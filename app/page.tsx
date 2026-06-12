@@ -1,0 +1,240 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { demoOrders } from "../lib/demo-data";
+import { fulfilledOrdersCsv, importShopifyData } from "../lib/importer";
+import { orderStatuses, type Order, type OrderStatus, type UserRole } from "../lib/types";
+
+type Session = { name: string; email: string; role: UserRole };
+type View = "orders" | "import" | "fulfilled";
+
+const statusLabels: Record<OrderStatus, string> = {
+  new_order: "New Order",
+  awaiting_voice: "Awaiting Voice",
+  ready_to_make: "Ready to Make",
+  making: "Making",
+  ready_to_pack: "Ready to Pack",
+  packed: "Packed",
+  fulfilled: "Fulfilled",
+  issue: "Issue",
+};
+
+const nextStatus: Partial<Record<OrderStatus, OrderStatus>> = {
+  new_order: "awaiting_voice",
+  awaiting_voice: "ready_to_make",
+  ready_to_make: "making",
+  making: "ready_to_pack",
+  ready_to_pack: "packed",
+  packed: "fulfilled",
+};
+
+function formatDate(value: string, withTime = false) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en-MY", withTime
+    ? { dateStyle: "medium", timeStyle: "short" }
+    : { day: "2-digit", month: "short", year: "numeric" }).format(date);
+}
+
+function whatsappLink(order: Order) {
+  const digits = order.phone.replace(/\D/g, "");
+  const phone = digits.startsWith("60") ? digits : digits.startsWith("0") ? `60${digits.slice(1)}` : `60${digits}`;
+  const tracking = order.trackingNumber ? `Tracking number: ${order.trackingNumber}` : "We will share your tracking number soon.";
+  return `https://wa.me/${phone}?text=${encodeURIComponent(`Hi ${order.customerName}, your Meaningful Plushie ${order.plushName} is being prepared. ${tracking}`)}`;
+}
+
+export default function Home() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [view, setView] = useState<View>("orders");
+  const [orders, setOrders] = useState<Order[]>(demoOrders);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | OrderStatus>("all");
+  const [orderCsv, setOrderCsv] = useState("");
+  const [metafieldCsv, setMetafieldCsv] = useState("");
+  const [notice, setNotice] = useState("");
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    const savedOrders = localStorage.getItem("mp-dashboard-orders");
+    const savedSession = localStorage.getItem("mp-dashboard-session");
+    if (savedOrders) setOrders(JSON.parse(savedOrders));
+    if (savedSession) setSession(JSON.parse(savedSession));
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (hydrated) localStorage.setItem("mp-dashboard-orders", JSON.stringify(orders));
+  }, [orders, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    if (session) localStorage.setItem("mp-dashboard-session", JSON.stringify(session));
+    else localStorage.removeItem("mp-dashboard-session");
+  }, [session, hydrated]);
+
+  const selected = orders.find((order) => order.id === selectedId) ?? null;
+  const filtered = useMemo(() => {
+    const source = view === "fulfilled" ? orders.filter((order) => order.status === "fulfilled") : orders;
+    const search = query.trim().toLowerCase();
+    return source
+      .filter((order) => statusFilter === "all" || order.status === statusFilter)
+      .filter((order) => !search || [order.orderNumber, order.customerName, order.phone, order.trackingNumber]
+        .join(" ").toLowerCase().includes(search))
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  }, [orders, query, statusFilter, view]);
+
+  const counts = useMemo(() => ({
+    total: orders.filter((order) => order.status !== "fulfilled").length,
+    voice: orders.filter((order) => order.status === "awaiting_voice").length,
+    production: orders.filter((order) => ["ready_to_make", "making"].includes(order.status)).length,
+    packing: orders.filter((order) => ["ready_to_pack", "packed"].includes(order.status)).length,
+    issue: orders.filter((order) => order.status === "issue").length,
+  }), [orders]);
+
+  if (!session) return <Login onLogin={setSession} />;
+
+  function updateOrder(orderId: string, patch: Partial<Order>) {
+    setOrders((current) => current.map((order) => order.id === orderId
+      ? { ...order, ...patch, updatedAt: new Date().toISOString() }
+      : order));
+  }
+
+  function setStatus(order: Order, status: OrderStatus) {
+    if (order.status === status) return;
+    const changedAt = new Date().toISOString();
+    updateOrder(order.id, {
+      status,
+      statusHistory: [...order.statusHistory, {
+        id: `${order.id}-${changedAt}`,
+        status,
+        changedAt,
+        changedBy: session?.name ?? "Staff",
+      }],
+    });
+    setNotice(`#${order.orderNumber} updated to ${statusLabels[status]}.`);
+  }
+
+  function runImport() {
+    const { orders: imported, result } = importShopifyData(orderCsv, metafieldCsv, orders, session?.name ?? "Admin");
+    setOrders(imported);
+    setOrderCsv("");
+    setMetafieldCsv("");
+    setNotice(`${result.imported} new orders imported, ${result.updated} updated, ${result.skipped} skipped.`);
+    setView("orders");
+  }
+
+  function downloadFulfilled() {
+    const blob = new Blob([fulfilledOrdersCsv(orders)], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `meaningful-plushies-fulfilled-${new Date().toISOString().slice(0, 10)}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function readFile(file: File | undefined, target: "orders" | "metafields") {
+    if (!file) return;
+    const text = await file.text();
+    if (target === "orders") setOrderCsv(text);
+    else setMetafieldCsv(text);
+  }
+
+  return <main className="app-shell">
+    <aside className="side-nav">
+      <div className="logo"><span>MP</span><div>Meaningful Plushies<small>Fulfilment</small></div></div>
+      <nav>
+        <button className={view === "orders" ? "active" : ""} onClick={() => setView("orders")}><b>▦</b> Orders</button>
+        {session.role === "admin" && <button className={view === "import" ? "active" : ""} onClick={() => setView("import")}><b>⇧</b> CSV Import</button>}
+        <button className={view === "fulfilled" ? "active" : ""} onClick={() => setView("fulfilled")}><b>✓</b> Fulfilled</button>
+      </nav>
+      <div className="user-card"><div className="avatar">{session.name.slice(0, 1)}</div><div><strong>{session.name}</strong><span>{session.role === "admin" ? "Administrator" : "Fulfilment staff"}</span></div><button title="Sign out" onClick={() => setSession(null)}>↪</button></div>
+    </aside>
+
+    <section className="main-area">
+      <header className="topbar"><div><p>FULFILMENT CONTROL</p><h1>{view === "import" ? "Import Shopify Orders" : view === "fulfilled" ? "Fulfilled Orders" : "Orders Dashboard"}</h1></div><div className="top-actions"><span className={`role-badge ${session.role}`}>{session.role}</span>{session.role === "admin" && view !== "import" && <button className="button primary" onClick={() => setView("import")}>Import CSV</button>}</div></header>
+      {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice("")}>×</button></div>}
+
+      {view !== "import" && <>
+        {view === "orders" && <section className="stats">
+          <Stat label="Active orders" value={counts.total} color="navy" />
+          <Stat label="Awaiting voice" value={counts.voice} color="orange" />
+          <Stat label="In production" value={counts.production} color="blue" />
+          <Stat label="Packing" value={counts.packing} color="green" />
+          <Stat label="Issues" value={counts.issue} color="red" />
+        </section>}
+
+        <section className="card orders-card">
+          <div className="toolbar"><div className="search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, customer, phone or tracking..." /></div><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select>{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>Export CSV</button>}</div>
+          <div className="table-scroll"><table className="orders-table"><thead><tr><th>Order</th><th>Date</th><th>Customer</th><th>Phone</th><th>Product</th><th>Character</th><th>Voice</th><th>Plush name</th><th>Status</th><th>Courier</th><th>Tracking number</th><th>Last updated</th><th></th></tr></thead><tbody>{filtered.map((order) => <tr key={order.id}><td><strong>#{order.orderNumber}</strong></td><td>{formatDate(order.orderDate)}</td><td><strong>{order.customerName || "-"}</strong></td><td>{order.phone || "-"}</td><td className="truncate" title={order.product}>{order.product || "-"}</td><td>{order.character || "-"}</td><td>{order.voiceLength ? `${order.voiceLength}s` : "-"}</td><td>{order.plushName || "-"}</td><td><StatusPill status={order.status} /></td><td>{order.courier || "-"}</td><td><code>{order.trackingNumber || "-"}</code></td><td>{formatDate(order.updatedAt, true)}</td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No orders found</strong><p>Try another search or status filter.</p></div>}</div>
+          <div className="table-footer">Showing {filtered.length} of {view === "fulfilled" ? orders.filter((order) => order.status === "fulfilled").length : orders.length} orders</div>
+        </section>
+      </>}
+
+      {view === "import" && session.role === "admin" && <section className="import-page">
+        <div className="import-intro"><span>CSV</span><div><h2>Import Shopify exports</h2><p>Upload the regular Shopify order CSV. Add the metafield CSV when you want plush names, meaningful messages, and personalization details matched automatically.</p></div></div>
+        <div className="import-columns">
+          <ImportBox number="1" title="Shopify order export" required value={orderCsv} onChange={setOrderCsv} onFile={(file) => readFile(file, "orders")} placeholder="Name, Email, Financial Status, Lineitem name..." />
+          <ImportBox number="2" title="Order metafields export" value={metafieldCsv} onChange={setMetafieldCsv} onFile={(file) => readFile(file, "metafields")} placeholder="Order GID, Order name, Metafield value..." />
+        </div>
+        <div className="import-action"><div><strong>Safe repeat imports</strong><p>Existing order numbers are updated without removing status, tracking, notes, or photos.</p></div><button className="button primary large" disabled={!orderCsv.trim()} onClick={runImport}>Validate and import orders</button></div>
+      </section>}
+    </section>
+
+    {selected && <OrderDrawer order={selected} role={session.role} actor={session.name} onClose={() => setSelectedId(null)} onUpdate={(patch) => updateOrder(selected.id, patch)} onStatus={(status) => setStatus(selected, status)} />}
+  </main>;
+}
+
+function Login({ onLogin }: { onLogin: (session: Session) => void }) {
+  const [email, setEmail] = useState("admin@meaningfulplushies.com");
+  const [password, setPassword] = useState("demo1234");
+  const role: UserRole = email.toLowerCase().startsWith("staff") ? "staff" : "admin";
+  return <main className="login-page"><section className="login-brand"><div className="login-logo">MP</div><p>MEANINGFUL PLUSHIES</p><h1>A calmer way to manage every plushie.</h1><span>Track voice, production, packing and delivery from one simple workspace.</span></section><section className="login-panel"><form onSubmit={(event) => { event.preventDefault(); onLogin({ name: role === "admin" ? "Admin" : "Fulfilment Staff", email, role }); }}><p className="eyebrow">STAFF PORTAL</p><h2>Welcome back</h2><span>Sign in to continue to fulfilment.</span><label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label><button className="button primary large" type="submit">Sign in</button><div className="demo-logins"><strong>Demo roles</strong><button type="button" onClick={() => { setEmail("admin@meaningfulplushies.com"); setPassword("demo1234"); }}>Admin account</button><button type="button" onClick={() => { setEmail("staff@meaningfulplushies.com"); setPassword("demo1234"); }}>Staff account</button></div></form></section></main>;
+}
+
+function Stat({ label, value, color }: { label: string; value: number; color: string }) {
+  return <article className={`stat ${color}`}><span>{label}</span><strong>{value}</strong></article>;
+}
+
+function StatusPill({ status }: { status: OrderStatus }) {
+  return <span className={`status-pill status-${status}`}>{statusLabels[status]}</span>;
+}
+
+function ImportBox({ number, title, required, value, onChange, onFile, placeholder }: { number: string; title: string; required?: boolean; value: string; onChange: (value: string) => void; onFile: (file?: File) => void; placeholder: string }) {
+  return <article className="card import-box"><div className="import-heading"><span>{number}</span><div><h3>{title}</h3><p>{required ? "Required" : "Optional, but recommended"}</p></div></div><label className="file-drop"><input type="file" accept=".csv,text/csv" onChange={(event) => onFile(event.target.files?.[0])} /><strong>Choose CSV file</strong><span>or paste the CSV content below</span></label><textarea value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} /></article>;
+}
+
+function OrderDrawer({ order, role, actor, onClose, onUpdate, onStatus }: { order: Order; role: UserRole; actor: string; onClose: () => void; onUpdate: (patch: Partial<Order>) => void; onStatus: (status: OrderStatus) => void }) {
+  const admin = role === "admin";
+  const following = nextStatus[order.status];
+
+  function uploadPhoto(file?: File) {
+    if (!file) return;
+    if (file.size > 3_000_000) return alert("Please choose an image smaller than 3 MB.");
+    const reader = new FileReader();
+    reader.onload = () => onUpdate({ photoDataUrl: String(reader.result), photoName: file.name });
+    reader.readAsDataURL(file);
+  }
+
+  return <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><aside className="order-drawer"><div className="drawer-header"><div><p>ORDER DETAIL</p><h2>#{order.orderNumber}</h2></div><button onClick={onClose}>×</button></div><div className="drawer-body">
+    <section className="detail-summary"><div><span>Current status</span><StatusPill status={order.status} /></div><div><span>Last updated</span><strong>{formatDate(order.updatedAt, true)}</strong></div></section>
+    <section className="detail-section"><h3>Quick actions</h3><div className="status-actions">{following && <button className="button primary" onClick={() => onStatus(following)}>Move to {statusLabels[following]}</button>}<button className="button issue-button" onClick={() => onStatus("issue")}>Mark issue</button>{order.status === "issue" && <button className="button secondary" onClick={() => onStatus("ready_to_make")}>Resolve issue</button>}<a className="button whatsapp" href={whatsappLink(order)} target="_blank">Open WhatsApp</a></div></section>
+    <section className="detail-section"><h3>Customer and order</h3><div className="field-grid"><Field label="Order number" value={`#${order.orderNumber}`} /><Field label="Order date" value={formatDate(order.orderDate, true)} /><Editable label="Customer name" value={order.customerName} disabled={!admin} onChange={(value) => onUpdate({ customerName: value })} /><Editable label="Phone" value={order.phone} disabled={!admin} onChange={(value) => onUpdate({ phone: value })} /><Editable wide label="Address" value={order.address} disabled={!admin} onChange={(value) => onUpdate({ address: value })} /></div></section>
+    <section className="detail-section"><h3>Plushie details</h3><div className="field-grid"><Editable label="Product" value={order.product} disabled={!admin} onChange={(value) => onUpdate({ product: value })} /><Editable label="Character" value={order.character} disabled={!admin} onChange={(value) => onUpdate({ character: value })} /><Editable label="Voice length" value={String(order.voiceLength || "")} disabled={!admin} onChange={(value) => onUpdate({ voiceLength: Number(value) || 0 })} /><Editable label="Plush name" value={order.plushName} disabled={!admin} onChange={(value) => onUpdate({ plushName: value })} /><Editable wide textarea label="Meaningful note" value={order.meaningfulNote} disabled={!admin} onChange={(value) => onUpdate({ meaningfulNote: value })} /><div className="field wide"><label>Meaningful message</label>{order.meaningfulMessage ? <a href={order.meaningfulMessage} target="_blank">Open customer message</a> : <span>Not provided</span>}</div><div className="field"><label>Voice upload</label>{admin ? <select value={order.voiceUploadStatus} onChange={(event) => onUpdate({ voiceUploadStatus: event.target.value as Order["voiceUploadStatus"] })}><option value="missing">Missing</option><option value="received">Received</option><option value="checked">Checked</option></select> : <strong>{order.voiceUploadStatus}</strong>}</div></div></section>
+    <section className="detail-section"><h3>Delivery</h3><div className="field-grid"><Editable label="Courier" value={order.courier} disabled={!admin} placeholder="J&T Express" onChange={(value) => onUpdate({ courier: value })} /><Editable label="Tracking number" value={order.trackingNumber} placeholder="Enter tracking number" onChange={(value) => onUpdate({ trackingNumber: value })} /></div></section>
+    <section className="detail-section"><h3>Tailor / packing photo</h3><div className="photo-field">{order.photoDataUrl ? <img src={order.photoDataUrl} alt="Tailor or packing evidence" /> : <div className="photo-placeholder">No photo uploaded</div>}{admin && <label className="button secondary"><input type="file" accept="image/*" onChange={(event) => uploadPhoto(event.target.files?.[0])} />{order.photoDataUrl ? "Replace photo" : "Upload photo"}</label>} {order.photoName && <small>{order.photoName}</small>}</div></section>
+    <section className="detail-section"><h3>Internal notes</h3><textarea className="notes" value={order.internalNotes} disabled={!admin} onChange={(event) => onUpdate({ internalNotes: event.target.value })} placeholder="Add notes visible to your team..." /></section>
+    <section className="detail-section"><h3>Status history</h3><div className="history">{[...order.statusHistory].reverse().map((event) => <div key={event.id}><span></span><div><strong>{statusLabels[event.status]}</strong><p>{event.changedBy} · {formatDate(event.changedAt, true)}</p>{event.note && <small>{event.note}</small>}</div></div>)}</div></section>
+    {!admin && <p className="permission-note">Signed in as Staff. You can update status and tracking only.</p>}
+  </div></aside></div>;
+}
+
+function Field({ label, value }: { label: string; value: string }) {
+  return <div className="field"><label>{label}</label><strong>{value || "-"}</strong></div>;
+}
+
+function Editable({ label, value, onChange, disabled, placeholder, wide, textarea }: { label: string; value: string; onChange: (value: string) => void; disabled?: boolean; placeholder?: string; wide?: boolean; textarea?: boolean }) {
+  return <div className={`field ${wide ? "wide" : ""}`}><label>{label}</label>{textarea ? <textarea value={value} disabled={disabled} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} /> : <input value={value} disabled={disabled} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} />}</div>;
+}
