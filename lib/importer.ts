@@ -71,6 +71,15 @@ function orderNumber(value = "") {
   return value.replace(/[^0-9]/g, "");
 }
 
+function money(value = "") {
+  const parsed = Number(value.replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function importedMoney(row: Record<string, string>, key: string, current = 0) {
+  return row[key] === undefined || row[key] === "" ? current : money(row[key]);
+}
+
 function metafield(raw: string, label: string) {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return raw.match(new RegExp(`${escaped}:\\s*([^\\r\\n]*)`, "i"))?.[1]?.trim() ?? "";
@@ -132,6 +141,9 @@ export function importShopifyData(
     const personalizations = personalizationBlocks(raw);
     const total = Math.max(rows.length, personalizations.length, 1);
     const shared = rows.find((row) => row["Shipping Name"] || row["Billing Name"] || row.Email) ?? rows[0] ?? {};
+    const productDiscountAmount = rows.reduce((sum, row) => sum + money(row["Lineitem discount"]), 0);
+    const discountAmount = money(shared["Discount Amount"]);
+    const shippingDiscountAmount = Math.max(0, discountAmount - productDiscountAmount);
 
     for (let index = 0; index < total; index += 1) {
       const row = rows[index] ?? rows[0] ?? {};
@@ -156,6 +168,15 @@ export function importShopifyData(
         phone: shared["Shipping Phone"] || shared.Phone || current?.phone || "",
         email: shared.Email || current?.email || "",
         address: shared["Shipping Street"] || shared["Shipping Address1"] || current?.address || "",
+        currency: shared.Currency || current?.currency || "MYR",
+        subtotalAmount: importedMoney(shared, "Subtotal", current?.subtotalAmount),
+        shippingAmount: importedMoney(shared, "Shipping", current?.shippingAmount),
+        totalAmount: importedMoney(shared, "Total", current?.totalAmount),
+        discountAmount: shared["Discount Amount"] === undefined || shared["Discount Amount"] === "" ? current?.discountAmount ?? 0 : discountAmount,
+        productDiscountAmount,
+        shippingDiscountAmount,
+        refundedAmount: importedMoney(shared, "Refunded Amount", current?.refundedAmount),
+        outstandingBalance: importedMoney(shared, "Outstanding Balance", current?.outstandingBalance),
         product: productName(lineName, personalization.product || current?.product || ""),
         character: character || current?.character || "",
         setIndicator: total > 1 ? `(${index + 1},${total})` : "",

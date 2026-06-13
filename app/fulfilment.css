@@ -61,3 +61,54 @@
   background: #daf2e6;
   color: #126646;
 }
+
+.sales-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 15px;
+}
+
+.money-stat {
+  position: relative;
+  overflow: hidden;
+  padding: 17px 18px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: white;
+}
+
+.money-stat::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: currentColor;
+}
+
+.money-stat span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.money-stat strong {
+  display: block;
+  margin-top: 7px;
+  color: var(--text);
+  font-size: 24px;
+}
+
+.money-stat.sales { color: #315a8f; }
+.money-stat.discount { color: #c36a12; }
+.money-stat.shipping { color: #8d5fb1; }
+.money-stat.transfer { color: #16758a; }
+.money-stat.collected { color: #16845b; }
+
+@media (max-width: 1100px) {
+  .sales-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 760px) {
+  .sales-stats { grid-template-columns: 1fr; }
+}

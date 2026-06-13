@@ -53,6 +53,10 @@ function formatDate(value: string, withTime = false) {
     : { day: "2-digit", month: "short", year: "numeric" }).format(date);
 }
 
+function formatMoney(value: number, currency = "MYR") {
+  return new Intl.NumberFormat("en-MY", { style: "currency", currency }).format(value);
+}
+
 function whatsappLink(order: Order) {
   const digits = order.phone.replace(/\D/g, "");
   const phone = digits.startsWith("60") ? digits : digits.startsWith("0") ? `60${digits.slice(1)}` : `60${digits}`;
@@ -102,6 +106,15 @@ export default function Home() {
       return {
         ...order,
         status,
+        currency: order.currency ?? "MYR",
+        subtotalAmount: order.subtotalAmount ?? 0,
+        shippingAmount: order.shippingAmount ?? 0,
+        totalAmount: order.totalAmount ?? 0,
+        discountAmount: order.discountAmount ?? 0,
+        productDiscountAmount: order.productDiscountAmount ?? 0,
+        shippingDiscountAmount: order.shippingDiscountAmount ?? 0,
+        refundedAmount: order.refundedAmount ?? 0,
+        outstandingBalance: order.outstandingBalance ?? 0,
         setIndicator: order.setIndicator ?? "",
         idWebsiteLink: order.idWebsiteLink ?? "",
         statusHistory: order.statusHistory.map((event) => ({
@@ -144,6 +157,26 @@ export default function Home() {
     packing: orders.filter((order) => order.status === "packed").length,
     issue: orders.filter((order) => order.status === "issue").length,
   }), [orders]);
+
+  const sales = useMemo(() => {
+    const uniqueOrders = new Map<string, Order>();
+    for (const order of orders) {
+      const current = uniqueOrders.get(order.orderNumber);
+      if (!current || order.totalAmount > current.totalAmount) uniqueOrders.set(order.orderNumber, order);
+    }
+    return [...uniqueOrders.values()].reduce((summary, order) => {
+      const bankTransfer = order.subtotalAmount > 0 && order.productDiscountAmount >= order.subtotalAmount - 0.01
+        ? order.subtotalAmount
+        : 0;
+      return {
+        gross: summary.gross + order.totalAmount + order.discountAmount,
+        productDiscounted: summary.productDiscounted + Math.max(0, order.productDiscountAmount - bankTransfer),
+        shippingDiscounted: summary.shippingDiscounted + order.shippingDiscountAmount,
+        bankTransfer: summary.bankTransfer + bankTransfer,
+        collected: summary.collected + Math.max(0, order.totalAmount + bankTransfer - order.refundedAmount - order.outstandingBalance),
+      };
+    }, { gross: 0, productDiscounted: 0, shippingDiscounted: 0, bankTransfer: 0, collected: 0 });
+  }, [orders]);
 
   if (!session) return <Login onLogin={setSession} />;
 
@@ -315,6 +348,14 @@ export default function Home() {
           <Stat label="Issues" value={counts.issue} color="red" />
         </section>}
 
+        {view === "orders" && <section className="sales-stats">
+          <MoneyStat label="Total sales" value={sales.gross} tone="sales" />
+          <MoneyStat label="Product discounts" value={sales.productDiscounted} tone="discount" />
+          <MoneyStat label="Shipping discounts" value={sales.shippingDiscounted} tone="shipping" />
+          <MoneyStat label="Bank transfer collected" value={sales.bankTransfer} tone="transfer" />
+          <MoneyStat label="Cash collected" value={sales.collected} tone="collected" />
+        </section>}
+
         {view !== "fulfilment" && <section className="card orders-card">
           <div className="toolbar"><div className="search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, customer, phone or tracking..." /></div><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select>{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>Move {selectedOrders.length} to next status</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>Export CSV</button>}</div>
           <div className="table-scroll"><table className="orders-table"><thead><tr><th><input type="checkbox" aria-label="Select visible orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th>Order</th><th>Date</th><th>Customer</th><th>Phone</th><th>Character</th><th>Voice</th><th>Plush name</th><th>Status</th><th>Tracking number</th><th>Last updated</th><th>View</th></tr></thead><tbody>{filtered.map((order) => <tr key={order.id}><td><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={selectedOrders.includes(order.id)} onChange={() => toggleOrderSelection(order.id)} /></td><td><strong>{orderLabel(order)}</strong></td><td>{formatDate(order.orderDate)}</td><td><strong>{order.customerName || "-"}</strong></td><td>{order.phone || "-"}</td><td>{order.character || "-"}</td><td>{order.voiceLength ? `${order.voiceLength}s` : "-"}</td><td>{order.plushName || "-"}</td><td><StatusPill status={order.status} /></td><td><code>{order.trackingNumber || "-"}</code></td><td>{formatDate(order.updatedAt, true)}</td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No orders found</strong><p>Try another search or status filter.</p></div>}</div>
@@ -360,6 +401,10 @@ function Login({ onLogin }: { onLogin: (session: Session) => void }) {
 
 function Stat({ label, value, color }: { label: string; value: number; color: string }) {
   return <article className={`stat ${color}`}><span>{label}</span><strong>{value}</strong></article>;
+}
+
+function MoneyStat({ label, value, tone }: { label: string; value: number; tone: string }) {
+  return <article className={`money-stat ${tone}`}><span>{label}</span><strong>{formatMoney(value)}</strong></article>;
 }
 
 function StatusPill({ status }: { status: OrderStatus }) {

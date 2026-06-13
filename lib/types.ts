@@ -26,6 +26,15 @@ export type Order = {
   phone: string;
   email: string;
   address: string;
+  currency: string;
+  subtotalAmount: number;
+  shippingAmount: number;
+  totalAmount: number;
+  discountAmount: number;
+  productDiscountAmount: number;
+  shippingDiscountAmount: number;
+  refundedAmount: number;
+  outstandingBalance: number;
   product: string;
   character: string;
   setIndicator: string;
