@@ -54,6 +54,10 @@ function productName(lineName: string, fallback: string) {
   return title || fallback;
 }
 
+function certificateLink(code: string) {
+  return code ? `https://meaningfulplushies.com/pages/certificate/${code.trim()}` : "";
+}
+
 export function importShopifyData(
   orderCsv: string,
   metafieldCsv: string,
@@ -86,6 +90,7 @@ export function importShopifyData(
     const current = next.get(number);
     const timestamp = new Date().toISOString();
     const initialStatus = current?.status ?? "new_order";
+    const certificateCode = metafield(raw, "Certificate Code") || current?.certificateCode || "";
 
     const value: Order = {
       id: current?.id ?? number,
@@ -98,10 +103,10 @@ export function importShopifyData(
       product: productName(lineName, metafield(raw, "Product") || current?.product || ""),
       character: character || current?.character || "",
       setIndicator: metafield(raw, "Set Indicator") || current?.setIndicator || "",
-      idWebsiteLink: metafield(raw, "ID Website Link") || metafield(raw, "Id Website Link") || current?.idWebsiteLink || "",
+      idWebsiteLink: certificateLink(certificateCode) || metafield(raw, "ID Website Link") || metafield(raw, "Id Website Link") || current?.idWebsiteLink || "",
       voiceLength: voice || current?.voiceLength || 0,
       plushName: metafield(raw, "Name") || current?.plushName || "",
-      certificateCode: metafield(raw, "Certificate Code") || current?.certificateCode || "",
+      certificateCode,
       meaningfulNote: metafield(raw, "Meaningful Note") || current?.meaningfulNote || "",
       meaningfulMessage: metafield(raw, "Meaningful Message") || current?.meaningfulMessage || "",
       remark: row.Remark || row.Notes || current?.remark || "",
@@ -137,7 +142,7 @@ export function fulfilledOrdersCsv(orders: Order[]) {
     "Order number", "Order date", "Customer name", "Phone", "Product", "Character",
     "Set indicator", "ID website link", "Voice length", "Plush name", "Remark", "Courier", "Tracking number", "Status", "Last updated",
   ];
-  const rows = orders.filter((order) => order.status === "fulfilled").map((order) => [
+  const rows = orders.filter((order) => order.status === "shipped").map((order) => [
     order.orderNumber, order.orderDate, order.customerName, order.phone, order.product,
     order.character, order.setIndicator, order.idWebsiteLink, order.voiceLength, order.plushName, order.remark, order.courier,
     order.trackingNumber, order.status, order.updatedAt,

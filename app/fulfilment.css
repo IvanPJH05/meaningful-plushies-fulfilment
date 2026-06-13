@@ -18,3 +18,46 @@
 .fulfilment-table {
   min-width: 1280px;
 }
+
+.fulfilment-table th[draggable="true"] {
+  cursor: grab;
+  user-select: none;
+}
+
+.link-copy {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 390px;
+}
+
+.link-copy a {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.link-copy button {
+  border: 1px solid #cbd8e8;
+  border-radius: 5px;
+  background: white;
+  color: #205da7;
+  padding: 4px 7px;
+  font-size: 9px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.status-uploading_audio {
+  background: #fff0d8;
+  color: #a15b0f;
+}
+
+.status-sent_for_sewing {
+  background: #e7efff;
+  color: #3767ae;
+}
+
+.status-shipped {
+  background: #daf2e6;
+  color: #126646;
+}

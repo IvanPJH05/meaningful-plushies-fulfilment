@@ -1,11 +1,9 @@
 export const orderStatuses = [
   "new_order",
-  "awaiting_voice",
-  "ready_to_make",
-  "making",
-  "ready_to_pack",
+  "uploading_audio",
+  "sent_for_sewing",
   "packed",
-  "fulfilled",
+  "shipped",
   "issue",
 ] as const;
 

@@ -2,8 +2,7 @@ create extension if not exists pgcrypto;
 
 create type public.user_role as enum ('admin', 'staff');
 create type public.order_status as enum (
-  'new_order', 'awaiting_voice', 'ready_to_make', 'making',
-  'ready_to_pack', 'packed', 'fulfilled', 'issue'
+  'new_order', 'uploading_audio', 'sent_for_sewing', 'packed', 'shipped', 'issue'
 );
 create type public.voice_upload_status as enum ('missing', 'received', 'checked');
 

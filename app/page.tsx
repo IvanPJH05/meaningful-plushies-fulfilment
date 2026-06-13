@@ -10,22 +10,38 @@ type View = "orders" | "fulfilment" | "packing_slips" | "import" | "fulfilled";
 
 const statusLabels: Record<OrderStatus, string> = {
   new_order: "New Order",
-  awaiting_voice: "Awaiting Voice",
-  ready_to_make: "Ready to Make",
-  making: "Making",
-  ready_to_pack: "Ready to Pack",
+  uploading_audio: "Uploading Audio",
+  sent_for_sewing: "Sent for Sewing",
   packed: "Packed",
-  fulfilled: "Fulfilled",
+  shipped: "Shipped",
   issue: "Issue",
 };
 
 const nextStatus: Partial<Record<OrderStatus, OrderStatus>> = {
-  new_order: "awaiting_voice",
-  awaiting_voice: "ready_to_make",
-  ready_to_make: "making",
-  making: "ready_to_pack",
-  ready_to_pack: "packed",
-  packed: "fulfilled",
+  new_order: "uploading_audio",
+  uploading_audio: "sent_for_sewing",
+  sent_for_sewing: "packed",
+  packed: "shipped",
+};
+
+const legacyStatus: Record<string, OrderStatus> = {
+  awaiting_voice: "uploading_audio",
+  ready_to_make: "sent_for_sewing",
+  making: "sent_for_sewing",
+  ready_to_pack: "sent_for_sewing",
+  fulfilled: "shipped",
+};
+
+type FulfilmentColumn = "orderNumber" | "meaningfulMessage" | "plushName" | "character" | "idWebsiteLink" | "customerName" | "phone";
+
+const fulfilmentColumnLabels: Record<FulfilmentColumn, string> = {
+  orderNumber: "Order ID",
+  meaningfulMessage: "Meaningful Message",
+  plushName: "Plush Name",
+  character: "Character",
+  idWebsiteLink: "ID Website Link",
+  customerName: "Customer Name",
+  phone: "Phone Number",
 };
 
 function formatDate(value: string, withTime = false) {
@@ -48,6 +64,13 @@ function displayProductName(value: string) {
   return value.split(/\s+-\s+(?=[^/]+\s+\(RM)/i)[0]?.trim() || value;
 }
 
+function certificateLink(order: Order, includeProtocol = true) {
+  const link = order.certificateCode
+    ? `meaningfulplushies.com/pages/certificate/${order.certificateCode.trim()}`
+    : order.idWebsiteLink.replace(/^https?:\/\//i, "");
+  return includeProtocol && link ? `https://${link}` : link;
+}
+
 export default function Home() {
   const [session, setSession] = useState<Session | null>(null);
   const [view, setView] = useState<View>("orders");
@@ -55,7 +78,12 @@ export default function Home() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | OrderStatus>("all");
+  const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [packingSelection, setPackingSelection] = useState<string[]>([]);
+  const [packingStatusFilter, setPackingStatusFilter] = useState<"all" | OrderStatus>("all");
+  const [fulfilmentColumns, setFulfilmentColumns] = useState<FulfilmentColumn[]>([
+    "orderNumber", "meaningfulMessage", "plushName", "character", "idWebsiteLink", "customerName", "phone",
+  ]);
   const [manualOrderIds, setManualOrderIds] = useState("");
   const [orderCsv, setOrderCsv] = useState("");
   const [metafieldCsv, setMetafieldCsv] = useState("");
@@ -65,11 +93,19 @@ export default function Home() {
   useEffect(() => {
     const savedOrders = localStorage.getItem("mp-dashboard-orders");
     const savedSession = localStorage.getItem("mp-dashboard-session");
-    if (savedOrders) setOrders((JSON.parse(savedOrders) as Order[]).map((order) => ({
-      ...order,
-      setIndicator: order.setIndicator ?? "",
-      idWebsiteLink: order.idWebsiteLink ?? "",
-    })));
+    if (savedOrders) setOrders((JSON.parse(savedOrders) as Order[]).map((order) => {
+      const status = legacyStatus[order.status] ?? order.status;
+      return {
+        ...order,
+        status,
+        setIndicator: order.setIndicator ?? "",
+        idWebsiteLink: order.idWebsiteLink ?? "",
+        statusHistory: order.statusHistory.map((event) => ({
+          ...event,
+          status: legacyStatus[event.status] ?? event.status,
+        })),
+      };
+    }));
     if (savedSession) setSession(JSON.parse(savedSession));
     setHydrated(true);
   }, []);
@@ -86,8 +122,9 @@ export default function Home() {
 
   const selected = orders.find((order) => order.id === selectedId) ?? null;
   const packingOrders = orders.filter((order) => packingSelection.includes(order.orderNumber));
+  const packingAvailableOrders = orders.filter((order) => packingStatusFilter === "all" || order.status === packingStatusFilter);
   const filtered = useMemo(() => {
-    const source = view === "fulfilled" ? orders.filter((order) => order.status === "fulfilled") : orders;
+    const source = view === "fulfilled" ? orders.filter((order) => order.status === "shipped") : orders;
     const search = query.trim().toLowerCase();
     return source
       .filter((order) => statusFilter === "all" || order.status === statusFilter)
@@ -97,10 +134,10 @@ export default function Home() {
   }, [orders, query, statusFilter, view]);
 
   const counts = useMemo(() => ({
-    total: orders.filter((order) => order.status !== "fulfilled").length,
-    voice: orders.filter((order) => order.status === "awaiting_voice").length,
-    production: orders.filter((order) => ["ready_to_make", "making"].includes(order.status)).length,
-    packing: orders.filter((order) => ["ready_to_pack", "packed"].includes(order.status)).length,
+    total: orders.filter((order) => order.status !== "shipped").length,
+    voice: orders.filter((order) => order.status === "uploading_audio").length,
+    production: orders.filter((order) => order.status === "sent_for_sewing").length,
+    packing: orders.filter((order) => order.status === "packed").length,
     issue: orders.filter((order) => order.status === "issue").length,
   }), [orders]);
 
@@ -125,6 +162,55 @@ export default function Home() {
       }],
     });
     setNotice(`#${order.orderNumber} updated to ${statusLabels[status]}.`);
+  }
+
+  function bulkMoveNext() {
+    const selected = orders.filter((order) => selectedOrders.includes(order.id));
+    if (!selected.length) return setNotice("Select at least one order first.");
+    const changedAt = new Date().toISOString();
+    let moved = 0;
+    setOrders((current) => current.map((order) => {
+      if (!selectedOrders.includes(order.id)) return order;
+      const status = nextStatus[order.status];
+      if (!status) return order;
+      moved += 1;
+      return {
+        ...order,
+        status,
+        updatedAt: changedAt,
+        statusHistory: [...order.statusHistory, {
+          id: `${order.id}-${changedAt}-${status}`,
+          status,
+          changedAt,
+          changedBy: session?.name ?? "Staff",
+          note: "Bulk status update",
+        }],
+      };
+    }));
+    setSelectedOrders([]);
+    setNotice(`${moved} order${moved === 1 ? "" : "s"} moved to the next status.`);
+  }
+
+  function toggleOrderSelection(orderId: string) {
+    setSelectedOrders((current) => current.includes(orderId)
+      ? current.filter((id) => id !== orderId)
+      : [...current, orderId]);
+  }
+
+  function reorderFulfilmentColumn(source: FulfilmentColumn, target: FulfilmentColumn) {
+    if (source === target) return;
+    setFulfilmentColumns((current) => {
+      const next = current.filter((column) => column !== source);
+      next.splice(next.indexOf(target), 0, source);
+      return next;
+    });
+  }
+
+  async function copyCertificateLink(order: Order) {
+    const link = certificateLink(order, false);
+    if (!link) return setNotice(`#${order.orderNumber} has no certificate code.`);
+    await navigator.clipboard.writeText(link);
+    setNotice(`Certificate link for #${order.orderNumber} copied without https://.`);
   }
 
   function runImport() {
@@ -159,7 +245,24 @@ export default function Home() {
       setNotice("Select at least one order before printing.");
       return;
     }
+    const changedAt = new Date().toISOString();
+    setOrders((current) => current.map((order) => {
+      if (!packingSelection.includes(order.orderNumber) || order.status !== "new_order") return order;
+      return {
+        ...order,
+        status: "uploading_audio",
+        updatedAt: changedAt,
+        statusHistory: [...order.statusHistory, {
+          id: `${order.id}-${changedAt}-uploading-audio`,
+          status: "uploading_audio",
+          changedAt,
+          changedBy: session?.name ?? "Staff",
+          note: "Packing slip printed",
+        }],
+      };
+    }));
     window.print();
+    setNotice(`${packingOrders.length} packing slip${packingOrders.length === 1 ? "" : "s"} sent to print. New orders moved to Uploading Audio.`);
   }
 
   async function readFile(file: File | undefined, target: "orders" | "metafields") {
@@ -167,6 +270,19 @@ export default function Home() {
     const text = await file.text();
     if (target === "orders") setOrderCsv(text);
     else setMetafieldCsv(text);
+  }
+
+  function fulfilmentCell(order: Order, column: FulfilmentColumn) {
+    if (column === "orderNumber") return <strong>#{order.orderNumber}</strong>;
+    if (column === "meaningfulMessage") return order.meaningfulMessage ? <a href={order.meaningfulMessage} target="_blank" rel="noreferrer">Open message</a> : "-";
+    if (column === "plushName") return <strong>{order.plushName || "-"}</strong>;
+    if (column === "character") return order.character || "-";
+    if (column === "idWebsiteLink") {
+      const link = certificateLink(order);
+      return link ? <div className="link-copy"><a href={link} target="_blank" rel="noreferrer">{certificateLink(order, false)}</a><button type="button" onClick={() => copyCertificateLink(order)}>Copy</button></div> : "-";
+    }
+    if (column === "customerName") return order.customerName || "-";
+    return order.phone || "-";
   }
 
   return <main className="app-shell">
@@ -177,33 +293,33 @@ export default function Home() {
         <button className={view === "fulfilment" ? "active" : ""} onClick={() => setView("fulfilment")}><b>≡</b> Fulfilment</button>
         <button className={view === "packing_slips" ? "active" : ""} onClick={() => setView("packing_slips")}><b>▤</b> Packing Slips</button>
         {session.role === "admin" && <button className={view === "import" ? "active" : ""} onClick={() => setView("import")}><b>⇧</b> CSV Import</button>}
-        <button className={view === "fulfilled" ? "active" : ""} onClick={() => setView("fulfilled")}><b>✓</b> Fulfilled</button>
+        <button className={view === "fulfilled" ? "active" : ""} onClick={() => setView("fulfilled")}><b>✓</b> Shipped</button>
       </nav>
       <div className="user-card"><div className="avatar">{session.name.slice(0, 1)}</div><div><strong>{session.name}</strong><span>{session.role === "admin" ? "Administrator" : "Fulfilment staff"}</span></div><button title="Sign out" onClick={() => setSession(null)}>↪</button></div>
     </aside>
 
     <section className="main-area">
-      <header className="topbar"><div><p>FULFILMENT CONTROL</p><h1>{view === "import" ? "Import Shopify Orders" : view === "fulfilled" ? "Fulfilled Orders" : view === "fulfilment" ? "Fulfilment" : view === "packing_slips" ? "Packing Slips" : "Orders Dashboard"}</h1></div><div className="top-actions"><span className={`role-badge ${session.role}`}>{session.role}</span>{view === "packing_slips" && <button className="button primary print-trigger" onClick={printPackingSlips}>Print {packingOrders.length} A6 slip{packingOrders.length === 1 ? "" : "s"}</button>}{session.role === "admin" && view !== "import" && <button className="button secondary" onClick={() => setView("import")}>Import CSV</button>}</div></header>
+      <header className="topbar"><div><p>FULFILMENT CONTROL</p><h1>{view === "import" ? "Import Shopify Orders" : view === "fulfilled" ? "Shipped Orders" : view === "fulfilment" ? "Fulfilment" : view === "packing_slips" ? "Packing Slips" : "Orders Dashboard"}</h1></div><div className="top-actions"><span className={`role-badge ${session.role}`}>{session.role}</span>{view === "packing_slips" && <button className="button primary print-trigger" onClick={printPackingSlips}>Print {packingOrders.length} A6 slip{packingOrders.length === 1 ? "" : "s"}</button>}{session.role === "admin" && view !== "import" && <button className="button secondary" onClick={() => setView("import")}>Import CSV</button>}</div></header>
       {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice("")}>×</button></div>}
 
       {view !== "import" && view !== "packing_slips" && <>
         {view === "orders" && <section className="stats">
           <Stat label="Active orders" value={counts.total} color="navy" />
-          <Stat label="Awaiting voice" value={counts.voice} color="orange" />
-          <Stat label="In production" value={counts.production} color="blue" />
-          <Stat label="Packing" value={counts.packing} color="green" />
+          <Stat label="Uploading audio" value={counts.voice} color="orange" />
+          <Stat label="Sent for sewing" value={counts.production} color="blue" />
+          <Stat label="Packed" value={counts.packing} color="green" />
           <Stat label="Issues" value={counts.issue} color="red" />
         </section>}
 
         {view !== "fulfilment" && <section className="card orders-card">
-          <div className="toolbar"><div className="search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, customer, phone or tracking..." /></div><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select>{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>Export CSV</button>}</div>
-          <div className="table-scroll"><table className="orders-table"><thead><tr><th>Order</th><th>Date</th><th>Customer</th><th>Phone</th><th>Product</th><th>Character</th><th>Voice</th><th>Plush name</th><th>Status</th><th>Courier</th><th>Tracking number</th><th>Last updated</th><th></th></tr></thead><tbody>{filtered.map((order) => <tr key={order.id}><td><strong>#{order.orderNumber}</strong></td><td>{formatDate(order.orderDate)}</td><td><strong>{order.customerName || "-"}</strong></td><td>{order.phone || "-"}</td><td className="truncate" title={order.product}>{order.product || "-"}</td><td>{order.character || "-"}</td><td>{order.voiceLength ? `${order.voiceLength}s` : "-"}</td><td>{order.plushName || "-"}</td><td><StatusPill status={order.status} /></td><td>{order.courier || "-"}</td><td><code>{order.trackingNumber || "-"}</code></td><td>{formatDate(order.updatedAt, true)}</td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No orders found</strong><p>Try another search or status filter.</p></div>}</div>
-          <div className="table-footer">Showing {filtered.length} of {view === "fulfilled" ? orders.filter((order) => order.status === "fulfilled").length : orders.length} orders</div>
+          <div className="toolbar"><div className="search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, customer, phone or tracking..." /></div><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select>{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>Move {selectedOrders.length} to next status</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>Export CSV</button>}</div>
+          <div className="table-scroll"><table className="orders-table"><thead><tr><th><input type="checkbox" aria-label="Select visible orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th>Order</th><th>Date</th><th>Customer</th><th>Phone</th><th>Character</th><th>Voice</th><th>Plush name</th><th>Status</th><th>Tracking number</th><th>Last updated</th><th>View</th></tr></thead><tbody>{filtered.map((order) => <tr key={order.id}><td><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={selectedOrders.includes(order.id)} onChange={() => toggleOrderSelection(order.id)} /></td><td><strong>#{order.orderNumber}</strong></td><td>{formatDate(order.orderDate)}</td><td><strong>{order.customerName || "-"}</strong></td><td>{order.phone || "-"}</td><td>{order.character || "-"}</td><td>{order.voiceLength ? `${order.voiceLength}s` : "-"}</td><td>{order.plushName || "-"}</td><td><StatusPill status={order.status} /></td><td><code>{order.trackingNumber || "-"}</code></td><td>{formatDate(order.updatedAt, true)}</td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No orders found</strong><p>Try another search or status filter.</p></div>}</div>
+          <div className="table-footer">Showing {filtered.length} of {view === "fulfilled" ? orders.filter((order) => order.status === "shipped").length : orders.length} orders</div>
         </section>}
 
         {view === "fulfilment" && <section className="card orders-card">
-          <div className="toolbar"><div className="search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, plush name, product, customer or phone..." /></div><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select></div>
-          <div className="table-scroll"><table className="orders-table fulfilment-table"><thead><tr><th>Order ID</th><th>Set Indicator</th><th>Remarks</th><th>Plush Name</th><th>ID Website Link</th><th>Product</th><th>Meaningful Message</th><th>Customer Name</th><th>Phone Number</th><th></th></tr></thead><tbody>{filtered.map((order) => <tr key={order.id}><td><strong>#{order.orderNumber}</strong></td><td>{order.setIndicator || "-"}</td><td className="wrap-cell">{order.remark || "-"}</td><td><strong>{order.plushName || "-"}</strong></td><td>{order.idWebsiteLink ? <a href={order.idWebsiteLink} target="_blank" rel="noreferrer">Open ID</a> : "-"}</td><td className="wrap-cell">{order.product || "-"}</td><td>{order.meaningfulMessage ? <a href={order.meaningfulMessage} target="_blank" rel="noreferrer">Open message</a> : "-"}</td><td>{order.customerName || "-"}</td><td>{order.phone || "-"}</td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No fulfilment orders found</strong><p>Try another search or status filter.</p></div>}</div>
+          <div className="toolbar"><div className="search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, plush name, character, customer or phone..." /></div><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>Move {selectedOrders.length} to next status</button></div>
+          <div className="table-scroll"><table className="orders-table fulfilment-table"><thead><tr><th><input type="checkbox" aria-label="Select visible fulfilment orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th>{fulfilmentColumns.map((column) => <th key={column} draggable onDragStart={(event) => event.dataTransfer.setData("text/plain", column)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => reorderFulfilmentColumn(event.dataTransfer.getData("text/plain") as FulfilmentColumn, column)} title="Drag to reorder">{fulfilmentColumnLabels[column]}</th>)}<th>Status</th><th>View</th></tr></thead><tbody>{filtered.map((order) => <tr key={order.id}><td><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={selectedOrders.includes(order.id)} onChange={() => toggleOrderSelection(order.id)} /></td>{fulfilmentColumns.map((column) => <td key={column} className={column === "idWebsiteLink" ? "certificate-cell" : ""}>{fulfilmentCell(order, column)}</td>)}<td><StatusPill status={order.status} /></td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No fulfilment orders found</strong><p>Try another search or status filter.</p></div>}</div>
           <div className="table-footer">Showing {filtered.length} of {orders.length} orders</div>
         </section>}
       </>}
@@ -211,8 +327,8 @@ export default function Home() {
       {view === "packing_slips" && <section className="packing-page">
         <div className="packing-controls card">
           <div className="packing-manual"><div><h2>Choose orders to print</h2><p>Enter order IDs separated by commas or spaces, or select orders from the list below.</p></div><div className="manual-entry"><input value={manualOrderIds} onChange={(event) => setManualOrderIds(event.target.value)} onKeyDown={(event) => event.key === "Enter" && selectManualOrders()} placeholder="Example: 1359, 1360, 1361" /><button className="button primary" onClick={selectManualOrders}>Add order IDs</button></div></div>
-          <div className="packing-list-header"><strong>Available orders</strong><div><button onClick={() => setPackingSelection(orders.map((order) => order.orderNumber))}>Select all</button><button onClick={() => setPackingSelection([])}>Clear</button></div></div>
-          <div className="packing-order-list">{orders.map((order) => <label key={order.id}><input type="checkbox" checked={packingSelection.includes(order.orderNumber)} onChange={() => setPackingSelection((current) => current.includes(order.orderNumber) ? current.filter((number) => number !== order.orderNumber) : [...current, order.orderNumber])} /><div><strong>#{order.orderNumber} · {order.plushName || "Unnamed plushie"}</strong><span>{order.customerName} · {order.product}</span></div><StatusPill status={order.status} /></label>)}</div>
+          <div className="packing-list-header"><strong>Available orders</strong><select value={packingStatusFilter} onChange={(event) => setPackingStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><div><button onClick={() => setPackingSelection((current) => [...new Set([...current, ...packingAvailableOrders.map((order) => order.orderNumber)])])}>Select shown</button><button onClick={() => setPackingSelection([])}>Clear</button></div></div>
+          <div className="packing-order-list">{packingAvailableOrders.map((order) => <label key={order.id}><input type="checkbox" checked={packingSelection.includes(order.orderNumber)} onChange={() => setPackingSelection((current) => current.includes(order.orderNumber) ? current.filter((number) => number !== order.orderNumber) : [...current, order.orderNumber])} /><div><strong>#{order.orderNumber} · {order.plushName || "Unnamed plushie"}</strong><span>{order.customerName} · {order.product}</span></div><StatusPill status={order.status} /></label>)}</div>
         </div>
         <div className="packing-preview"><div className="preview-heading"><div><h2>A6 print preview</h2><p>One packing slip will print on each A6 page.</p></div><span>{packingOrders.length} selected</span></div>{packingOrders.length ? <div className="slip-grid">{packingOrders.map((order) => <PackingSlip order={order} key={order.id} />)}</div> : <div className="preview-empty"><strong>No orders selected</strong><p>Enter order IDs or tick orders from the list.</p></div>}</div>
       </section>}
@@ -264,7 +380,7 @@ function OrderDrawer({ order, role, actor, onClose, onUpdate, onStatus }: { orde
 
   return <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><aside className="order-drawer"><div className="drawer-header"><div><p>ORDER DETAIL</p><h2>#{order.orderNumber}</h2></div><button onClick={onClose}>×</button></div><div className="drawer-body">
     <section className="detail-summary"><div><span>Current status</span><StatusPill status={order.status} /></div><div><span>Last updated</span><strong>{formatDate(order.updatedAt, true)}</strong></div></section>
-    <section className="detail-section"><h3>Quick actions</h3><div className="status-actions">{following && <button className="button primary" onClick={() => onStatus(following)}>Move to {statusLabels[following]}</button>}<button className="button issue-button" onClick={() => onStatus("issue")}>Mark issue</button>{order.status === "issue" && <button className="button secondary" onClick={() => onStatus("ready_to_make")}>Resolve issue</button>}<a className="button whatsapp" href={whatsappLink(order)} target="_blank">Open WhatsApp</a></div></section>
+    <section className="detail-section"><h3>Quick actions</h3><div className="status-actions">{following && <button className="button primary" onClick={() => onStatus(following)}>Move to {statusLabels[following]}</button>}<button className="button issue-button" onClick={() => onStatus("issue")}>Mark issue</button>{order.status === "issue" && <button className="button secondary" onClick={() => onStatus("sent_for_sewing")}>Resolve issue</button>}<a className="button whatsapp" href={whatsappLink(order)} target="_blank">Open WhatsApp</a></div></section>
     <section className="detail-section"><h3>Customer and order</h3><div className="field-grid"><Field label="Order number" value={`#${order.orderNumber}`} /><Field label="Order date" value={formatDate(order.orderDate, true)} /><Editable label="Customer name" value={order.customerName} disabled={!admin} onChange={(value) => onUpdate({ customerName: value })} /><Editable label="Phone" value={order.phone} disabled={!admin} onChange={(value) => onUpdate({ phone: value })} /><Editable wide label="Address" value={order.address} disabled={!admin} onChange={(value) => onUpdate({ address: value })} /></div></section>
     <section className="detail-section"><h3>Plushie details</h3><div className="field-grid"><Editable label="Product name" value={order.product} disabled={!admin} onChange={(value) => onUpdate({ product: value })} /><Editable label="Character" value={order.character} disabled={!admin} onChange={(value) => onUpdate({ character: value })} /><Editable label="Set indicator" value={order.setIndicator ?? ""} disabled={!admin} onChange={(value) => onUpdate({ setIndicator: value })} /><Editable label="ID website link" value={order.idWebsiteLink ?? ""} disabled={!admin} onChange={(value) => onUpdate({ idWebsiteLink: value })} /><Editable label="Voice length" value={String(order.voiceLength || "")} disabled={!admin} onChange={(value) => onUpdate({ voiceLength: Number(value) || 0 })} /><Editable label="Plush name" value={order.plushName} disabled={!admin} onChange={(value) => onUpdate({ plushName: value })} /><Editable wide label="Remark" value={order.remark ?? ""} disabled={!admin} onChange={(value) => onUpdate({ remark: value })} /><Editable wide textarea label="Meaningful note" value={order.meaningfulNote} disabled={!admin} onChange={(value) => onUpdate({ meaningfulNote: value })} /><div className="field wide"><label>Meaningful message</label>{order.meaningfulMessage ? <a href={order.meaningfulMessage} target="_blank" rel="noreferrer">Open customer message</a> : <span>Not provided</span>}</div><div className="field"><label>Voice upload</label>{admin ? <select value={order.voiceUploadStatus} onChange={(event) => onUpdate({ voiceUploadStatus: event.target.value as Order["voiceUploadStatus"] })}><option value="missing">Missing</option><option value="received">Received</option><option value="checked">Checked</option></select> : <strong>{order.voiceUploadStatus}</strong>}</div></div></section>
     <section className="detail-section"><h3>Delivery</h3><div className="field-grid"><Editable label="Courier" value={order.courier} disabled={!admin} placeholder="J&T Express" onChange={(value) => onUpdate({ courier: value })} /><Editable label="Tracking number" value={order.trackingNumber} placeholder="Enter tracking number" onChange={(value) => onUpdate({ trackingNumber: value })} /></div></section>
