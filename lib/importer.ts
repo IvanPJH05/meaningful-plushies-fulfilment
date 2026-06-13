@@ -49,6 +49,17 @@ function metafield(raw: string, label: string) {
   return raw.match(new RegExp(`${escaped}:\\s*([^\\r\\n]*)`, "i"))?.[1]?.trim() ?? "";
 }
 
+function personalizationBlocks(raw: string) {
+  const blocks = raw.split(/(?=\bProduct:\s*)/i).filter((block) => /^Product:\s*/i.test(block.trim()));
+  return blocks.map((block) => ({
+    product: metafield(block, "Product"),
+    certificateCode: metafield(block, "Certificate Code"),
+    plushName: metafield(block, "Name"),
+    meaningfulNote: metafield(block, "Meaningful Note"),
+    meaningfulMessage: metafield(block, "Meaningful Message"),
+  }));
+}
+
 function productName(lineName: string, fallback: string) {
   const title = lineName.split(/\s+-\s+(?=[^/]+\s+\(RM)/i)[0]?.trim();
   return title || fallback;
@@ -66,67 +77,87 @@ export function importShopifyData(
 ): { orders: Order[]; result: ImportResult } {
   const orderRows = records(orderCsv);
   const metaRows = metafieldCsv.trim() ? records(metafieldCsv) : [];
-  const metaByOrder = new Map(
-    metaRows.map((row) => [orderNumber(row["Order name"]), row["Metafield value"] ?? ""]),
-  );
-  const next = new Map(existing.map((order) => [order.orderNumber, order]));
   const warnings: string[] = [];
   let imported = 0;
   let updated = 0;
   let skipped = 0;
-
+  const metaByOrder = new Map<string, string>();
+  for (const row of metaRows) {
+    const number = orderNumber(row["Order name"]);
+    const value = row["Metafield value"] ?? "";
+    if (number && value.trim()) metaByOrder.set(number, value);
+  }
+  const rowsByOrder = new Map<string, Record<string, string>[]>();
   for (const row of orderRows) {
     const number = orderNumber(row.Name);
     if (!number) {
       skipped += 1;
       continue;
     }
+    rowsByOrder.set(number, [...(rowsByOrder.get(number) ?? []), row]);
+  }
+  const existingById = new Map(existing.map((order) => [order.id, order]));
+  const next = new Map(existing.map((order) => [order.id, order]));
 
+  for (const [number, rows] of rowsByOrder) {
     const raw = metaByOrder.get(number) ?? "";
     if (metaRows.length && !raw) warnings.push(`#${number}: no matching metafield row`);
-    const lineName = row["Lineitem name"] ?? "";
-    const voice = Number(lineName.match(/(5|10|20)\s*(?:seconds?|S)/i)?.[1] ?? 0);
-    const character = lineName.match(/-\s*([^/]+?)\s*\(RM/i)?.[1]?.trim() ?? "";
-    const current = next.get(number);
-    const timestamp = new Date().toISOString();
-    const initialStatus = current?.status ?? "new_order";
-    const certificateCode = metafield(raw, "Certificate Code") || current?.certificateCode || "";
+    const personalizations = personalizationBlocks(raw);
+    const total = Math.max(rows.length, personalizations.length, 1);
+    const shared = rows.find((row) => row["Shipping Name"] || row["Billing Name"] || row.Email) ?? rows[0] ?? {};
 
-    const value: Order = {
-      id: current?.id ?? number,
-      orderNumber: number,
-      orderDate: row["Created at"] || row["Paid at"] || current?.orderDate || timestamp,
-      customerName: row["Shipping Name"] || row["Billing Name"] || current?.customerName || "",
-      phone: row["Shipping Phone"] || row.Phone || current?.phone || "",
-      email: row.Email || current?.email || "",
-      address: row["Shipping Street"] || row["Shipping Address1"] || current?.address || "",
-      product: productName(lineName, metafield(raw, "Product") || current?.product || ""),
-      character: character || current?.character || "",
-      setIndicator: metafield(raw, "Set Indicator") || current?.setIndicator || "",
-      idWebsiteLink: certificateLink(certificateCode) || metafield(raw, "ID Website Link") || metafield(raw, "Id Website Link") || current?.idWebsiteLink || "",
-      voiceLength: voice || current?.voiceLength || 0,
-      plushName: metafield(raw, "Name") || current?.plushName || "",
-      certificateCode,
-      meaningfulNote: metafield(raw, "Meaningful Note") || current?.meaningfulNote || "",
-      meaningfulMessage: metafield(raw, "Meaningful Message") || current?.meaningfulMessage || "",
-      remark: row.Remark || row.Notes || current?.remark || "",
-      voiceUploadStatus: current?.voiceUploadStatus ?? (metafield(raw, "Meaningful Message") ? "received" : "missing"),
-      courier: current?.courier || "",
-      trackingNumber: current?.trackingNumber || "",
-      status: initialStatus,
-      internalNotes: current?.internalNotes || "",
-      photoDataUrl: current?.photoDataUrl,
-      photoName: current?.photoName,
-      statusHistory: current?.statusHistory ?? [
-        { id: `${number}-${timestamp}`, status: initialStatus, changedAt: timestamp, changedBy: actor, note: "Imported from Shopify CSV" },
-      ],
-      importedAt: current?.importedAt ?? timestamp,
-      updatedAt: timestamp,
-    };
+    for (let index = 0; index < total; index += 1) {
+      const row = rows[index] ?? rows[0] ?? {};
+      const personalization = personalizations[index] ?? personalizations[0] ?? {
+        product: "", certificateCode: "", plushName: "", meaningfulNote: "", meaningfulMessage: "",
+      };
+      const lineName = row["Lineitem name"] ?? "";
+      const voice = Number(lineName.match(/(5|10|20)\s*(?:seconds?|S)/i)?.[1] ?? 0);
+      const character = lineName.match(/-\s*([^/]+?)(?:\s*\(RM\d+\))?\s*\//i)?.[1]?.trim() ?? "";
+      const id = total === 1 ? number : `${number}-${index + 1}`;
+      const legacyCurrent = index === 0 ? existing.find((order) => order.orderNumber === number && !order.setIndicator) : undefined;
+      const current = existingById.get(id) ?? legacyCurrent;
+      const timestamp = new Date().toISOString();
+      const initialStatus = current?.status ?? "new_order";
+      const certificateCode = personalization.certificateCode || current?.certificateCode || "";
 
-    next.set(number, value);
-    if (current) updated += 1;
-    else imported += 1;
+      const value: Order = {
+        id,
+        orderNumber: number,
+        orderDate: shared["Created at"] || shared["Paid at"] || current?.orderDate || timestamp,
+        customerName: shared["Shipping Name"] || shared["Billing Name"] || current?.customerName || "",
+        phone: shared["Shipping Phone"] || shared.Phone || current?.phone || "",
+        email: shared.Email || current?.email || "",
+        address: shared["Shipping Street"] || shared["Shipping Address1"] || current?.address || "",
+        product: productName(lineName, personalization.product || current?.product || ""),
+        character: character || current?.character || "",
+        setIndicator: total > 1 ? `(${index + 1},${total})` : "",
+        idWebsiteLink: certificateLink(certificateCode) || current?.idWebsiteLink || "",
+        voiceLength: voice || current?.voiceLength || 0,
+        plushName: personalization.plushName || current?.plushName || "",
+        certificateCode,
+        meaningfulNote: personalization.meaningfulNote || current?.meaningfulNote || "",
+        meaningfulMessage: personalization.meaningfulMessage || current?.meaningfulMessage || "",
+        remark: shared.Remark || shared.Notes || current?.remark || "",
+        voiceUploadStatus: current?.voiceUploadStatus ?? (personalization.meaningfulMessage ? "received" : "missing"),
+        courier: current?.courier || "",
+        trackingNumber: current?.trackingNumber || "",
+        status: initialStatus,
+        internalNotes: current?.internalNotes || "",
+        photoDataUrl: current?.photoDataUrl,
+        photoName: current?.photoName,
+        statusHistory: current?.statusHistory ?? [
+          { id: `${id}-${timestamp}`, status: initialStatus, changedAt: timestamp, changedBy: actor, note: "Imported from Shopify CSV" },
+        ],
+        importedAt: current?.importedAt ?? timestamp,
+        updatedAt: timestamp,
+      };
+
+      if (legacyCurrent && legacyCurrent.id !== id) next.delete(legacyCurrent.id);
+      next.set(id, value);
+      if (current) updated += 1;
+      else imported += 1;
+    }
   }
 
   return { orders: [...next.values()], result: { imported, updated, skipped, warnings } };
