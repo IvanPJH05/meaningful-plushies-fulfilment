@@ -338,7 +338,7 @@ export default function Home() {
       </section>}
 
       {view === "import" && session.role === "admin" && <section className="import-page">
-        <div className="import-intro"><span>CSV</span><div><h2>Import Shopify exports</h2><p>Upload the regular Shopify order CSV. Add the metafield CSV when you want plush names, meaningful messages, and personalization details matched automatically.</p></div></div>
+        <div className="import-intro"><span>CSV</span><div><h2>Import Shopify exports</h2><p>Upload either standard Shopify CSV exports or the headerless Sheet25 files. The app matches line items with each Product block and creates one fulfilment record per plushie.</p></div></div>
         <div className="import-columns">
           <ImportBox number="1" title="Shopify order export" required value={orderCsv} onChange={setOrderCsv} onFile={(file) => readFile(file, "orders")} placeholder="Name, Email, Financial Status, Lineitem name..." />
           <ImportBox number="2" title="Order metafields export" value={metafieldCsv} onChange={setMetafieldCsv} onFile={(file) => readFile(file, "metafields")} placeholder="Order GID, Order name, Metafield value..." />
