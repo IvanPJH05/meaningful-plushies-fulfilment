@@ -30,6 +30,8 @@ export type Order = {
   address: string;
   product: string;
   character: string;
+  setIndicator: string;
+  idWebsiteLink: string;
   voiceLength: number;
   plushName: string;
   certificateCode: string;

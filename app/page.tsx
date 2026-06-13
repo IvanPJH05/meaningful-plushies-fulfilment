@@ -6,7 +6,7 @@ import { fulfilledOrdersCsv, importShopifyData } from "../lib/importer";
 import { orderStatuses, type Order, type OrderStatus, type UserRole } from "../lib/types";
 
 type Session = { name: string; email: string; role: UserRole };
-type View = "orders" | "packing_slips" | "import" | "fulfilled";
+type View = "orders" | "fulfilment" | "packing_slips" | "import" | "fulfilled";
 
 const statusLabels: Record<OrderStatus, string> = {
   new_order: "New Order",
@@ -44,6 +44,10 @@ function whatsappLink(order: Order) {
   return `https://wa.me/${phone}?text=${encodeURIComponent(`Hi ${order.customerName}, your Meaningful Plushie ${order.plushName} is being prepared. ${tracking}`)}`;
 }
 
+function displayProductName(value: string) {
+  return value.split(/\s+-\s+(?=[^/]+\s+\(RM)/i)[0]?.trim() || value;
+}
+
 export default function Home() {
   const [session, setSession] = useState<Session | null>(null);
   const [view, setView] = useState<View>("orders");
@@ -61,7 +65,11 @@ export default function Home() {
   useEffect(() => {
     const savedOrders = localStorage.getItem("mp-dashboard-orders");
     const savedSession = localStorage.getItem("mp-dashboard-session");
-    if (savedOrders) setOrders(JSON.parse(savedOrders));
+    if (savedOrders) setOrders((JSON.parse(savedOrders) as Order[]).map((order) => ({
+      ...order,
+      setIndicator: order.setIndicator ?? "",
+      idWebsiteLink: order.idWebsiteLink ?? "",
+    })));
     if (savedSession) setSession(JSON.parse(savedSession));
     setHydrated(true);
   }, []);
@@ -83,7 +91,7 @@ export default function Home() {
     const search = query.trim().toLowerCase();
     return source
       .filter((order) => statusFilter === "all" || order.status === statusFilter)
-      .filter((order) => !search || [order.orderNumber, order.customerName, order.phone, order.trackingNumber]
+      .filter((order) => !search || [order.orderNumber, order.customerName, order.phone, order.trackingNumber, order.plushName, order.product]
         .join(" ").toLowerCase().includes(search))
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   }, [orders, query, statusFilter, view]);
@@ -166,6 +174,7 @@ export default function Home() {
       <div className="logo"><span>MP</span><div>Meaningful Plushies<small>Fulfilment</small></div></div>
       <nav>
         <button className={view === "orders" ? "active" : ""} onClick={() => setView("orders")}><b>▦</b> Orders</button>
+        <button className={view === "fulfilment" ? "active" : ""} onClick={() => setView("fulfilment")}><b>≡</b> Fulfilment</button>
         <button className={view === "packing_slips" ? "active" : ""} onClick={() => setView("packing_slips")}><b>▤</b> Packing Slips</button>
         {session.role === "admin" && <button className={view === "import" ? "active" : ""} onClick={() => setView("import")}><b>⇧</b> CSV Import</button>}
         <button className={view === "fulfilled" ? "active" : ""} onClick={() => setView("fulfilled")}><b>✓</b> Fulfilled</button>
@@ -174,7 +183,7 @@ export default function Home() {
     </aside>
 
     <section className="main-area">
-      <header className="topbar"><div><p>FULFILMENT CONTROL</p><h1>{view === "import" ? "Import Shopify Orders" : view === "fulfilled" ? "Fulfilled Orders" : view === "packing_slips" ? "Packing Slips" : "Orders Dashboard"}</h1></div><div className="top-actions"><span className={`role-badge ${session.role}`}>{session.role}</span>{view === "packing_slips" && <button className="button primary print-trigger" onClick={printPackingSlips}>Print {packingOrders.length} A6 slip{packingOrders.length === 1 ? "" : "s"}</button>}{session.role === "admin" && view !== "import" && <button className="button secondary" onClick={() => setView("import")}>Import CSV</button>}</div></header>
+      <header className="topbar"><div><p>FULFILMENT CONTROL</p><h1>{view === "import" ? "Import Shopify Orders" : view === "fulfilled" ? "Fulfilled Orders" : view === "fulfilment" ? "Fulfilment" : view === "packing_slips" ? "Packing Slips" : "Orders Dashboard"}</h1></div><div className="top-actions"><span className={`role-badge ${session.role}`}>{session.role}</span>{view === "packing_slips" && <button className="button primary print-trigger" onClick={printPackingSlips}>Print {packingOrders.length} A6 slip{packingOrders.length === 1 ? "" : "s"}</button>}{session.role === "admin" && view !== "import" && <button className="button secondary" onClick={() => setView("import")}>Import CSV</button>}</div></header>
       {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice("")}>×</button></div>}
 
       {view !== "import" && view !== "packing_slips" && <>
@@ -186,11 +195,17 @@ export default function Home() {
           <Stat label="Issues" value={counts.issue} color="red" />
         </section>}
 
-        <section className="card orders-card">
+        {view !== "fulfilment" && <section className="card orders-card">
           <div className="toolbar"><div className="search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, customer, phone or tracking..." /></div><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select>{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>Export CSV</button>}</div>
           <div className="table-scroll"><table className="orders-table"><thead><tr><th>Order</th><th>Date</th><th>Customer</th><th>Phone</th><th>Product</th><th>Character</th><th>Voice</th><th>Plush name</th><th>Status</th><th>Courier</th><th>Tracking number</th><th>Last updated</th><th></th></tr></thead><tbody>{filtered.map((order) => <tr key={order.id}><td><strong>#{order.orderNumber}</strong></td><td>{formatDate(order.orderDate)}</td><td><strong>{order.customerName || "-"}</strong></td><td>{order.phone || "-"}</td><td className="truncate" title={order.product}>{order.product || "-"}</td><td>{order.character || "-"}</td><td>{order.voiceLength ? `${order.voiceLength}s` : "-"}</td><td>{order.plushName || "-"}</td><td><StatusPill status={order.status} /></td><td>{order.courier || "-"}</td><td><code>{order.trackingNumber || "-"}</code></td><td>{formatDate(order.updatedAt, true)}</td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No orders found</strong><p>Try another search or status filter.</p></div>}</div>
           <div className="table-footer">Showing {filtered.length} of {view === "fulfilled" ? orders.filter((order) => order.status === "fulfilled").length : orders.length} orders</div>
-        </section>
+        </section>}
+
+        {view === "fulfilment" && <section className="card orders-card">
+          <div className="toolbar"><div className="search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, plush name, product, customer or phone..." /></div><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select></div>
+          <div className="table-scroll"><table className="orders-table fulfilment-table"><thead><tr><th>Order ID</th><th>Set Indicator</th><th>Remarks</th><th>Plush Name</th><th>ID Website Link</th><th>Product</th><th>Meaningful Message</th><th>Customer Name</th><th>Phone Number</th><th></th></tr></thead><tbody>{filtered.map((order) => <tr key={order.id}><td><strong>#{order.orderNumber}</strong></td><td>{order.setIndicator || "-"}</td><td className="wrap-cell">{order.remark || "-"}</td><td><strong>{order.plushName || "-"}</strong></td><td>{order.idWebsiteLink ? <a href={order.idWebsiteLink} target="_blank" rel="noreferrer">Open ID</a> : "-"}</td><td className="wrap-cell">{order.product || "-"}</td><td>{order.meaningfulMessage ? <a href={order.meaningfulMessage} target="_blank" rel="noreferrer">Open message</a> : "-"}</td><td>{order.customerName || "-"}</td><td>{order.phone || "-"}</td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No fulfilment orders found</strong><p>Try another search or status filter.</p></div>}</div>
+          <div className="table-footer">Showing {filtered.length} of {orders.length} orders</div>
+        </section>}
       </>}
 
       {view === "packing_slips" && <section className="packing-page">
@@ -251,7 +266,7 @@ function OrderDrawer({ order, role, actor, onClose, onUpdate, onStatus }: { orde
     <section className="detail-summary"><div><span>Current status</span><StatusPill status={order.status} /></div><div><span>Last updated</span><strong>{formatDate(order.updatedAt, true)}</strong></div></section>
     <section className="detail-section"><h3>Quick actions</h3><div className="status-actions">{following && <button className="button primary" onClick={() => onStatus(following)}>Move to {statusLabels[following]}</button>}<button className="button issue-button" onClick={() => onStatus("issue")}>Mark issue</button>{order.status === "issue" && <button className="button secondary" onClick={() => onStatus("ready_to_make")}>Resolve issue</button>}<a className="button whatsapp" href={whatsappLink(order)} target="_blank">Open WhatsApp</a></div></section>
     <section className="detail-section"><h3>Customer and order</h3><div className="field-grid"><Field label="Order number" value={`#${order.orderNumber}`} /><Field label="Order date" value={formatDate(order.orderDate, true)} /><Editable label="Customer name" value={order.customerName} disabled={!admin} onChange={(value) => onUpdate({ customerName: value })} /><Editable label="Phone" value={order.phone} disabled={!admin} onChange={(value) => onUpdate({ phone: value })} /><Editable wide label="Address" value={order.address} disabled={!admin} onChange={(value) => onUpdate({ address: value })} /></div></section>
-    <section className="detail-section"><h3>Plushie details</h3><div className="field-grid"><Editable label="Product" value={order.product} disabled={!admin} onChange={(value) => onUpdate({ product: value })} /><Editable label="Character" value={order.character} disabled={!admin} onChange={(value) => onUpdate({ character: value })} /><Editable label="Voice length" value={String(order.voiceLength || "")} disabled={!admin} onChange={(value) => onUpdate({ voiceLength: Number(value) || 0 })} /><Editable label="Plush name" value={order.plushName} disabled={!admin} onChange={(value) => onUpdate({ plushName: value })} /><Editable wide label="Remark" value={order.remark ?? ""} disabled={!admin} onChange={(value) => onUpdate({ remark: value })} /><Editable wide textarea label="Meaningful note" value={order.meaningfulNote} disabled={!admin} onChange={(value) => onUpdate({ meaningfulNote: value })} /><div className="field wide"><label>Meaningful message</label>{order.meaningfulMessage ? <a href={order.meaningfulMessage} target="_blank">Open customer message</a> : <span>Not provided</span>}</div><div className="field"><label>Voice upload</label>{admin ? <select value={order.voiceUploadStatus} onChange={(event) => onUpdate({ voiceUploadStatus: event.target.value as Order["voiceUploadStatus"] })}><option value="missing">Missing</option><option value="received">Received</option><option value="checked">Checked</option></select> : <strong>{order.voiceUploadStatus}</strong>}</div></div></section>
+    <section className="detail-section"><h3>Plushie details</h3><div className="field-grid"><Editable label="Product name" value={order.product} disabled={!admin} onChange={(value) => onUpdate({ product: value })} /><Editable label="Character" value={order.character} disabled={!admin} onChange={(value) => onUpdate({ character: value })} /><Editable label="Set indicator" value={order.setIndicator ?? ""} disabled={!admin} onChange={(value) => onUpdate({ setIndicator: value })} /><Editable label="ID website link" value={order.idWebsiteLink ?? ""} disabled={!admin} onChange={(value) => onUpdate({ idWebsiteLink: value })} /><Editable label="Voice length" value={String(order.voiceLength || "")} disabled={!admin} onChange={(value) => onUpdate({ voiceLength: Number(value) || 0 })} /><Editable label="Plush name" value={order.plushName} disabled={!admin} onChange={(value) => onUpdate({ plushName: value })} /><Editable wide label="Remark" value={order.remark ?? ""} disabled={!admin} onChange={(value) => onUpdate({ remark: value })} /><Editable wide textarea label="Meaningful note" value={order.meaningfulNote} disabled={!admin} onChange={(value) => onUpdate({ meaningfulNote: value })} /><div className="field wide"><label>Meaningful message</label>{order.meaningfulMessage ? <a href={order.meaningfulMessage} target="_blank" rel="noreferrer">Open customer message</a> : <span>Not provided</span>}</div><div className="field"><label>Voice upload</label>{admin ? <select value={order.voiceUploadStatus} onChange={(event) => onUpdate({ voiceUploadStatus: event.target.value as Order["voiceUploadStatus"] })}><option value="missing">Missing</option><option value="received">Received</option><option value="checked">Checked</option></select> : <strong>{order.voiceUploadStatus}</strong>}</div></div></section>
     <section className="detail-section"><h3>Delivery</h3><div className="field-grid"><Editable label="Courier" value={order.courier} disabled={!admin} placeholder="J&T Express" onChange={(value) => onUpdate({ courier: value })} /><Editable label="Tracking number" value={order.trackingNumber} placeholder="Enter tracking number" onChange={(value) => onUpdate({ trackingNumber: value })} /></div></section>
     <section className="detail-section"><h3>Tailor / packing photo</h3><div className="photo-field">{order.photoDataUrl ? <img src={order.photoDataUrl} alt="Tailor or packing evidence" /> : <div className="photo-placeholder">No photo uploaded</div>}{admin && <label className="button secondary"><input type="file" accept="image/*" onChange={(event) => uploadPhoto(event.target.files?.[0])} />{order.photoDataUrl ? "Replace photo" : "Upload photo"}</label>} {order.photoName && <small>{order.photoName}</small>}</div></section>
     <section className="detail-section"><h3>Internal notes</h3><textarea className="notes" value={order.internalNotes} disabled={!admin} onChange={(event) => onUpdate({ internalNotes: event.target.value })} placeholder="Add notes visible to your team..." /></section>
@@ -269,5 +284,5 @@ function Editable({ label, value, onChange, disabled, placeholder, wide, textare
 }
 
 function PackingSlip({ order }: { order: Order }) {
-  return <article className="a6-slip"><header><span>ORDER ID</span><strong>#{order.orderNumber}</strong></header><div className="slip-fields"><div><label>PRODUCT:</label><p>{order.product || "-"}</p></div><div><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{order.remark || "-"}</p></div></div><footer>Meaningful Plushies</footer></article>;
+  return <article className="a6-slip"><header><span>ORDER ID</span><strong>#{order.orderNumber}</strong></header><div className="slip-fields"><div><label>PRODUCT:</label><p>{displayProductName(order.product) || "-"}</p></div><div><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{order.remark || "-"}</p></div></div><footer>Meaningful Plushies</footer></article>;
 }

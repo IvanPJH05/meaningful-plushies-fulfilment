@@ -1,0 +1,20 @@
+.orders-table a {
+  color: var(--blue);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.orders-table a:hover {
+  text-decoration: underline;
+}
+
+.orders-table .wrap-cell {
+  min-width: 150px;
+  max-width: 260px;
+  white-space: normal;
+  line-height: 1.4;
+}
+
+.fulfilment-table {
+  min-width: 1280px;
+}

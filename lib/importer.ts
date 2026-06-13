@@ -49,6 +49,11 @@ function metafield(raw: string, label: string) {
   return raw.match(new RegExp(`${escaped}:\\s*([^\\r\\n]*)`, "i"))?.[1]?.trim() ?? "";
 }
 
+function productName(lineName: string, fallback: string) {
+  const title = lineName.split(/\s+-\s+(?=[^/]+\s+\(RM)/i)[0]?.trim();
+  return title || fallback;
+}
+
 export function importShopifyData(
   orderCsv: string,
   metafieldCsv: string,
@@ -90,8 +95,10 @@ export function importShopifyData(
       phone: row["Shipping Phone"] || row.Phone || current?.phone || "",
       email: row.Email || current?.email || "",
       address: row["Shipping Street"] || row["Shipping Address1"] || current?.address || "",
-      product: metafield(raw, "Product") || lineName || current?.product || "",
+      product: productName(lineName, metafield(raw, "Product") || current?.product || ""),
       character: character || current?.character || "",
+      setIndicator: metafield(raw, "Set Indicator") || current?.setIndicator || "",
+      idWebsiteLink: metafield(raw, "ID Website Link") || metafield(raw, "Id Website Link") || current?.idWebsiteLink || "",
       voiceLength: voice || current?.voiceLength || 0,
       plushName: metafield(raw, "Name") || current?.plushName || "",
       certificateCode: metafield(raw, "Certificate Code") || current?.certificateCode || "",
@@ -128,11 +135,11 @@ function csvCell(value: string | number) {
 export function fulfilledOrdersCsv(orders: Order[]) {
   const headers = [
     "Order number", "Order date", "Customer name", "Phone", "Product", "Character",
-    "Voice length", "Plush name", "Remark", "Courier", "Tracking number", "Status", "Last updated",
+    "Set indicator", "ID website link", "Voice length", "Plush name", "Remark", "Courier", "Tracking number", "Status", "Last updated",
   ];
   const rows = orders.filter((order) => order.status === "fulfilled").map((order) => [
     order.orderNumber, order.orderDate, order.customerName, order.phone, order.product,
-    order.character, order.voiceLength, order.plushName, order.remark, order.courier,
+    order.character, order.setIndicator, order.idWebsiteLink, order.voiceLength, order.plushName, order.remark, order.courier,
     order.trackingNumber, order.status, order.updatedAt,
   ]);
   return [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
