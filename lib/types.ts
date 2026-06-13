@@ -35,6 +35,7 @@ export type Order = {
   certificateCode: string;
   meaningfulNote: string;
   meaningfulMessage: string;
+  remark: string;
   voiceUploadStatus: "missing" | "received" | "checked";
   courier: string;
   trackingNumber: string;

@@ -1,0 +1,67 @@
+.packing-page { display: grid; grid-template-columns: minmax(360px, .8fr) minmax(420px, 1.2fr); gap: 15px; align-items: start; }
+.packing-controls { overflow: hidden; }
+.packing-manual { padding: 19px; border-bottom: 1px solid var(--line); }
+.packing-manual h2, .preview-heading h2 { font-size: 16px; margin: 0; }
+.packing-manual p, .preview-heading p { font-size: 11px; color: #78869a; margin: 5px 0 0; }
+.manual-entry { display: flex; gap: 8px; margin-top: 14px; }
+.manual-entry input { min-width: 0; flex: 1; height: 38px; border: 1px solid #d4dee9; border-radius: 7px; padding: 0 11px; }
+.packing-list-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: #f8fafc; font-size: 11px; }
+.packing-list-header button { border: 0; background: transparent; color: #1769e0; font-size: 10px; font-weight: 700; cursor: pointer; margin-left: 10px; }
+.packing-order-list { max-height: 560px; overflow: auto; }
+.packing-order-list label { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 12px 16px; border-top: 1px solid #edf1f5; cursor: pointer; }
+.packing-order-list label:hover { background: #f9fbfe; }
+.packing-order-list strong, .packing-order-list span { display: block; }
+.packing-order-list strong { font-size: 11px; }
+.packing-order-list span { font-size: 9px; color: #78869a; margin-top: 3px; max-width: 290px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.packing-preview { background: #e7ebf0; border-radius: 9px; padding: 17px; min-height: 620px; }
+.preview-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+.preview-heading > span { background: white; border-radius: 20px; padding: 6px 9px; font-size: 9px; color: #66758a; }
+.slip-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+.a6-slip { background: white; width: 100%; aspect-ratio: 105 / 148; border: 1px solid #cfd5dc; box-shadow: 0 5px 15px rgba(28,42,58,.1); padding: 7%; display: flex; flex-direction: column; color: #111; }
+.a6-slip header { border-bottom: 3px solid #111; padding-bottom: 5%; margin-bottom: 7%; }
+.a6-slip header span { display: block; font-size: clamp(7px, .75vw, 10px); font-weight: 800; letter-spacing: .16em; }
+.a6-slip header strong { display: block; font-size: clamp(25px, 4vw, 48px); line-height: 1; margin-top: 3%; letter-spacing: -.04em; }
+.slip-fields { display: grid; gap: 5.5%; }
+.slip-fields div { border-bottom: 1px solid #d4d4d4; padding-bottom: 4%; }
+.slip-fields label { display: block; font-size: clamp(7px, .7vw, 9px); font-weight: 900; letter-spacing: .06em; }
+.slip-fields p { font-size: clamp(10px, 1.15vw, 16px); font-weight: 650; line-height: 1.22; margin: 2.5% 0 0; overflow-wrap: anywhere; }
+.slip-fields .remark-row { min-height: 19%; }
+.a6-slip footer { margin-top: auto; text-align: center; border-top: 1px solid #111; padding-top: 4%; font-size: clamp(7px, .7vw, 9px); font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.preview-empty { height: 480px; display: grid; place-content: center; text-align: center; color: #768398; }
+.preview-empty strong { color: #425169; }
+.preview-empty p { font-size: 11px; }
+.print-trigger { min-width: 120px; }
+
+@media (max-width: 1100px) {
+  .packing-page { grid-template-columns: 1fr; }
+  .packing-order-list { max-height: 360px; }
+  .slip-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 760px) {
+  .top-actions { flex-wrap: wrap; justify-content: flex-end; }
+  .manual-entry { display: grid; }
+  .slip-grid { grid-template-columns: 1fr 1fr; }
+}
+
+@page { size: A6 portrait; margin: 0; }
+
+@media print {
+  html, body { width: 105mm; background: #fff; }
+  .app-shell { display: block; }
+  .side-nav, .topbar, .notice, .packing-controls, .preview-heading, .order-drawer, .drawer-backdrop { display: none !important; }
+  .main-area { padding: 0; margin: 0; }
+  .packing-page { display: block; }
+  .packing-preview { padding: 0; margin: 0; background: #fff; min-height: 0; }
+  .slip-grid { display: block; }
+  .a6-slip { width: 105mm; height: 148mm; aspect-ratio: auto; border: 0; box-shadow: none; padding: 8mm; break-after: page; page-break-after: always; }
+  .a6-slip:last-child { break-after: auto; page-break-after: auto; }
+  .a6-slip header { padding-bottom: 5mm; margin-bottom: 7mm; }
+  .a6-slip header span { font-size: 9pt; }
+  .a6-slip header strong { font-size: 38pt; margin-top: 2mm; }
+  .slip-fields { gap: 5mm; }
+  .slip-fields div { padding-bottom: 3.5mm; }
+  .slip-fields label { font-size: 8pt; }
+  .slip-fields p { font-size: 13pt; margin-top: 2mm; }
+  .a6-slip footer { font-size: 8pt; padding-top: 3mm; }
+}

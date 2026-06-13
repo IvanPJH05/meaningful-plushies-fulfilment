@@ -97,6 +97,7 @@ export function importShopifyData(
       certificateCode: metafield(raw, "Certificate Code") || current?.certificateCode || "",
       meaningfulNote: metafield(raw, "Meaningful Note") || current?.meaningfulNote || "",
       meaningfulMessage: metafield(raw, "Meaningful Message") || current?.meaningfulMessage || "",
+      remark: row.Remark || row.Notes || current?.remark || "",
       voiceUploadStatus: current?.voiceUploadStatus ?? (metafield(raw, "Meaningful Message") ? "received" : "missing"),
       courier: current?.courier || "",
       trackingNumber: current?.trackingNumber || "",
@@ -127,11 +128,11 @@ function csvCell(value: string | number) {
 export function fulfilledOrdersCsv(orders: Order[]) {
   const headers = [
     "Order number", "Order date", "Customer name", "Phone", "Product", "Character",
-    "Voice length", "Plush name", "Courier", "Tracking number", "Status", "Last updated",
+    "Voice length", "Plush name", "Remark", "Courier", "Tracking number", "Status", "Last updated",
   ];
   const rows = orders.filter((order) => order.status === "fulfilled").map((order) => [
     order.orderNumber, order.orderDate, order.customerName, order.phone, order.product,
-    order.character, order.voiceLength, order.plushName, order.courier,
+    order.character, order.voiceLength, order.plushName, order.remark, order.courier,
     order.trackingNumber, order.status, order.updatedAt,
   ]);
   return [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");

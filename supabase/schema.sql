@@ -30,6 +30,7 @@ create table public.orders (
   certificate_code text unique,
   meaningful_note text not null default '',
   meaningful_message text not null default '',
+  remark text not null default '',
   voice_upload_status public.voice_upload_status not null default 'missing',
   courier text not null default '',
   tracking_number text not null default '',
