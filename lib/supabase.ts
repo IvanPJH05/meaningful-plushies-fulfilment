@@ -72,7 +72,9 @@ export async function fetchPaymentProcessorSettings(): Promise<PaymentProcessorS
 }
 
 export async function ensurePaymentProcessors(processors: string[]) {
-  const rows = [...new Set(processors.map((processor) => processor.trim()).filter(Boolean))]
+  const rows = [...new Set(processors.map((processor) => processor.trim()).filter((processor) => (
+    Boolean(processor) && processor.toLowerCase() !== "bank transfer"
+  )))]
     .map((processor) => ({ processor }));
   if (!rows.length) return;
   const { error } = await requireSupabase()
