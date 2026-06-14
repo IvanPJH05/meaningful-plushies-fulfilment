@@ -1,3 +1,6 @@
+Exit code: 0
+Wall time: 0.7 seconds
+Output:
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import fontkit from "@pdf-lib/fontkit";
@@ -35,7 +38,13 @@ export async function POST(request: Request) {
       if (names[index + 1]) drawName(page, names[index + 1], font, width * .235, height * .105, -45);
     }
 
-    return new Response(await output.save(), {
+    const pdfBytes = await output.save();
+    const pdfBuffer = pdfBytes.buffer.slice(
+      pdfBytes.byteOffset,
+      pdfBytes.byteOffset + pdfBytes.byteLength,
+    ) as ArrayBuffer;
+
+    return new Response(pdfBuffer, {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": "inline; filename=meaningful-plushies-envelopes.pdf",
@@ -61,3 +70,4 @@ function drawName(page: ReturnType<PDFDocument["getPage"]>, name: string, font: 
     rotate: degrees(angle),
   });
 }
+
