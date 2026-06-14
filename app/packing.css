@@ -1,4 +1,6 @@
-
+Exit code: 0
+Wall time: 0.7 seconds
+Output:
 .packing-page { display: grid; grid-template-columns: minmax(360px, .8fr) minmax(420px, 1.2fr); gap: 15px; align-items: start; }
 .packing-controls { overflow: hidden; }
 .packing-manual { padding: 19px; border-bottom: 1px solid var(--line); }
@@ -6,7 +8,10 @@
 .packing-manual p, .preview-heading p { font-size: 11px; color: #78869a; margin: 5px 0 0; }
 .manual-entry { display: flex; gap: 8px; margin-top: 14px; }
 .manual-entry input { min-width: 0; flex: 1; height: 38px; border: 1px solid #d4dee9; border-radius: 7px; padding: 0 11px; }
-.packing-list-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: #f8fafc; font-size: 11px; }
+.packing-list-header { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(120px, 160px) auto; gap: 12px; align-items: center; padding: 12px 16px; background: #f8fafc; font-size: 11px; }
+.packing-list-header > div:first-child { display: grid; gap: 3px; }
+.packing-list-header > div:first-child span { color: #78869a; font-size: 9px; }
+.packing-list-actions { display: flex; justify-content: flex-end; white-space: nowrap; }
 .packing-list-header button { border: 0; background: transparent; color: #1769e0; font-size: 10px; font-weight: 700; cursor: pointer; margin-left: 10px; }
 .packing-list-header select { height: 30px; border: 1px solid #d4dee9; border-radius: 6px; background: white; color: #425169; padding: 0 8px; font-size: 10px; }
 .packing-order-list { max-height: 560px; overflow: auto; }
@@ -47,26 +52,27 @@
   .slip-grid { grid-template-columns: 1fr 1fr; }
 }
 
-@page { size: A6 portrait; margin: 0; }
+@page packing-slip { size: A6 portrait; margin: 0; }
 
 @media print {
-  html, body { width: 105mm; background: #fff; }
-  .app-shell { display: block; }
-  .side-nav, .topbar, .notice, .packing-controls, .preview-heading, .order-drawer, .drawer-backdrop { display: none !important; }
-  .main-area { padding: 0; margin: 0; }
-  .packing-page { display: block; }
-  .packing-preview { padding: 0; margin: 0; background: #fff; min-height: 0; }
-  .slip-grid { display: block; }
-  .a6-slip { width: 105mm; height: 148mm; aspect-ratio: auto; border: 0; box-shadow: none; padding: 8mm; break-after: page; page-break-after: always; }
-  .a6-slip:last-child { break-after: auto; page-break-after: auto; }
-  .a6-slip header { padding-bottom: 5mm; margin-bottom: 7mm; }
-  .a6-slip header span { font-size: 9pt; }
-  .a6-slip header strong { font-size: 38pt; margin-top: 2mm; }
-  .slip-fields { gap: 3mm; }
-  .slip-fields div { padding-bottom: 2mm; }
-  .slip-fields label { font-size: 8pt; }
-  .slip-fields p { font-size: 13pt; margin-top: 2mm; }
-  .slip-fields .primary-slip-field p { font-size: 18pt; }
-  .a6-slip footer { font-size: 8pt; padding-top: 3mm; }
+  body.print-packing { width: 105mm; background: #fff; }
+  body.print-packing .app-shell { display: block; }
+  body.print-packing .side-nav, body.print-packing .topbar, body.print-packing .notice, body.print-packing .packing-controls, body.print-packing .preview-heading, body.print-packing .order-drawer, body.print-packing .drawer-backdrop { display: none !important; }
+  body.print-packing .main-area { padding: 0; margin: 0; }
+  body.print-packing .main-area > :not(.packing-page) { display: none !important; }
+  body.print-packing .packing-page { display: block; }
+  body.print-packing .packing-preview { padding: 0; margin: 0; background: #fff; min-height: 0; }
+  body.print-packing .slip-grid { display: block; }
+  body.print-packing .a6-slip { page: packing-slip; width: 105mm; height: 148mm; aspect-ratio: auto; border: 0; box-shadow: none; padding: 8mm; break-after: page; page-break-after: always; }
+  body.print-packing .a6-slip:last-child { break-after: auto; page-break-after: auto; }
+  body.print-packing .a6-slip header { padding-bottom: 5mm; margin-bottom: 7mm; }
+  body.print-packing .a6-slip header span { font-size: 9pt; }
+  body.print-packing .a6-slip header strong { display: block !important; font-size: 38pt; margin-top: 2mm; color: #111 !important; }
+  body.print-packing .slip-fields { gap: 3mm; }
+  body.print-packing .slip-fields div { padding-bottom: 2mm; }
+  body.print-packing .slip-fields label { font-size: 8pt; }
+  body.print-packing .slip-fields p { font-size: 13pt; margin-top: 2mm; }
+  body.print-packing .slip-fields .primary-slip-field p { font-size: 18pt; }
+  body.print-packing .a6-slip footer { font-size: 8pt; padding-top: 3mm; }
 }
 
