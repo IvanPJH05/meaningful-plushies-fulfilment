@@ -1,4 +1,4 @@
-import type { Order } from "./types";
+import type { Order, PaymentProcessorSetting } from "./types";
 
 export type SalesSummary = {
   gross: number;
@@ -6,6 +6,7 @@ export type SalesSummary = {
   shippingDiscounted: number;
   bankTransfer: number;
   collected: number;
+  processingFees: number;
 };
 
 const emptySummary: SalesSummary = {
@@ -14,9 +15,11 @@ const emptySummary: SalesSummary = {
   shippingDiscounted: 0,
   bankTransfer: 0,
   collected: 0,
+  processingFees: 0,
 };
 
-export function summarizeSales(orders: Order[]): SalesSummary {
+export function summarizeSales(orders: Order[], settings: PaymentProcessorSetting[] = []): SalesSummary {
+  const feesByProcessor = new Map(settings.map((setting) => [setting.processor.toLowerCase(), setting]));
   const uniqueOrders = new Map<string, Order>();
   for (const order of orders) {
     const current = uniqueOrders.get(order.orderNumber);
@@ -39,16 +42,22 @@ export function summarizeSales(orders: Order[]): SalesSummary {
         shippingDiscounted: summary.shippingDiscounted + order.shippingAmount,
         bankTransfer: summary.bankTransfer + order.subtotalAmount,
         collected: summary.collected + order.subtotalAmount,
+        processingFees: summary.processingFees,
       };
     }
+
+    const processor = feesByProcessor.get((order.paymentProcessor || "Unknown").toLowerCase());
+    const processingFee = processor
+      ? Math.min(cashCollected, cashCollected * Math.max(0, processor.percentage) / 100 + Math.max(0, processor.fixedAmount))
+      : 0;
 
     return {
       gross: summary.gross + order.totalAmount + order.discountAmount,
       productDiscounted: summary.productDiscounted + order.productDiscountAmount,
       shippingDiscounted: summary.shippingDiscounted + order.shippingDiscountAmount,
       bankTransfer: summary.bankTransfer,
-      collected: summary.collected + cashCollected,
+      collected: summary.collected + cashCollected - processingFee,
+      processingFees: summary.processingFees + processingFee,
     };
   }, emptySummary);
 }
-
