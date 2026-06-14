@@ -4,3 +4,4 @@ Retry after JSX fix.
 Retry after complete source upload.
 Validate Supabase persistence build.
 Validate payment processor settings build.
+Validate accounts and stock build.
