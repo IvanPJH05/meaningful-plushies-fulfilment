@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { SVGProps } from "react";
 import { demoOrders } from "../lib/demo-data";
 import { fulfilledOrdersCsv, importShopifyData } from "../lib/importer";
 import { summarizeSales } from "../lib/sales";
@@ -18,6 +19,13 @@ type ActivityEvent = {
   actor: string;
   createdAt: string;
 };
+
+const salesRanges: { value: SalesRange; label: string }[] = [
+  { value: "active", label: "Active orders" },
+  { value: "7d", label: "Past 7 days" },
+  { value: "30d", label: "Past 30 days" },
+  { value: "lifetime", label: "Lifetime" },
+];
 
 const statusLabels: Record<OrderStatus, string> = {
   new_order: "New Order",
@@ -185,7 +193,7 @@ export default function Home() {
     return orders.filter((order) => new Date(order.orderDate).getTime() >= threshold);
   }, [orders, salesRange]);
   const sales = useMemo(() => summarizeSales(reportingOrders), [reportingOrders]);
-  const historyEvents = useMemo(() => [
+  const historyEvents = useMemo<ActivityEvent[]>(() => [
     ...activity,
     ...orders.flatMap((order) => order.statusHistory.map((event) => ({
       id: `status-${event.id}`,
@@ -397,7 +405,7 @@ export default function Home() {
           <Stat label="Issues" value={counts.issue} color="red" />
         </section>}
 
-        {view === "orders" && <><div className="reporting-header"><div><strong>Sales reporting</strong><span>{reportingOrders.length} order records</span></div><div className="range-tabs">{([['active','Active orders'],['7d','Past 7 days'],['30d','Past 30 days'],['lifetime','Lifetime']] as [SalesRange,string][]).map(([range, label]) => <button key={range} className={salesRange === range ? "active" : ""} onClick={() => setSalesRange(range)}>{label}</button>)}</div></div><section …679 tokens truncated…><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No orders found</strong><p>Try another search or status filter.</p></div>}</div>
+        {view === "orders" && <><div className="reporting-header"><div><strong>Sales reporting</strong><span>{reportingOrders.length} order records</span></div><div className="range-tab…728 tokens truncated…n className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No orders found</strong><p>Try another search or status filter.</p></div>}</div>
           <div className="table-footer">Showing {filtered.length} of {view === "fulfilled" ? orders.filter((order) => order.status === "shipped").length : orders.length} orders</div>
         </section>}
 
@@ -496,7 +504,7 @@ function PackingSlip({ order }: { order: Order }) {
 type IconName = "orders" | "fulfilment" | "packing" | "import" | "shipped" | "logout" | "search" | "history" | "drag";
 
 function Icon({ name }: { name: IconName }) {
-  const common = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
+  const common: SVGProps<SVGSVGElement> = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true };
   if (name === "orders") return <svg {...common}><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>;
   if (name === "fulfilment") return <svg {...common}><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>;
   if (name === "packing") return <svg {...common}><path d="M6 3h9l3 3v15H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></svg>;
