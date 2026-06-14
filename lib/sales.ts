@@ -1,3 +1,6 @@
+Exit code: 0
+Wall time: 0.6 seconds
+Output:
 import type { Order, PaymentProcessorSetting } from "./types";
 
 export type SalesSummary = {
@@ -10,6 +13,8 @@ export type SalesSummary = {
   totalCollected: number;
   collected: number;
   processingFees: number;
+  shopifyFees: number;
+  totalFees: number;
 };
 
 export type SalesReportRow = {
@@ -24,6 +29,8 @@ export type SalesReportRow = {
   shippingDiscount: number;
   totalDiscount: number;
   processingFee: number;
+  shopifyFee: number;
+  totalFees: number;
   cashAfterFees: number;
 };
 
@@ -37,10 +44,12 @@ const emptySummary: SalesSummary = {
   totalCollected: 0,
   collected: 0,
   processingFees: 0,
+  shopifyFees: 0,
+  totalFees: 0,
 };
 
-export function summarizeSales(orders: Order[], settings: PaymentProcessorSetting[] = []): SalesSummary {
-  const rows = buildSalesReportRows(orders, settings);
+export function summarizeSales(orders: Order[], settings: PaymentProcessorSetting[] = [], shopifyPercentage = 0): SalesSummary {
+  const rows = buildSalesReportRows(orders, settings, shopifyPercentage);
   return rows.reduce((summary, row) => ({
     gross: summary.gross + row.salePrice + row.totalDiscount,
     productDiscounted: summary.productDiscounted + row.productDiscount,
@@ -51,10 +60,12 @@ export function summarizeSales(orders: Order[], settings: PaymentProcessorSettin
     totalCollected: summary.totalCollected + row.salePrice,
     collected: summary.collected + row.cashAfterFees,
     processingFees: summary.processingFees + row.processingFee,
+    shopifyFees: summary.shopifyFees + row.shopifyFee,
+    totalFees: summary.totalFees + row.totalFees,
   }), emptySummary);
 }
 
-export function buildSalesReportRows(orders: Order[], settings: PaymentProcessorSetting[] = []): SalesReportRow[] {
+export function buildSalesReportRows(orders: Order[], settings: PaymentProcessorSetting[] = [], shopifyPercentage = 0): SalesReportRow[] {
   const feesByProcessor = new Map(settings.map((setting) => [setting.processor.toLowerCase(), setting]));
   const groupedOrders = new Map<string, Order[]>();
   for (const order of orders) {
@@ -74,6 +85,11 @@ export function buildSalesReportRows(orders: Order[], settings: PaymentProcessor
     const processingFee = !isBankTransfer && processor
       ? Math.min(salePrice, salePrice * Math.max(0, processor.percentage) / 100 + Math.max(0, processor.fixedAmount))
       : 0;
+    const usesShopifyFee = paymentProcessor === "Stripe" || paymentProcessor === "Xendit";
+    const shopifyFee = usesShopifyFee
+      ? Math.min(salePrice, salePrice * Math.max(0, shopifyPercentage) / 100)
+      : 0;
+    const totalFees = processingFee + shopifyFee;
     return {
       orderNumber: order.orderNumber,
       orderDate: order.orderDate,
@@ -86,7 +102,10 @@ export function buildSalesReportRows(orders: Order[], settings: PaymentProcessor
       shippingDiscount: isBankTransfer ? order.shippingAmount : order.shippingDiscountAmount,
       totalDiscount: isBankTransfer ? order.shippingAmount : order.discountAmount,
       processingFee,
-      cashAfterFees: salePrice - processingFee,
+      shopifyFee,
+      totalFees,
+      cashAfterFees: salePrice - totalFees,
     };
   });
 }
+
