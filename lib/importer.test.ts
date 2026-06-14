@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { importShopifyData } from "./importer.ts";
+import { importShopifyData, normalizePaymentProcessor } from "./importer.ts";
 import { summarizeSales } from "./sales.ts";
 
 const headers = [
@@ -43,7 +43,7 @@ test("imports real discounts and zero-total bank transfers correctly", () => {
     total: bankTransfer?.totalAmount,
   }, { subtotal: 135, productDiscount: 0, shippingDiscount: 8, total: 0 });
 
-  assert.equal(discounted?.paymentProcessor, "Shopify Payments");
+  assert.equal(discounted?.paymentProcessor, "Stripe");
   assert.equal(bankTransfer?.paymentProcessor, "Bank Transfer");
 
   assert.deepEqual(summarizeSales(orders), {
@@ -54,4 +54,11 @@ test("imports real discounts and zero-total bank transfers correctly", () => {
     collected: 484,
     processingFees: 0,
   });
+});
+
+test("normalizes Shopify gateway labels to actual processors", () => {
+  assert.equal(normalizePaymentProcessor("Stripe Card Payments"), "Stripe");
+  assert.equal(normalizePaymentProcessor("Xendit Payment Gateway (New)"), "Xendit");
+  assert.equal(normalizePaymentProcessor("Stripe Card Payments + Xendit Payment Gateway (New)"), "Xendit");
+  assert.equal(normalizePaymentProcessor("", true), "Bank Transfer");
 });
