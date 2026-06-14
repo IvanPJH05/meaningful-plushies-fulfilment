@@ -189,6 +189,7 @@ export function importShopifyData(
         shippingDiscountAmount,
         refundedAmount: importedMoney(shared, "Refunded Amount", current?.refundedAmount),
         outstandingBalance: importedMoney(shared, "Outstanding Balance", current?.outstandingBalance),
+        paymentProcessor: shared["Payment Method"] || current?.paymentProcessor || "Unknown",
         product: productName(lineName, personalization.product || current?.product || ""),
         character: character || current?.character || "",
         setIndicator: total > 1 ? `(${index + 1},${total})` : "",
@@ -240,4 +241,3 @@ export function fulfilledOrdersCsv(orders: Order[]) {
   ]);
   return [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
 }
-
