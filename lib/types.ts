@@ -10,6 +10,12 @@ export const orderStatuses = [
 export type OrderStatus = (typeof orderStatuses)[number];
 export type UserRole = "admin" | "staff";
 
+export type PaymentProcessorSetting = {
+  processor: string;
+  percentage: number;
+  fixedAmount: number;
+};
+
 export type StatusEvent = {
   id: string;
   status: OrderStatus;
@@ -35,6 +41,7 @@ export type Order = {
   shippingDiscountAmount: number;
   refundedAmount: number;
   outstandingBalance: number;
+  paymentProcessor: string;
   product: string;
   character: string;
   setIndicator: string;
