@@ -1,22 +1,27 @@
 "use client";
 
+import "./settings.css";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { SVGProps } from "react";
 import { fulfilledOrdersCsv, importShopifyData } from "../lib/importer";
 import { summarizeSales } from "../lib/sales";
 import {
   deleteSharedOrders,
+  ensurePaymentProcessors,
   fetchSharedActivity,
   fetchSharedOrders,
+  fetchPaymentProcessorSettings,
   insertSharedActivity,
+  savePaymentProcessorSetting,
   subscribeToSharedData,
   supabaseConfigured,
   upsertSharedOrders,
 } from "../lib/supabase";
-import { orderStatuses, type Order, type OrderStatus, type UserRole } from "../lib/types";
+import { orderStatuses, type Order, type OrderStatus, type PaymentProcessorSetting, type UserRole } from "../lib/types";
 
 type Session = { name: string; email: string; role: UserRole };
-type View = "orders" | "fulfilment" | "packing_slips" | "import" | "fulfilled" | "history";
+type View = "orders" | "fulfilment" | "packing_slips" | "import" | "fulfilled" | "history" | "settings";
 type SalesRange = "active" | "7d" | "30d" | "lifetime";
 type ActivityEvent = {
   id: string;
@@ -111,8 +116,9 @@ export default function Home() {
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [packingSelection, setPackingSelection] = useState<string[]>([]);
   const [packingStatusFilter, setPackingStatusFilter] = useState<"all" | OrderStatus>("all");
-  const [dashboardStatus, setDashboardStatus] = useState<OrderStatus>("packed");
+  const [dashboardStatus, setDashboardStatus] = useState<OrderStatus | "total">("packed");
   const [salesRange, setSalesRange] = useState<SalesRange>("active");
+  const [processorSettings, setProcessorSettings] = useState<PaymentProcessorSetting[]>([]);
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
   const [draggedColumn, setDraggedColumn] = useState<FulfilmentColumn | null>(null);
   const [fulfilmentColumns, setFulfilmentColumns] = useState<FulfilmentColumn[]>([
@@ -133,7 +139,9 @@ export default function Home() {
     }
     if (showLoading) setLoadingOrders(true);
     try {
-      const [sharedOrders, sharedActivity] = await Promise.all([fetchSharedOrders(), fetchSharedActivity()]);
+      const [sharedOrders, sharedActivity, sharedProcessorSettings] = await Promise.all([
+        fetchSharedOrders(), fetchSharedActivity(), fetchPaymentProcessorSettings(),
+      ]);
       setOrders(sharedOrders.map((order) => {
       const status = legacyStatus[order.status] ?? order.status;
       return {
@@ -148,6 +156,7 @@ export default function Home() {
         shippingDiscountAmount: order.shippingDiscountAmount ?? 0,
         refundedAmount: order.refundedAmount ?? 0,
         outstandingBalance: order.outstandingBalance ?? 0,
+        paymentProcessor: order.paymentProcessor ?? "Unknown",
         setIndicator: order.setIndicator ?? "",
         idWebsiteLink: order.idWebsiteLink ?? "",
         statusHistory: (order.statusHistory ?? []).map((event) => ({
@@ -157,6 +166,7 @@ export default function Home() {
       };
       }));
       setActivity(sharedActivity);
+      setProcessorSettings(sharedProcessorSettings);
       setDatabaseError("");
     } catch (error) {
       setDatabaseError(error instanceof Error ? error.message : "Could not load orders from Supabase.");
@@ -190,7 +200,7 @@ export default function Home() {
     total: orders.filter((order) => order.status !== "shipped").length,
     voice: orders.filter((order) => order.status === "uploading_audio").length,
     production: orders.filter((order) => order.status === "sent_for_sewing").length,
-    selected: orders.filter((order) => order.status === dashboardStatus).length,
+    selected: dashboardStatus === "total" ? orders.length : orders.filter((order) => order.status === dashboardStatus).length,
     issue: orders.filter((order) => order.status === "issue").length,
   }), [orders, dashboardStatus]);
 
@@ -201,7 +211,7 @@ export default function Home() {
     const threshold = Date.now() - days * 24 * 60 * 60 * 1000;
     return orders.filter((order) => new Date(order.orderDate).getTime() >= threshold);
   }, [orders, salesRange]);
-  const sales = useMemo(() => summarizeSales(reportingOrders), [reportingOrders]);
+  const sales = useMemo(() => summarizeSales(reportingOrders, processorSettings), [reportingOrders, processorSettings]);
   const historyEvents = useMemo<ActivityEvent[]>(() => [
     ...activity,
     ...orders.flatMap((order) => order.statusHistory.map((event) => ({
@@ -323,7 +333,10 @@ export default function Home() {
 
   async function runImport() {
     const { orders: imported, result } = importShopifyData(orderCsv, metafieldCsv, orders, session?.name ?? "Admin");
-    try { await upsertSharedOrders(imported); }
+    try {
+      await upsertSharedOrders(imported);
+      await ensurePaymentProcessors(imported.map((order) => order.paymentProcessor));
+    }
     catch (error) { setNotice(error instanceof Error ? error.message : "Import could not be saved to Supabase."); return; }
     setOrders(imported);
     setOrderCsv("");
@@ -331,6 +344,17 @@ export default function Home() {
     setNotice(`${result.imported} new orders imported, ${result.updated} updated, ${result.skipped} skipped.`);
     await logActivity("CSV import", `${result.imported} imported, ${result.updated} updated, ${result.skipped} skipped.`);
     setView("orders");
+    await loadSharedData();
+  }
+
+  async function saveProcessor(setting: PaymentProcessorSetting) {
+    try {
+      await savePaymentProcessorSetting(setting);
+      setNotice(`${setting.processor} processing fee saved.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Processing fee could not be saved.");
+      await loadSharedData();
+    }
   }
 
   function downloadFulfilled() {
@@ -425,22 +449,23 @@ export default function Home() {
         {session.role === "admin" && <button className={view === "import" ? "active" : ""} onClick={() => setView("import")}><Icon name="import" /> CSV Import</button>}
         <button className={view === "fulfilled" ? "active" : ""} onClick={() => setView("fulfilled")}><Icon name="shipped" /> Shipped</button>
         <button className={view === "history" ? "active" : ""} onClick={() => setView("history")}><Icon name="history" /> History</button>
+        {session.role === "admin" && <button className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}><Icon name="settings" /> Settings</button>}
       </nav>
       <div className="user-card"><div className="avatar">{session.name.slice(0, 1)}</div><div><strong>{session.name}</strong><span>{session.role === "admin" ? "Administrator" : "Fulfilment staff"}</span></div><button title="Sign out" onClick={() => setSession(null)}><Icon name="logout" /></button></div>
     </aside>
 
     <section className="main-area">
-      <header className="topbar"><div><p>FULFILMENT CONTROL</p><h1>{view === "import" ? "Import Shopify Orders" : view === "fulfilled" ? "Shipped Orders" : view === "fulfilment" ? "Fulfilment" : view === "packing_slips" ? "Packing Slips" : view === "history" ? "Activity History" : "Orders Dashboard"}</h1></div><div className="top-actions"><span className={`role-badge ${session.role}`}>{session.role}</span>{view === "packing_slips" && <button className="button primary print-trigger" onClick={printPackingSlips}>Print {packingOrders.length} A6 slip{packingOrders.length === 1 ? "" : "s"}</button>}{session.role === "admin" && view !== "import" && <button className="button secondary" onClick={() => setView("import")}>Import CSV</button>}</div></header>
+      <header className="topbar"><div><p>FULFILMENT CONTROL</p><h1>{view === "import" ? "Import Shopify Orders" : view === "fulfilled" ? "Shipped Orders" : view === "fulfilment" ? "Fulfilment" : view === "packing_slips" ? "Packing Slips" : view === "history" ? "Activity History" : view === "settings" ? "Settings" : "Orders Dashboard"}</h1></div><div className="top-actions"><span className={`role-badge ${session.role}`}>{session.role}</span>{view === "packing_slips" && <button className="button primary print-trigger" onClick={printPackingSlips}>Print {packingOrders.length} A6 slip{packingOrders.length === 1 ? "" : "s"}</button>}{session.role === "admin" && view !== "import" && <button className="button secondary" onClick={() => setView("import")}>Import CSV</button>}</div></header>
       {databaseError && <div className="notice"><span>Database connection: {databaseError}</span></div>}
       {loadingOrders && <div className="notice"><span>Loading shared orders from Supabase...</span></div>}
       {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice("")}>x</button></div>}
 
-      {view !== "import" && view !== "packing_slips" && view !== "history" && <>
+      {view !== "import" && view !== "packing_slips" && view !== "history" && view !== "settings" && <>
         {view === "orders" && <section className="stats">
           <Stat label="Active orders" value={counts.total} color="navy" />
           <Stat label="Uploading audio" value={counts.voice} color="orange" />
           <Stat label="Sent for sewing" value={counts.production} color="blue" />
-          <article className="stat green selectable-stat"><select aria-label="Choose dashboard status" value={dashboardStatus} onChange={(event) => setDashboardStatus(event.target.value as OrderStatus)}>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><strong>{counts.selected}</strong></article>
+          <article className="stat green selectable-stat"><select aria-label="Choose dashboard status" value={dashboardStatus} onChange={(event) => setDashboardStatus(event.target.value as OrderStatus | "total")}><option value="total">Total orders</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><strong>{counts.selected}</strong></article>
           <Stat label="Issues" value={counts.issue} color="red" />
         </section>}
 
@@ -457,6 +482,7 @@ export default function Home() {
             <MoneyStat label="Shipping discounts" value={sales.shippingDiscounted} tone="shipping" />
             <MoneyStat label="Bank transfer collected" value={sales.bankTransfer} tone="transfer" />
             <MoneyStat label="Cash collected" value={sales.collected} tone="collected" />
+            <MoneyStat label="Payment processing fees" value={sales.processingFees} tone="fees" />
           </section>
         </>}
 
@@ -483,6 +509,15 @@ export default function Home() {
       </section>}
 
       {view === "history" && <section className="history-page card"><div className="history-page-header"><div><h2>Activity history</h2><p>Every recorded import, edit, status change, print, and deletion.</p></div><span>{historyEvents.length} actions</span></div><div className="activity-list">{historyEvents.map((event) => <article key={event.id}><div className="activity-icon"><Icon name="history" /></div><div><strong>{event.action}</strong><p>{event.detail}</p><span>{event.orderNumber ? `Order #${event.orderNumber} | ` : ""}{event.actor} | {formatDate(event.createdAt, true)}</span></div></article>)}{!historyEvents.length && <div className="empty"><strong>No activity recorded yet</strong><p>New actions will appear here.</p></div>}</div></section>}
+
+      {view === "settings" && session.role === "admin" && <section className="settings-page card">
+        <div className="settings-heading"><div><h2>Payment processor fees</h2><p>New Shopify payment methods appear here automatically. Set a percentage, a fixed RM amount, both, or leave both at zero for no fee.</p></div><span>{processorSettings.length} processors</span></div>
+        <div className="processor-list">
+          <div className="processor-row processor-header"><strong>Payment method</strong><strong>Percentage</strong><strong>Fixed amount</strong><span /></div>
+          {processorSettings.map((setting) => <div className="processor-row" key={setting.processor}><strong>{setting.processor}</strong><label><input type="number" min="0" step="0.01" value={setting.percentage} onChange={(event) => setProcessorSettings((current) => current.map((item) => item.processor === setting.processor ? { ...item, percentage: Number(event.target.value) } : item))} /><span>%</span></label><label><span>RM</span><input type="number" min="0" step="0.01" value={setting.fixedAmount} onChange={(event) => setProcessorSettings((current) => current.map((item) => item.processor === setting.processor ? { ...item, fixedAmount: Number(event.target.value) } : item))} /></label><button className="button primary" onClick={() => saveProcessor(setting)}>Save</button></div>)}
+          {!processorSettings.length && <div className="empty"><strong>No payment methods discovered yet</strong><p>Import a Shopify orders CSV and its payment methods will appear here.</p></div>}
+        </div>
+      </section>}
 
       {view === "import" && session.role === "admin" && <section className="import-page">
         <div className="import-intro"><span>CSV</span><div><h2>Import Shopify exports</h2><p>Upload either standard Shopify CSV exports or the headerless Sheet25 files. The app matches line items with each Product block and creates one fulfilment record per plushie.</p></div></div>
@@ -536,7 +571,7 @@ function OrderDrawer({ order, role, actor, onClose, onUpdate, onStatus }: { orde
   return <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><aside className="order-drawer"><div className="drawer-header"><div><p>ORDER DETAIL</p><h2>{orderLabel(order)}</h2></div><button onClick={onClose}>x</button></div><div className="drawer-body">
     <section className="detail-summary"><div><span>Current status</span><StatusPill status={order.status} /></div><div><span>Last updated</span><strong>{formatDate(order.updatedAt, true)}</strong></div></section>
     <section className="detail-section"><h3>Quick actions</h3><div className="status-actions">{following && <button className="button primary" onClick={() => onStatus(following)}>Move to {statusLabels[following]}</button>}<button className="button issue-button" onClick={() => onStatus("issue")}>Mark issue</button>{order.status === "issue" && <button className="button secondary" onClick={() => onStatus("sent_for_sewing")}>Resolve issue</button>}<a className="button whatsapp" href={whatsappLink(order)} target="_blank">Open WhatsApp</a></div></section>
-    <section className="detail-section"><h3>Customer and order</h3><div className="field-grid"><Field label="Order number" value={`#${order.orderNumber}`} /><Field label="Order date" value={formatDate(order.orderDate, true)} /><Editable label="Customer name" value={order.customerName} disabled={!admin} onChange={(value) => onUpdate({ customerName: value })} /><Editable label="Phone" value={order.phone} disabled={!admin} onChange={(value) => onUpdate({ phone: value })} /><Editable wide label="Address" value={order.address} disabled={!admin} onChange={(value) => onUpdate({ address: value })} /></div></section>
+    <section className="detail-section"><h3>Customer and order</h3><div className="field-grid"><Field label="Order number" value={`#${order.orderNumber}`} /><Field label="Order date" value={formatDate(order.orderDate, true)} /><Field label="Payment method" value={order.paymentProcessor || "Unknown"} /><Editable label="Customer name" value={order.customerName} disabled={!admin} onChange={(value) => onUpdate({ customerName: value })} /><Editable label="Phone" value={order.phone} disabled={!admin} onChange={(value) => onUpdate({ phone: value })} /><Editable wide label="Address" value={order.address} disabled={!admin} onChange={(value) => onUpdate({ address: value })} /></div></section>
     <section className="detail-section"><h3>Plushie details</h3><div className="field-grid"><Editable label="Product name" value={order.product} disabled={!admin} onChange={(value) => onUpdate({ product: value })} /><Editable label="Character" value={order.character} disabled={!admin} onChange={(value) => onUpdate({ character: value })} /><Editable label="Set indicator" value={order.setIndicator ?? ""} disabled={!admin} onChange={(value) => onUpdate({ setIndicator: value })} /><Editable label="ID website link" value={order.idWebsiteLink ?? ""} disabled={!admin} onChange={(value) => onUpdate({ idWebsiteLink: value })} /><Editable label="Voice length" value={String(order.voiceLength || "")} disabled={!admin} onChange={(value) => onUpdate({ voiceLength: Number(value) || 0 })} /><Editable label="Plush name" value={order.plushName} disabled={!admin} onChange={(value) => onUpdate({ plushName: value })} /><Editable wide label="Remark" value={order.remark ?? ""} disabled={!admin} onChange={(value) => onUpdate({ remark: value })} /><Editable wide textarea label="Meaningful note" value={order.meaningfulNote} disabled={!admin} onChange={(value) => onUpdate({ meaningfulNote: value })} /><div className="field wide"><label>Meaningful message</label>{order.meaningfulMessage ? <a href={order.meaningfulMessage} target="_blank" rel="noreferrer">Open customer message</a> : <span>Not provided</span>}</div><div className="field"><label>Voice upload</label>{admin ? <select value={order.voiceUploadStatus} onChange={(event) => onUpdate({ voiceUploadStatus: event.target.value as Order["voiceUploadStatus"] })}><option value="missing">Missing</option><option value="received">Received</option><option value="checked">Checked</option></select> : <strong>{order.voiceUploadStatus}</strong>}</div></div></section>
     <section className="detail-section"><h3>Delivery</h3><div className="field-grid"><Editable label="Courier" value={order.courier} disabled={!admin} placeholder="J&T Express" onChange={(value) => onUpdate({ courier: value })} /><Editable label="Tracking number" value={order.trackingNumber} placeholder="Enter tracking number" onChange={(value) => onUpdate({ trackingNumber: value })} /></div></section>
     <section className="detail-section"><h3>Tailor / packing photo</h3><div className="photo-field">{order.photoDataUrl ? <img src={order.photoDataUrl} alt="Tailor or packing evidence" /> : <div className="photo-placeholder">No photo uploaded</div>}{admin && <label className="button secondary"><input type="file" accept="image/*" onChange={(event) => uploadPhoto(event.target.files?.[0])} />{order.photoDataUrl ? "Replace photo" : "Upload photo"}</label>} {order.photoName && <small>{order.photoName}</small>}</div></section>
@@ -558,7 +593,7 @@ function PackingSlip({ order }: { order: Order }) {
   return <article className="a6-slip"><header><span>ORDER ID</span><strong>{orderLabel(order)}</strong></header><div className="slip-fields"><div className="primary-slip-field"><label>CHARACTER:</label><p>{order.character || "-"}</p></div><div className="primary-slip-field"><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{order.remark || "-"}</p></div></div><footer>Meaningful Plushies</footer></article>;
 }
 
-type IconName = "orders" | "fulfilment" | "packing" | "import" | "shipped" | "logout" | "search" | "history" | "drag";
+type IconName = "orders" | "fulfilment" | "packing" | "import" | "shipped" | "logout" | "search" | "history" | "drag" | "settings";
 
 function Icon({ name }: { name: IconName }) {
   const common: SVGProps<SVGSVGElement> = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true };
@@ -569,6 +604,7 @@ function Icon({ name }: { name: IconName }) {
   if (name === "shipped") return <svg {...common}><path d="M20 6 9 17l-5-5"/></svg>;
   if (name === "logout") return <svg {...common}><path d="M10 5H5v14h5M14 8l4 4-4 4M18 12H9"/></svg>;
   if (name === "search") return <svg {...common}><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>;
+  if (name === "settings") return <svg {...common}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg>;
   if (name === "drag") return <svg {...common}><circle cx="8" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="17" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="17" r="1" fill="currentColor" stroke="none"/></svg>;
   return <svg {...common}><path d="M12 8v5l3 2"/><circle cx="12" cy="12" r="9"/></svg>;
 }
