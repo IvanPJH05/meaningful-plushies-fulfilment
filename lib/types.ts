@@ -1,3 +1,6 @@
+Exit code: 0
+Wall time: 0.7 seconds
+Output:
 export const orderStatuses = [
   "new_order",
   "uploading_audio",
@@ -14,6 +17,10 @@ export type PaymentProcessorSetting = {
   processor: string;
   percentage: number;
   fixedAmount: number;
+};
+
+export type SalesFeeSetting = {
+  shopifyPercentage: number;
 };
 
 export type DashboardAccount = {
@@ -83,3 +90,4 @@ export type ImportResult = {
   skipped: number;
   warnings: string[];
 };
+
