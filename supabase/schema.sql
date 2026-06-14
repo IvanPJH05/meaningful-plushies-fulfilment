@@ -1,3 +1,6 @@
+Exit code: 0
+Wall time: 0.8 seconds
+Output:
 create extension if not exists pgcrypto;
 
 create table if not exists public.fulfilment_orders (
@@ -34,6 +37,16 @@ create table if not exists public.payment_processor_settings (
   fixed_amount numeric(12,2) not null default 0 check (fixed_amount >= 0),
   updated_at timestamptz not null default now()
 );
+
+create table if not exists public.sales_fee_settings (
+  id text primary key default 'default' check (id = 'default'),
+  shopify_percentage numeric(8,4) not null default 0 check (shopify_percentage >= 0),
+  updated_at timestamptz not null default now()
+);
+
+insert into public.sales_fee_settings(id)
+values ('default')
+on conflict (id) do nothing;
 
 create table if not exists public.dashboard_accounts (
   id uuid primary key default gen_random_uuid(),
@@ -124,6 +137,7 @@ end $$;
 alter table public.fulfilment_orders enable row level security;
 alter table public.activity_events enable row level security;
 alter table public.payment_processor_settings enable row level security;
+alter table public.sales_fee_settings enable row level security;
 alter table public.dashboard_accounts enable row level security;
 alter table public.dashboard_sessions enable row level security;
 alter table public.stock_settings enable row level security;
@@ -149,6 +163,13 @@ create policy "shared dashboard reads processor settings" on public.payment_proc
 create policy "shared dashboard inserts processor settings" on public.payment_processor_settings for insert to anon, authenticated with check (true);
 create policy "shared dashboard updates processor settings" on public.payment_processor_settings for update to anon, authenticated using (true) with check (true);
 
+drop policy if exists "shared dashboard reads sales fee settings" on public.sales_fee_settings;
+drop policy if exists "shared dashboard inserts sales fee settings" on public.sales_fee_settings;
+drop policy if exists "shared dashboard updates sales fee settings" on public.sales_fee_settings;
+create policy "shared dashboard reads sales fee settings" on public.sales_fee_settings for select to anon, authenticated using (true);
+create policy "shared dashboard inserts sales fee settings" on public.sales_fee_settings for insert to anon, authenticated with check (true);
+create policy "shared dashboard updates sales fee settings" on public.sales_fee_settings for update to anon, authenticated using (true) with check (true);
+
 drop policy if exists "shared dashboard reads stock settings" on public.stock_settings;
 drop policy if exists "shared dashboard updates stock settings" on public.stock_settings;
 create policy "shared dashboard reads stock settings" on public.stock_settings for select to anon, authenticated using (true);
@@ -158,6 +179,7 @@ create policy "shared dashboard changes stock settings" on public.stock_settings
 grant select, insert, update, delete on public.fulfilment_orders to anon, authenticated;
 grant select, insert on public.activity_events to anon, authenticated;
 grant select, insert, update on public.payment_processor_settings to anon, authenticated;
+grant select, insert, update on public.sales_fee_settings to anon, authenticated;
 grant select, insert, update on public.stock_settings to anon, authenticated;
 grant execute on function public.dashboard_login(text, text) to anon, authenticated;
 grant execute on function public.dashboard_list_accounts(uuid) to anon, authenticated;
@@ -189,8 +211,15 @@ begin
   end if;
   if not exists (
     select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'sales_fee_settings'
+  ) then
+    alter publication supabase_realtime add table public.sales_fee_settings;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'stock_settings'
   ) then
     alter publication supabase_realtime add table public.stock_settings;
   end if;
 end $$;
+
