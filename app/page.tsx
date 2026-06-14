@@ -248,6 +248,7 @@ export default function Home() {
   ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [activity, orders]);
 
   if (!session) return <Login onLogin={setSession} />;
+  const currentSession = session;
 
   async function logActivity(action: string, detail: string, orderNumber?: string) {
     const createdAt = new Date().toISOString();
@@ -265,7 +266,7 @@ export default function Home() {
   }
 
   async function updateOrder(orderId: string, patch: Partial<Order>) {
-    if (session.role !== "admin") return setNotice("Staff accounts can only move orders to the next stage.");
+    if (currentSession.role !== "admin") return setNotice("Staff accounts can only move orders to the next stage.");
     const order = orders.find((item) => item.id === orderId);
     if (!order) return;
     const updated = { ...order, ...patch, updatedAt: new Date().toISOString() };
@@ -281,7 +282,7 @@ export default function Home() {
 
   async function setStatus(order: Order, status: OrderStatus) {
     if (order.status === status) return;
-    if (session.role === "staff" && nextStatus[order.status] !== status) {
+    if (currentSession.role === "staff" && nextStatus[order.status] !== status) {
       return setNotice("Staff accounts can only move orders to the next stage.");
     }
     const changedAt = new Date().toISOString();
@@ -389,8 +390,8 @@ export default function Home() {
       return setNotice("Enter a username, display name, and password of at least 8 characters.");
     }
     try {
-      await createDashboardAccount(session.token, newAccount, newAccount.password);
-      setAccounts(await fetchDashboardAccounts(session.token));
+      await createDashboardAccount(currentSession.token, newAccount, newAccount.password);
+      setAccounts(await fetchDashboardAccounts(currentSession.token));
       setNewAccount({ username: "", displayName: "", role: "staff", password: "" });
       setNotice("Account created.");
       await logActivity("Account created", `Created @${newAccount.username} as ${newAccount.role}.`);
@@ -401,8 +402,8 @@ export default function Home() {
 
   async function saveAccount(account: DashboardAccount, password = "") {
     try {
-      await updateDashboardAccount(session.token, account, password);
-      setAccounts(await fetchDashboardAccounts(session.token));
+      await updateDashboardAccount(currentSession.token, account, password);
+      setAccounts(await fetchDashboardAccounts(currentSession.token));
       setNotice(`@${account.username} updated.`);
       await logActivity("Account updated", `Updated @${account.username}.`);
     } catch (error) {
