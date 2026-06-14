@@ -1,5 +1,5 @@
 Exit code: 0
-Wall time: 0.7 seconds
+Wall time: 0.6 seconds
 Output:
 import assert from "node:assert/strict";
 import test from "node:test";
