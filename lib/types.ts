@@ -1,6 +1,3 @@
-Exit code: 0
-Wall time: 0.6 seconds
-Output:
 export const orderStatuses = [
   "new_order",
   "uploading_audio",
@@ -90,4 +87,3 @@ export type ImportResult = {
   skipped: number;
   warnings: string[];
 };
-
