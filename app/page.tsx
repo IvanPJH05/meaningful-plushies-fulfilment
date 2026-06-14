@@ -143,7 +143,7 @@ function formatMoney(value: number, currency = "MYR") {
   return new Intl.NumberFormat("en-MY", { style: "currency", currency }).format(value);
 }
 
-function printView(className: "print-packing" | "print-envelope" | "print-sales-report") {
+function printView(className: "print-packing" | "print-sales-report") {
   document.body.classList.add(className);
   const cleanup = () => document.body.classList.remove(className);
   window.addEventListener("afterprint", cleanup, { once: true });
@@ -604,6 +604,29 @@ export default function Home() {
     setNotice(`${matches.length} envelope name${matches.length === 1 ? "" : "s"} added in the order entered.`);
   }
 
+  async function printEnvelopes() {
+    if (!envelopeOrders.length) return;
+    const printWindow = window.open("", "_blank");
+    try {
+      setNotice("Generating the A4 envelope PDF...");
+      const response = await fetch("/api/envelopes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ names: envelopeOrders.map((order) => order.plushName || "UNNAMED PLUSHIE") }),
+
+      });
+      if (!response.ok) throw new Error(await response.text() || "Envelope PDF could not be generated.");
+      const url = URL.createObjectURL(await response.blob());
+      if (printWindow) printWindow.location.href = url;
+      else window.location.href = url;
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setNotice(`${envelopePages.length} A4 envelope page${envelopePages.length === 1 ? "" : "s"} generated.`);
+    } catch (error) {
+      printWindow?.close();
+      setNotice(error instanceof Error ? error.message : "Envelope PDF could not be generated.");
+    }
+  }
+
   async function deleteOrders(orderIds: string[]) {
     const deleting = orders.filter((order) => orderIds.includes(order.id));
     if (!deleting.length || !window.confirm(`Delete ${deleting.length} selected order${deleting.length === 1 ? "" : "s"}? This cannot be undone.`)) return;
@@ -613,7 +636,6 @@ export default function Home() {
     setSelectedOrders([]);
     setSelectedId(null);
     await Promise.all(deleting.map((order) => logActivity("Order deleted", `${order.customerName || "Customer"} - ${order.product || "Order"}.`, order.orderNumber)));
-
     setNotice(`${deleting.length} order${deleting.length === 1 ? "" : "s"} deleted.`);
   }
 
@@ -632,6 +654,7 @@ export default function Home() {
     if (column === "idWebsiteLink") {
       const link = certificateLink(order);
       return link ? <div className="link-copy"><a href={link} target="_blank" rel="noreferrer">{certificateLink(order, false)}</a><button type="button" onClick={() => copyCertificateLink(order)}>Copy</button></div> : "-";
+
     }
     if (column === "customerName") return order.customerName || "-";
     return order.phone || "-";
@@ -654,9 +677,8 @@ export default function Home() {
       <div className="user-card"><div className="avatar">{session.displayName.slice(0, 1)}</div><div><strong>{session.displayName}</strong><span>@{session.username} | {session.role === "admin" ? "Administrator" : "Fulfilment staff"}</span></div><button title="Sign out" onClick={() => setSession(null)}><Icon name="logout" /></button></div>
     </aside>
 
-
     <section className="main-area">
-      <header className="topbar"><div><p>FULFILMENT CONTROL</p><h1>{view === "import" ? "Import Shopify Orders" : view === "fulfilled" ? "Shipped Orders" : view === "fulfilment" ? "Fulfilment" : view === "packing_slips" ? "Packing Slips" : view === "print_envelope" ? "Print Envelope" : view === "history" ? "Activity History" : view === "settings" ? "Settings" : view === "stock" ? "Stock Count" : view === "sales_report" ? "Sales Report" : "Orders Dashboard"}</h1></div><div className="top-actions"><span className={`role-badge ${session.role}`}>{session.role}</span>{view === "packing_slips" && <button className="button primary print-trigger" onClick={printPackingSlips}>Print {packingOrders.length} A6 slip{packingOrders.length === 1 ? "" : "s"}</button>}{view === "print_envelope" && <button className="button primary" disabled={!envelopeOrders.length} onClick={() => printView("print-envelope")}>Print {envelopePages.length} A4 page{envelopePages.length === 1 ? "" : "s"}</button>}{view === "sales_report" && <button className="button primary" onClick={() => printView("print-sales-report")}>Print / Save PDF</button>}{view !== "import" && <button className="button secondary" onClick={() => setView("import")}>Import CSV</button>}</div></header>
+      <header className="topbar"><div><p>FULFILMENT CONTROL</p><h1>{view === "import" ? "Import Shopify Orders" : view === "fulfilled" ? "Shipped Orders" : view === "fulfilment" ? "Fulfilment" : view === "packing_slips" ? "Packing Slips" : view === "print_envelope" ? "Print Envelope" : view === "history" ? "Activity History" : view === "settings" ? "Settings" : view === "stock" ? "Stock Count" : view === "sales_report" ? "Sales Report" : "Orders Dashboard"}</h1></div><div className="top-actions"><span className={`role-badge ${session.role}`}>{session.role}</span>{view === "packing_slips" && <button className="button primary print-trigger" onClick={printPackingSlips}>Print {packingOrders.length} A6 slip{packingOrders.length === 1 ? "" : "s"}</button>}{view === "print_envelope" && <button className="button primary" disabled={!envelopeOrders.length} onClick={printEnvelopes}>Generate {envelopePages.length} A4 page{envelopePages.length === 1 ? "" : "s"}</button>}{view === "sales_report" && <button className="button primary" onClick={() => printView("print-sales-report")}>Print / Save PDF</button>}{view !== "import" && <button className="button secondary" onClick={() => setView("import")}>Import CSV</button>}</div></header>
       {databaseError && <div className="notice"><span>Database connection: {databaseError}</span></div>}
       {loadingOrders && <div className="notice"><span>Loading shared orders from Supabase...</span></div>}
       {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice("")}>x</button></div>}
@@ -673,6 +695,7 @@ export default function Home() {
         {view === "orders" && session.role === "admin" && <>
           <div className="reporting-header">
             <div><strong>Sales reporting</strong><span>{reportingOrders.length} order records</span></div>
+
             <div className="range-tabs">
               {salesRanges.map(({ value, label }) => <button key={value} className={salesRange === value ? "active" : ""} onClick={() => setSalesRange(value)}>{label}</button>)}
             </div>
@@ -695,7 +718,6 @@ export default function Home() {
         {view === "fulfilment" && <section className="card orders-card">
           <div className="toolbar"><div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, plush name, character, customer or phone..." /></div><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /><button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>Move {selectedOrders.length} to next status</button>{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>Delete</button>}</div>
           <div className="fulfilment-scroll table-scroll"><table className="orders-table fulfilment-table"><thead><tr><th className="select-column"><input type="checkbox" aria-label="Select visible fulfilment orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th className="locked-order-column">Order ID</th>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <th key={column} className={draggedColumn === column ? "dragging" : ""} draggable onDragStart={(event) => { setDraggedColumn(column); event.dataTransfer.setData("text/plain", column); }} onDragEnd={() => setDraggedColumn(null)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => reorderFulfilmentColumn(event.dataTransfer.getData("text/plain") as FulfilmentColumn, column)}><span className="drag-handle"><Icon name="drag" /></span>{fulfilmentColumnLabels[column]}</th>)}<th>Status</th><th>View</th></tr></thead><tbody>{filtered.map((order) => { const checked = selectedOrders.includes(order.id); return <tr key={order.id} className={checked ? "selected-row" : ""} onClick={(event) => { if ((event.target as HTMLElement).closest("button,a,input")) return; toggleOrderSelection(order.id); }}><td className="select-column"><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={checked} onChange={() => toggleOrderSelection(order.id)} /></td><td className="locked-order-column"><strong>{orderLabel(order)}</strong></td>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <td key={column} className={column === "idWebsiteLink" ? "certificate-cell" : ""}>{fulfilmentCell(order, column)}</td>)}<td><StatusPill status={order.status} /></td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>; })}</tbody></table>{!filtered.length && <div className="empty"><strong>No fulfilment orders found</strong><p>Try another search or status filter.</p></div>}</div>
-
           <div className="table-footer">Showing {filtered.length} of {orders.length} orders</div>
         </section>}
       </>}
@@ -714,10 +736,11 @@ export default function Home() {
           <div className="envelope-heading"><div><h2>Choose envelope names</h2><p>Select orders in the exact sequence they should print. Two plush names are placed on each A4 page.</p></div><a className="button secondary" href="https://www.canva.com/design/DAHMlKpyMEI/tkTdjkzXIGSgBCwnGmGaww/edit" target="_blank" rel="noreferrer">Open Canva template</a></div>
           <div className="manual-entry"><input value={manualEnvelopeIds} onChange={(event) => setManualEnvelopeIds(event.target.value)} onKeyDown={(event) => event.key === "Enter" && selectManualEnvelopeOrders()} placeholder="Example: 1402, 1403, 1404" /><button className="button primary" onClick={selectManualEnvelopeOrders}>Add order IDs</button></div>
           <div className="envelope-selection-summary"><strong>{envelopeOrders.length} names selected</strong><span>Names print in the sequence shown below.</span><button onClick={() => setEnvelopeSelection([])}>Clear all</button></div>
+
           <div className="envelope-selected-list">{envelopeOrders.map((order, index) => <div key={order.id}><span>{index + 1}</span><div><strong>{(order.plushName || "UNNAMED PLUSHIE").toUpperCase()}</strong><small>{orderLabel(order)} | {order.customerName || "No customer"}</small></div><button aria-label={`Remove ${order.plushName || order.orderNumber}`} onClick={() => setEnvelopeSelection((current) => current.filter((id) => id !== order.id))}>x</button></div>)}</div>
           <div className="envelope-order-list">{sortOrderRecords(orders, "orderNumber", "desc").map((order) => { const selectedIndex = envelopeSelection.indexOf(order.id); return <label key={order.id} className={selectedIndex >= 0 ? "selected" : ""}><input type="checkbox" checked={selectedIndex >= 0} onChange={() => setEnvelopeSelection((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><div><strong>{orderLabel(order)} | {(order.plushName || "Unnamed plushie").toUpperCase()}</strong><span>{order.customerName || "No customer"}</span></div>{selectedIndex >= 0 && <b>{selectedIndex + 1}</b>}</label>; })}</div>
         </div>
-        <div className="envelope-preview"><div className="preview-heading no-envelope-print"><div><h2>A4 print preview</h2><p>The connected Canva artwork remains unchanged. Plush names are printed in uppercase.</p></div><span>{envelopePages.length} pages</span></div>{envelopePages.length ? <div className="envelope-sheet-list">{envelopePages.map((pageOrders, index) => <EnvelopeSheet key={index} orders={pageOrders} />)}</div> : <div className="preview-empty"><strong>No orders selected</strong><p>Choose orders from the list to build the envelope pages.</p></div>}</div>
+        <div className="envelope-preview"><div className="preview-heading"><div><h2>A4 page order</h2><p>The generated PDF uses the supplied Canva artwork directly. Two names are placed on each page.</p></div><span>{envelopePages.length} pages</span></div>{envelopePages.length ? <div className="envelope-sheet-list">{envelopePages.map((pageOrders, index) => <EnvelopeSheet key={index} pageNumber={index + 1} orders={pageOrders} />)}</div> : <div className="preview-empty"><strong>No orders selected</strong><p>Choose orders from the list to build the envelope pages.</p></div>}</div>
       </section>}
 
       {view === "sales_report" && session.role === "admin" && <section className="sales-report-page">
@@ -735,7 +758,6 @@ export default function Home() {
         <div className="stock-grid">{stock.characters.map((item) => <article className="stock-card card" key={item.name}><span>{item.name}</span><strong>{item.remaining}</strong><p>{item.sold} sold from {item.initial} initial stock</p></article>)}</div>
         <section className="card voice-stock"><div><span>Shared voice inventory</span><strong>{stock.voiceRemaining}</strong><p>{stock.voiceSold} total sold from {stock.voiceInitial} initial stock</p></div><div className="voice-breakdown">{stock.voices.map((voice) => <article key={voice.length}><strong>{voice.sold}</strong><span>{voice.length}s sold</span></article>)}</div></section>
       </section>}
-
 
       {view === "history" && session.role === "admin" && <section className="history-page card"><div className="history-page-header"><div><h2>Activity history</h2><p>Every recorded import, edit, status change, print, and deletion.</p></div><span>{historyEvents.length} actions</span></div><div className="activity-list">{historyEvents.map((event) => <article key={event.id}><div className="activity-icon"><Icon name="history" /></div><div><strong>{event.action}</strong><p>{event.detail}</p><span>{event.orderNumber ? `Order #${event.orderNumber} | ` : ""}{event.actor} | {formatDate(event.createdAt, true)}</span></div></article>)}{!historyEvents.length && <div className="empty"><strong>No activity recorded yet</strong><p>New actions will appear here.</p></div>}</div></section>}
 
@@ -755,6 +777,7 @@ export default function Home() {
           {!processorSettings.length && <div className="empty"><strong>No payment methods discovered yet</strong><p>Import a Shopify orders CSV and its payment methods will appear here.</p></div>}
         </div>
       </section>}
+
 
       {view === "import" && <section className="import-page">
         <div className="import-intro"><span>CSV</span><div><h2>Import Shopify exports</h2><p>Upload either standard Shopify CSV exports or the headerless Sheet25 files. The app matches line items with each Product block and creates one fulfilment record per plushie.</p></div></div>
@@ -777,7 +800,6 @@ function Login({ onLogin }: { onLogin: (session: Session) => void }) {
   const [signingIn, setSigningIn] = useState(false);
   async function submit(event: FormEvent) {
     event.preventDefault();
-
     setSigningIn(true);
     setError("");
     try { onLogin(await loginDashboardAccount(username, password)); }
@@ -796,6 +818,7 @@ function MoneyStat({ label, value, tone }: { label: string; value: number; tone:
 }
 
 function SelectableMoneyStat({ label, value, tone, selected, options, onChange }: { label: string; value: number; tone: string; selected: string; options: [string, string][]; onChange: (value: string) => void }) {
+
   return <article className={`money-stat ${tone} selectable-money-stat`}><span>{label}</span><select value={selected} onChange={(event) => onChange(event.target.value)}>{options.map(([value, optionLabel]) => <option key={value} value={value}>{optionLabel}</option>)}</select><strong>{formatMoney(value)}</strong></article>;
 }
 
@@ -818,7 +841,6 @@ function OrderDrawer({ order, role, actor, onClose, onUpdate, onStatus }: { orde
   function uploadPhoto(file?: File) {
     if (!file) return;
     if (file.size > 3_000_000) return alert("Please choose an image smaller than 3 MB.");
-
     const reader = new FileReader();
     reader.onload = () => onUpdate({ photoDataUrl: String(reader.result), photoName: file.name });
     reader.readAsDataURL(file);
@@ -837,6 +859,7 @@ function OrderDrawer({ order, role, actor, onClose, onUpdate, onStatus }: { orde
   </div></aside></div>;
 }
 
+
 function Field({ label, value }: { label: string; value: string }) {
   return <div className="field"><label>{label}</label><strong>{value || "-"}</strong></div>;
 }
@@ -849,8 +872,8 @@ function PackingSlip({ order }: { order: Order }) {
   return <article className="a6-slip"><header><span>ORDER ID</span><strong>{orderLabel(order)}</strong></header><div className="slip-fields"><div className="primary-slip-field"><label>CHARACTER:</label><p>{order.character || "-"}</p></div><div className="primary-slip-field"><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{order.remark || "-"}</p></div></div><footer>Meaningful Plushies</footer></article>;
 }
 
-function EnvelopeSheet({ orders }: { orders: Order[] }) {
-  return <article className="envelope-sheet"><iframe title="Canva envelope template" src="https://www.canva.com/design/DAHMlKpyMEI/view?embed" /><div className="envelope-name envelope-name-top">{(orders[0]?.plushName || "").toUpperCase()}</div><div className="envelope-name envelope-name-bottom">{(orders[1]?.plushName || "").toUpperCase()}</div></article>;
+function EnvelopeSheet({ orders, pageNumber }: { orders: Order[]; pageNumber: number }) {
+  return <article className="envelope-sheet"><span>PAGE {pageNumber}</span><div><small>TOP NAME</small><strong>{(orders[0]?.plushName || "-").toUpperCase()}</strong></div><div><small>BOTTOM NAME</small><strong>{(orders[1]?.plushName || "-").toUpperCase()}</strong></div></article>;
 }
 
 type IconName = "orders" | "fulfilment" | "packing" | "envelope" | "import" | "shipped" | "logout" | "search" | "history" | "drag" | "settings" | "stock" | "report";
@@ -859,7 +882,6 @@ function Icon({ name }: { name: IconName }) {
   const common: SVGProps<SVGSVGElement> = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true };
   if (name === "orders") return <svg {...common}><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>;
   if (name === "fulfilment") return <svg {...common}><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>;
-
   if (name === "packing") return <svg {...common}><path d="M6 3h9l3 3v15H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></svg>;
   if (name === "envelope") return <svg {...common}><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>;
   if (name === "import") return <svg {...common}><path d="M12 3v12M7 8l5-5 5 5M5 15v5h14v-5"/></svg>;
