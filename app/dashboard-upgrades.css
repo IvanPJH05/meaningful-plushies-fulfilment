@@ -1,0 +1,29 @@
+
+.side-nav nav button { display: flex; align-items: center; gap: 11px; }
+.side-nav nav button > svg { width: 18px; min-width: 18px; color: #8da4c1; }
+.side-nav nav button.active > svg, .side-nav nav button:hover > svg { color: #fff; }
+.search > span { display: none; }
+.search > svg { position: absolute; left: 12px; top: 10px; width: 17px; height: 17px; color: #8a96a7; pointer-events: none; }
+.button.danger { background: #fff0f1; color: #ad313a; border: 1px solid #f0c6ca; }
+.button.danger:disabled { opacity: .45; cursor: not-allowed; }
+.selectable-stat select { width: 100%; border: 0; background: transparent; color: var(--muted); font-size: 11px; outline: 0; cursor: pointer; }
+.reporting-header { display: flex; justify-content: space-between; align-items: center; gap: 14px; margin: 2px 0 10px; }
+.reporting-header strong, .reporting-header span { display: block; }
+.reporting-header strong { font-size: 13px; }
+.reporting-header span { color: var(--muted); font-size: 10px; margin-top: 2px; }
+.range-tabs { display: flex; gap: 4px; padding: 4px; background: #e8edf4; border-radius: 8px; }
+.range-tabs button { border: 0; background: transparent; color: #68758a; border-radius: 6px; padding: 7px 10px; font-size: 10px; font-weight: 750; cursor: pointer; }
+.range-tabs button.active { background: white; color: #1d4f87; box-shadow: 0 1px 4px rgba(25,45,70,.12); }
+.history-page { overflow: hidden; }
+.history-page-header { display: flex; justify-content: space-between; align-items: center; padding: 20px; border-bottom: 1px solid var(--line); }
+.history-page-header h2 { margin: 0; font-size: 17px; }
+.history-page-header p { margin: 4px 0 0; color: var(--muted); font-size: 11px; }
+.history-page-header > span { background: #edf3fa; color: #37658f; border-radius: 20px; padding: 6px 10px; font-size: 10px; font-weight: 750; }
+.activity-list article { display: grid; grid-template-columns: 38px 1fr; gap: 12px; padding: 15px 20px; border-bottom: 1px solid #edf1f5; }
+.activity-icon { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: #eaf2ff; color: #2e69aa; }
+.activity-icon svg { width: 17px; height: 17px; }
+.activity-list strong { font-size: 12px; }
+.activity-list p { margin: 3px 0; color: #4d5b6e; font-size: 11px; }
+.activity-list span { color: #8793a4; font-size: 9px; }
+@media (max-width: 760px) { .reporting-header { align-items: flex-start; flex-direction: column; } .range-tabs { width: 100%; overflow: auto; } }
+
