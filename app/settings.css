@@ -1,0 +1,121 @@
+.sales-stats {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.reporting-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 15px;
+  margin: 18px 0 12px;
+}
+
+.reporting-header strong,
+.reporting-header span { display: block; }
+.reporting-header span { margin-top: 3px; color: var(--muted); font-size: 10px; }
+.range-tabs { display: flex; gap: 4px; padding: 4px; border-radius: 9px; background: #e8edf5; }
+.range-tabs button { border: 0; border-radius: 6px; padding: 8px 11px; background: transparent; color: #5c6c82; font-size: 10px; font-weight: 750; cursor: pointer; }
+.range-tabs button.active { background: #fff; color: #174f91; box-shadow: 0 1px 4px rgba(28, 48, 75, .12); }
+.money-stat { position: relative; overflow: hidden; min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }
+.money-stat::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: #3278c7; }
+.money-stat span { display: block; color: var(--muted); font-size: 11px; }
+.money-stat strong { display: block; margin-top: 9px; font-size: 21px; white-space: nowrap; }
+
+.money-stat.fees::before {
+  background: #b04c77;
+}
+
+.selectable-stat select {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  outline: 0;
+}
+
+.settings-page {
+  max-width: 1000px;
+  overflow: hidden;
+}
+
+.settings-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: flex-start;
+  padding: 22px;
+  border-bottom: 1px solid var(--line);
+}
+
+.settings-heading h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.settings-heading p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.settings-heading > span {
+  white-space: nowrap;
+  background: var(--blue-soft);
+  color: #255f9f;
+  border-radius: 20px;
+  padding: 7px 10px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.processor-list {
+  padding: 8px 22px 22px;
+}
+
+.processor-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 170px 190px 80px;
+  gap: 14px;
+  align-items: center;
+  padding: 13px 0;
+  border-bottom: 1px solid #edf1f5;
+  font-size: 12px;
+}
+
+.processor-header {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.processor-row label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+}
+
+.processor-row input {
+  width: 100%;
+  height: 38px;
+  border: 1px solid #d6dee8;
+  border-radius: 7px;
+  padding: 0 10px;
+  color: var(--text);
+}
+
+@media (max-width: 1200px) {
+  .sales-stats { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media (max-width: 760px) {
+  .sales-stats { grid-template-columns: 1fr 1fr; }
+  .processor-row { grid-template-columns: 1fr 1fr; }
+  .processor-header { display: none; }
+}
