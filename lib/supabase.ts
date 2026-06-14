@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { Order } from "./types";
+import type { Order, PaymentProcessorSetting } from "./types";
 
 export type SharedActivity = {
   id: string;
@@ -58,6 +58,39 @@ export async function deleteSharedOrders(ids: string[]) {
   if (error) throw error;
 }
 
+export async function fetchPaymentProcessorSettings(): Promise<PaymentProcessorSetting[]> {
+  const { data, error } = await requireSupabase()
+    .from("payment_processor_settings")
+    .select("processor, percentage, fixed_amount")
+    .order("processor");
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    processor: row.processor,
+    percentage: Number(row.percentage),
+    fixedAmount: Number(row.fixed_amount),
+  }));
+}
+
+export async function ensurePaymentProcessors(processors: string[]) {
+  const rows = [...new Set(processors.map((processor) => processor.trim()).filter(Boolean))]
+    .map((processor) => ({ processor }));
+  if (!rows.length) return;
+  const { error } = await requireSupabase()
+    .from("payment_processor_settings")
+    .upsert(rows, { onConflict: "processor", ignoreDuplicates: true });
+  if (error) throw error;
+}
+
+export async function savePaymentProcessorSetting(setting: PaymentProcessorSetting) {
+  const { error } = await requireSupabase().from("payment_processor_settings").upsert({
+    processor: setting.processor,
+    percentage: Math.max(0, setting.percentage),
+    fixed_amount: Math.max(0, setting.fixedAmount),
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "processor" });
+  if (error) throw error;
+}
+
 export async function fetchSharedActivity(): Promise<SharedActivity[]> {
   const { data, error } = await requireSupabase()
     .from("activity_events")
@@ -92,6 +125,7 @@ export function subscribeToSharedData(onChange: () => void) {
   const channel = client.channel("fulfilment-dashboard")
     .on("postgres_changes", { event: "*", schema: "public", table: "fulfilment_orders" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "activity_events" }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "payment_processor_settings" }, onChange)
     .subscribe();
   return () => { void client.removeChannel(channel); };
 }
