@@ -4,7 +4,7 @@ import "./settings.css";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { SVGProps } from "react";
-import { fulfilledOrdersCsv, importShopifyData } from "../lib/importer";
+import { fulfilledOrdersCsv, importShopifyData, normalizePaymentProcessor } from "../lib/importer";
 import { summarizeSales } from "../lib/sales";
 import {
   deleteSharedOrders,
@@ -156,7 +156,7 @@ export default function Home() {
         shippingDiscountAmount: order.shippingDiscountAmount ?? 0,
         refundedAmount: order.refundedAmount ?? 0,
         outstandingBalance: order.outstandingBalance ?? 0,
-        paymentProcessor: order.paymentProcessor ?? "Unknown",
+        paymentProcessor: normalizePaymentProcessor(order.paymentProcessor ?? "", order.totalAmount === 0),
         setIndicator: order.setIndicator ?? "",
         idWebsiteLink: order.idWebsiteLink ?? "",
         statusHistory: (order.statusHistory ?? []).map((event) => ({
