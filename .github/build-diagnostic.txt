@@ -6,3 +6,4 @@ Validate Supabase persistence build.
 Validate payment processor settings build.
 Validate accounts and stock build.
 Retry authenticated session build.
+Retry account RPC typing build.
