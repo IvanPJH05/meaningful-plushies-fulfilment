@@ -1,5 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
-import type { Order, PaymentProcessorSetting } from "./types";
+import type { DashboardAccount, Order, PaymentProcessorSetting, StockSetting, UserRole } from "./types";
+
+export type DashboardSession = DashboardAccount & { token: string };
 
 export type SharedActivity = {
   id: string;
@@ -93,6 +95,74 @@ export async function savePaymentProcessorSetting(setting: PaymentProcessorSetti
   if (error) throw error;
 }
 
+export async function loginDashboardAccount(username: string, password: string): Promise<DashboardSession> {
+  const { data, error } = await requireSupabase().rpc("dashboard_login", {
+    p_username: username,
+    p_password: password,
+  });
+  if (error) throw error;
+  const account = data?.[0];
+  if (!account) throw new Error("Incorrect username or password.");
+  return {
+    id: account.account_id,
+    token: account.session_token,
+    username: account.username,
+    displayName: account.display_name,
+    role: account.role as UserRole,
+    active: true,
+  };
+}
+
+export async function fetchDashboardAccounts(token: string): Promise<DashboardAccount[]> {
+  const { data, error } = await requireSupabase().rpc("dashboard_list_accounts", { p_session_token: token });
+  if (error) throw error;
+  return (data ?? []).map((account) => ({
+    id: account.account_id,
+    username: account.username,
+    displayName: account.display_name,
+    role: account.role as UserRole,
+    active: account.active,
+  }));
+}
+
+export async function createDashboardAccount(token: string, account: Omit<DashboardAccount, "id" | "active">, password: string) {
+  const { error } = await requireSupabase().rpc("dashboard_create_account", {
+    p_session_token: token,
+    p_username: account.username,
+    p_display_name: account.displayName,
+    p_role: account.role,
+    p_password: password,
+  });
+  if (error) throw error;
+}
+
+export async function updateDashboardAccount(token: string, account: DashboardAccount, password = "") {
+  const { error } = await requireSupabase().rpc("dashboard_update_account", {
+    p_session_token: token,
+    p_account_id: account.id,
+    p_display_name: account.displayName,
+    p_role: account.role,
+    p_active: account.active,
+    p_new_password: password || null,
+  });
+  if (error) throw error;
+}
+
+export async function fetchStockSettings(): Promise<StockSetting[]> {
+  const { data, error } = await requireSupabase().from("stock_settings").select("item_key, initial_stock").order("item_key");
+  if (error) throw error;
+  return (data ?? []).map((row) => ({ itemKey: row.item_key, initialStock: Number(row.initial_stock) }));
+}
+
+export async function saveStockSetting(setting: StockSetting) {
+  const { error } = await requireSupabase().from("stock_settings").upsert({
+    item_key: setting.itemKey,
+    initial_stock: Math.max(0, Math.floor(setting.initialStock)),
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "item_key" });
+  if (error) throw error;
+}
+
 export async function fetchSharedActivity(): Promise<SharedActivity[]> {
   const { data, error } = await requireSupabase()
     .from("activity_events")
@@ -128,6 +198,7 @@ export function subscribeToSharedData(onChange: () => void) {
     .on("postgres_changes", { event: "*", schema: "public", table: "fulfilment_orders" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "activity_events" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "payment_processor_settings" }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "stock_settings" }, onChange)
     .subscribe();
   return () => { void client.removeChannel(channel); };
 }
