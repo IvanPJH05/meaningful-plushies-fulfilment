@@ -116,7 +116,13 @@ export async function loginDashboardAccount(username: string, password: string):
 export async function fetchDashboardAccounts(token: string): Promise<DashboardAccount[]> {
   const { data, error } = await requireSupabase().rpc("dashboard_list_accounts", { p_session_token: token });
   if (error) throw error;
-  return (data ?? []).map((account) => ({
+  return (data ?? []).map((account: {
+    account_id: string;
+    username: string;
+    display_name: string;
+    role: UserRole;
+    active: boolean;
+  }) => ({
     id: account.account_id,
     username: account.username,
     displayName: account.display_name,
