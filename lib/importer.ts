@@ -105,6 +105,14 @@ function certificateLink(code: string) {
   return code ? `https://meaningfulplushies.com/pages/certificate/${code.trim()}` : "";
 }
 
+export function normalizePaymentProcessor(value: string, isBankTransfer = false) {
+  if (isBankTransfer) return "Bank Transfer";
+  const normalized = value.trim();
+  if (/xendit/i.test(normalized)) return "Xendit";
+  if (/stripe|shopify payments/i.test(normalized)) return "Stripe";
+  return normalized;
+}
+
 export function importShopifyData(
   orderCsv: string,
   metafieldCsv: string,
@@ -189,7 +197,10 @@ export function importShopifyData(
         shippingDiscountAmount,
         refundedAmount: importedMoney(shared, "Refunded Amount", current?.refundedAmount),
         outstandingBalance: importedMoney(shared, "Outstanding Balance", current?.outstandingBalance),
-        paymentProcessor: shared["Payment Method"] || current?.paymentProcessor || "Unknown",
+        paymentProcessor: normalizePaymentProcessor(
+          shared["Payment Method"] || current?.paymentProcessor || "",
+          isZeroCashOrder,
+        ),
         product: productName(lineName, personalization.product || current?.product || ""),
         character: character || current?.character || "",
         setIndicator: total > 1 ? `(${index + 1},${total})` : "",
