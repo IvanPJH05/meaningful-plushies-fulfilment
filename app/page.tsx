@@ -405,7 +405,10 @@ export default function Home() {
           <Stat label="Issues" value={counts.issue} color="red" />
         </section>}
 
-        {view === "orders" && <><div className="reporting-header"><div><strong>Sales reporting</strong><span>{reportingOrders.length} order records</span></div><div className="range-tab…728 tokens truncated…n className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No orders found</strong><p>Try another search or status filter.</p></div>}</div>
+        {view === "orders" && <>
+          <div className="reporting-header">
+            <div><strong>Sales reporting</strong><span>{reportingOrders.length} order records</span></div>
+…755 tokens truncated…n className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No orders found</strong><p>Try another search or status filter.</p></div>}</div>
           <div className="table-footer">Showing {filtered.length} of {view === "fulfilled" ? orders.filter((order) => order.status === "shipped").length : orders.length} orders</div>
         </section>}
 
