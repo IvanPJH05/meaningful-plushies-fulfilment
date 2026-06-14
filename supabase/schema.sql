@@ -1,6 +1,3 @@
-Exit code: 0
-Wall time: 0.6 seconds
-Output:
 create extension if not exists pgcrypto;
 
 create table if not exists public.fulfilment_orders (
@@ -222,4 +219,3 @@ begin
     alter publication supabase_realtime add table public.stock_settings;
   end if;
 end $$;
-
