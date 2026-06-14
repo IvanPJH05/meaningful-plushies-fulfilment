@@ -1,20 +1,39 @@
 # Meaningful Plushies Fulfilment
 
-Simple internal courier-style dashboard for replacing the current Google Sheets fulfilment tracker.
+Internal fulfilment dashboard with shared Supabase storage. Orders, imports, edits, status changes, deletions, packing-slip updates, and activity history are saved to the database so every user opening the same Vercel site sees the same data.
 
-## Included
+## Supabase setup
 
-- Staff login demo with Admin and Staff roles
-- Searchable and filterable orders dashboard
-- Full order detail drawer
-- Eight fulfilment statuses and permanent status history
-- Courier and tracking management
-- Customer WhatsApp links
-- Tailor/packing photo field
-- Shopify CSV import with optional metafield matching
-- Fulfilled-order CSV export
-- Browser-local demo persistence
-- Supabase Auth, database, Storage, and role-policy schema
+1. Create a Supabase project at `https://supabase.com/dashboard`.
+2. Open **SQL Editor**, paste all of [`supabase/schema.sql`](supabase/schema.sql), and run it.
+3. In **Project Settings > API**, copy the project URL and anon/public key.
+4. Create `.env.local` for local development:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+```
+
+5. Restart the local development server after changing environment variables.
+
+The SQL creates `fulfilment_orders` and `activity_events`, enables row-level security, grants the dashboard access, and enables realtime updates. It can safely be run again when updating an existing project.
+
+## Vercel environment variables
+
+In the Vercel project, open **Settings > Environment Variables** and add:
+
+| Name | Value | Environments |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | Production, Preview, Development |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon/public key | Production, Preview, Development |
+
+Save the variables and redeploy the latest commit. Vercel only applies newly added variables to new deployments. The app displays a database connection message when either variable is missing or Supabase cannot be reached.
+
+Do not add a Supabase service-role key to this frontend application. It is not needed and must never be exposed through a `NEXT_PUBLIC_` variable.
+
+## Existing browser data
+
+Old data saved in a browser's `localStorage` is intentionally no longer loaded. After configuring Supabase, import the Shopify CSV once from the dashboard. From then on, all devices use the shared database copy.
 
 ## Run locally
 
@@ -23,19 +42,8 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`.
+Open `http://localhost:3000`. The current login screen controls dashboard roles only; use `admin@meaningfulplushies.com` or `staff@meaningfulplushies.com` with any password.
 
-The current UI uses browser storage so the workflow can be reviewed without credentials. Demo customer information is fictionalized. Use `admin@meaningfulplushies.com` or `staff@meaningfulplushies.com` with any password to preview each role. To reset the demo, clear the `mp-dashboard-orders` and `mp-dashboard-session` local-storage keys.
+## Security note
 
-## Supabase setup
-
-1. Create a Supabase project.
-2. Run `supabase/schema.sql` in the SQL editor.
-3. Copy `.env.example` to `.env.local` and fill in the project URL and keys.
-4. Replace browser-local persistence in `app/page.tsx` with Supabase queries/server actions.
-
-Do not expose `SUPABASE_SERVICE_ROLE_KEY` to browser code.
-
-## Current boundary
-
-This is the reviewable MVP implementation. The Supabase schema is ready, but connecting live authentication, database persistence, Storage, and Vercel deployment requires the corresponding project credentials.
+The included policies allow users with the public Vercel link to read and change dashboard data, which matches the current shared-link workflow. Before exposing the site publicly, replace the demo login with Supabase Auth and restrict the row-level security policies to authenticated staff.
