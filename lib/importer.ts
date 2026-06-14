@@ -141,9 +141,19 @@ export function importShopifyData(
     const personalizations = personalizationBlocks(raw);
     const total = Math.max(rows.length, personalizations.length, 1);
     const shared = rows.find((row) => row["Shipping Name"] || row["Billing Name"] || row.Email) ?? rows[0] ?? {};
-    const productDiscountAmount = rows.reduce((sum, row) => sum + money(row["Lineitem discount"]), 0);
-    const discountAmount = money(shared["Discount Amount"]);
-    const shippingDiscountAmount = Math.max(0, discountAmount - productDiscountAmount);
+    const lineItemSubtotal = rows.reduce((sum, row) => (
+      sum + money(row["Lineitem price"]) * Math.max(1, money(row["Lineitem quantity"]))
+    ), 0);
+    const importedTotalAmount = money(shared.Total);
+    const isZeroCashOrder = shared.Total !== undefined && shared.Total !== "" && importedTotalAmount === 0;
+    const importedProductDiscountAmount = rows.reduce((sum, row) => sum + money(row["Lineitem discount"]), 0);
+    const importedDiscountAmount = money(shared["Discount Amount"]);
+    const importedShippingAmount = money(shared.Shipping);
+    const productDiscountAmount = isZeroCashOrder ? 0 : importedProductDiscountAmount;
+    const shippingDiscountAmount = isZeroCashOrder
+      ? importedShippingAmount
+      : Math.max(0, importedDiscountAmount - importedProductDiscountAmount);
+    const discountAmount = isZeroCashOrder ? shippingDiscountAmount : importedDiscountAmount;
 
     for (let index = 0; index < total; index += 1) {
       const row = rows[index] ?? rows[0] ?? {};
@@ -169,7 +179,9 @@ export function importShopifyData(
         email: shared.Email || current?.email || "",
         address: shared["Shipping Street"] || shared["Shipping Address1"] || current?.address || "",
         currency: shared.Currency || current?.currency || "MYR",
-        subtotalAmount: importedMoney(shared, "Subtotal", current?.subtotalAmount),
+        subtotalAmount: isZeroCashOrder && lineItemSubtotal > 0
+          ? lineItemSubtotal
+          : importedMoney(shared, "Subtotal", current?.subtotalAmount),
         shippingAmount: importedMoney(shared, "Shipping", current?.shippingAmount),
         totalAmount: importedMoney(shared, "Total", current?.totalAmount),
         discountAmount: shared["Discount Amount"] === undefined || shared["Discount Amount"] === "" ? current?.discountAmount ?? 0 : discountAmount,
@@ -228,3 +240,4 @@ export function fulfilledOrdersCsv(orders: Order[]) {
   ]);
   return [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
 }
+
