@@ -1,3 +1,4 @@
+
 .orders-table a {
   color: var(--blue);
   font-weight: 700;
@@ -19,10 +20,27 @@
   min-width: 1280px;
 }
 
+.fulfilment-scroll { max-height: calc(100vh - 205px); overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.fulfilment-table thead th { position: sticky; top: 0; z-index: 4; }
+.fulfilment-table .select-column { position: sticky; left: 0; z-index: 5; width: 44px; min-width: 44px; background: #f8fafc; }
+.fulfilment-table td.select-column { z-index: 2; background: white; }
+.fulfilment-table .locked-order-column { position: sticky; left: 44px; z-index: 5; min-width: 125px; box-shadow: 8px 0 12px -12px rgba(30,48,72,.7); background: #f8fafc; }
+.fulfilment-table td.locked-order-column { z-index: 2; background: white; }
+.fulfilment-table tbody tr { cursor: pointer; transition: background .16s ease, box-shadow .16s ease; }
+.fulfilment-table tbody tr:hover td { background: #f3f8ff; }
+.fulfilment-table tbody tr.selected-row td { background: #e8f2ff; }
+.fulfilment-table tbody tr.selected-row { box-shadow: inset 3px 0 #1769e0; }
+.fulfilment-table tbody tr.selected-row td.select-column, .fulfilment-table tbody tr.selected-row td.locked-order-column { background: #e8f2ff; }
+
 .fulfilment-table th[draggable="true"] {
   cursor: grab;
   user-select: none;
+  transition: background .16s ease, opacity .16s ease;
 }
+.fulfilment-table th[draggable="true"]:active { cursor: grabbing; }
+.fulfilment-table th.dragging { opacity: .55; background: #e7effa; }
+.drag-handle { display: inline-flex; vertical-align: middle; margin-right: 5px; color: #9aa9ba; }
+.drag-handle svg { width: 13px; height: 13px; }
 
 .link-copy {
   display: flex;
@@ -112,3 +130,4 @@
 @media (max-width: 760px) {
   .sales-stats { grid-template-columns: 1fr; }
 }
+
