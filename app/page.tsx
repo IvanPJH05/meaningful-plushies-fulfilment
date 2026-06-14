@@ -5,7 +5,7 @@ import "./settings.css";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FormEvent, SVGProps } from "react";
 import { fulfilledOrdersCsv, importShopifyData, normalizePaymentProcessor } from "../lib/importer";
-import { summarizeSales } from "../lib/sales";
+import { buildSalesReportRows, summarizeSales } from "../lib/sales";
 import { stockCharacters, summarizeStock } from "../lib/stock";
 import {
   createDashboardAccount,
@@ -29,8 +29,12 @@ import {
 import { orderStatuses, type DashboardAccount, type Order, type OrderStatus, type PaymentProcessorSetting, type StockSetting, type UserRole } from "../lib/types";
 
 type Session = DashboardSession;
-type View = "orders" | "fulfilment" | "packing_slips" | "import" | "fulfilled" | "history" | "settings" | "stock";
-type SalesRange = "active" | "7d" | "30d" | "lifetime";
+type View = "orders" | "fulfilment" | "packing_slips" | "import" | "fulfilled" | "history" | "settings" | "stock" | "sales_report";
+type SalesRange = "active" | "today" | "7d" | "30d" | "lifetime";
+type SortKey = "orderNumber" | "importedAt" | "updatedAt";
+type SortDirection = "asc" | "desc";
+type CollectedMetric = "bankTransfer" | "stripeCollected" | "xenditCollected" | "totalCollected";
+type DiscountMetric = "productDiscounted" | "shippingDiscounted";
 type ActivityEvent = {
   id: string;
   orderNumber?: string;
@@ -42,10 +46,31 @@ type ActivityEvent = {
 
 const salesRanges: { value: SalesRange; label: string }[] = [
   { value: "active", label: "Active orders" },
+  { value: "today", label: "Today" },
   { value: "7d", label: "Past 7 days" },
   { value: "30d", label: "Past 30 days" },
   { value: "lifetime", label: "Lifetime" },
 ];
+
+const dashboardSelectableStatuses: { value: OrderStatus | "total"; label: string }[] = [
+  { value: "total", label: "Total orders" },
+  { value: "new_order", label: "New orders" },
+  { value: "packed", label: "Packed" },
+  { value: "shipped", label: "Shipped" },
+  { value: "issue", label: "Issues" },
+];
+
+const collectedMetricLabels: Record<CollectedMetric, string> = {
+  bankTransfer: "Bank transfer collected",
+  stripeCollected: "Stripe collected",
+  xenditCollected: "Xendit collected",
+  totalCollected: "Total collected",
+};
+
+const discountMetricLabels: Record<DiscountMetric, string> = {
+  productDiscounted: "Product discounts",
+  shippingDiscounted: "Shipping discounts",
+};
 
 const statusLabels: Record<OrderStatus, string> = {
   new_order: "New Order",
@@ -92,6 +117,15 @@ function formatDate(value: string, withTime = false) {
     : { day: "2-digit", month: "short", year: "numeric" }).format(date);
 }
 
+function dateKey(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value.slice(0, 10);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function formatMoney(value: number, currency = "MYR") {
   return new Intl.NumberFormat("en-MY", { style: "currency", currency }).format(value);
 }
@@ -114,6 +148,16 @@ function certificateLink(order: Order, includeProtocol = true) {
   return includeProtocol && link ? `https://${link}` : link;
 }
 
+function sortOrderRecords<T extends Pick<Order, "orderNumber" | "importedAt" | "updatedAt">>(
+  records: T[], key: SortKey, direction: SortDirection,
+) {
+  const multiplier = direction === "asc" ? 1 : -1;
+  return [...records].sort((a, b) => {
+    if (key === "orderNumber") return multiplier * (Number(a.orderNumber) - Number(b.orderNumber));
+    return multiplier * (new Date(a[key]).getTime() - new Date(b[key]).getTime());
+  });
+}
+
 export default function Home() {
   const [session, setSession] = useState<Session | null>(null);
   const [view, setView] = useState<View>("orders");
@@ -125,7 +169,15 @@ export default function Home() {
   const [packingSelection, setPackingSelection] = useState<string[]>([]);
   const [packingStatusFilter, setPackingStatusFilter] = useState<"all" | OrderStatus>("all");
   const [dashboardStatus, setDashboardStatus] = useState<OrderStatus | "total">("packed");
+  const [dashboardStatusTwo, setDashboardStatusTwo] = useState<OrderStatus | "total">("issue");
   const [salesRange, setSalesRange] = useState<SalesRange>("active");
+  const [collectedMetric, setCollectedMetric] = useState<CollectedMetric>("totalCollected");
+  const [discountMetric, setDiscountMetric] = useState<DiscountMetric>("productDiscounted");
+  const [sortKey, setSortKey] = useState<SortKey>("orderNumber");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [reportSelectedOrders, setReportSelectedOrders] = useState<string[]>([]);
+  const [reportStartDate, setReportStartDate] = useState("");
+  const [reportEndDate, setReportEndDate] = useState("");
   const [processorSettings, setProcessorSettings] = useState<PaymentProcessorSetting[]>([]);
   const [stockSettings, setStockSettings] = useState<StockSetting[]>([]);
   const [accounts, setAccounts] = useState<DashboardAccount[]>([]);
@@ -200,12 +252,16 @@ export default function Home() {
   }, [session]);
 
   useEffect(() => {
-    if (session?.role === "staff" && (["history", "settings", "stock"] as View[]).includes(view)) setView("orders");
+    if (session?.role === "staff" && (["history", "settings", "stock", "sales_report"] as View[]).includes(view)) setView("orders");
   }, [session, view]);
 
   const selected = orders.find((order) => order.id === selectedId) ?? null;
   const packingOrders = orders.filter((order) => packingSelection.includes(order.id));
-  const packingAvailableOrders = orders.filter((order) => packingStatusFilter === "all" || order.status === packingStatusFilter);
+  const packingAvailableOrders = useMemo(() => sortOrderRecords(
+    orders.filter((order) => packingStatusFilter === "all" || order.status === packingStatusFilter),
+    sortKey,
+    sortDirection,
+  ), [orders, packingStatusFilter, sortKey, sortDirection]);
   const filtered = useMemo(() => {
     const source = view === "fulfilled" ? orders.filter((order) => order.status === "shipped") : orders;
     const search = query.trim().toLowerCase();
@@ -213,27 +269,43 @@ export default function Home() {
       .filter((order) => statusFilter === "all" || order.status === statusFilter)
       .filter((order) => !search || [order.orderNumber, order.customerName, order.phone, order.trackingNumber, order.plushName, order.product, order.character]
         .join(" ").toLowerCase().includes(search));
-    return matching.sort((a, b) => view === "fulfilment"
-      ? Number(a.orderNumber) - Number(b.orderNumber) || a.id.localeCompare(b.id)
-      : new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-  }, [orders, query, statusFilter, view]);
+    return sortOrderRecords(matching, sortKey, sortDirection);
+  }, [orders, query, statusFilter, view, sortKey, sortDirection]);
 
   const counts = useMemo(() => ({
     total: orders.filter((order) => order.status !== "shipped").length,
     voice: orders.filter((order) => order.status === "uploading_audio").length,
     production: orders.filter((order) => order.status === "sent_for_sewing").length,
     selected: dashboardStatus === "total" ? orders.length : orders.filter((order) => order.status === dashboardStatus).length,
-    issue: orders.filter((order) => order.status === "issue").length,
-  }), [orders, dashboardStatus]);
+    selectedTwo: dashboardStatusTwo === "total" ? orders.length : orders.filter((order) => order.status === dashboardStatusTwo).length,
+  }), [orders, dashboardStatus, dashboardStatusTwo]);
 
   const reportingOrders = useMemo(() => {
     if (salesRange === "active") return orders.filter((order) => order.status !== "shipped");
     if (salesRange === "lifetime") return orders;
+    if (salesRange === "today") {
+      const today = dateKey(new Date().toISOString());
+      return orders.filter((order) => dateKey(order.orderDate) === today);
+    }
     const days = salesRange === "7d" ? 7 : 30;
     const threshold = Date.now() - days * 24 * 60 * 60 * 1000;
     return orders.filter((order) => new Date(order.orderDate).getTime() >= threshold);
   }, [orders, salesRange]);
   const sales = useMemo(() => summarizeSales(reportingOrders, processorSettings), [reportingOrders, processorSettings]);
+  const allSalesReportRows = useMemo(() => buildSalesReportRows(orders, processorSettings), [orders, processorSettings]);
+  const dateFilteredReportRows = useMemo(() => allSalesReportRows.filter((row) => {
+    const date = dateKey(row.orderDate);
+    return (!reportStartDate || date >= reportStartDate) && (!reportEndDate || date <= reportEndDate);
+  }).sort((a, b) => Number(a.orderNumber) - Number(b.orderNumber)), [allSalesReportRows, reportStartDate, reportEndDate]);
+  const visibleReportRows = useMemo(() => reportSelectedOrders.length
+    ? dateFilteredReportRows.filter((row) => reportSelectedOrders.includes(row.orderNumber))
+    : dateFilteredReportRows, [dateFilteredReportRows, reportSelectedOrders]);
+  const reportTotals = useMemo(() => visibleReportRows.reduce((total, row) => ({
+    sales: total.sales + row.salePrice,
+    discounts: total.discounts + row.totalDiscount,
+    fees: total.fees + row.processingFee,
+    cash: total.cash + row.cashAfterFees,
+  }), { sales: 0, discounts: 0, fees: 0, cash: 0 }), [visibleReportRows]);
   const stock = useMemo(() => summarizeStock(orders, stockSettings), [orders, stockSettings]);
   const historyEvents = useMemo<ActivityEvent[]>(() => [
     ...activity,
@@ -512,6 +584,7 @@ export default function Home() {
         <button className={view === "packing_slips" ? "active" : ""} onClick={() => setView("packing_slips")}><Icon name="packing" /> Packing Slips</button>
         <button className={view === "import" ? "active" : ""} onClick={() => setView("import")}><Icon name="import" /> CSV Import</button>
         <button className={view === "fulfilled" ? "active" : ""} onClick={() => setView("fulfilled")}><Icon name="shipped" /> Shipped</button>
+        {session.role === "admin" && <button className={view === "sales_report" ? "active" : ""} onClick={() => setView("sales_report")}><Icon name="report" /> Sales Report</button>}
         {session.role === "admin" && <button className={view === "stock" ? "active" : ""} onClick={() => setView("stock")}><Icon name="stock" /> Stock Count</button>}
         {session.role === "admin" && <button className={view === "history" ? "active" : ""} onClick={() => setView("history")}><Icon name="history" /> History</button>}
         {session.role === "admin" && <button className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}><Icon name="settings" /> Settings</button>}
@@ -520,18 +593,18 @@ export default function Home() {
     </aside>
 
     <section className="main-area">
-      <header className="topbar"><div><p>FULFILMENT CONTROL</p><h1>{view === "import" ? "Import Shopify Orders" : view === "fulfilled" ? "Shipped Orders" : view === "fulfilment" ? "Fulfilment" : view === "packing_slips" ? "Packing Slips" : view === "history" ? "Activity History" : view === "settings" ? "Settings" : view === "stock" ? "Stock Count" : "Orders Dashboard"}</h1></div><div className="top-actions"><span className={`role-badge ${session.role}`}>{session.role}</span>{view === "packing_slips" && <button className="button primary print-trigger" onClick={printPackingSlips}>Print {packingOrders.length} A6 slip{packingOrders.length === 1 ? "" : "s"}</button>}{view !== "import" && <button className="button secondary" onClick={() => setView("import")}>Import CSV</button>}</div></header>
+      <header className="topbar"><div><p>FULFILMENT CONTROL</p><h1>{view === "import" ? "Import Shopify Orders" : view === "fulfilled" ? "Shipped Orders" : view === "fulfilment" ? "Fulfilment" : view === "packing_slips" ? "Packing Slips" : view === "history" ? "Activity History" : view === "settings" ? "Settings" : view === "stock" ? "Stock Count" : view === "sales_report" ? "Sales Report" : "Orders Dashboard"}</h1></div><div className="top-actions"><span className={`role-badge ${session.role}`}>{session.role}</span>{view === "packing_slips" && <button className="button primary print-trigger" onClick={printPackingSlips}>Print {packingOrders.length} A6 slip{packingOrders.length === 1 ? "" : "s"}</button>}{view === "sales_report" && <button className="button primary" onClick={() => window.print()}>Print / Save PDF</button>}{view !== "import" && <button className="button secondary" onClick={() => setView("import")}>Import CSV</button>}</div></header>
       {databaseError && <div className="notice"><span>Database connection: {databaseError}</span></div>}
       {loadingOrders && <div className="notice"><span>Loading shared orders from Supabase...</span></div>}
       {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice("")}>x</button></div>}
 
-      {view !== "import" && view !== "packing_slips" && view !== "history" && view !== "settings" && view !== "stock" && <>
+      {view !== "import" && view !== "packing_slips" && view !== "history" && view !== "settings" && view !== "stock" && view !== "sales_report" && <>
         {view === "orders" && <section className="stats">
           <Stat label="Active orders" value={counts.total} color="navy" />
           <Stat label="Uploading audio" value={counts.voice} color="orange" />
           <Stat label="Sent for sewing" value={counts.production} color="blue" />
-          <article className="stat green selectable-stat"><select aria-label="Choose dashboard status" value={dashboardStatus} onChange={(event) => setDashboardStatus(event.target.value as OrderStatus | "total")}><option value="total">Total orders</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><strong>{counts.selected}</strong></article>
-          <Stat label="Issues" value={counts.issue} color="red" />
+          <article className="stat green selectable-stat"><select aria-label="Choose fourth dashboard status" value={dashboardStatus} onChange={(event) => setDashboardStatus(event.target.value as OrderStatus | "total")}>{dashboardSelectableStatuses.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><strong>{counts.selected}</strong></article>
+          <article className="stat red selectable-stat"><select aria-label="Choose fifth dashboard status" value={dashboardStatusTwo} onChange={(event) => setDashboardStatusTwo(event.target.value as OrderStatus | "total")}>{dashboardSelectableStatuses.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><strong>{counts.selectedTwo}</strong></article>
         </section>}
 
         {view === "orders" && session.role === "admin" && <>
@@ -543,22 +616,21 @@ export default function Home() {
           </div>
           <section className="sales-stats">
             <MoneyStat label="Total sales" value={sales.gross} tone="sales" />
-            <MoneyStat label="Product discounts" value={sales.productDiscounted} tone="discount" />
-            <MoneyStat label="Shipping discounts" value={sales.shippingDiscounted} tone="shipping" />
-            <MoneyStat label="Bank transfer collected" value={sales.bankTransfer} tone="transfer" />
-            <MoneyStat label="Cash collected" value={sales.collected} tone="collected" />
-            <MoneyStat label="Payment processing fees" value={sales.processingFees} tone="fees" />
+            <SelectableMoneyStat label="Collected from" value={sales[collectedMetric]} tone="transfer" selected={collectedMetric} onChange={(value) => setCollectedMetric(value as CollectedMetric)} options={Object.entries(collectedMetricLabels)} />
+            <SelectableMoneyStat label="Discount" value={sales[discountMetric]} tone="discount" selected={discountMetric} onChange={(value) => setDiscountMetric(value as DiscountMetric)} options={Object.entries(discountMetricLabels)} />
+            <SelectableMoneyStat label="Fees" value={sales.processingFees} tone="fees" selected="processingFees" onChange={() => undefined} options={[["processingFees", "Payment processing fees"]]} />
+            <MoneyStat label="Total cash after fees" value={sales.collected} tone="collected" />
           </section>
         </>}
 
         {view !== "fulfilment" && <section className="card orders-card">
-          <div className="toolbar"><div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, customer, phone or tracking..." /></div><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select>{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>Move {selectedOrders.length} to next status</button>}{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>Delete</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>Export CSV</button>}</div>
+          <div className="toolbar"><div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, customer, phone or tracking..." /></div><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} />{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>Move {selectedOrders.length} to next status</button>}{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>Delete</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>Export CSV</button>}</div>
           <div className="table-scroll"><table className="orders-table"><thead><tr><th><input type="checkbox" aria-label="Select visible orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th>Order</th><th>Date</th><th>Customer</th><th>Phone</th><th>Character</th><th>Voice</th><th>Plush name</th><th>Status</th><th>Tracking number</th><th>Last updated</th><th>View</th></tr></thead><tbody>{filtered.map((order) => <tr key={order.id}><td><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={selectedOrders.includes(order.id)} onChange={() => toggleOrderSelection(order.id)} /></td><td><strong>{orderLabel(order)}</strong></td><td>{formatDate(order.orderDate)}</td><td><strong>{order.customerName || "-"}</strong></td><td>{order.phone || "-"}</td><td>{order.character || "-"}</td><td>{order.voiceLength ? `${order.voiceLength}s` : "-"}</td><td>{order.plushName || "-"}</td><td><StatusPill status={order.status} /></td><td><code>{order.trackingNumber || "-"}</code></td><td>{formatDate(order.updatedAt, true)}</td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No orders found</strong><p>Try another search or status filter.</p></div>}</div>
           <div className="table-footer">Showing {filtered.length} of {view === "fulfilled" ? orders.filter((order) => order.status === "shipped").length : orders.length} orders</div>
         </section>}
 
         {view === "fulfilment" && <section className="card orders-card">
-          <div className="toolbar"><div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, plush name, character, customer or phone..." /></div><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>Move {selectedOrders.length} to next status</button>{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>Delete</button>}</div>
+          <div className="toolbar"><div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, plush name, character, customer or phone..." /></div><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /><button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>Move {selectedOrders.length} to next status</button>{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>Delete</button>}</div>
           <div className="fulfilment-scroll table-scroll"><table className="orders-table fulfilment-table"><thead><tr><th className="select-column"><input type="checkbox" aria-label="Select visible fulfilment orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th className="locked-order-column">Order ID</th>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <th key={column} className={draggedColumn === column ? "dragging" : ""} draggable onDragStart={(event) => { setDraggedColumn(column); event.dataTransfer.setData("text/plain", column); }} onDragEnd={() => setDraggedColumn(null)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => reorderFulfilmentColumn(event.dataTransfer.getData("text/plain") as FulfilmentColumn, column)}><span className="drag-handle"><Icon name="drag" /></span>{fulfilmentColumnLabels[column]}</th>)}<th>Status</th><th>View</th></tr></thead><tbody>{filtered.map((order) => { const checked = selectedOrders.includes(order.id); return <tr key={order.id} className={checked ? "selected-row" : ""} onClick={(event) => { if ((event.target as HTMLElement).closest("button,a,input")) return; toggleOrderSelection(order.id); }}><td className="select-column"><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={checked} onChange={() => toggleOrderSelection(order.id)} /></td><td className="locked-order-column"><strong>{orderLabel(order)}</strong></td>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <td key={column} className={column === "idWebsiteLink" ? "certificate-cell" : ""}>{fulfilmentCell(order, column)}</td>)}<td><StatusPill status={order.status} /></td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>; })}</tbody></table>{!filtered.length && <div className="empty"><strong>No fulfilment orders found</strong><p>Try another search or status filter.</p></div>}</div>
           <div className="table-footer">Showing {filtered.length} of {orders.length} orders</div>
         </section>}
@@ -567,10 +639,21 @@ export default function Home() {
       {view === "packing_slips" && <section className="packing-page">
         <div className="packing-controls card">
           <div className="packing-manual"><div><h2>Choose orders to print</h2><p>Enter order IDs separated by commas or spaces, or select orders from the list below.</p></div><div className="manual-entry"><input value={manualOrderIds} onChange={(event) => setManualOrderIds(event.target.value)} onKeyDown={(event) => event.key === "Enter" && selectManualOrders()} placeholder="Example: 1359, 1360, 1361" /><button className="button primary" onClick={selectManualOrders}>Add order IDs</button></div></div>
-          <div className="packing-list-header"><strong>Available orders</strong><select value={packingStatusFilter} onChange={(event) => setPackingStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><div><button onClick={() => setPackingSelection((current) => [...new Set([...current, ...packingAvailableOrders.map((order) => order.id)])])}>Select shown</button><button onClick={() => setPackingSelection([])}>Clear</button></div></div>
+          <div className="packing-list-header"><strong>Available orders</strong><select value={packingStatusFilter} onChange={(event) => setPackingStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /><div><button onClick={() => setPackingSelection((current) => [...new Set([...current, ...packingAvailableOrders.map((order) => order.id)])])}>Select shown</button><button onClick={() => setPackingSelection([])}>Clear</button></div></div>
           <div className="packing-order-list">{packingAvailableOrders.map((order) => <label key={order.id}><input type="checkbox" checked={packingSelection.includes(order.id)} onChange={() => setPackingSelection((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><div><strong>{orderLabel(order)} | {order.plushName || "Unnamed plushie"}</strong><span>{order.customerName} | {order.character || "No character"}</span></div><StatusPill status={order.status} /></label>)}</div>
         </div>
         <div className="packing-preview"><div className="preview-heading"><div><h2>A6 print preview</h2><p>One packing slip will print on each A6 page.</p></div><span>{packingOrders.length} selected</span></div>{packingOrders.length ? <div className="slip-grid">{packingOrders.map((order) => <PackingSlip order={order} key={order.id} />)}</div> : <div className="preview-empty"><strong>No orders selected</strong><p>Enter order IDs or tick orders from the list.</p></div>}</div>
+      </section>}
+
+      {view === "sales_report" && session.role === "admin" && <section className="sales-report-page">
+        <div className="report-controls card no-print"><div><label>From<input type="date" value={reportStartDate} onChange={(event) => setReportStartDate(event.target.value)} /></label><label>To<input type="date" value={reportEndDate} onChange={(event) => setReportEndDate(event.target.value)} /></label></div><div><button className="button secondary" onClick={() => setReportSelectedOrders(dateFilteredReportRows.map((row) => row.orderNumber))}>Select shown</button><button className="button secondary" onClick={() => setReportSelectedOrders([])}>Use all matching</button><button className="button primary" onClick={() => window.print()}>Print / Save PDF</button></div></div>
+        <div className="report-selection card no-print"><div className="report-selection-heading"><strong>Choose individual orders</strong><span>{reportSelectedOrders.length ? `${reportSelectedOrders.length} selected` : "All orders matching the dates are included"}</span></div><div>{dateFilteredReportRows.map((row) => <label key={row.orderNumber}><input type="checkbox" checked={reportSelectedOrders.includes(row.orderNumber)} onChange={() => setReportSelectedOrders((current) => current.includes(row.orderNumber) ? current.filter((number) => number !== row.orderNumber) : [...current, row.orderNumber])} /><span>#{row.orderNumber}</span><small>{formatDate(row.orderDate)} | {row.customerName}</small></label>)}</div></div>
+        <section className="sales-report-print card">
+          <div className="report-title"><div><p>MEANINGFUL PLUSHIES</p><h2>Sales Report</h2><span>{reportStartDate || "All dates"}{reportEndDate ? ` to ${reportEndDate}` : ""}</span></div><div><strong>{visibleReportRows.length}</strong><span>orders</span></div></div>
+          <div className="report-summary"><div><span>Sale price</span><strong>{formatMoney(reportTotals.sales)}</strong></div><div><span>Discounts</span><strong>{formatMoney(reportTotals.discounts)}</strong></div><div><span>Processing fees</span><strong>{formatMoney(reportTotals.fees)}</strong></div><div><span>Cash after fees</span><strong>{formatMoney(reportTotals.cash)}</strong></div></div>
+          <div className="table-scroll"><table className="orders-table report-table"><thead><tr><th>Order</th><th>Date</th><th>Customer</th><th>Character</th><th>Speaker</th><th>Payment</th><th>Sale price</th><th>Discount</th><th>Processing fees</th><th>Cash after fees</th></tr></thead><tbody>{visibleReportRows.map((row) => <tr key={row.orderNumber}><td><strong>#{row.orderNumber}</strong></td><td>{formatDate(row.orderDate)}</td><td>{row.customerName || "-"}</td><td>{row.characters.join(", ") || "-"}</td><td>{row.voiceLengths.map((length) => `${length}s`).join(", ") || "-"}</td><td>{row.paymentProcessor}</td><td>{formatMoney(row.salePrice)}</td><td>{formatMoney(row.totalDiscount)}</td><td>{formatMoney(row.processingFee)}</td><td><strong>{formatMoney(row.cashAfterFees)}</strong></td></tr>)}</tbody></table></div>
+          {!visibleReportRows.length && <div className="empty"><strong>No orders in this report</strong><p>Choose orders or adjust the date range.</p></div>}
+        </section>
       </section>}
 
       {view === "stock" && session.role === "admin" && <section className="stock-page">
@@ -634,6 +717,14 @@ function MoneyStat({ label, value, tone }: { label: string; value: number; tone:
   return <article className={`money-stat ${tone}`}><span>{label}</span><strong>{formatMoney(value)}</strong></article>;
 }
 
+function SelectableMoneyStat({ label, value, tone, selected, options, onChange }: { label: string; value: number; tone: string; selected: string; options: [string, string][]; onChange: (value: string) => void }) {
+  return <article className={`money-stat ${tone} selectable-money-stat`}><span>{label}</span><select value={selected} onChange={(event) => onChange(event.target.value)}>{options.map(([value, optionLabel]) => <option key={value} value={value}>{optionLabel}</option>)}</select><strong>{formatMoney(value)}</strong></article>;
+}
+
+function SortControls({ sortKey, direction, onKey, onDirection }: { sortKey: SortKey; direction: SortDirection; onKey: (key: SortKey) => void; onDirection: (direction: SortDirection) => void }) {
+  return <div className="sort-controls"><select aria-label="Sort orders by" value={sortKey} onChange={(event) => onKey(event.target.value as SortKey)}><option value="orderNumber">Order number</option><option value="importedAt">Last added</option><option value="updatedAt">Last edited</option></select><select aria-label="Sort direction" value={direction} onChange={(event) => onDirection(event.target.value as SortDirection)}><option value="asc">Ascending</option><option value="desc">Descending</option></select></div>;
+}
+
 function StatusPill({ status }: { status: OrderStatus }) {
   return <span className={`status-pill status-${status}`}>{statusLabels[status]}</span>;
 }
@@ -679,7 +770,7 @@ function PackingSlip({ order }: { order: Order }) {
   return <article className="a6-slip"><header><span>ORDER ID</span><strong>{orderLabel(order)}</strong></header><div className="slip-fields"><div className="primary-slip-field"><label>CHARACTER:</label><p>{order.character || "-"}</p></div><div className="primary-slip-field"><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{order.remark || "-"}</p></div></div><footer>Meaningful Plushies</footer></article>;
 }
 
-type IconName = "orders" | "fulfilment" | "packing" | "import" | "shipped" | "logout" | "search" | "history" | "drag" | "settings" | "stock";
+type IconName = "orders" | "fulfilment" | "packing" | "import" | "shipped" | "logout" | "search" | "history" | "drag" | "settings" | "stock" | "report";
 
 function Icon({ name }: { name: IconName }) {
   const common: SVGProps<SVGSVGElement> = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true };
@@ -692,6 +783,7 @@ function Icon({ name }: { name: IconName }) {
   if (name === "search") return <svg {...common}><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>;
   if (name === "settings") return <svg {...common}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg>;
   if (name === "stock") return <svg {...common}><path d="m4 7 8-4 8 4-8 4-8-4Z"/><path d="m4 7v10l8 4 8-4V7M12 11v10"/></svg>;
+  if (name === "report") return <svg {...common}><path d="M6 3h12v18H6zM9 8h6M9 12h6M9 16h4"/></svg>;
   if (name === "drag") return <svg {...common}><circle cx="8" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="17" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="17" r="1" fill="currentColor" stroke="none"/></svg>;
   return <svg {...common}><path d="M12 8v5l3 2"/><circle cx="12" cy="12" r="9"/></svg>;
 }
