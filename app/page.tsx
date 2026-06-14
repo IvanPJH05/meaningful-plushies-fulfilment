@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -7,7 +8,16 @@ import { summarizeSales } from "../lib/sales";
 import { orderStatuses, type Order, type OrderStatus, type UserRole } from "../lib/types";
 
 type Session = { name: string; email: string; role: UserRole };
-type View = "orders" | "fulfilment" | "packing_slips" | "import" | "fulfilled";
+type View = "orders" | "fulfilment" | "packing_slips" | "import" | "fulfilled" | "history";
+type SalesRange = "active" | "7d" | "30d" | "lifetime";
+type ActivityEvent = {
+  id: string;
+  orderNumber?: string;
+  action: string;
+  detail: string;
+  actor: string;
+  createdAt: string;
+};
 
 const statusLabels: Record<OrderStatus, string> = {
   new_order: "New Order",
@@ -65,10 +75,6 @@ function whatsappLink(order: Order) {
   return `https://wa.me/${phone}?text=${encodeURIComponent(`Hi ${order.customerName}, your Meaningful Plushie ${order.plushName} is being prepared. ${tracking}`)}`;
 }
 
-function displayProductName(value: string) {
-  return value.split(/\s+-\s+(?=[^/]+\s+\(RM)/i)[0]?.trim() || value;
-}
-
 function orderLabel(order: Order) {
   return `#${order.orderNumber}${order.setIndicator ? ` ${order.setIndicator}` : ""}`;
 }
@@ -90,6 +96,10 @@ export default function Home() {
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [packingSelection, setPackingSelection] = useState<string[]>([]);
   const [packingStatusFilter, setPackingStatusFilter] = useState<"all" | OrderStatus>("all");
+  const [dashboardStatus, setDashboardStatus] = useState<OrderStatus>("packed");
+  const [salesRange, setSalesRange] = useState<SalesRange>("active");
+  const [activity, setActivity] = useState<ActivityEvent[]>([]);
+  const [draggedColumn, setDraggedColumn] = useState<FulfilmentColumn | null>(null);
   const [fulfilmentColumns, setFulfilmentColumns] = useState<FulfilmentColumn[]>([
     "orderNumber", "meaningfulMessage", "plushName", "character", "idWebsiteLink", "customerName", "phone",
   ]);
@@ -102,6 +112,7 @@ export default function Home() {
   useEffect(() => {
     const savedOrders = localStorage.getItem("mp-dashboard-orders");
     const savedSession = localStorage.getItem("mp-dashboard-session");
+    const savedActivity = localStorage.getItem("mp-dashboard-activity");
     if (savedOrders) setOrders((JSON.parse(savedOrders) as Order[]).map((order) => {
       const status = legacyStatus[order.status] ?? order.status;
       return {
@@ -125,12 +136,17 @@ export default function Home() {
       };
     }));
     if (savedSession) setSession(JSON.parse(savedSession));
+    if (savedActivity) setActivity(JSON.parse(savedActivity) as ActivityEvent[]);
     setHydrated(true);
   }, []);
 
   useEffect(() => {
     if (hydrated) localStorage.setItem("mp-dashboard-orders", JSON.stringify(orders));
   }, [orders, hydrated]);
+
+  useEffect(() => {
+    if (hydrated) localStorage.setItem("mp-dashboard-activity", JSON.stringify(activity));
+  }, [activity, hydrated]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -144,43 +160,79 @@ export default function Home() {
   const filtered = useMemo(() => {
     const source = view === "fulfilled" ? orders.filter((order) => order.status === "shipped") : orders;
     const search = query.trim().toLowerCase();
-    return source
+    const matching = source
       .filter((order) => statusFilter === "all" || order.status === statusFilter)
-      .filter((order) => !search || [order.orderNumber, order.customerName, order.phone, order.trackingNumber, order.plushName, order.product]
-        .join(" ").toLowerCase().includes(search))
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+      .filter((order) => !search || [order.orderNumber, order.customerName, order.phone, order.trackingNumber, order.plushName, order.product, order.character]
+        .join(" ").toLowerCase().includes(search));
+    return matching.sort((a, b) => view === "fulfilment"
+      ? Number(a.orderNumber) - Number(b.orderNumber) || a.id.localeCompare(b.id)
+      : new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   }, [orders, query, statusFilter, view]);
 
   const counts = useMemo(() => ({
     total: orders.filter((order) => order.status !== "shipped").length,
     voice: orders.filter((order) => order.status === "uploading_audio").length,
     production: orders.filter((order) => order.status === "sent_for_sewing").length,
-    packing: orders.filter((order) => order.status === "packed").length,
+    selected: orders.filter((order) => order.status === dashboardStatus).length,
     issue: orders.filter((order) => order.status === "issue").length,
-  }), [orders]);
+  }), [orders, dashboardStatus]);
 
-  const sales = useMemo(() => summarizeSales(orders), [orders]);
+  const reportingOrders = useMemo(() => {
+    if (salesRange === "active") return orders.filter((order) => order.status !== "shipped");
+    if (salesRange === "lifetime") return orders;
+    const days = salesRange === "7d" ? 7 : 30;
+    const threshold = Date.now() - days * 24 * 60 * 60 * 1000;
+    return orders.filter((order) => new Date(order.orderDate).getTime() >= threshold);
+  }, [orders, salesRange]);
+  const sales = useMemo(() => summarizeSales(reportingOrders), [reportingOrders]);
+  const historyEvents = useMemo(() => [
+    ...activity,
+    ...orders.flatMap((order) => order.statusHistory.map((event) => ({
+      id: `status-${event.id}`,
+      orderNumber: order.orderNumber,
+      action: "Status changed",
+      detail: `${statusLabels[event.status]}${event.note ? ` - ${event.note}` : ""}`,
+      actor: event.changedBy,
+      createdAt: event.changedAt,
+    }))),
+  ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [activity, orders]);
 
   if (!session) return <Login onLogin={setSession} />;
 
+  function logActivity(action: string, detail: string, orderNumber?: string) {
+    const createdAt = new Date().toISOString();
+    setActivity((current) => [{
+      id: `${createdAt}-${Math.random().toString(36).slice(2)}`,
+      orderNumber,
+      action,
+      detail,
+      actor: session?.name ?? "System",
+      createdAt,
+    }, ...current]);
+  }
+
   function updateOrder(orderId: string, patch: Partial<Order>) {
+    const order = orders.find((item) => item.id === orderId);
     setOrders((current) => current.map((order) => order.id === orderId
       ? { ...order, ...patch, updatedAt: new Date().toISOString() }
       : order));
+    if (order) logActivity("Order updated", `Changed ${Object.keys(patch).join(", ")}.`, order.orderNumber);
   }
 
   function setStatus(order: Order, status: OrderStatus) {
     if (order.status === status) return;
     const changedAt = new Date().toISOString();
-    updateOrder(order.id, {
+    setOrders((current) => current.map((item) => item.id === order.id ? {
+      ...item,
       status,
-      statusHistory: [...order.statusHistory, {
-        id: `${order.id}-${changedAt}`,
+      updatedAt: changedAt,
+      statusHistory: [...item.statusHistory, {
+        id: `${item.id}-${changedAt}`,
         status,
         changedAt,
         changedBy: session?.name ?? "Staff",
       }],
-    });
+    } : item));
     setNotice(`#${order.orderNumber} updated to ${statusLabels[status]}.`);
   }
 
@@ -218,12 +270,13 @@ export default function Home() {
   }
 
   function reorderFulfilmentColumn(source: FulfilmentColumn, target: FulfilmentColumn) {
-    if (source === target) return;
+    if (source === target || source === "orderNumber" || target === "orderNumber") return;
     setFulfilmentColumns((current) => {
       const next = current.filter((column) => column !== source);
       next.splice(next.indexOf(target), 0, source);
       return next;
     });
+    setDraggedColumn(null);
   }
 
   async function copyCertificateLink(order: Order) {
@@ -239,6 +292,7 @@ export default function Home() {
     setOrderCsv("");
     setMetafieldCsv("");
     setNotice(`${result.imported} new orders imported, ${result.updated} updated, ${result.skipped} skipped.`);
+    logActivity("CSV import", `${result.imported} imported, ${result.updated} updated, ${result.skipped} skipped.`);
     setView("orders");
   }
 
@@ -283,6 +337,17 @@ export default function Home() {
     }));
     window.print();
     setNotice(`${packingOrders.length} packing slip${packingOrders.length === 1 ? "" : "s"} sent to print. New orders moved to Uploading Audio.`);
+    logActivity("Packing slips printed", `${packingOrders.length} packing slip${packingOrders.length === 1 ? "" : "s"} printed.`);
+  }
+
+  function deleteOrders(orderIds: string[]) {
+    const deleting = orders.filter((order) => orderIds.includes(order.id));
+    if (!deleting.length || !window.confirm(`Delete ${deleting.length} selected order${deleting.length === 1 ? "" : "s"}? This cannot be undone.`)) return;
+    setOrders((current) => current.filter((order) => !orderIds.includes(order.id)));
+    setSelectedOrders([]);
+    setSelectedId(null);
+    deleting.forEach((order) => logActivity("Order deleted", `${order.customerName || "Customer"} - ${order.product || "Order"}.`, order.orderNumber));
+    setNotice(`${deleting.length} order${deleting.length === 1 ? "" : "s"} deleted.`);
   }
 
   async function readFile(file: File | undefined, target: "orders" | "metafields") {
@@ -309,45 +374,36 @@ export default function Home() {
     <aside className="side-nav">
       <div className="logo"><span>MP</span><div>Meaningful Plushies<small>Fulfilment</small></div></div>
       <nav>
-        <button className={view === "orders" ? "active" : ""} onClick={() => setView("orders")}><b>O</b> Orders</button>
-        <button className={view === "fulfilment" ? "active" : ""} onClick={() => setView("fulfilment")}><b>F</b> Fulfilment</button>
-        <button className={view === "packing_slips" ? "active" : ""} onClick={() => setView("packing_slips")}><b>P</b> Packing Slips</button>
-        {session.role === "admin" && <button className={view === "import" ? "active" : ""} onClick={() => setView("import")}><b>I</b> CSV Import</button>}
-        <button className={view === "fulfilled" ? "active" : ""} onClick={() => setView("fulfilled")}><b>S</b> Shipped</button>
+        <button className={view === "orders" ? "active" : ""} onClick={() => setView("orders")}><Icon name="orders" /> Orders</button>
+        <button className={view === "fulfilment" ? "active" : ""} onClick={() => setView("fulfilment")}><Icon name="fulfilment" /> Fulfilment</button>
+        <button className={view === "packing_slips" ? "active" : ""} onClick={() => setView("packing_slips")}><Icon name="packing" /> Packing Slips</button>
+        {session.role === "admin" && <button className={view === "import" ? "active" : ""} onClick={() => setView("import")}><Icon name="import" /> CSV Import</button>}
+        <button className={view === "fulfilled" ? "active" : ""} onClick={() => setView("fulfilled")}><Icon name="shipped" /> Shipped</button>
+        <button className={view === "history" ? "active" : ""} onClick={() => setView("history")}><Icon name="history" /> History</button>
       </nav>
-      <div className="user-card"><div className="avatar">{session.name.slice(0, 1)}</div><div><strong>{session.name}</strong><span>{session.role === "admin" ? "Administrator" : "Fulfilment staff"}</span></div><button title="Sign out" onClick={() => setSession(null)}>Out</button></div>
+      <div className="user-card"><div className="avatar">{session.name.slice(0, 1)}</div><div><strong>{session.name}</strong><span>{session.role === "admin" ? "Administrator" : "Fulfilment staff"}</span></div><button title="Sign out" onClick={() => setSession(null)}><Icon name="logout" /></button></div>
     </aside>
 
     <section className="main-area">
-      <header className="topbar"><div><p>FULFILMENT CONTROL</p><h1>{view === "import" ? "Import Shopify Orders" : view === "fulfilled" ? "Shipped Orders" : view === "fulfilment" ? "Fulfilment" : view === "packing_slips" ? "Packing Slips" : "Orders Dashboard"}</h1></div><div className="top-actions"><span className={`role-badge ${session.role}`}>{session.role}</span>{view === "packing_slips" && <button className="button primary print-trigger" onClick={printPackingSlips}>Print {packingOrders.length} A6 slip{packingOrders.length === 1 ? "" : "s"}</button>}{session.role === "admin" && view !== "import" && <button className="button secondary" onClick={() => setView("import")}>Import CSV</button>}</div></header>
+      <header className="topbar"><div><p>FULFILMENT CONTROL</p><h1>{view === "import" ? "Import Shopify Orders" : view === "fulfilled" ? "Shipped Orders" : view === "fulfilment" ? "Fulfilment" : view === "packing_slips" ? "Packing Slips" : view === "history" ? "Activity History" : "Orders Dashboard"}</h1></div><div className="top-actions"><span className={`role-badge ${session.role}`}>{session.role}</span>{view === "packing_slips" && <button className="button primary print-trigger" onClick={printPackingSlips}>Print {packingOrders.length} A6 slip{packingOrders.length === 1 ? "" : "s"}</button>}{session.role === "admin" && view !== "import" && <button className="button secondary" onClick={() => setView("import")}>Import CSV</button>}</div></header>
       {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice("")}>x</button></div>}
 
-      {view !== "import" && view !== "packing_slips" && <>
+      {view !== "import" && view !== "packing_slips" && view !== "history" && <>
         {view === "orders" && <section className="stats">
           <Stat label="Active orders" value={counts.total} color="navy" />
           <Stat label="Uploading audio" value={counts.voice} color="orange" />
           <Stat label="Sent for sewing" value={counts.production} color="blue" />
-          <Stat label="Packed" value={counts.packing} color="green" />
+          <article className="stat green selectable-stat"><select aria-label="Choose dashboard status" value={dashboardStatus} onChange={(event) => setDashboardStatus(event.target.value as OrderStatus)}>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><strong>{counts.selected}</strong></article>
           <Stat label="Issues" value={counts.issue} color="red" />
         </section>}
 
-        {view === "orders" && <section className="sales-stats">
-          <MoneyStat label="Total sales" value={sales.gross} tone="sales" />
-          <MoneyStat label="Product discounts" value={sales.productDiscounted} tone="discount" />
-          <MoneyStat label="Shipping discounts" value={sales.shippingDiscounted} tone="shipping" />
-          <MoneyStat label="Bank transfer collected" value={sales.bankTransfer} tone="transfer" />
-          <MoneyStat label="Cash collected" value={sales.collected} tone="collected" />
-        </section>}
-
-        {view !== "fulfilment" && <section className="card orders-card">
-          <div className="toolbar"><div className="search"><span>Search</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, customer, phone or tracking..." /></div><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select>{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>Move {selectedOrders.length} to next status</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>Export CSV</button>}</div>
-          <div className="table-scroll"><table className="orders-table"><thead><tr><th><input type="checkbox" aria-label="Select visible orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th>Order</th><th>Date</th><th>Customer</th><th>Phone</th><th>Character</th><th>Voice</th><th>Plush name</th><th>Status</th><th>Tracking number</th><th>Last updated</th><th>View</th></tr></thead><tbody>{filtered.map((order) => <tr key={order.id}><td><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={selectedOrders.includes(order.id)} onChange={() => toggleOrderSelection(order.id)} /></td><td><strong>{orderLabel(order)}</strong></td><td>{formatDate(order.orderDate)}</td><td><strong>{order.customerName || "-"}</strong></td><td>{order.phone || "-"}</td><td>{order.character || "-"}</td><td>{order.voiceLength ? `${order.voiceLength}s` : "-"}</td><td>{order.plushName || "-"}</td><td><StatusPill status={order.status} /></td><td><code>{order.trackingNumber || "-"}</code></td><td>{formatDate(order.updatedAt, true)}</td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No orders found</strong><p>Try another search or status filter.</p></div>}</div>
+        {view === "orders" && <><div className="reporting-header"><div><strong>Sales reporting</strong><span>{reportingOrders.length} order records</span></div><div className="range-tabs">{([['active','Active orders'],['7d','Past 7 days'],['30d','Past 30 days'],['lifetime','Lifetime']] as [SalesRange,string][]).map(([range, label]) => <button key={range} className={salesRange === range ? "active" : ""} onClick={() => setSalesRange(range)}>{label}</button>)}</div></div><section …679 tokens truncated…><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No orders found</strong><p>Try another search or status filter.</p></div>}</div>
           <div className="table-footer">Showing {filtered.length} of {view === "fulfilled" ? orders.filter((order) => order.status === "shipped").length : orders.length} orders</div>
         </section>}
 
         {view === "fulfilment" && <section className="card orders-card">
-          <div className="toolbar"><div className="search"><span>Search</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, plush name, character, customer or phone..." /></div><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>Move {selectedOrders.length} to next status</button></div>
-          <div className="table-scroll"><table className="orders-table fulfilment-table"><thead><tr><th><input type="checkbox" aria-label="Select visible fulfilment orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th>{fulfilmentColumns.map((column) => <th key={column} draggable onDragStart={(event) => event.dataTransfer.setData("text/plain", column)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => reorderFulfilmentColumn(event.dataTransfer.getData("text/plain") as FulfilmentColumn, column)} title="Drag to reorder">{fulfilmentColumnLabels[column]}</th>)}<th>Status</th><th>View</th></tr></thead><tbody>{filtered.map((order) => <tr key={order.id}><td><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={selectedOrders.includes(order.id)} onChange={() => toggleOrderSelection(order.id)} /></td>{fulfilmentColumns.map((column) => <td key={column} className={column === "idWebsiteLink" ? "certificate-cell" : ""}>{fulfilmentCell(order, column)}</td>)}<td><StatusPill status={order.status} /></td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No fulfilment orders found</strong><p>Try another search or status filter.</p></div>}</div>
+          <div className="toolbar"><div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, plush name, character, customer or phone..." /></div><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>Move {selectedOrders.length} to next status</button>{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>Delete</button>}</div>
+          <div className="fulfilment-scroll table-scroll"><table className="orders-table fulfilment-table"><thead><tr><th className="select-column"><input type="checkbox" aria-label="Select visible fulfilment orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th className="locked-order-column">Order ID</th>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <th key={column} className={draggedColumn === column ? "dragging" : ""} draggable onDragStart={(event) => { setDraggedColumn(column); event.dataTransfer.setData("text/plain", column); }} onDragEnd={() => setDraggedColumn(null)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => reorderFulfilmentColumn(event.dataTransfer.getData("text/plain") as FulfilmentColumn, column)}><span className="drag-handle"><Icon name="drag" /></span>{fulfilmentColumnLabels[column]}</th>)}<th>Status</th><th>View</th></tr></thead><tbody>{filtered.map((order) => { const checked = selectedOrders.includes(order.id); return <tr key={order.id} className={checked ? "selected-row" : ""} onClick={(event) => { if ((event.target as HTMLElement).closest("button,a,input")) return; toggleOrderSelection(order.id); }}><td className="select-column"><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={checked} onChange={() => toggleOrderSelection(order.id)} /></td><td className="locked-order-column"><strong>{orderLabel(order)}</strong></td>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <td key={column} className={column === "idWebsiteLink" ? "certificate-cell" : ""}>{fulfilmentCell(order, column)}</td>)}<td><StatusPill status={order.status} /></td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>; })}</tbody></table>{!filtered.length && <div className="empty"><strong>No fulfilment orders found</strong><p>Try another search or status filter.</p></div>}</div>
           <div className="table-footer">Showing {filtered.length} of {orders.length} orders</div>
         </section>}
       </>}
@@ -356,10 +412,12 @@ export default function Home() {
         <div className="packing-controls card">
           <div className="packing-manual"><div><h2>Choose orders to print</h2><p>Enter order IDs separated by commas or spaces, or select orders from the list below.</p></div><div className="manual-entry"><input value={manualOrderIds} onChange={(event) => setManualOrderIds(event.target.value)} onKeyDown={(event) => event.key === "Enter" && selectManualOrders()} placeholder="Example: 1359, 1360, 1361" /><button className="button primary" onClick={selectManualOrders}>Add order IDs</button></div></div>
           <div className="packing-list-header"><strong>Available orders</strong><select value={packingStatusFilter} onChange={(event) => setPackingStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><div><button onClick={() => setPackingSelection((current) => [...new Set([...current, ...packingAvailableOrders.map((order) => order.id)])])}>Select shown</button><button onClick={() => setPackingSelection([])}>Clear</button></div></div>
-          <div className="packing-order-list">{packingAvailableOrders.map((order) => <label key={order.id}><input type="checkbox" checked={packingSelection.includes(order.id)} onChange={() => setPackingSelection((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><div><strong>{orderLabel(order)} | {order.plushName || "Unnamed plushie"}</strong><span>{order.customerName} | {order.product}</span></div><StatusPill status={order.status} /></label>)}</div>
+          <div className="packing-order-list">{packingAvailableOrders.map((order) => <label key={order.id}><input type="checkbox" checked={packingSelection.includes(order.id)} onChange={() => setPackingSelection((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><div><strong>{orderLabel(order)} | {order.plushName || "Unnamed plushie"}</strong><span>{order.customerName} | {order.character || "No character"}</span></div><StatusPill status={order.status} /></label>)}</div>
         </div>
         <div className="packing-preview"><div className="preview-heading"><div><h2>A6 print preview</h2><p>One packing slip will print on each A6 page.</p></div><span>{packingOrders.length} selected</span></div>{packingOrders.length ? <div className="slip-grid">{packingOrders.map((order) => <PackingSlip order={order} key={order.id} />)}</div> : <div className="preview-empty"><strong>No orders selected</strong><p>Enter order IDs or tick orders from the list.</p></div>}</div>
       </section>}
+
+      {view === "history" && <section className="history-page card"><div className="history-page-header"><div><h2>Activity history</h2><p>Every recorded import, edit, status change, print, and deletion.</p></div><span>{historyEvents.length} actions</span></div><div className="activity-list">{historyEvents.map((event) => <article key={event.id}><div className="activity-icon"><Icon name="history" /></div><div><strong>{event.action}</strong><p>{event.detail}</p><span>{event.orderNumber ? `Order #${event.orderNumber} | ` : ""}{event.actor} | {formatDate(event.createdAt, true)}</span></div></article>)}{!historyEvents.length && <div className="empty"><strong>No activity recorded yet</strong><p>New actions will appear here.</p></div>}</div></section>}
 
       {view === "import" && session.role === "admin" && <section className="import-page">
         <div className="import-intro"><span>CSV</span><div><h2>Import Shopify exports</h2><p>Upload either standard Shopify CSV exports or the headerless Sheet25 files. The app matches line items with each Product block and creates one fulfilment record per plushie.</p></div></div>
@@ -432,6 +490,21 @@ function Editable({ label, value, onChange, disabled, placeholder, wide, textare
 }
 
 function PackingSlip({ order }: { order: Order }) {
-  return <article className="a6-slip"><header><span>ORDER ID</span><strong>{orderLabel(order)}</strong></header><div className="slip-fields"><div><label>PRODUCT:</label><p>{displayProductName(order.product) || "-"}</p></div><div><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{order.remark || "-"}</p></div></div><footer>Meaningful Plushies</footer></article>;
+  return <article className="a6-slip"><header><span>ORDER ID</span><strong>{orderLabel(order)}</strong></header><div className="slip-fields"><div className="primary-slip-field"><label>CHARACTER:</label><p>{order.character || "-"}</p></div><div className="primary-slip-field"><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{order.remark || "-"}</p></div></div><footer>Meaningful Plushies</footer></article>;
+}
+
+type IconName = "orders" | "fulfilment" | "packing" | "import" | "shipped" | "logout" | "search" | "history" | "drag";
+
+function Icon({ name }: { name: IconName }) {
+  const common = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
+  if (name === "orders") return <svg {...common}><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>;
+  if (name === "fulfilment") return <svg {...common}><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>;
+  if (name === "packing") return <svg {...common}><path d="M6 3h9l3 3v15H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></svg>;
+  if (name === "import") return <svg {...common}><path d="M12 3v12M7 8l5-5 5 5M5 15v5h14v-5"/></svg>;
+  if (name === "shipped") return <svg {...common}><path d="M20 6 9 17l-5-5"/></svg>;
+  if (name === "logout") return <svg {...common}><path d="M10 5H5v14h5M14 8l4 4-4 4M18 12H9"/></svg>;
+  if (name === "search") return <svg {...common}><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>;
+  if (name === "drag") return <svg {...common}><circle cx="8" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="17" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="17" r="1" fill="currentColor" stroke="none"/></svg>;
+  return <svg {...common}><path d="M12 8v5l3 2"/><circle cx="12" cy="12" r="9"/></svg>;
 }
 
