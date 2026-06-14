@@ -1,7 +1,9 @@
+
 import type { Metadata } from "next";
 import "./globals.css";
 import "./packing.css";
 import "./fulfilment.css";
+import "./dashboard-upgrades.css";
 
 export const metadata: Metadata = {
   title: "Meaningful Plushies Fulfilment",
@@ -15,3 +17,4 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     </html>
   );
 }
+
