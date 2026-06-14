@@ -1,6 +1,3 @@
-Exit code: 0
-Wall time: 0.7 seconds
-Output:
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import fontkit from "@pdf-lib/fontkit";
@@ -70,4 +67,3 @@ function drawName(page: ReturnType<PDFDocument["getPage"]>, name: string, font: 
     rotate: degrees(angle),
   });
 }
-
