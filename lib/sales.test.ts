@@ -1,6 +1,3 @@
-Exit code: 0
-Wall time: 0.7 seconds
-Output:
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildSalesReportRows, summarizeSales } from "./sales.ts";
@@ -134,4 +131,3 @@ test("builds one report row and charges one fee for a multi-item order", () => {
   assert.equal(rows[0].processingFee, 4);
   assert.equal(rows[0].cashAfterFees, 96);
 });
-
