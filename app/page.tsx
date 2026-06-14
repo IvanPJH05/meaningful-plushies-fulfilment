@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -89,6 +88,7 @@ function orderLabel(order: Order) {
 
 function certificateLink(order: Order, includeProtocol = true) {
   const link = order.certificateCode
+
     ? `meaningfulplushies.com/pages/certificate/${order.certificateCode.trim()}`
     : order.idWebsiteLink.replace(/^https?:\/\//i, "");
   return includeProtocol && link ? `https://${link}` : link;
@@ -179,6 +179,7 @@ export default function Home() {
 
   const counts = useMemo(() => ({
     total: orders.filter((order) => order.status !== "shipped").length,
+
     voice: orders.filter((order) => order.status === "uploading_audio").length,
     production: orders.filter((order) => order.status === "sent_for_sewing").length,
     selected: orders.filter((order) => order.status === dashboardStatus).length,
@@ -269,6 +270,7 @@ export default function Home() {
     }));
     setSelectedOrders([]);
     setNotice(`${moved} order${moved === 1 ? "" : "s"} moved to the next status.`);
+
   }
 
   function toggleOrderSelection(orderId: string) {
@@ -359,6 +361,7 @@ export default function Home() {
   }
 
   async function readFile(file: File | undefined, target: "orders" | "metafields") {
+
     if (!file) return;
     const text = await file.text();
     if (target === "orders") setOrderCsv(text);
@@ -408,7 +411,22 @@ export default function Home() {
         {view === "orders" && <>
           <div className="reporting-header">
             <div><strong>Sales reporting</strong><span>{reportingOrders.length} order records</span></div>
-…755 tokens truncated…n className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No orders found</strong><p>Try another search or status filter.</p></div>}</div>
+            <div className="range-tabs">
+              {salesRanges.map(({ value, label }) => <button key={value} className={salesRange === value ? "active" : ""} onClick={() => setSalesRange(value)}>{label}</button>)}
+            </div>
+          </div>
+          <section className="sales-stats">
+            <MoneyStat label="Total sales" value={sales.gross} tone="sales" />
+            <MoneyStat label="Product discounts" value={sales.productDiscounted} tone="discount" />
+            <MoneyStat label="Shipping discounts" value={sales.shippingDiscounted} tone="shipping" />
+            <MoneyStat label="Bank transfer collected" value={sales.bankTransfer} tone="transfer" />
+            <MoneyStat label="Cash collected" value={sales.collected} tone="collected" />
+          </section>
+        </>}
+
+        {view !== "fulfilment" && <section className="card orders-card">
+          <div className="toolbar"><div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, customer, phone or tracking..." /></div><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select>{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>Move {selectedOrders.length} to next status</button>}{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>Delete</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>Export CSV</button>}</div>
+          <div className="table-scroll"><table className="orders-table"><thead><tr><th><input type="checkbox" aria-label="Select visible orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th>Order</th><th>Date</th><th>Customer</th><th>Phone</th><th>Character</th><th>Voice</th><th>Plush name</th><th>Status</th><th>Tracking number</th><th>Last updated</th><th>View</th></tr></thead><tbody>{filtered.map((order) => <tr key={order.id}><td><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={selectedOrders.includes(order.id)} onChange={() => toggleOrderSelection(order.id)} /></td><td><strong>{orderLabel(order)}</strong></td><td>{formatDate(order.orderDate)}</td><td><strong>{order.customerName || "-"}</strong></td><td>{order.phone || "-"}</td><td>{order.character || "-"}</td><td>{order.voiceLength ? `${order.voiceLength}s` : "-"}</td><td>{order.plushName || "-"}</td><td><StatusPill status={order.status} /></td><td><code>{order.trackingNumber || "-"}</code></td><td>{formatDate(order.updatedAt, true)}</td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No orders found</strong><p>Try another search or status filter.</p></div>}</div>
           <div className="table-footer">Showing {filtered.length} of {view === "fulfilled" ? orders.filter((order) => order.status === "shipped").length : orders.length} orders</div>
         </section>}
 
@@ -434,6 +452,7 @@ export default function Home() {
         <div className="import-intro"><span>CSV</span><div><h2>Import Shopify exports</h2><p>Upload either standard Shopify CSV exports or the headerless Sheet25 files. The app matches line items with each Product block and creates one fulfilment record per plushie.</p></div></div>
         <div className="import-columns">
           <ImportBox number="1" title="Shopify order export" required value={orderCsv} onChange={setOrderCsv} onFile={(file) => readFile(file, "orders")} placeholder="Name, Email, Financial Status, Lineitem name..." />
+
           <ImportBox number="2" title="Order metafields export" value={metafieldCsv} onChange={setMetafieldCsv} onFile={(file) => readFile(file, "metafields")} placeholder="Order GID, Order name, Metafield value..." />
         </div>
         <div className="import-action"><div><strong>Safe repeat imports</strong><p>Existing order numbers are updated without removing status, tracking, notes, or photos.</p></div><button className="button primary large" disabled={!orderCsv.trim()} onClick={runImport}>Validate and import orders</button></div>
