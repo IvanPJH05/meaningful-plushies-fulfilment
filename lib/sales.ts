@@ -1,6 +1,3 @@
-Exit code: 0
-Wall time: 0.6 seconds
-Output:
 import type { Order, PaymentProcessorSetting } from "./types";
 
 export type SalesSummary = {
@@ -108,4 +105,3 @@ export function buildSalesReportRows(orders: Order[], settings: PaymentProcessor
     };
   });
 }
-
