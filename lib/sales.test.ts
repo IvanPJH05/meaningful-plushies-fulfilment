@@ -1,3 +1,6 @@
+Exit code: 0
+Wall time: 0.7 seconds
+Output:
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildSalesReportRows, summarizeSales } from "./sales.ts";
@@ -55,6 +58,8 @@ test("reclassifies a zero-cash order as a bank transfer", () => {
     totalCollected: 115,
     collected: 115,
     processingFees: 0,
+    shopifyFees: 0,
+    totalFees: 0,
   });
 });
 
@@ -76,6 +81,8 @@ test("keeps discounts when customer revenue is greater than zero", () => {
     totalCollected: 100,
     collected: 100,
     processingFees: 0,
+    shopifyFees: 0,
+    totalFees: 0,
   });
 });
 
@@ -101,6 +108,20 @@ test("does not charge processing fees on zero-cash bank transfers", () => {
   assert.equal(result.collected, 115);
 });
 
+test("charges processor and Shopify percentages from collected cash after free shipping", () => {
+  const result = summarizeSales([order({
+    totalAmount: 115,
+    shippingDiscountAmount: 8,
+    discountAmount: 8,
+    productDiscountAmount: 0,
+  })], [{ processor: "Stripe", percentage: 3, fixedAmount: 0 }], 2);
+
+  assert.equal(result.processingFees, 3.45);
+  assert.equal(result.shopifyFees, 2.3);
+  assert.equal(result.totalFees, 5.75);
+  assert.equal(result.collected, 109.25);
+});
+
 test("builds one report row and charges one fee for a multi-item order", () => {
   const rows = buildSalesReportRows([
     order({ id: "1", orderNumber: "1005", character: "BILLY", voiceLength: 5, totalAmount: 100 }),
@@ -113,3 +134,4 @@ test("builds one report row and charges one fee for a multi-item order", () => {
   assert.equal(rows[0].processingFee, 4);
   assert.equal(rows[0].cashAfterFees, 96);
 });
+
