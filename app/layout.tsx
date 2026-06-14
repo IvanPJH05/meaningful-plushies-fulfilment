@@ -1,7 +1,7 @@
-
 import type { Metadata } from "next";
 import "./globals.css";
 import "./packing.css";
+import "./envelope.css";
 import "./fulfilment.css";
 import "./dashboard-upgrades.css";
 
@@ -17,4 +17,3 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     </html>
   );
 }
-
