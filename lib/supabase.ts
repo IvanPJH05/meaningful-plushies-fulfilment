@@ -1,5 +1,8 @@
+Exit code: 0
+Wall time: 0.7 seconds
+Output:
 import { createClient } from "@supabase/supabase-js";
-import type { DashboardAccount, Order, PaymentProcessorSetting, StockSetting, UserRole } from "./types";
+import type { DashboardAccount, Order, PaymentProcessorSetting, SalesFeeSetting, StockSetting, UserRole } from "./types";
 
 export type DashboardSession = DashboardAccount & { token: string };
 
@@ -92,6 +95,25 @@ export async function savePaymentProcessorSetting(setting: PaymentProcessorSetti
     fixed_amount: Math.max(0, setting.fixedAmount),
     updated_at: new Date().toISOString(),
   }, { onConflict: "processor" });
+  if (error) throw error;
+}
+
+export async function fetchSalesFeeSettings(): Promise<SalesFeeSetting> {
+  const { data, error } = await requireSupabase()
+    .from("sales_fee_settings")
+    .select("shopify_percentage")
+    .eq("id", "default")
+    .maybeSingle();
+  if (error) throw error;
+  return { shopifyPercentage: Number(data?.shopify_percentage ?? 0) };
+}
+
+export async function saveSalesFeeSettings(setting: SalesFeeSetting) {
+  const { error } = await requireSupabase().from("sales_fee_settings").upsert({
+    id: "default",
+    shopify_percentage: Math.max(0, setting.shopifyPercentage),
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "id" });
   if (error) throw error;
 }
 
@@ -204,7 +226,9 @@ export function subscribeToSharedData(onChange: () => void) {
     .on("postgres_changes", { event: "*", schema: "public", table: "fulfilment_orders" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "activity_events" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "payment_processor_settings" }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "sales_fee_settings" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "stock_settings" }, onChange)
     .subscribe();
   return () => { void client.removeChannel(channel); };
 }
+
