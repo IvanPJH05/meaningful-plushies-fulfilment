@@ -1,10 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { SVGProps } from "react";
-import { demoOrders } from "../lib/demo-data";
 import { fulfilledOrdersCsv, importShopifyData } from "../lib/importer";
 import { summarizeSales } from "../lib/sales";
+import {
+  deleteSharedOrders,
+  fetchSharedActivity,
+  fetchSharedOrders,
+  insertSharedActivity,
+  subscribeToSharedData,
+  supabaseConfigured,
+  upsertSharedOrders,
+} from "../lib/supabase";
 import { orderStatuses, type Order, type OrderStatus, type UserRole } from "../lib/types";
 
 type Session = { name: string; email: string; role: UserRole };
@@ -88,7 +96,6 @@ function orderLabel(order: Order) {
 
 function certificateLink(order: Order, includeProtocol = true) {
   const link = order.certificateCode
-
     ? `meaningfulplushies.com/pages/certificate/${order.certificateCode.trim()}`
     : order.idWebsiteLink.replace(/^https?:\/\//i, "");
   return includeProtocol && link ? `https://${link}` : link;
@@ -97,7 +104,7 @@ function certificateLink(order: Order, includeProtocol = true) {
 export default function Home() {
   const [session, setSession] = useState<Session | null>(null);
   const [view, setView] = useState<View>("orders");
-  const [orders, setOrders] = useState<Order[]>(demoOrders);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | OrderStatus>("all");
@@ -115,13 +122,19 @@ export default function Home() {
   const [orderCsv, setOrderCsv] = useState("");
   const [metafieldCsv, setMetafieldCsv] = useState("");
   const [notice, setNotice] = useState("");
-  const [hydrated, setHydrated] = useState(false);
+  const [loadingOrders, setLoadingOrders] = useState(true);
+  const [databaseError, setDatabaseError] = useState("");
 
-  useEffect(() => {
-    const savedOrders = localStorage.getItem("mp-dashboard-orders");
-    const savedSession = localStorage.getItem("mp-dashboard-session");
-    const savedActivity = localStorage.getItem("mp-dashboard-activity");
-    if (savedOrders) setOrders((JSON.parse(savedOrders) as Order[]).map((order) => {
+  const loadSharedData = useCallback(async (showLoading = false) => {
+    if (!supabaseConfigured) {
+      setDatabaseError("Supabase is not configured. Add the public Supabase URL and anon key in Vercel.");
+      setLoadingOrders(false);
+      return;
+    }
+    if (showLoading) setLoadingOrders(true);
+    try {
+      const [sharedOrders, sharedActivity] = await Promise.all([fetchSharedOrders(), fetchSharedActivity()]);
+      setOrders(sharedOrders.map((order) => {
       const status = legacyStatus[order.status] ?? order.status;
       return {
         ...order,
@@ -137,30 +150,26 @@ export default function Home() {
         outstandingBalance: order.outstandingBalance ?? 0,
         setIndicator: order.setIndicator ?? "",
         idWebsiteLink: order.idWebsiteLink ?? "",
-        statusHistory: order.statusHistory.map((event) => ({
+        statusHistory: (order.statusHistory ?? []).map((event) => ({
           ...event,
           status: legacyStatus[event.status] ?? event.status,
         })),
       };
-    }));
-    if (savedSession) setSession(JSON.parse(savedSession));
-    if (savedActivity) setActivity(JSON.parse(savedActivity) as ActivityEvent[]);
-    setHydrated(true);
+      }));
+      setActivity(sharedActivity);
+      setDatabaseError("");
+    } catch (error) {
+      setDatabaseError(error instanceof Error ? error.message : "Could not load orders from Supabase.");
+    } finally {
+      setLoadingOrders(false);
+    }
   }, []);
 
   useEffect(() => {
-    if (hydrated) localStorage.setItem("mp-dashboard-orders", JSON.stringify(orders));
-  }, [orders, hydrated]);
-
-  useEffect(() => {
-    if (hydrated) localStorage.setItem("mp-dashboard-activity", JSON.stringify(activity));
-  }, [activity, hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    if (session) localStorage.setItem("mp-dashboard-session", JSON.stringify(session));
-    else localStorage.removeItem("mp-dashboard-session");
-  }, [session, hydrated]);
+    void loadSharedData(true);
+    if (!supabaseConfigured) return;
+    return subscribeToSharedData(() => { void loadSharedData(); });
+  }, [loadSharedData]);
 
   const selected = orders.find((order) => order.id === selectedId) ?? null;
   const packingOrders = orders.filter((order) => packingSelection.includes(order.id));
@@ -179,7 +188,6 @@ export default function Home() {
 
   const counts = useMemo(() => ({
     total: orders.filter((order) => order.status !== "shipped").length,
-
     voice: orders.filter((order) => order.status === "uploading_audio").length,
     production: orders.filter((order) => order.status === "sent_for_sewing").length,
     selected: orders.filter((order) => order.status === dashboardStatus).length,
@@ -208,58 +216,71 @@ export default function Home() {
 
   if (!session) return <Login onLogin={setSession} />;
 
-  function logActivity(action: string, detail: string, orderNumber?: string) {
+  async function logActivity(action: string, detail: string, orderNumber?: string) {
     const createdAt = new Date().toISOString();
-    setActivity((current) => [{
+    const event = {
       id: `${createdAt}-${Math.random().toString(36).slice(2)}`,
       orderNumber,
       action,
       detail,
       actor: session?.name ?? "System",
       createdAt,
-    }, ...current]);
+    };
+    setActivity((current) => [event, ...current]);
+    try { await insertSharedActivity(event); }
+    catch (error) { setNotice(error instanceof Error ? error.message : "Activity history could not be saved."); }
   }
 
-  function updateOrder(orderId: string, patch: Partial<Order>) {
+  async function updateOrder(orderId: string, patch: Partial<Order>) {
     const order = orders.find((item) => item.id === orderId);
-    setOrders((current) => current.map((order) => order.id === orderId
-      ? { ...order, ...patch, updatedAt: new Date().toISOString() }
-      : order));
-    if (order) logActivity("Order updated", `Changed ${Object.keys(patch).join(", ")}.`, order.orderNumber);
+    if (!order) return;
+    const updated = { ...order, ...patch, updatedAt: new Date().toISOString() };
+    setOrders((current) => current.map((item) => item.id === orderId ? updated : item));
+    try {
+      await upsertSharedOrders([updated]);
+      await logActivity("Order updated", `Changed ${Object.keys(patch).join(", ")}.`, order.orderNumber);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Order update could not be saved.");
+      await loadSharedData();
+    }
   }
 
-  function setStatus(order: Order, status: OrderStatus) {
+  async function setStatus(order: Order, status: OrderStatus) {
     if (order.status === status) return;
     const changedAt = new Date().toISOString();
-    setOrders((current) => current.map((item) => item.id === order.id ? {
-      ...item,
+    const updated: Order = {
+      ...order,
       status,
       updatedAt: changedAt,
-      statusHistory: [...item.statusHistory, {
-        id: `${item.id}-${changedAt}`,
+      statusHistory: [...(order.statusHistory ?? []), {
+        id: `${order.id}-${changedAt}`,
         status,
         changedAt,
         changedBy: session?.name ?? "Staff",
       }],
-    } : item));
+    };
+    setOrders((current) => current.map((item) => item.id === order.id ? updated : item));
+    try { await upsertSharedOrders([updated]); }
+    catch (error) { setNotice(error instanceof Error ? error.message : "Status change could not be saved."); await loadSharedData(); return; }
     setNotice(`#${order.orderNumber} updated to ${statusLabels[status]}.`);
   }
 
-  function bulkMoveNext() {
+  async function bulkMoveNext() {
     const selected = orders.filter((order) => selectedOrders.includes(order.id));
     if (!selected.length) return setNotice("Select at least one order first.");
     const changedAt = new Date().toISOString();
     let moved = 0;
-    setOrders((current) => current.map((order) => {
+    const changed: Order[] = [];
+    const nextOrders = orders.map((order) => {
       if (!selectedOrders.includes(order.id)) return order;
       const status = nextStatus[order.status];
       if (!status) return order;
       moved += 1;
-      return {
+      const updated: Order = {
         ...order,
         status,
         updatedAt: changedAt,
-        statusHistory: [...order.statusHistory, {
+        statusHistory: [...(order.statusHistory ?? []), {
           id: `${order.id}-${changedAt}-${status}`,
           status,
           changedAt,
@@ -267,10 +288,14 @@ export default function Home() {
           note: "Bulk status update",
         }],
       };
-    }));
+      changed.push(updated);
+      return updated;
+    });
+    setOrders(nextOrders);
+    try { await upsertSharedOrders(changed); }
+    catch (error) { setNotice(error instanceof Error ? error.message : "Orders could not be saved."); await loadSharedData(); return; }
     setSelectedOrders([]);
     setNotice(`${moved} order${moved === 1 ? "" : "s"} moved to the next status.`);
-
   }
 
   function toggleOrderSelection(orderId: string) {
@@ -296,13 +321,15 @@ export default function Home() {
     setNotice(`Certificate link for #${order.orderNumber} copied without https://.`);
   }
 
-  function runImport() {
+  async function runImport() {
     const { orders: imported, result } = importShopifyData(orderCsv, metafieldCsv, orders, session?.name ?? "Admin");
+    try { await upsertSharedOrders(imported); }
+    catch (error) { setNotice(error instanceof Error ? error.message : "Import could not be saved to Supabase."); return; }
     setOrders(imported);
     setOrderCsv("");
     setMetafieldCsv("");
     setNotice(`${result.imported} new orders imported, ${result.updated} updated, ${result.skipped} skipped.`);
-    logActivity("CSV import", `${result.imported} imported, ${result.updated} updated, ${result.skipped} skipped.`);
+    await logActivity("CSV import", `${result.imported} imported, ${result.updated} updated, ${result.skipped} skipped.`);
     setView("orders");
   }
 
@@ -324,19 +351,20 @@ export default function Home() {
     setNotice(missing.length ? `Selected ${found.length} order(s). Not found: ${missing.map((id) => `#${id}`).join(", ")}.` : `Selected ${found.length} order(s) for printing.`);
   }
 
-  function printPackingSlips() {
+  async function printPackingSlips() {
     if (!packingOrders.length) {
       setNotice("Select at least one order before printing.");
       return;
     }
     const changedAt = new Date().toISOString();
-    setOrders((current) => current.map((order) => {
+    const changed: Order[] = [];
+    const nextOrders = orders.map((order) => {
       if (!packingSelection.includes(order.id) || order.status !== "new_order") return order;
-      return {
+      const updated: Order = {
         ...order,
         status: "uploading_audio",
         updatedAt: changedAt,
-        statusHistory: [...order.statusHistory, {
+        statusHistory: [...(order.statusHistory ?? []), {
           id: `${order.id}-${changedAt}-uploading-audio`,
           status: "uploading_audio",
           changedAt,
@@ -344,24 +372,30 @@ export default function Home() {
           note: "Packing slip printed",
         }],
       };
-    }));
+      changed.push(updated);
+      return updated;
+    });
+    try { await upsertSharedOrders(changed); }
+    catch (error) { setNotice(error instanceof Error ? error.message : "Packing-slip changes could not be saved."); return; }
+    setOrders(nextOrders);
     window.print();
     setNotice(`${packingOrders.length} packing slip${packingOrders.length === 1 ? "" : "s"} sent to print. New orders moved to Uploading Audio.`);
-    logActivity("Packing slips printed", `${packingOrders.length} packing slip${packingOrders.length === 1 ? "" : "s"} printed.`);
+    await logActivity("Packing slips printed", `${packingOrders.length} packing slip${packingOrders.length === 1 ? "" : "s"} printed.`);
   }
 
-  function deleteOrders(orderIds: string[]) {
+  async function deleteOrders(orderIds: string[]) {
     const deleting = orders.filter((order) => orderIds.includes(order.id));
     if (!deleting.length || !window.confirm(`Delete ${deleting.length} selected order${deleting.length === 1 ? "" : "s"}? This cannot be undone.`)) return;
+    try { await deleteSharedOrders(orderIds); }
+    catch (error) { setNotice(error instanceof Error ? error.message : "Orders could not be deleted."); return; }
     setOrders((current) => current.filter((order) => !orderIds.includes(order.id)));
     setSelectedOrders([]);
     setSelectedId(null);
-    deleting.forEach((order) => logActivity("Order deleted", `${order.customerName || "Customer"} - ${order.product || "Order"}.`, order.orderNumber));
+    await Promise.all(deleting.map((order) => logActivity("Order deleted", `${order.customerName || "Customer"} - ${order.product || "Order"}.`, order.orderNumber)));
     setNotice(`${deleting.length} order${deleting.length === 1 ? "" : "s"} deleted.`);
   }
 
   async function readFile(file: File | undefined, target: "orders" | "metafields") {
-
     if (!file) return;
     const text = await file.text();
     if (target === "orders") setOrderCsv(text);
@@ -397,6 +431,8 @@ export default function Home() {
 
     <section className="main-area">
       <header className="topbar"><div><p>FULFILMENT CONTROL</p><h1>{view === "import" ? "Import Shopify Orders" : view === "fulfilled" ? "Shipped Orders" : view === "fulfilment" ? "Fulfilment" : view === "packing_slips" ? "Packing Slips" : view === "history" ? "Activity History" : "Orders Dashboard"}</h1></div><div className="top-actions"><span className={`role-badge ${session.role}`}>{session.role}</span>{view === "packing_slips" && <button className="button primary print-trigger" onClick={printPackingSlips}>Print {packingOrders.length} A6 slip{packingOrders.length === 1 ? "" : "s"}</button>}{session.role === "admin" && view !== "import" && <button className="button secondary" onClick={() => setView("import")}>Import CSV</button>}</div></header>
+      {databaseError && <div className="notice"><span>Database connection: {databaseError}</span></div>}
+      {loadingOrders && <div className="notice"><span>Loading shared orders from Supabase...</span></div>}
       {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice("")}>x</button></div>}
 
       {view !== "import" && view !== "packing_slips" && view !== "history" && <>
@@ -452,7 +488,6 @@ export default function Home() {
         <div className="import-intro"><span>CSV</span><div><h2>Import Shopify exports</h2><p>Upload either standard Shopify CSV exports or the headerless Sheet25 files. The app matches line items with each Product block and creates one fulfilment record per plushie.</p></div></div>
         <div className="import-columns">
           <ImportBox number="1" title="Shopify order export" required value={orderCsv} onChange={setOrderCsv} onFile={(file) => readFile(file, "orders")} placeholder="Name, Email, Financial Status, Lineitem name..." />
-
           <ImportBox number="2" title="Order metafields export" value={metafieldCsv} onChange={setMetafieldCsv} onFile={(file) => readFile(file, "metafields")} placeholder="Order GID, Order name, Metafield value..." />
         </div>
         <div className="import-action"><div><strong>Safe repeat imports</strong><p>Existing order numbers are updated without removing status, tracking, notes, or photos.</p></div><button className="button primary large" disabled={!orderCsv.trim()} onClick={runImport}>Validate and import orders</button></div>
@@ -537,4 +572,3 @@ function Icon({ name }: { name: IconName }) {
   if (name === "drag") return <svg {...common}><circle cx="8" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="17" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="17" r="1" fill="currentColor" stroke="none"/></svg>;
   return <svg {...common}><path d="M12 8v5l3 2"/><circle cx="12" cy="12" r="9"/></svg>;
 }
-
