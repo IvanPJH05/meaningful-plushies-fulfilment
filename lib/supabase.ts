@@ -10,8 +10,12 @@ export type SharedActivity = {
   createdAt: string;
 };
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+// Public browser credentials for the shared production database. Vercel
+// environment variables override these defaults when configured.
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  ?? "https://joaoirpegnkexmktylop.supabase.co";
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  ?? "sb_publishable_qYeTDXzz1yeOydayZDSBPA_VjLbcgdE";
 
 export const supabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 export const supabase = supabaseConfigured
