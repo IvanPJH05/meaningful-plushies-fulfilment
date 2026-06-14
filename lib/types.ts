@@ -16,6 +16,19 @@ export type PaymentProcessorSetting = {
   fixedAmount: number;
 };
 
+export type DashboardAccount = {
+  id: string;
+  username: string;
+  displayName: string;
+  role: UserRole;
+  active: boolean;
+};
+
+export type StockSetting = {
+  itemKey: string;
+  initialStock: number;
+};
+
 export type StatusEvent = {
   id: string;
   status: OrderStatus;
