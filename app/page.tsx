@@ -3,25 +3,33 @@
 import "./settings.css";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { SVGProps } from "react";
+import type { FormEvent, SVGProps } from "react";
 import { fulfilledOrdersCsv, importShopifyData, normalizePaymentProcessor } from "../lib/importer";
 import { summarizeSales } from "../lib/sales";
+import { stockCharacters, summarizeStock } from "../lib/stock";
 import {
+  createDashboardAccount,
   deleteSharedOrders,
   ensurePaymentProcessors,
   fetchSharedActivity,
   fetchSharedOrders,
+  fetchDashboardAccounts,
   fetchPaymentProcessorSettings,
+  fetchStockSettings,
   insertSharedActivity,
+  loginDashboardAccount,
+  saveStockSetting,
   savePaymentProcessorSetting,
   subscribeToSharedData,
   supabaseConfigured,
+  updateDashboardAccount,
   upsertSharedOrders,
+  type DashboardSession,
 } from "../lib/supabase";
-import { orderStatuses, type Order, type OrderStatus, type PaymentProcessorSetting, type UserRole } from "../lib/types";
+import { orderStatuses, type DashboardAccount, type Order, type OrderStatus, type PaymentProcessorSetting, type StockSetting, type UserRole } from "../lib/types";
 
-type Session = { name: string; email: string; role: UserRole };
-type View = "orders" | "fulfilment" | "packing_slips" | "import" | "fulfilled" | "history" | "settings";
+type Session = DashboardSession;
+type View = "orders" | "fulfilment" | "packing_slips" | "import" | "fulfilled" | "history" | "settings" | "stock";
 type SalesRange = "active" | "7d" | "30d" | "lifetime";
 type ActivityEvent = {
   id: string;
@@ -119,6 +127,10 @@ export default function Home() {
   const [dashboardStatus, setDashboardStatus] = useState<OrderStatus | "total">("packed");
   const [salesRange, setSalesRange] = useState<SalesRange>("active");
   const [processorSettings, setProcessorSettings] = useState<PaymentProcessorSetting[]>([]);
+  const [stockSettings, setStockSettings] = useState<StockSetting[]>([]);
+  const [accounts, setAccounts] = useState<DashboardAccount[]>([]);
+  const [accountPasswords, setAccountPasswords] = useState<Record<string, string>>({});
+  const [newAccount, setNewAccount] = useState({ username: "", displayName: "", role: "staff" as UserRole, password: "" });
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
   const [draggedColumn, setDraggedColumn] = useState<FulfilmentColumn | null>(null);
   const [fulfilmentColumns, setFulfilmentColumns] = useState<FulfilmentColumn[]>([
@@ -139,8 +151,8 @@ export default function Home() {
     }
     if (showLoading) setLoadingOrders(true);
     try {
-      const [sharedOrders, sharedActivity, sharedProcessorSettings] = await Promise.all([
-        fetchSharedOrders(), fetchSharedActivity(), fetchPaymentProcessorSettings(),
+      const [sharedOrders, sharedActivity, sharedProcessorSettings, sharedStockSettings] = await Promise.all([
+        fetchSharedOrders(), fetchSharedActivity(), fetchPaymentProcessorSettings(), fetchStockSettings(),
       ]);
       setOrders(sharedOrders.map((order) => {
       const status = legacyStatus[order.status] ?? order.status;
@@ -167,6 +179,7 @@ export default function Home() {
       }));
       setActivity(sharedActivity);
       setProcessorSettings(sharedProcessorSettings);
+      setStockSettings(sharedStockSettings);
       setDatabaseError("");
     } catch (error) {
       setDatabaseError(error instanceof Error ? error.message : "Could not load orders from Supabase.");
@@ -180,6 +193,15 @@ export default function Home() {
     if (!supabaseConfigured) return;
     return subscribeToSharedData(() => { void loadSharedData(); });
   }, [loadSharedData]);
+
+  useEffect(() => {
+    if (session?.role !== "admin") return;
+    void fetchDashboardAccounts(session.token).then(setAccounts).catch((error) => setNotice(error instanceof Error ? error.message : "Accounts could not be loaded."));
+  }, [session]);
+
+  useEffect(() => {
+    if (session?.role === "staff" && (["history", "settings", "stock"] as View[]).includes(view)) setView("orders");
+  }, [session, view]);
 
   const selected = orders.find((order) => order.id === selectedId) ?? null;
   const packingOrders = orders.filter((order) => packingSelection.includes(order.id));
@@ -212,6 +234,7 @@ export default function Home() {
     return orders.filter((order) => new Date(order.orderDate).getTime() >= threshold);
   }, [orders, salesRange]);
   const sales = useMemo(() => summarizeSales(reportingOrders, processorSettings), [reportingOrders, processorSettings]);
+  const stock = useMemo(() => summarizeStock(orders, stockSettings), [orders, stockSettings]);
   const historyEvents = useMemo<ActivityEvent[]>(() => [
     ...activity,
     ...orders.flatMap((order) => order.statusHistory.map((event) => ({
@@ -233,7 +256,7 @@ export default function Home() {
       orderNumber,
       action,
       detail,
-      actor: session?.name ?? "System",
+      actor: session ? `${session.displayName} (${session.username})` : "System",
       createdAt,
     };
     setActivity((current) => [event, ...current]);
@@ -242,6 +265,7 @@ export default function Home() {
   }
 
   async function updateOrder(orderId: string, patch: Partial<Order>) {
+    if (session.role !== "admin") return setNotice("Staff accounts can only move orders to the next stage.");
     const order = orders.find((item) => item.id === orderId);
     if (!order) return;
     const updated = { ...order, ...patch, updatedAt: new Date().toISOString() };
@@ -257,6 +281,9 @@ export default function Home() {
 
   async function setStatus(order: Order, status: OrderStatus) {
     if (order.status === status) return;
+    if (session.role === "staff" && nextStatus[order.status] !== status) {
+      return setNotice("Staff accounts can only move orders to the next stage.");
+    }
     const changedAt = new Date().toISOString();
     const updated: Order = {
       ...order,
@@ -266,7 +293,7 @@ export default function Home() {
         id: `${order.id}-${changedAt}`,
         status,
         changedAt,
-        changedBy: session?.name ?? "Staff",
+        changedBy: session ? `${session.displayName} (${session.username})` : "Staff",
       }],
     };
     setOrders((current) => current.map((item) => item.id === order.id ? updated : item));
@@ -294,7 +321,7 @@ export default function Home() {
           id: `${order.id}-${changedAt}-${status}`,
           status,
           changedAt,
-          changedBy: session?.name ?? "Staff",
+          changedBy: session ? `${session.displayName} (${session.username})` : "Staff",
           note: "Bulk status update",
         }],
       };
@@ -332,7 +359,7 @@ export default function Home() {
   }
 
   async function runImport() {
-    const { orders: imported, result } = importShopifyData(orderCsv, metafieldCsv, orders, session?.name ?? "Admin");
+    const { orders: imported, result } = importShopifyData(orderCsv, metafieldCsv, orders, session ? `${session.displayName} (${session.username})` : "Admin");
     try {
       await upsertSharedOrders(imported);
       await ensurePaymentProcessors(imported.map((order) => order.paymentProcessor));
@@ -354,6 +381,42 @@ export default function Home() {
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Processing fee could not be saved.");
       await loadSharedData();
+    }
+  }
+
+  async function createAccount() {
+    if (!newAccount.username.trim() || !newAccount.displayName.trim() || newAccount.password.length < 8) {
+      return setNotice("Enter a username, display name, and password of at least 8 characters.");
+    }
+    try {
+      await createDashboardAccount(session.token, newAccount, newAccount.password);
+      setAccounts(await fetchDashboardAccounts(session.token));
+      setNewAccount({ username: "", displayName: "", role: "staff", password: "" });
+      setNotice("Account created.");
+      await logActivity("Account created", `Created @${newAccount.username} as ${newAccount.role}.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Account could not be created.");
+    }
+  }
+
+  async function saveAccount(account: DashboardAccount, password = "") {
+    try {
+      await updateDashboardAccount(session.token, account, password);
+      setAccounts(await fetchDashboardAccounts(session.token));
+      setNotice(`@${account.username} updated.`);
+      await logActivity("Account updated", `Updated @${account.username}.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Account could not be updated.");
+    }
+  }
+
+  async function saveStock(setting: StockSetting) {
+    try {
+      await saveStockSetting(setting);
+      setNotice(`${setting.itemKey} stock saved.`);
+      await logActivity("Stock updated", `${setting.itemKey} initial stock set to ${setting.initialStock}.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Stock could not be saved.");
     }
   }
 
@@ -392,7 +455,7 @@ export default function Home() {
           id: `${order.id}-${changedAt}-uploading-audio`,
           status: "uploading_audio",
           changedAt,
-          changedBy: session?.name ?? "Staff",
+          changedBy: session ? `${session.displayName} (${session.username})` : "Staff",
           note: "Packing slip printed",
         }],
       };
@@ -446,21 +509,22 @@ export default function Home() {
         <button className={view === "orders" ? "active" : ""} onClick={() => setView("orders")}><Icon name="orders" /> Orders</button>
         <button className={view === "fulfilment" ? "active" : ""} onClick={() => setView("fulfilment")}><Icon name="fulfilment" /> Fulfilment</button>
         <button className={view === "packing_slips" ? "active" : ""} onClick={() => setView("packing_slips")}><Icon name="packing" /> Packing Slips</button>
-        {session.role === "admin" && <button className={view === "import" ? "active" : ""} onClick={() => setView("import")}><Icon name="import" /> CSV Import</button>}
+        <button className={view === "import" ? "active" : ""} onClick={() => setView("import")}><Icon name="import" /> CSV Import</button>
         <button className={view === "fulfilled" ? "active" : ""} onClick={() => setView("fulfilled")}><Icon name="shipped" /> Shipped</button>
-        <button className={view === "history" ? "active" : ""} onClick={() => setView("history")}><Icon name="history" /> History</button>
+        {session.role === "admin" && <button className={view === "stock" ? "active" : ""} onClick={() => setView("stock")}><Icon name="stock" /> Stock Count</button>}
+        {session.role === "admin" && <button className={view === "history" ? "active" : ""} onClick={() => setView("history")}><Icon name="history" /> History</button>}
         {session.role === "admin" && <button className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}><Icon name="settings" /> Settings</button>}
       </nav>
-      <div className="user-card"><div className="avatar">{session.name.slice(0, 1)}</div><div><strong>{session.name}</strong><span>{session.role === "admin" ? "Administrator" : "Fulfilment staff"}</span></div><button title="Sign out" onClick={() => setSession(null)}><Icon name="logout" /></button></div>
+      <div className="user-card"><div className="avatar">{session.displayName.slice(0, 1)}</div><div><strong>{session.displayName}</strong><span>@{session.username} | {session.role === "admin" ? "Administrator" : "Fulfilment staff"}</span></div><button title="Sign out" onClick={() => setSession(null)}><Icon name="logout" /></button></div>
     </aside>
 
     <section className="main-area">
-      <header className="topbar"><div><p>FULFILMENT CONTROL</p><h1>{view === "import" ? "Import Shopify Orders" : view === "fulfilled" ? "Shipped Orders" : view === "fulfilment" ? "Fulfilment" : view === "packing_slips" ? "Packing Slips" : view === "history" ? "Activity History" : view === "settings" ? "Settings" : "Orders Dashboard"}</h1></div><div className="top-actions"><span className={`role-badge ${session.role}`}>{session.role}</span>{view === "packing_slips" && <button className="button primary print-trigger" onClick={printPackingSlips}>Print {packingOrders.length} A6 slip{packingOrders.length === 1 ? "" : "s"}</button>}{session.role === "admin" && view !== "import" && <button className="button secondary" onClick={() => setView("import")}>Import CSV</button>}</div></header>
+      <header className="topbar"><div><p>FULFILMENT CONTROL</p><h1>{view === "import" ? "Import Shopify Orders" : view === "fulfilled" ? "Shipped Orders" : view === "fulfilment" ? "Fulfilment" : view === "packing_slips" ? "Packing Slips" : view === "history" ? "Activity History" : view === "settings" ? "Settings" : view === "stock" ? "Stock Count" : "Orders Dashboard"}</h1></div><div className="top-actions"><span className={`role-badge ${session.role}`}>{session.role}</span>{view === "packing_slips" && <button className="button primary print-trigger" onClick={printPackingSlips}>Print {packingOrders.length} A6 slip{packingOrders.length === 1 ? "" : "s"}</button>}{view !== "import" && <button className="button secondary" onClick={() => setView("import")}>Import CSV</button>}</div></header>
       {databaseError && <div className="notice"><span>Database connection: {databaseError}</span></div>}
       {loadingOrders && <div className="notice"><span>Loading shared orders from Supabase...</span></div>}
       {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice("")}>x</button></div>}
 
-      {view !== "import" && view !== "packing_slips" && view !== "history" && view !== "settings" && <>
+      {view !== "import" && view !== "packing_slips" && view !== "history" && view !== "settings" && view !== "stock" && <>
         {view === "orders" && <section className="stats">
           <Stat label="Active orders" value={counts.total} color="navy" />
           <Stat label="Uploading audio" value={counts.voice} color="orange" />
@@ -469,7 +533,7 @@ export default function Home() {
           <Stat label="Issues" value={counts.issue} color="red" />
         </section>}
 
-        {view === "orders" && <>
+        {view === "orders" && session.role === "admin" && <>
           <div className="reporting-header">
             <div><strong>Sales reporting</strong><span>{reportingOrders.length} order records</span></div>
             <div className="range-tabs">
@@ -508,9 +572,21 @@ export default function Home() {
         <div className="packing-preview"><div className="preview-heading"><div><h2>A6 print preview</h2><p>One packing slip will print on each A6 page.</p></div><span>{packingOrders.length} selected</span></div>{packingOrders.length ? <div className="slip-grid">{packingOrders.map((order) => <PackingSlip order={order} key={order.id} />)}</div> : <div className="preview-empty"><strong>No orders selected</strong><p>Enter order IDs or tick orders from the list.</p></div>}</div>
       </section>}
 
-      {view === "history" && <section className="history-page card"><div className="history-page-header"><div><h2>Activity history</h2><p>Every recorded import, edit, status change, print, and deletion.</p></div><span>{historyEvents.length} actions</span></div><div className="activity-list">{historyEvents.map((event) => <article key={event.id}><div className="activity-icon"><Icon name="history" /></div><div><strong>{event.action}</strong><p>{event.detail}</p><span>{event.orderNumber ? `Order #${event.orderNumber} | ` : ""}{event.actor} | {formatDate(event.createdAt, true)}</span></div></article>)}{!historyEvents.length && <div className="empty"><strong>No activity recorded yet</strong><p>New actions will appear here.</p></div>}</div></section>}
+      {view === "stock" && session.role === "admin" && <section className="stock-page">
+        <div className="stock-grid">{stock.characters.map((item) => <article className="stock-card card" key={item.name}><span>{item.name}</span><strong>{item.remaining}</strong><p>{item.sold} sold from {item.initial} initial stock</p></article>)}</div>
+        <section className="card voice-stock"><div><span>Shared voice inventory</span><strong>{stock.voiceRemaining}</strong><p>{stock.voiceSold} total sold from {stock.voiceInitial} initial stock</p></div><div className="voice-breakdown">{stock.voices.map((voice) => <article key={voice.length}><strong>{voice.sold}</strong><span>{voice.length}s sold</span></article>)}</div></section>
+      </section>}
+
+      {view === "history" && session.role === "admin" && <section className="history-page card"><div className="history-page-header"><div><h2>Activity history</h2><p>Every recorded import, edit, status change, print, and deletion.</p></div><span>{historyEvents.length} actions</span></div><div className="activity-list">{historyEvents.map((event) => <article key={event.id}><div className="activity-icon"><Icon name="history" /></div><div><strong>{event.action}</strong><p>{event.detail}</p><span>{event.orderNumber ? `Order #${event.orderNumber} | ` : ""}{event.actor} | {formatDate(event.createdAt, true)}</span></div></article>)}{!historyEvents.length && <div className="empty"><strong>No activity recorded yet</strong><p>New actions will appear here.</p></div>}</div></section>}
 
       {view === "settings" && session.role === "admin" && <section className="settings-page card">
+        <div className="settings-heading"><div><h2>Accounts and permissions</h2><p>Admins can edit everything. Staff can use workflow pages and only advance order stages.</p></div><span>{accounts.length} accounts</span></div>
+        <div className="account-create"><input placeholder="Username" value={newAccount.username} onChange={(event) => setNewAccount({ ...newAccount, username: event.target.value.toLowerCase() })} /><input placeholder="Display name" value={newAccount.displayName} onChange={(event) => setNewAccount({ ...newAccount, displayName: event.target.value })} /><select value={newAccount.role} onChange={(event) => setNewAccount({ ...newAccount, role: event.target.value as UserRole })}><option value="staff">Staff</option><option value="admin">Admin</option></select><input type="password" placeholder="Password (8+ characters)" value={newAccount.password} onChange={(event) => setNewAccount({ ...newAccount, password: event.target.value })} /><button className="button primary" onClick={createAccount}>Create account</button></div>
+        <div className="account-list">{accounts.map((account) => <div className="account-row" key={account.id}><strong>@{account.username}</strong><input value={account.displayName} onChange={(event) => setAccounts((current) => current.map((item) => item.id === account.id ? { ...item, displayName: event.target.value } : item))} /><select value={account.role} onChange={(event) => setAccounts((current) => current.map((item) => item.id === account.id ? { ...item, role: event.target.value as UserRole } : item))}><option value="staff">Staff</option><option value="admin">Admin</option></select><input type="password" placeholder="New password (optional)" value={accountPasswords[account.id] ?? ""} onChange={(event) => setAccountPasswords((current) => ({ ...current, [account.id]: event.target.value }))} /><label><input type="checkbox" checked={account.active} onChange={(event) => setAccounts((current) => current.map((item) => item.id === account.id ? { ...item, active: event.target.checked } : item))} /> Active</label><button className="button primary" onClick={() => saveAccount(account, accountPasswords[account.id])}>Save</button></div>)}</div>
+
+        <div className="settings-heading"><div><h2>Initial stock</h2><p>Character stock is separate. Voice stock is one shared pool, so any 5s, 10s, or 20s sale deducts one unit.</p></div></div>
+        <div className="stock-settings">{[...stockCharacters, "VOICE"].map((itemKey) => { const setting = stockSettings.find((item) => item.itemKey === itemKey) ?? { itemKey, initialStock: 0 }; return <div key={itemKey}><strong>{itemKey === "VOICE" ? "SHARED VOICE UNITS" : itemKey}</strong><input type="number" min="0" step="1" value={setting.initialStock} onChange={(event) => setStockSettings((current) => [...current.filter((item) => item.itemKey !== itemKey), { itemKey, initialStock: Number(event.target.value) }])} /><button className="button primary" onClick={() => saveStock(setting)}>Save</button></div>; })}</div>
+
         <div className="settings-heading"><div><h2>Payment processor fees</h2><p>New Shopify payment methods appear here automatically. Set a percentage, a fixed RM amount, both, or leave both at zero for no fee.</p></div><span>{processorSettings.length} processors</span></div>
         <div className="processor-list">
           <div className="processor-row processor-header"><strong>Payment method</strong><strong>Percentage</strong><strong>Fixed amount</strong><span /></div>
@@ -519,7 +595,7 @@ export default function Home() {
         </div>
       </section>}
 
-      {view === "import" && session.role === "admin" && <section className="import-page">
+      {view === "import" && <section className="import-page">
         <div className="import-intro"><span>CSV</span><div><h2>Import Shopify exports</h2><p>Upload either standard Shopify CSV exports or the headerless Sheet25 files. The app matches line items with each Product block and creates one fulfilment record per plushie.</p></div></div>
         <div className="import-columns">
           <ImportBox number="1" title="Shopify order export" required value={orderCsv} onChange={setOrderCsv} onFile={(file) => readFile(file, "orders")} placeholder="Name, Email, Financial Status, Lineitem name..." />
@@ -529,15 +605,24 @@ export default function Home() {
       </section>}
     </section>
 
-    {selected && <OrderDrawer order={selected} role={session.role} actor={session.name} onClose={() => setSelectedId(null)} onUpdate={(patch) => updateOrder(selected.id, patch)} onStatus={(status) => setStatus(selected, status)} />}
+    {selected && <OrderDrawer order={selected} role={session.role} actor={session.displayName} onClose={() => setSelectedId(null)} onUpdate={(patch) => updateOrder(selected.id, patch)} onStatus={(status) => setStatus(selected, status)} />}
   </main>;
 }
 
 function Login({ onLogin }: { onLogin: (session: Session) => void }) {
-  const [email, setEmail] = useState("admin@meaningfulplushies.com");
+  const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("demo1234");
-  const role: UserRole = email.toLowerCase().startsWith("staff") ? "staff" : "admin";
-  return <main className="login-page"><section className="login-brand"><div className="login-logo">MP</div><p>MEANINGFUL PLUSHIES</p><h1>A calmer way to manage every plushie.</h1><span>Track voice, production, packing and delivery from one simple workspace.</span></section><section className="login-panel"><form onSubmit={(event) => { event.preventDefault(); onLogin({ name: role === "admin" ? "Admin" : "Fulfilment Staff", email, role }); }}><p className="eyebrow">STAFF PORTAL</p><h2>Welcome back</h2><span>Sign in to continue to fulfilment.</span><label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label><button className="button primary large" type="submit">Sign in</button><div className="demo-logins"><strong>Demo roles</strong><button type="button" onClick={() => { setEmail("admin@meaningfulplushies.com"); setPassword("demo1234"); }}>Admin account</button><button type="button" onClick={() => { setEmail("staff@meaningfulplushies.com"); setPassword("demo1234"); }}>Staff account</button></div></form></section></main>;
+  const [error, setError] = useState("");
+  const [signingIn, setSigningIn] = useState(false);
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setSigningIn(true);
+    setError("");
+    try { onLogin(await loginDashboardAccount(username, password)); }
+    catch (loginError) { setError(loginError instanceof Error ? loginError.message : "Sign in failed."); }
+    finally { setSigningIn(false); }
+  }
+  return <main className="login-page"><section className="login-brand"><div className="login-logo">MP</div><p>MEANINGFUL PLUSHIES</p><h1>A calmer way to manage every plushie.</h1><span>Track voice, production, packing and delivery from one simple workspace.</span></section><section className="login-panel"><form onSubmit={submit}><p className="eyebrow">STAFF PORTAL</p><h2>Welcome back</h2><span>Sign in with the account created by your administrator.</span>{error && <p className="login-error">{error}</p>}<label>Username<input value={username} onChange={(event) => setUsername(event.target.value)} required autoComplete="username" /></label><label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required autoComplete="current-password" /></label><button className="button primary large" type="submit" disabled={signingIn}>{signingIn ? "Signing in..." : "Sign in"}</button></form></section></main>;
 }
 
 function Stat({ label, value, color }: { label: string; value: number; color: string }) {
@@ -570,14 +655,14 @@ function OrderDrawer({ order, role, actor, onClose, onUpdate, onStatus }: { orde
 
   return <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><aside className="order-drawer"><div className="drawer-header"><div><p>ORDER DETAIL</p><h2>{orderLabel(order)}</h2></div><button onClick={onClose}>x</button></div><div className="drawer-body">
     <section className="detail-summary"><div><span>Current status</span><StatusPill status={order.status} /></div><div><span>Last updated</span><strong>{formatDate(order.updatedAt, true)}</strong></div></section>
-    <section className="detail-section"><h3>Quick actions</h3><div className="status-actions">{following && <button className="button primary" onClick={() => onStatus(following)}>Move to {statusLabels[following]}</button>}<button className="button issue-button" onClick={() => onStatus("issue")}>Mark issue</button>{order.status === "issue" && <button className="button secondary" onClick={() => onStatus("sent_for_sewing")}>Resolve issue</button>}<a className="button whatsapp" href={whatsappLink(order)} target="_blank">Open WhatsApp</a></div></section>
+    <section className="detail-section"><h3>Quick actions</h3><div className="status-actions">{following && <button className="button primary" onClick={() => onStatus(following)}>Move to {statusLabels[following]}</button>}{admin && <button className="button issue-button" onClick={() => onStatus("issue")}>Mark issue</button>}{admin && order.status === "issue" && <button className="button secondary" onClick={() => onStatus("sent_for_sewing")}>Resolve issue</button>}<a className="button whatsapp" href={whatsappLink(order)} target="_blank">Open WhatsApp</a></div></section>
     <section className="detail-section"><h3>Customer and order</h3><div className="field-grid"><Field label="Order number" value={`#${order.orderNumber}`} /><Field label="Order date" value={formatDate(order.orderDate, true)} /><Field label="Payment method" value={order.paymentProcessor || "Unknown"} /><Editable label="Customer name" value={order.customerName} disabled={!admin} onChange={(value) => onUpdate({ customerName: value })} /><Editable label="Phone" value={order.phone} disabled={!admin} onChange={(value) => onUpdate({ phone: value })} /><Editable wide label="Address" value={order.address} disabled={!admin} onChange={(value) => onUpdate({ address: value })} /></div></section>
     <section className="detail-section"><h3>Plushie details</h3><div className="field-grid"><Editable label="Product name" value={order.product} disabled={!admin} onChange={(value) => onUpdate({ product: value })} /><Editable label="Character" value={order.character} disabled={!admin} onChange={(value) => onUpdate({ character: value })} /><Editable label="Set indicator" value={order.setIndicator ?? ""} disabled={!admin} onChange={(value) => onUpdate({ setIndicator: value })} /><Editable label="ID website link" value={order.idWebsiteLink ?? ""} disabled={!admin} onChange={(value) => onUpdate({ idWebsiteLink: value })} /><Editable label="Voice length" value={String(order.voiceLength || "")} disabled={!admin} onChange={(value) => onUpdate({ voiceLength: Number(value) || 0 })} /><Editable label="Plush name" value={order.plushName} disabled={!admin} onChange={(value) => onUpdate({ plushName: value })} /><Editable wide label="Remark" value={order.remark ?? ""} disabled={!admin} onChange={(value) => onUpdate({ remark: value })} /><Editable wide textarea label="Meaningful note" value={order.meaningfulNote} disabled={!admin} onChange={(value) => onUpdate({ meaningfulNote: value })} /><div className="field wide"><label>Meaningful message</label>{order.meaningfulMessage ? <a href={order.meaningfulMessage} target="_blank" rel="noreferrer">Open customer message</a> : <span>Not provided</span>}</div><div className="field"><label>Voice upload</label>{admin ? <select value={order.voiceUploadStatus} onChange={(event) => onUpdate({ voiceUploadStatus: event.target.value as Order["voiceUploadStatus"] })}><option value="missing">Missing</option><option value="received">Received</option><option value="checked">Checked</option></select> : <strong>{order.voiceUploadStatus}</strong>}</div></div></section>
-    <section className="detail-section"><h3>Delivery</h3><div className="field-grid"><Editable label="Courier" value={order.courier} disabled={!admin} placeholder="J&T Express" onChange={(value) => onUpdate({ courier: value })} /><Editable label="Tracking number" value={order.trackingNumber} placeholder="Enter tracking number" onChange={(value) => onUpdate({ trackingNumber: value })} /></div></section>
+    <section className="detail-section"><h3>Delivery</h3><div className="field-grid"><Editable label="Courier" value={order.courier} disabled={!admin} placeholder="J&T Express" onChange={(value) => onUpdate({ courier: value })} /><Editable label="Tracking number" value={order.trackingNumber} disabled={!admin} placeholder="Enter tracking number" onChange={(value) => onUpdate({ trackingNumber: value })} /></div></section>
     <section className="detail-section"><h3>Tailor / packing photo</h3><div className="photo-field">{order.photoDataUrl ? <img src={order.photoDataUrl} alt="Tailor or packing evidence" /> : <div className="photo-placeholder">No photo uploaded</div>}{admin && <label className="button secondary"><input type="file" accept="image/*" onChange={(event) => uploadPhoto(event.target.files?.[0])} />{order.photoDataUrl ? "Replace photo" : "Upload photo"}</label>} {order.photoName && <small>{order.photoName}</small>}</div></section>
     <section className="detail-section"><h3>Internal notes</h3><textarea className="notes" value={order.internalNotes} disabled={!admin} onChange={(event) => onUpdate({ internalNotes: event.target.value })} placeholder="Add notes visible to your team..." /></section>
     <section className="detail-section"><h3>Status history</h3><div className="history">{[...order.statusHistory].reverse().map((event) => <div key={event.id}><span></span><div><strong>{statusLabels[event.status]}</strong><p>{event.changedBy} | {formatDate(event.changedAt, true)}</p>{event.note && <small>{event.note}</small>}</div></div>)}</div></section>
-    {!admin && <p className="permission-note">Signed in as Staff. You can update status and tracking only.</p>}
+    {!admin && <p className="permission-note">Signed in as Staff. You can only move orders to the next stage.</p>}
   </div></aside></div>;
 }
 
@@ -593,7 +678,7 @@ function PackingSlip({ order }: { order: Order }) {
   return <article className="a6-slip"><header><span>ORDER ID</span><strong>{orderLabel(order)}</strong></header><div className="slip-fields"><div className="primary-slip-field"><label>CHARACTER:</label><p>{order.character || "-"}</p></div><div className="primary-slip-field"><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{order.remark || "-"}</p></div></div><footer>Meaningful Plushies</footer></article>;
 }
 
-type IconName = "orders" | "fulfilment" | "packing" | "import" | "shipped" | "logout" | "search" | "history" | "drag" | "settings";
+type IconName = "orders" | "fulfilment" | "packing" | "import" | "shipped" | "logout" | "search" | "history" | "drag" | "settings" | "stock";
 
 function Icon({ name }: { name: IconName }) {
   const common: SVGProps<SVGSVGElement> = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true };
@@ -605,6 +690,7 @@ function Icon({ name }: { name: IconName }) {
   if (name === "logout") return <svg {...common}><path d="M10 5H5v14h5M14 8l4 4-4 4M18 12H9"/></svg>;
   if (name === "search") return <svg {...common}><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>;
   if (name === "settings") return <svg {...common}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg>;
+  if (name === "stock") return <svg {...common}><path d="m4 7 8-4 8 4-8 4-8-4Z"/><path d="m4 7v10l8 4 8-4V7M12 11v10"/></svg>;
   if (name === "drag") return <svg {...common}><circle cx="8" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="17" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="17" r="1" fill="currentColor" stroke="none"/></svg>;
   return <svg {...common}><path d="M12 8v5l3 2"/><circle cx="12" cy="12" r="9"/></svg>;
 }
