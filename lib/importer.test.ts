@@ -1,6 +1,3 @@
-Exit code: 0
-Wall time: 0.6 seconds
-Output:
 import assert from "node:assert/strict";
 import test from "node:test";
 import { importShopifyData, normalizePaymentProcessor } from "./importer.ts";
@@ -70,4 +67,3 @@ test("normalizes Shopify gateway labels to actual processors", () => {
   assert.equal(normalizePaymentProcessor("Stripe Card Payments + Xendit Payment Gateway (New)"), "Xendit");
   assert.equal(normalizePaymentProcessor("", true), "Bank Transfer");
 });
-
