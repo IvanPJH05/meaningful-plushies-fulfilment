@@ -51,6 +51,9 @@ test("imports real discounts and zero-total bank transfers correctly", () => {
     productDiscounted: 46,
     shippingDiscounted: 16,
     bankTransfer: 135,
+    stripeCollected: 349,
+    xenditCollected: 0,
+    totalCollected: 484,
     collected: 484,
     processingFees: 0,
   });
