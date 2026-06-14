@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { summarizeSales } from "./sales.ts";
+import { buildSalesReportRows, summarizeSales } from "./sales.ts";
 import type { Order } from "./types";
 
 function order(overrides: Partial<Order>): Order {
@@ -21,7 +21,7 @@ function order(overrides: Partial<Order>): Order {
     shippingDiscountAmount: 8,
     refundedAmount: 0,
     outstandingBalance: 0,
-    paymentProcessor: "Shopify Payments",
+    paymentProcessor: "Stripe",
     product: "Plushie",
     character: "",
     setIndicator: "",
@@ -50,6 +50,9 @@ test("reclassifies a zero-cash order as a bank transfer", () => {
     productDiscounted: 0,
     shippingDiscounted: 8,
     bankTransfer: 115,
+    stripeCollected: 0,
+    xenditCollected: 0,
+    totalCollected: 115,
     collected: 115,
     processingFees: 0,
   });
@@ -68,6 +71,9 @@ test("keeps discounts when customer revenue is greater than zero", () => {
     productDiscounted: 15,
     shippingDiscounted: 8,
     bankTransfer: 0,
+    stripeCollected: 100,
+    xenditCollected: 0,
+    totalCollected: 100,
     collected: 100,
     processingFees: 0,
   });
@@ -75,7 +81,7 @@ test("keeps discounts when customer revenue is greater than zero", () => {
 
 test("deducts percentage and fixed processor fees from cash collected", () => {
   const result = summarizeSales([order({ totalAmount: 100 })], [{
-    processor: "Shopify Payments",
+    processor: "Stripe",
     percentage: 3,
     fixedAmount: 1,
   }]);
@@ -93,4 +99,17 @@ test("does not charge processing fees on zero-cash bank transfers", () => {
 
   assert.equal(result.processingFees, 0);
   assert.equal(result.collected, 115);
+});
+
+test("builds one report row and charges one fee for a multi-item order", () => {
+  const rows = buildSalesReportRows([
+    order({ id: "1", orderNumber: "1005", character: "BILLY", voiceLength: 5, totalAmount: 100 }),
+    order({ id: "2", orderNumber: "1005", character: "HUNNIE", voiceLength: 20, totalAmount: 0 }),
+  ], [{ processor: "Stripe", percentage: 3, fixedAmount: 1 }]);
+
+  assert.equal(rows.length, 1);
+  assert.deepEqual(rows[0].characters, ["BILLY", "HUNNIE"]);
+  assert.deepEqual(rows[0].voiceLengths, [5, 20]);
+  assert.equal(rows[0].processingFee, 4);
+  assert.equal(rows[0].cashAfterFees, 96);
 });
