@@ -323,4 +323,234 @@ export default function Home() {
     return orders.filter((order) => new Date(order.orderDate).getTime() >= threshold);
   }, [orders, salesRange]);
   const sales = useMemo(() => summarizeSales(reportingOrders, processorSettings, salesFeeSettings.shopifyPercentage), [reportingOrders, processorSettings, salesFeeSettings]);
-  const allSalesReportRows = useMemo(() => buildSalesReportRows(orders, processorS×ôæÚ$z{-®éÜj×¢Â÷6V7FöãçÐ¢Â÷6V7Föãà ¢·6VÆV7FVBbbÄ÷&FW$G&vW"÷&FW#×·6VÆV7FVGÒ&öÆS×·6W76öâç&öÆWÒ7F÷#×·6W76öâæF7ÆæÖWÒöä6Æ÷6S×²Óâ6WE6VÆV7FVDBçVÆÂÒöåWFFS×²F6ÓâWFFT÷&FW"6VÆV7FVBæBÂF6Òöå7FGW3×²7FGW2Óâ6WE7FGW26VÆV7FVBÂ7FGW2ÒóçÐ¢ÂöÖãã°§Ð ¦gVæ7FöâÆövâ²öäÆövâÓ¢²öäÆövã¢6W76öã¢6W76öâÓâföBÒ°¢6öç7B·W6W&æÖRÂ6WEW6W&æÖUÒÒW6U7FFR&FÖâ"°¢6öç7B·77v÷&BÂ6WE77v÷&EÒÒW6U7FFR&FVÖó#3B"°¢6öç7B¶W'&÷"Â6WDW'&÷%ÒÒW6U7FFR""°¢6öç7B·6væætâÂ6WE6væætåÒÒW6U7FFRfÇ6R°¢7æ2gVæ7Föâ7V&ÖBWfVçC¢f÷&ÔWfVçB°¢WfVçBç&WfVçDFVfVÇB°¢6WE6væætâG'VR°¢6WDW'&÷"""°¢G'²öäÆövâvBÆöväF6&ö&D66÷VçBW6W&æÖRÂ77v÷&B²Ð¢6F6ÆöväW'&÷"²6WDW'&÷"ÆöväW'&÷"ç7Fæ6VöbW'&÷"òÆöväW'&÷"æÖW76vR¢%6vââfÆVBâ"²Ð¢fæÆÇ²6WE6væætâfÇ6R²Ð¢Ð¢&WGW&âÆÖâ6Æ74æÖSÒ&Æövâ×vR#ãÇ6V7Föâ6Æ74æÖSÒ&ÆövâÖ'&æB#ãÆFb6Æ74æÖSÒ&ÆövâÖÆövò#äÕÂöFcãÇäÔTääteTÂÅU4U3Â÷ãÆä6ÆÖW"vFòÖævRWfW'ÇW6RãÂöãÇ7ãåG&6²fö6RÂ&öGV7FöâÂ6¶æræBFVÆfW'g&öÒöæR6×ÆRv÷&·76RãÂ÷7ããÂ÷6V7FöããÇ6V7Föâ6Æ74æÖSÒ&Æövâ×æVÂ#ãÆf÷&Òöå7V&ÖC×·7V&ÖGÓãÇ6Æ74æÖSÒ&WV'&÷r#å5Ddbõ%DÃÂ÷ãÆ#åvVÆ6öÖR&6³Âö#ãÇ7ãå6vââvFFR66÷VçB7&VFVB'÷W"FÖæ7G&F÷"ãÂ÷7ãç¶W'&÷"bbÇ6Æ74æÖSÒ&ÆövâÖW'&÷"#ç¶W'&÷'ÓÂ÷çÓÆÆ&VÃåW6W&æÖSÆçWBfÇVS×·W6W&æÖWÒöä6ævS×²WfVçBÓâ6WEW6W&æÖRWfVçBçF&vWBçfÇVRÒ&WV&VBWFô6ö×ÆWFSÒ'W6W&æÖR"óãÂöÆ&VÃãÆÆ&VÃå77v÷&CÆçWBGSÒ'77v÷&B"fÇVS×·77v÷&GÒöä6ævS×²WfVçBÓâ6WE77v÷&BWfVçBçF&vWBçfÇVRÒ&WV&VBWFô6ö×ÆWFSÒ&7W'&VçB×77v÷&B"óãÂöÆ&VÃãÆ'WGFöâ6Æ74æÖSÒ&'WGFöâ&Ö'Æ&vR"GSÒ'7V&ÖB"F6&ÆVC×·6væætçÓç·6væætâò%6væærââââ"¢%6vââ'ÓÂö'WGFöããÂöf÷&ÓãÂ÷6V7FöããÂöÖãã°§Ð ¦gVæ7Föâ7FB²Æ&VÂÂfÇVRÂ6öÆ÷"Ó¢²Æ&VÃ¢7G&æs²fÇVS¢çVÖ&W#²6öÆ÷#¢7G&ærÒ°¢&WGW&âÆ'F6ÆR6Æ74æÖS×¶7FBG¶6öÆ÷'ÖÓãÇ7ãç¶Æ&VÇÓÂ÷7ããÇ7G&öæsç·fÇVWÓÂ÷7G&öæsãÂö'F6ÆSã°§Ð ¦gVæ7FöâÖöæW7FB²Æ&VÂÂfÇVRÂFöæRÓ¢²Æ&VÃ¢7G&æs²fÇVS¢çVÖ&W#²FöæS¢7G&ærÒ°¢&WGW&âÆ'F6ÆR6Æ74æÖS×¶ÖöæW×7FBG·FöæWÖÓãÇ7ãç¶Æ&VÇÓÂ÷7ããÇ7G&öæsç¶f÷&ÖDÖöæWfÇVRÓÂ÷7G&öæsãÂö'F6ÆSã°§Ð ¦gVæ7Föâ6VÆV7F&ÆTÖöæW7FB²Æ&VÂÂfÇVRÂFöæRÂ6VÆV7FVBÂ÷Föç2Âöä6ævRÓ¢²Æ&VÃ¢7G&æs²fÇVS¢çVÖ&W#²FöæS¢7G&æs²6VÆV7FVC¢7G&æs²÷Föç3¢·7G&ærÂ7G&æuÕµÓ²öä6ævS¢fÇVS¢7G&ærÓâföBÒ°¢&WGW&âÆ'F6ÆR6Æ74æÖS×¶ÖöæW×7FBG·FöæWÒ6VÆV7F&ÆRÖÖöæW×7FFÓãÇ7ãç¶Æ&VÇÓÂ÷7ããÇ6VÆV7BfÇVS×·6VÆV7FVGÒöä6ævS×²WfVçBÓâöä6ævRWfVçBçF&vWBçfÇVRÓç¶÷Föç2æÖ·fÇVRÂ÷FöäÆ&VÅÒÓâÆ÷Föâ¶W×·fÇVWÒfÇVS×·fÇVWÓç¶÷FöäÆ&VÇÓÂö÷FöãâÓÂ÷6VÆV7CãÇ7G&öæsç¶f÷&ÖDÖöæWfÇVRÓÂ÷7G&öæsãÂö'F6ÆSã°§Ð ¦gVæ7Föâ6÷'D6öçG&öÇ2²6÷'D¶WÂF&V7FöâÂöä¶WÂöäF&V7FöâÓ¢²6÷'D¶W¢6÷'D¶W²F&V7Föã¢6÷'DF&V7Föã²öä¶W¢¶W¢6÷'D¶WÓâföC²öäF&V7Föã¢F&V7Föã¢6÷'DF&V7FöâÓâföBÒ°¢&WGW&âÆFb6Æ74æÖSÒ'6÷'BÖ6öçG&öÇ2#ãÇ6VÆV7B&ÖÆ&VÃÒ%6÷'B÷&FW'2'"fÇVS×·6÷'D¶WÒöä6ævS×²WfVçBÓâöä¶WWfVçBçF&vWBçfÇVR26÷'D¶WÓãÆ÷FöâfÇVSÒ&÷&FW$çVÖ&W"#ä÷&FW"çVÖ&W#Âö÷FöããÆ÷FöâfÇVSÒ&×÷'FVDB#äÆ7BFFVCÂö÷FöããÆ÷FöâfÇVSÒ'WFFVDB#äÆ7BVFFVCÂö÷FöããÂ÷6VÆV7CãÇ6VÆV7B&ÖÆ&VÃÒ%6÷'BF&V7Föâ"fÇVS×¶F&V7FöçÒöä6ævS×²WfVçBÓâöäF&V7FöâWfVçBçF&vWBçfÇVR26÷'DF&V7FöâÓãÆ÷FöâfÇVSÒ&62#ä66VæFæsÂö÷FöããÆ÷FöâfÇVSÒ&FW62#äFW66VæFæsÂö÷FöããÂ÷6VÆV7CãÂöFcã°§Ð ¦gVæ7Föâ7FGW5ÆÂ²7FGW2Ó¢²7FGW3¢÷&FW%7FGW2Ò°¢&WGW&âÇ7â6Æ74æÖS×¶7FGW2×ÆÂ7FGW2ÒG·7FGW7ÖÓç·7FGW4Æ&VÇ5·7FGW5×ÓÂ÷7ãã°§Ð ¦gVæ7Föâ×÷'D&÷²çVÖ&W"ÂFFÆRÂ&WV&VBÂfÇVRÂöä6ævRÂöäfÆRÂÆ6VöÆFW"Ó¢²çVÖ&W#¢7G&æs²FFÆS¢7G&æs²&WV&VCó¢&ööÆVã²fÇVS¢7G&æs²öä6ævS¢fÇVS¢7G&ærÓâföC²öäfÆS¢fÆSó¢fÆRÓâföC²Æ6VöÆFW#¢7G&ærÒ°¢&WGW&âÆ'F6ÆR6Æ74æÖSÒ&6&B×÷'BÖ&÷#ãÆFb6Æ74æÖSÒ&×÷'BÖVFær#ãÇ7ãç¶çVÖ&W'ÓÂ÷7ããÆFcãÆ3ç·FFÆWÓÂö3ãÇç·&WV&VBò%&WV&VB"¢$÷FöæÂÂ'WB&V6öÖÖVæFVB'ÓÂ÷ãÂöFcãÂöFcãÆÆ&VÂ6Æ74æÖSÒ&fÆRÖG&÷#ãÆçWBGSÒ&fÆR"66WCÒ"æ77bÇFWBö77b"öä6ævS×²WfVçBÓâöäfÆRWfVçBçF&vWBæfÆW3òå³ÒÒóãÇ7G&öæsä6ö÷6R55bfÆSÂ÷7G&öæsãÇ7ãæ÷"7FRFR55b6öçFVçB&VÆ÷sÂ÷7ããÂöÆ&VÃãÇFWF&VfÇVS×·fÇVWÒöä6ævS×²WfVçBÓâöä6ævRWfVçBçF&vWBçfÇVRÒÆ6VöÆFW#×·Æ6VöÆFW'ÒóãÂö'F6ÆSã°§Ð ¦gVæ7Föâ÷&FW$G&vW"²÷&FW"Â&öÆRÂ7F÷"Âöä6Æ÷6RÂöåWFFRÂöå7FGW2Ó¢²÷&FW#¢÷&FW#²&öÆS¢W6W%&öÆS²7F÷#¢7G&æs²öä6Æ÷6S¢ÓâföC²öåWFFS¢F6¢'FÃÄ÷&FW#âÓâföC²öå7FGW3¢7FGW3¢÷&FW%7FGW2ÓâföBÒ°¢6öç7BFÖâÒ&öÆRÓÓÒ&FÖâ#°¢6öç7BföÆÆ÷værÒæWE7FGW5¶÷&FW"ç7FGW5Ó° ¢gVæ7FöâWÆöE÷FòfÆSó¢fÆR°¢bfÆR&WGW&ã°¢bfÆRç6¦Râ5óó&WGW&âÆW'B%ÆV6R6ö÷6RâÖvR6ÖÆÆW"Fâ2Ô"â"°¢6öç7B&VFW"ÒæWrfÆU&VFW"°¢&VFW"æöæÆöBÒÓâöåWFFR²÷FôFFW&Ã¢7G&ær&VFW"ç&W7VÇBÂ÷FôæÖS¢fÆRææÖRÒ°¢&VFW"ç&VD4FFU$ÂfÆR°¢Ð ¢&WGW&âÆFb6Æ74æÖSÒ&G&vW"Ö&6¶G&÷"öäÖ÷W6TF÷vã×²WfVçBÓâWfVçBçF&vWBÓÓÒWfVçBæ7W'&VçEF&vWBbböä6Æ÷6RÓãÆ6FR6Æ74æÖSÒ&÷&FW"ÖG&vW"#ãÆFb6Æ74æÖSÒ&G&vW"ÖVFW"#ãÆFcãÇäõ$DU"DUDÃÂ÷ãÆ#ç¶÷&FW$Æ&VÂ÷&FW"ÓÂö#ãÂöFcãÆ'WGFöâöä6Æ6³×¶öä6Æ÷6WÓçÂö'WGFöããÂöFcãÆFb6Æ74æÖSÒ&G&vW"Ö&öG#à¢Ç6V7Föâ6Æ74æÖSÒ&FWFÂ×7VÖÖ'#ãÆFcãÇ7ãä7W'&VçB7FGW3Â÷7ããÅ7FGW5ÆÂ7FGW3×¶÷&FW"ç7FGW7ÒóãÂöFcãÆFcãÇ7ãäÆ7BWFFVCÂ÷7ããÇ7G&öæsç¶f÷&ÖDFFR÷&FW"çWFFVDBÂG'VRÓÂ÷7G&öæsãÂöFcãÂ÷6V7Föãà¢Ç6V7Föâ6Æ74æÖSÒ&FWFÂ×6V7Föâ#ãÆ3åV6²7Föç3Âö3ãÆFb6Æ74æÖSÒ'7FGW2Ö7Föç2#ç¶föÆÆ÷værbbÆ'WGFöâ6Æ74æÖSÒ&'WGFöâ&Ö'"öä6Æ6³×²Óâöå7FGW2föÆÆ÷værÓäÖ÷fRFò·7FGW4Æ&VÇ5¶föÆÆ÷væu×ÓÂö'WGFöãç×¶FÖâbbÆ'WGFöâ6Æ74æÖSÒ&'WGFöâ77VRÖ'WGFöâ"öä6Æ6³×²Óâöå7FGW2&77VR"ÓäÖ&²77VSÂö'WGFöãç×¶FÖâbb÷&FW"ç7FGW2ÓÓÒ&77VR"bbÆ'WGFöâ6Æ74æÖSÒ&'WGFöâ6V6öæF'"öä6Æ6³×²Óâöå7FGW2'6VçEöf÷%÷6Wvær"Óå&W6öÇfR77VSÂö'WGFöãçÓÆ6Æ74æÖSÒ&'WGFöâvG6"&Vc×·vG6Ææ²÷&FW"ÒF&vWCÒ%ö&Ææ²#ä÷VâvG4ÂöãÂöFcãÂ÷6V7Föãà¢Ç6V7Föâ6Æ74æÖSÒ&FWFÂ×6V7Föâ#ãÆ3ä7W7FöÖW"æB÷&FW#Âö3ãÆFb6Æ74æÖSÒ&fVÆBÖw&B#ãÄfVÆBÆ&VÃÒ$÷&FW"çVÖ&W""fÇVS×¶2G¶÷&FW"æ÷&FW$çVÖ&W'ÖÒóãÄfVÆBÆ&VÃÒ$÷&FW"FFR"fÇVS×¶f÷&ÖDFFR÷&FW"æ÷&FW$FFRÂG'VRÒóãÄfVÆBÆ&VÃÒ%ÖVçBÖWFöB"fÇVS×¶÷&FW"çÖVçE&ö6W76÷"ÇÂ%Væ¶æ÷vâ'ÒóãÄVFF&ÆRÆ&VÃÒ$7W7FöÖW"æÖR"fÇVS×¶÷&FW"æ7W7FöÖW$æÖWÒF6&ÆVC×²FÖçÒöä6ævS×²fÇVRÓâöåWFFR²7W7FöÖW$æÖS¢fÇVRÒÒóãÄVFF&ÆRÆ&VÃÒ%öæR"fÇVS×¶÷&FW"çöæWÒF6&ÆVC×²FÖçÒöä6ævS×²fÇVRÓâöåWFFR²öæS¢fÇVRÒÒóãÄVFF&ÆRvFRÆ&VÃÒ$FG&W72"fÇVS×¶÷&FW"æFG&W77ÒF6&ÆVC×²FÖçÒöä6ævS×²fÇVRÓâöåWFFR²FG&W73¢fÇVRÒÒóãÂöFcãÂ÷6V7Föãà¢Ç6V7Föâ6Æ74æÖSÒ&FWFÂ×6V7Föâ#ãÆ3åÇW6RFWFÇ3Âö3ãÆFb6Æ74æÖSÒ&fVÆBÖw&B#ãÄVFF&ÆRÆ&VÃÒ%&öGV7BæÖR"fÇVS×¶÷&FW"ç&öGV7GÒF6&ÆVC×²FÖçÒöä6ævS×²fÇVRÓâöåWFFR²&öGV7C¢fÇVRÒÒóãÄVFF&ÆRÆ&VÃÒ$6&7FW""fÇVS×¶÷&FW"æ6&7FW'ÒF6&ÆVC×²FÖçÒöä6ævS×²fÇVRÓâöåWFFR²6&7FW#¢fÇVRÒÒóãÄVFF&ÆRÆ&VÃÒ%6WBæF6F÷""fÇVS×¶÷&FW"ç6WDæF6F÷"óò"'ÒF6&ÆVC×²FÖçÒöä6ævS×²fÇVRÓâöåWFFR²6WDæF6F÷#¢fÇVRÒÒóãÄVFF&ÆRÆ&VÃÒ$BvV'6FRÆæ²"fÇVS×¶÷&FW"æEvV'6FTÆæ²óò"'ÒF6&ÆVC×²FÖçÒöä6ævS×²fÇVRÓâöåWFFR²EvV'6FTÆæ³¢fÇVRÒÒóãÄVFF&ÆRÆ&VÃÒ%fö6RÆVæwF"fÇVS×µ7G&ær÷&FW"çfö6TÆVæwFÇÂ""ÒF6&ÆVC×²FÖçÒöä6ævS×²fÇVRÓâöåWFFR²fö6TÆVæwF¢çVÖ&W"fÇVRÇÂÒÒóãÄVFF&ÆRÆ&VÃÒ%ÇW6æÖR"fÇVS×¶÷&FW"çÇW6æÖWÒF6&ÆVC×²FÖçÒöä6ævS×²fÇVRÓâöåWFFR²ÇW6æÖS¢fÇVRÒÒóãÄVFF&ÆRvFRÆ&VÃÒ%&VÖ&²"fÇVS×¶÷&FW"ç&VÖ&²óò"'ÒF6&ÆVC×²FÖçÒöä6ævS×²fÇVRÓâöåWFFR²&VÖ&³¢fÇVRÒÒóãÄVFF&ÆRvFRFWF&VÆ&VÃÒ$ÖVæævgVÂæ÷FR"fÇVS×¶÷&FW"æÖVæævgVÄæ÷FWÒF6&ÆVC×²FÖçÒöä6ævS×²fÇVRÓâöåWFFR²ÖVæævgVÄæ÷FS¢fÇVRÒÒóãÆFb6Æ74æÖSÒ&fVÆBvFR#ãÆÆ&VÃäÖVæævgVÂÖW76vSÂöÆ&VÃç¶÷&FW"æÖVæævgVÄÖW76vRòÆ&Vc×¶÷&FW"æÖVæævgVÄÖW76vWÒF&vWCÒ%ö&Ææ²"&VÃÒ&æ÷&VfW'&W"#ä÷Vâ7W7FöÖW"ÖW76vSÂöâ¢Ç7ãäæ÷B&÷fFVCÂ÷7ãçÓÂöFcãÆFb6Æ74æÖSÒ&fVÆB#ãÆÆ&VÃåfö6RWÆöCÂöÆ&VÃç¶FÖâòÇ6VÆV7BfÇVS×¶÷&FW"çfö6UWÆöE7FGW7Òöä6ævS×²WfVçBÓâöåWFFR²fö6UWÆöE7FGW3¢WfVçBçF&vWBçfÇVR2÷&FW%²'fö6UWÆöE7FGW2%ÒÒÓãÆ÷FöâfÇVSÒ&Ö76ær#äÖ76æsÂö÷FöããÆ÷FöâfÇVSÒ'&V6VfVB#å&V6VfVCÂö÷FöããÆ÷FöâfÇVSÒ&6V6¶VB#ä6V6¶VCÂö÷FöããÂ÷6VÆV7Câ¢Ç7G&öæsç¶÷&FW"çfö6UWÆöE7FGW7ÓÂ÷7G&öæsçÓÂöFcãÂöFcãÂ÷6V7Föãà¢Ç6V7Föâ6Æ74æÖSÒ&FWFÂ×6V7Föâ#ãÆ3äFVÆfW'Âö3ãÆFb6Æ74æÖSÒ&fVÆBÖw&B#ãÄVFF&ÆRÆ&VÃÒ$6÷W&W""fÇVS×¶÷&FW"æ6÷W&W'ÒF6&ÆVC×²FÖçÒÆ6VöÆFW#Ò$¢eBW&W72"öä6ævS×²fÇVRÓâöåWFFR²6÷W&W#¢fÇVRÒÒóãÄVFF&ÆRÆ&VÃÒ%G&6¶ærçVÖ&W""fÇVS×¶÷&FW"çG&6¶ætçVÖ&W'ÒF6&ÆVC×²FÖçÒÆ6VöÆFW#Ò$VçFW"G&6¶ærçVÖ&W""öä6ævS×²fÇVRÓâöåWFFR²G&6¶ætçVÖ&W#¢fÇVRÒÒóãÂöFcãÂ÷6V7Föãà¢Ç6V7Föâ6Æ74æÖSÒ&FWFÂ×6V7Föâ#ãÆ3åFÆ÷"ò6¶ær÷FóÂö3ãÆFb6Æ74æÖSÒ'÷FòÖfVÆB#ç¶÷&FW"ç÷FôFFW&ÂòÆÖr7&3×¶÷&FW"ç÷FôFFW&ÇÒÇCÒ%FÆ÷"÷"6¶ærWfFVæ6R"óâ¢ÆFb6Æ74æÖSÒ'÷Fò×Æ6VöÆFW"#äæò÷FòWÆöFVCÂöFcç×¶FÖâbbÆÆ&VÂ6Æ74æÖSÒ&'WGFöâ6V6öæF'#ãÆçWBGSÒ&fÆR"66WCÒ&ÖvRò¢"öä6ævS×²WfVçBÓâWÆöE÷FòWfVçBçF&vWBæfÆW3òå³ÒÒóç¶÷&FW"ç÷FôFFW&Âò%&WÆ6R÷Fò"¢%WÆöB÷Fò'ÓÂöÆ&VÃçÒ¶÷&FW"ç÷FôæÖRbbÇ6ÖÆÃç¶÷&FW"ç÷FôæÖWÓÂ÷6ÖÆÃçÓÂöFcãÂ÷6V7Föãà¢Ç6V7Föâ6Æ74æÖSÒ&FWFÂ×6V7Föâ#ãÆ3äçFW&æÂæ÷FW3Âö3ãÇFWF&V6Æ74æÖSÒ&æ÷FW2"fÇVS×¶÷&FW"æçFW&æÄæ÷FW7ÒF6&ÆVC×²FÖçÒöä6ævS×²WfVçBÓâöåWFFR²çFW&æÄæ÷FW3¢WfVçBçF&vWBçfÇVRÒÒÆ6VöÆFW#Ò$FBæ÷FW2f6&ÆRFò÷W"FVÒâââ"óãÂ÷6V7Föãà¢Ç6V7Föâ6Æ74æÖSÒ&FWFÂ×6V7Föâ#ãÆ3å7FGW27F÷'Âö3ãÆFb6Æ74æÖSÒ&7F÷'#çµ²ââæ÷&FW"ç7FGW47F÷'Òç&WfW'6RæÖWfVçBÓâÆFb¶W×¶WfVçBæGÓãÇ7ããÂ÷7ããÆFcãÇ7G&öæsç·7FGW4Æ&VÇ5¶WfVçBç7FGW5×ÓÂ÷7G&öæsãÇç¶WfVçBæ6ævVD'ÒÂ¶f÷&ÖDFFRWfVçBæ6ævVDBÂG'VRÓÂ÷ç¶WfVçBææ÷FRbbÇ6ÖÆÃç¶WfVçBææ÷FWÓÂ÷6ÖÆÃçÓÂöFcãÂöFcâÓÂöFcãÂ÷6V7Föãà¢²FÖâbbÇ6Æ74æÖSÒ'W&Ö76öâÖæ÷FR#å6væVBâ27Ffbâ÷R6âöæÇÖ÷fR÷&FW'2FòFRæWB7FvRãÂ÷çÐ¢ÂöFcãÂö6FSãÂöFcã°§Ð ¦gVæ7FöâfVÆB²Æ&VÂÂfÇVRÓ¢²Æ&VÃ¢7G&æs²fÇVS¢7G&ærÒ°¢&WGW&âÆFb6Æ74æÖSÒ&fVÆB#ãÆÆ&VÃç¶Æ&VÇÓÂöÆ&VÃãÇ7G&öæsç·fÇVRÇÂ"Ò'ÓÂ÷7G&öæsãÂöFcã°§Ð ¦gVæ7FöâVFF&ÆR²Æ&VÂÂfÇVRÂöä6ævRÂF6&ÆVBÂÆ6VöÆFW"ÂvFRÂFWF&VÓ¢²Æ&VÃ¢7G&æs²fÇVS¢7G&æs²öä6ævS¢fÇVS¢7G&ærÓâföC²F6&ÆVCó¢&ööÆVã²Æ6VöÆFW#ó¢7G&æs²vFSó¢&ööÆVã²FWF&Vó¢&ööÆVâÒ°¢&WGW&âÆFb6Æ74æÖS×¶fVÆBG·vFRò'vFR"¢"'ÖÓãÆÆ&VÃç¶Æ&VÇÓÂöÆ&VÃç·FWF&VòÇFWF&VfÇVS×·fÇVWÒF6&ÆVC×¶F6&ÆVGÒÆ6VöÆFW#×·Æ6VöÆFW'Òöä6ævS×²WfVçBÓâöä6ævRWfVçBçF&vWBçfÇVRÒóâ¢ÆçWBfÇVS×·fÇVWÒF6&ÆVC×¶F6&ÆVGÒÆ6VöÆFW#×·Æ6VöÆFW'Òöä6ævS×²WfVçBÓâöä6ævRWfVçBçF&vWBçfÇVRÒóçÓÂöFcã°§Ð ¦gVæ7Föâ6¶æu6Æ²÷&FW"Ó¢²÷&FW#¢÷&FW"Ò°¢&WGW&âÆ'F6ÆR6Æ74æÖSÒ&b×6Æ#ãÆVFW#ãÇ7ãäõ$DU"CÂ÷7ããÇ7G&öæsç¶÷&FW$Æ&VÂ÷&FW"ÓÂ÷7G&öæsãÂöVFW#ãÆFb6Æ74æÖSÒ'6ÆÖfVÆG2#ãÆFb6Æ74æÖSÒ'&Ö'×6ÆÖfVÆB#ãÆÆ&VÃä4$5DU#£ÂöÆ&VÃãÇç¶÷&FW"æ6&7FW"ÇÂ"Ò'ÓÂ÷ãÂöFcãÆFb6Æ74æÖSÒ'&Ö'×6ÆÖfVÆB#ãÆÆ&VÃåÅU4äÔS£ÂöÆ&VÃãÇç¶÷&FW"çÇW6æÖRÇÂ"Ò'ÓÂ÷ãÂöFcãÆFcãÆÆ&VÃä5U5DôÔU#£ÂöÆ&VÃãÇç¶÷&FW"æ7W7FöÖW$æÖRÇÂ"Ò'ÓÂ÷ãÂöFcãÆFcãÆÆ&VÃåôäS£ÂöÆ&VÃãÇç¶÷&FW"çöæRÇÂ"Ò'ÓÂ÷ãÂöFcãÆFb6Æ74æÖSÒ'&VÖ&²×&÷r#ãÆÆ&VÃå$TÔ$³£ÂöÆ&VÃãÇç¶÷&FW"ç&VÖ&²ÇÂ"Ò'ÓÂ÷ãÂöFcãÂöFcãÆfö÷FW#äÖVæævgVÂÇW6W3Âöfö÷FW#ãÂö'F6ÆSã°§Ð ¦gVæ7FöâVçfVÆ÷U6VWB²÷&FW'2ÂvTçVÖ&W"Ó¢²÷&FW'3¢÷&FW%µÓ²vTçVÖ&W#¢çVÖ&W"Ò°¢&WGW&âÆ'F6ÆR6Æ74æÖSÒ&VçfVÆ÷R×6VWB#ãÇ7ãåtR·vTçVÖ&W'ÓÂ÷7ããÆFcãÇ6ÖÆÃåDõäÔSÂ÷6ÖÆÃãÇ7G&öæsç²÷&FW'5³ÓòçÇW6æÖRÇÂ"Ò"çFõWW$66RÓÂ÷7G&öæsãÂöFcãÆFcãÇ6ÖÆÃä$õEDôÒäÔSÂ÷6ÖÆÃãÇ7G&öæsç²÷&FW'5³ÓòçÇW6æÖRÇÂ"Ò"çFõWW$66RÓÂ÷7G&öæsãÂöFcãÂö'F6ÆSã°§Ð §GR6öäæÖRÒ&÷&FW'2"Â&gVÆfÆÖVçB"Â'6¶ær"Â&VçfVÆ÷R"Â&×÷'B"Â'6VB"Â&Æöv÷WB"Â'6V&6"Â&7F÷'"Â&G&r"Â'6WGFæw2"Â'7Fö6²"Â'&W÷'B#° ¦gVæ7Föâ6öâ²æÖRÓ¢²æÖS¢6öäæÖRÒ°¢6öç7B6öÖÖöã¢5du&÷3Å5du5dtVÆVÖVçCâÒ²vGF¢ÂVvC¢ÂfWt&÷¢##B#B"ÂfÆÃ¢&æöæR"Â7G&ö¶S¢&7W'&VçD6öÆ÷""Â7G&ö¶UvGF¢ãÂ7G&ö¶TÆæV6¢'&÷VæB"Â7G&ö¶TÆæV¦öã¢'&÷VæB"Â&&ÖFFVâ#¢G'VRÓ°¢bæÖRÓÓÒ&÷&FW'2"&WGW&âÇ7fr²ââæ6öÖÖöçÓãÇ&V7BÒ#2"Ò#2"vGFÒ#r"VvCÒ#r"'Ò#"óãÇ&V7BÒ#B"Ò#2"vGFÒ#r"VvCÒ#r"'Ò#"óãÇ&V7BÒ#2"Ò#B"vGFÒ#r"VvCÒ#r"'Ò#"óãÇ&V7BÒ#B"Ò#B"vGFÒ#r"VvCÒ#r"'Ò#"óãÂ÷7fsã°¢bæÖRÓÓÒ&gVÆfÆÖVçB"&WGW&âÇ7fr²ââæ6öÖÖöçÓãÇFCÒ$Óf4Ó&4Ó2"óãÆ6&6ÆR7Ò#B"7Ò#b"#Ò#"óãÆ6&6ÆR7Ò#B"7Ò#""#Ò#"óãÆ6&6ÆR7Ò#B"7Ò#"#Ò#"óãÂ÷7fsã°¢bæÖRÓÓÒ'6¶ær"&WGW&âÇ7fr²ââæ6öÖÖöçÓãÇFCÒ$Ób6Ã27cTg¢"óãÇFCÒ$ÓB7cFDÓ&dÓfb"óãÂ÷7fsã°¢bæÖRÓÓÒ&VçfVÆ÷R"&WGW&âÇ7fr²ââæ6öÖÖöçÓãÇ&V7BÒ#2"Ò#R"vGFÒ#"VvCÒ#B"'Ò#""óãÇFCÒ&Ó2rbÓb"óãÂ÷7fsã°¢bæÖRÓÓÒ&×÷'B"&WGW&âÇ7fr²ââæ6öÖÖöçÓãÇFCÒ$Ó"7c$ÓrÃRÓRRTÓRWcVGbÓR"óãÂ÷7fsã°¢bæÖRÓÓÒ'6VB"&WGW&âÇ7fr²ââæ6öÖÖöçÓãÇFCÒ$Ó#bvÂÓRÓR"óãÂ÷7fsã°¢bæÖRÓÓÒ&Æöv÷WB"&WGW&âÇ7fr²ââæ6öÖÖöçÓãÇFCÒ$ÓTWcFTÓBÃBBÓBDÓ$"óãÂ÷7fsã°¢bæÖRÓÓÒ'6V&6"&WGW&âÇ7fr²ââæ6öÖÖöçÓãÆ6&6ÆR7Ò#"7Ò#"#Ò#r"óãÇFCÒ&Ó##ÓBÓB"óãÂ÷7fsã°¢bæÖRÓÓÒ'6WGFæw2"&WGW&âÇ7fr²ââæ6öÖÖöçÓãÆ6&6ÆR7Ò#""7Ò#""#Ò#2"óãÇFCÒ$ÓãBVãrãrã2ãÂããÓ"ã"ãÒãÒããrãrÓãÒã2ãrãrÓãgbã&ÓEc#ãrãrÓÓãbãrãrÓãã6ÂÒããÃBã"vÂãÒããrãrã2Óããrãr2D"ãbÓD6ãrãrãbÓãrãrÒã2ÓãÃBã"rrBã&ÂãããrãrBãbãrãr7bÒã&Ec6ãrãrãbãrãrãÒã6ÂãÒãÃãvÂÒãããrãrÒã2ããrãrãbã'cD#ãrãrÓãb¢"óãÂ÷7fsã°¢bæÖRÓÓÒ'7Fö6²"&WGW&âÇ7fr²ââæ6öÖÖöçÓãÇFCÒ&ÓBrÓBBÓBÓÓE¢"óãÇFCÒ&ÓBwcÃBÓEctÓ"c"óãÂ÷7fsã°¢bæÖRÓÓÒ'&W÷'B"&WGW&âÇ7fr²ââæ6öÖÖöçÓãÇFCÒ$Ób6'cg¤ÓdÓ&dÓfB"óãÂ÷7fsã°¢bæÖRÓÓÒ&G&r"&WGW&âÇ7fr²ââæ6öÖÖöçÓãÆ6&6ÆR7Ò#"7Ò#r"#Ò#"fÆÃÒ&7W'&VçD6öÆ÷""7G&ö¶SÒ&æöæR"óãÆ6&6ÆR7Ò#b"7Ò#r"#Ò#"fÆÃÒ&7W'&VçD6öÆ÷""7G&ö¶SÒ&æöæR"óãÆ6&6ÆR7Ò#"7Ò#""#Ò#"fÆÃÒ&7W'&VçD6öÆ÷""7G&ö¶SÒ&æöæR"óãÆ6&6ÆR7Ò#b"7Ò#""#Ò#"fÆÃÒ&7W'&VçD6öÆ÷""7G&ö¶SÒ&æöæR"óãÆ6&6ÆR7Ò#"7Ò#r"#Ò#"fÆÃÒ&7W'&VçD6öÆ÷""7G&ö¶SÒ&æöæR"óãÆ6&6ÆR7Ò#b"7Ò#r"#Ò#"fÆÃÒ&7W'&VçD6öÆ÷""7G&ö¶SÒ&æöæR"óãÂ÷7fsã°¢&WGW&âÇ7fr²ââæ6öÖÖöçÓãÇFCÒ$Ó"cVÃ2""óãÆ6&6ÆR7Ò#""7Ò#""#Ò#"óãÂ÷7fsã°§Ð￿￿
+  const allSalesReportRows = useMemo(() => buildSalesReportRows(orders, processorSettings, salesFeeSettings.shopifyPercentage), [orders, processorSettings, salesFeeSettings]);
+  const dateFilteredReportRows = useMemo(() => allSalesReportRows.filter((row) => {
+    const date = dateKey(row.orderDate);
+    return (!reportStartDate || date >= reportStartDate) && (!reportEndDate || date <= reportEndDate);
+  }).sort((a, b) => Number(a.orderNumber) - Number(b.orderNumber)), [allSalesReportRows, reportStartDate, reportEndDate]);
+  const visibleReportRows = useMemo(() => reportSelectedOrders.length
+    ? dateFilteredReportRows.filter((row) => reportSelectedOrders.includes(row.orderNumber))
+    : dateFilteredReportRows, [dateFilteredReportRows, reportSelectedOrders]);
+  const reportTotals = useMemo(() => visibleReportRows.reduce((total, row) => ({
+    sales: total.sales + row.salePrice,
+    discounts: total.discounts + row.totalDiscount,
+    processingFees: total.processingFees + row.processingFee,
+    shopifyFees: total.shopifyFees + row.shopifyFee,
+    fees: total.fees + row.totalFees,
+    cash: total.cash + row.cashAfterFees,
+  }), { sales: 0, discounts: 0, processingFees: 0, shopifyFees: 0, fees: 0, cash: 0 }), [visibleReportRows]);
+  const stock = useMemo(() => summarizeStock(orders, stockSettings), [orders, stockSettings]);
+  const historyEvents = useMemo<ActivityEvent[]>(() => [
+    ...activity,
+    ...orders.flatMap((order) => order.statusHistory.map((event) => ({
+      id: `status-${event.id}`,
+      orderNumber: order.orderNumber,
+      action: "Status changed",
+      detail: `${statusLabels[event.status]}${event.note ? ` - ${event.note}` : ""}`,
+      actor: event.changedBy,
+      createdAt: event.changedAt,
+    }))),
+  ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [activity, orders]);
+
+  if (!session) return <Login onLogin={setSession} />;
+  const currentSession = session;
+
+  async function logActivity(action: string, detail: string, orderNumber?: string) {
+    const createdAt = new Date().toISOString();
+    const event = {
+      id: `${createdAt}-${Math.random().toString(36).slice(2)}`,
+      orderNumber,
+      action,
+      detail,
+      actor: session ? `${session.displayName} (${session.username})` : "System",
+      createdAt,
+    };
+    setActivity((current) => [event, ...current]);
+    try { await insertSharedActivity(event); }
+    catch (error) { setNotice(error instanceof Error ? error.message : "Activity history could not be saved."); }
+  }
+
+  async function updateOrder(orderId: string, patch: Partial<Order>) {
+    if (currentSession.role !== "admin") return setNotice("Staff accounts can only move orders to the next stage.");
+    const order = orders.find((item) => item.id === orderId);
+    if (!order) return;
+    const updated = { ...order, ...patch, updatedAt: new Date().toISOString() };
+    setOrders((current) => current.map((item) => item.id === orderId ? updated : item));
+    try {
+      await upsertSharedOrders([updated]);
+      await logActivity("Order updated", `Changed ${Object.keys(patch).join(", ")}.`, order.orderNumber);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Order update could not be saved.");
+      await loadSharedData();
+    }
+  }
+
+  async function setStatus(order: Order, status: OrderStatus) {
+    if (order.status === status) return;
+    if (currentSession.role === "staff" && nextStatus[order.status] !== status) {
+      return setNotice("Staff accounts can only move orders to the next stage.");
+    }
+    const changedAt = new Date().toISOString();
+    const updated: Order = {
+      ...order,
+      status,
+      updatedAt: changedAt,
+      statusHistory: [...(order.statusHistory ?? []), {
+        id: `${order.id}-${changedAt}`,
+        status,
+        changedAt,
+        changedBy: session ? `${session.displayName} (${session.username})` : "Staff",
+      }],
+    };
+    setOrders((current) => current.map((item) => item.id === order.id ? updated : item));
+    try { await upsertSharedOrders([updated]); }
+    catch (error) { setNotice(error instanceof Error ? error.message : "Status change could not be saved."); await loadSharedData(); return; }
+    setNotice(`#${order.orderNumber} updated to ${statusLabels[status]}.`);
+  }
+
+  async function bulkMoveNext() {
+    const selected = orders.filter((order) => selectedOrders.includes(order.id));
+    if (!selected.length) return setNotice("Select at least one order first.");
+    const changedAt = new Date().toISOString();
+    let moved = 0;
+    const changed: Order[] = [];
+    const nextOrders = orders.map((order) => {
+      if (!selectedOrders.includes(order.id)) return order;
+      const status = nextStatus[order.status];
+      if (!status) return order;
+      moved += 1;
+      const updated: Order = {
+        ...order,
+        status,
+        updatedAt: changedAt,
+        statusHistory: [...(order.statusHistory ?? []), {
+          id: `${order.id}-${changedAt}-${status}`,
+          status,
+          changedAt,
+          changedBy: session ? `$…8529 tokens truncated…account.id}><strong>@{account.username}</strong><input value={account.displayName} onChange={(event) => setAccounts((current) => current.map((item) => item.id === account.id ? { ...item, displayName: event.target.value } : item))} /><select value={account.role} onChange={(event) => setAccounts((current) => current.map((item) => item.id === account.id ? { ...item, role: event.target.value as UserRole } : item))}><option value="staff">Staff</option><option value="admin">Admin</option></select><input type="password" placeholder="New password (optional)" value={accountPasswords[account.id] ?? ""} onChange={(event) => setAccountPasswords((current) => ({ ...current, [account.id]: event.target.value }))} /><label><input type="checkbox" checked={account.active} onChange={(event) => setAccounts((current) => current.map((item) => item.id === account.id ? { ...item, active: event.target.checked } : item))} /> Active</label><button className="button primary" onClick={() => saveAccount(account, accountPasswords[account.id])}>Save</button></div>)}</div>
+
+        <div className="settings-heading"><div><h2>Initial stock</h2><p>Character stock is separate. Voice stock is one shared pool, so any 5s, 10s, or 20s sale deducts one unit.</p></div></div>
+        <div className="stock-settings">{[...stockCharacters, "VOICE"].map((itemKey) => { const setting = stockSettings.find((item) => item.itemKey === itemKey) ?? { itemKey, initialStock: 0 }; return <div key={itemKey}><strong>{itemKey === "VOICE" ? "SHARED VOICE UNITS" : itemKey}</strong><input type="number" min="0" step="1" value={setting.initialStock} onChange={(event) => setStockSettings((current) => [...current.filter((item) => item.itemKey !== itemKey), { itemKey, initialStock: Number(event.target.value) }])} /><button className="button primary" onClick={() => saveStock(setting)}>Save</button></div>; })}</div>
+
+        <div className="settings-heading"><div><h2>Payment processor fees</h2><p>New Shopify payment methods appear here automatically. Set a percentage, a fixed RM amount, both, or leave both at zero for no fee.</p></div><span>{processorSettings.length} processors</span></div>
+        <div className="processor-list">
+          <div className="processor-row shopify-fee-row"><strong>Shopify fee (Stripe and Xendit)</strong><label><input type="number" min="0" step="0.01" value={salesFeeSettings.shopifyPercentage} onChange={(event) => setSalesFeeSettings({ shopifyPercentage: Number(event.target.value) })} /><span>%</span></label><span className="shopify-fee-note">Calculated from the amount collected</span><button className="button primary" onClick={saveShopifyFee}>Save</button></div>
+          <div className="processor-row processor-header"><strong>Payment method</strong><strong>Percentage</strong><strong>Fixed amount</strong><span /></div>
+          {processorSettings.map((setting) => <div className="processor-row" key={setting.processor}><strong>{setting.processor}</strong><label><input type="number" min="0" step="0.01" value={setting.percentage} onChange={(event) => setProcessorSettings((current) => current.map((item) => item.processor === setting.processor ? { ...item, percentage: Number(event.target.value) } : item))} /><span>%</span></label><label><span>RM</span><input type="number" min="0" step="0.01" value={setting.fixedAmount} onChange={(event) => setProcessorSettings((current) => current.map((item) => item.processor === setting.processor ? { ...item, fixedAmount: Number(event.target.value) } : item))} /></label><button className="button primary" onClick={() => saveProcessor(setting)}>Save</button></div>)}
+          {!processorSettings.length && <div className="empty"><strong>No payment methods discovered yet</strong><p>Import a Shopify orders CSV and its payment methods will appear here.</p></div>}
+        </div>
+      </section>}
+
+      {view === "import" && <section className="import-page">
+        <div className="import-intro"><span>CSV</span><div><h2>Import Shopify exports</h2><p>Upload either standard Shopify CSV exports or the headerless Sheet25 files. The app matches line items with each Product block and creates one fulfilment record per plushie.</p></div></div>
+        <div className="import-columns">
+          <ImportBox number="1" title="Shopify order export" required value={orderCsv} onChange={setOrderCsv} onFile={(file) => readFile(file, "orders")} placeholder="Name, Email, Financial Status, Lineitem name..." />
+          <ImportBox number="2" title="Order metafields export" value={metafieldCsv} onChange={setMetafieldCsv} onFile={(file) => readFile(file, "metafields")} placeholder="Order GID, Order name, Metafield value..." />
+        </div>
+        <div className="import-action"><div><strong>Safe repeat imports</strong><p>Existing order numbers are updated without removing status, tracking, notes, or photos.</p></div><button className="button primary large" disabled={!orderCsv.trim()} onClick={runImport}>Validate and import orders</button></div>
+      </section>}
+    </section>
+
+    {selected && <OrderDrawer order={selected} role={session.role} actor={session.displayName} onClose={() => setSelectedId(null)} onUpdate={(patch) => updateOrder(selected.id, patch)} onStatus={(status) => setStatus(selected, status)} />}
+  </main>;
+}
+
+function Login({ onLogin }: { onLogin: (session: Session) => void }) {
+  const [username, setUsername] = useState("admin");
+  const [password, setPassword] = useState("demo1234");
+  const [error, setError] = useState("");
+  const [signingIn, setSigningIn] = useState(false);
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setSigningIn(true);
+    setError("");
+    try { onLogin(await loginDashboardAccount(username, password)); }
+    catch (loginError) { setError(loginError instanceof Error ? loginError.message : "Sign in failed."); }
+    finally { setSigningIn(false); }
+  }
+  return <main className="login-page"><section className="login-brand"><div className="login-logo">MP</div><p>MEANINGFUL PLUSHIES</p><h1>A calmer way to manage every plushie.</h1><span>Track voice, production, packing and delivery from one simple workspace.</span></section><section className="login-panel"><form onSubmit={submit}><p className="eyebrow">STAFF PORTAL</p><h2>Welcome back</h2><span>Sign in with the account created by your administrator.</span>{error && <p className="login-error">{error}</p>}<label>Username<input value={username} onChange={(event) => setUsername(event.target.value)} required autoComplete="username" /></label><label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required autoComplete="current-password" /></label><button className="button primary large" type="submit" disabled={signingIn}>{signingIn ? "Signing in..." : "Sign in"}</button></form></section></main>;
+}
+
+function Stat({ label, value, color }: { label: string; value: number; color: string }) {
+  return <article className={`stat ${color}`}><span>{label}</span><strong>{value}</strong></article>;
+}
+
+function MoneyStat({ label, value, tone }: { label: string; value: number; tone: string }) {
+  return <article className={`money-stat ${tone}`}><span>{label}</span><strong>{formatMoney(value)}</strong></article>;
+}
+
+function SelectableMoneyStat({ label, value, tone, selected, options, onChange }: { label: string; value: number; tone: string; selected: string; options: [string, string][]; onChange: (value: string) => void }) {
+  return <article className={`money-stat ${tone} selectable-money-stat`}><span>{label}</span><select value={selected} onChange={(event) => onChange(event.target.value)}>{options.map(([value, optionLabel]) => <option key={value} value={value}>{optionLabel}</option>)}</select><strong>{formatMoney(value)}</strong></article>;
+}
+
+function SortControls({ sortKey, direction, onKey, onDirection }: { sortKey: SortKey; direction: SortDirection; onKey: (key: SortKey) => void; onDirection: (direction: SortDirection) => void }) {
+  return <div className="sort-controls"><select aria-label="Sort orders by" value={sortKey} onChange={(event) => onKey(event.target.value as SortKey)}><option value="orderNumber">Order number</option><option value="importedAt">Last added</option><option value="updatedAt">Last edited</option></select><select aria-label="Sort direction" value={direction} onChange={(event) => onDirection(event.target.value as SortDirection)}><option value="asc">Ascending</option><option value="desc">Descending</option></select></div>;
+}
+
+function StatusPill({ status }: { status: OrderStatus }) {
+  return <span className={`status-pill status-${status}`}>{statusLabels[status]}</span>;
+}
+
+function ImportBox({ number, title, required, value, onChange, onFile, placeholder }: { number: string; title: string; required?: boolean; value: string; onChange: (value: string) => void; onFile: (file?: File) => void; placeholder: string }) {
+  return <article className="card import-box"><div className="import-heading"><span>{number}</span><div><h3>{title}</h3><p>{required ? "Required" : "Optional, but recommended"}</p></div></div><label className="file-drop"><input type="file" accept=".csv,text/csv" onChange={(event) => onFile(event.target.files?.[0])} /><strong>Choose CSV file</strong><span>or paste the CSV content below</span></label><textarea value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} /></article>;
+}
+
+function OrderDrawer({ order, role, actor, onClose, onUpdate, onStatus }: { order: Order; role: UserRole; actor: string; onClose: () => void; onUpdate: (patch: Partial<Order>) => void; onStatus: (status: OrderStatus) => void }) {
+  const admin = role === "admin";
+  const following = nextStatus[order.status];
+
+  function uploadPhoto(file?: File) {
+    if (!file) return;
+    if (file.size > 3_000_000) return alert("Please choose an image smaller than 3 MB.");
+    const reader = new FileReader();
+    reader.onload = () => onUpdate({ photoDataUrl: String(reader.result), photoName: file.name });
+    reader.readAsDataURL(file);
+  }
+
+  return <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><aside className="order-drawer"><div className="drawer-header"><div><p>ORDER DETAIL</p><h2>{orderLabel(order)}</h2></div><button onClick={onClose}>x</button></div><div className="drawer-body">
+    <section className="detail-summary"><div><span>Current status</span><StatusPill status={order.status} /></div><div><span>Last updated</span><strong>{formatDate(order.updatedAt, true)}</strong></div></section>
+    <section className="detail-section"><h3>Quick actions</h3><div className="status-actions">{following && <button className="button primary" onClick={() => onStatus(following)}>Move to {statusLabels[following]}</button>}{admin && <button className="button issue-button" onClick={() => onStatus("issue")}>Mark issue</button>}{admin && order.status === "issue" && <button className="button secondary" onClick={() => onStatus("sent_for_sewing")}>Resolve issue</button>}<a className="button whatsapp" href={whatsappLink(order)} target="_blank">Open WhatsApp</a></div></section>
+    <section className="detail-section"><h3>Customer and order</h3><div className="field-grid"><Field label="Order number" value={`#${order.orderNumber}`} /><Field label="Order date" value={formatDate(order.orderDate, true)} /><Field label="Payment method" value={order.paymentProcessor || "Unknown"} /><Editable label="Customer name" value={order.customerName} disabled={!admin} onChange={(value) => onUpdate({ customerName: value })} /><Editable label="Phone" value={order.phone} disabled={!admin} onChange={(value) => onUpdate({ phone: value })} /><Editable wide label="Address" value={order.address} disabled={!admin} onChange={(value) => onUpdate({ address: value })} /></div></section>
+    <section className="detail-section"><h3>Plushie details</h3><div className="field-grid"><Editable label="Product name" value={order.product} disabled={!admin} onChange={(value) => onUpdate({ product: value })} /><Editable label="Character" value={order.character} disabled={!admin} onChange={(value) => onUpdate({ character: value })} /><Editable label="Set indicator" value={order.setIndicator ?? ""} disabled={!admin} onChange={(value) => onUpdate({ setIndicator: value })} /><Editable label="ID website link" value={order.idWebsiteLink ?? ""} disabled={!admin} onChange={(value) => onUpdate({ idWebsiteLink: value })} /><Editable label="Voice length" value={String(order.voiceLength || "")} disabled={!admin} onChange={(value) => onUpdate({ voiceLength: Number(value) || 0 })} /><Editable label="Plush name" value={order.plushName} disabled={!admin} onChange={(value) => onUpdate({ plushName: value })} /><Editable wide label="Remark" value={order.remark ?? ""} disabled={!admin} onChange={(value) => onUpdate({ remark: value })} /><Editable wide textarea label="Meaningful note" value={order.meaningfulNote} disabled={!admin} onChange={(value) => onUpdate({ meaningfulNote: value })} /><div className="field wide"><label>Meaningful message</label>{order.meaningfulMessage ? <a href={order.meaningfulMessage} target="_blank" rel="noreferrer">Open customer message</a> : <span>Not provided</span>}</div><div className="field"><label>Voice upload</label>{admin ? <select value={order.voiceUploadStatus} onChange={(event) => onUpdate({ voiceUploadStatus: event.target.value as Order["voiceUploadStatus"] })}><option value="missing">Missing</option><option value="received">Received</option><option value="checked">Checked</option></select> : <strong>{order.voiceUploadStatus}</strong>}</div></div></section>
+    <section className="detail-section"><h3>Delivery</h3><div className="field-grid"><Editable label="Courier" value={order.courier} disabled={!admin} placeholder="J&T Express" onChange={(value) => onUpdate({ courier: value })} /><Editable label="Tracking number" value={order.trackingNumber} disabled={!admin} placeholder="Enter tracking number" onChange={(value) => onUpdate({ trackingNumber: value })} /></div></section>
+    <section className="detail-section"><h3>Tailor / packing photo</h3><div className="photo-field">{order.photoDataUrl ? <img src={order.photoDataUrl} alt="Tailor or packing evidence" /> : <div className="photo-placeholder">No photo uploaded</div>}{admin && <label className="button secondary"><input type="file" accept="image/*" onChange={(event) => uploadPhoto(event.target.files?.[0])} />{order.photoDataUrl ? "Replace photo" : "Upload photo"}</label>} {order.photoName && <small>{order.photoName}</small>}</div></section>
+    <section className="detail-section"><h3>Internal notes</h3><textarea className="notes" value={order.internalNotes} disabled={!admin} onChange={(event) => onUpdate({ internalNotes: event.target.value })} placeholder="Add notes visible to your team..." /></section>
+    <section className="detail-section"><h3>Status history</h3><div className="history">{[...order.statusHistory].reverse().map((event) => <div key={event.id}><span></span><div><strong>{statusLabels[event.status]}</strong><p>{event.changedBy} | {formatDate(event.changedAt, true)}</p>{event.note && <small>{event.note}</small>}</div></div>)}</div></section>
+    {!admin && <p className="permission-note">Signed in as Staff. You can only move orders to the next stage.</p>}
+  </div></aside></div>;
+}
+
+function Field({ label, value }: { label: string; value: string }) {
+  return <div className="field"><label>{label}</label><strong>{value || "-"}</strong></div>;
+}
+
+function Editable({ label, value, onChange, disabled, placeholder, wide, textarea }: { label: string; value: string; onChange: (value: string) => void; disabled?: boolean; placeholder?: string; wide?: boolean; textarea?: boolean }) {
+  return <div className={`field ${wide ? "wide" : ""}`}><label>{label}</label>{textarea ? <textarea value={value} disabled={disabled} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} /> : <input value={value} disabled={disabled} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} />}</div>;
+}
+
+function PackingSlip({ order }: { order: Order }) {
+  return <article className="a6-slip"><header><span>ORDER ID</span><strong>{orderLabel(order)}</strong></header><div className="slip-fields"><div className="primary-slip-field"><label>CHARACTER:</label><p>{order.character || "-"}</p></div><div className="primary-slip-field"><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{order.remark || "-"}</p></div></div><footer>Meaningful Plushies</footer></article>;
+}
+
+function EnvelopeSheet({ orders, pageNumber }: { orders: Order[]; pageNumber: number }) {
+  return <article className="envelope-sheet"><span>PAGE {pageNumber}</span><div><small>TOP NAME</small><strong>{(orders[0]?.plushName || "-").toUpperCase()}</strong></div><div><small>BOTTOM NAME</small><strong>{(orders[1]?.plushName || "-").toUpperCase()}</strong></div></article>;
+}
+
+type IconName = "orders" | "fulfilment" | "packing" | "envelope" | "import" | "shipped" | "logout" | "search" | "history" | "drag" | "settings" | "stock" | "report";
+
+function Icon({ name }: { name: IconName }) {
+  const common: SVGProps<SVGSVGElement> = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true };
+  if (name === "orders") return <svg {...common}><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>;
+  if (name === "fulfilment") return <svg {...common}><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>;
+  if (name === "packing") return <svg {...common}><path d="M6 3h9l3 3v15H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></svg>;
+  if (name === "envelope") return <svg {...common}><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>;
+  if (name === "import") return <svg {...common}><path d="M12 3v12M7 8l5-5 5 5M5 15v5h14v-5"/></svg>;
+  if (name === "shipped") return <svg {...common}><path d="M20 6 9 17l-5-5"/></svg>;
+  if (name === "logout") return <svg {...common}><path d="M10 5H5v14h5M14 8l4 4-4 4M18 12H9"/></svg>;
+  if (name === "search") return <svg {...common}><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>;
+  if (name === "settings") return <svg {...common}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg>;
+  if (name === "stock") return <svg {...common}><path d="m4 7 8-4 8 4-8 4-8-4Z"/><path d="m4 7v10l8 4 8-4V7M12 11v10"/></svg>;
+  if (name === "report") return <svg {...common}><path d="M6 3h12v18H6zM9 8h6M9 12h6M9 16h4"/></svg>;
+  if (name === "drag") return <svg {...common}><circle cx="8" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="17" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="17" r="1" fill="currentColor" stroke="none"/></svg>;
+  return <svg {...common}><path d="M12 8v5l3 2"/><circle cx="12" cy="12" r="9"/></svg>;
+}
