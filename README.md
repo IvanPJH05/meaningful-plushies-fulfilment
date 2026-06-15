@@ -37,14 +37,16 @@ Do not add a Supabase service-role key to this frontend application. It is not n
 
 The Print Envelope page uses the published Canva Brand Template `EAHMnYdOAJk`. For every two selected orders, Canva fills `top_plush_name` and `bottom_plush_name`, exports an A4 PDF, and the server combines the pages into one printable document.
 
-Create a Canva Connect access token with `design:content:write`, `design:meta:read`, and `design:content:read`, then add these server-only variables in **Vercel > Settings > Environment Variables**:
+Create a Canva Connect integration with `brandtemplate:content:read`, `design:content:write`, `design:content:read`, and `design:meta:read`, then add these server-only variables in **Vercel > Settings > Environment Variables**:
 
 ```env
-CANVA_ACCESS_TOKEN=YOUR_CANVA_CONNECT_ACCESS_TOKEN
+CANVA_CLIENT_ID=YOUR_CANVA_CONNECT_CLIENT_ID
+CANVA_CLIENT_SECRET=YOUR_CANVA_CONNECT_CLIENT_SECRET
+CANVA_REDIRECT_URI=https://YOUR_DOMAIN.vercel.app/api/canva/callback
 CANVA_ENVELOPE_TEMPLATE_ID=EAHMnYdOAJk
 ```
 
-Apply them to Production, Preview, and Development, then redeploy. Do not prefix the token with `NEXT_PUBLIC_`; it must remain server-only. Canva access tokens expire, so replace `CANVA_ACCESS_TOKEN` and redeploy when the dashboard reports that it has expired.
+Apply them to Production, Preview, and Development, then redeploy. Do not prefix these values with `NEXT_PUBLIC_`. Open Print Envelope and select **Connect Canva** once; the server uses PKCE OAuth and automatically rotates Canva refresh tokens in an encrypted, HTTP-only cookie.
 
 ## Existing browser data
 
