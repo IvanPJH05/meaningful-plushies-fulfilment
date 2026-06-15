@@ -221,7 +221,6 @@ export default function Home() {
   const [notice, setNotice] = useState("");
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [databaseError, setDatabaseError] = useState("");
-  const [canvaStatus, setCanvaStatus] = useState({ configured: false, connected: false, loading: true });
 
   const loadSharedData = useCallback(async (showLoading = false) => {
     if (!supabaseConfigured) {
@@ -284,21 +283,6 @@ export default function Home() {
   useEffect(() => {
     if (session?.role === "staff" && (["history", "settings", "stock", "sales_report"] as View[]).includes(view)) setView("orders");
   }, [session, view]);
-
-  useEffect(() => {
-    void fetch("/api/canva/status", { cache: "no-store" })
-      .then((response) => response.json())
-      .then((status) => setCanvaStatus({ configured: Boolean(status.configured), connected: Boolean(status.connected), loading: false }))
-      .catch(() => setCanvaStatus({ configured: false, connected: false, loading: false }));
-    const result = new URLSearchParams(window.location.search).get("canva");
-    if (result === "connected") {
-      setNotice("Canva connected successfully. Envelope PDFs are ready to generate.");
-      window.history.replaceState({}, "", window.location.pathname);
-    } else if (result?.startsWith("error:")) {
-      setNotice("Canva could not be connected. Check the integration scopes and try again.");
-      window.history.replaceState({}, "", window.location.pathname);
-    }
-  }, []);
 
   const selected = orders.find((order) => order.id === selectedId) ?? null;
   const packingOrders = orders.filter((order) => packingSelection.includes(order.id));
@@ -652,10 +636,6 @@ export default function Home() {
     }
   }
 
-  function connectCanva() {
-    window.location.href = "/api/canva/connect";
-  }
-
   async function deleteOrders(orderIds: string[]) {
     const deleting = orders.filter((order) => orderIds.includes(order.id));
     if (!deleting.length || !window.confirm(`Delete ${deleting.length} selected order${deleting.length === 1 ? "" : "s"}? This cannot be undone.`)) return;
@@ -763,11 +743,11 @@ export default function Home() {
       {view === "print_envelope" && <section className="envelope-page">
         <div className="envelope-controls card no-envelope-print">
           <div className="packing-manual"><div><h2>Choose orders to print</h2><p>Enter order IDs, choose a stage, or select every order shown in that stage.</p></div><div className="manual-entry"><input value={manualEnvelopeIds} onChange={(event) => setManualEnvelopeIds(event.target.value)} onKeyDown={(event) => event.key === "Enter" && selectManualEnvelopeOrders()} placeholder="Example: 1402, 1403, 1404" /><button className="button primary" onClick={selectManualEnvelopeOrders}>Add order IDs</button></div></div>
-          <div className={`canva-connection ${canvaStatus.connected ? "connected" : ""}`}><div><strong>{canvaStatus.loading ? "Checking Canva..." : canvaStatus.connected ? "Canva connected" : "Canva connection required"}</strong><span>{canvaStatus.connected ? "Names will be rendered and exported directly by Canva." : canvaStatus.configured ? "Connect the Canva account that owns the Brand Template." : "Canva credentials are missing from Vercel."}</span></div><button className={`button ${canvaStatus.connected ? "secondary" : "primary"}`} disabled={!canvaStatus.configured || canvaStatus.loading} onClick={connectCanva}>{canvaStatus.connected ? "Reconnect Canva" : "Connect Canva"}</button></div>
+          <div className="canva-connection connected"><div><strong>Print-ready PDF generator</strong><span>The original envelope artwork and Jingleberry font are built in. No Canva connection is required.</span></div></div>
           <div className="packing-list-header"><div><strong>Available orders</strong><span>Order number, descending</span></div><select value={envelopeStatusFilter} onChange={(event) => setEnvelopeStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><div className="packing-list-actions"><button onClick={() => setEnvelopeSelection((current) => [...new Set([...current, ...envelopeAvailableOrders.map((order) => order.id)])])}>Select shown</button><button onClick={() => setEnvelopeSelection([])}>Clear</button></div></div>
           <div className="packing-order-list">{envelopeAvailableOrders.map((order) => { const selectedIndex = envelopeSelection.indexOf(order.id); return <label key={order.id}><input type="checkbox" checked={selectedIndex >= 0} onChange={() => setEnvelopeSelection((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><div><strong>{orderLabel(order)} | {(order.plushName || "Unnamed plushie").toUpperCase()}</strong><span>{order.customerName || "No customer"} | {order.character || "No character"}</span></div>{selectedIndex >= 0 ? <b className="envelope-order-position">{selectedIndex + 1}</b> : <StatusPill status={order.status} />}</label>; })}</div>
         </div>
-        <div className="envelope-preview"><div className="preview-heading"><div><h2>A4 page order</h2><p>The generated PDF uses the supplied Canva artwork directly. Two names are placed on each page.</p></div><span>{envelopePages.length} pages</span></div>{envelopePages.length ? <div className="envelope-sheet-list">{envelopePages.map((pageOrders, index) => <EnvelopeSheet key={index} pageNumber={index + 1} orders={pageOrders} />)}</div> : <div className="preview-empty"><strong>No orders selected</strong><p>Choose orders from the list to build the envelope pages.</p></div>}</div>
+        <div className="envelope-preview"><div className="preview-heading"><div><h2>A4 page order</h2><p>Two uppercase Jingleberry names are placed on each page using the supplied envelope artwork.</p></div><span>{envelopePages.length} pages</span></div>{envelopePages.length ? <div className="envelope-sheet-list">{envelopePages.map((pageOrders, index) => <EnvelopeSheet key={index} pageNumber={index + 1} orders={pageOrders} />)}</div> : <div className="preview-empty"><strong>No orders selected</strong><p>Choose orders from the list to build the envelope pages.</p></div>}</div>
       </section>}
 
       {view === "sales_report" && session.role === "admin" && <section className="sales-report-page">
