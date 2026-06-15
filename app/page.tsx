@@ -628,24 +628,27 @@ export default function Home() {
 
   async function printEnvelopes() {
     if (!envelopeOrders.length) return;
-    const printWindow = window.open("", "_blank");
     try {
       setNotice("Generating the A4 envelope PDF...");
       const response = await fetch("/api/envelopes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ names: envelopeOrders.map((order) => order.plushName || "UNNAMED PLUSHIE") }),
-
       });
       if (!response.ok) throw new Error(await response.text() || "Envelope PDF could not be generated.");
       const url = URL.createObjectURL(await response.blob());
-      if (printWindow) printWindow.location.href = url;
-      else window.location.href = url;
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "meaningful-plushies-envelopes.pdf";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
       setNotice(`${envelopePages.length} A4 envelope page${envelopePages.length === 1 ? "" : "s"} generated.`);
     } catch (error) {
-      printWindow?.close();
-      setNotice(error instanceof Error ? error.message : "Envelope PDF could not be generated.");
+      const message = error instanceof Error ? error.message : "Envelope PDF could not be generated.";
+      setNotice(`Envelope PDF error: ${message}`);
+      window.alert(`Envelope PDF could not be generated.\n\n${message}`);
     }
   }
 
