@@ -21,6 +21,11 @@
 .envelope-order-list span { margin-top: 3px; color: #78869a; font-size: 9px; }
 .envelope-order-list b { display: grid; place-items: center; min-width: 22px; height: 22px; border-radius: 50%; background: #1769e0; color: #fff; font-size: 9px; }
 .envelope-order-position { display: grid; place-items: center; min-width: 24px; height: 24px; border-radius: 50%; background: #1769e0; color: #fff; font-size: 9px; }
+.canva-connection { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 16px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: #fff8eb; }
+.canva-connection.connected { background: #eef9f4; }
+.canva-connection strong,.canva-connection span { display: block; }
+.canva-connection strong { font-size: 11px; }
+.canva-connection span { margin-top: 3px; color: #78869a; font-size: 9px; }
 .envelope-preview { padding: 17px; border-radius: 9px; background: #e7ebf0; min-height: 620px; }
 .envelope-sheet-list { display: grid; gap: 18px; }
 .envelope-sheet { display: grid; grid-template-columns: auto 1fr 1fr; gap: 12px; align-items: center; padding: 18px; background: #fff; border: 1px solid #cfd5dc; border-radius: 9px; box-shadow: 0 5px 15px rgba(28,42,58,.08); }
