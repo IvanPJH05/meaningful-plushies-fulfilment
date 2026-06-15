@@ -1,4 +1,12 @@
 import { PDFDocument } from "pdf-lib";
+import { cookies } from "next/headers";
+import {
+  CANVA_REFRESH_COOKIE,
+  canvaCookieOptions,
+  decryptCanvaValue,
+  encryptCanvaValue,
+  refreshCanvaAccessToken,
+} from "../../../lib/canva-auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -20,10 +28,15 @@ function cleanName(value: unknown) {
 
 export async function POST(request: Request) {
   try {
-    const token = process.env.CANVA_ACCESS_TOKEN;
-    if (!token) {
-      return new Response("Canva is not connected to Vercel. Add CANVA_ACCESS_TOKEN in the Vercel environment variables, then redeploy.", { status: 503 });
-    }
+    const cookieStore = await cookies();
+    const encryptedRefreshToken = cookieStore.get(CANVA_REFRESH_COOKIE)?.value;
+    if (!encryptedRefreshToken) return new Response("Connect Canva from the Print Envelope page first.", { status: 401 });
+    const tokens = await refreshCanvaAccessToken(decryptCanvaValue(encryptedRefreshToken));
+    cookieStore.set(CANVA_REFRESH_COOKIE, encryptCanvaValue(tokens.refresh_token), {
+      ...canvaCookieOptions,
+      maxAge: 60 * 60 * 24 * 30,
+    });
+    const token = tokens.access_token;
 
     const body = await request.json() as { names?: unknown[] };
     const names = (body.names ?? []).map(cleanName).filter(Boolean);
@@ -128,6 +141,6 @@ async function canvaFetch(token: string, path: string, init: RequestInit = {}) {
   if (response.ok) return response;
 
   const error = await response.json().catch(() => ({})) as { message?: string };
-  if (response.status === 401) throw new Error("The Canva access token has expired. Replace CANVA_ACCESS_TOKEN in Vercel and redeploy.");
+  if (response.status === 401) throw new Error("The Canva connection expired. Reconnect Canva from the Print Envelope page.");
   throw new Error(error.message || `Canva request failed (${response.status}).`);
 }
