@@ -22,7 +22,9 @@ export async function POST(request: Request) {
     const template = await PDFDocument.load(templateBytes);
     const output = await PDFDocument.create();
     output.registerFontkit(fontkit);
-    const font = await output.embedFont(fontBytes, { subset: true });
+    // The Canva export already contains a subset font. Subsetting it again corrupts
+    // its character map, so preserve the embedded font program as-is.
+    const font = await output.embedFont(fontBytes, { subset: false });
     for (let index = 0; index < names.length; index += 2) {
       const [page] = await output.copyPages(template, [0]);
       output.addPage(page);
