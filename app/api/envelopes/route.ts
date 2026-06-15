@@ -17,7 +17,7 @@ const DEFAULT_TEMPLATE_ID = "EAHMnYdOAJk";
 type CanvaJob = {
   id: string;
   status: "in_progress" | "success" | "failed";
-  error?: { message?: string };
+  error?: { code?: string; message?: string };
   result?: { design?: { id?: string } };
   urls?: string[];
 };
@@ -117,13 +117,16 @@ async function exportDesign(token: string, designId: string) {
 }
 
 async function waitForJob(token: string, path: string) {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+  for (let attempt = 0; attempt < 45; attempt += 1) {
     const response = await canvaFetch(token, path);
     const data = await response.json() as { job?: CanvaJob };
     if (!data.job) throw new Error("Canva returned an invalid job response.");
     if (data.job.status === "success") return data.job;
-    if (data.job.status === "failed") throw new Error(data.job.error?.message || "Canva could not complete the envelope job.");
-    await new Promise((resolve) => setTimeout(resolve, 750));
+    if (data.job.status === "failed") {
+      const detail = data.job.error?.message || "Canva could not complete the envelope job.";
+      throw new Error(data.job.error?.code ? `${detail} (${data.job.error.code})` : detail);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
   throw new Error("Canva took too long to generate the envelope PDF. Please try again.");
 }
@@ -140,7 +143,7 @@ async function canvaFetch(token: string, path: string, init: RequestInit = {}) {
   });
   if (response.ok) return response;
 
-  const error = await response.json().catch(() => ({})) as { message?: string };
+  const error = await response.json().catch(() => ({})) as { code?: string; message?: string };
   if (response.status === 401) throw new Error("The Canva connection expired. Reconnect Canva from the Print Envelope page.");
-  throw new Error(error.message || `Canva request failed (${response.status}).`);
+  throw new Error(error.message ? (error.code ? `${error.message} (${error.code})` : error.message) : `Canva request failed (${response.status}).`);
 }
