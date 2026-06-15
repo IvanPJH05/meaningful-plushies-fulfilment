@@ -33,6 +33,19 @@ The production Supabase URL and publishable browser key are also included as dep
 
 Do not add a Supabase service-role key to this frontend application. It is not needed and must never be exposed through a `NEXT_PUBLIC_` variable.
 
+## Canva envelope automation
+
+The Print Envelope page uses the published Canva Brand Template `EAHMnYdOAJk`. For every two selected orders, Canva fills `top_plush_name` and `bottom_plush_name`, exports an A4 PDF, and the server combines the pages into one printable document.
+
+Create a Canva Connect access token with `design:content:write`, `design:meta:read`, and `design:content:read`, then add these server-only variables in **Vercel > Settings > Environment Variables**:
+
+```env
+CANVA_ACCESS_TOKEN=YOUR_CANVA_CONNECT_ACCESS_TOKEN
+CANVA_ENVELOPE_TEMPLATE_ID=EAHMnYdOAJk
+```
+
+Apply them to Production, Preview, and Development, then redeploy. Do not prefix the token with `NEXT_PUBLIC_`; it must remain server-only. Canva access tokens expire, so replace `CANVA_ACCESS_TOKEN` and redeploy when the dashboard reports that it has expired.
+
 ## Existing browser data
 
 Old data saved in a browser's `localStorage` is intentionally no longer loaded. After configuring Supabase, import the Shopify CSV once from the dashboard. From then on, all devices use the shared database copy.
