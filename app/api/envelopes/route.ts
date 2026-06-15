@@ -1,9 +1,18 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-import fontkit from "@pdf-lib/fontkit";
-import { degrees, PDFDocument, rgb } from "pdf-lib";
+import { PDFDocument } from "pdf-lib";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
+
+const CANVA_API = "https://api.canva.com/rest/v1";
+const DEFAULT_TEMPLATE_ID = "EAHMnYdOAJk";
+
+type CanvaJob = {
+  id: string;
+  status: "in_progress" | "success" | "failed";
+  error?: { message?: string };
+  result?: { design?: { id?: string } };
+  urls?: string[];
+};
 
 function cleanName(value: unknown) {
   return String(value ?? "").trim().toUpperCase().slice(0, 32);
@@ -11,30 +20,31 @@ function cleanName(value: unknown) {
 
 export async function POST(request: Request) {
   try {
+    const token = process.env.CANVA_ACCESS_TOKEN;
+    if (!token) {
+      return new Response("Canva is not connected to Vercel. Add CANVA_ACCESS_TOKEN in the Vercel environment variables, then redeploy.", { status: 503 });
+    }
+
     const body = await request.json() as { names?: unknown[] };
     const names = (body.names ?? []).map(cleanName).filter(Boolean);
     if (!names.length) return new Response("Choose at least one order.", { status: 400 });
 
-    const [templateBytes, fontBytes] = await Promise.all([
-      readFile(path.join(process.cwd(), "public", "envelope-template.pdf")),
-      readFile(path.join(process.cwd(), "public", "fonts", "jingleberry.ttf")),
-    ]);
-    const template = await PDFDocument.load(templateBytes);
-    const output = await PDFDocument.create();
-    output.registerFontkit(fontkit);
-    // The Canva export already contains a subset font. Subsetting it again corrupts
-    // its character map, so preserve the embedded font program as-is.
-    const font = await output.embedFont(fontBytes, { subset: false });
+    const templateId = process.env.CANVA_ENVELOPE_TEMPLATE_ID || DEFAULT_TEMPLATE_ID;
+    const pagePdfs: ArrayBuffer[] = [];
+
     for (let index = 0; index < names.length; index += 2) {
-      const [page] = await output.copyPages(template, [0]);
-      output.addPage(page);
-      const { width, height } = page.getSize();
+      const designId = await createAutofilledDesign(token, templateId, names[index], names[index + 1] ?? "");
+      const pdfUrl = await exportDesign(token, designId);
+      const pdfResponse = await fetch(pdfUrl, { cache: "no-store" });
+      if (!pdfResponse.ok) throw new Error("Canva created the envelope but its PDF could not be downloaded.");
+      pagePdfs.push(await pdfResponse.arrayBuffer());
+    }
 
-      page.drawRectangle({ x: width * .07, y: height * .76, width: width * .36, height: height * .20, color: rgb(1, 1, 1) });
-      page.drawRectangle({ x: width * .07, y: height * .02, width: width * .36, height: height * .20, color: rgb(1, 1, 1) });
-
-      drawName(page, names[index], font, width * .235, height * .87, 45);
-      if (names[index + 1]) drawName(page, names[index + 1], font, width * .235, height * .105, -45);
+    const output = await PDFDocument.create();
+    for (const pdfBytes of pagePdfs) {
+      const source = await PDFDocument.load(pdfBytes);
+      const pages = await output.copyPages(source, source.getPageIndices());
+      pages.forEach((page) => output.addPage(page));
     }
 
     const pdfBytes = await output.save();
@@ -52,20 +62,72 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error(error);
-    return new Response("The envelope PDF could not be generated. A name may contain a character unavailable in the Jingleberry template font.", { status: 500 });
+    return new Response(error instanceof Error ? error.message : "Canva could not generate the envelope PDF.", { status: 500 });
   }
 }
 
-function drawName(page: ReturnType<PDFDocument["getPage"]>, name: string, font: Awaited<ReturnType<PDFDocument["embedFont"]>>, centerX: number, centerY: number, angle: number) {
-  let size = 68;
-  while (size > 36 && font.widthOfTextAtSize(name, size) > 380) size -= 2;
-  const width = font.widthOfTextAtSize(name, size);
-  page.drawText(name, {
-    x: centerX - width / 2,
-    y: centerY - size / 3,
-    size,
-    font,
-    color: rgb(.27, .38, .49),
-    rotate: degrees(angle),
+async function createAutofilledDesign(token: string, templateId: string, topName: string, bottomName: string) {
+  const response = await canvaFetch(token, "/autofills", {
+    method: "POST",
+    body: JSON.stringify({
+      brand_template_id: templateId,
+      title: `Envelope - ${topName}${bottomName ? ` - ${bottomName}` : ""}`,
+      data: {
+        top_plush_name: { type: "text", text: topName },
+        bottom_plush_name: { type: "text", text: bottomName },
+      },
+    }),
   });
+  const created = await response.json() as { job?: CanvaJob };
+  if (!created.job?.id) throw new Error("Canva did not start the envelope design.");
+
+  const job = await waitForJob(token, `/autofills/${created.job.id}`);
+  const designId = job.result?.design?.id;
+  if (!designId) throw new Error("Canva finished without returning an envelope design.");
+  return designId;
+}
+
+async function exportDesign(token: string, designId: string) {
+  const response = await canvaFetch(token, "/exports", {
+    method: "POST",
+    body: JSON.stringify({
+      design_id: designId,
+      format: { type: "pdf", export_quality: "regular" },
+    }),
+  });
+  const created = await response.json() as { job?: CanvaJob };
+  if (!created.job?.id) throw new Error("Canva did not start the envelope PDF export.");
+
+  const job = await waitForJob(token, `/exports/${created.job.id}`);
+  if (!job.urls?.[0]) throw new Error("Canva finished without returning an envelope PDF.");
+  return job.urls[0];
+}
+
+async function waitForJob(token: string, path: string) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const response = await canvaFetch(token, path);
+    const data = await response.json() as { job?: CanvaJob };
+    if (!data.job) throw new Error("Canva returned an invalid job response.");
+    if (data.job.status === "success") return data.job;
+    if (data.job.status === "failed") throw new Error(data.job.error?.message || "Canva could not complete the envelope job.");
+    await new Promise((resolve) => setTimeout(resolve, 750));
+  }
+  throw new Error("Canva took too long to generate the envelope PDF. Please try again.");
+}
+
+async function canvaFetch(token: string, path: string, init: RequestInit = {}) {
+  const response = await fetch(`${CANVA_API}${path}`, {
+    ...init,
+    cache: "no-store",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      ...init.headers,
+    },
+  });
+  if (response.ok) return response;
+
+  const error = await response.json().catch(() => ({})) as { message?: string };
+  if (response.status === 401) throw new Error("The Canva access token has expired. Replace CANVA_ACCESS_TOKEN in Vercel and redeploy.");
+  throw new Error(error.message || `Canva request failed (${response.status}).`);
 }
