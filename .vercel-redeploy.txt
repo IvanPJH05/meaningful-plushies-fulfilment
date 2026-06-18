@@ -1,0 +1,5 @@
+Redeploy triggered by Codex on 2026-06-18 21:35 MYT.
+Fixed files already present:
+- app/page.tsx
+- assets/Jingleberry.otf.b64
+- app/api/envelopes/route.ts
