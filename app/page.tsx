@@ -156,20 +156,16 @@ const stockPurchaseAccounts = [
   "NFC Chips",
 ] as const;
 const businessEvents = [
-  { group: "Purchases", value: "inventory_purchase", label: "Buy Inventory", transactionLabel: "Inventory Purchase", accountTypes: ["asset", "cost_of_sales"] },
-  { group: "Purchases", value: "equipment_purchase", label: "Buy Equipment", transactionLabel: "Equipment Purchase", accountTypes: ["asset"] },
-  { group: "Expense", value: "marketing_expense", label: "Marketing Expense", transactionLabel: "Marketing Expense", accountTypes: ["expense"] },
-  { group: "Expense", value: "software_expense", label: "Software Expense", transactionLabel: "Software Expense", accountTypes: ["expense"] },
-  { group: "Expense", value: "administrative_expense", label: "Administrative Expense", transactionLabel: "Administrative Expense", accountTypes: ["expense"] },
-  { group: "Expense", value: "salary_expense", label: "Salary Expense", transactionLabel: "Salary Expense", accountTypes: ["expense"] },
-  { group: "Sales", value: "record_sale", label: "Record Sale", transactionLabel: "Record Sale", accountTypes: ["revenue", "income"] },
-  { group: "Sales", value: "customer_deposit", label: "Receive Customer Deposit", transactionLabel: "Customer Deposit", accountTypes: ["liability"] },
-  { group: "Sales", value: "customer_payment", label: "Receive Customer Payment", transactionLabel: "Customer Payment", accountTypes: ["revenue", "income", "asset"] },
-  { group: "Liabilities", value: "receive_loan", label: "Receive Loan", transactionLabel: "Loan Received", accountTypes: ["liability"] },
-  { group: "Liabilities", value: "repay_loan", label: "Repay Loan", transactionLabel: "Loan Repayment", accountTypes: ["liability"] },
-  { group: "Owner Transactions", value: "owner_capital", label: "Owner Capital Injection", transactionLabel: "Owner Capital Injection", accountTypes: ["equity"] },
-  { group: "Owner Transactions", value: "owner_withdrawal", label: "Owner Withdrawal", transactionLabel: "Owner Withdrawal", accountTypes: ["equity"] },
-  { group: "Transfer", value: "bank_transfer", label: "Bank Transfer", transactionLabel: "Bank Transfer", accountTypes: ["asset"] },
+  { group: "Category", value: "inventory_purchase", label: "Purchases (Inventory)", transactionLabel: "Inventory Purchase", accountingMapping: "Inventory", accounts: ["Plushie", "Speakers", "NFC Card", "Packaging", "Carton Boxes"] },
+  { group: "Category", value: "marketing_expense", label: "Marketing", transactionLabel: "Marketing Expense", accountingMapping: "Marketing Expenses", accounts: ["Meta Advertising", "TikTok Advertising", "Influencer Marketing", "Affiliate Commissions", "Content Creation"] },
+  { group: "Category", value: "software_expense", label: "Software & Subscriptions", transactionLabel: "Software Expense", accountingMapping: "Software Expenses", accounts: ["Shopify Subscription", "ChatGPT Subscription", "Canva Subscription", "Upload Lift", "Domain & Hosting", "Other Software"] },
+  { group: "Category", value: "administrative_expense", label: "Administrative Expenses", transactionLabel: "Administrative Expense", accountingMapping: "Admin Fees", accounts: ["Professional Fees", "Bank Charges", "Office Expenses", "Samples & Testing", "Miscellaneous Expenses"] },
+  { group: "Category", value: "operating_expense", label: "Operating Expenses", transactionLabel: "Operating Expense", accountingMapping: "Operating Expense", accounts: ["Salary", "Carriage Outwards"] },
+  { group: "Category", value: "equipment_purchase", label: "Equipment & Assets", transactionLabel: "Equipment Purchase", accountingMapping: "Equipment", accounts: ["Printers", "Heat Press Machines", "Sewing Machines", "Computers", "Cameras", "Other Equipment"] },
+  { group: "Category", value: "bank_transfer", label: "Bank & Transfers", transactionLabel: "Bank Transfer", accountingMapping: "Bank Account", accounts: ["Bank Transfer", "Xendit Payout", "Stripe Payout", "TikTok Payout"] },
+  { group: "Category", value: "owner_transaction", label: "Owner Transactions", transactionLabel: "Owner Transaction", accountingMapping: "Equity", accounts: ["Owner Capital Injection", "Owner Drawings"] },
+  { group: "Category", value: "loan", label: "Loans", transactionLabel: "Loan Transaction", accountingMapping: "Loan", accounts: ["Loan Received", "Loan Repayment"] },
+  { group: "Category", value: "tax", label: "Tax", transactionLabel: "Tax Transaction", accountingMapping: "Tax Payable", accounts: ["Tax Payment", "Tax Penalty"] },
 ] as const;
 
 const accountingPresetAccounts: Omit<AccountingCategory, "id" | "parentId" | "active">[] = [
@@ -1132,10 +1128,44 @@ export default function Home() {
 
   function accountOptionsForEvent() {
     const event = selectedBusinessEvent();
-    return accountingCategories.filter((category) =>
-      category.active &&
-      (event.accountTypes as readonly string[]).includes(category.accountType)
-    );
+    return [...event.accounts];
+  }
+
+  function mappedAccountName(event: ReturnType<typeof selectedBusinessEvent>, selection: string) {
+    const directMap: Record<string, string> = {
+      Plushie: "Inventory",
+      Speakers: "Speakers",
+      "NFC Card": "NFC Chips",
+      Packaging: "Packaging Cost",
+      "Carton Boxes": "Boxes",
+      Salary: "Salary Expense",
+      "Carriage Outwards": "Shipping Cost",
+      Printers: "Equipment",
+      "Heat Press Machines": "Equipment",
+      "Sewing Machines": "Equipment",
+      Computers: "Equipment",
+      Cameras: "Equipment",
+      "Other Equipment": "Equipment",
+      "Bank Transfer": "Bank Account",
+      "Xendit Payout": "Xendit",
+      "Stripe Payout": "Stripe",
+      "TikTok Payout": "TikTok Shop",
+      "Owner Capital Injection": "Owner Capital",
+      "Owner Drawings": "Owner Drawings",
+      "Loan Received": "Loan",
+      "Loan Repayment": "Loan",
+      "Tax Payment": "Tax Payable",
+      "Tax Penalty": "Tax Penalties",
+    };
+    return directMap[selection] ?? selection ?? event.accountingMapping;
+  }
+
+  function selectedAccountingAccount() {
+    const event = selectedBusinessEvent();
+    const selected = transactionForm.categoryId || transactionForm.accountName;
+    const mapped = mappedAccountName(event, selected);
+    return accountingCategories.find((category) => category.name.toLowerCase() === mapped.toLowerCase())
+      ?? accountingCategories.find((category) => category.name.toLowerCase() === event.accountingMapping.toLowerCase());
   }
 
   function emptyTransactionForm(): AccountingTransactionForm {
@@ -1146,14 +1176,14 @@ export default function Home() {
     const amount = Number(transactionForm.amount);
     if (!Number.isFinite(amount) || amount <= 0) return [];
     const event = selectedBusinessEvent();
-    const account = accountingCategories.find((category) => category.id === transactionForm.categoryId);
-    const accountName = account?.name || transactionForm.accountName || "Selected account";
+    const account = selectedAccountingAccount();
+    const accountName = transactionForm.categoryId || account?.name || transactionForm.accountName || "Selected account";
     const depositAmount = Math.min(amount, Math.max(0, Number(transactionForm.depositAmount) || 0));
     const paidAmount = transactionForm.paymentStatus === "paid_in_full" ? amount : transactionForm.paymentStatus === "deposit_paid" ? depositAmount : 0;
     const outstandingAmount = Math.max(0, amount - paidAmount);
     const now = new Date().toISOString();
-    const primaryIsCredit = ["record_sale", "customer_deposit", "customer_payment", "receive_loan", "owner_capital"].includes(event.value);
-    const transferOrRepayment = ["repay_loan", "owner_withdrawal", "bank_transfer"].includes(event.value);
+    const primaryIsCredit = ["owner_transaction", "loan"].includes(event.value) && ["Owner Capital Injection", "Loan Received"].includes(transactionForm.categoryId);
+    const transferOrRepayment = ["bank_transfer"].includes(event.value) || ["Owner Drawings", "Loan Repayment", "Tax Payment"].includes(transactionForm.categoryId);
     const entries: AccountingLedgerEntry[] = [];
     const primaryEntryType: "debit" | "credit" = primaryIsCredit ? "credit" : "debit";
     entries.push({ id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName, entryType: transferOrRepayment ? "debit" : primaryEntryType, amount, memo: event.label, createdAt: now });
@@ -1242,7 +1272,7 @@ export default function Home() {
     const depositAmount = Number(transactionForm.depositAmount) || 0;
     if (!transactionForm.description.trim()) return setNotice("Add a transaction description.");
     if (!Number.isFinite(amount) || amount < 0) return setNotice("Enter a valid transaction amount.");
-    if (!transactionForm.categoryId && !transactionForm.accountName.trim()) return setNotice("Choose an account or type a new item/account name.");
+    if (!transactionForm.categoryId && !transactionForm.accountName.trim()) return setNotice("Choose an account or type the item name.");
     if (transactionForm.paymentStatus === "deposit_paid" && (depositAmount <= 0 || depositAmount >= amount)) return setNotice("Enter a deposit amount that is more than 0 and less than the total.");
     setSavingAccounting(true);
     try {
@@ -1250,14 +1280,14 @@ export default function Home() {
       const now = new Date().toISOString();
       const id = crypto.randomUUID();
       const event = selectedBusinessEvent();
-      let account = accountingCategories.find((category) => category.id === transactionForm.categoryId);
+      let account = selectedAccountingAccount();
       if (!account && transactionForm.accountName.trim()) {
         const inventoryParent = accountingCategories.find((category) => category.name.toLowerCase() === "inventory" && !category.parentId);
         account = {
           id: crypto.randomUUID(),
           name: transactionForm.accountName.trim(),
-          accountType: event.group === "Purchases" ? "asset" : event.group === "Sales" ? "revenue" : "expense",
-          reportSection: event.group === "Purchases" ? "Assets" : event.group === "Sales" ? "Revenue" : "Expenses",
+          accountType: event.value === "inventory_purchase" || event.value === "equipment_purchase" ? "asset" : "expense",
+          reportSection: event.value === "inventory_purchase" ? "Current Assets" : event.value === "equipment_purchase" ? "Non Current Assets" : "Expenses",
           parentId: event.value === "inventory_purchase" ? inventoryParent?.id ?? "" : "",
           dataSourceType: "manual",
           sourceModule: "Manual Transactions",
@@ -1278,9 +1308,9 @@ export default function Home() {
         businessEvent: transactionForm.businessEvent,
         transactionDate: transactionForm.transactionDate,
         description: transactionForm.description.trim(),
-        accountName: account?.name || transactionForm.accountName.trim() || "Cash",
-        categoryId: transactionForm.categoryId,
-        transactionType: event.group === "Sales" ? "income" : event.group === "Transfer" ? "transfer" : "expense",
+        accountName: transactionForm.categoryId || account?.name || transactionForm.accountName.trim() || "Cash",
+        categoryId: account?.id ?? "",
+        transactionType: event.value === "bank_transfer" ? "transfer" : "expense",
         paymentStatus: transactionForm.paymentStatus,
         paymentMethod: transactionForm.paymentMethod,
         supplier: transactionForm.supplier.trim(),
@@ -1301,13 +1331,17 @@ export default function Home() {
         updatedAt: now,
       });
       await saveAccountingLedgerEntries(id, entries);
-      if (event.value === "inventory_purchase" && account && quantity > 0) {
-        const stockKey = account.name.toUpperCase().includes("BILLY") ? "BILLY"
-          : account.name.toUpperCase().includes("TOOTSIE") ? "TOOTSIE"
-          : account.name.toUpperCase().includes("HUNNIE") ? "HUNNIE"
-          : account.name.toUpperCase().includes("DRAGON") ? "DRAGON WARRIOR"
-          : account.name.toUpperCase().includes("SPEAKER") ? "VOICE"
-          : account.name.toUpperCase();
+      if (event.value === "inventory_purchase" && quantity > 0) {
+        const stockSource = `${transactionForm.categoryId} ${transactionForm.accountName}`.toUpperCase();
+        const stockKey = stockSource.includes("BILLY") ? "BILLY"
+          : stockSource.includes("TOOTSIE") ? "TOOTSIE"
+          : stockSource.includes("HUNNIE") ? "HUNNIE"
+          : stockSource.includes("DRAGON") ? "DRAGON WARRIOR"
+          : stockSource.includes("SPEAKER") ? "VOICE"
+          : stockSource.includes("NFC") ? "NFC"
+          : stockSource.includes("BOX") || stockSource.includes("CARTON") ? "BOXES"
+          : stockSource.includes("PACK") ? "PACKAGING"
+          : stockSource.trim();
         const currentStock = stockSettings.find((setting) => setting.itemKey === stockKey)?.initialStock ?? 0;
         await saveStockSetting({ itemKey: stockKey, initialStock: currentStock + Math.floor(quantity) });
       }
@@ -1595,7 +1629,7 @@ function AccountingWorkspacePage({
   onSetupChart: () => void;
   onEditAccount: (account: AccountingCategory) => void;
   postingPreview: AccountingLedgerEntry[];
-  accountOptions: AccountingCategory[];
+  accountOptions: string[];
   onOpenDocument: (document: AccountingDocument) => void;
   onDeleteDocument: (document: AccountingDocument) => void;
   onDeleteTransaction: (transaction: AccountingTransaction) => void;
@@ -1641,16 +1675,16 @@ function AccountingWorkspacePage({
     <section className="accounting-form-grid">
       <div className="accounting-form card">
         <h3>Step 1: Choose category</h3>
-        <div className="business-event-grid">{businessEvents.map((item) => <button type="button" key={item.value} className={transactionForm.businessEvent === item.value ? "selected" : ""} onClick={() => onTransactionFormChange({ businessEvent: item.value, categoryId: "", accountName: "" })}><span>{item.group}</span><strong>{item.label}</strong></button>)}</div>
+        <div className="business-event-grid">{businessEvents.map((item) => <button type="button" key={item.value} className={transactionForm.businessEvent === item.value ? "selected" : ""} onClick={() => onTransactionFormChange({ businessEvent: item.value, categoryId: "", accountName: "" })}><strong>{item.label}</strong><span>{item.accountingMapping}</span></button>)}</div>
         <h3>Step 2: Select item / account</h3>
-        <label>{event.value === "inventory_purchase" ? "Inventory item" : "Account"}<select value={transactionForm.categoryId} onChange={(input) => onTransactionFormChange({ categoryId: input.target.value, accountName: "" })}><option value="">Choose existing</option>{accountOptions.map((category) => <option key={category.id} value={category.id}>{category.parentId ? "- " : ""}{category.name}</option>)}</select></label>
-        {event.value === "inventory_purchase" && <label>Create new inventory item<input value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value, categoryId: "" })} placeholder="Voice Recorder Module" /></label>}
-        {!accountOptions.length && <p className="accounting-file-name">No matching accounts yet. You can create one in Accounting Settings, or type a new inventory item above.</p>}
+        <label>Account<select value={transactionForm.categoryId} onChange={(input) => onTransactionFormChange({ categoryId: input.target.value, accountName: "" })}><option value="">Choose account</option>{accountOptions.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>
+        {event.value === "inventory_purchase" && transactionForm.categoryId === "Plushie" && <label>Which plushie / character?<input value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })} placeholder="Billy, Tootsie, Hunnie, Dragon Warrior..." /></label>}
+        {!accountOptions.length && <p className="accounting-file-name">No accounts are configured for this category yet.</p>}
         <h3>Step 3: Transaction details</h3>
         <div className="accounting-two-cols"><label>Date<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label><label>Total amount<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onTransactionFormChange({ amount: input.target.value })} /></label></div>
         <div className="accounting-two-cols"><label>Supplier / customer<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder="Supplier, customer, platform..." /></label><label>Invoice number<input value={transactionForm.invoiceNumber} onChange={(input) => onTransactionFormChange({ invoiceNumber: input.target.value })} placeholder="Optional" /></label></div>
         <label>Description<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder="Boxes purchase, Meta ad spend, payout..." /></label>
-        {event.group === "Purchases" && <div className="accounting-two-cols"><label>Quantity<input type="number" min="0" step="1" value={transactionForm.quantity} onChange={(input) => onTransactionFormChange({ quantity: input.target.value })} /></label><label>Unit cost<input type="number" min="0" step="0.01" value={transactionForm.unitCost} onChange={(input) => onTransactionFormChange({ unitCost: input.target.value })} /></label></div>}
+        {event.value === "inventory_purchase" && <div className="accounting-two-cols"><label>Quantity<input type="number" min="0" step="1" value={transactionForm.quantity} onChange={(input) => onTransactionFormChange({ quantity: input.target.value })} /></label><label>Unit cost<input type="number" min="0" step="0.01" value={transactionForm.unitCost} onChange={(input) => onTransactionFormChange({ unitCost: input.target.value })} /></label></div>}
         <h3>Step 4: Payment terms</h3>
         <label>Payment type<select value={transactionForm.paymentStatus} onChange={(input) => onTransactionFormChange({ paymentStatus: input.target.value as AccountingTransactionForm["paymentStatus"] })}><option value="paid_in_full">Paid In Full</option><option value="deposit_paid">Deposit Paid</option><option value="on_credit">On Credit</option></select></label>
         {transactionForm.paymentStatus !== "on_credit" && <label>Funding source<select value={transactionForm.paymentMethod} onChange={(input) => onTransactionFormChange({ paymentMethod: input.target.value })}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>}
