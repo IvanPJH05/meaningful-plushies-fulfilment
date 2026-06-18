@@ -1,4 +1,3 @@
-
 "use client";
 
 import "./settings.css";
@@ -39,7 +38,24 @@ type SortDirection = "asc" | "desc";
 type CollectedMetric = "bankTransfer" | "stripeCollected" | "xenditCollected" | "totalCollected";
 type DiscountMetric = "productDiscounted" | "shippingDiscounted";
 type FeeMetric = "processingFees" | "shopifyFees" | "totalFees";
-
+type StoredUiPreferences = {
+  view?: View;
+  query?: string;
+  statusFilter?: "all" | OrderStatus;
+  packingStatusFilter?: "all" | OrderStatus;
+  envelopeStatusFilter?: "all" | OrderStatus;
+  dashboardStatus?: OrderStatus | "total";
+  dashboardStatusTwo?: OrderStatus | "total";
+  salesRange?: SalesRange;
+  collectedMetric?: CollectedMetric;
+  discountMetric?: DiscountMetric;
+  feeMetric?: FeeMetric;
+  sortKey?: SortKey;
+  sortDirection?: SortDirection;
+  reportStartDate?: string;
+  reportEndDate?: string;
+  fulfilmentColumns?: FulfilmentColumn[];
+};
 type ActivityEvent = {
   id: string;
   orderNumber?: string;
@@ -65,6 +81,20 @@ const dashboardSelectableStatuses: { value: OrderStatus | "total"; label: string
   { value: "issue", label: "Issues" },
 ];
 
+const dashboardViews: readonly View[] = ["orders", "fulfilment", "packing_slips", "print_envelope", "import", "fulfilled", "history", "settings", "stock", "sales_report"];
+const adminOnlyViews = new Set<View>(["history", "settings", "stock", "sales_report"]);
+const orderStatusFilterValues = ["all", ...orderStatuses] as const;
+const dashboardMetricValues = ["total", ...orderStatuses] as const;
+const salesRangeValues = ["active", "today", "7d", "30d", "lifetime"] as const;
+const collectedMetricValues = ["bankTransfer", "stripeCollected", "xenditCollected", "totalCollected"] as const;
+const discountMetricValues = ["productDiscounted", "shippingDiscounted"] as const;
+const feeMetricValues = ["processingFees", "shopifyFees", "totalFees"] as const;
+const sortKeyValues = ["orderNumber", "importedAt", "updatedAt"] as const;
+const sortDirectionValues = ["asc", "desc"] as const;
+const fulfilmentColumnValues: readonly FulfilmentColumn[] = ["orderNumber", "meaningfulMessage", "plushName", "character", "idWebsiteLink", "customerName", "phone"];
+const sessionStorageKey = "meaningful-plushies-dashboard-session";
+const uiStorageKey = "meaningful-plushies-ui-preferences";
+
 const collectedMetricLabels: Record<CollectedMetric, string> = {
   bankTransfer: "Bank transfer collected",
   stripeCollected: "Stripe collected",
@@ -80,7 +110,6 @@ const discountMetricLabels: Record<DiscountMetric, string> = {
 const feeMetricLabels: Record<FeeMetric, string> = {
   processingFees: "Payment processing fees",
   shopifyFees: "Shopify fees",
-
   totalFees: "Total fees",
 };
 
@@ -121,7 +150,6 @@ const fulfilmentColumnLabels: Record<FulfilmentColumn, string> = {
 };
 
 function formatDate(value: string, withTime = false) {
-
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -162,7 +190,6 @@ function orderLabel(order: Order) {
 }
 
 function certificateLink(order: Order, includeProtocol = true) {
-
   const link = order.certificateCode
     ? `meaningfulplushies.com/pages/certificate/${order.certificateCode.trim()}`
     : order.idWebsiteLink.replace(/^https?:\/\//i, "");
@@ -179,41 +206,85 @@ function sortOrderRecords<T extends Pick<Order, "orderNumber" | "importedAt" | "
   });
 }
 
+function readJson<T>(key: string): T | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const value = window.localStorage.getItem(key);
+    return value ? JSON.parse(value) as T : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeJson(key: string, value: unknown) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(key, JSON.stringify(value));
+}
+
+function removeStored(key: string) {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(key);
+}
+
+function readStoredSession() {
+  const session = readJson<Session>(sessionStorageKey);
+  if (!session?.token || !session.username || !session.displayName || !["admin", "staff"].includes(session.role)) return null;
+  return session;
+}
+
+function readStoredUi() {
+  return readJson<StoredUiPreferences>(uiStorageKey) ?? {};
+}
+
+function choice<T extends string>(value: unknown, fallback: T, allowed: readonly T[]) {
+  return typeof value === "string" && allowed.includes(value as T) ? value as T : fallback;
+}
+
+function cleanFulfilmentColumns(value: unknown) {
+  if (!Array.isArray(value)) return [...fulfilmentColumnValues];
+  const columns = value.filter((column): column is FulfilmentColumn => fulfilmentColumnValues.includes(column));
+  return [...columns, ...fulfilmentColumnValues.filter((column) => !columns.includes(column))];
+}
+
+function permittedView(value: unknown, role?: UserRole) {
+  const view = choice(value, "orders" as View, dashboardViews);
+  return role === "staff" && adminOnlyViews.has(view) ? "orders" : view;
+}
+
 export default function Home() {
-  const [session, setSession] = useState<Session | null>(null);
-  const [view, setView] = useState<View>("orders");
+  const storedSession = readStoredSession();
+  const storedUi = readStoredUi();
+  const [session, setSession] = useState<Session | null>(() => storedSession);
+  const [view, setView] = useState<View>(() => permittedView(storedUi.view, storedSession?.role));
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | OrderStatus>("all");
+  const [query, setQuery] = useState(() => storedUi.query ?? "");
+  const [statusFilter, setStatusFilter] = useState<"all" | OrderStatus>(() => choice(storedUi.statusFilter, "all", orderStatusFilterValues));
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [packingSelection, setPackingSelection] = useState<string[]>([]);
   const [envelopeSelection, setEnvelopeSelection] = useState<string[]>([]);
-  const [packingStatusFilter, setPackingStatusFilter] = useState<"all" | OrderStatus>("all");
-  const [envelopeStatusFilter, setEnvelopeStatusFilter] = useState<"all" | OrderStatus>("all");
-  const [dashboardStatus, setDashboardStatus] = useState<OrderStatus | "total">("packed");
-  const [dashboardStatusTwo, setDashboardStatusTwo] = useState<OrderStatus | "total">("issue");
-  const [salesRange, setSalesRange] = useState<SalesRange>("active");
-  const [collectedMetric, setCollectedMetric] = useState<CollectedMetric>("totalCollected");
-  const [discountMetric, setDiscountMetric] = useState<DiscountMetric>("productDiscounted");
-  const [feeMetric, setFeeMetric] = useState<FeeMetric>("totalFees");
-  const [sortKey, setSortKey] = useState<SortKey>("orderNumber");
-  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [packingStatusFilter, setPackingStatusFilter] = useState<"all" | OrderStatus>(() => choice(storedUi.packingStatusFilter, "all", orderStatusFilterValues));
+  const [envelopeStatusFilter, setEnvelopeStatusFilter] = useState<"all" | OrderStatus>(() => choice(storedUi.envelopeStatusFilter, "all", orderStatusFilterValues));
+  const [dashboardStatus, setDashboardStatus] = useState<OrderStatus | "total">(() => choice(storedUi.dashboardStatus, "packed", dashboardMetricValues));
+  const [dashboardStatusTwo, setDashboardStatusTwo] = useState<OrderStatus | "total">(() => choice(storedUi.dashboardStatusTwo, "issue", dashboardMetricValues));
+  const [salesRange, setSalesRange] = useState<SalesRange>(() => choice(storedUi.salesRange, "active", salesRangeValues));
+  const [collectedMetric, setCollectedMetric] = useState<CollectedMetric>(() => choice(storedUi.collectedMetric, "totalCollected", collectedMetricValues));
+  const [discountMetric, setDiscountMetric] = useState<DiscountMetric>(() => choice(storedUi.discountMetric, "productDiscounted", discountMetricValues));
+  const [feeMetric, setFeeMetric] = useState<FeeMetric>(() => choice(storedUi.feeMetric, "totalFees", feeMetricValues));
+  const [sortKey, setSortKey] = useState<SortKey>(() => choice(storedUi.sortKey, "orderNumber", sortKeyValues));
+  const [sortDirection, setSortDirection] = useState<SortDirection>(() => choice(storedUi.sortDirection, "asc", sortDirectionValues));
   const [reportSelectedOrders, setReportSelectedOrders] = useState<string[]>([]);
-  const [reportStartDate, setReportStartDate] = useState("");
-  const [reportEndDate, setReportEndDate] = useState("");
+  const [reportStartDate, setReportStartDate] = useState(() => storedUi.reportStartDate ?? "");
+  const [reportEndDate, setReportEndDate] = useState(() => storedUi.reportEndDate ?? "");
   const [processorSettings, setProcessorSettings] = useState<PaymentProcessorSetting[]>([]);
   const [salesFeeSettings, setSalesFeeSettings] = useState<SalesFeeSetting>({ shopifyPercentage: 0 });
-
   const [stockSettings, setStockSettings] = useState<StockSetting[]>([]);
   const [accounts, setAccounts] = useState<DashboardAccount[]>([]);
   const [accountPasswords, setAccountPasswords] = useState<Record<string, string>>({});
   const [newAccount, setNewAccount] = useState({ username: "", displayName: "", role: "staff" as UserRole, password: "" });
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
   const [draggedColumn, setDraggedColumn] = useState<FulfilmentColumn | null>(null);
-  const [fulfilmentColumns, setFulfilmentColumns] = useState<FulfilmentColumn[]>([
-    "orderNumber", "meaningfulMessage", "plushName", "character", "idWebsiteLink", "customerName", "phone",
-  ]);
+  const [fulfilmentColumns, setFulfilmentColumns] = useState<FulfilmentColumn[]>(() => cleanFulfilmentColumns(storedUi.fulfilmentColumns));
   const [manualOrderIds, setManualOrderIds] = useState("");
   const [manualEnvelopeIds, setManualEnvelopeIds] = useState("");
   const [orderCsv, setOrderCsv] = useState("");
@@ -245,7 +316,6 @@ export default function Home() {
         discountAmount: order.discountAmount ?? 0,
         productDiscountAmount: order.productDiscountAmount ?? 0,
         shippingDiscountAmount: order.shippingDiscountAmount ?? 0,
-
         refundedAmount: order.refundedAmount ?? 0,
         outstandingBalance: order.outstandingBalance ?? 0,
         paymentProcessor: normalizePaymentProcessor(order.paymentProcessor ?? "", order.totalAmount === 0),
@@ -276,17 +346,60 @@ export default function Home() {
   }, [loadSharedData]);
 
   useEffect(() => {
+    if (session) writeJson(sessionStorageKey, session);
+    else removeStored(sessionStorageKey);
+  }, [session]);
+
+  useEffect(() => {
+    writeJson(uiStorageKey, {
+      view: permittedView(view, session?.role),
+      query,
+      statusFilter,
+      packingStatusFilter,
+      envelopeStatusFilter,
+      dashboardStatus,
+      dashboardStatusTwo,
+      salesRange,
+      collectedMetric,
+      discountMetric,
+      feeMetric,
+      sortKey,
+      sortDirection,
+      reportStartDate,
+      reportEndDate,
+      fulfilmentColumns,
+    } satisfies StoredUiPreferences);
+  }, [
+    view,
+    session,
+    query,
+    statusFilter,
+    packingStatusFilter,
+    envelopeStatusFilter,
+    dashboardStatus,
+    dashboardStatusTwo,
+    salesRange,
+    collectedMetric,
+    discountMetric,
+    feeMetric,
+    sortKey,
+    sortDirection,
+    reportStartDate,
+    reportEndDate,
+    fulfilmentColumns,
+  ]);
+
+  useEffect(() => {
     if (session?.role !== "admin") return;
     void fetchDashboardAccounts(session.token).then(setAccounts).catch((error) => setNotice(error instanceof Error ? error.message : "Accounts could not be loaded."));
   }, [session]);
 
   useEffect(() => {
-    if (session?.role === "staff" && (["history", "settings", "stock", "sales_report"] as View[]).includes(view)) setView("orders");
+    if (session?.role === "staff" && adminOnlyViews.has(view)) setView("orders");
   }, [session, view]);
 
   const selected = orders.find((order) => order.id === selectedId) ?? null;
   const packingOrders = orders.filter((order) => packingSelection.includes(order.id));
-
   const envelopeOrders = envelopeSelection
     .map((id) => orders.find((order) => order.id === id))
     .filter((order): order is Order => Boolean(order));
@@ -332,7 +445,6 @@ export default function Home() {
   }, [orders, salesRange]);
   const sales = useMemo(() => summarizeSales(reportingOrders, processorSettings, salesFeeSettings.shopifyPercentage), [reportingOrders, processorSettings, salesFeeSettings]);
   const allSalesReportRows = useMemo(() => buildSalesReportRows(orders, processorSettings, salesFeeSettings.shopifyPercentage), [orders, processorSettings, salesFeeSettings]);
-
   const dateFilteredReportRows = useMemo(() => allSalesReportRows.filter((row) => {
     const date = dateKey(row.orderDate);
     return (!reportStartDate || date >= reportStartDate) && (!reportEndDate || date <= reportEndDate);
@@ -364,6 +476,12 @@ export default function Home() {
   if (!session) return <Login onLogin={setSession} />;
   const currentSession = session;
 
+  function signOut() {
+    setSession(null);
+    setSelectedOrders([]);
+    setSelectedId(null);
+  }
+
   async function logActivity(action: string, detail: string, orderNumber?: string) {
     const createdAt = new Date().toISOString();
     const event = {
@@ -373,7 +491,6 @@ export default function Home() {
       detail,
       actor: session ? `${session.displayName} (${session.username})` : "System",
       createdAt,
-
     };
     setActivity((current) => [event, ...current]);
     try { await insertSharedActivity(event); }
@@ -414,7 +531,6 @@ export default function Home() {
     };
     setOrders((current) => current.map((item) => item.id === order.id ? updated : item));
     try { await upsertSharedOrders([updated]); }
-
     catch (error) { setNotice(error instanceof Error ? error.message : "Status change could not be saved."); await loadSharedData(); return; }
     setNotice(`#${order.orderNumber} updated to ${statusLabels[status]}.`);
   }
@@ -455,7 +571,6 @@ export default function Home() {
   function toggleOrderSelection(orderId: string) {
     setSelectedOrders((current) => current.includes(orderId)
       ? current.filter((id) => id !== orderId)
-
       : [...current, orderId]);
   }
 
@@ -496,7 +611,6 @@ export default function Home() {
     try {
       await savePaymentProcessorSetting(setting);
       setNotice(`${setting.processor} processing fee saved.`);
-
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Processing fee could not be saved.");
       await loadSharedData();
@@ -537,7 +651,6 @@ export default function Home() {
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Account could not be updated.");
     }
-
   }
 
   async function saveStock(setting: StockSetting) {
@@ -578,7 +691,6 @@ export default function Home() {
     const nextOrders = orders.map((order) => {
       if (!packingSelection.includes(order.id) || order.status !== "new_order") return order;
       const updated: Order = {
-
         ...order,
         status: "uploading_audio",
         updatedAt: changedAt,
@@ -663,7 +775,6 @@ export default function Home() {
     if (column === "idWebsiteLink") {
       const link = certificateLink(order);
       return link ? <div className="link-copy"><a href={link} target="_blank" rel="noreferrer">{certificateLink(order, false)}</a><button type="button" onClick={() => copyCertificateLink(order)}>Copy</button></div> : "-";
-
     }
     if (column === "customerName") return order.customerName || "-";
     return order.phone || "-";
@@ -683,7 +794,7 @@ export default function Home() {
         {session.role === "admin" && <button className={view === "history" ? "active" : ""} onClick={() => setView("history")}><Icon name="history" /> History</button>}
         {session.role === "admin" && <button className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}><Icon name="settings" /> Settings</button>}
       </nav>
-      <div className="user-card"><div className="avatar">{session.displayName.slice(0, 1)}</div><div><strong>{session.displayName}</strong><span>@{session.username} | {session.role === "admin" ? "Administrator" : "Fulfilment staff"}</span></div><button title="Sign out" onClick={() => setSession(null)}><Icon name="logout" /></button></div>
+      <div className="user-card"><div className="avatar">{session.displayName.slice(0, 1)}</div><div><strong>{session.displayName}</strong><span>@{session.username} | {session.role === "admin" ? "Administrator" : "Fulfilment staff"}</span></div><button title="Sign out" onClick={signOut}><Icon name="logout" /></button></div>
     </aside>
 
     <section className="main-area">
@@ -704,7 +815,6 @@ export default function Home() {
         {view === "orders" && session.role === "admin" && <>
           <div className="reporting-header">
             <div><strong>Sales reporting</strong><span>{reportingOrders.length} order records</span></div>
-
             <div className="range-tabs">
               {salesRanges.map(({ value, label }) => <button key={value} className={salesRange === value ? "active" : ""} onClick={() => setSalesRange(value)}>{label}</button>)}
             </div>
@@ -785,7 +895,6 @@ export default function Home() {
         </div>
       </section>}
 
-
       {view === "import" && <section className="import-page">
         <div className="import-intro"><span>CSV</span><div><h2>Import Shopify exports</h2><p>Upload either standard Shopify CSV exports or the headerless Sheet25 files. The app matches line items with each Product block and creates one fulfilment record per plushie.</p></div></div>
         <div className="import-columns">
@@ -825,7 +934,6 @@ function MoneyStat({ label, value, tone }: { label: string; value: number; tone:
 }
 
 function SelectableMoneyStat({ label, value, tone, selected, options, onChange }: { label: string; value: number; tone: string; selected: string; options: [string, string][]; onChange: (value: string) => void }) {
-
   return <article className={`money-stat ${tone} selectable-money-stat`}><span>{label}</span><select value={selected} onChange={(event) => onChange(event.target.value)}>{options.map(([value, optionLabel]) => <option key={value} value={value}>{optionLabel}</option>)}</select><strong>{formatMoney(value)}</strong></article>;
 }
 
@@ -865,7 +973,6 @@ function OrderDrawer({ order, role, actor, onClose, onUpdate, onStatus }: { orde
     {!admin && <p className="permission-note">Signed in as Staff. You can only move orders to the next stage.</p>}
   </div></aside></div>;
 }
-
 
 function Field({ label, value }: { label: string; value: string }) {
   return <div className="field"><label>{label}</label><strong>{value || "-"}</strong></div>;
