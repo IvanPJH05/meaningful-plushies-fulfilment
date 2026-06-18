@@ -6,19 +6,115 @@ import { degrees, PDFDocument, PDFFont, PDFPage, rgb } from "pdf-lib";
 export const runtime = "nodejs";
 
 const BASE_FONT_SIZE = 56.25;
-const MIN_FONT_SIZE = 38;
-const MAX_TEXT_WIDTH = 285;
-const TOP_BASELINE_CENTER = { x: 291.4, y: 1566.6 };
-const BOTTOM_BASELINE_CENTER = { x: 291.4, y: 117.5 };
+const MIN_FONT_SIZE = 34;
+const TEXT_BOX_WIDTH = 300;
+const TEXT_BOX_HEIGHT = 150;
+const LINE_HEIGHT_RATIO = 0.96;
+const LETTER_SPACING = 0;
+const TOP_TEXT_BOX_CENTER = { x: 301.8, y: 1564.2 };
+const BOTTOM_TEXT_BOX_CENTER = { x: 301.8, y: 135.6 };
 const NAME_COLOR = rgb(0.26, 0.37, 0.46);
 
 function cleanName(value: unknown) {
-  return String(value ?? "").trim().toUpperCase().slice(0, 40);
+  return String(value ?? "").replace(/\s+/g, " ").trim().toUpperCase().slice(0, 60);
 }
 
-function fittedSize(font: PDFFont, name: string) {
-  const width = font.widthOfTextAtSize(name, BASE_FONT_SIZE);
-  return Math.max(MIN_FONT_SIZE, Math.min(BASE_FONT_SIZE, BASE_FONT_SIZE * MAX_TEXT_WIDTH / width));
+function lineWidth(font: PDFFont, text: string, size: number) {
+  return [...text].reduce((width, character, index) => (
+    width + font.widthOfTextAtSize(character, size) + (index ? LETTER_SPACING : 0)
+  ), 0);
+}
+
+function splitLongWord(font: PDFFont, word: string, size: number) {
+  const chunks: string[] = [];
+  let current = "";
+  for (const character of word) {
+    const candidate = `${current}${character}`;
+    if (current && lineWidth(font, candidate, size) > TEXT_BOX_WIDTH) {
+      chunks.push(current);
+      current = character;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+function wrapName(font: PDFFont, name: string, size: number) {
+  const words = name.split(" ").filter(Boolean);
+  const lines: string[] = [];
+  let current = "";
+
+  for (const word of words) {
+    if (lineWidth(font, word, size) > TEXT_BOX_WIDTH) {
+      if (current) {
+        lines.push(current);
+        current = "";
+      }
+      lines.push(...splitLongWord(font, word, size));
+      continue;
+    }
+
+    const candidate = current ? `${current} ${word}` : word;
+    if (current && lineWidth(font, candidate, size) > TEXT_BOX_WIDTH) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
+  }
+
+  if (current) lines.push(current);
+  return lines.map((line) => line.trim()).filter(Boolean);
+}
+
+function layoutName(font: PDFFont, name: string) {
+  for (let size = BASE_FONT_SIZE; size >= MIN_FONT_SIZE; size -= 1) {
+    const lines = wrapName(font, name, size);
+    const height = Math.max(1, lines.length) * size * LINE_HEIGHT_RATIO;
+    if (lines.length <= 3 && height <= TEXT_BOX_HEIGHT) return { lines, size };
+  }
+  return { lines: wrapName(font, name, MIN_FONT_SIZE).slice(0, 3), size: MIN_FONT_SIZE };
+}
+
+function rotatedPoint(center: { x: number; y: number }, angle: number, localX: number, localY: number) {
+  const radians = angle * Math.PI / 180;
+  const alongX = Math.cos(radians);
+  const alongY = Math.sin(radians);
+  const normalX = -alongY;
+  const normalY = alongX;
+  return {
+    x: center.x + alongX * localX + normalX * localY,
+    y: center.y + alongY * localX + normalY * localY,
+  };
+}
+
+function drawCenteredLine(
+  page: PDFPage,
+  font: PDFFont,
+  line: string,
+  center: { x: number; y: number },
+  angle: number,
+  localY: number,
+  size: number,
+) {
+  let cursor = -lineWidth(font, line, size) / 2;
+  for (const character of line) {
+    const characterWidth = font.widthOfTextAtSize(character, size);
+    if (character !== " ") {
+      const point = rotatedPoint(center, angle, cursor, localY);
+      page.drawText(character, {
+        x: point.x,
+        y: point.y,
+        size,
+        font,
+        color: NAME_COLOR,
+        rotate: degrees(angle),
+      });
+    }
+    cursor += characterWidth + LETTER_SPACING;
+  }
 }
 
 function drawCenteredName(
@@ -30,19 +126,11 @@ function drawCenteredName(
 ) {
   if (!name) return;
 
-  const size = fittedSize(font, name);
-  const width = font.widthOfTextAtSize(name, size);
-  const radians = angle * Math.PI / 180;
-  const alongX = Math.cos(radians);
-  const alongY = Math.sin(radians);
-
-  page.drawText(name, {
-    x: center.x - alongX * width / 2,
-    y: center.y - alongY * width / 2,
-    size,
-    font,
-    color: NAME_COLOR,
-    rotate: degrees(angle),
+  const { lines, size } = layoutName(font, name);
+  const lineHeight = size * LINE_HEIGHT_RATIO;
+  lines.forEach((line, index) => {
+    const localY = ((lines.length - 1) / 2 - index) * lineHeight;
+    drawCenteredLine(page, font, line, center, angle, localY, size);
   });
 }
 
@@ -67,8 +155,8 @@ export async function POST(request: Request) {
     for (let index = 0; index < names.length; index += 2) {
       const [page] = await output.copyPages(template, [0]);
       output.addPage(page);
-      drawCenteredName(page, font, names[index], TOP_BASELINE_CENTER, 225);
-      drawCenteredName(page, font, names[index + 1] ?? "", BOTTOM_BASELINE_CENTER, 315);
+      drawCenteredName(page, font, names[index], TOP_TEXT_BOX_CENTER, 225);
+      drawCenteredName(page, font, names[index + 1] ?? "", BOTTOM_TEXT_BOX_CENTER, 315);
     }
 
     const pdfBytes = await output.save();
@@ -89,4 +177,3 @@ export async function POST(request: Request) {
     return new Response(error instanceof Error ? error.message : "The envelope PDF could not be generated.", { status: 500 });
   }
 }
-
