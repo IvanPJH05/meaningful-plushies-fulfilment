@@ -102,7 +102,7 @@ function drawCenteredName(
   lines.forEach((line, index) => {
     const localY = ((lines.length - 1) / 2 - index) * lineHeight;
     const point = rotatedPoint(center, angle, -lineWidth(font, line, size) / 2, localY);
-    page.drawText(line, {
+    const textOptions = {
       x: point.x,
       y: point.y,
       size,
@@ -110,7 +110,8 @@ function drawCenteredName(
       color: NAME_COLOR,
       rotate: degrees(angle),
       characterSpacing: CHARACTER_SPACING,
-    });
+    };
+    page.drawText(line, textOptions);
   });
 }
 
