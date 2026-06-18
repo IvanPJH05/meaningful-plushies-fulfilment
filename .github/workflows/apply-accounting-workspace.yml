@@ -1,0 +1,535 @@
+name: Apply accounting workspace update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/apply-accounting-workspace.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply workspace switcher and accounting sidebar
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          page = Path("app/page.tsx")
+          text = page.read_text()
+
+          def replace_once(old: str, new: str) -> None:
+              global text
+              if old not in text:
+                  raise SystemExit(f"Missing expected block:\n{old[:300]}")
+              text = text.replace(old, new, 1)
+
+          replace_once('type View = "orders" | "fulfilment" | "packing_slips" | "print_envelope" | "import" | "fulfilled" | "history" | "settings" | "stock" | "sales_report";\n', '''type View =
+  | "orders" | "fulfilment" | "packing_slips" | "print_envelope" | "import" | "fulfilled" | "history" | "settings" | "stock" | "sales_report"
+  | "accounting_dashboard" | "accounting_documents" | "accounting_transactions" | "accounting_profit_loss" | "accounting_balance_sheet"
+  | "accounting_cash_flow" | "accounting_general_ledger" | "accounting_trial_balance" | "accounting_payable" | "accounting_receivable"
+  | "accounting_bank_reconciliation" | "accounting_product_profitability" | "accounting_marketing_profitability" | "accounting_cash_position"
+  | "accounting_tax_reports" | "accounting_settings";
+type Workspace = "fulfilment" | "accounting" | "inventory" | "reports" | "settings";
+''')
+
+          replace_once('''const dashboardViews: readonly View[] = ["orders", "fulfilment", "packing_slips", "print_envelope", "import", "fulfilled", "history", "settings", "stock", "sales_report"];
+const adminOnlyViews = new Set<View>(["history", "settings", "stock", "sales_report"]);
+''', '''const fulfilmentViews: readonly View[] = ["orders", "fulfilment", "packing_slips", "print_envelope", "import", "fulfilled"];
+const accountingViews: readonly View[] = [
+  "accounting_dashboard",
+  "accounting_documents",
+  "accounting_transactions",
+  "accounting_profit_loss",
+  "accounting_balance_sheet",
+  "accounting_cash_flow",
+  "accounting_general_ledger",
+  "accounting_trial_balance",
+  "accounting_payable",
+  "accounting_receivable",
+  "accounting_bank_reconciliation",
+  "accounting_product_profitability",
+  "accounting_marketing_profitability",
+  "accounting_cash_position",
+  "accounting_tax_reports",
+  "accounting_settings",
+];
+const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "stock", "sales_report", ...accountingViews];
+const adminOnlyViews = new Set<View>(["history", "settings", "stock", "sales_report", ...accountingViews]);
+const workspaceDefaultViews: Record<Workspace, View> = {
+  fulfilment: "orders",
+  accounting: "accounting_dashboard",
+  inventory: "stock",
+  reports: "sales_report",
+  settings: "settings",
+};
+const workspaceLabels: Record<Workspace, string> = {
+  fulfilment: "Fulfilment",
+  accounting: "Accounting",
+  inventory: "Inventory",
+  reports: "Reports",
+  settings: "Settings",
+};
+''')
+
+          replace_once('''const fulfilmentColumnLabels: Record<FulfilmentColumn, string> = {
+  orderNumber: "Order ID",
+  meaningfulMessage: "Meaningful Message",
+  plushName: "Plush Name",
+  character: "Character",
+  idWebsiteLink: "ID Website Link",
+  customerName: "Customer Name",
+  phone: "Phone Number",
+};
+
+function formatDate(value: string, withTime = false) {
+''', '''const fulfilmentColumnLabels: Record<FulfilmentColumn, string> = {
+  orderNumber: "Order ID",
+  meaningfulMessage: "Meaningful Message",
+  plushName: "Plush Name",
+  character: "Character",
+  idWebsiteLink: "ID Website Link",
+  customerName: "Customer Name",
+  phone: "Phone Number",
+};
+
+type NavItem = { view: View; label: string; icon: IconName };
+
+const fulfilmentNavItems: NavItem[] = [
+  { view: "orders", label: "Orders", icon: "orders" },
+  { view: "fulfilment", label: "Fulfilment", icon: "fulfilment" },
+  { view: "packing_slips", label: "Packing Slips", icon: "packing" },
+  { view: "print_envelope", label: "Print Envelope", icon: "envelope" },
+  { view: "import", label: "CSV Import", icon: "import" },
+];
+
+const fulfilmentAdminNavItems: NavItem[] = [
+  { view: "sales_report", label: "Sales Report", icon: "report" },
+  { view: "stock", label: "Stock Count", icon: "stock" },
+  { view: "history", label: "History", icon: "history" },
+  { view: "settings", label: "Settings", icon: "settings" },
+];
+
+const accountingNavItems: NavItem[] = [
+  { view: "accounting_dashboard", label: "Overview", icon: "accounting" },
+  { view: "accounting_documents", label: "Documents", icon: "documents" },
+  { view: "accounting_transactions", label: "Transactions", icon: "cash" },
+  { view: "accounting_profit_loss", label: "Profit & Loss", icon: "report" },
+  { view: "accounting_balance_sheet", label: "Balance Sheet", icon: "ledger" },
+  { view: "accounting_cash_flow", label: "Cash Flow", icon: "cash" },
+  { view: "accounting_general_ledger", label: "General Ledger", icon: "ledger" },
+  { view: "accounting_trial_balance", label: "Trial Balance", icon: "ledger" },
+  { view: "accounting_payable", label: "Payables", icon: "cash" },
+  { view: "accounting_receivable", label: "Receivables", icon: "cash" },
+  { view: "accounting_bank_reconciliation", label: "Bank Reconciliation", icon: "ledger" },
+  { view: "accounting_product_profitability", label: "Product Profitability", icon: "report" },
+  { view: "accounting_marketing_profitability", label: "Marketing Profitability", icon: "report" },
+  { view: "accounting_cash_position", label: "Cash Position", icon: "cash" },
+  { view: "accounting_tax_reports", label: "Tax Reports", icon: "tax" },
+  { view: "accounting_settings", label: "Accounting Settings", icon: "settings" },
+];
+
+const inventoryNavItems: NavItem[] = [{ view: "stock", label: "Stock Count", icon: "stock" }];
+const reportsNavItems: NavItem[] = [{ view: "sales_report", label: "Sales Report", icon: "report" }];
+const settingsNavItems: NavItem[] = [
+  { view: "settings", label: "Fulfilment Settings", icon: "settings" },
+  { view: "history", label: "History", icon: "history" },
+  { view: "accounting_settings", label: "Accounting Settings", icon: "settings" },
+];
+
+function formatDate(value: string, withTime = false) {
+''')
+
+          replace_once('''function permittedView(value: unknown, role?: UserRole) {
+  const view = choice(value, "orders" as View, dashboardViews);
+  return role === "staff" && adminOnlyViews.has(view) ? "orders" : view;
+}
+
+export default function Home() {
+''', '''function permittedView(value: unknown, role?: UserRole) {
+  const view = choice(value, "orders" as View, dashboardViews);
+  return role === "staff" && adminOnlyViews.has(view) ? "orders" : view;
+}
+
+function workspaceForView(view: View): Workspace {
+  if (accountingViews.includes(view)) return "accounting";
+  if (view === "stock") return "inventory";
+  if (view === "sales_report") return "reports";
+  if (view === "history" || view === "settings") return "settings";
+  return "fulfilment";
+}
+
+function navItemsForWorkspace(workspace: Workspace, role: UserRole): NavItem[] {
+  if (role !== "admin") return fulfilmentNavItems;
+  if (workspace === "accounting") return accountingNavItems;
+  if (workspace === "inventory") return inventoryNavItems;
+  if (workspace === "reports") return reportsNavItems;
+  if (workspace === "settings") return settingsNavItems;
+  return [...fulfilmentNavItems, ...fulfilmentAdminNavItems];
+}
+
+function viewTitle(view: View) {
+  const titleOverrides: Partial<Record<View, string>> = {
+    orders: "Orders Dashboard",
+    import: "Import Shopify Orders",
+    fulfilled: "Shipped Orders",
+    history: "Activity History",
+  };
+  if (titleOverrides[view]) return titleOverrides[view]!;
+  const item = [...fulfilmentNavItems, ...fulfilmentAdminNavItems, ...accountingNavItems, ...inventoryNavItems, ...reportsNavItems, ...settingsNavItems]
+    .find((navItem) => navItem.view === view);
+  if (item) return item.label;
+  return "Orders Dashboard";
+}
+
+export default function Home() {
+''')
+
+          replace_once('''    if (column === "customerName") return order.customerName || "-";
+    return order.phone || "-";
+  }
+
+  return <main className="app-shell">
+''', '''    if (column === "customerName") return order.customerName || "-";
+    return order.phone || "-";
+  }
+
+  const workspace = workspaceForView(view);
+  const availableWorkspaces: Workspace[] = session.role === "admin" ? ["fulfilment", "accounting", "inventory", "reports", "settings"] : ["fulfilment"];
+  const sidebarNavItems = navItemsForWorkspace(workspace, session.role);
+  const workspaceTitle = workspaceLabels[workspace];
+
+  return <main className="app-shell">
+''')
+
+          replace_once('''    <aside className="side-nav">
+      <div className="logo"><span>MP</span><div>Meaningful Plushies<small>Fulfilment</small></div></div>
+      <nav>
+        <button className={view === "orders" ? "active" : ""} onClick={() => setView("orders")}><Icon name="orders" /> Orders</button>
+        <button className={view === "fulfilment" ? "active" : ""} onClick={() => setView("fulfilment")}><Icon name="fulfilment" /> Fulfilment</button>
+        <button className={view === "packing_slips" ? "active" : ""} onClick={() => setView("packing_slips")}><Icon name="packing" /> Packing Slips</button>
+        <button className={view === "print_envelope" ? "active" : ""} onClick={() => setView("print_envelope")}><Icon name="envelope" /> Print Envelope</button>
+        <button className={view === "import" ? "active" : ""} onClick={() => setView("import")}><Icon name="import" /> CSV Import</button>
+        {session.role === "admin" && <button className={view === "sales_report" ? "active" : ""} onClick={() => setView("sales_report")}><Icon name="report" /> Sales Report</button>}
+        {session.role === "admin" && <button className={view === "stock" ? "active" : ""} onClick={() => setView("stock")}><Icon name="stock" /> Stock Count</button>}
+        {session.role === "admin" && <button className={view === "history" ? "active" : ""} onClick={() => setView("history")}><Icon name="history" /> History</button>}
+        {session.role === "admin" && <button className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}><Icon name="settings" /> Settings</button>}
+      </nav>
+''', '''    <aside className="side-nav">
+      <div className="workspace-switcher">
+        <div className="logo"><span>MP</span><div>Meaningful Plushies<small>{workspaceTitle}</small></div></div>
+        <label>
+          <span>Workspace</span>
+          <select value={workspace} onChange={(event) => setView(workspaceDefaultViews[event.target.value as Workspace])}>
+            {availableWorkspaces.map((item) => <option key={item} value={item}>{workspaceLabels[item]}</option>)}
+          </select>
+        </label>
+      </div>
+      <nav>
+        {sidebarNavItems.map((item) => <button key={item.view} className={view === item.view ? "active" : ""} onClick={() => setView(item.view)}><Icon name={item.icon} /> {item.label}</button>)}
+      </nav>
+''')
+
+          replace_once('''      <header className="topbar"><div><p>FULFILMENT CONTROL</p><h1>{view === "import" ? "Import Shopify Orders" : view === "fulfilled" ? "Shipped Orders" : view === "fulfilment" ? "Fulfilment" : view === "packing_slips" ? "Packing Slips" : view === "print_envelope" ? "Print Envelope" : view === "history" ? "Activity History" : view === "settings" ? "Settings" : view === "stock" ? "Stock Count" : view === "sales_report" ? "Sales Report" : "Orders Dashboard"}</h1></div><div className="top-actions"><span className={`role-badge ${session.role}`}>{session.role}</span>{view === "packing_slips" && <button className="button primary print-trigger" onClick={printPackingSlips}>Print {packingOrders.length} A6 slip{packingOrders.length === 1 ? "" : "s"}</button>}{view === "print_envelope" && <button className="button primary" disabled={!envelopeOrders.length} onClick={printEnvelopes}>Generate {envelopePages.length} A4 page{envelopePages.length === 1 ? "" : "s"}</button>}{view === "sales_report" && <button className="button primary" onClick={() => printView("print-sales-report")}>Print / Save PDF</button>}{view !== "import" && <button className="button secondary" onClick={() => setView("import")}>Import CSV</button>}</div></header>
+''', '''      <header className="topbar"><div><p>{workspaceTitle.toUpperCase()} WORKSPACE</p><h1>{viewTitle(view)}</h1></div><div className="top-actions"><span className={`role-badge ${session.role}`}>{session.role}</span>{view === "packing_slips" && <button className="button primary print-trigger" onClick={printPackingSlips}>Print {packingOrders.length} A6 slip{packingOrders.length === 1 ? "" : "s"}</button>}{view === "print_envelope" && <button className="button primary" disabled={!envelopeOrders.length} onClick={printEnvelopes}>Generate {envelopePages.length} A4 page{envelopePages.length === 1 ? "" : "s"}</button>}{view === "sales_report" && <button className="button primary" onClick={() => printView("print-sales-report")}>Print / Save PDF</button>}{workspace === "fulfilment" && view !== "import" && <button className="button secondary" onClick={() => setView("import")}>Import CSV</button>}</div></header>
+''')
+
+          replace_once('''      {view !== "import" && view !== "packing_slips" && view !== "print_envelope" && view !== "history" && view !== "settings" && view !== "stock" && view !== "sales_report" && <>
+''', '''      {workspace === "accounting" && session.role === "admin" && <AccountingWorkspacePage view={view} />}
+
+      {workspace === "fulfilment" && view !== "import" && view !== "packing_slips" && view !== "print_envelope" && view !== "history" && view !== "settings" && view !== "stock" && view !== "sales_report" && <>
+''')
+
+          replace_once('''    {selected && <OrderDrawer order={selected} role={session.role} actor={session.displayName} onClose={() => setSelectedId(null)} onUpdate={(patch) => updateOrder(selected.id, patch)} onStatus={(status) => setStatus(selected, status)} />}
+  </main>;
+}
+
+function Login({ onLogin }: { onLogin: (session: Session) => void }) {
+''', '''    {selected && <OrderDrawer order={selected} role={session.role} actor={session.displayName} onClose={() => setSelectedId(null)} onUpdate={(patch) => updateOrder(selected.id, patch)} onStatus={(status) => setStatus(selected, status)} />}
+  </main>;
+}
+
+function AccountingWorkspacePage({ view }: { view: View }) {
+  const pageCopy: Partial<Record<View, { title: string; description: string; focus: string[] }>> = {
+    accounting_dashboard: {
+      title: "Accounting overview",
+      description: "A home base for uploads, categorisation, reconciliation, and reporting.",
+      focus: ["Document inbox", "Cash position", "Open reconciliations", "Monthly reports"],
+    },
+    accounting_documents: {
+      title: "Document inbox",
+      description: "Upload receipts, invoices, bank statements, and other source documents for coding.",
+      focus: ["Private Supabase storage", "Document status", "Suggested category", "Linked transactions"],
+    },
+    accounting_transactions: {
+      title: "Transactions",
+      description: "Record money in and money out, then connect each transaction to documents and categories.",
+      focus: ["Income", "Expenses", "Transfers", "Attachments"],
+    },
+    accounting_profit_loss: {
+      title: "Profit & Loss",
+      description: "Summarise revenue, cost of goods sold, operating expenses, and net profit.",
+      focus: ["Sales", "COGS", "Operating expenses", "Net profit"],
+    },
+    accounting_balance_sheet: {
+      title: "Balance Sheet",
+      description: "Track assets, liabilities, and owner equity for the business.",
+      focus: ["Assets", "Liabilities", "Equity", "As-of date"],
+    },
+    accounting_cash_flow: {
+      title: "Cash Flow",
+      description: "See cash movement across operating, investing, and financing activity.",
+      focus: ["Opening cash", "Cash in", "Cash out", "Closing cash"],
+    },
+    accounting_general_ledger: {
+      title: "General Ledger",
+      description: "Review account-by-account activity using the accounting category structure.",
+      focus: ["Category", "Debit", "Credit", "Running balance"],
+    },
+    accounting_trial_balance: {
+      title: "Trial Balance",
+      description: "Check debit and credit balances before reporting.",
+      focus: ["Debit total", "Credit total", "Difference", "Period"],
+    },
+    accounting_payable: {
+      title: "Accounts payable",
+      description: "Track supplier bills and amounts still owed.",
+      focus: ["Supplier", "Due date", "Amount due", "Payment status"],
+    },
+    accounting_receivable: {
+      title: "Accounts receivable",
+      description: "Track customer invoices and money still expected.",
+      focus: ["Customer", "Invoice", "Amount due", "Collection status"],
+    },
+    accounting_bank_reconciliation: {
+      title: "Bank reconciliation",
+      description: "Match bank statement lines against recorded transactions.",
+      focus: ["Statement upload", "Matched lines", "Unmatched lines", "Adjustments"],
+    },
+    accounting_product_profitability: {
+      title: "Product profitability",
+      description: "Compare sales, product cost, fees, and profit by product or character.",
+      focus: ["Character", "Voice length", "Gross margin", "Profit per order"],
+    },
+    accounting_marketing_profitability: {
+      title: "Marketing profitability",
+      description: "Connect ad spend to sales performance once marketing data is imported.",
+      focus: ["Campaign", "Spend", "Revenue", "Return"],
+    },
+    accounting_cash_position: {
+      title: "Cash position",
+      description: "A quick view of available cash and upcoming commitments.",
+      focus: ["Bank balance", "Pending payouts", "Bills due", "Net cash"],
+    },
+    accounting_tax_reports: {
+      title: "Tax reports",
+      description: "Prepare summaries for tax filing and accountant review.",
+      focus: ["Tax period", "Taxable sales", "Deductible expenses", "Export"],
+    },
+    accounting_settings: {
+      title: "Accounting settings",
+      description: "Control categories, mappings, fiscal year, document types, and report defaults.",
+      focus: ["Categories", "Mappings", "Fiscal year", "Document rules"],
+    },
+  };
+  const copy = pageCopy[view] ?? pageCopy.accounting_dashboard!;
+  return <section className="accounting-workspace">
+    <div className="accounting-hero card">
+      <div>
+        <p>ACCOUNTING MODULE</p>
+        <h2>{copy.title}</h2>
+        <span>{copy.description}</span>
+      </div>
+      <div className="accounting-status-pill">Infrastructure ready</div>
+    </div>
+    <div className="accounting-module-grid">
+      {copy.focus.map((item) => <article className="accounting-module-card card" key={item}><Icon name="accounting" /><strong>{item}</strong><span>Ready for the next build step.</span></article>)}
+    </div>
+  </section>;
+}
+
+function Login({ onLogin }: { onLogin: (session: Session) => void }) {
+''')
+
+          replace_once('''type IconName = "orders" | "fulfilment" | "packing" | "envelope" | "import" | "shipped" | "logout" | "search" | "history" | "drag" | "settings" | "stock" | "report";
+''', '''type IconName = "orders" | "fulfilment" | "packing" | "envelope" | "import" | "shipped" | "logout" | "search" | "history" | "drag" | "settings" | "stock" | "report" | "accounting" | "cash" | "documents" | "ledger" | "tax";
+''')
+
+          replace_once('''  if (name === "report") return <svg {...common}><path d="M6 3h12v18H6zM9 8h6M9 12h6M9 16h4"/></svg>;
+  if (name === "drag") return <svg {...common}><circle cx="8" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="17" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="17" r="1" fill="currentColor" stroke="none"/></svg>;
+''', '''  if (name === "report") return <svg {...common}><path d="M6 3h12v18H6zM9 8h6M9 12h6M9 16h4"/></svg>;
+  if (name === "accounting") return <svg {...common}><path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h3"/></svg>;
+  if (name === "cash") return <svg {...common}><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 9v0M18 15v0"/></svg>;
+  if (name === "documents") return <svg {...common}><path d="M7 3h8l4 4v14H7z"/><path d="M15 3v5h4M10 12h6M10 16h6M5 7v14"/></svg>;
+  if (name === "ledger") return <svg {...common}><path d="M5 4h14v16H5zM9 4v16M5 9h14M5 14h14"/></svg>;
+  if (name === "tax") return <svg {...common}><path d="M7 17 17 7"/><circle cx="7" cy="7" r="2"/><circle cx="17" cy="17" r="2"/></svg>;
+  if (name === "drag") return <svg {...common}><circle cx="8" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="17" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="17" r="1" fill="currentColor" stroke="none"/></svg>;
+''')
+
+          page.write_text(text)
+
+          layout = Path("app/layout.tsx")
+          layout_text = layout.read_text()
+          if 'import "./workspaces.css";' not in layout_text:
+              layout_text = layout_text.replace('import "./dashboard-upgrades.css";\n', 'import "./dashboard-upgrades.css";\nimport "./workspaces.css";\n')
+              layout.write_text(layout_text)
+
+          Path("app/workspaces.css").write_text('''.workspace-switcher {
+  display: grid;
+  gap: 14px;
+}
+
+.workspace-switcher label {
+  display: grid;
+  gap: 6px;
+  padding: 0 4px;
+}
+
+.workspace-switcher label span {
+  color: #8fa3bf;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.workspace-switcher select {
+  width: 100%;
+  border: 1px solid #314965;
+  border-radius: 8px;
+  background: #0f1d31;
+  color: #fff;
+  padding: 9px 10px;
+  cursor: pointer;
+}
+
+.side-nav nav button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.side-nav nav button svg {
+  flex: 0 0 18px;
+  color: #8da4c1;
+}
+
+.side-nav nav button.active svg,
+.side-nav nav button:hover svg {
+  color: #fff;
+}
+
+.accounting-workspace {
+  display: grid;
+  gap: 16px;
+}
+
+.accounting-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+  padding: 24px;
+  background: linear-gradient(135deg, #fff, #eef5ff);
+}
+
+.accounting-hero p {
+  margin: 0 0 7px;
+  color: #4772a8;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .16em;
+}
+
+.accounting-hero h2 {
+  margin: 0;
+  font-size: 28px;
+  letter-spacing: -.03em;
+}
+
+.accounting-hero span {
+  display: block;
+  margin-top: 8px;
+  color: #61738a;
+  max-width: 720px;
+}
+
+.accounting-status-pill {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #e5f4ed;
+  color: #176b50;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.accounting-module-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.accounting-module-card {
+  min-height: 128px;
+  padding: 18px;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.accounting-module-card svg {
+  color: #1769e0;
+}
+
+.accounting-module-card strong {
+  font-size: 14px;
+}
+
+.accounting-module-card span {
+  color: #728197;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+@media (max-width: 1100px) {
+  .accounting-module-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .workspace-switcher {
+    gap: 10px;
+  }
+
+  .workspace-switcher label {
+    max-width: 260px;
+  }
+
+  .accounting-hero {
+    display: grid;
+  }
+
+  .accounting-module-grid {
+    grid-template-columns: 1fr;
+  }
+}
+''')
+
+          workflow = Path(".github/workflows/apply-accounting-workspace.yml")
+          if workflow.exists():
+              workflow.unlink()
+          PY
+      - name: Commit update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/page.tsx app/layout.tsx app/workspaces.css .github/workflows/apply-accounting-workspace.yml
+          git commit -m "Add accounting workspace navigation"
+          git push
