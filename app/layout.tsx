@@ -4,6 +4,7 @@ import "./packing.css";
 import "./envelope.css";
 import "./fulfilment.css";
 import "./dashboard-upgrades.css";
+import "./workspaces.css";
 
 export const metadata: Metadata = {
   title: "Meaningful Plushies Fulfilment",

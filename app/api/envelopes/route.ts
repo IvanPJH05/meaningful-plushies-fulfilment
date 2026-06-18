@@ -10,6 +10,7 @@ const MIN_FONT_SIZE = 34;
 const TEXT_BOX_WIDTH = 300;
 const TEXT_BOX_HEIGHT = 150;
 const LINE_HEIGHT_RATIO = 0.96;
+const LETTER_SPACING = 0;
 const TOP_TEXT_BOX_CENTER = { x: 301.8, y: 1564.2 };
 const BOTTOM_TEXT_BOX_CENTER = { x: 301.8, y: 135.6 };
 const NAME_COLOR = rgb(0.26, 0.37, 0.46);
@@ -19,7 +20,9 @@ function cleanName(value: unknown) {
 }
 
 function lineWidth(font: PDFFont, text: string, size: number) {
-  return font.widthOfTextAtSize(text, size);
+  return [...text].reduce((width, character, index) => (
+    width + font.widthOfTextAtSize(character, size) + (index ? LETTER_SPACING : 0)
+  ), 0);
 }
 
 function splitLongWord(font: PDFFont, word: string, size: number) {
@@ -87,6 +90,33 @@ function rotatedPoint(center: { x: number; y: number }, angle: number, localX: n
   };
 }
 
+function drawCenteredLine(
+  page: PDFPage,
+  font: PDFFont,
+  line: string,
+  center: { x: number; y: number },
+  angle: number,
+  localY: number,
+  size: number,
+) {
+  let cursor = -lineWidth(font, line, size) / 2;
+  for (const character of line) {
+    const characterWidth = font.widthOfTextAtSize(character, size);
+    if (character !== " ") {
+      const point = rotatedPoint(center, angle, cursor, localY);
+      page.drawText(character, {
+        x: point.x,
+        y: point.y,
+        size,
+        font,
+        color: NAME_COLOR,
+        rotate: degrees(angle),
+      });
+    }
+    cursor += characterWidth + LETTER_SPACING;
+  }
+}
+
 function drawCenteredName(
   page: PDFPage,
   font: PDFFont,
@@ -100,15 +130,7 @@ function drawCenteredName(
   const lineHeight = size * LINE_HEIGHT_RATIO;
   lines.forEach((line, index) => {
     const localY = ((lines.length - 1) / 2 - index) * lineHeight;
-    const point = rotatedPoint(center, angle, -lineWidth(font, line, size) / 2, localY);
-    page.drawText(line, {
-      x: point.x,
-      y: point.y,
-      size,
-      font,
-      color: NAME_COLOR,
-      rotate: degrees(angle),
-    });
+    drawCenteredLine(page, font, line, center, angle, localY, size);
   });
 }
 

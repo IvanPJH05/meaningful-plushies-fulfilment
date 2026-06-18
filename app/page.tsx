@@ -31,7 +31,13 @@ import {
 import { orderStatuses, type DashboardAccount, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesFeeSetting, type StockSetting, type UserRole } from "../lib/types";
 
 type Session = DashboardSession;
-type View = "orders" | "fulfilment" | "packing_slips" | "print_envelope" | "import" | "fulfilled" | "history" | "settings" | "stock" | "sales_report";
+type View =
+  | "orders" | "fulfilment" | "packing_slips" | "print_envelope" | "import" | "fulfilled" | "history" | "settings" | "stock" | "sales_report"
+  | "accounting_dashboard" | "accounting_documents" | "accounting_transactions" | "accounting_profit_loss" | "accounting_balance_sheet"
+  | "accounting_cash_flow" | "accounting_general_ledger" | "accounting_trial_balance" | "accounting_payable" | "accounting_receivable"
+  | "accounting_bank_reconciliation" | "accounting_product_profitability" | "accounting_marketing_profitability" | "accounting_cash_position"
+  | "accounting_tax_reports" | "accounting_settings";
+type Workspace = "fulfilment" | "accounting" | "inventory" | "reports" | "settings";
 type SalesRange = "active" | "today" | "7d" | "30d" | "lifetime";
 type SortKey = "orderNumber" | "importedAt" | "updatedAt";
 type SortDirection = "asc" | "desc";
@@ -81,8 +87,41 @@ const dashboardSelectableStatuses: { value: OrderStatus | "total"; label: string
   { value: "issue", label: "Issues" },
 ];
 
-const dashboardViews: readonly View[] = ["orders", "fulfilment", "packing_slips", "print_envelope", "import", "fulfilled", "history", "settings", "stock", "sales_report"];
-const adminOnlyViews = new Set<View>(["history", "settings", "stock", "sales_report"]);
+const fulfilmentViews: readonly View[] = ["orders", "fulfilment", "packing_slips", "print_envelope", "import", "fulfilled"];
+const accountingViews: readonly View[] = [
+  "accounting_dashboard",
+  "accounting_documents",
+  "accounting_transactions",
+  "accounting_profit_loss",
+  "accounting_balance_sheet",
+  "accounting_cash_flow",
+  "accounting_general_ledger",
+  "accounting_trial_balance",
+  "accounting_payable",
+  "accounting_receivable",
+  "accounting_bank_reconciliation",
+  "accounting_product_profitability",
+  "accounting_marketing_profitability",
+  "accounting_cash_position",
+  "accounting_tax_reports",
+  "accounting_settings",
+];
+const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "stock", "sales_report", ...accountingViews];
+const adminOnlyViews = new Set<View>(["history", "settings", "stock", "sales_report", ...accountingViews]);
+const workspaceDefaultViews: Record<Workspace, View> = {
+  fulfilment: "orders",
+  accounting: "accounting_dashboard",
+  inventory: "stock",
+  reports: "sales_report",
+  settings: "settings",
+};
+const workspaceLabels: Record<Workspace, string> = {
+  fulfilment: "Fulfilment",
+  accounting: "Accounting",
+  inventory: "Inventory",
+  reports: "Reports",
+  settings: "Settings",
+};
 const orderStatusFilterValues = ["all", ...orderStatuses] as const;
 const dashboardMetricValues = ["total", ...orderStatuses] as const;
 const salesRangeValues = ["active", "today", "7d", "30d", "lifetime"] as const;
@@ -148,6 +187,50 @@ const fulfilmentColumnLabels: Record<FulfilmentColumn, string> = {
   customerName: "Customer Name",
   phone: "Phone Number",
 };
+
+type NavItem = { view: View; label: string; icon: IconName };
+
+const fulfilmentNavItems: NavItem[] = [
+  { view: "orders", label: "Orders", icon: "orders" },
+  { view: "fulfilment", label: "Fulfilment", icon: "fulfilment" },
+  { view: "packing_slips", label: "Packing Slips", icon: "packing" },
+  { view: "print_envelope", label: "Print Envelope", icon: "envelope" },
+  { view: "import", label: "CSV Import", icon: "import" },
+];
+
+const fulfilmentAdminNavItems: NavItem[] = [
+  { view: "sales_report", label: "Sales Report", icon: "report" },
+  { view: "stock", label: "Stock Count", icon: "stock" },
+  { view: "history", label: "History", icon: "history" },
+  { view: "settings", label: "Settings", icon: "settings" },
+];
+
+const accountingNavItems: NavItem[] = [
+  { view: "accounting_dashboard", label: "Overview", icon: "accounting" },
+  { view: "accounting_documents", label: "Documents", icon: "documents" },
+  { view: "accounting_transactions", label: "Transactions", icon: "cash" },
+  { view: "accounting_profit_loss", label: "Profit & Loss", icon: "report" },
+  { view: "accounting_balance_sheet", label: "Balance Sheet", icon: "ledger" },
+  { view: "accounting_cash_flow", label: "Cash Flow", icon: "cash" },
+  { view: "accounting_general_ledger", label: "General Ledger", icon: "ledger" },
+  { view: "accounting_trial_balance", label: "Trial Balance", icon: "ledger" },
+  { view: "accounting_payable", label: "Payables", icon: "cash" },
+  { view: "accounting_receivable", label: "Receivables", icon: "cash" },
+  { view: "accounting_bank_reconciliation", label: "Bank Reconciliation", icon: "ledger" },
+  { view: "accounting_product_profitability", label: "Product Profitability", icon: "report" },
+  { view: "accounting_marketing_profitability", label: "Marketing Profitability", icon: "report" },
+  { view: "accounting_cash_position", label: "Cash Position", icon: "cash" },
+  { view: "accounting_tax_reports", label: "Tax Reports", icon: "tax" },
+  { view: "accounting_settings", label: "Accounting Settings", icon: "settings" },
+];
+
+const inventoryNavItems: NavItem[] = [{ view: "stock", label: "Stock Count", icon: "stock" }];
+const reportsNavItems: NavItem[] = [{ view: "sales_report", label: "Sales Report", icon: "report" }];
+const settingsNavItems: NavItem[] = [
+  { view: "settings", label: "Fulfilment Settings", icon: "settings" },
+  { view: "history", label: "History", icon: "history" },
+  { view: "accounting_settings", label: "Accounting Settings", icon: "settings" },
+];
 
 function formatDate(value: string, withTime = false) {
   if (!value) return "-";
@@ -249,6 +332,37 @@ function cleanFulfilmentColumns(value: unknown) {
 function permittedView(value: unknown, role?: UserRole) {
   const view = choice(value, "orders" as View, dashboardViews);
   return role === "staff" && adminOnlyViews.has(view) ? "orders" : view;
+}
+
+function workspaceForView(view: View): Workspace {
+  if (accountingViews.includes(view)) return "accounting";
+  if (view === "stock") return "inventory";
+  if (view === "sales_report") return "reports";
+  if (view === "history" || view === "settings") return "settings";
+  return "fulfilment";
+}
+
+function navItemsForWorkspace(workspace: Workspace, role: UserRole): NavItem[] {
+  if (role !== "admin") return fulfilmentNavItems;
+  if (workspace === "accounting") return accountingNavItems;
+  if (workspace === "inventory") return inventoryNavItems;
+  if (workspace === "reports") return reportsNavItems;
+  if (workspace === "settings") return settingsNavItems;
+  return [...fulfilmentNavItems, ...fulfilmentAdminNavItems];
+}
+
+function viewTitle(view: View) {
+  const titleOverrides: Partial<Record<View, string>> = {
+    orders: "Orders Dashboard",
+    import: "Import Shopify Orders",
+    fulfilled: "Shipped Orders",
+    history: "Activity History",
+  };
+  if (titleOverrides[view]) return titleOverrides[view]!;
+  const item = [...fulfilmentNavItems, ...fulfilmentAdminNavItems, ...accountingNavItems, ...inventoryNavItems, ...reportsNavItems, ...settingsNavItems]
+    .find((navItem) => navItem.view === view);
+  if (item) return item.label;
+  return "Orders Dashboard";
 }
 
 export default function Home() {
@@ -780,30 +894,37 @@ export default function Home() {
     return order.phone || "-";
   }
 
+  const workspace = workspaceForView(view);
+  const availableWorkspaces: Workspace[] = session.role === "admin" ? ["fulfilment", "accounting", "inventory", "reports", "settings"] : ["fulfilment"];
+  const sidebarNavItems = navItemsForWorkspace(workspace, session.role);
+  const workspaceTitle = workspaceLabels[workspace];
+
   return <main className="app-shell">
     <aside className="side-nav">
-      <div className="logo"><span>MP</span><div>Meaningful Plushies<small>Fulfilment</small></div></div>
+      <div className="workspace-switcher">
+        <div className="logo"><span>MP</span><div>Meaningful Plushies<small>{workspaceTitle}</small></div></div>
+        <label>
+          <span>Workspace</span>
+          <select value={workspace} onChange={(event) => setView(workspaceDefaultViews[event.target.value as Workspace])}>
+            {availableWorkspaces.map((item) => <option key={item} value={item}>{workspaceLabels[item]}</option>)}
+          </select>
+        </label>
+      </div>
       <nav>
-        <button className={view === "orders" ? "active" : ""} onClick={() => setView("orders")}><Icon name="orders" /> Orders</button>
-        <button className={view === "fulfilment" ? "active" : ""} onClick={() => setView("fulfilment")}><Icon name="fulfilment" /> Fulfilment</button>
-        <button className={view === "packing_slips" ? "active" : ""} onClick={() => setView("packing_slips")}><Icon name="packing" /> Packing Slips</button>
-        <button className={view === "print_envelope" ? "active" : ""} onClick={() => setView("print_envelope")}><Icon name="envelope" /> Print Envelope</button>
-        <button className={view === "import" ? "active" : ""} onClick={() => setView("import")}><Icon name="import" /> CSV Import</button>
-        {session.role === "admin" && <button className={view === "sales_report" ? "active" : ""} onClick={() => setView("sales_report")}><Icon name="report" /> Sales Report</button>}
-        {session.role === "admin" && <button className={view === "stock" ? "active" : ""} onClick={() => setView("stock")}><Icon name="stock" /> Stock Count</button>}
-        {session.role === "admin" && <button className={view === "history" ? "active" : ""} onClick={() => setView("history")}><Icon name="history" /> History</button>}
-        {session.role === "admin" && <button className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}><Icon name="settings" /> Settings</button>}
+        {sidebarNavItems.map((item) => <button key={item.view} className={view === item.view ? "active" : ""} onClick={() => setView(item.view)}><Icon name={item.icon} /> {item.label}</button>)}
       </nav>
       <div className="user-card"><div className="avatar">{session.displayName.slice(0, 1)}</div><div><strong>{session.displayName}</strong><span>@{session.username} | {session.role === "admin" ? "Administrator" : "Fulfilment staff"}</span></div><button title="Sign out" onClick={signOut}><Icon name="logout" /></button></div>
     </aside>
 
     <section className="main-area">
-      <header className="topbar"><div><p>FULFILMENT CONTROL</p><h1>{view === "import" ? "Import Shopify Orders" : view === "fulfilled" ? "Shipped Orders" : view === "fulfilment" ? "Fulfilment" : view === "packing_slips" ? "Packing Slips" : view === "print_envelope" ? "Print Envelope" : view === "history" ? "Activity History" : view === "settings" ? "Settings" : view === "stock" ? "Stock Count" : view === "sales_report" ? "Sales Report" : "Orders Dashboard"}</h1></div><div className="top-actions"><span className={`role-badge ${session.role}`}>{session.role}</span>{view === "packing_slips" && <button className="button primary print-trigger" onClick={printPackingSlips}>Print {packingOrders.length} A6 slip{packingOrders.length === 1 ? "" : "s"}</button>}{view === "print_envelope" && <button className="button primary" disabled={!envelopeOrders.length} onClick={printEnvelopes}>Generate {envelopePages.length} A4 page{envelopePages.length === 1 ? "" : "s"}</button>}{view === "sales_report" && <button className="button primary" onClick={() => printView("print-sales-report")}>Print / Save PDF</button>}{view !== "import" && <button className="button secondary" onClick={() => setView("import")}>Import CSV</button>}</div></header>
+      <header className="topbar"><div><p>{workspaceTitle.toUpperCase()} WORKSPACE</p><h1>{viewTitle(view)}</h1></div><div className="top-actions"><span className={`role-badge ${session.role}`}>{session.role}</span>{view === "packing_slips" && <button className="button primary print-trigger" onClick={printPackingSlips}>Print {packingOrders.length} A6 slip{packingOrders.length === 1 ? "" : "s"}</button>}{view === "print_envelope" && <button className="button primary" disabled={!envelopeOrders.length} onClick={printEnvelopes}>Generate {envelopePages.length} A4 page{envelopePages.length === 1 ? "" : "s"}</button>}{view === "sales_report" && <button className="button primary" onClick={() => printView("print-sales-report")}>Print / Save PDF</button>}{workspace === "fulfilment" && view !== "import" && <button className="button secondary" onClick={() => setView("import")}>Import CSV</button>}</div></header>
       {databaseError && <div className="notice"><span>Database connection: {databaseError}</span></div>}
       {loadingOrders && <div className="notice"><span>Loading shared orders from Supabase...</span></div>}
       {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice("")}>x</button></div>}
 
-      {view !== "import" && view !== "packing_slips" && view !== "print_envelope" && view !== "history" && view !== "settings" && view !== "stock" && view !== "sales_report" && <>
+      {workspace === "accounting" && session.role === "admin" && <AccountingWorkspacePage view={view} />}
+
+      {workspace === "fulfilment" && view !== "import" && view !== "packing_slips" && view !== "print_envelope" && view !== "history" && view !== "settings" && view !== "stock" && view !== "sales_report" && <>
         {view === "orders" && <section className="stats">
           <Stat label="Active orders" value={counts.total} color="navy" />
           <Stat label="Uploading audio" value={counts.voice} color="orange" />
@@ -854,7 +975,7 @@ export default function Home() {
         <div className="envelope-controls card no-envelope-print">
           <div className="packing-manual"><div><h2>Choose orders to print</h2><p>Enter order IDs, choose a stage, or select every order shown in that stage.</p></div><div className="manual-entry"><input value={manualEnvelopeIds} onChange={(event) => setManualEnvelopeIds(event.target.value)} onKeyDown={(event) => event.key === "Enter" && selectManualEnvelopeOrders()} placeholder="Example: 1402, 1403, 1404" /><button className="button primary" onClick={selectManualEnvelopeOrders}>Add order IDs</button></div></div>
           <div className="canva-connection connected"><div><strong>Print-ready PDF generator</strong><span>The original envelope artwork and Jingleberry font are built in. No Canva connection is required.</span></div></div>
-          <div className="packing-list-header"><div><strong>Available orders</strong><span>Order number, descending</span></div><select value={envelopeStatusFilter} onChange={(event) => setEnvelopeStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><div className="packing-list-actions"><button onClick={() => setEnvelopeSelection((current) => [...new Set([...current, ...sortOrderRecords(envelopeAvailableOrders, "orderNumber", "asc").map((order) => order.id)])])}>Select shown</button><button onClick={() => setEnvelopeSelection([])}>Clear</button></div></div>
+          <div className="packing-list-header"><div><strong>Available orders</strong><span>Order number, descending</span></div><select value={envelopeStatusFilter} onChange={(event) => setEnvelopeStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><div className="packing-list-actions"><button onClick={() => setEnvelopeSelection((current) => [...new Set([...current, ...envelopeAvailableOrders.map((order) => order.id)])])}>Select shown</button><button onClick={() => setEnvelopeSelection([])}>Clear</button></div></div>
           <div className="packing-order-list">{envelopeAvailableOrders.map((order) => { const selectedIndex = envelopeSelection.indexOf(order.id); return <label key={order.id}><input type="checkbox" checked={selectedIndex >= 0} onChange={() => setEnvelopeSelection((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><div><strong>{orderLabel(order)} | {(order.plushName || "Unnamed plushie").toUpperCase()}</strong><span>{order.customerName || "No customer"} | {order.character || "No character"}</span></div>{selectedIndex >= 0 ? <b className="envelope-order-position">{selectedIndex + 1}</b> : <StatusPill status={order.status} />}</label>; })}</div>
         </div>
         <div className="envelope-preview"><div className="preview-heading"><div><h2>A4 page order</h2><p>Two uppercase Jingleberry names are placed on each page using the supplied envelope artwork.</p></div><span>{envelopePages.length} pages</span></div>{envelopePages.length ? <div className="envelope-sheet-list">{envelopePages.map((pageOrders, index) => <EnvelopeSheet key={index} pageNumber={index + 1} orders={pageOrders} />)}</div> : <div className="preview-empty"><strong>No orders selected</strong><p>Choose orders from the list to build the envelope pages.</p></div>}</div>
@@ -907,6 +1028,105 @@ export default function Home() {
 
     {selected && <OrderDrawer order={selected} role={session.role} actor={session.displayName} onClose={() => setSelectedId(null)} onUpdate={(patch) => updateOrder(selected.id, patch)} onStatus={(status) => setStatus(selected, status)} />}
   </main>;
+}
+
+function AccountingWorkspacePage({ view }: { view: View }) {
+  const pageCopy: Partial<Record<View, { title: string; description: string; focus: string[] }>> = {
+    accounting_dashboard: {
+      title: "Accounting overview",
+      description: "A home base for uploads, categorisation, reconciliation, and reporting.",
+      focus: ["Document inbox", "Cash position", "Open reconciliations", "Monthly reports"],
+    },
+    accounting_documents: {
+      title: "Document inbox",
+      description: "Upload receipts, invoices, bank statements, and other source documents for coding.",
+      focus: ["Private Supabase storage", "Document status", "Suggested category", "Linked transactions"],
+    },
+    accounting_transactions: {
+      title: "Transactions",
+      description: "Record money in and money out, then connect each transaction to documents and categories.",
+      focus: ["Income", "Expenses", "Transfers", "Attachments"],
+    },
+    accounting_profit_loss: {
+      title: "Profit & Loss",
+      description: "Summarise revenue, cost of goods sold, operating expenses, and net profit.",
+      focus: ["Sales", "COGS", "Operating expenses", "Net profit"],
+    },
+    accounting_balance_sheet: {
+      title: "Balance Sheet",
+      description: "Track assets, liabilities, and owner equity for the business.",
+      focus: ["Assets", "Liabilities", "Equity", "As-of date"],
+    },
+    accounting_cash_flow: {
+      title: "Cash Flow",
+      description: "See cash movement across operating, investing, and financing activity.",
+      focus: ["Opening cash", "Cash in", "Cash out", "Closing cash"],
+    },
+    accounting_general_ledger: {
+      title: "General Ledger",
+      description: "Review account-by-account activity using the accounting category structure.",
+      focus: ["Category", "Debit", "Credit", "Running balance"],
+    },
+    accounting_trial_balance: {
+      title: "Trial Balance",
+      description: "Check debit and credit balances before reporting.",
+      focus: ["Debit total", "Credit total", "Difference", "Period"],
+    },
+    accounting_payable: {
+      title: "Accounts payable",
+      description: "Track supplier bills and amounts still owed.",
+      focus: ["Supplier", "Due date", "Amount due", "Payment status"],
+    },
+    accounting_receivable: {
+      title: "Accounts receivable",
+      description: "Track customer invoices and money still expected.",
+      focus: ["Customer", "Invoice", "Amount due", "Collection status"],
+    },
+    accounting_bank_reconciliation: {
+      title: "Bank reconciliation",
+      description: "Match bank statement lines against recorded transactions.",
+      focus: ["Statement upload", "Matched lines", "Unmatched lines", "Adjustments"],
+    },
+    accounting_product_profitability: {
+      title: "Product profitability",
+      description: "Compare sales, product cost, fees, and profit by product or character.",
+      focus: ["Character", "Voice length", "Gross margin", "Profit per order"],
+    },
+    accounting_marketing_profitability: {
+      title: "Marketing profitability",
+      description: "Connect ad spend to sales performance once marketing data is imported.",
+      focus: ["Campaign", "Spend", "Revenue", "Return"],
+    },
+    accounting_cash_position: {
+      title: "Cash position",
+      description: "A quick view of available cash and upcoming commitments.",
+      focus: ["Bank balance", "Pending payouts", "Bills due", "Net cash"],
+    },
+    accounting_tax_reports: {
+      title: "Tax reports",
+      description: "Prepare summaries for tax filing and accountant review.",
+      focus: ["Tax period", "Taxable sales", "Deductible expenses", "Export"],
+    },
+    accounting_settings: {
+      title: "Accounting settings",
+      description: "Control categories, mappings, fiscal year, document types, and report defaults.",
+      focus: ["Categories", "Mappings", "Fiscal year", "Document rules"],
+    },
+  };
+  const copy = pageCopy[view] ?? pageCopy.accounting_dashboard!;
+  return <section className="accounting-workspace">
+    <div className="accounting-hero card">
+      <div>
+        <p>ACCOUNTING MODULE</p>
+        <h2>{copy.title}</h2>
+        <span>{copy.description}</span>
+      </div>
+      <div className="accounting-status-pill">Infrastructure ready</div>
+    </div>
+    <div className="accounting-module-grid">
+      {copy.focus.map((item) => <article className="accounting-module-card card" key={item}><Icon name="accounting" /><strong>{item}</strong><span>Ready for the next build step.</span></article>)}
+    </div>
+  </section>;
 }
 
 function Login({ onLogin }: { onLogin: (session: Session) => void }) {
@@ -990,7 +1210,7 @@ function EnvelopeSheet({ orders, pageNumber }: { orders: Order[]; pageNumber: nu
   return <article className="envelope-sheet"><span>PAGE {pageNumber}</span><div><small>TOP NAME</small><strong>{(orders[0]?.plushName || "-").toUpperCase()}</strong></div><div><small>BOTTOM NAME</small><strong>{(orders[1]?.plushName || "-").toUpperCase()}</strong></div></article>;
 }
 
-type IconName = "orders" | "fulfilment" | "packing" | "envelope" | "import" | "shipped" | "logout" | "search" | "history" | "drag" | "settings" | "stock" | "report";
+type IconName = "orders" | "fulfilment" | "packing" | "envelope" | "import" | "shipped" | "logout" | "search" | "history" | "drag" | "settings" | "stock" | "report" | "accounting" | "cash" | "documents" | "ledger" | "tax";
 
 function Icon({ name }: { name: IconName }) {
   const common: SVGProps<SVGSVGElement> = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true };
@@ -1005,6 +1225,11 @@ function Icon({ name }: { name: IconName }) {
   if (name === "settings") return <svg {...common}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg>;
   if (name === "stock") return <svg {...common}><path d="m4 7 8-4 8 4-8 4-8-4Z"/><path d="m4 7v10l8 4 8-4V7M12 11v10"/></svg>;
   if (name === "report") return <svg {...common}><path d="M6 3h12v18H6zM9 8h6M9 12h6M9 16h4"/></svg>;
+  if (name === "accounting") return <svg {...common}><path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h3"/></svg>;
+  if (name === "cash") return <svg {...common}><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 9v0M18 15v0"/></svg>;
+  if (name === "documents") return <svg {...common}><path d="M7 3h8l4 4v14H7z"/><path d="M15 3v5h4M10 12h6M10 16h6M5 7v14"/></svg>;
+  if (name === "ledger") return <svg {...common}><path d="M5 4h14v16H5zM9 4v16M5 9h14M5 14h14"/></svg>;
+  if (name === "tax") return <svg {...common}><path d="M7 17 17 7"/><circle cx="7" cy="7" r="2"/><circle cx="17" cy="17" r="2"/></svg>;
   if (name === "drag") return <svg {...common}><circle cx="8" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="17" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="17" r="1" fill="currentColor" stroke="none"/></svg>;
   return <svg {...common}><path d="M12 8v5l3 2"/><circle cx="12" cy="12" r="9"/></svg>;
 }
