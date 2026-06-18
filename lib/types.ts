@@ -79,11 +79,15 @@ export type AccountingTransaction = {
   accountName: string;
   categoryId: string;
   transactionType: "income" | "expense" | "transfer";
-  paymentStatus: "paid_now" | "pay_later";
+  paymentStatus: "paid_in_full" | "deposit_paid" | "on_credit" | "paid_now" | "pay_later";
   paymentMethod: string;
   supplier: string;
   quantity: number;
   unitCost: number;
+  depositAmount: number;
+  invoiceNumber: string;
+  dueDate: string;
+  supplierTerms: string;
   debit: number;
   credit: number;
   amount: number;

@@ -340,7 +340,7 @@ export async function deleteAccountingDocument(id: string) {
 export async function fetchAccountingTransactions(): Promise<AccountingTransaction[]> {
   const { data, error } = await requireSupabase()
     .from("accounting_transactions")
-    .select("id, source, source_id, document_id, business_event, transaction_date, description, account_name, category_id, transaction_type, payment_status, payment_method, supplier, quantity, unit_cost, debit, credit, amount, currency, tax_treatment, notes, created_by, created_at, updated_at")
+    .select("id, source, source_id, document_id, business_event, transaction_date, description, account_name, category_id, transaction_type, payment_status, payment_method, supplier, quantity, unit_cost, deposit_amount, invoice_number, due_date, supplier_terms, debit, credit, amount, currency, tax_treatment, notes, created_by, created_at, updated_at")
     .is("deleted_at", null)
     .order("transaction_date", { ascending: false })
     .order("created_at", { ascending: false });
@@ -356,11 +356,15 @@ export async function fetchAccountingTransactions(): Promise<AccountingTransacti
     accountName: row.account_name,
     categoryId: row.category_id ?? "",
     transactionType: row.transaction_type,
-    paymentStatus: row.payment_status ?? "paid_now",
+    paymentStatus: row.payment_status ?? "paid_in_full",
     paymentMethod: row.payment_method ?? "",
     supplier: row.supplier ?? "",
     quantity: Number(row.quantity ?? 0),
     unitCost: Number(row.unit_cost ?? 0),
+    depositAmount: Number(row.deposit_amount ?? 0),
+    invoiceNumber: row.invoice_number ?? "",
+    dueDate: row.due_date ?? "",
+    supplierTerms: row.supplier_terms ?? "",
     debit: Number(row.debit),
     credit: Number(row.credit),
     amount: Number(row.amount),
@@ -386,13 +390,17 @@ export async function saveAccountingTransaction(transaction: AccountingTransacti
     account_name: transaction.accountName || "Cash",
     category_id: transaction.categoryId || null,
     transaction_type: transaction.transactionType,
-    payment_status: transaction.paymentStatus || "paid_now",
+    payment_status: transaction.paymentStatus || "paid_in_full",
     payment_method: transaction.paymentMethod || "",
     supplier: transaction.supplier || "",
     quantity: transaction.quantity || 0,
     unit_cost: transaction.unitCost || 0,
-    debit: transaction.transactionType === "expense" ? amount : 0,
-    credit: transaction.transactionType === "income" ? amount : 0,
+    deposit_amount: transaction.depositAmount || 0,
+    invoice_number: transaction.invoiceNumber || "",
+    due_date: transaction.dueDate || null,
+    supplier_terms: transaction.supplierTerms || "",
+    debit: Math.max(0, transaction.debit),
+    credit: Math.max(0, transaction.credit),
     amount,
     currency: transaction.currency || "MYR",
     tax_treatment: transaction.taxTreatment || "none",
