@@ -10,6 +10,7 @@ const MIN_FONT_SIZE = 34;
 const TEXT_BOX_WIDTH = 300;
 const TEXT_BOX_HEIGHT = 150;
 const LINE_HEIGHT_RATIO = 0.96;
+const CHARACTER_SPACING = 4.5;
 const TOP_TEXT_BOX_CENTER = { x: 301.8, y: 1564.2 };
 const BOTTOM_TEXT_BOX_CENTER = { x: 301.8, y: 135.6 };
 const NAME_COLOR = rgb(0.26, 0.37, 0.46);
@@ -19,7 +20,7 @@ function cleanName(value: unknown) {
 }
 
 function lineWidth(font: PDFFont, text: string, size: number) {
-  return font.widthOfTextAtSize(text, size);
+  return font.widthOfTextAtSize(text, size) + Math.max(0, text.length - 1) * CHARACTER_SPACING;
 }
 
 function splitLongWord(font: PDFFont, word: string, size: number) {
@@ -108,6 +109,7 @@ function drawCenteredName(
       font,
       color: NAME_COLOR,
       rotate: degrees(angle),
+      characterSpacing: CHARACTER_SPACING,
     });
   });
 }
