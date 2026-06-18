@@ -146,6 +146,15 @@ const dashboardSelectableStatuses: { value: OrderStatus | "total"; label: string
 const sourceModules = ["Shopify", "TikTok Shop", "Fulfilment", "Inventory", "Payment Processor", "Tax Engine", "Depreciation Engine", "Manual Transactions", "Subscription Engine", "Payroll Engine"];
 const postingTriggers = ["Manual Entry", "Order Created", "Payment Received", "Order Fulfilled", "Order Packed", "Payout Received", "Inventory Adjusted", "Bill Created"];
 const paymentAccounts = ["Bank Account"];
+const stockPurchaseAccounts = [
+  "Billy Plush Skin",
+  "Tootsie Plush Skin",
+  "Hunnie Plush Skin",
+  "Dragon Warrior Plush Skin",
+  "Speakers",
+  "Boxes",
+  "NFC Chips",
+] as const;
 const businessEvents = [
   { group: "Purchases", value: "inventory_purchase", label: "Buy Inventory", transactionLabel: "Inventory Purchase", accountTypes: ["asset", "cost_of_sales"] },
   { group: "Purchases", value: "equipment_purchase", label: "Buy Equipment", transactionLabel: "Equipment Purchase", accountTypes: ["asset"] },
@@ -162,6 +171,54 @@ const businessEvents = [
   { group: "Owner Transactions", value: "owner_withdrawal", label: "Owner Withdrawal", transactionLabel: "Owner Withdrawal", accountTypes: ["equity"] },
   { group: "Transfer", value: "bank_transfer", label: "Bank Transfer", transactionLabel: "Bank Transfer", accountTypes: ["asset"] },
 ] as const;
+
+const accountingPresetAccounts: Omit<AccountingCategory, "id" | "parentId" | "active">[] = [
+  { name: "Bank Account", accountType: "asset", reportSection: "Current Assets", dataSourceType: "system_generated", sourceModule: "Payment Processor", sourceEntity: "Payouts", postingTrigger: "Payout Received", allowSubAccounts: false, allowedTransactionTypes: [] },
+  { name: "Accounts Receivable", accountType: "asset", reportSection: "Current Assets", dataSourceType: "system_generated", sourceModule: "Shopify", sourceEntity: "Orders", postingTrigger: "Order Paid", allowSubAccounts: false, allowedTransactionTypes: [] },
+  { name: "Payment Processors", accountType: "asset", reportSection: "Current Assets", dataSourceType: "system_generated", sourceModule: "Payment Processor", sourceEntity: "Processor Balances", postingTrigger: "Payment Received", allowSubAccounts: true, allowedTransactionTypes: [] },
+  { name: "Inventory", accountType: "asset", reportSection: "Current Assets", dataSourceType: "hybrid", sourceModule: "Inventory", sourceEntity: "Inventory Items", postingTrigger: "Inventory Purchased", allowSubAccounts: true, allowedTransactionTypes: [] },
+  { name: "Prepaid Expenses", accountType: "asset", reportSection: "Current Assets", dataSourceType: "manual", sourceModule: "Manual Transactions", sourceEntity: "", postingTrigger: "Manual Entry", allowSubAccounts: false, allowedTransactionTypes: [] },
+  { name: "Equipment", accountType: "asset", reportSection: "Non Current Assets", dataSourceType: "manual", sourceModule: "Manual Transactions", sourceEntity: "", postingTrigger: "Manual Entry", allowSubAccounts: false, allowedTransactionTypes: [] },
+  { name: "Accumulated Depreciation", accountType: "asset", reportSection: "Non Current Assets", dataSourceType: "system_generated", sourceModule: "Depreciation Engine", sourceEntity: "Equipment", postingTrigger: "Depreciation Run", allowSubAccounts: false, allowedTransactionTypes: [] },
+  { name: "Accounts Payable", accountType: "liability", reportSection: "Liabilities", dataSourceType: "hybrid", sourceModule: "Manual Transactions", sourceEntity: "Supplier Bills", postingTrigger: "Bill Created", allowSubAccounts: false, allowedTransactionTypes: [] },
+  { name: "Tax Payable", accountType: "liability", reportSection: "Liabilities", dataSourceType: "system_generated", sourceModule: "Tax Engine", sourceEntity: "Tax Payable", postingTrigger: "Tax Calculated", allowSubAccounts: false, allowedTransactionTypes: [] },
+  { name: "Accrued Expenses", accountType: "liability", reportSection: "Liabilities", dataSourceType: "manual", sourceModule: "Manual Transactions", sourceEntity: "", postingTrigger: "Manual Entry", allowSubAccounts: false, allowedTransactionTypes: [] },
+  { name: "Customer Deposits", accountType: "liability", reportSection: "Liabilities", dataSourceType: "manual", sourceModule: "Manual Transactions", sourceEntity: "", postingTrigger: "Manual Entry", allowSubAccounts: false, allowedTransactionTypes: [] },
+  { name: "Loan", accountType: "liability", reportSection: "Long Term Liabilities", dataSourceType: "manual", sourceModule: "Manual Transactions", sourceEntity: "", postingTrigger: "Manual Entry", allowSubAccounts: false, allowedTransactionTypes: [] },
+  { name: "Owner Capital", accountType: "equity", reportSection: "Equity", dataSourceType: "manual", sourceModule: "Manual Transactions", sourceEntity: "", postingTrigger: "Manual Entry", allowSubAccounts: false, allowedTransactionTypes: [] },
+  { name: "Owner Drawings", accountType: "equity", reportSection: "Equity", dataSourceType: "manual", sourceModule: "Manual Transactions", sourceEntity: "", postingTrigger: "Manual Entry", allowSubAccounts: false, allowedTransactionTypes: [] },
+  { name: "Retained Earnings", accountType: "equity", reportSection: "Equity", dataSourceType: "system_generated", sourceModule: "Accounting", sourceEntity: "Closed Earnings", postingTrigger: "Year Closed", allowSubAccounts: false, allowedTransactionTypes: [] },
+  { name: "Current Year Earnings", accountType: "equity", reportSection: "Equity", dataSourceType: "system_generated", sourceModule: "Accounting", sourceEntity: "Current Profit", postingTrigger: "Report Generated", allowSubAccounts: false, allowedTransactionTypes: [] },
+  { name: "Shopify Sales", accountType: "revenue", reportSection: "Revenue", dataSourceType: "system_generated", sourceModule: "Shopify", sourceEntity: "Orders", postingTrigger: "Payment Received", allowSubAccounts: false, allowedTransactionTypes: [] },
+  { name: "TikTok Shop Sales", accountType: "revenue", reportSection: "Revenue", dataSourceType: "system_generated", sourceModule: "TikTok Shop", sourceEntity: "Orders", postingTrigger: "Payment Received", allowSubAccounts: false, allowedTransactionTypes: [] },
+  { name: "Shipping Revenue", accountType: "revenue", reportSection: "Revenue", dataSourceType: "system_generated", sourceModule: "Shopify", sourceEntity: "Shipping Charges", postingTrigger: "Payment Received", allowSubAccounts: false, allowedTransactionTypes: [] },
+  { name: "Meta Advertising", accountType: "expense", reportSection: "Marketing Expenses", dataSourceType: "manual", sourceModule: "Manual Transactions", sourceEntity: "", postingTrigger: "Manual Entry", allowSubAccounts: false, allowedTransactionTypes: [] },
+  { name: "TikTok Advertising", accountType: "expense", reportSection: "Marketing Expenses", dataSourceType: "manual", sourceModule: "Manual Transactions", sourceEntity: "", postingTrigger: "Manual Entry", allowSubAccounts: false, allowedTransactionTypes: [] },
+  { name: "Influencer Marketing", accountType: "expense", reportSection: "Marketing Expenses", dataSourceType: "manual", sourceModule: "Manual Transactions", sourceEntity: "", postingTrigger: "Manual Entry", allowSubAccounts: false, allowedTransactionTypes: [] },
+  { name: "Affiliate Commissions", accountType: "expense", reportSection: "Marketing Expenses", dataSourceType: "manual", sourceModule: "Manual Transactions", sourceEntity: "", postingTrigger: "Manual Entry", allowSubAccounts: false, allowedTransactionTypes: [] },
+  { name: "Content Creation", accountType: "expense", reportSection: "Marketing Expenses", dataSourceType: "manual", sourceModule: "Manual Transactions", sourceEntity: "", postingTrigger: "Manual Entry", allowSubAccounts: false, allowedTransactionTypes: [] },
+  { name: "Payment Processor Fees", accountType: "expense", reportSection: "Admin Fees", dataSourceType: "system_generated", sourceModule: "Payment Processor", sourceEntity: "Processor Fees", postingTrigger: "Payment Received", allowSubAccounts: false, allowedTransactionTypes: [] },
+  { name: "Income Tax Expense", accountType: "expense", reportSection: "Tax", dataSourceType: "system_generated", sourceModule: "Tax Engine", sourceEntity: "Profit Tax", postingTrigger: "Tax Calculated", allowSubAccounts: false, allowedTransactionTypes: [] },
+  { name: "SST Expense", accountType: "expense", reportSection: "Tax", dataSourceType: "system_generated", sourceModule: "Tax Engine", sourceEntity: "SST", postingTrigger: "Tax Calculated", allowSubAccounts: false, allowedTransactionTypes: [] },
+];
+const manualExpenseAccounts = [
+  ["Software Expenses", "Expense", true],
+  ["Shopify Subscription", "Software Expenses", false],
+  ["ChatGPT Subscription", "Software Expenses", false],
+  ["Canva Subscription", "Software Expenses", false],
+  ["Upload Lift", "Software Expenses", false],
+  ["Domain & Hosting", "Software Expenses", false],
+  ["Other Software", "Software Expenses", false],
+  ["Professional Fees", "Admin Fees", false],
+  ["Bank Charges", "Admin Fees", false],
+  ["Office Expenses", "Admin Fees", false],
+  ["Samples & Testing", "Admin Fees", false],
+  ["Miscellaneous Expenses", "Admin Fees", false],
+  ["Salary Expense", "Salary", false],
+  ["Tax Penalties", "Tax", false],
+] as const;
+const cogsAccounts = ["Plushie Cost", "Speaker Cost", "Packaging Cost", "Shipping Cost", "Labour Cost", "NFC Cost", "Other Direct Costs"] as const;
+const processorAccounts = ["Xendit", "Stripe", "TikTok Shop"] as const;
 
 const fulfilmentViews: readonly View[] = ["orders", "fulfilment", "packing_slips", "print_envelope", "import", "fulfilled"];
 const accountingViews: readonly View[] = [
@@ -918,6 +975,49 @@ export default function Home() {
     }
   }
 
+  async function setupAccountingChart() {
+    const existing = new Map(accountingCategories.map((account) => [account.name.toLowerCase(), account]));
+    const saved: AccountingCategory[] = [];
+    async function ensureAccount(input: Omit<AccountingCategory, "id" | "parentId" | "active"> & { parentName?: string }) {
+      const current = existing.get(input.name.toLowerCase());
+      const parentId = input.parentName ? existing.get(input.parentName.toLowerCase())?.id ?? "" : "";
+      const account: AccountingCategory = {
+        id: current?.id ?? crypto.randomUUID(),
+        name: input.name,
+        accountType: input.accountType,
+        reportSection: input.reportSection,
+        parentId,
+        dataSourceType: current?.dataSourceType ?? input.dataSourceType,
+        sourceModule: current?.sourceModule ?? input.sourceModule,
+        sourceEntity: current?.sourceEntity ?? input.sourceEntity,
+        postingTrigger: current?.postingTrigger ?? input.postingTrigger,
+        allowSubAccounts: input.allowSubAccounts,
+        allowedTransactionTypes: [],
+        active: true,
+      };
+      await saveAccountingCategory(account);
+      existing.set(account.name.toLowerCase(), account);
+      saved.push(account);
+    }
+    try {
+      setSavingAccounting(true);
+      for (const account of accountingPresetAccounts) await ensureAccount(account);
+      for (const processor of processorAccounts) await ensureAccount({ name: processor, accountType: "asset", reportSection: "Current Assets", parentName: "Payment Processors", dataSourceType: "system_generated", sourceModule: "Payment Processor", sourceEntity: `${processor} Transactions`, postingTrigger: "Payment Received", allowSubAccounts: false, allowedTransactionTypes: [] });
+      for (const item of stockPurchaseAccounts) await ensureAccount({ name: item, accountType: "asset", reportSection: "Current Assets", parentName: "Inventory", dataSourceType: "hybrid", sourceModule: "Inventory", sourceEntity: item, postingTrigger: "Inventory Purchased", allowSubAccounts: false, allowedTransactionTypes: [] });
+      for (const account of cogsAccounts) await ensureAccount({ name: account, accountType: "cost_of_sales", reportSection: "COGS", dataSourceType: "manual", sourceModule: "Manual Transactions", sourceEntity: "", postingTrigger: "Manual Entry", allowSubAccounts: false, allowedTransactionTypes: [] });
+      for (const [name, section, allowSubAccounts] of manualExpenseAccounts) {
+        const recurringSoftware = section === "Software Expenses";
+        await ensureAccount({ name, accountType: "expense", reportSection: section, dataSourceType: recurringSoftware ? "hybrid" : "manual", sourceModule: recurringSoftware ? "Subscription Engine" : "Manual Transactions", sourceEntity: recurringSoftware ? name : "", postingTrigger: recurringSoftware ? "Subscription Renewed" : "Manual Entry", allowSubAccounts, allowedTransactionTypes: [] });
+      }
+      await loadSharedData();
+      setNotice(`${saved.length} chart of accounts entries are ready.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not set up chart of accounts.");
+    } finally {
+      setSavingAccounting(false);
+    }
+  }
+
   function downloadFulfilled() {
     const blob = new Blob([fulfilledOrdersCsv(orders)], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -1201,6 +1301,16 @@ export default function Home() {
         updatedAt: now,
       });
       await saveAccountingLedgerEntries(id, entries);
+      if (event.value === "inventory_purchase" && account && quantity > 0) {
+        const stockKey = account.name.toUpperCase().includes("BILLY") ? "BILLY"
+          : account.name.toUpperCase().includes("TOOTSIE") ? "TOOTSIE"
+          : account.name.toUpperCase().includes("HUNNIE") ? "HUNNIE"
+          : account.name.toUpperCase().includes("DRAGON") ? "DRAGON WARRIOR"
+          : account.name.toUpperCase().includes("SPEAKER") ? "VOICE"
+          : account.name.toUpperCase();
+        const currentStock = stockSettings.find((setting) => setting.itemKey === stockKey)?.initialStock ?? 0;
+        await saveStockSetting({ itemKey: stockKey, initialStock: currentStock + Math.floor(quantity) });
+      }
       await insertSharedActivity({ id: crypto.randomUUID(), action: "Accounting transaction created", detail: `${event.label}: ${transactionForm.description} (${formatMoney(amount)})`, actor, createdAt: now });
       setTransactionForm(emptyTransactionForm());
       await loadSharedData();
@@ -1322,6 +1432,7 @@ export default function Home() {
         onUploadDocument={uploadAccountingDocument}
         onCreateTransaction={createManualAccountingTransaction}
         onSaveAccount={saveAccountSettings}
+        onSetupChart={setupAccountingChart}
         onEditAccount={(account) => setAccountForm({ id: account.id, name: account.name, accountType: account.accountType === "income" ? "revenue" : account.accountType, reportSection: account.reportSection, parentId: account.parentId, dataSourceType: account.dataSourceType, sourceModule: account.sourceModule || "Manual Transactions", sourceEntity: account.sourceEntity, postingTrigger: account.postingTrigger || "Manual Entry", allowSubAccounts: account.allowSubAccounts, active: account.active })}
         postingPreview={ledgerPreview()}
         accountOptions={accountOptionsForEvent()}
@@ -1455,6 +1566,7 @@ function AccountingWorkspacePage({
   onUploadDocument,
   onCreateTransaction,
   onSaveAccount,
+  onSetupChart,
   onEditAccount,
   postingPreview,
   accountOptions,
@@ -1480,6 +1592,7 @@ function AccountingWorkspacePage({
   onUploadDocument: () => void;
   onCreateTransaction: () => void;
   onSaveAccount: () => void;
+  onSetupChart: () => void;
   onEditAccount: (account: AccountingCategory) => void;
   postingPreview: AccountingLedgerEntry[];
   accountOptions: AccountingCategory[];
@@ -1527,7 +1640,7 @@ function AccountingWorkspacePage({
     <div className="accounting-hero card"><div><p>TRANSACTION ENTRY ENGINE</p><h2>Record what happened</h2><span>Use normal business language. The system creates the accounting entries behind the scenes.</span></div><div className="accounting-status-pill">{transactions.length} transactions</div></div>
     <section className="accounting-form-grid">
       <div className="accounting-form card">
-        <h3>Step 1: What happened?</h3>
+        <h3>Step 1: Choose category</h3>
         <div className="business-event-grid">{businessEvents.map((item) => <button type="button" key={item.value} className={transactionForm.businessEvent === item.value ? "selected" : ""} onClick={() => onTransactionFormChange({ businessEvent: item.value, categoryId: "", accountName: "" })}><span>{item.group}</span><strong>{item.label}</strong></button>)}</div>
         <h3>Step 2: Select item / account</h3>
         <label>{event.value === "inventory_purchase" ? "Inventory item" : "Account"}<select value={transactionForm.categoryId} onChange={(input) => onTransactionFormChange({ categoryId: input.target.value, accountName: "" })}><option value="">Choose existing</option>{accountOptions.map((category) => <option key={category.id} value={category.id}>{category.parentId ? "- " : ""}{category.name}</option>)}</select></label>
@@ -1557,6 +1670,7 @@ function AccountingWorkspacePage({
 
   if (view === "accounting_settings") return <section className="accounting-workspace">
     <div className="accounting-hero card"><div><p>CHART OF ACCOUNTS</p><h2>Account settings</h2><span>Define what accounts exist, where balances come from, and whether sub-accounts are allowed.</span></div><div className="accounting-status-pill">{categories.length} accounts</div></div>
+    <div className="accounting-action-row"><button className="button primary" disabled={saving} onClick={onSetupChart}>Set up Meaningful Plushies accounts</button><span>Creates the preset accounts from your list without removing your existing accounts.</span></div>
     <section className="accounting-form-grid">
       <div className="accounting-form card">
         <h3>{accountForm.id ? "Edit account" : "Create account"}</h3>

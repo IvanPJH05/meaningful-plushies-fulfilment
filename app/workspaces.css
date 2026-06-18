@@ -99,6 +99,18 @@
   gap: 12px;
 }
 
+.accounting-action-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.accounting-action-row span {
+  color: #617086;
+  font-size: 12px;
+}
+
 .accounting-form-grid {
   display: grid;
   grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
