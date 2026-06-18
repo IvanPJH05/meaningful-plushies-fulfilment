@@ -10,7 +10,8 @@ const MIN_FONT_SIZE = 34;
 const TEXT_BOX_WIDTH = 300;
 const TEXT_BOX_HEIGHT = 150;
 const LINE_HEIGHT_RATIO = 0.96;
-const LETTER_SPACING = 0;
+const CHARACTER_SPACING = 2.5;
+const FAUX_BOLD_OFFSET = 0.65;
 const TOP_TEXT_BOX_CENTER = { x: 301.8, y: 1564.2 };
 const BOTTOM_TEXT_BOX_CENTER = { x: 301.8, y: 135.6 };
 const NAME_COLOR = rgb(0.26, 0.37, 0.46);
@@ -20,9 +21,7 @@ function cleanName(value: unknown) {
 }
 
 function lineWidth(font: PDFFont, text: string, size: number) {
-  return [...text].reduce((width, character, index) => (
-    width + font.widthOfTextAtSize(character, size) + (index ? LETTER_SPACING : 0)
-  ), 0);
+  return font.widthOfTextAtSize(text, size) + Math.max(0, text.length - 1) * CHARACTER_SPACING;
 }
 
 function splitLongWord(font: PDFFont, word: string, size: number) {
@@ -90,33 +89,6 @@ function rotatedPoint(center: { x: number; y: number }, angle: number, localX: n
   };
 }
 
-function drawCenteredLine(
-  page: PDFPage,
-  font: PDFFont,
-  line: string,
-  center: { x: number; y: number },
-  angle: number,
-  localY: number,
-  size: number,
-) {
-  let cursor = -lineWidth(font, line, size) / 2;
-  for (const character of line) {
-    const characterWidth = font.widthOfTextAtSize(character, size);
-    if (character !== " ") {
-      const point = rotatedPoint(center, angle, cursor, localY);
-      page.drawText(character, {
-        x: point.x,
-        y: point.y,
-        size,
-        font,
-        color: NAME_COLOR,
-        rotate: degrees(angle),
-      });
-    }
-    cursor += characterWidth + LETTER_SPACING;
-  }
-}
-
 function drawCenteredName(
   page: PDFPage,
   font: PDFFont,
@@ -130,7 +102,28 @@ function drawCenteredName(
   const lineHeight = size * LINE_HEIGHT_RATIO;
   lines.forEach((line, index) => {
     const localY = ((lines.length - 1) / 2 - index) * lineHeight;
-    drawCenteredLine(page, font, line, center, angle, localY, size);
+    let cursor = -lineWidth(font, line, size) / 2;
+
+    for (const character of line) {
+      const characterWidth = font.widthOfTextAtSize(character, size);
+      if (character !== " ") {
+        const drawAt = (offsetX: number, offsetY: number) => {
+          const point = rotatedPoint(center, angle, cursor + offsetX, localY + offsetY);
+          page.drawText(character, {
+            x: point.x,
+            y: point.y,
+            size,
+            font,
+            color: NAME_COLOR,
+            rotate: degrees(angle),
+          });
+        };
+        drawAt(0, 0);
+        drawAt(FAUX_BOLD_OFFSET, 0);
+        drawAt(0, FAUX_BOLD_OFFSET);
+      }
+      cursor += characterWidth + CHARACTER_SPACING;
+    }
   });
 }
 
