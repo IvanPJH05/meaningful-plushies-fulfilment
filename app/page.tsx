@@ -9,8 +9,14 @@ import { buildSalesReportRows, summarizeSales } from "../lib/sales";
 import { stockCharacters, summarizeStock } from "../lib/stock";
 import {
   createDashboardAccount,
+  createAccountingDocumentSignedUrl,
   deleteSharedOrders,
+  deleteAccountingDocument,
+  deleteAccountingTransaction,
   ensurePaymentProcessors,
+  fetchAccountingCategories,
+  fetchAccountingDocuments,
+  fetchAccountingTransactions,
   fetchSharedActivity,
   fetchSharedOrders,
   fetchDashboardAccounts,
@@ -19,16 +25,19 @@ import {
   fetchStockSettings,
   insertSharedActivity,
   loginDashboardAccount,
+  saveAccountingDocument,
+  saveAccountingTransaction,
   saveStockSetting,
   savePaymentProcessorSetting,
   saveSalesFeeSettings,
   subscribeToSharedData,
   supabaseConfigured,
   updateDashboardAccount,
+  uploadAccountingDocumentFile,
   upsertSharedOrders,
   type DashboardSession,
 } from "../lib/supabase";
-import { orderStatuses, type DashboardAccount, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesFeeSetting, type StockSetting, type UserRole } from "../lib/types";
+import { orderStatuses, type AccountingCategory, type AccountingDocument, type AccountingTransaction, type DashboardAccount, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesFeeSetting, type StockSetting, type UserRole } from "../lib/types";
 
 type Session = DashboardSession;
 type View =
@@ -69,6 +78,27 @@ type ActivityEvent = {
   detail: string;
   actor: string;
   createdAt: string;
+};
+type AccountingDocumentForm = {
+  name: string;
+  supplier: string;
+  description: string;
+  documentDate: string;
+  amount: string;
+  categoryId: string;
+  transactionType: "income" | "expense";
+  taxTreatment: string;
+  notes: string;
+};
+type AccountingTransactionForm = {
+  transactionDate: string;
+  description: string;
+  accountName: string;
+  amount: string;
+  categoryId: string;
+  transactionType: "income" | "expense" | "transfer";
+  taxTreatment: string;
+  notes: string;
 };
 
 const salesRanges: { value: SalesRange; label: string }[] = [
@@ -394,6 +424,32 @@ export default function Home() {
   const [salesFeeSettings, setSalesFeeSettings] = useState<SalesFeeSetting>({ shopifyPercentage: 0 });
   const [stockSettings, setStockSettings] = useState<StockSetting[]>([]);
   const [accounts, setAccounts] = useState<DashboardAccount[]>([]);
+  const [accountingCategories, setAccountingCategories] = useState<AccountingCategory[]>([]);
+  const [accountingDocuments, setAccountingDocuments] = useState<AccountingDocument[]>([]);
+  const [accountingTransactions, setAccountingTransactions] = useState<AccountingTransaction[]>([]);
+  const [accountingDocumentFile, setAccountingDocumentFile] = useState<File | null>(null);
+  const [savingAccounting, setSavingAccounting] = useState(false);
+  const [documentForm, setDocumentForm] = useState<AccountingDocumentForm>({
+    name: "",
+    supplier: "",
+    description: "",
+    documentDate: dateKey(new Date().toISOString()),
+    amount: "",
+    categoryId: "",
+    transactionType: "expense" as "income" | "expense",
+    taxTreatment: "none",
+    notes: "",
+  });
+  const [transactionForm, setTransactionForm] = useState<AccountingTransactionForm>({
+    transactionDate: dateKey(new Date().toISOString()),
+    description: "",
+    accountName: "Cash",
+    amount: "",
+    categoryId: "",
+    transactionType: "expense" as "income" | "expense" | "transfer",
+    taxTreatment: "none",
+    notes: "",
+  });
   const [accountPasswords, setAccountPasswords] = useState<Record<string, string>>({});
   const [newAccount, setNewAccount] = useState({ username: "", displayName: "", role: "staff" as UserRole, password: "" });
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
@@ -415,8 +471,18 @@ export default function Home() {
     }
     if (showLoading) setLoadingOrders(true);
     try {
-      const [sharedOrders, sharedActivity, sharedProcessorSettings, sharedStockSettings, sharedSalesFeeSettings] = await Promise.all([
+      const [
+        sharedOrders,
+        sharedActivity,
+        sharedProcessorSettings,
+        sharedStockSettings,
+        sharedSalesFeeSettings,
+        sharedAccountingCategories,
+        sharedAccountingDocuments,
+        sharedAccountingTransactions,
+      ] = await Promise.all([
         fetchSharedOrders(), fetchSharedActivity(), fetchPaymentProcessorSettings(), fetchStockSettings(), fetchSalesFeeSettings(),
+        fetchAccountingCategories(), fetchAccountingDocuments(), fetchAccountingTransactions(),
       ]);
       setOrders(sharedOrders.map((order) => {
       const status = legacyStatus[order.status] ?? order.status;
@@ -445,6 +511,9 @@ export default function Home() {
       setProcessorSettings(sharedProcessorSettings);
       setStockSettings(sharedStockSettings);
       setSalesFeeSettings(sharedSalesFeeSettings);
+      setAccountingCategories(sharedAccountingCategories);
+      setAccountingDocuments(sharedAccountingDocuments);
+      setAccountingTransactions(sharedAccountingTransactions);
       setDatabaseError("");
     } catch (error) {
       setDatabaseError(error instanceof Error ? error.message : "Could not load orders from Supabase.");
@@ -881,6 +950,132 @@ export default function Home() {
     else setMetafieldCsv(text);
   }
 
+  function categoryName(categoryId: string) {
+    return accountingCategories.find((category) => category.id === categoryId)?.name ?? "Uncategorised";
+  }
+
+  async function uploadAccountingDocument() {
+    if (!accountingDocumentFile) return setNotice("Choose a receipt, invoice, or statement file first.");
+    const amount = Number(documentForm.amount);
+    if (!documentForm.name.trim()) return setNotice("Add a document name.");
+    if (!Number.isFinite(amount) || amount < 0) return setNotice("Enter a valid document amount.");
+    setSavingAccounting(true);
+    try {
+      const actor = session?.displayName ?? "Admin";
+      const id = crypto.randomUUID();
+      const filePath = await uploadAccountingDocumentFile(accountingDocumentFile, id);
+      const now = new Date().toISOString();
+      const document: AccountingDocument = {
+        id,
+        filePath,
+        fileName: accountingDocumentFile.name,
+        fileType: accountingDocumentFile.type || "application/octet-stream",
+        fileSize: accountingDocumentFile.size,
+        name: documentForm.name.trim(),
+        supplier: documentForm.supplier.trim(),
+        description: documentForm.description.trim(),
+        documentDate: documentForm.documentDate,
+        amount,
+        categoryId: documentForm.categoryId,
+        transactionType: documentForm.transactionType,
+        taxTreatment: documentForm.taxTreatment,
+        notes: documentForm.notes.trim(),
+        uploadedBy: actor,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await saveAccountingDocument(document);
+      await saveAccountingTransaction({
+        id: crypto.randomUUID(),
+        source: "document",
+        sourceId: id,
+        documentId: id,
+        transactionDate: document.documentDate,
+        description: document.description || document.name,
+        accountName: document.supplier || "Cash",
+        categoryId: document.categoryId,
+        transactionType: document.transactionType,
+        debit: document.transactionType === "expense" ? amount : 0,
+        credit: document.transactionType === "income" ? amount : 0,
+        amount,
+        currency: "MYR",
+        taxTreatment: document.taxTreatment,
+        notes: document.notes,
+        createdBy: actor,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await insertSharedActivity({ id: crypto.randomUUID(), action: "Accounting document uploaded", detail: `${document.name} (${formatMoney(amount)})`, actor, createdAt: now });
+      setAccountingDocumentFile(null);
+      setDocumentForm({ name: "", supplier: "", description: "", documentDate: dateKey(new Date().toISOString()), amount: "", categoryId: "", transactionType: "expense", taxTreatment: "none", notes: "" });
+      await loadSharedData();
+      setNotice("Accounting document uploaded and transaction created.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not upload accounting document.");
+    } finally {
+      setSavingAccounting(false);
+    }
+  }
+
+  async function createManualAccountingTransaction() {
+    const amount = Number(transactionForm.amount);
+    if (!transactionForm.description.trim()) return setNotice("Add a transaction description.");
+    if (!Number.isFinite(amount) || amount < 0) return setNotice("Enter a valid transaction amount.");
+    setSavingAccounting(true);
+    try {
+      const actor = session?.displayName ?? "Admin";
+      const now = new Date().toISOString();
+      await saveAccountingTransaction({
+        id: crypto.randomUUID(),
+        source: "manual",
+        sourceId: "",
+        documentId: "",
+        transactionDate: transactionForm.transactionDate,
+        description: transactionForm.description.trim(),
+        accountName: transactionForm.accountName.trim() || "Cash",
+        categoryId: transactionForm.categoryId,
+        transactionType: transactionForm.transactionType,
+        debit: transactionForm.transactionType === "expense" ? amount : 0,
+        credit: transactionForm.transactionType === "income" ? amount : 0,
+        amount,
+        currency: "MYR",
+        taxTreatment: transactionForm.taxTreatment,
+        notes: transactionForm.notes.trim(),
+        createdBy: actor,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await insertSharedActivity({ id: crypto.randomUUID(), action: "Accounting transaction created", detail: `${transactionForm.description} (${formatMoney(amount)})`, actor, createdAt: now });
+      setTransactionForm({ transactionDate: dateKey(new Date().toISOString()), description: "", accountName: "Cash", amount: "", categoryId: "", transactionType: "expense", taxTreatment: "none", notes: "" });
+      await loadSharedData();
+      setNotice("Transaction added.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not create transaction.");
+    } finally {
+      setSavingAccounting(false);
+    }
+  }
+
+  async function removeAccountingDocument(document: AccountingDocument) {
+    if (!confirm(`Delete ${document.name}?`)) return;
+    await deleteAccountingDocument(document.id);
+    await loadSharedData();
+  }
+
+  async function removeAccountingTransaction(transaction: AccountingTransaction) {
+    if (!confirm(`Delete ${transaction.description}?`)) return;
+    await deleteAccountingTransaction(transaction.id);
+    await loadSharedData();
+  }
+
+  async function openAccountingDocument(document: AccountingDocument) {
+    try {
+      window.open(await createAccountingDocumentSignedUrl(document.filePath), "_blank", "noopener,noreferrer");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not open document.");
+    }
+  }
+
   function fulfilmentCell(order: Order, column: FulfilmentColumn) {
     if (column === "orderNumber") return <strong>{orderLabel(order)}</strong>;
     if (column === "meaningfulMessage") return order.meaningfulMessage ? <a href={order.meaningfulMessage} target="_blank" rel="noreferrer">Open message</a> : "-";
@@ -922,7 +1117,25 @@ export default function Home() {
       {loadingOrders && <div className="notice"><span>Loading shared orders from Supabase...</span></div>}
       {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice("")}>x</button></div>}
 
-      {workspace === "accounting" && session.role === "admin" && <AccountingWorkspacePage view={view} />}
+      {workspace === "accounting" && session.role === "admin" && <AccountingWorkspacePage
+        view={view}
+        categories={accountingCategories}
+        documents={accountingDocuments}
+        transactions={accountingTransactions}
+        documentForm={documentForm}
+        transactionForm={transactionForm}
+        selectedFile={accountingDocumentFile}
+        saving={savingAccounting}
+        onDocumentFormChange={(patch) => setDocumentForm((current) => ({ ...current, ...patch }))}
+        onTransactionFormChange={(patch) => setTransactionForm((current) => ({ ...current, ...patch }))}
+        onFileChange={setAccountingDocumentFile}
+        onUploadDocument={uploadAccountingDocument}
+        onCreateTransaction={createManualAccountingTransaction}
+        onOpenDocument={openAccountingDocument}
+        onDeleteDocument={removeAccountingDocument}
+        onDeleteTransaction={removeAccountingTransaction}
+        categoryName={categoryName}
+      />}
 
       {workspace === "fulfilment" && view !== "import" && view !== "packing_slips" && view !== "print_envelope" && view !== "history" && view !== "settings" && view !== "stock" && view !== "sales_report" && <>
         {view === "orders" && <section className="stats">
@@ -1030,103 +1243,121 @@ export default function Home() {
   </main>;
 }
 
-function AccountingWorkspacePage({ view }: { view: View }) {
-  const pageCopy: Partial<Record<View, { title: string; description: string; focus: string[] }>> = {
-    accounting_dashboard: {
-      title: "Accounting overview",
-      description: "A home base for uploads, categorisation, reconciliation, and reporting.",
-      focus: ["Document inbox", "Cash position", "Open reconciliations", "Monthly reports"],
-    },
-    accounting_documents: {
-      title: "Document inbox",
-      description: "Upload receipts, invoices, bank statements, and other source documents for coding.",
-      focus: ["Private Supabase storage", "Document status", "Suggested category", "Linked transactions"],
-    },
-    accounting_transactions: {
-      title: "Transactions",
-      description: "Record money in and money out, then connect each transaction to documents and categories.",
-      focus: ["Income", "Expenses", "Transfers", "Attachments"],
-    },
-    accounting_profit_loss: {
-      title: "Profit & Loss",
-      description: "Summarise revenue, cost of goods sold, operating expenses, and net profit.",
-      focus: ["Sales", "COGS", "Operating expenses", "Net profit"],
-    },
-    accounting_balance_sheet: {
-      title: "Balance Sheet",
-      description: "Track assets, liabilities, and owner equity for the business.",
-      focus: ["Assets", "Liabilities", "Equity", "As-of date"],
-    },
-    accounting_cash_flow: {
-      title: "Cash Flow",
-      description: "See cash movement across operating, investing, and financing activity.",
-      focus: ["Opening cash", "Cash in", "Cash out", "Closing cash"],
-    },
-    accounting_general_ledger: {
-      title: "General Ledger",
-      description: "Review account-by-account activity using the accounting category structure.",
-      focus: ["Category", "Debit", "Credit", "Running balance"],
-    },
-    accounting_trial_balance: {
-      title: "Trial Balance",
-      description: "Check debit and credit balances before reporting.",
-      focus: ["Debit total", "Credit total", "Difference", "Period"],
-    },
-    accounting_payable: {
-      title: "Accounts payable",
-      description: "Track supplier bills and amounts still owed.",
-      focus: ["Supplier", "Due date", "Amount due", "Payment status"],
-    },
-    accounting_receivable: {
-      title: "Accounts receivable",
-      description: "Track customer invoices and money still expected.",
-      focus: ["Customer", "Invoice", "Amount due", "Collection status"],
-    },
-    accounting_bank_reconciliation: {
-      title: "Bank reconciliation",
-      description: "Match bank statement lines against recorded transactions.",
-      focus: ["Statement upload", "Matched lines", "Unmatched lines", "Adjustments"],
-    },
-    accounting_product_profitability: {
-      title: "Product profitability",
-      description: "Compare sales, product cost, fees, and profit by product or character.",
-      focus: ["Character", "Voice length", "Gross margin", "Profit per order"],
-    },
-    accounting_marketing_profitability: {
-      title: "Marketing profitability",
-      description: "Connect ad spend to sales performance once marketing data is imported.",
-      focus: ["Campaign", "Spend", "Revenue", "Return"],
-    },
-    accounting_cash_position: {
-      title: "Cash position",
-      description: "A quick view of available cash and upcoming commitments.",
-      focus: ["Bank balance", "Pending payouts", "Bills due", "Net cash"],
-    },
-    accounting_tax_reports: {
-      title: "Tax reports",
-      description: "Prepare summaries for tax filing and accountant review.",
-      focus: ["Tax period", "Taxable sales", "Deductible expenses", "Export"],
-    },
-    accounting_settings: {
-      title: "Accounting settings",
-      description: "Control categories, mappings, fiscal year, document types, and report defaults.",
-      focus: ["Categories", "Mappings", "Fiscal year", "Document rules"],
-    },
-  };
-  const copy = pageCopy[view] ?? pageCopy.accounting_dashboard!;
-  return <section className="accounting-workspace">
-    <div className="accounting-hero card">
-      <div>
-        <p>ACCOUNTING MODULE</p>
-        <h2>{copy.title}</h2>
-        <span>{copy.description}</span>
+function AccountingWorkspacePage({
+  view,
+  categories,
+  documents,
+  transactions,
+  documentForm,
+  transactionForm,
+  selectedFile,
+  saving,
+  onDocumentFormChange,
+  onTransactionFormChange,
+  onFileChange,
+  onUploadDocument,
+  onCreateTransaction,
+  onOpenDocument,
+  onDeleteDocument,
+  onDeleteTransaction,
+  categoryName,
+}: {
+  view: View;
+  categories: AccountingCategory[];
+  documents: AccountingDocument[];
+  transactions: AccountingTransaction[];
+  documentForm: AccountingDocumentForm;
+  transactionForm: AccountingTransactionForm;
+  selectedFile: File | null;
+  saving: boolean;
+  onDocumentFormChange: (patch: Partial<AccountingDocumentForm>) => void;
+  onTransactionFormChange: (patch: Partial<AccountingTransactionForm>) => void;
+  onFileChange: (file: File | null) => void;
+  onUploadDocument: () => void;
+  onCreateTransaction: () => void;
+  onOpenDocument: (document: AccountingDocument) => void;
+  onDeleteDocument: (document: AccountingDocument) => void;
+  onDeleteTransaction: (transaction: AccountingTransaction) => void;
+  categoryName: (categoryId: string) => string;
+}) {
+  const incomeTransactions = transactions.filter((transaction) => transaction.transactionType === "income");
+  const expenseTransactions = transactions.filter((transaction) => transaction.transactionType === "expense");
+  const income = incomeTransactions.reduce((total, transaction) => total + transaction.amount, 0);
+  const expenses = expenseTransactions.reduce((total, transaction) => total + transaction.amount, 0);
+  const profit = income - expenses;
+  const expenseByCategory = expenseTransactions.reduce<Record<string, number>>((totals, transaction) => {
+    const key = categoryName(transaction.categoryId);
+    totals[key] = (totals[key] ?? 0) + transaction.amount;
+    return totals;
+  }, {});
+
+  const categoryOptions = categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>);
+
+  if (view === "accounting_documents") return <section className="accounting-workspace">
+    <div className="accounting-hero card"><div><p>DOCUMENT INBOX</p><h2>Upload accounting documents</h2><span>Upload receipts, invoices, bank statements, or expense proof. Each upload also creates a transaction.</span></div><div className="accounting-status-pill">{documents.length} documents</div></div>
+    <section className="accounting-form-grid">
+      <div className="accounting-form card">
+        <h3>New document</h3>
+        <label>File<input type="file" accept="application/pdf,image/png,image/jpeg,image/webp" onChange={(event) => onFileChange(event.target.files?.[0] ?? null)} /></label>
+        {selectedFile && <p className="accounting-file-name">{selectedFile.name}</p>}
+        <label>Name<input value={documentForm.name} onChange={(event) => onDocumentFormChange({ name: event.target.value })} placeholder="June supplier invoice" /></label>
+        <label>Supplier / source<input value={documentForm.supplier} onChange={(event) => onDocumentFormChange({ supplier: event.target.value })} placeholder="Shopify, Meta, supplier name..." /></label>
+        <label>Description<input value={documentForm.description} onChange={(event) => onDocumentFormChange({ description: event.target.value })} placeholder="What is this for?" /></label>
+        <div className="accounting-two-cols"><label>Date<input type="date" value={documentForm.documentDate} onChange={(event) => onDocumentFormChange({ documentDate: event.target.value })} /></label><label>Amount<input type="number" min="0" step="0.01" value={documentForm.amount} onChange={(event) => onDocumentFormChange({ amount: event.target.value })} /></label></div>
+        <div className="accounting-two-cols"><label>Type<select value={documentForm.transactionType} onChange={(event) => onDocumentFormChange({ transactionType: event.target.value as "income" | "expense" })}><option value="expense">Expense</option><option value="income">Income</option></select></label><label>Category<select value={documentForm.categoryId} onChange={(event) => onDocumentFormChange({ categoryId: event.target.value })}><option value="">Uncategorised</option>{categoryOptions}</select></label></div>
+        <label>Notes<textarea value={documentForm.notes} onChange={(event) => onDocumentFormChange({ notes: event.target.value })} /></label>
+        <button className="button primary" disabled={saving} onClick={onUploadDocument}>{saving ? "Saving..." : "Upload document"}</button>
       </div>
-      <div className="accounting-status-pill">Infrastructure ready</div>
-    </div>
+      <AccountingDocumentsTable documents={documents} categoryName={categoryName} onOpen={onOpenDocument} onDelete={onDeleteDocument} />
+    </section>
+  </section>;
+
+  if (view === "accounting_transactions") return <section className="accounting-workspace">
+    <div className="accounting-hero card"><div><p>TRANSACTIONS</p><h2>Money in and money out</h2><span>Create manual transactions or review transactions created from uploaded documents.</span></div><div className="accounting-status-pill">{transactions.length} transactions</div></div>
+    <section className="accounting-form-grid">
+      <div className="accounting-form card">
+        <h3>Manual transaction</h3>
+        <div className="accounting-two-cols"><label>Date<input type="date" value={transactionForm.transactionDate} onChange={(event) => onTransactionFormChange({ transactionDate: event.target.value })} /></label><label>Amount<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(event) => onTransactionFormChange({ amount: event.target.value })} /></label></div>
+        <label>Description<input value={transactionForm.description} onChange={(event) => onTransactionFormChange({ description: event.target.value })} placeholder="Stripe payout, supplier payment..." /></label>
+        <label>Account<input value={transactionForm.accountName} onChange={(event) => onTransactionFormChange({ accountName: event.target.value })} /></label>
+        <div className="accounting-two-cols"><label>Type<select value={transactionForm.transactionType} onChange={(event) => onTransactionFormChange({ transactionType: event.target.value as "income" | "expense" | "transfer" })}><option value="expense">Expense</option><option value="income">Income</option><option value="transfer">Transfer</option></select></label><label>Category<select value={transactionForm.categoryId} onChange={(event) => onTransactionFormChange({ categoryId: event.target.value })}><option value="">Uncategorised</option>{categoryOptions}</select></label></div>
+        <label>Notes<textarea value={transactionForm.notes} onChange={(event) => onTransactionFormChange({ notes: event.target.value })} /></label>
+        <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? "Saving..." : "Add transaction"}</button>
+      </div>
+      <AccountingTransactionsTable transactions={transactions} categoryName={categoryName} onDelete={onDeleteTransaction} />
+    </section>
+  </section>;
+
+  if (view === "accounting_profit_loss") return <section className="accounting-workspace">
+    <div className="accounting-hero card"><div><p>PROFIT & LOSS</p><h2>Current profit and loss</h2><span>Based on all active accounting transactions currently saved in Supabase.</span></div><div className={`accounting-status-pill ${profit < 0 ? "loss" : ""}`}>{formatMoney(profit)}</div></div>
+    <section className="accounting-summary-grid">
+      <MoneyStat label="Income" value={income} tone="collected" />
+      <MoneyStat label="Expenses" value={expenses} tone="fees" />
+      <MoneyStat label="Net profit" value={profit} tone={profit < 0 ? "fees" : "sales"} />
+    </section>
+    <section className="accounting-report card">
+      <h3>Expense breakdown</h3>
+      {Object.entries(expenseByCategory).length ? Object.entries(expenseByCategory).sort((a, b) => b[1] - a[1]).map(([name, amount]) => <div key={name}><span>{name}</span><strong>{formatMoney(amount)}</strong></div>) : <div className="empty"><strong>No expenses yet</strong><p>Upload documents or add expense transactions to build this report.</p></div>}
+    </section>
+  </section>;
+
+  return <section className="accounting-workspace">
+    <div className="accounting-hero card"><div><p>ACCOUNTING MVP</p><h2>Accounting overview</h2><span>Start by uploading documents, adding transactions, then review the Profit & Loss page.</span></div><div className="accounting-status-pill">Live in Supabase</div></div>
     <div className="accounting-module-grid">
-      {copy.focus.map((item) => <article className="accounting-module-card card" key={item}><Icon name="accounting" /><strong>{item}</strong><span>Ready for the next build step.</span></article>)}
+      <article className="accounting-module-card card"><Icon name="documents" /><strong>{documents.length} documents</strong><span>Receipts, invoices, and statements uploaded.</span></article>
+      <article className="accounting-module-card card"><Icon name="cash" /><strong>{transactions.length} transactions</strong><span>Manual and document-linked entries.</span></article>
+      <article className="accounting-module-card card"><Icon name="report" /><strong>{formatMoney(profit)}</strong><span>Current net profit from saved transactions.</span></article>
+      <article className="accounting-module-card card"><Icon name="ledger" /><strong>{categories.length} categories</strong><span>Accounting categories available for coding.</span></article>
     </div>
   </section>;
+}
+
+function AccountingDocumentsTable({ documents, categoryName, onOpen, onDelete }: { documents: AccountingDocument[]; categoryName: (categoryId: string) => string; onOpen: (document: AccountingDocument) => void; onDelete: (document: AccountingDocument) => void }) {
+  return <section className="card accounting-table-card"><h3>Uploaded documents</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>Date</th><th>Name</th><th>Supplier</th><th>Category</th><th>Type</th><th>Amount</th><th>File</th><th /></tr></thead><tbody>{documents.map((document) => <tr key={document.id}><td>{formatDate(document.documentDate)}</td><td><strong>{document.name}</strong><br /><small>{document.description || document.fileName}</small></td><td>{document.supplier || "-"}</td><td>{categoryName(document.categoryId)}</td><td>{document.transactionType}</td><td><strong>{formatMoney(document.amount)}</strong></td><td><button className="view-button" onClick={() => onOpen(document)}>Open</button></td><td><button className="view-button danger-text" onClick={() => onDelete(document)}>Delete</button></td></tr>)}</tbody></table>{!documents.length && <div className="empty"><strong>No documents uploaded yet</strong><p>Use the form to upload the first receipt or invoice.</p></div>}</div></section>;
+}
+
+function AccountingTransactionsTable({ transactions, categoryName, onDelete }: { transactions: AccountingTransaction[]; categoryName: (categoryId: string) => string; onDelete: (transaction: AccountingTransaction) => void }) {
+  return <section className="card accounting-table-card"><h3>Transaction ledger</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>Date</th><th>Description</th><th>Account</th><th>Category</th><th>Type</th><th>Debit</th><th>Credit</th><th /></tr></thead><tbody>{transactions.map((transaction) => <tr key={transaction.id}><td>{formatDate(transaction.transactionDate)}</td><td><strong>{transaction.description}</strong><br /><small>{transaction.source}</small></td><td>{transaction.accountName}</td><td>{categoryName(transaction.categoryId)}</td><td>{transaction.transactionType}</td><td>{transaction.debit ? formatMoney(transaction.debit) : "-"}</td><td>{transaction.credit ? formatMoney(transaction.credit) : "-"}</td><td><button className="view-button danger-text" onClick={() => onDelete(transaction)}>Delete</button></td></tr>)}</tbody></table>{!transactions.length && <div className="empty"><strong>No transactions yet</strong><p>Upload documents or add manual entries to start the ledger.</p></div>}</div></section>;
 }
 
 function Login({ onLogin }: { onLogin: (session: Session) => void }) {

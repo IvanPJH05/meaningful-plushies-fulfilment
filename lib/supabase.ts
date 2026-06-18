@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { DashboardAccount, Order, PaymentProcessorSetting, SalesFeeSetting, StockSetting, UserRole } from "./types";
+import type { AccountingCategory, AccountingDocument, AccountingTransaction, DashboardAccount, Order, PaymentProcessorSetting, SalesFeeSetting, StockSetting, UserRole } from "./types";
 
 export type DashboardSession = DashboardAccount & { token: string };
 
@@ -217,6 +217,162 @@ export async function insertSharedActivity(event: SharedActivity) {
   if (error) throw error;
 }
 
+export async function fetchAccountingCategories(): Promise<AccountingCategory[]> {
+  const { data, error } = await requireSupabase()
+    .from("accounting_categories")
+    .select("id, name, account_type, report_section, active")
+    .eq("active", true)
+    .order("report_section", { ascending: true })
+    .order("name", { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    accountType: row.account_type,
+    reportSection: row.report_section,
+    active: row.active,
+  }));
+}
+
+export async function fetchAccountingDocuments(): Promise<AccountingDocument[]> {
+  const { data, error } = await requireSupabase()
+    .from("accounting_documents")
+    .select("id, file_path, file_name, file_type, file_size, name, supplier, description, document_date, amount, category_id, transaction_type, tax_treatment, notes, uploaded_by, created_at, updated_at")
+    .is("deleted_at", null)
+    .order("document_date", { ascending: false })
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    filePath: row.file_path,
+    fileName: row.file_name,
+    fileType: row.file_type,
+    fileSize: Number(row.file_size),
+    name: row.name,
+    supplier: row.supplier,
+    description: row.description,
+    documentDate: row.document_date,
+    amount: Number(row.amount),
+    categoryId: row.category_id ?? "",
+    transactionType: row.transaction_type,
+    taxTreatment: row.tax_treatment,
+    notes: row.notes,
+    uploadedBy: row.uploaded_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+}
+
+export async function uploadAccountingDocumentFile(file: File, id: string) {
+  const extension = file.name.includes(".") ? file.name.split(".").pop() : "bin";
+  const path = `${new Date().getFullYear()}/${id}.${extension}`;
+  const { error } = await requireSupabase().storage.from("accounting-documents").upload(path, file, {
+    cacheControl: "3600",
+    upsert: true,
+    contentType: file.type || "application/octet-stream",
+  });
+  if (error) throw error;
+  return path;
+}
+
+export async function createAccountingDocumentSignedUrl(filePath: string) {
+  const { data, error } = await requireSupabase().storage.from("accounting-documents").createSignedUrl(filePath, 60 * 10);
+  if (error) throw error;
+  return data.signedUrl;
+}
+
+export async function saveAccountingDocument(document: AccountingDocument) {
+  const { error } = await requireSupabase().from("accounting_documents").upsert({
+    id: document.id,
+    file_path: document.filePath,
+    file_name: document.fileName,
+    file_type: document.fileType,
+    file_size: document.fileSize,
+    name: document.name,
+    supplier: document.supplier,
+    description: document.description,
+    document_date: document.documentDate,
+    amount: Math.max(0, document.amount),
+    category_id: document.categoryId || null,
+    transaction_type: document.transactionType,
+    tax_treatment: document.taxTreatment || "none",
+    notes: document.notes,
+    uploaded_by: document.uploadedBy,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "id" });
+  if (error) throw error;
+}
+
+export async function deleteAccountingDocument(id: string) {
+  const { error } = await requireSupabase()
+    .from("accounting_documents")
+    .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function fetchAccountingTransactions(): Promise<AccountingTransaction[]> {
+  const { data, error } = await requireSupabase()
+    .from("accounting_transactions")
+    .select("id, source, source_id, document_id, transaction_date, description, account_name, category_id, transaction_type, debit, credit, amount, currency, tax_treatment, notes, created_by, created_at, updated_at")
+    .is("deleted_at", null)
+    .order("transaction_date", { ascending: false })
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    source: row.source,
+    sourceId: row.source_id ?? "",
+    documentId: row.document_id ?? "",
+    transactionDate: row.transaction_date,
+    description: row.description,
+    accountName: row.account_name,
+    categoryId: row.category_id ?? "",
+    transactionType: row.transaction_type,
+    debit: Number(row.debit),
+    credit: Number(row.credit),
+    amount: Number(row.amount),
+    currency: row.currency,
+    taxTreatment: row.tax_treatment,
+    notes: row.notes,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+}
+
+export async function saveAccountingTransaction(transaction: AccountingTransaction) {
+  const amount = Math.max(0, transaction.amount);
+  const { error } = await requireSupabase().from("accounting_transactions").upsert({
+    id: transaction.id,
+    source: transaction.source,
+    source_id: transaction.sourceId || null,
+    document_id: transaction.documentId || null,
+    transaction_date: transaction.transactionDate,
+    description: transaction.description,
+    account_name: transaction.accountName || "Cash",
+    category_id: transaction.categoryId || null,
+    transaction_type: transaction.transactionType,
+    debit: transaction.transactionType === "expense" ? amount : 0,
+    credit: transaction.transactionType === "income" ? amount : 0,
+    amount,
+    currency: transaction.currency || "MYR",
+    tax_treatment: transaction.taxTreatment || "none",
+    notes: transaction.notes,
+    created_by: transaction.createdBy,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "id" });
+  if (error) throw error;
+}
+
+export async function deleteAccountingTransaction(id: string) {
+  const { error } = await requireSupabase()
+    .from("accounting_transactions")
+    .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw error;
+}
+
 export function subscribeToSharedData(onChange: () => void) {
   const client = requireSupabase();
   const channel = client.channel("fulfilment-dashboard")
@@ -225,6 +381,9 @@ export function subscribeToSharedData(onChange: () => void) {
     .on("postgres_changes", { event: "*", schema: "public", table: "payment_processor_settings" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "sales_fee_settings" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "stock_settings" }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "accounting_documents" }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "accounting_transactions" }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "accounting_categories" }, onChange)
     .subscribe();
   return () => { void client.removeChannel(channel); };
 }

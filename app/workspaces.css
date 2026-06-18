@@ -88,10 +88,124 @@
   font-weight: 800;
 }
 
+.accounting-status-pill.loss {
+  background: #ffe6e8;
+  color: #ae2934;
+}
+
 .accounting-module-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
+}
+
+.accounting-form-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.accounting-form,
+.accounting-table-card,
+.accounting-report {
+  padding: 18px;
+}
+
+.accounting-form h3,
+.accounting-table-card h3,
+.accounting-report h3 {
+  margin: 0 0 14px;
+  font-size: 15px;
+}
+
+.accounting-form {
+  display: grid;
+  gap: 11px;
+}
+
+.accounting-form label {
+  display: grid;
+  gap: 6px;
+  color: #56657a;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.accounting-form input,
+.accounting-form select,
+.accounting-form textarea {
+  width: 100%;
+  border: 1px solid #d6dee8;
+  border-radius: 7px;
+  background: #fff;
+  color: var(--text);
+  padding: 10px 11px;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.accounting-form textarea {
+  min-height: 76px;
+  resize: vertical;
+}
+
+.accounting-two-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.accounting-file-name {
+  margin: -4px 0 0;
+  border-radius: 7px;
+  background: #eef5ff;
+  color: #315a8f;
+  padding: 8px 10px;
+  font-size: 11px;
+}
+
+.accounting-table-card {
+  overflow: hidden;
+}
+
+.accounting-table-card .table-scroll {
+  max-height: 610px;
+}
+
+.accounting-table-card small {
+  color: #78869a;
+}
+
+.danger-text {
+  color: #b4232d;
+}
+
+.accounting-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.accounting-report {
+  display: grid;
+  gap: 10px;
+}
+
+.accounting-report > div:not(.empty) {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+  padding: 10px 0;
+}
+
+.accounting-report span {
+  color: #596678;
 }
 
 .accounting-module-card {
@@ -120,6 +234,10 @@
   .accounting-module-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .accounting-form-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 760px) {
@@ -136,6 +254,11 @@
   }
 
   .accounting-module-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .accounting-summary-grid,
+  .accounting-two-cols {
     grid-template-columns: 1fr;
   }
 }

@@ -186,6 +186,114 @@ revoke all on public.dashboard_accounts from anon, authenticated;
 revoke all on public.dashboard_sessions from anon, authenticated;
 revoke execute on function public.dashboard_is_admin(uuid) from anon, authenticated;
 
+insert into storage.buckets(id, name, public, file_size_limit, allowed_mime_types)
+values ('accounting-documents', 'accounting-documents', false, 10485760, array['application/pdf', 'image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+create table if not exists public.accounting_categories (
+  id uuid primary key default gen_random_uuid(),
+  name text not null unique,
+  account_type text not null check (account_type in ('asset', 'liability', 'equity', 'income', 'expense', 'cost_of_sales')),
+  report_section text not null,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.accounting_documents (
+  id text primary key,
+  file_path text not null,
+  file_name text not null,
+  file_type text not null,
+  file_size bigint not null default 0,
+  name text not null,
+  supplier text not null default '',
+  description text not null default '',
+  document_date date not null default current_date,
+  amount numeric(12,2) not null default 0 check (amount >= 0),
+  category_id uuid references public.accounting_categories(id) on delete set null,
+  transaction_type text not null default 'expense' check (transaction_type in ('income', 'expense')),
+  tax_treatment text not null default 'none',
+  notes text not null default '',
+  uploaded_by text not null default 'System',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+
+create table if not exists public.accounting_transactions (
+  id text primary key,
+  source text not null default 'manual' check (source in ('manual', 'document', 'order')),
+  source_id text,
+  document_id text references public.accounting_documents(id) on delete set null,
+  transaction_date date not null default current_date,
+  description text not null,
+  account_name text not null default 'Cash',
+  category_id uuid references public.accounting_categories(id) on delete set null,
+  transaction_type text not null default 'expense' check (transaction_type in ('income', 'expense', 'transfer')),
+  debit numeric(12,2) not null default 0 check (debit >= 0),
+  credit numeric(12,2) not null default 0 check (credit >= 0),
+  amount numeric(12,2) not null default 0 check (amount >= 0),
+  currency text not null default 'MYR',
+  tax_treatment text not null default 'none',
+  notes text not null default '',
+  created_by text not null default 'System',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+
+insert into public.accounting_categories(name, account_type, report_section)
+values
+  ('Sales Revenue', 'income', 'Revenue'),
+  ('Shipping Revenue', 'income', 'Revenue'),
+  ('Product Cost', 'cost_of_sales', 'Cost of Sales'),
+  ('Shipping Cost', 'cost_of_sales', 'Cost of Sales'),
+  ('Payment Processing Fees', 'expense', 'Expenses'),
+  ('Shopify Fees', 'expense', 'Expenses'),
+  ('Marketing', 'expense', 'Expenses'),
+  ('Packaging', 'expense', 'Expenses'),
+  ('Office & Admin', 'expense', 'Expenses'),
+  ('Bank Charges', 'expense', 'Expenses'),
+  ('Cash', 'asset', 'Assets'),
+  ('Bank Account', 'asset', 'Assets')
+on conflict (name) do nothing;
+
+alter table public.accounting_categories enable row level security;
+alter table public.accounting_documents enable row level security;
+alter table public.accounting_transactions enable row level security;
+
+drop policy if exists "shared accounting reads categories" on public.accounting_categories;
+drop policy if exists "shared accounting changes categories" on public.accounting_categories;
+create policy "shared accounting reads categories" on public.accounting_categories for select to anon, authenticated using (true);
+create policy "shared accounting changes categories" on public.accounting_categories for all to anon, authenticated using (true) with check (true);
+
+drop policy if exists "shared accounting reads documents" on public.accounting_documents;
+drop policy if exists "shared accounting changes documents" on public.accounting_documents;
+create policy "shared accounting reads documents" on public.accounting_documents for select to anon, authenticated using (true);
+create policy "shared accounting changes documents" on public.accounting_documents for all to anon, authenticated using (true) with check (true);
+
+drop policy if exists "shared accounting reads transactions" on public.accounting_transactions;
+drop policy if exists "shared accounting changes transactions" on public.accounting_transactions;
+create policy "shared accounting reads transactions" on public.accounting_transactions for select to anon, authenticated using (true);
+create policy "shared accounting changes transactions" on public.accounting_transactions for all to anon, authenticated using (true) with check (true);
+
+drop policy if exists "shared accounting reads document files" on storage.objects;
+drop policy if exists "shared accounting inserts document files" on storage.objects;
+drop policy if exists "shared accounting updates document files" on storage.objects;
+drop policy if exists "shared accounting deletes document files" on storage.objects;
+create policy "shared accounting reads document files" on storage.objects for select to anon, authenticated using (bucket_id = 'accounting-documents');
+create policy "shared accounting inserts document files" on storage.objects for insert to anon, authenticated with check (bucket_id = 'accounting-documents');
+create policy "shared accounting updates document files" on storage.objects for update to anon, authenticated using (bucket_id = 'accounting-documents') with check (bucket_id = 'accounting-documents');
+create policy "shared accounting deletes document files" on storage.objects for delete to anon, authenticated using (bucket_id = 'accounting-documents');
+
+grant select, insert, update, delete on public.accounting_categories to anon, authenticated;
+grant select, insert, update, delete on public.accounting_documents to anon, authenticated;
+grant select, insert, update, delete on public.accounting_transactions to anon, authenticated;
+
 do $$
 begin
   if not exists (
@@ -217,5 +325,23 @@ begin
     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'stock_settings'
   ) then
     alter publication supabase_realtime add table public.stock_settings;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'accounting_documents'
+  ) then
+    alter publication supabase_realtime add table public.accounting_documents;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'accounting_transactions'
+  ) then
+    alter publication supabase_realtime add table public.accounting_transactions;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'accounting_categories'
+  ) then
+    alter publication supabase_realtime add table public.accounting_categories;
   end if;
 end $$;

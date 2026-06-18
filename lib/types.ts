@@ -33,6 +33,55 @@ export type StockSetting = {
   initialStock: number;
 };
 
+export type AccountingCategory = {
+  id: string;
+  name: string;
+  accountType: "asset" | "liability" | "equity" | "income" | "expense" | "cost_of_sales";
+  reportSection: string;
+  active: boolean;
+};
+
+export type AccountingDocument = {
+  id: string;
+  filePath: string;
+  fileName: string;
+  fileType: string;
+  fileSize: number;
+  name: string;
+  supplier: string;
+  description: string;
+  documentDate: string;
+  amount: number;
+  categoryId: string;
+  transactionType: "income" | "expense";
+  taxTreatment: string;
+  notes: string;
+  uploadedBy: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AccountingTransaction = {
+  id: string;
+  source: "manual" | "document" | "order";
+  sourceId: string;
+  documentId: string;
+  transactionDate: string;
+  description: string;
+  accountName: string;
+  categoryId: string;
+  transactionType: "income" | "expense" | "transfer";
+  debit: number;
+  credit: number;
+  amount: number;
+  currency: string;
+  taxTreatment: string;
+  notes: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type StatusEvent = {
   id: string;
   status: OrderStatus;
