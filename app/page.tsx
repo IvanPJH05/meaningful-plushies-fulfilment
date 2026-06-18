@@ -16,6 +16,7 @@ import {
   ensurePaymentProcessors,
   fetchAccountingCategories,
   fetchAccountingDocuments,
+  fetchAccountingLedgerEntries,
   fetchAccountingTransactions,
   fetchSharedActivity,
   fetchSharedOrders,
@@ -26,6 +27,8 @@ import {
   insertSharedActivity,
   loginDashboardAccount,
   saveAccountingDocument,
+  saveAccountingCategory,
+  saveAccountingLedgerEntries,
   saveAccountingTransaction,
   saveStockSetting,
   savePaymentProcessorSetting,
@@ -37,7 +40,7 @@ import {
   upsertSharedOrders,
   type DashboardSession,
 } from "../lib/supabase";
-import { orderStatuses, type AccountingCategory, type AccountingDocument, type AccountingTransaction, type DashboardAccount, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesFeeSetting, type StockSetting, type UserRole } from "../lib/types";
+import { orderStatuses, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type DashboardAccount, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesFeeSetting, type StockSetting, type UserRole } from "../lib/types";
 
 type Session = DashboardSession;
 type View =
@@ -91,14 +94,34 @@ type AccountingDocumentForm = {
   notes: string;
 };
 type AccountingTransactionForm = {
+  businessEvent: string;
   transactionDate: string;
   description: string;
   accountName: string;
   amount: string;
   categoryId: string;
   transactionType: "income" | "expense" | "transfer";
+  paymentStatus: "paid_now" | "pay_later";
+  paymentMethod: string;
+  supplier: string;
+  quantity: string;
+  unitCost: string;
   taxTreatment: string;
   notes: string;
+};
+type AccountingAccountForm = {
+  id: string;
+  name: string;
+  accountType: AccountingCategory["accountType"];
+  reportSection: string;
+  parentId: string;
+  dataSourceType: AccountingCategory["dataSourceType"];
+  sourceModule: string;
+  sourceEntity: string;
+  postingTrigger: string;
+  allowSubAccounts: boolean;
+  allowedTransactionTypes: string[];
+  active: boolean;
 };
 
 const salesRanges: { value: SalesRange; label: string }[] = [
@@ -116,6 +139,49 @@ const dashboardSelectableStatuses: { value: OrderStatus | "total"; label: string
   { value: "shipped", label: "Shipped" },
   { value: "issue", label: "Issues" },
 ];
+
+const sourceModules = ["Shopify", "TikTok Shop", "Fulfilment", "Inventory", "Payment Processor", "Tax Engine", "Depreciation Engine", "Manual Transactions", "Subscription Engine", "Payroll Engine"];
+const postingTriggers = ["Manual Entry", "Order Created", "Payment Received", "Order Fulfilled", "Order Packed", "Payout Received", "Inventory Adjusted", "Bill Created"];
+const paymentAccounts = ["Bank Account", "Xendit", "Stripe", "Cash"];
+const accountTransactionTypes = [
+  "Inventory Purchase",
+  "Inventory Adjustment",
+  "Inventory Consumption",
+  "Marketing Expense",
+  "Software Expense",
+  "Administrative Expense",
+  "Salary Expense",
+  "Record Sale",
+  "Customer Deposit",
+  "Customer Payment",
+  "Supplier Bill",
+  "Supplier Payment",
+  "Loan Received",
+  "Loan Repayment",
+  "Owner Capital Injection",
+  "Owner Withdrawal",
+  "Bank Transfer",
+  "Processor Transfer",
+];
+const businessEvents = [
+  { group: "Inventory", value: "inventory_purchase", label: "Purchase Inventory", transactionLabel: "Inventory Purchase", accountTypes: ["asset", "cost_of_sales"] },
+  { group: "Inventory", value: "inventory_adjustment", label: "Adjust Inventory", transactionLabel: "Inventory Adjustment", accountTypes: ["asset", "cost_of_sales"] },
+  { group: "Inventory", value: "inventory_consumption", label: "Consume Inventory", transactionLabel: "Inventory Consumption", accountTypes: ["asset", "cost_of_sales"] },
+  { group: "Expense", value: "marketing_expense", label: "Marketing Expense", transactionLabel: "Marketing Expense", accountTypes: ["expense"] },
+  { group: "Expense", value: "software_expense", label: "Software Expense", transactionLabel: "Software Expense", accountTypes: ["expense"] },
+  { group: "Expense", value: "administrative_expense", label: "Administrative Expense", transactionLabel: "Administrative Expense", accountTypes: ["expense"] },
+  { group: "Expense", value: "salary_expense", label: "Salary Expense", transactionLabel: "Salary Expense", accountTypes: ["expense"] },
+  { group: "Revenue", value: "record_sale", label: "Record Sale", transactionLabel: "Record Sale", accountTypes: ["revenue", "income"] },
+  { group: "Revenue", value: "customer_deposit", label: "Receive Customer Deposit", transactionLabel: "Customer Deposit", accountTypes: ["liability"] },
+  { group: "Revenue", value: "customer_payment", label: "Receive Customer Payment", transactionLabel: "Customer Payment", accountTypes: ["revenue", "income", "asset"] },
+  { group: "Liability", value: "receive_loan", label: "Receive Loan", transactionLabel: "Loan Received", accountTypes: ["liability"] },
+  { group: "Liability", value: "repay_loan", label: "Repay Loan", transactionLabel: "Loan Repayment", accountTypes: ["liability"] },
+  { group: "Liability", value: "accrued_expense", label: "Record Accrued Expense", transactionLabel: "Supplier Bill", accountTypes: ["liability", "expense"] },
+  { group: "Equity", value: "owner_capital", label: "Owner Capital Injection", transactionLabel: "Owner Capital Injection", accountTypes: ["equity"] },
+  { group: "Equity", value: "owner_withdrawal", label: "Owner Withdrawal", transactionLabel: "Owner Withdrawal", accountTypes: ["equity"] },
+  { group: "Transfer", value: "bank_transfer", label: "Bank Transfer", transactionLabel: "Bank Transfer", accountTypes: ["asset"] },
+  { group: "Transfer", value: "processor_transfer", label: "Processor Transfer", transactionLabel: "Processor Transfer", accountTypes: ["asset"] },
+] as const;
 
 const fulfilmentViews: readonly View[] = ["orders", "fulfilment", "packing_slips", "print_envelope", "import", "fulfilled"];
 const accountingViews: readonly View[] = [
@@ -427,6 +493,7 @@ export default function Home() {
   const [accountingCategories, setAccountingCategories] = useState<AccountingCategory[]>([]);
   const [accountingDocuments, setAccountingDocuments] = useState<AccountingDocument[]>([]);
   const [accountingTransactions, setAccountingTransactions] = useState<AccountingTransaction[]>([]);
+  const [accountingLedgerEntries, setAccountingLedgerEntries] = useState<AccountingLedgerEntry[]>([]);
   const [accountingDocumentFile, setAccountingDocumentFile] = useState<File | null>(null);
   const [savingAccounting, setSavingAccounting] = useState(false);
   const [documentForm, setDocumentForm] = useState<AccountingDocumentForm>({
@@ -441,14 +508,34 @@ export default function Home() {
     notes: "",
   });
   const [transactionForm, setTransactionForm] = useState<AccountingTransactionForm>({
+    businessEvent: "inventory_purchase",
     transactionDate: dateKey(new Date().toISOString()),
     description: "",
     accountName: "Cash",
     amount: "",
     categoryId: "",
     transactionType: "expense" as "income" | "expense" | "transfer",
+    paymentStatus: "paid_now",
+    paymentMethod: "Bank Account",
+    supplier: "",
+    quantity: "",
+    unitCost: "",
     taxTreatment: "none",
     notes: "",
+  });
+  const [accountForm, setAccountForm] = useState<AccountingAccountForm>({
+    id: "",
+    name: "",
+    accountType: "expense",
+    reportSection: "Expenses",
+    parentId: "",
+    dataSourceType: "manual",
+    sourceModule: "Manual Transactions",
+    sourceEntity: "",
+    postingTrigger: "Manual Entry",
+    allowSubAccounts: false,
+    allowedTransactionTypes: [],
+    active: true,
   });
   const [accountPasswords, setAccountPasswords] = useState<Record<string, string>>({});
   const [newAccount, setNewAccount] = useState({ username: "", displayName: "", role: "staff" as UserRole, password: "" });
@@ -480,9 +567,10 @@ export default function Home() {
         sharedAccountingCategories,
         sharedAccountingDocuments,
         sharedAccountingTransactions,
+        sharedAccountingLedgerEntries,
       ] = await Promise.all([
         fetchSharedOrders(), fetchSharedActivity(), fetchPaymentProcessorSettings(), fetchStockSettings(), fetchSalesFeeSettings(),
-        fetchAccountingCategories(), fetchAccountingDocuments(), fetchAccountingTransactions(),
+        fetchAccountingCategories(), fetchAccountingDocuments(), fetchAccountingTransactions(), fetchAccountingLedgerEntries(),
       ]);
       setOrders(sharedOrders.map((order) => {
       const status = legacyStatus[order.status] ?? order.status;
@@ -514,6 +602,7 @@ export default function Home() {
       setAccountingCategories(sharedAccountingCategories);
       setAccountingDocuments(sharedAccountingDocuments);
       setAccountingTransactions(sharedAccountingTransactions);
+      setAccountingLedgerEntries(sharedAccountingLedgerEntries);
       setDatabaseError("");
     } catch (error) {
       setDatabaseError(error instanceof Error ? error.message : "Could not load orders from Supabase.");
@@ -954,6 +1043,37 @@ export default function Home() {
     return accountingCategories.find((category) => category.id === categoryId)?.name ?? "Uncategorised";
   }
 
+  function selectedBusinessEvent() {
+    return businessEvents.find((event) => event.value === transactionForm.businessEvent) ?? businessEvents[0];
+  }
+
+  function accountOptionsForEvent() {
+    const event = selectedBusinessEvent();
+    return accountingCategories.filter((category) =>
+      category.active &&
+      (event.accountTypes as readonly string[]).includes(category.accountType) &&
+      (!category.allowedTransactionTypes.length || category.allowedTransactionTypes.includes(event.transactionLabel))
+    );
+  }
+
+  function ledgerPreview(transactionId = "preview") {
+    const amount = Number(transactionForm.amount);
+    if (!Number.isFinite(amount) || amount <= 0) return [];
+    const event = selectedBusinessEvent();
+    const account = accountingCategories.find((category) => category.id === transactionForm.categoryId);
+    const accountName = account?.name || transactionForm.accountName || "Selected account";
+    const paymentAccount = transactionForm.paymentStatus === "pay_later" ? "Accounts Payable" : transactionForm.paymentMethod;
+    const now = new Date().toISOString();
+    const primaryIsCredit = ["record_sale", "customer_deposit", "customer_payment", "receive_loan", "owner_capital"].includes(event.value);
+    const transferOrRepayment = ["repay_loan", "owner_withdrawal", "bank_transfer", "processor_transfer"].includes(event.value);
+    const entries: AccountingLedgerEntry[] = [];
+    const primaryEntryType: "debit" | "credit" = primaryIsCredit ? "credit" : "debit";
+    const offsetEntryType: "debit" | "credit" = primaryEntryType === "debit" ? "credit" : "debit";
+    entries.push({ id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName, entryType: transferOrRepayment ? "debit" : primaryEntryType, amount, memo: event.label, createdAt: now });
+    entries.push({ id: crypto.randomUUID(), transactionId, accountId: "", accountName: paymentAccount, entryType: transferOrRepayment ? "credit" : offsetEntryType, amount, memo: transactionForm.paymentStatus === "pay_later" ? "Outstanding payable" : "Paid now", createdAt: now });
+    return entries;
+  }
+
   async function uploadAccountingDocument() {
     if (!accountingDocumentFile) return setNotice("Choose a receipt, invoice, or statement file first.");
     const amount = Number(documentForm.amount);
@@ -990,11 +1110,17 @@ export default function Home() {
         source: "document",
         sourceId: id,
         documentId: id,
+        businessEvent: document.transactionType === "income" ? "record_sale" : "administrative_expense",
         transactionDate: document.documentDate,
         description: document.description || document.name,
         accountName: document.supplier || "Cash",
         categoryId: document.categoryId,
         transactionType: document.transactionType,
+        paymentStatus: "paid_now",
+        paymentMethod: "Bank Account",
+        supplier: document.supplier,
+        quantity: 0,
+        unitCost: 0,
         debit: document.transactionType === "expense" ? amount : 0,
         credit: document.transactionType === "income" ? amount : 0,
         amount,
@@ -1019,24 +1145,37 @@ export default function Home() {
 
   async function createManualAccountingTransaction() {
     const amount = Number(transactionForm.amount);
+    const quantity = Number(transactionForm.quantity) || 0;
+    const unitCost = Number(transactionForm.unitCost) || 0;
     if (!transactionForm.description.trim()) return setNotice("Add a transaction description.");
     if (!Number.isFinite(amount) || amount < 0) return setNotice("Enter a valid transaction amount.");
+    if (!transactionForm.categoryId) return setNotice("Choose the account this business event posts to.");
     setSavingAccounting(true);
     try {
       const actor = session?.displayName ?? "Admin";
       const now = new Date().toISOString();
+      const id = crypto.randomUUID();
+      const event = selectedBusinessEvent();
+      const account = accountingCategories.find((category) => category.id === transactionForm.categoryId);
+      const entries = ledgerPreview(id);
       await saveAccountingTransaction({
-        id: crypto.randomUUID(),
+        id,
         source: "manual",
         sourceId: "",
         documentId: "",
+        businessEvent: transactionForm.businessEvent,
         transactionDate: transactionForm.transactionDate,
         description: transactionForm.description.trim(),
-        accountName: transactionForm.accountName.trim() || "Cash",
+        accountName: account?.name || transactionForm.accountName.trim() || "Cash",
         categoryId: transactionForm.categoryId,
-        transactionType: transactionForm.transactionType,
-        debit: transactionForm.transactionType === "expense" ? amount : 0,
-        credit: transactionForm.transactionType === "income" ? amount : 0,
+        transactionType: event.group === "Revenue" ? "income" : event.group === "Transfer" ? "transfer" : "expense",
+        paymentStatus: transactionForm.paymentStatus,
+        paymentMethod: transactionForm.paymentMethod,
+        supplier: transactionForm.supplier.trim(),
+        quantity,
+        unitCost,
+        debit: entries.filter((entry) => entry.entryType === "debit").reduce((total, entry) => total + entry.amount, 0),
+        credit: entries.filter((entry) => entry.entryType === "credit").reduce((total, entry) => total + entry.amount, 0),
         amount,
         currency: "MYR",
         taxTreatment: transactionForm.taxTreatment,
@@ -1045,8 +1184,9 @@ export default function Home() {
         createdAt: now,
         updatedAt: now,
       });
-      await insertSharedActivity({ id: crypto.randomUUID(), action: "Accounting transaction created", detail: `${transactionForm.description} (${formatMoney(amount)})`, actor, createdAt: now });
-      setTransactionForm({ transactionDate: dateKey(new Date().toISOString()), description: "", accountName: "Cash", amount: "", categoryId: "", transactionType: "expense", taxTreatment: "none", notes: "" });
+      await saveAccountingLedgerEntries(id, entries);
+      await insertSharedActivity({ id: crypto.randomUUID(), action: "Accounting transaction created", detail: `${event.label}: ${transactionForm.description} (${formatMoney(amount)})`, actor, createdAt: now });
+      setTransactionForm({ businessEvent: "inventory_purchase", transactionDate: dateKey(new Date().toISOString()), description: "", accountName: "Cash", amount: "", categoryId: "", transactionType: "expense", paymentStatus: "paid_now", paymentMethod: "Bank Account", supplier: "", quantity: "", unitCost: "", taxTreatment: "none", notes: "" });
       await loadSharedData();
       setNotice("Transaction added.");
     } catch (error) {
@@ -1064,8 +1204,39 @@ export default function Home() {
 
   async function removeAccountingTransaction(transaction: AccountingTransaction) {
     if (!confirm(`Delete ${transaction.description}?`)) return;
+    await saveAccountingLedgerEntries(transaction.id, []);
     await deleteAccountingTransaction(transaction.id);
     await loadSharedData();
+  }
+
+  async function saveAccountSettings() {
+    if (!accountForm.name.trim()) return setNotice("Add an account name.");
+    setSavingAccounting(true);
+    try {
+      const account: AccountingCategory = {
+        id: accountForm.id || crypto.randomUUID(),
+        name: accountForm.name.trim(),
+        accountType: accountForm.accountType,
+        reportSection: accountForm.reportSection || accountForm.accountType,
+        parentId: accountForm.parentId,
+        dataSourceType: accountForm.dataSourceType,
+        sourceModule: accountForm.sourceModule,
+        sourceEntity: accountForm.sourceEntity.trim(),
+        postingTrigger: accountForm.postingTrigger,
+        allowSubAccounts: accountForm.allowSubAccounts,
+        allowedTransactionTypes: accountForm.allowedTransactionTypes,
+        active: accountForm.active,
+      };
+      await saveAccountingCategory(account);
+      await insertSharedActivity({ id: crypto.randomUUID(), action: "Accounting account saved", detail: `${account.name} mapping updated.`, actor: session?.displayName ?? "Admin", createdAt: new Date().toISOString() });
+      setAccountForm({ id: "", name: "", accountType: "expense", reportSection: "Expenses", parentId: "", dataSourceType: "manual", sourceModule: "Manual Transactions", sourceEntity: "", postingTrigger: "Manual Entry", allowSubAccounts: false, allowedTransactionTypes: [], active: true });
+      await loadSharedData();
+      setNotice("Account settings saved.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not save account settings.");
+    } finally {
+      setSavingAccounting(false);
+    }
   }
 
   async function openAccountingDocument(document: AccountingDocument) {
@@ -1122,15 +1293,22 @@ export default function Home() {
         categories={accountingCategories}
         documents={accountingDocuments}
         transactions={accountingTransactions}
+        ledgerEntries={accountingLedgerEntries}
         documentForm={documentForm}
         transactionForm={transactionForm}
+        accountForm={accountForm}
         selectedFile={accountingDocumentFile}
         saving={savingAccounting}
         onDocumentFormChange={(patch) => setDocumentForm((current) => ({ ...current, ...patch }))}
         onTransactionFormChange={(patch) => setTransactionForm((current) => ({ ...current, ...patch }))}
+        onAccountFormChange={(patch) => setAccountForm((current) => ({ ...current, ...patch }))}
         onFileChange={setAccountingDocumentFile}
         onUploadDocument={uploadAccountingDocument}
         onCreateTransaction={createManualAccountingTransaction}
+        onSaveAccount={saveAccountSettings}
+        onEditAccount={(account) => setAccountForm({ id: account.id, name: account.name, accountType: account.accountType === "income" ? "revenue" : account.accountType, reportSection: account.reportSection, parentId: account.parentId, dataSourceType: account.dataSourceType, sourceModule: account.sourceModule || "Manual Transactions", sourceEntity: account.sourceEntity, postingTrigger: account.postingTrigger || "Manual Entry", allowSubAccounts: account.allowSubAccounts, allowedTransactionTypes: account.allowedTransactionTypes, active: account.active })}
+        postingPreview={ledgerPreview()}
+        accountOptions={accountOptionsForEvent()}
         onOpenDocument={openAccountingDocument}
         onDeleteDocument={removeAccountingDocument}
         onDeleteTransaction={removeAccountingTransaction}
@@ -1248,15 +1426,22 @@ function AccountingWorkspacePage({
   categories,
   documents,
   transactions,
+  ledgerEntries,
   documentForm,
   transactionForm,
+  accountForm,
   selectedFile,
   saving,
   onDocumentFormChange,
   onTransactionFormChange,
+  onAccountFormChange,
   onFileChange,
   onUploadDocument,
   onCreateTransaction,
+  onSaveAccount,
+  onEditAccount,
+  postingPreview,
+  accountOptions,
   onOpenDocument,
   onDeleteDocument,
   onDeleteTransaction,
@@ -1266,15 +1451,22 @@ function AccountingWorkspacePage({
   categories: AccountingCategory[];
   documents: AccountingDocument[];
   transactions: AccountingTransaction[];
+  ledgerEntries: AccountingLedgerEntry[];
   documentForm: AccountingDocumentForm;
   transactionForm: AccountingTransactionForm;
+  accountForm: AccountingAccountForm;
   selectedFile: File | null;
   saving: boolean;
   onDocumentFormChange: (patch: Partial<AccountingDocumentForm>) => void;
   onTransactionFormChange: (patch: Partial<AccountingTransactionForm>) => void;
+  onAccountFormChange: (patch: Partial<AccountingAccountForm>) => void;
   onFileChange: (file: File | null) => void;
   onUploadDocument: () => void;
   onCreateTransaction: () => void;
+  onSaveAccount: () => void;
+  onEditAccount: (account: AccountingCategory) => void;
+  postingPreview: AccountingLedgerEntry[];
+  accountOptions: AccountingCategory[];
   onOpenDocument: (document: AccountingDocument) => void;
   onDeleteDocument: (document: AccountingDocument) => void;
   onDeleteTransaction: (transaction: AccountingTransaction) => void;
@@ -1285,6 +1477,7 @@ function AccountingWorkspacePage({
   const income = incomeTransactions.reduce((total, transaction) => total + transaction.amount, 0);
   const expenses = expenseTransactions.reduce((total, transaction) => total + transaction.amount, 0);
   const profit = income - expenses;
+  const event = businessEvents.find((item) => item.value === transactionForm.businessEvent) ?? businessEvents[0];
   const expenseByCategory = expenseTransactions.reduce<Record<string, number>>((totals, transaction) => {
     const key = categoryName(transaction.categoryId);
     totals[key] = (totals[key] ?? 0) + transaction.amount;
@@ -1292,6 +1485,8 @@ function AccountingWorkspacePage({
   }, {});
 
   const categoryOptions = categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>);
+  const groupedEvents = Array.from(new Set(businessEvents.map((item) => item.group)));
+  const parentOptions = categories.filter((category) => category.allowSubAccounts && !category.parentId);
 
   if (view === "accounting_documents") return <section className="accounting-workspace">
     <div className="accounting-hero card"><div><p>DOCUMENT INBOX</p><h2>Upload accounting documents</h2><span>Upload receipts, invoices, bank statements, or expense proof. Each upload also creates a transaction.</span></div><div className="accounting-status-pill">{documents.length} documents</div></div>
@@ -1313,18 +1508,50 @@ function AccountingWorkspacePage({
   </section>;
 
   if (view === "accounting_transactions") return <section className="accounting-workspace">
-    <div className="accounting-hero card"><div><p>TRANSACTIONS</p><h2>Money in and money out</h2><span>Create manual transactions or review transactions created from uploaded documents.</span></div><div className="accounting-status-pill">{transactions.length} transactions</div></div>
+    <div className="accounting-hero card"><div><p>TRANSACTION ENTRY ENGINE</p><h2>Record the business event</h2><span>You choose what happened. The system creates the debit, credit, ledger entry, and audit trail.</span></div><div className="accounting-status-pill">{transactions.length} transactions</div></div>
     <section className="accounting-form-grid">
       <div className="accounting-form card">
-        <h3>Manual transaction</h3>
-        <div className="accounting-two-cols"><label>Date<input type="date" value={transactionForm.transactionDate} onChange={(event) => onTransactionFormChange({ transactionDate: event.target.value })} /></label><label>Amount<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(event) => onTransactionFormChange({ amount: event.target.value })} /></label></div>
-        <label>Description<input value={transactionForm.description} onChange={(event) => onTransactionFormChange({ description: event.target.value })} placeholder="Stripe payout, supplier payment..." /></label>
-        <label>Account<input value={transactionForm.accountName} onChange={(event) => onTransactionFormChange({ accountName: event.target.value })} /></label>
-        <div className="accounting-two-cols"><label>Type<select value={transactionForm.transactionType} onChange={(event) => onTransactionFormChange({ transactionType: event.target.value as "income" | "expense" | "transfer" })}><option value="expense">Expense</option><option value="income">Income</option><option value="transfer">Transfer</option></select></label><label>Category<select value={transactionForm.categoryId} onChange={(event) => onTransactionFormChange({ categoryId: event.target.value })}><option value="">Uncategorised</option>{categoryOptions}</select></label></div>
+        <h3>Step 1: Select business event</h3>
+        <label>Business event<select value={transactionForm.businessEvent} onChange={(input) => onTransactionFormChange({ businessEvent: input.target.value, categoryId: "" })}>{groupedEvents.map((group) => <optgroup key={group} label={group}>{businessEvents.filter((item) => item.group === group).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</optgroup>)}</select></label>
+        <h3>Step 2: Select account</h3>
+        <label>Account<select value={transactionForm.categoryId} onChange={(input) => onTransactionFormChange({ categoryId: input.target.value })}><option value="">Choose account</option>{accountOptions.map((category) => <option key={category.id} value={category.id}>{category.parentId ? "— " : ""}{category.name}</option>)}</select></label>
+        {!accountOptions.length && <p className="accounting-file-name">No mapped account allows {event.transactionLabel} yet. Add one in Accounting Settings.</p>}
+        <h3>Step 3: Transaction details</h3>
+        <div className="accounting-two-cols"><label>Date<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label><label>Amount<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onTransactionFormChange({ amount: input.target.value })} /></label></div>
+        <label>Supplier / customer<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder="Supplier, customer, platform..." /></label>
+        <label>Description<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder="Boxes purchase, Meta ad spend, payout..." /></label>
+        {event.group === "Inventory" && <div className="accounting-two-cols"><label>Quantity<input type="number" min="0" step="1" value={transactionForm.quantity} onChange={(input) => onTransactionFormChange({ quantity: input.target.value })} /></label><label>Unit cost<input type="number" min="0" step="0.01" value={transactionForm.unitCost} onChange={(input) => onTransactionFormChange({ unitCost: input.target.value })} /></label></div>}
+        <h3>Step 4: Payment method</h3>
+        <div className="accounting-two-cols"><label>Payment status<select value={transactionForm.paymentStatus} onChange={(input) => onTransactionFormChange({ paymentStatus: input.target.value as "paid_now" | "pay_later" })}><option value="paid_now">Paid Now</option><option value="pay_later">Pay Later</option></select></label><label>Paid from<select value={transactionForm.paymentMethod} disabled={transactionForm.paymentStatus === "pay_later"} onChange={(input) => onTransactionFormChange({ paymentMethod: input.target.value })}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label></div>
         <label>Notes<textarea value={transactionForm.notes} onChange={(event) => onTransactionFormChange({ notes: event.target.value })} /></label>
+        <section className="posting-preview">
+          <h3>Step 5: Automatic posting preview</h3>
+          <p><strong>Business event:</strong> {event.label}</p>
+          {postingPreview.length ? postingPreview.map((entry) => <div key={entry.id}><span>{entry.entryType === "debit" ? "Dr" : "Cr"} {entry.accountName}</span><strong>{formatMoney(entry.amount)}</strong></div>) : <p>Enter an amount and select an account to preview the posting.</p>}
+        </section>
         <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? "Saving..." : "Add transaction"}</button>
       </div>
-      <AccountingTransactionsTable transactions={transactions} categoryName={categoryName} onDelete={onDeleteTransaction} />
+      <AccountingTransactionsTable transactions={transactions} ledgerEntries={ledgerEntries} categoryName={categoryName} onDelete={onDeleteTransaction} />
+    </section>
+  </section>;
+
+  if (view === "accounting_settings") return <section className="accounting-workspace">
+    <div className="accounting-hero card"><div><p>ACCOUNT MAPPING</p><h2>Chart of Accounts settings</h2><span>Configure whether each account is manual, system generated, or hybrid, and which business events can post to it.</span></div><div className="accounting-status-pill">{categories.length} accounts</div></div>
+    <section className="accounting-form-grid">
+      <div className="accounting-form card">
+        <h3>{accountForm.id ? "Edit account" : "Create account"}</h3>
+        <label>Account name<input value={accountForm.name} onChange={(event) => onAccountFormChange({ name: event.target.value })} placeholder="Inventory, Meta Advertising, Shopify Sales..." /></label>
+        <div className="accounting-two-cols"><label>Account type<select value={accountForm.accountType} onChange={(event) => onAccountFormChange({ accountType: event.target.value as AccountingCategory["accountType"], reportSection: event.target.value === "revenue" ? "Revenue" : event.target.value === "asset" ? "Assets" : event.target.value === "liability" ? "Liabilities" : event.target.value === "equity" ? "Equity" : "Expenses" })}><option value="asset">Asset</option><option value="liability">Liability</option><option value="equity">Equity</option><option value="revenue">Revenue</option><option value="expense">Expense</option><option value="cost_of_sales">Cost of Sales</option></select></label><label>Report section<input value={accountForm.reportSection} onChange={(event) => onAccountFormChange({ reportSection: event.target.value })} /></label></div>
+        <div className="accounting-two-cols"><label>Parent account<select value={accountForm.parentId} onChange={(event) => onAccountFormChange({ parentId: event.target.value })}><option value="">None / master account</option>{parentOptions.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label><label>Allow sub accounts<select value={accountForm.allowSubAccounts ? "yes" : "no"} onChange={(event) => onAccountFormChange({ allowSubAccounts: event.target.value === "yes" })}><option value="no">No</option><option value="yes">Yes</option></select></label></div>
+        <label>Data source type<select value={accountForm.dataSourceType} onChange={(event) => onAccountFormChange({ dataSourceType: event.target.value as AccountingCategory["dataSourceType"] })}><option value="manual">Manual</option><option value="system_generated">System Generated</option><option value="hybrid">Hybrid</option></select></label>
+        {accountForm.dataSourceType !== "manual" && <><div className="accounting-two-cols"><label>Source module<select value={accountForm.sourceModule} onChange={(event) => onAccountFormChange({ sourceModule: event.target.value })}>{sourceModules.map((module) => <option key={module} value={module}>{module}</option>)}</select></label><label>Source entity<input value={accountForm.sourceEntity} onChange={(event) => onAccountFormChange({ sourceEntity: event.target.value })} placeholder="Orders, Xendit Transactions..." /></label></div><label>Posting trigger<select value={accountForm.postingTrigger} onChange={(event) => onAccountFormChange({ postingTrigger: event.target.value })}>{postingTriggers.map((trigger) => <option key={trigger} value={trigger}>{trigger}</option>)}</select></label></>}
+        <section className="checkbox-list">
+          <strong>Allowed transaction types</strong>
+          {accountTransactionTypes.map((type) => <label key={type}><input type="checkbox" checked={accountForm.allowedTransactionTypes.includes(type)} onChange={(event) => onAccountFormChange({ allowedTransactionTypes: event.target.checked ? [...accountForm.allowedTransactionTypes, type] : accountForm.allowedTransactionTypes.filter((item) => item !== type) })} />{type}</label>)}
+        </section>
+        <button className="button primary" disabled={saving} onClick={onSaveAccount}>{saving ? "Saving..." : "Save account settings"}</button>
+      </div>
+      <section className="card accounting-table-card"><h3>Configured accounts</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>Account</th><th>Type</th><th>Source</th><th>Trigger</th><th>Allowed events</th><th /></tr></thead><tbody>{categories.map((account) => <tr key={account.id}><td><strong>{account.parentId ? "— " : ""}{account.name}</strong><br /><small>{account.reportSection}</small></td><td>{account.accountType === "income" ? "revenue" : account.accountType}</td><td>{account.dataSourceType}<br /><small>{account.sourceModule || "Manual"}</small></td><td>{account.postingTrigger || "-"}</td><td>{account.allowedTransactionTypes.length ? account.allowedTransactionTypes.join(", ") : "Any"}</td><td><button className="view-button" onClick={() => onEditAccount(account)}>Edit</button></td></tr>)}</tbody></table></div></section>
     </section>
   </section>;
 
@@ -1356,8 +1583,11 @@ function AccountingDocumentsTable({ documents, categoryName, onOpen, onDelete }:
   return <section className="card accounting-table-card"><h3>Uploaded documents</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>Date</th><th>Name</th><th>Supplier</th><th>Category</th><th>Type</th><th>Amount</th><th>File</th><th /></tr></thead><tbody>{documents.map((document) => <tr key={document.id}><td>{formatDate(document.documentDate)}</td><td><strong>{document.name}</strong><br /><small>{document.description || document.fileName}</small></td><td>{document.supplier || "-"}</td><td>{categoryName(document.categoryId)}</td><td>{document.transactionType}</td><td><strong>{formatMoney(document.amount)}</strong></td><td><button className="view-button" onClick={() => onOpen(document)}>Open</button></td><td><button className="view-button danger-text" onClick={() => onDelete(document)}>Delete</button></td></tr>)}</tbody></table>{!documents.length && <div className="empty"><strong>No documents uploaded yet</strong><p>Use the form to upload the first receipt or invoice.</p></div>}</div></section>;
 }
 
-function AccountingTransactionsTable({ transactions, categoryName, onDelete }: { transactions: AccountingTransaction[]; categoryName: (categoryId: string) => string; onDelete: (transaction: AccountingTransaction) => void }) {
-  return <section className="card accounting-table-card"><h3>Transaction ledger</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>Date</th><th>Description</th><th>Account</th><th>Category</th><th>Type</th><th>Debit</th><th>Credit</th><th /></tr></thead><tbody>{transactions.map((transaction) => <tr key={transaction.id}><td>{formatDate(transaction.transactionDate)}</td><td><strong>{transaction.description}</strong><br /><small>{transaction.source}</small></td><td>{transaction.accountName}</td><td>{categoryName(transaction.categoryId)}</td><td>{transaction.transactionType}</td><td>{transaction.debit ? formatMoney(transaction.debit) : "-"}</td><td>{transaction.credit ? formatMoney(transaction.credit) : "-"}</td><td><button className="view-button danger-text" onClick={() => onDelete(transaction)}>Delete</button></td></tr>)}</tbody></table>{!transactions.length && <div className="empty"><strong>No transactions yet</strong><p>Upload documents or add manual entries to start the ledger.</p></div>}</div></section>;
+function AccountingTransactionsTable({ transactions, ledgerEntries, categoryName, onDelete }: { transactions: AccountingTransaction[]; ledgerEntries: AccountingLedgerEntry[]; categoryName: (categoryId: string) => string; onDelete: (transaction: AccountingTransaction) => void }) {
+  return <section className="card accounting-table-card"><h3>Transaction ledger</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>Date</th><th>Description</th><th>Business event</th><th>Account</th><th>Payment</th><th>Ledger posting</th><th /></tr></thead><tbody>{transactions.map((transaction) => {
+    const entries = ledgerEntries.filter((entry) => entry.transactionId === transaction.id);
+    return <tr key={transaction.id}><td>{formatDate(transaction.transactionDate)}</td><td><strong>{transaction.description}</strong><br /><small>{transaction.supplier || transaction.source}</small></td><td>{businessEvents.find((event) => event.value === transaction.businessEvent)?.label ?? (transaction.businessEvent || "-")}</td><td>{categoryName(transaction.categoryId)}</td><td>{transaction.paymentStatus === "pay_later" ? "Pay Later" : transaction.paymentMethod || "Paid Now"}</td><td>{entries.length ? entries.map((entry) => <div key={entry.id} className="ledger-line"><span>{entry.entryType === "debit" ? "Dr" : "Cr"} {entry.accountName}</span><strong>{formatMoney(entry.amount)}</strong></div>) : <small>{transaction.debit ? `Dr ${formatMoney(transaction.debit)}` : ""} {transaction.credit ? `Cr ${formatMoney(transaction.credit)}` : ""}</small>}</td><td><button className="view-button danger-text" onClick={() => onDelete(transaction)}>Delete</button></td></tr>;
+  })}</tbody></table>{!transactions.length && <div className="empty"><strong>No transactions yet</strong><p>Record a business event to start the ledger.</p></div>}</div></section>;
 }
 
 function Login({ onLogin }: { onLogin: (session: Session) => void }) {

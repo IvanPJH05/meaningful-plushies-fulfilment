@@ -196,8 +196,15 @@ on conflict (id) do update set
 create table if not exists public.accounting_categories (
   id uuid primary key default gen_random_uuid(),
   name text not null unique,
-  account_type text not null check (account_type in ('asset', 'liability', 'equity', 'income', 'expense', 'cost_of_sales')),
+  account_type text not null check (account_type in ('asset', 'liability', 'equity', 'revenue', 'income', 'expense', 'cost_of_sales')),
   report_section text not null,
+  parent_id uuid references public.accounting_categories(id) on delete set null,
+  data_source_type text not null default 'manual' check (data_source_type in ('manual', 'system_generated', 'hybrid')),
+  source_module text not null default 'Manual Transactions',
+  source_entity text not null default '',
+  posting_trigger text not null default 'Manual Entry',
+  allow_sub_accounts boolean not null default false,
+  allowed_transaction_types text[] not null default '{}',
   active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -229,11 +236,17 @@ create table if not exists public.accounting_transactions (
   source text not null default 'manual' check (source in ('manual', 'document', 'order')),
   source_id text,
   document_id text references public.accounting_documents(id) on delete set null,
+  business_event text,
   transaction_date date not null default current_date,
   description text not null,
   account_name text not null default 'Cash',
   category_id uuid references public.accounting_categories(id) on delete set null,
   transaction_type text not null default 'expense' check (transaction_type in ('income', 'expense', 'transfer')),
+  payment_status text not null default 'paid_now' check (payment_status in ('paid_now', 'pay_later')),
+  payment_method text not null default '',
+  supplier text not null default '',
+  quantity numeric(12,2) not null default 0 check (quantity >= 0),
+  unit_cost numeric(12,2) not null default 0 check (unit_cost >= 0),
   debit numeric(12,2) not null default 0 check (debit >= 0),
   credit numeric(12,2) not null default 0 check (credit >= 0),
   amount numeric(12,2) not null default 0 check (amount >= 0),
@@ -244,6 +257,17 @@ create table if not exists public.accounting_transactions (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   deleted_at timestamptz
+);
+
+create table if not exists public.accounting_ledger_entries (
+  id text primary key,
+  transaction_id text not null references public.accounting_transactions(id) on delete cascade,
+  account_id uuid references public.accounting_categories(id) on delete set null,
+  account_name text not null,
+  entry_type text not null check (entry_type in ('debit', 'credit')),
+  amount numeric(12,2) not null default 0 check (amount >= 0),
+  memo text not null default '',
+  created_at timestamptz not null default now()
 );
 
 insert into public.accounting_categories(name, account_type, report_section)
@@ -265,6 +289,7 @@ on conflict (name) do nothing;
 alter table public.accounting_categories enable row level security;
 alter table public.accounting_documents enable row level security;
 alter table public.accounting_transactions enable row level security;
+alter table public.accounting_ledger_entries enable row level security;
 
 drop policy if exists "shared accounting reads categories" on public.accounting_categories;
 drop policy if exists "shared accounting changes categories" on public.accounting_categories;
@@ -281,6 +306,11 @@ drop policy if exists "shared accounting changes transactions" on public.account
 create policy "shared accounting reads transactions" on public.accounting_transactions for select to anon, authenticated using (true);
 create policy "shared accounting changes transactions" on public.accounting_transactions for all to anon, authenticated using (true) with check (true);
 
+drop policy if exists "shared accounting reads ledger entries" on public.accounting_ledger_entries;
+drop policy if exists "shared accounting changes ledger entries" on public.accounting_ledger_entries;
+create policy "shared accounting reads ledger entries" on public.accounting_ledger_entries for select to anon, authenticated using (true);
+create policy "shared accounting changes ledger entries" on public.accounting_ledger_entries for all to anon, authenticated using (true) with check (true);
+
 drop policy if exists "shared accounting reads document files" on storage.objects;
 drop policy if exists "shared accounting inserts document files" on storage.objects;
 drop policy if exists "shared accounting updates document files" on storage.objects;
@@ -293,6 +323,7 @@ create policy "shared accounting deletes document files" on storage.objects for 
 grant select, insert, update, delete on public.accounting_categories to anon, authenticated;
 grant select, insert, update, delete on public.accounting_documents to anon, authenticated;
 grant select, insert, update, delete on public.accounting_transactions to anon, authenticated;
+grant select, insert, update, delete on public.accounting_ledger_entries to anon, authenticated;
 
 do $$
 begin
@@ -343,5 +374,11 @@ begin
     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'accounting_categories'
   ) then
     alter publication supabase_realtime add table public.accounting_categories;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'accounting_ledger_entries'
+  ) then
+    alter publication supabase_realtime add table public.accounting_ledger_entries;
   end if;
 end $$;

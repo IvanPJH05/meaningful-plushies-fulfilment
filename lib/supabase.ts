@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { AccountingCategory, AccountingDocument, AccountingTransaction, DashboardAccount, Order, PaymentProcessorSetting, SalesFeeSetting, StockSetting, UserRole } from "./types";
+import type { AccountingCategory, AccountingDocument, AccountingLedgerEntry, AccountingTransaction, DashboardAccount, Order, PaymentProcessorSetting, SalesFeeSetting, StockSetting, UserRole } from "./types";
 
 export type DashboardSession = DashboardAccount & { token: string };
 
@@ -220,7 +220,7 @@ export async function insertSharedActivity(event: SharedActivity) {
 export async function fetchAccountingCategories(): Promise<AccountingCategory[]> {
   const { data, error } = await requireSupabase()
     .from("accounting_categories")
-    .select("id, name, account_type, report_section, active")
+    .select("id, name, account_type, report_section, parent_id, data_source_type, source_module, source_entity, posting_trigger, allow_sub_accounts, allowed_transaction_types, active")
     .eq("active", true)
     .order("report_section", { ascending: true })
     .order("name", { ascending: true });
@@ -230,8 +230,34 @@ export async function fetchAccountingCategories(): Promise<AccountingCategory[]>
     name: row.name,
     accountType: row.account_type,
     reportSection: row.report_section,
+    parentId: row.parent_id ?? "",
+    dataSourceType: row.data_source_type ?? "manual",
+    sourceModule: row.source_module ?? "",
+    sourceEntity: row.source_entity ?? "",
+    postingTrigger: row.posting_trigger ?? "",
+    allowSubAccounts: Boolean(row.allow_sub_accounts),
+    allowedTransactionTypes: row.allowed_transaction_types ?? [],
     active: row.active,
   }));
+}
+
+export async function saveAccountingCategory(category: AccountingCategory) {
+  const { error } = await requireSupabase().from("accounting_categories").upsert({
+    id: category.id,
+    name: category.name,
+    account_type: category.accountType === "income" ? "revenue" : category.accountType,
+    report_section: category.reportSection,
+    parent_id: category.parentId || null,
+    data_source_type: category.dataSourceType,
+    source_module: category.sourceModule,
+    source_entity: category.sourceEntity,
+    posting_trigger: category.postingTrigger,
+    allow_sub_accounts: category.allowSubAccounts,
+    allowed_transaction_types: category.allowedTransactionTypes,
+    active: category.active,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "id" });
+  if (error) throw error;
 }
 
 export async function fetchAccountingDocuments(): Promise<AccountingDocument[]> {
@@ -314,7 +340,7 @@ export async function deleteAccountingDocument(id: string) {
 export async function fetchAccountingTransactions(): Promise<AccountingTransaction[]> {
   const { data, error } = await requireSupabase()
     .from("accounting_transactions")
-    .select("id, source, source_id, document_id, transaction_date, description, account_name, category_id, transaction_type, debit, credit, amount, currency, tax_treatment, notes, created_by, created_at, updated_at")
+    .select("id, source, source_id, document_id, business_event, transaction_date, description, account_name, category_id, transaction_type, payment_status, payment_method, supplier, quantity, unit_cost, debit, credit, amount, currency, tax_treatment, notes, created_by, created_at, updated_at")
     .is("deleted_at", null)
     .order("transaction_date", { ascending: false })
     .order("created_at", { ascending: false });
@@ -324,11 +350,17 @@ export async function fetchAccountingTransactions(): Promise<AccountingTransacti
     source: row.source,
     sourceId: row.source_id ?? "",
     documentId: row.document_id ?? "",
+    businessEvent: row.business_event ?? "",
     transactionDate: row.transaction_date,
     description: row.description,
     accountName: row.account_name,
     categoryId: row.category_id ?? "",
     transactionType: row.transaction_type,
+    paymentStatus: row.payment_status ?? "paid_now",
+    paymentMethod: row.payment_method ?? "",
+    supplier: row.supplier ?? "",
+    quantity: Number(row.quantity ?? 0),
+    unitCost: Number(row.unit_cost ?? 0),
     debit: Number(row.debit),
     credit: Number(row.credit),
     amount: Number(row.amount),
@@ -348,11 +380,17 @@ export async function saveAccountingTransaction(transaction: AccountingTransacti
     source: transaction.source,
     source_id: transaction.sourceId || null,
     document_id: transaction.documentId || null,
+    business_event: transaction.businessEvent || null,
     transaction_date: transaction.transactionDate,
     description: transaction.description,
     account_name: transaction.accountName || "Cash",
     category_id: transaction.categoryId || null,
     transaction_type: transaction.transactionType,
+    payment_status: transaction.paymentStatus || "paid_now",
+    payment_method: transaction.paymentMethod || "",
+    supplier: transaction.supplier || "",
+    quantity: transaction.quantity || 0,
+    unit_cost: transaction.unitCost || 0,
     debit: transaction.transactionType === "expense" ? amount : 0,
     credit: transaction.transactionType === "income" ? amount : 0,
     amount,
@@ -362,6 +400,42 @@ export async function saveAccountingTransaction(transaction: AccountingTransacti
     created_by: transaction.createdBy,
     updated_at: new Date().toISOString(),
   }, { onConflict: "id" });
+  if (error) throw error;
+}
+
+export async function fetchAccountingLedgerEntries(): Promise<AccountingLedgerEntry[]> {
+  const { data, error } = await requireSupabase()
+    .from("accounting_ledger_entries")
+    .select("id, transaction_id, account_id, account_name, entry_type, amount, memo, created_at")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    transactionId: row.transaction_id,
+    accountId: row.account_id ?? "",
+    accountName: row.account_name,
+    entryType: row.entry_type,
+    amount: Number(row.amount),
+    memo: row.memo ?? "",
+    createdAt: row.created_at,
+  }));
+}
+
+export async function saveAccountingLedgerEntries(transactionId: string, entries: AccountingLedgerEntry[]) {
+  const client = requireSupabase();
+  const { error: deleteError } = await client.from("accounting_ledger_entries").delete().eq("transaction_id", transactionId);
+  if (deleteError) throw deleteError;
+  if (!entries.length) return;
+  const { error } = await client.from("accounting_ledger_entries").insert(entries.map((entry) => ({
+    id: entry.id,
+    transaction_id: entry.transactionId,
+    account_id: entry.accountId || null,
+    account_name: entry.accountName,
+    entry_type: entry.entryType,
+    amount: Math.max(0, entry.amount),
+    memo: entry.memo,
+    created_at: entry.createdAt,
+  })));
   if (error) throw error;
 }
 
@@ -383,6 +457,7 @@ export function subscribeToSharedData(onChange: () => void) {
     .on("postgres_changes", { event: "*", schema: "public", table: "stock_settings" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "accounting_documents" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "accounting_transactions" }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "accounting_ledger_entries" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "accounting_categories" }, onChange)
     .subscribe();
   return () => { void client.removeChannel(channel); };

@@ -169,6 +169,66 @@
   font-size: 11px;
 }
 
+.posting-preview {
+  border: 1px solid #dce7f5;
+  border-radius: 10px;
+  background: #f7fbff;
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.posting-preview h3 {
+  margin-bottom: 2px;
+}
+
+.posting-preview p {
+  margin: 0;
+  color: #536277;
+  font-size: 12px;
+}
+
+.posting-preview div,
+.ledger-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.posting-preview div {
+  border-top: 1px solid #e2ebf6;
+  padding-top: 8px;
+}
+
+.checkbox-list {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+
+.checkbox-list strong {
+  grid-column: 1 / -1;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.checkbox-list label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.checkbox-list input {
+  width: auto;
+}
+
 .accounting-table-card {
   overflow: hidden;
 }
@@ -258,7 +318,8 @@
   }
 
   .accounting-summary-grid,
-  .accounting-two-cols {
+  .accounting-two-cols,
+  .checkbox-list {
     grid-template-columns: 1fr;
   }
 }

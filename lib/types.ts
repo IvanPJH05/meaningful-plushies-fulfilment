@@ -36,8 +36,15 @@ export type StockSetting = {
 export type AccountingCategory = {
   id: string;
   name: string;
-  accountType: "asset" | "liability" | "equity" | "income" | "expense" | "cost_of_sales";
+  accountType: "asset" | "liability" | "equity" | "revenue" | "income" | "expense" | "cost_of_sales";
   reportSection: string;
+  parentId: string;
+  dataSourceType: "manual" | "system_generated" | "hybrid";
+  sourceModule: string;
+  sourceEntity: string;
+  postingTrigger: string;
+  allowSubAccounts: boolean;
+  allowedTransactionTypes: string[];
   active: boolean;
 };
 
@@ -66,11 +73,17 @@ export type AccountingTransaction = {
   source: "manual" | "document" | "order";
   sourceId: string;
   documentId: string;
+  businessEvent: string;
   transactionDate: string;
   description: string;
   accountName: string;
   categoryId: string;
   transactionType: "income" | "expense" | "transfer";
+  paymentStatus: "paid_now" | "pay_later";
+  paymentMethod: string;
+  supplier: string;
+  quantity: number;
+  unitCost: number;
   debit: number;
   credit: number;
   amount: number;
@@ -80,6 +93,17 @@ export type AccountingTransaction = {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+};
+
+export type AccountingLedgerEntry = {
+  id: string;
+  transactionId: string;
+  accountId: string;
+  accountName: string;
+  entryType: "debit" | "credit";
+  amount: number;
+  memo: string;
+  createdAt: string;
 };
 
 export type StatusEvent = {
