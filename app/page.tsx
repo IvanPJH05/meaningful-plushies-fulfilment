@@ -126,6 +126,15 @@ type AccountingAccountForm = {
   allowSubAccounts: boolean;
   active: boolean;
 };
+type BookkeepingSectionKey = "inventory" | "expense" | "asset" | "marketing";
+type BookkeepingCategoryForm = {
+  section: BookkeepingSectionKey;
+  name: string;
+};
+type AccountOption = {
+  value: string;
+  label: string;
+};
 
 const salesRanges: { value: SalesRange; label: string }[] = [
   { value: "active", label: "Active orders" },
@@ -156,6 +165,53 @@ const stockPurchaseAccounts = [
   "NFC Chips",
 ] as const;
 const bookkeepingInventoryStockKeys = ["BILLY", "TOOTSIE", "HUNNIE", "DRAGON WARRIOR", "PACKAGING", "BOXES", "BUBBLE WRAP", "CARRIAGE INWARD", "WAX SEAL"];
+const newAssetOptionValue = "__new_asset__";
+const bookkeepingSectionConfigs: Record<BookkeepingSectionKey, {
+  label: string;
+  singularLabel: string;
+  reportSection: string;
+  accountType: AccountingCategory["accountType"];
+  parentAccount: string;
+  sourceEntity: string;
+  defaults: readonly string[];
+}> = {
+  inventory: {
+    label: "Inventory items",
+    singularLabel: "Inventory item",
+    reportSection: "Bookkeeping Inventory",
+    accountType: "asset",
+    parentAccount: "Inventory",
+    sourceEntity: "Inventory item",
+    defaults: ["Plush toy", "Packaging", "Carton Box", "Bubble wrap", "Carriage Inward", "Wax seal"],
+  },
+  expense: {
+    label: "Expense categories",
+    singularLabel: "Expense category",
+    reportSection: "Bookkeeping Expenses",
+    accountType: "expense",
+    parentAccount: "Expenses",
+    sourceEntity: "Expense category",
+    defaults: ["Labour", "Samples", "JnT (Carriage Outwards)"],
+  },
+  asset: {
+    label: "Assets",
+    singularLabel: "Asset",
+    reportSection: "Bookkeeping Assets",
+    accountType: "asset",
+    parentAccount: "Equipment",
+    sourceEntity: "Asset",
+    defaults: [],
+  },
+  marketing: {
+    label: "Marketing categories",
+    singularLabel: "Marketing category",
+    reportSection: "Bookkeeping Marketing",
+    accountType: "expense",
+    parentAccount: "Marketing Expenses",
+    sourceEntity: "Marketing category",
+    defaults: ["Meta ads", "TikTok ads"],
+  },
+};
 const businessEvents = [
   { group: "Money out", value: "inventory_purchase", label: "Inventory", transactionLabel: "Inventory Purchase", accountingMapping: "Inventory", accounts: ["Plush toy", "Packaging", "Carton Box", "Bubble wrap", "Carriage Inward", "Wax seal"] },
   { group: "Money out", value: "expense", label: "Expenses", transactionLabel: "Expense", accountingMapping: "Expenses", accounts: ["Labour", "Samples", "JnT (Carriage Outwards)"] },
@@ -228,6 +284,7 @@ const accountingViews: readonly View[] = [
   "accounting_balance_sheet",
   "accounting_profit_loss",
   "accounting_cash_flow",
+  "accounting_settings",
 ];
 const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "stock", "sales_report", ...accountingViews];
 const adminOnlyViews = new Set<View>(["history", "settings", "stock", "sales_report", ...accountingViews]);
@@ -336,6 +393,7 @@ const accountingNavItems: NavItem[] = [
   { view: "accounting_balance_sheet", label: "Assets", icon: "accounting" },
   { view: "accounting_profit_loss", label: "Marketing", icon: "report" },
   { view: "accounting_cash_flow", label: "Money In", icon: "cash" },
+  { view: "accounting_settings", label: "Book Keeping Settings", icon: "settings" },
 ];
 
 const inventoryNavItems: NavItem[] = [{ view: "stock", label: "Stock Count", icon: "stock" }];
@@ -564,6 +622,10 @@ export default function Home() {
     postingTrigger: "Manual Entry",
     allowSubAccounts: false,
     active: true,
+  });
+  const [bookkeepingCategoryForm, setBookkeepingCategoryForm] = useState<BookkeepingCategoryForm>({
+    section: "inventory",
+    name: "",
   });
   const [accountPasswords, setAccountPasswords] = useState<Record<string, string>>({});
   const [newAccount, setNewAccount] = useState({ username: "", displayName: "", role: "staff" as UserRole, password: "" });
@@ -1129,9 +1191,39 @@ export default function Home() {
     return businessEvents.find((event) => event.value === transactionForm.businessEvent) ?? businessEvents[0];
   }
 
-  function accountOptionsForEvent() {
+  function bookkeepingConfigForEvent(eventValue: string) {
+    if (eventValue === "inventory_purchase") return bookkeepingSectionConfigs.inventory;
+    if (eventValue === "expense") return bookkeepingSectionConfigs.expense;
+    if (eventValue === "asset_purchase") return bookkeepingSectionConfigs.asset;
+    if (eventValue === "marketing_expense") return bookkeepingSectionConfigs.marketing;
+    return null;
+  }
+
+  function bookkeepingCategoriesForSection(section: BookkeepingSectionKey) {
+    const config = bookkeepingSectionConfigs[section];
+    return accountingCategories
+      .filter((category) => category.active && category.reportSection === config.reportSection)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  function selectedCategoryRecord() {
+    return accountingCategories.find((category) => category.id === transactionForm.categoryId);
+  }
+
+  function accountOptionsForEvent(): AccountOption[] {
     const event = selectedBusinessEvent();
-    return [...event.accounts];
+    const config = bookkeepingConfigForEvent(event.value);
+    if (!config) return event.accounts.map((account) => ({ value: account, label: account }));
+    const saved = accountingCategories
+      .filter((category) => category.active && category.reportSection === config.reportSection)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const savedNames = new Set(saved.map((category) => category.name.toLowerCase()));
+    const defaultOptions = config.defaults
+      .filter((name) => !savedNames.has(name.toLowerCase()))
+      .map((name) => ({ value: name, label: name }));
+    const savedOptions = saved.map((category) => ({ value: category.id, label: category.name }));
+    if (event.value === "asset_purchase") return [{ value: newAssetOptionValue, label: "+ New asset" }, ...savedOptions];
+    return [...savedOptions, ...defaultOptions];
   }
 
   function mappedAccountName(event: ReturnType<typeof selectedBusinessEvent>, selection: string) {
@@ -1180,10 +1272,25 @@ export default function Home() {
 
   function selectedAccountingAccount() {
     const event = selectedBusinessEvent();
+    const selectedCategory = selectedCategoryRecord();
+    if (selectedCategory) return selectedCategory;
     const selected = transactionForm.categoryId || transactionForm.accountName;
     const mapped = mappedAccountName(event, selected);
     return accountingCategories.find((category) => category.name.toLowerCase() === mapped.toLowerCase())
       ?? accountingCategories.find((category) => category.name.toLowerCase() === event.accountingMapping.toLowerCase());
+  }
+
+  function bookkeepingAccountNameForSave(event: ReturnType<typeof selectedBusinessEvent>) {
+    const selectedCategory = selectedCategoryRecord();
+    if (selectedCategory) return selectedCategory.name;
+    if (transactionForm.categoryId === newAssetOptionValue) return transactionForm.accountName.trim();
+    return transactionForm.categoryId || transactionForm.accountName.trim() || event.accountingMapping;
+  }
+
+  function bookkeepingParentId(config: (typeof bookkeepingSectionConfigs)[BookkeepingSectionKey] | null) {
+    if (!config) return "";
+    const parentName = config.parentAccount.toLowerCase();
+    return accountingCategories.find((category) => category.name.toLowerCase() === parentName && !category.parentId)?.id ?? "";
   }
 
   function emptyTransactionForm(): AccountingTransactionForm {
@@ -1197,7 +1304,7 @@ export default function Home() {
     if (!Number.isFinite(amount) || amount <= 0) return [];
     const event = selectedBusinessEvent();
     const account = selectedAccountingAccount();
-    const accountName = transactionForm.categoryId || account?.name || transactionForm.accountName || "Selected account";
+    const accountName = account?.name || bookkeepingAccountNameForSave(event) || "Selected account";
     const depositAmount = Math.min(amount, Math.max(0, Number(transactionForm.depositAmount) || 0));
     const paidAmount = transactionForm.paymentStatus === "paid_in_full" ? amount : transactionForm.paymentStatus === "deposit_paid" ? depositAmount : 0;
     const outstandingAmount = Math.max(0, amount - paidAmount);
@@ -1316,17 +1423,18 @@ export default function Home() {
       const id = crypto.randomUUID();
       let documentId = "";
       let account = selectedAccountingAccount();
-      if (!account && transactionForm.accountName.trim()) {
-        const inventoryParent = accountingCategories.find((category) => category.name.toLowerCase() === "inventory" && !category.parentId);
+      const accountName = bookkeepingAccountNameForSave(event).trim();
+      const bookkeepingConfig = bookkeepingConfigForEvent(event.value);
+      if (!account && accountName) {
         account = {
           id: crypto.randomUUID(),
-          name: transactionForm.accountName.trim(),
-          accountType: event.value === "inventory_purchase" || event.value === "asset_purchase" ? "asset" : "expense",
-          reportSection: event.value === "inventory_purchase" ? "Current Assets" : event.value === "asset_purchase" ? "Non Current Assets" : "Expenses",
-          parentId: event.value === "inventory_purchase" ? inventoryParent?.id ?? "" : "",
+          name: accountName,
+          accountType: bookkeepingConfig?.accountType ?? (event.value === "inventory_purchase" || event.value === "asset_purchase" ? "asset" : "expense"),
+          reportSection: bookkeepingConfig?.reportSection ?? (event.value === "inventory_purchase" ? "Current Assets" : event.value === "asset_purchase" ? "Non Current Assets" : "Expenses"),
+          parentId: bookkeepingParentId(bookkeepingConfig),
           dataSourceType: "manual",
-          sourceModule: "Manual Transactions",
-          sourceEntity: "",
+          sourceModule: "Book Keeping",
+          sourceEntity: bookkeepingConfig?.sourceEntity ?? event.label,
           postingTrigger: "Manual Entry",
           allowSubAccounts: false,
           allowedTransactionTypes: [],
@@ -1366,7 +1474,7 @@ export default function Home() {
         businessEvent: transactionForm.businessEvent,
         transactionDate: transactionForm.transactionDate,
         description,
-        accountName: transactionForm.categoryId === "New asset" ? transactionForm.accountName.trim() : transactionForm.categoryId || account?.name || transactionForm.accountName.trim() || "Cash",
+        accountName: account?.name || accountName || "Cash",
         categoryId: account?.id ?? "",
         transactionType: event.value === "payment_processor_paid" ? "transfer" : "expense",
         paymentStatus: transactionForm.paymentStatus,
@@ -1390,7 +1498,7 @@ export default function Home() {
       });
       await saveAccountingLedgerEntries(id, entries);
       if (event.value === "inventory_purchase" && quantity > 0) {
-        const stockSource = `${transactionForm.categoryId} ${transactionForm.accountName}`.toUpperCase();
+        const stockSource = `${account?.name ?? accountName} ${transactionForm.accountName}`.toUpperCase();
         const stockKey = stockSource.includes("BILLY") ? "BILLY"
           : stockSource.includes("TOOTSIE") ? "TOOTSIE"
           : stockSource.includes("HUNNIE") ? "HUNNIE"
@@ -1552,6 +1660,40 @@ export default function Home() {
     }
   }
 
+  async function saveBookkeepingCategory() {
+    const config = bookkeepingSectionConfigs[bookkeepingCategoryForm.section];
+    const name = bookkeepingCategoryForm.name.trim();
+    if (!name) return setNotice(`Add a ${config.singularLabel.toLowerCase()} name.`);
+    const duplicate = accountingCategories.find((category) => category.reportSection === config.reportSection && category.name.toLowerCase() === name.toLowerCase());
+    if (duplicate) return setNotice(`${name} already exists in ${config.label}.`);
+    setSavingAccounting(true);
+    try {
+      const account: AccountingCategory = {
+        id: crypto.randomUUID(),
+        name,
+        accountType: config.accountType,
+        reportSection: config.reportSection,
+        parentId: bookkeepingParentId(config),
+        dataSourceType: "manual",
+        sourceModule: "Book Keeping",
+        sourceEntity: config.sourceEntity,
+        postingTrigger: "Manual Entry",
+        allowSubAccounts: false,
+        allowedTransactionTypes: [],
+        active: true,
+      };
+      await saveAccountingCategory(account);
+      await insertSharedActivity({ id: crypto.randomUUID(), action: "Bookkeeping category added", detail: `${name} added to ${config.label}.`, actor: session?.displayName ?? "Admin", createdAt: new Date().toISOString() });
+      setBookkeepingCategoryForm((current) => ({ ...current, name: "" }));
+      await loadSharedData();
+      setNotice(`${name} added.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not save bookkeeping category.");
+    } finally {
+      setSavingAccounting(false);
+    }
+  }
+
   async function openAccountingDocument(document: AccountingDocument) {
     try {
       window.open(await createAccountingDocumentSignedUrl(document.filePath), "_blank", "noopener,noreferrer");
@@ -1610,17 +1752,20 @@ export default function Home() {
         documentForm={documentForm}
         transactionForm={transactionForm}
         accountForm={accountForm}
+        bookkeepingCategoryForm={bookkeepingCategoryForm}
         selectedFile={accountingDocumentFile}
         transactionFile={transactionDocumentFile}
         saving={savingAccounting}
         onDocumentFormChange={(patch) => setDocumentForm((current) => ({ ...current, ...patch }))}
         onTransactionFormChange={(patch) => setTransactionForm((current) => ({ ...current, ...patch }))}
         onAccountFormChange={(patch) => setAccountForm((current) => ({ ...current, ...patch }))}
+        onBookkeepingCategoryFormChange={(patch) => setBookkeepingCategoryForm((current) => ({ ...current, ...patch }))}
         onFileChange={setAccountingDocumentFile}
         onTransactionFileChange={setTransactionDocumentFile}
         onUploadDocument={uploadAccountingDocument}
         onCreateTransaction={createManualAccountingTransaction}
         onSaveAccount={saveAccountSettings}
+        onSaveBookkeepingCategory={saveBookkeepingCategory}
         onSetupChart={setupAccountingChart}
         onEditAccount={(account) => setAccountForm({ id: account.id, name: account.name, accountType: account.accountType === "income" ? "revenue" : account.accountType, reportSection: account.reportSection, parentId: account.parentId, dataSourceType: account.dataSourceType, sourceModule: account.sourceModule || "Manual Transactions", sourceEntity: account.sourceEntity, postingTrigger: account.postingTrigger || "Manual Entry", allowSubAccounts: account.allowSubAccounts, active: account.active })}
         postingPreview={ledgerPreview()}
@@ -1751,17 +1896,20 @@ function AccountingWorkspacePage({
   documentForm,
   transactionForm,
   accountForm,
+  bookkeepingCategoryForm,
   selectedFile,
   transactionFile,
   saving,
   onDocumentFormChange,
   onTransactionFormChange,
   onAccountFormChange,
+  onBookkeepingCategoryFormChange,
   onFileChange,
   onTransactionFileChange,
   onUploadDocument,
   onCreateTransaction,
   onSaveAccount,
+  onSaveBookkeepingCategory,
   onSetupChart,
   onEditAccount,
   postingPreview,
@@ -1784,21 +1932,24 @@ function AccountingWorkspacePage({
   documentForm: AccountingDocumentForm;
   transactionForm: AccountingTransactionForm;
   accountForm: AccountingAccountForm;
+  bookkeepingCategoryForm: BookkeepingCategoryForm;
   selectedFile: File | null;
   transactionFile: File | null;
   saving: boolean;
   onDocumentFormChange: (patch: Partial<AccountingDocumentForm>) => void;
   onTransactionFormChange: (patch: Partial<AccountingTransactionForm>) => void;
   onAccountFormChange: (patch: Partial<AccountingAccountForm>) => void;
+  onBookkeepingCategoryFormChange: (patch: Partial<BookkeepingCategoryForm>) => void;
   onFileChange: (file: File | null) => void;
   onTransactionFileChange: (file: File | null) => void;
   onUploadDocument: () => void;
   onCreateTransaction: () => void;
   onSaveAccount: () => void;
+  onSaveBookkeepingCategory: () => void;
   onSetupChart: () => void;
   onEditAccount: (account: AccountingCategory) => void;
   postingPreview: AccountingLedgerEntry[];
-  accountOptions: string[];
+  accountOptions: AccountOption[];
   onOpenDocument: (document: AccountingDocument) => void;
   onDeleteDocument: (document: AccountingDocument) => void;
   onDeleteTransaction: (transaction: AccountingTransaction) => void;
@@ -1847,6 +1998,7 @@ function AccountingWorkspacePage({
     const isInventory = categoryEvent.value === "inventory_purchase";
     const isAsset = categoryEvent.value === "asset_purchase";
     const isMoneyIn = categoryEvent.value === "payment_processor_paid";
+    const selectedAccountLabel = accountOptions.find((option) => option.value === transactionForm.categoryId)?.label ?? transactionForm.categoryId;
     const calculatedAmount = Number(transactionForm.amount) || ((Number(transactionForm.quantity) || 0) * (Number(transactionForm.unitCost) || 0));
     const processorPayouts = transactions.filter((transaction) => transaction.businessEvent === "payment_processor_paid");
     const stripePaid = processorPayouts.filter((transaction) => transaction.accountName === "Stripe").reduce((total, transaction) => total + transaction.amount, 0);
@@ -1906,9 +2058,9 @@ function AccountingWorkspacePage({
         <div className="accounting-form card">
           <h3>New {categoryEvent.label} record</h3>
           <label>Date<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label>
-          <label>{isInventory ? "Inventory item" : isMoneyIn ? "Money in type" : "Category"}<select value={transactionForm.categoryId} onChange={(input) => onTransactionFormChange({ categoryId: input.target.value, accountName: "" })}><option value="">Choose</option>{categoryEvent.accounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>
-          {isInventory && transactionForm.categoryId === "Plush toy" && <label>Plush character<select value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })}><option value="">Choose character</option><option value="BILLY">BILLY</option><option value="TOOTSIE">TOOTSIE</option><option value="HUNNIE">HUNNIE</option><option value="DRAGON WARRIOR">DRAGON WARRIOR</option></select></label>}
-          {isAsset && <label>Asset name<input value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })} placeholder="Example: Printer, heat press machine..." /></label>}
+          <label>{isInventory ? "Inventory item" : isMoneyIn ? "Money in type" : isAsset ? "Asset" : "Category"}<select value={transactionForm.categoryId} onChange={(input) => onTransactionFormChange({ categoryId: input.target.value, accountName: "" })}><option value="">Choose</option>{accountOptions.map((account) => <option key={account.value} value={account.value}>{account.label}</option>)}</select></label>
+          {isInventory && selectedAccountLabel === "Plush toy" && <label>Plush character<select value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })}><option value="">Choose character</option><option value="BILLY">BILLY</option><option value="TOOTSIE">TOOTSIE</option><option value="HUNNIE">HUNNIE</option><option value="DRAGON WARRIOR">DRAGON WARRIOR</option></select></label>}
+          {isAsset && transactionForm.categoryId === newAssetOptionValue && <label>New asset name<input value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })} placeholder="Example: Printer, heat press machine..." /></label>}
           <div className="accounting-two-cols"><label>{isInventory ? "Unit price" : "Amount"}<input type="number" min="0" step="0.01" value={isInventory ? transactionForm.unitCost : transactionForm.amount} onChange={(input) => onTransactionFormChange(isInventory ? { unitCost: input.target.value, amount: String((Number(input.target.value) || 0) * (Number(transactionForm.quantity) || 0) || "") } : { amount: input.target.value })} /></label>{isInventory ? <label>Quantity bought<input type="number" min="0" step="1" value={transactionForm.quantity} onChange={(input) => onTransactionFormChange({ quantity: input.target.value, amount: String((Number(input.target.value) || 0) * (Number(transactionForm.unitCost) || 0) || "") })} /></label> : <label>Supplier / source<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder={isMoneyIn ? "Stripe, Xendit, TikTok Shop..." : "Supplier name"} /></label>}</div>
           {isInventory && <label>Total batch cost<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onTransactionFormChange({ amount: input.target.value })} placeholder="Auto-calculates from unit price x quantity" /></label>}
           {isInventory && <label>Supplier<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder="Supplier name" /></label>}
@@ -1951,7 +2103,7 @@ function AccountingWorkspacePage({
         <h3>Step 1: Choose category</h3>
         <div className="business-event-grid">{businessEvents.map((item) => <button type="button" key={item.value} className={transactionForm.businessEvent === item.value ? "selected" : ""} onClick={() => onTransactionFormChange({ businessEvent: item.value, categoryId: "", accountName: "" })}><strong>{item.label}</strong><span>{item.accountingMapping}</span></button>)}</div>
         <h3>Step 2: Select item / account</h3>
-        <label>Account<select value={transactionForm.categoryId} onChange={(input) => onTransactionFormChange({ categoryId: input.target.value, accountName: "" })}><option value="">Choose account</option>{accountOptions.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>
+        <label>Account<select value={transactionForm.categoryId} onChange={(input) => onTransactionFormChange({ categoryId: input.target.value, accountName: "" })}><option value="">Choose account</option>{accountOptions.map((account) => <option key={account.value} value={account.value}>{account.label}</option>)}</select></label>
         {event.value === "inventory_purchase" && transactionForm.categoryId === "Plushie" && <label>Which plushie / character?<input value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })} placeholder="Billy, Tootsie, Hunnie, Dragon Warrior..." /></label>}
         {!accountOptions.length && <p className="accounting-file-name">No accounts are configured for this category yet.</p>}
         <h3>Step 3: Transaction details</h3>
@@ -1978,22 +2130,26 @@ function AccountingWorkspacePage({
     </section>
   </section>;
 
-  if (view === "accounting_settings") return <section className="accounting-workspace">
-    <div className="accounting-hero card"><div><p>CHART OF ACCOUNTS</p><h2>Account settings</h2><span>Define what accounts exist, where balances come from, and whether sub-accounts are allowed.</span></div><div className="accounting-status-pill">{categories.length} accounts</div></div>
-    <div className="accounting-action-row"><button className="button primary" disabled={saving} onClick={onSetupChart}>Set up Meaningful Plushies accounts</button><span>Creates the preset accounts from your list without removing your existing accounts.</span></div>
-    <section className="accounting-form-grid">
-      <div className="accounting-form card">
-        <h3>{accountForm.id ? "Edit account" : "Create account"}</h3>
-        <label>Account name<input value={accountForm.name} onChange={(event) => onAccountFormChange({ name: event.target.value })} placeholder="Inventory, Meta Advertising, Shopify Sales..." /></label>
-        <div className="accounting-two-cols"><label>Account type<select value={accountForm.accountType} onChange={(event) => onAccountFormChange({ accountType: event.target.value as AccountingCategory["accountType"], reportSection: event.target.value === "revenue" ? "Revenue" : event.target.value === "asset" ? "Assets" : event.target.value === "liability" ? "Liabilities" : event.target.value === "equity" ? "Equity" : "Expenses" })}><option value="asset">Asset</option><option value="liability">Liability</option><option value="equity">Equity</option><option value="revenue">Revenue</option><option value="expense">Expense</option><option value="cost_of_sales">Cost of Sales</option></select></label><label>Report section<input value={accountForm.reportSection} onChange={(event) => onAccountFormChange({ reportSection: event.target.value })} /></label></div>
-        <div className="accounting-two-cols"><label>Parent account<select value={accountForm.parentId} onChange={(event) => onAccountFormChange({ parentId: event.target.value })}><option value="">None / master account</option>{parentOptions.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label><label>Allow sub accounts<select value={accountForm.allowSubAccounts ? "yes" : "no"} onChange={(event) => onAccountFormChange({ allowSubAccounts: event.target.value === "yes" })}><option value="no">No</option><option value="yes">Yes</option></select></label></div>
-        <label>Data source type<select value={accountForm.dataSourceType} onChange={(event) => onAccountFormChange({ dataSourceType: event.target.value as AccountingCategory["dataSourceType"] })}><option value="manual">Manual</option><option value="system_generated">System Generated</option><option value="hybrid">Hybrid</option></select></label>
-        {accountForm.dataSourceType !== "manual" && <><div className="accounting-two-cols"><label>Source module<select value={accountForm.sourceModule} onChange={(event) => onAccountFormChange({ sourceModule: event.target.value })}>{sourceModules.map((module) => <option key={module} value={module}>{module}</option>)}</select></label><label>Source entity<input value={accountForm.sourceEntity} onChange={(event) => onAccountFormChange({ sourceEntity: event.target.value })} placeholder="Orders, Xendit Transactions..." /></label></div><label>Posting trigger<select value={accountForm.postingTrigger} onChange={(event) => onAccountFormChange({ postingTrigger: event.target.value })}>{postingTriggers.map((trigger) => <option key={trigger} value={trigger}>{trigger}</option>)}</select></label></>}
-        <button className="button primary" disabled={saving} onClick={onSaveAccount}>{saving ? "Saving..." : "Save account settings"}</button>
-      </div>
-      <section className="card accounting-table-card"><h3>Configured accounts</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>Account</th><th>Type</th><th>Parent</th><th>Source</th><th>Trigger</th><th /></tr></thead><tbody>{categories.map((account) => <tr key={account.id}><td><strong>{account.parentId ? "- " : ""}{account.name}</strong><br /><small>{account.reportSection}{account.allowSubAccounts ? " - Allows sub-accounts" : ""}</small></td><td>{account.accountType === "income" ? "revenue" : account.accountType}</td><td>{account.parentId ? categoryName(account.parentId) : "-"}</td><td>{account.dataSourceType}<br /><small>{account.sourceModule || "Manual"}</small></td><td>{account.postingTrigger || "-"}</td><td><button className="view-button" onClick={() => onEditAccount(account)}>Edit</button></td></tr>)}</tbody></table></div></section>
-    </section>
-  </section>;
+  if (view === "accounting_settings") {
+    const sectionEntries = Object.entries(bookkeepingSectionConfigs) as [BookkeepingSectionKey, typeof bookkeepingSectionConfigs[BookkeepingSectionKey]][];
+    const selectedConfig = bookkeepingSectionConfigs[bookkeepingCategoryForm.section];
+    return <section className="accounting-workspace">
+      <div className="accounting-hero card"><div><p>BOOK KEEPING SETTINGS</p><h2>Category accounts</h2><span>Add the items you want to use in Inventory, Expenses, Assets, and Marketing. Each item is saved as its own account for future T-accounts and financial statements.</span></div><div className="accounting-status-pill">{categories.filter((category) => Object.values(bookkeepingSectionConfigs).some((config) => config.reportSection === category.reportSection)).length} items</div></div>
+      <section className="accounting-form-grid">
+        <div className="accounting-form card">
+          <h3>Add category item</h3>
+          <label>Section<select value={bookkeepingCategoryForm.section} onChange={(event) => onBookkeepingCategoryFormChange({ section: event.target.value as BookkeepingSectionKey, name: "" })}>{sectionEntries.map(([key, config]) => <option key={key} value={key}>{config.label}</option>)}</select></label>
+          <label>{selectedConfig.singularLabel} name<input value={bookkeepingCategoryForm.name} onChange={(event) => onBookkeepingCategoryFormChange({ name: event.target.value })} placeholder={bookkeepingCategoryForm.section === "asset" ? "Example: Printer, camera, heat press machine" : "Example: Speaker, Meta ads, samples"} /></label>
+          <p className="accounting-file-name">This will appear as an option in the {selectedConfig.label.toLowerCase()} page and will be treated as its own account.</p>
+          <button className="button primary" disabled={saving} onClick={onSaveBookkeepingCategory}>{saving ? "Saving..." : "Add item"}</button>
+        </div>
+        <section className="card accounting-table-card"><h3>Saved category accounts</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>Section</th><th>Account item</th><th>Type</th><th>Parent</th></tr></thead><tbody>{sectionEntries.flatMap(([key, config]) => {
+          const rows = categories.filter((category) => category.reportSection === config.reportSection).sort((a, b) => a.name.localeCompare(b.name));
+          return rows.map((account) => <tr key={account.id}><td>{config.label}</td><td><strong>{account.name}</strong><br /><small>Used by {config.sourceEntity}</small></td><td>{account.accountType}</td><td>{account.parentId ? categoryName(account.parentId) : config.parentAccount}</td></tr>);
+        })}</tbody></table></div></section>
+      </section>
+    </section>;
+  }
 
   if (view === "accounting_profit_loss") return <section className="accounting-workspace">
     <div className="accounting-hero card"><div><p>PROFIT & LOSS</p><h2>Current profit and loss</h2><span>Based on all active accounting transactions currently saved in Supabase.</span></div><div className={`accounting-status-pill ${profit < 0 ? "loss" : ""}`}>{formatMoney(profit)}</div></div>
