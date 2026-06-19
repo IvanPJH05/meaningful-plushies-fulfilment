@@ -56,6 +56,16 @@ const metafieldHeaders = [
   "Metafield type", "Metafield value",
 ];
 
+export type CsvKind = "orders" | "metafields" | "unknown";
+
+export function detectCsvKind(text: string): CsvKind {
+  const header = parseCsv(text)[0]?.map((cell) => clean(cell).toLowerCase()) ?? [];
+  const has = (name: string) => header.includes(name.toLowerCase());
+  if (has("order gid") || has("metafield value") || has("metafield key")) return "metafields";
+  if (has("name") && (has("lineitem name") || has("shipping method") || has("payment method"))) return "orders";
+  return "unknown";
+}
+
 function records(text: string, kind: "orders" | "metafields") {
   const parsed = parseCsv(text);
   const expectedFirstHeader = kind === "orders" ? "Name" : "Order GID";
@@ -119,9 +129,27 @@ export function importShopifyData(
   existing: Order[],
   actor = "Admin",
 ): { orders: Order[]; result: ImportResult } {
-  const orderRows = records(orderCsv, "orders");
-  const metaRows = metafieldCsv.trim() ? records(metafieldCsv, "metafields") : [];
   const warnings: string[] = [];
+  const firstKind = detectCsvKind(orderCsv);
+  const secondKind = detectCsvKind(metafieldCsv);
+  let detectedOrderCsv = orderCsv;
+  let detectedMetafieldCsv = metafieldCsv;
+  if (firstKind === "metafields" && secondKind === "orders") {
+    detectedOrderCsv = metafieldCsv;
+    detectedMetafieldCsv = orderCsv;
+  } else if (!orderCsv.trim() && secondKind === "orders") {
+    detectedOrderCsv = metafieldCsv;
+    detectedMetafieldCsv = "";
+  } else if (firstKind === "orders" && secondKind === "orders") {
+    warnings.push("Two Shopify order CSV files were detected. The first one was imported; the second one was ignored.");
+    detectedMetafieldCsv = "";
+  } else if (firstKind === "metafields" && secondKind !== "orders") {
+    warnings.push("The Shopify orders CSV was not detected. Upload the orders export as either CSV file.");
+    detectedOrderCsv = "";
+    detectedMetafieldCsv = orderCsv;
+  }
+  const orderRows = detectedOrderCsv.trim() ? records(detectedOrderCsv, "orders") : [];
+  const metaRows = detectedMetafieldCsv.trim() ? records(detectedMetafieldCsv, "metafields") : [];
   let imported = 0;
   let updated = 0;
   let skipped = 0;

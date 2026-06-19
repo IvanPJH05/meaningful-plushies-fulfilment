@@ -4,7 +4,7 @@ import "./settings.css";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FormEvent, SVGProps } from "react";
-import { fulfilledOrdersCsv, importShopifyData, normalizePaymentProcessor } from "../lib/importer";
+import { detectCsvKind, fulfilledOrdersCsv, importShopifyData, normalizePaymentProcessor } from "../lib/importer";
 import { buildSalesReportRows, summarizeSales, type SalesReportRow, type SalesSummary } from "../lib/sales";
 import { stockCharacters, summarizeStock } from "../lib/stock";
 import {
@@ -1229,7 +1229,14 @@ export default function Home() {
   async function readFile(file: File | undefined, target: "orders" | "metafields") {
     if (!file) return;
     const text = await file.text();
-    if (target === "orders") setOrderCsv(text);
+    const detected = detectCsvKind(text);
+    if (detected === "orders") {
+      setOrderCsv(text);
+      setNotice(target === "orders" ? "Shopify orders CSV loaded." : "Shopify orders CSV detected and moved to the orders side.");
+    } else if (detected === "metafields") {
+      setMetafieldCsv(text);
+      setNotice(target === "metafields" ? "Order metafields CSV loaded." : "Order metafields CSV detected and moved to the metafields side.");
+    } else if (target === "orders") setOrderCsv(text);
     else setMetafieldCsv(text);
   }
 
@@ -1940,12 +1947,12 @@ export default function Home() {
       </section>}
 
       {view === "import" && <section className="import-page">
-        <div className="import-intro"><span>CSV</span><div><h2>Import Shopify exports</h2><p>Upload either standard Shopify CSV exports or the headerless Sheet25 files. The app matches line items with each Product block and creates one fulfilment record per plushie.</p></div></div>
+        <div className="import-intro"><span>CSV</span><div><h2>Import Shopify exports</h2><p>Upload or paste the CSV files into either side. The app auto-detects the Shopify orders export and the metafields export, then matches line items with each Product block.</p></div></div>
         <div className="import-columns">
           <ImportBox number="1" title="Shopify order export" required value={orderCsv} onChange={setOrderCsv} onFile={(file) => readFile(file, "orders")} placeholder="Name, Email, Financial Status, Lineitem name..." />
           <ImportBox number="2" title="Order metafields export" value={metafieldCsv} onChange={setMetafieldCsv} onFile={(file) => readFile(file, "metafields")} placeholder="Order GID, Order name, Metafield value..." />
         </div>
-        <div className="import-action"><div><strong>Safe repeat imports</strong><p>Existing order numbers are updated without removing status, tracking, notes, or photos.</p></div><button className="button primary large" disabled={!orderCsv.trim()} onClick={runImport}>Validate and import orders</button></div>
+        <div className="import-action"><div><strong>Safe repeat imports</strong><p>Existing order numbers are updated without removing status, tracking, notes, or photos.</p></div><button className="button primary large" disabled={!orderCsv.trim() && detectCsvKind(metafieldCsv) !== "orders"} onClick={runImport}>Validate and import orders</button></div>
       </section>}
     </section>
 

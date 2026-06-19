@@ -67,3 +67,16 @@ test("normalizes Shopify gateway labels to actual processors", () => {
   assert.equal(normalizePaymentProcessor("Stripe Card Payments + Xendit Payment Gateway (New)"), "Xendit");
   assert.equal(normalizePaymentProcessor("", true), "Bank Transfer");
 });
+
+test("auto-detects swapped order and metafield CSV inputs", () => {
+  const metafields = [
+    "Order GID,Order name,Order email,Metafield namespace,Metafield key,Metafield type,Metafield value",
+    "gid://shopify/Order/1,#1403,test@example.com,custom,personalization,single_line_text_field,\"Product: Plushie\nCertificate Code: abc123\nName: Baba\nMeaningful Note: Hello\"",
+  ].join("\n");
+  const { orders, result } = importShopifyData(metafields, `${headers}\n${rows}`, []);
+  const bankTransfer = orders.find((order) => order.orderNumber === "1403");
+
+  assert.equal(result.imported, 4);
+  assert.equal(bankTransfer?.plushName, "Baba");
+  assert.equal(bankTransfer?.certificateCode, "abc123");
+});
