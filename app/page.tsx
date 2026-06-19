@@ -5,7 +5,7 @@ import "./settings.css";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FormEvent, SVGProps } from "react";
 import { fulfilledOrdersCsv, importShopifyData, normalizePaymentProcessor } from "../lib/importer";
-import { buildSalesReportRows, summarizeSales } from "../lib/sales";
+import { buildSalesReportRows, summarizeSales, type SalesSummary } from "../lib/sales";
 import { stockCharacters, summarizeStock } from "../lib/stock";
 import {
   createDashboardAccount,
@@ -161,7 +161,7 @@ const businessEvents = [
   { group: "Money out", value: "expense", label: "Expenses", transactionLabel: "Expense", accountingMapping: "Expenses", accounts: ["Labour", "Samples", "JnT (Carriage Outwards)"] },
   { group: "Money out", value: "asset_purchase", label: "Assets", transactionLabel: "Asset Purchase", accountingMapping: "Assets", accounts: ["New asset"] },
   { group: "Money out", value: "marketing_expense", label: "Marketing", transactionLabel: "Marketing Expense", accountingMapping: "Marketing", accounts: ["Meta ads", "TikTok ads"] },
-  { group: "Money in", value: "payment_processor_paid", label: "Payment Processor Paid", transactionLabel: "Payment Processor Paid", accountingMapping: "Money In", accounts: ["From sales report"] },
+  { group: "Money in", value: "payment_processor_paid", label: "Payment Processor Paid", transactionLabel: "Payment Processor Paid", accountingMapping: "Money In", accounts: ["Bank Transfer", "Stripe", "Xendit"] },
 ] as const;
 const bookkeepingEventByView: Partial<Record<View, (typeof businessEvents)[number]["value"]>> = {
   accounting_transactions: "inventory_purchase",
@@ -1152,6 +1152,8 @@ export default function Home() {
       "TikTok ads": "TikTok Advertising",
       "New asset": "Equipment",
       "From sales report": "Bank Account",
+      Stripe: "Stripe",
+      Xendit: "Xendit",
       Salary: "Salary Expense",
       "Carriage Outwards": "Shipping Cost",
       Printers: "Equipment",
@@ -1287,7 +1289,9 @@ export default function Home() {
     let amount = Number(transactionForm.amount);
     if ((!Number.isFinite(amount) || amount <= 0) && quantity > 0 && unitCost > 0) amount = quantity * unitCost;
     const depositAmount = Number(transactionForm.depositAmount) || 0;
-    if (!transactionForm.description.trim()) return setNotice("Add a transaction description.");
+    const event = selectedBusinessEvent();
+    const description = transactionForm.description.trim() || (event.value === "payment_processor_paid" && transactionForm.categoryId ? `${transactionForm.categoryId} payout to bank` : "");
+    if (!description) return setNotice("Add a transaction description.");
     if (!Number.isFinite(amount) || amount < 0) return setNotice("Enter a valid transaction amount.");
     if (!transactionForm.categoryId && !transactionForm.accountName.trim()) return setNotice("Choose an account or type the item name.");
     if (transactionForm.paymentStatus === "deposit_paid" && (depositAmount <= 0 || depositAmount >= amount)) return setNotice("Enter a deposit amount that is more than 0 and less than the total.");
@@ -1297,7 +1301,6 @@ export default function Home() {
       const now = new Date().toISOString();
       const id = crypto.randomUUID();
       let documentId = "";
-      const event = selectedBusinessEvent();
       let account = selectedAccountingAccount();
       if (!account && transactionForm.accountName.trim()) {
         const inventoryParent = accountingCategories.find((category) => category.name.toLowerCase() === "inventory" && !category.parentId);
@@ -1326,9 +1329,9 @@ export default function Home() {
           fileName: transactionDocumentFile.name,
           fileType: transactionDocumentFile.type || "application/octet-stream",
           fileSize: transactionDocumentFile.size,
-          name: transactionForm.invoiceNumber.trim() ? `Invoice ${transactionForm.invoiceNumber.trim()}` : transactionForm.description.trim(),
+          name: transactionForm.invoiceNumber.trim() ? `Invoice ${transactionForm.invoiceNumber.trim()}` : description,
           supplier: transactionForm.supplier.trim(),
-          description: `${event.label}: ${transactionForm.description.trim()}`,
+          description: `${event.label}: ${description}`,
           documentDate: transactionForm.transactionDate,
           amount,
           categoryId: account?.id ?? "",
@@ -1348,10 +1351,10 @@ export default function Home() {
         documentId,
         businessEvent: transactionForm.businessEvent,
         transactionDate: transactionForm.transactionDate,
-        description: transactionForm.description.trim(),
+        description,
         accountName: transactionForm.categoryId === "New asset" ? transactionForm.accountName.trim() : transactionForm.categoryId || account?.name || transactionForm.accountName.trim() || "Cash",
         categoryId: account?.id ?? "",
-        transactionType: event.value === "payment_processor_paid" ? "income" : "expense",
+        transactionType: event.value === "payment_processor_paid" ? "transfer" : "expense",
         paymentStatus: transactionForm.paymentStatus,
         paymentMethod: transactionForm.paymentMethod,
         supplier: transactionForm.supplier.trim(),
@@ -1389,7 +1392,7 @@ export default function Home() {
         const currentStock = stockSettings.find((setting) => setting.itemKey === stockKey)?.initialStock ?? 0;
         await saveStockSetting({ itemKey: stockKey, initialStock: currentStock + Math.floor(quantity) });
       }
-      await insertSharedActivity({ id: crypto.randomUUID(), action: "Accounting transaction created", detail: `${event.label}: ${transactionForm.description} (${formatMoney(amount)})`, actor, createdAt: now });
+      await insertSharedActivity({ id: crypto.randomUUID(), action: "Accounting transaction created", detail: `${event.label}: ${description} (${formatMoney(amount)})`, actor, createdAt: now });
       setTransactionForm(emptyTransactionForm());
       setTransactionDocumentFile(null);
       await loadSharedData();
@@ -1615,6 +1618,7 @@ export default function Home() {
         settlementFiles={settlementFiles}
         onSettlementFileChange={(transactionId, file) => setSettlementFiles((current) => ({ ...current, [transactionId]: file }))}
         onSettleTransaction={settleAccountingTransaction}
+        sales={sales}
         categoryName={categoryName}
       />}
 
@@ -1755,6 +1759,7 @@ function AccountingWorkspacePage({
   settlementFiles,
   onSettlementFileChange,
   onSettleTransaction,
+  sales,
   categoryName,
 }: {
   view: View;
@@ -1787,6 +1792,7 @@ function AccountingWorkspacePage({
   settlementFiles: Record<string, File | null>;
   onSettlementFileChange: (transactionId: string, file: File | null) => void;
   onSettleTransaction: (transaction: AccountingTransaction) => void;
+  sales: SalesSummary;
   categoryName: (categoryId: string) => string;
 }) {
   const incomeTransactions = transactions.filter((transaction) => transaction.transactionType === "income");
@@ -1828,6 +1834,50 @@ function AccountingWorkspacePage({
     const isAsset = categoryEvent.value === "asset_purchase";
     const isMoneyIn = categoryEvent.value === "payment_processor_paid";
     const calculatedAmount = Number(transactionForm.amount) || ((Number(transactionForm.quantity) || 0) * (Number(transactionForm.unitCost) || 0));
+    const processorPayouts = transactions.filter((transaction) => transaction.businessEvent === "payment_processor_paid");
+    const stripePaid = processorPayouts.filter((transaction) => transaction.accountName === "Stripe").reduce((total, transaction) => total + transaction.amount, 0);
+    const xenditPaid = processorPayouts.filter((transaction) => transaction.accountName === "Xendit").reduce((total, transaction) => total + transaction.amount, 0);
+    const processorBalance = transactionForm.categoryId === "Stripe"
+      ? Math.max(0, sales.stripeCollected - stripePaid)
+      : transactionForm.categoryId === "Xendit"
+        ? Math.max(0, sales.xenditCollected - xenditPaid)
+        : transactionForm.categoryId === "Bank Transfer"
+          ? sales.bankTransfer
+          : 0;
+    if (isMoneyIn) return <section className="accounting-workspace">
+      <div className="accounting-hero card"><div><p>MONEY IN</p><h2>Payment processor payouts</h2><span>Collection totals come from the fulfilment sales report. When Stripe or Xendit pays out, record the payout here: debit Bank, credit the payment processor.</span></div><div className="accounting-status-pill">{formatMoney(sales.totalCollected)}</div></div>
+      <section className="sales-stats">
+        <MoneyStat label="Bank transfer collected" value={sales.bankTransfer} tone="transfer" />
+        <MoneyStat label="Stripe collected" value={sales.stripeCollected} tone="sales" />
+        <MoneyStat label="Xendit collected" value={sales.xenditCollected} tone="collected" />
+        <MoneyStat label="Total collected" value={sales.totalCollected} tone="sales" />
+        <MoneyStat label="Cash after fees" value={sales.collected} tone="collected" />
+      </section>
+      <section className="accounting-summary-grid">
+        <MoneyStat label="Stripe payouts recorded" value={stripePaid} tone="transfer" />
+        <MoneyStat label="Xendit payouts recorded" value={xenditPaid} tone="transfer" />
+        <MoneyStat label="Processor fees" value={sales.totalFees} tone="fees" />
+      </section>
+      <section className="accounting-form-grid">
+        <div className="accounting-form card">
+          <h3>Record payment received</h3>
+          <label>Date received<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label>
+          <label>Received from<select value={transactionForm.categoryId} onChange={(input) => onTransactionFormChange({ categoryId: input.target.value, accountName: "", amount: input.target.value === "Stripe" ? String(Math.max(0, sales.stripeCollected - stripePaid) || "") : input.target.value === "Xendit" ? String(Math.max(0, sales.xenditCollected - xenditPaid) || "") : "" })}><option value="">Choose processor</option><option value="Stripe">Stripe</option><option value="Xendit">Xendit</option><option value="Bank Transfer">Bank Transfer</option></select></label>
+          {transactionForm.categoryId && <p className="accounting-file-name">{transactionForm.categoryId === "Bank Transfer" ? "Bank transfer sales are already in bank. Use this only if you want to record a manual received amount." : `Unrecorded balance from sales report: ${formatMoney(processorBalance)}`}</p>}
+          <label>Amount received<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onTransactionFormChange({ amount: input.target.value })} /></label>
+          <label>Description<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder="Example: Stripe payout to bank" /></label>
+          <label>Source document<input type="file" accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" onChange={(event) => onTransactionFileChange(event.target.files?.[0] ?? null)} /></label>
+          {transactionFile && <p className="accounting-file-name">{transactionFile.name}</p>}
+          <section className="posting-preview">
+            <h3>Posting preview</h3>
+            <div><span>Debit Bank Account</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div>
+            <div><span>Credit {transactionForm.categoryId || "payment processor"}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div>
+          </section>
+          <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? "Saving..." : "Save payout"}</button>
+        </div>
+        <AccountingTransactionsTable transactions={processorPayouts} ledgerEntries={ledgerEntries} documents={transactionDocuments} categoryName={categoryName} onOpenDocument={onOpenDocument} onDelete={onDeleteTransaction} />
+      </section>
+    </section>;
     return <section className="accounting-workspace">
       <div className="accounting-hero card"><div><p>{categoryEvent.group.toUpperCase()}</p><h2>{categoryEvent.label}</h2><span>{isInventory ? "Record stock bought by batch. Quantity updates the inventory stock settings after saving." : isMoneyIn ? "Record payout money received from payment processors or sales reports." : "Record a simple bookkeeping transaction with source document proof."}</span></div><div className="accounting-status-pill">{formatMoney(calculatedAmount || 0)}</div></div>
       <section className="accounting-form-grid">
