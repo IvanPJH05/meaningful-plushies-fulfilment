@@ -2420,7 +2420,7 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
     if (transaction?.businessEvent === "payment_processor_paid" && transaction.accountName) return `${transaction.accountName} payout received`;
     return transaction?.description || entry.memo || entry.accountName;
   };
-  const cashFlowRows = bankPeriodEntries
+  const rawCashFlowRows = bankPeriodEntries
     .map((entry) => ({
       id: entry.id,
       date: entryDate(entry),
@@ -2429,6 +2429,17 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
       amount: cashMovementForEntry(entry),
     }))
     .sort((a, b) => a.date.localeCompare(b.date) || a.details.localeCompare(b.details) || a.id.localeCompare(b.id));
+  const bankTransferSalesRows = rawCashFlowRows.filter((row) => row.details === "Bank Transfer sales");
+  const cashFlowRows = [
+    ...(bankTransferSalesRows.length ? [{
+      id: "cash-flow-bank-transfer-sales",
+      date: bankTransferSalesRows[0].date,
+      activity: "operating" as CashFlowActivity,
+      details: "Bank Transfer sales",
+      amount: bankTransferSalesRows.reduce((total, row) => total + row.amount, 0),
+    }] : []),
+    ...rawCashFlowRows.filter((row) => row.details !== "Bank Transfer sales"),
+  ].sort((a, b) => a.date.localeCompare(b.date) || a.details.localeCompare(b.details) || a.id.localeCompare(b.id));
   const cashFlowSections: { key: CashFlowActivity; title: string }[] = [
     { key: "operating", title: "Cash Flows From Operating Activities" },
     { key: "investing", title: "Cash Flows From Investing Activities" },
