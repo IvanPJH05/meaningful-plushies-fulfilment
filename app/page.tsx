@@ -420,6 +420,7 @@ function formatDate(value: string, withTime = false) {
 }
 
 function dateKey(value: string) {
+  if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value.slice(0, 10);
   const year = date.getFullYear();
@@ -2217,11 +2218,14 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
     return groups;
   }, {});
   const generatedSalesGroups = Object.values(salesRows.reduce<Record<string, { id: string; date: string; processor: string; salePrice: number; processingFees: number }>>((groups, row) => {
+    const date = dateKey(row.orderDate);
+    const salePrice = Number(row.salePrice) || 0;
+    if (!date || salePrice <= 0) return groups;
     const processor = row.paymentProcessor === "Bank Transfer" ? "Bank Transfer" : row.paymentProcessor === "Stripe" ? "Stripe" : row.paymentProcessor === "Xendit" ? "Xendit" : row.paymentProcessor || "Unassigned";
-    const key = `${dateKey(row.orderDate)}-${processor}`;
-    groups[key] = groups[key] ?? { id: `sales-${key}`, date: dateKey(row.orderDate), processor, salePrice: 0, processingFees: 0 };
-    groups[key].salePrice += row.salePrice;
-    groups[key].processingFees += row.totalFees;
+    const key = `${date}-${processor}`;
+    groups[key] = groups[key] ?? { id: `sales-${key}`, date, processor, salePrice: 0, processingFees: 0 };
+    groups[key].salePrice += salePrice;
+    groups[key].processingFees += Number(row.totalFees) || 0;
     return groups;
   }, {})).sort((a, b) => a.date.localeCompare(b.date) || a.processor.localeCompare(b.processor)).map((group) => {
     const cashAccount = group.processor === "Bank Transfer" ? "Bank Account" : group.processor;
