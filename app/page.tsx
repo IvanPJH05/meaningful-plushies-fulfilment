@@ -2209,6 +2209,9 @@ function AccountingTransactionsTable({ transactions, ledgerEntries, documents, c
 
 function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, categories, salesRows, categoryName }: { view: View; transactions: AccountingTransaction[]; ledgerEntries: AccountingLedgerEntry[]; categories: AccountingCategory[]; salesRows: SalesReportRow[]; categoryName: (categoryId: string) => string }) {
   const [selectedTAccountSection, setSelectedTAccountSection] = useState("Cash");
+  const [selectedTAccountName, setSelectedTAccountName] = useState("all");
+  const [accountingStartDate, setAccountingStartDate] = useState("");
+  const [accountingEndDate, setAccountingEndDate] = useState("");
   const sortedTransactions = [...transactions].sort((a, b) => {
     const dateCompare = new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime();
     return dateCompare || a.createdAt.localeCompare(b.createdAt);
@@ -2242,10 +2245,14 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
     return { ...group, description: `${group.processor} sales for ${formatDate(group.date)}`, entries };
   });
   const allLedgerEntries = [...ledgerEntries, ...generatedSalesGroups.flatMap((group) => group.entries)];
-  const totalDebits = allLedgerEntries.filter((entry) => entry.entryType === "debit").reduce((total, entry) => total + entry.amount, 0);
-  const totalCredits = allLedgerEntries.filter((entry) => entry.entryType === "credit").reduce((total, entry) => total + entry.amount, 0);
   const transactionById = new Map(transactions.map((transaction) => [transaction.id, transaction]));
   const generatedTransactionDescriptions = new Map(generatedSalesGroups.map((group) => [group.id, group.description]));
+  const entryDate = (entry: AccountingLedgerEntry) => dateKey(transactionById.get(entry.transactionId)?.transactionDate || entry.createdAt);
+  const isInAccountingRange = (date: string) => Boolean(date) && (!accountingStartDate || date >= accountingStartDate) && (!accountingEndDate || date <= accountingEndDate);
+  const isBeforeAccountingRange = (date: string) => Boolean(date) && Boolean(accountingStartDate) && date < accountingStartDate;
+  const periodLedgerEntries = allLedgerEntries.filter((entry) => isInAccountingRange(entryDate(entry)));
+  const totalDebits = periodLedgerEntries.filter((entry) => entry.entryType === "debit").reduce((total, entry) => total + entry.amount, 0);
+  const totalCredits = periodLedgerEntries.filter((entry) => entry.entryType === "credit").reduce((total, entry) => total + entry.amount, 0);
   const accountGroups = allLedgerEntries.reduce<Record<string, AccountingLedgerEntry[]>>((groups, entry) => {
     groups[entry.accountName] = [...(groups[entry.accountName] ?? []), entry];
     return groups;
@@ -2271,30 +2278,58 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
     return [...allNames].sort((a, b) => a.localeCompare(b));
   };
   const totalTAccounts = tAccountSections.reduce((total, section) => total + sectionAccountNames(section).length, 0);
+  const selectedSection = tAccountSections.find((section) => section.title === selectedTAccountSection) ?? tAccountSections[0];
+  const selectedSectionAccountNames = sectionAccountNames(selectedSection);
+  const visibleAccountNames = selectedTAccountName === "all" ? selectedSectionAccountNames : selectedSectionAccountNames.filter((name) => name === selectedTAccountName);
+  const filteredTransactions = sortedTransactions.filter((transaction) => isInAccountingRange(dateKey(transaction.transactionDate)));
+  const filteredGeneratedSalesGroups = generatedSalesGroups.filter((group) => isInAccountingRange(group.date));
+  const dateFilter = <section className="card accounting-date-filter"><div><strong>Accounting period</strong><span>This date range is shared by General Journal and T Accounts.</span></div><label>From<input type="date" value={accountingStartDate} onChange={(event) => setAccountingStartDate(event.target.value)} /></label><label>To<input type="date" value={accountingEndDate} onChange={(event) => setAccountingEndDate(event.target.value)} /></label><button className="button secondary" onClick={() => { setAccountingStartDate(""); setAccountingEndDate(""); }}>Clear</button></section>;
 
   if (view === "accounting_t_accounts") return <section className="accounting-workspace">
     <div className="accounting-hero card"><div><p>ACCOUNTING</p><h2>T Accounts</h2><span>All created bookkeeping accounts appear here, even before they have transactions. Debits and credits are grouped by account section.</span></div><div className="accounting-status-pill">{totalTAccounts} accounts</div></div>
+    {dateFilter}
     <section className="accounting-summary-grid">
       <MoneyStat label="Total debits" value={totalDebits} tone="sales" />
       <MoneyStat label="Total credits" value={totalCredits} tone="collected" />
       <MoneyStat label="Difference" value={Math.abs(totalDebits - totalCredits)} tone={Math.abs(totalDebits - totalCredits) > 0.01 ? "fees" : "transfer"} />
     </section>
-    <div className="range-tabs t-account-tabs">{tAccountSections.map((section) => <button key={section.title} className={selectedTAccountSection === section.title ? "active" : ""} onClick={() => setSelectedTAccountSection(section.title)}>{section.title}</button>)}</div>
-    {tAccountSections.filter((section) => section.title === selectedTAccountSection).map((section) => {
-      const accountNames = sectionAccountNames(section);
+    <div className="range-tabs t-account-tabs">{tAccountSections.map((section) => <button key={section.title} className={selectedTAccountSection === section.title ? "active" : ""} onClick={() => { setSelectedTAccountSection(section.title); setSelectedTAccountName("all"); }}>{section.title}</button>)}</div>
+    <label className="t-account-selector">T account<select value={selectedTAccountName} onChange={(event) => setSelectedTAccountName(event.target.value)}><option value="all">View all</option>{selectedSectionAccountNames.map((accountName) => <option key={accountName} value={accountName}>{accountName}</option>)}</select></label>
+    {[selectedSection].map((section) => {
+      const accountNames = visibleAccountNames;
       return <section className="accounting-workspace" key={section.title}>
         <div className="reporting-header"><div><strong>{section.title}</strong><span>{accountNames.length} T account{accountNames.length === 1 ? "" : "s"}</span></div></div>
         <section className="t-account-list">
           {accountNames.map((accountName) => {
             const entries = accountGroups[accountName] ?? [];
-            const debits = entries.filter((entry) => entry.entryType === "debit");
-            const credits = entries.filter((entry) => entry.entryType === "credit");
+            const openingBalance = entries.filter((entry) => isBeforeAccountingRange(entryDate(entry))).reduce((total, entry) => total + (entry.entryType === "debit" ? entry.amount : -entry.amount), 0);
+            const periodEntries = entries.filter((entry) => isInAccountingRange(entryDate(entry)));
+            const debits = periodEntries.filter((entry) => entry.entryType === "debit");
+            const credits = periodEntries.filter((entry) => entry.entryType === "credit");
             const debitTotal = debits.reduce((total, entry) => total + entry.amount, 0);
             const creditTotal = credits.reduce((total, entry) => total + entry.amount, 0);
+            const closingBalance = openingBalance + debitTotal - creditTotal;
+            const details = (entry: AccountingLedgerEntry) => transactionById.get(entry.transactionId)?.description || generatedTransactionDescriptions.get(entry.transactionId) || entry.memo;
+            const debitRows = [
+              ...(openingBalance > 0 ? [{ id: `${accountName}-bd-debit`, date: accountingStartDate, details: "Balance b/d", amount: openingBalance }] : []),
+              ...debits.map((entry) => ({ id: entry.id, date: entryDate(entry), details: details(entry), amount: entry.amount })),
+              ...(closingBalance < 0 ? [{ id: `${accountName}-cd-debit`, date: accountingEndDate || dateKey(new Date().toISOString()), details: "Balance c/d", amount: Math.abs(closingBalance) }] : []),
+            ];
+            const creditRows = [
+              ...(openingBalance < 0 ? [{ id: `${accountName}-bd-credit`, date: accountingStartDate, details: "Balance b/d", amount: Math.abs(openingBalance) }] : []),
+              ...credits.map((entry) => ({ id: entry.id, date: entryDate(entry), details: details(entry), amount: entry.amount })),
+              ...(closingBalance > 0 ? [{ id: `${accountName}-cd-credit`, date: accountingEndDate || dateKey(new Date().toISOString()), details: "Balance c/d", amount: closingBalance }] : []),
+            ];
+            const rowCount = Math.max(debitRows.length, creditRows.length, 1);
+            const sideTotal = Math.max(debitRows.reduce((total, row) => total + row.amount, 0), creditRows.reduce((total, row) => total + row.amount, 0));
             return <article className="card accounting-table-card" key={`${section.title}-${accountName}`}>
               <h3>{accountName}</h3>
-              <div className="table-scroll"><table className="orders-table t-account-table"><thead><tr><th>Debit</th><th>Credit</th></tr></thead><tbody><tr><td>{debits.length ? debits.map((entry) => <div className="ledger-line" key={entry.id}><span>{transactionById.get(entry.transactionId)?.description || generatedTransactionDescriptions.get(entry.transactionId) || entry.memo}</span><strong>{formatMoney(entry.amount)}</strong></div>) : <small>No debit entries yet</small>}</td><td>{credits.length ? credits.map((entry) => <div className="ledger-line" key={entry.id}><span>{transactionById.get(entry.transactionId)?.description || generatedTransactionDescriptions.get(entry.transactionId) || entry.memo}</span><strong>{formatMoney(entry.amount)}</strong></div>) : <small>No credit entries yet</small>}</td></tr><tr><td><strong>{formatMoney(debitTotal)}</strong></td><td><strong>{formatMoney(creditTotal)}</strong></td></tr></tbody></table></div>
-              <p className="accounting-file-name">Balance: {formatMoney(Math.abs(debitTotal - creditTotal))} {debitTotal >= creditTotal ? "debit" : "credit"}</p>
+              <div className="table-scroll"><table className="orders-table t-account-table"><thead><tr><th colSpan={3}>Debit</th><th colSpan={3}>Credit</th></tr><tr><th>Date</th><th>Details</th><th>Amount</th><th>Date</th><th>Details</th><th>Amount</th></tr></thead><tbody>{Array.from({ length: rowCount }).map((_, index) => {
+                const debit = debitRows[index];
+                const credit = creditRows[index];
+                return <tr key={`${accountName}-${index}`}><td>{debit?.date ? formatDate(debit.date) : ""}</td><td>{debit?.details ?? ""}</td><td>{debit ? formatMoney(debit.amount) : ""}</td><td>{credit?.date ? formatDate(credit.date) : ""}</td><td>{credit?.details ?? ""}</td><td>{credit ? formatMoney(credit.amount) : ""}</td></tr>;
+              })}<tr><td /><td><strong>Total</strong></td><td><strong>{formatMoney(sideTotal)}</strong></td><td /><td><strong>Total</strong></td><td><strong>{formatMoney(sideTotal)}</strong></td></tr></tbody></table></div>
+              <p className="accounting-file-name">Balance: {formatMoney(Math.abs(closingBalance))} {closingBalance >= 0 ? "debit" : "credit"}</p>
             </article>;
           })}
           {!accountNames.length && <div className="empty"><strong>No {section.title.toLowerCase()} accounts yet</strong><p>Add category items in Book Keeping Settings and they will appear here.</p></div>}
@@ -2305,16 +2340,17 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
 
   return <section className="accounting-workspace">
     <div className="accounting-hero card"><div><p>ACCOUNTING</p><h2>General Journal</h2><span>Every bookkeeping transaction is converted into debit and credit journal lines. This is the formal journal before posting to T accounts.</span></div><div className="accounting-status-pill">{ledgerEntries.length} lines</div></div>
+    {dateFilter}
     <section className="accounting-summary-grid">
       <MoneyStat label="Journal debits" value={totalDebits} tone="sales" />
       <MoneyStat label="Journal credits" value={totalCredits} tone="collected" />
       <MoneyStat label="Out of balance" value={Math.abs(totalDebits - totalCredits)} tone={Math.abs(totalDebits - totalCredits) > 0.01 ? "fees" : "transfer"} />
     </section>
-    <section className="card accounting-table-card"><h3>Journal entries</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>Date</th><th>Reference</th><th>Account</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead><tbody>{sortedTransactions.flatMap((transaction) => {
+    <section className="card accounting-table-card"><h3>Journal entries</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>Date</th><th>Reference</th><th>Account</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead><tbody>{filteredTransactions.flatMap((transaction) => {
       const entries = entriesByTransaction[transaction.id] ?? [];
       if (!entries.length) return [<tr key={transaction.id}><td>{formatDate(transaction.transactionDate)}</td><td>{transaction.id.slice(0, 8)}</td><td>{transaction.accountName || categoryName(transaction.categoryId)}</td><td>{transaction.description}</td><td>{transaction.debit ? formatMoney(transaction.debit) : "-"}</td><td>{transaction.credit ? formatMoney(transaction.credit) : "-"}</td></tr>];
       return entries.map((entry, index) => <tr key={entry.id}><td>{index === 0 ? formatDate(transaction.transactionDate) : ""}</td><td>{index === 0 ? transaction.id.slice(0, 8) : ""}</td><td><strong>{entry.accountName}</strong><br /><small>{categories.find((category) => category.id === entry.accountId)?.reportSection || "Posted from book keeping"}</small></td><td>{index === 0 ? transaction.description : entry.memo}</td><td>{entry.entryType === "debit" ? formatMoney(entry.amount) : "-"}</td><td>{entry.entryType === "credit" ? formatMoney(entry.amount) : "-"}</td></tr>);
-    }).concat(generatedSalesGroups.flatMap((group) => group.entries.map((entry, index) => <tr key={entry.id}><td>{index === 0 ? formatDate(group.date) : ""}</td><td>{index === 0 ? group.id.replace("sales-", "").slice(0, 14) : ""}</td><td><strong>{entry.accountName}</strong><br /><small>{entry.accountName === "Sales" ? "Automatic Sales" : entry.accountName === "Payment Processing Fees" ? "Automatic Expense" : "Automatic Cash"}</small></td><td>{index === 0 ? group.description : entry.memo}</td><td>{entry.entryType === "debit" ? formatMoney(entry.amount) : "-"}</td><td>{entry.entryType === "credit" ? formatMoney(entry.amount) : "-"}</td></tr>)))}</tbody></table>{!sortedTransactions.length && !generatedSalesGroups.length && <div className="empty"><strong>No journal entries yet</strong><p>Save transactions in Book Keeping or import sales first. They will flow into this journal automatically.</p></div>}</div></section>
+    }).concat(filteredGeneratedSalesGroups.flatMap((group) => group.entries.map((entry, index) => <tr key={entry.id}><td>{index === 0 ? formatDate(group.date) : ""}</td><td>{index === 0 ? group.id.replace("sales-", "").slice(0, 14) : ""}</td><td><strong>{entry.accountName}</strong><br /><small>{entry.accountName === "Sales" ? "Automatic Sales" : entry.accountName === "Payment Processing Fees" ? "Automatic Expense" : "Automatic Cash"}</small></td><td>{index === 0 ? group.description : entry.memo}</td><td>{entry.entryType === "debit" ? formatMoney(entry.amount) : "-"}</td><td>{entry.entryType === "credit" ? formatMoney(entry.amount) : "-"}</td></tr>)))}</tbody></table>{!filteredTransactions.length && !filteredGeneratedSalesGroups.length && <div className="empty"><strong>No journal entries in this period</strong><p>Change the date range or save more bookkeeping transactions.</p></div>}</div></section>
   </section>;
 }
 
