@@ -48,8 +48,8 @@ type View =
   | "accounting_dashboard" | "accounting_documents" | "accounting_transactions" | "accounting_profit_loss" | "accounting_balance_sheet"
   | "accounting_cash_flow" | "accounting_general_ledger" | "accounting_trial_balance" | "accounting_payable" | "accounting_receivable"
   | "accounting_bank_reconciliation" | "accounting_product_profitability" | "accounting_marketing_profitability" | "accounting_cash_position"
-  | "accounting_tax_reports" | "accounting_settings";
-type Workspace = "fulfilment" | "accounting" | "inventory" | "reports" | "settings";
+  | "accounting_tax_reports" | "accounting_settings" | "accounting_general_journal" | "accounting_t_accounts";
+type Workspace = "fulfilment" | "accounting" | "formal_accounting" | "inventory" | "reports" | "settings";
 type SalesRange = "active" | "today" | "7d" | "30d" | "lifetime";
 type SortKey = "orderNumber" | "importedAt" | "updatedAt";
 type SortDirection = "asc" | "desc";
@@ -286,11 +286,13 @@ const accountingViews: readonly View[] = [
   "accounting_cash_flow",
   "accounting_settings",
 ];
-const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "stock", "sales_report", ...accountingViews];
-const adminOnlyViews = new Set<View>(["history", "settings", "stock", "sales_report", ...accountingViews]);
+const formalAccountingViews: readonly View[] = ["accounting_general_journal", "accounting_t_accounts"];
+const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "stock", "sales_report", ...accountingViews, ...formalAccountingViews];
+const adminOnlyViews = new Set<View>(["history", "settings", "stock", "sales_report", ...accountingViews, ...formalAccountingViews]);
 const workspaceDefaultViews: Record<Workspace, View> = {
   fulfilment: "orders",
   accounting: "accounting_dashboard",
+  formal_accounting: "accounting_general_journal",
   inventory: "stock",
   reports: "sales_report",
   settings: "settings",
@@ -298,6 +300,7 @@ const workspaceDefaultViews: Record<Workspace, View> = {
 const workspaceLabels: Record<Workspace, string> = {
   fulfilment: "Fulfilment",
   accounting: "Book Keeping",
+  formal_accounting: "Accounting",
   inventory: "Inventory",
   reports: "Reports",
   settings: "Settings",
@@ -394,6 +397,10 @@ const accountingNavItems: NavItem[] = [
   { view: "accounting_profit_loss", label: "Marketing", icon: "report" },
   { view: "accounting_cash_flow", label: "Money In", icon: "cash" },
   { view: "accounting_settings", label: "Book Keeping Settings", icon: "settings" },
+];
+const formalAccountingNavItems: NavItem[] = [
+  { view: "accounting_general_journal", label: "General Journal", icon: "ledger" },
+  { view: "accounting_t_accounts", label: "T Accounts", icon: "accounting" },
 ];
 
 const inventoryNavItems: NavItem[] = [{ view: "stock", label: "Stock Count", icon: "stock" }];
@@ -512,6 +519,7 @@ function permittedView(value: unknown, role?: UserRole) {
 }
 
 function workspaceForView(view: View): Workspace {
+  if (formalAccountingViews.includes(view)) return "formal_accounting";
   if (accountingViews.includes(view)) return "accounting";
   if (view === "stock") return "inventory";
   if (view === "sales_report") return "reports";
@@ -522,6 +530,7 @@ function workspaceForView(view: View): Workspace {
 function navItemsForWorkspace(workspace: Workspace, role: UserRole): NavItem[] {
   if (role !== "admin") return fulfilmentNavItems;
   if (workspace === "accounting") return accountingNavItems;
+  if (workspace === "formal_accounting") return formalAccountingNavItems;
   if (workspace === "inventory") return inventoryNavItems;
   if (workspace === "reports") return reportsNavItems;
   if (workspace === "settings") return settingsNavItems;
@@ -536,7 +545,7 @@ function viewTitle(view: View) {
     history: "Activity History",
   };
   if (titleOverrides[view]) return titleOverrides[view]!;
-  const item = [...fulfilmentNavItems, ...fulfilmentAdminNavItems, ...accountingNavItems, ...inventoryNavItems, ...reportsNavItems, ...settingsNavItems]
+  const item = [...fulfilmentNavItems, ...fulfilmentAdminNavItems, ...accountingNavItems, ...formalAccountingNavItems, ...inventoryNavItems, ...reportsNavItems, ...settingsNavItems]
     .find((navItem) => navItem.view === view);
   if (item) return item.label;
   return "Orders Dashboard";
@@ -1716,7 +1725,7 @@ export default function Home() {
   }
 
   const workspace = workspaceForView(view);
-  const availableWorkspaces: Workspace[] = session.role === "admin" ? ["fulfilment", "accounting", "inventory", "reports", "settings"] : ["fulfilment"];
+  const availableWorkspaces: Workspace[] = session.role === "admin" ? ["fulfilment", "accounting", "formal_accounting", "inventory", "reports", "settings"] : ["fulfilment"];
   const sidebarNavItems = navItemsForWorkspace(workspace, session.role);
   const workspaceTitle = workspaceLabels[workspace];
 
@@ -1778,6 +1787,14 @@ export default function Home() {
         onSettlementFileChange={(transactionId, file) => setSettlementFiles((current) => ({ ...current, [transactionId]: file }))}
         onSettleTransaction={settleAccountingTransaction}
         sales={sales}
+        categoryName={categoryName}
+      />}
+
+      {workspace === "formal_accounting" && session.role === "admin" && <FormalAccountingWorkspacePage
+        view={view}
+        transactions={accountingTransactions}
+        ledgerEntries={accountingLedgerEntries}
+        categories={accountingCategories}
         categoryName={categoryName}
       />}
 
@@ -2186,6 +2203,63 @@ function AccountingTransactionsTable({ transactions, ledgerEntries, documents, c
     const paymentLabel = transaction.paymentStatus === "deposit_paid" ? `Deposit ${formatMoney(transaction.depositAmount)}` : transaction.paymentStatus === "on_credit" ? "On Credit" : "Paid In Full";
     return <tr key={transaction.id}><td>{formatDate(transaction.transactionDate)}</td><td><strong>{transaction.description}</strong><br /><small>{transaction.supplier || transaction.source}{transaction.invoiceNumber ? ` · Invoice ${transaction.invoiceNumber}` : ""}</small></td><td>{businessEvents.find((event) => event.value === transaction.businessEvent)?.label ?? (transaction.businessEvent || "-")}</td><td>{categoryName(transaction.categoryId)}</td><td>{paymentLabel}<br /><small>{transaction.paymentStatus === "on_credit" ? transaction.dueDate || transaction.supplierTerms || "Outstanding" : transaction.paymentMethod || "Bank Account"}</small></td><td>{entries.length ? entries.map((entry, index) => <div key={entry.id} className="ledger-line"><span>{index === 0 ? `Record ${entry.accountName}` : entry.accountName.includes("Payable") || entry.accountName.includes("Receivable") ? `Outstanding ${entry.accountName}` : `Payment from ${entry.accountName}`}</span><strong>{formatMoney(entry.amount)}</strong></div>) : <small>{formatMoney(transaction.amount)}</small>}</td><td>{document ? <button className="view-button" onClick={() => onOpenDocument(document)}>Open</button> : "-"}</td><td><button className="view-button danger-text" onClick={() => onDelete(transaction)}>Delete</button></td></tr>;
   })}</tbody></table>{!transactions.length && <div className="empty"><strong>No transactions yet</strong><p>Record a business event to start the ledger.</p></div>}</div></section>;
+}
+
+function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, categories, categoryName }: { view: View; transactions: AccountingTransaction[]; ledgerEntries: AccountingLedgerEntry[]; categories: AccountingCategory[]; categoryName: (categoryId: string) => string }) {
+  const sortedTransactions = [...transactions].sort((a, b) => {
+    const dateCompare = new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime();
+    return dateCompare || a.createdAt.localeCompare(b.createdAt);
+  });
+  const entriesByTransaction = ledgerEntries.reduce<Record<string, AccountingLedgerEntry[]>>((groups, entry) => {
+    groups[entry.transactionId] = [...(groups[entry.transactionId] ?? []), entry];
+    return groups;
+  }, {});
+  const totalDebits = ledgerEntries.filter((entry) => entry.entryType === "debit").reduce((total, entry) => total + entry.amount, 0);
+  const totalCredits = ledgerEntries.filter((entry) => entry.entryType === "credit").reduce((total, entry) => total + entry.amount, 0);
+  const transactionById = new Map(transactions.map((transaction) => [transaction.id, transaction]));
+  const accountGroups = ledgerEntries.reduce<Record<string, AccountingLedgerEntry[]>>((groups, entry) => {
+    groups[entry.accountName] = [...(groups[entry.accountName] ?? []), entry];
+    return groups;
+  }, {});
+  const accountNames = Object.keys(accountGroups).sort((a, b) => a.localeCompare(b));
+
+  if (view === "accounting_t_accounts") return <section className="accounting-workspace">
+    <div className="accounting-hero card"><div><p>ACCOUNTING</p><h2>T Accounts</h2><span>Posted from the bookkeeping ledger entries. Debits and credits are grouped by account so you can see each account movement.</span></div><div className="accounting-status-pill">{accountNames.length} accounts</div></div>
+    <section className="accounting-summary-grid">
+      <MoneyStat label="Total debits" value={totalDebits} tone="sales" />
+      <MoneyStat label="Total credits" value={totalCredits} tone="collected" />
+      <MoneyStat label="Difference" value={Math.abs(totalDebits - totalCredits)} tone={Math.abs(totalDebits - totalCredits) > 0.01 ? "fees" : "transfer"} />
+    </section>
+    <section className="accounting-module-grid">
+      {accountNames.map((accountName) => {
+        const entries = accountGroups[accountName];
+        const debits = entries.filter((entry) => entry.entryType === "debit");
+        const credits = entries.filter((entry) => entry.entryType === "credit");
+        const debitTotal = debits.reduce((total, entry) => total + entry.amount, 0);
+        const creditTotal = credits.reduce((total, entry) => total + entry.amount, 0);
+        return <article className="card accounting-table-card" key={accountName}>
+          <h3>{accountName}</h3>
+          <div className="table-scroll"><table className="orders-table"><thead><tr><th>Debit</th><th>Credit</th></tr></thead><tbody><tr><td>{debits.map((entry) => <div className="ledger-line" key={entry.id}><span>{transactionById.get(entry.transactionId)?.description || entry.memo}</span><strong>{formatMoney(entry.amount)}</strong></div>)}</td><td>{credits.map((entry) => <div className="ledger-line" key={entry.id}><span>{transactionById.get(entry.transactionId)?.description || entry.memo}</span><strong>{formatMoney(entry.amount)}</strong></div>)}</td></tr><tr><td><strong>{formatMoney(debitTotal)}</strong></td><td><strong>{formatMoney(creditTotal)}</strong></td></tr></tbody></table></div>
+          <p className="accounting-file-name">Balance: {formatMoney(Math.abs(debitTotal - creditTotal))} {debitTotal >= creditTotal ? "debit" : "credit"}</p>
+        </article>;
+      })}
+      {!accountNames.length && <div className="empty"><strong>No T accounts yet</strong><p>Create bookkeeping transactions first, then the accounting entries will appear here.</p></div>}
+    </section>
+  </section>;
+
+  return <section className="accounting-workspace">
+    <div className="accounting-hero card"><div><p>ACCOUNTING</p><h2>General Journal</h2><span>Every bookkeeping transaction is converted into debit and credit journal lines. This is the formal journal before posting to T accounts.</span></div><div className="accounting-status-pill">{ledgerEntries.length} lines</div></div>
+    <section className="accounting-summary-grid">
+      <MoneyStat label="Journal debits" value={totalDebits} tone="sales" />
+      <MoneyStat label="Journal credits" value={totalCredits} tone="collected" />
+      <MoneyStat label="Out of balance" value={Math.abs(totalDebits - totalCredits)} tone={Math.abs(totalDebits - totalCredits) > 0.01 ? "fees" : "transfer"} />
+    </section>
+    <section className="card accounting-table-card"><h3>Journal entries</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>Date</th><th>Reference</th><th>Account</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead><tbody>{sortedTransactions.flatMap((transaction) => {
+      const entries = entriesByTransaction[transaction.id] ?? [];
+      if (!entries.length) return [<tr key={transaction.id}><td>{formatDate(transaction.transactionDate)}</td><td>{transaction.id.slice(0, 8)}</td><td>{transaction.accountName || categoryName(transaction.categoryId)}</td><td>{transaction.description}</td><td>{transaction.debit ? formatMoney(transaction.debit) : "-"}</td><td>{transaction.credit ? formatMoney(transaction.credit) : "-"}</td></tr>];
+      return entries.map((entry, index) => <tr key={entry.id}><td>{index === 0 ? formatDate(transaction.transactionDate) : ""}</td><td>{index === 0 ? transaction.id.slice(0, 8) : ""}</td><td><strong>{entry.accountName}</strong><br /><small>{categories.find((category) => category.id === entry.accountId)?.reportSection || "Posted from book keeping"}</small></td><td>{index === 0 ? transaction.description : entry.memo}</td><td>{entry.entryType === "debit" ? formatMoney(entry.amount) : "-"}</td><td>{entry.entryType === "credit" ? formatMoney(entry.amount) : "-"}</td></tr>);
+    })}</tbody></table>{!sortedTransactions.length && <div className="empty"><strong>No journal entries yet</strong><p>Save transactions in Book Keeping first. They will flow into this journal automatically.</p></div>}</div></section>
+  </section>;
 }
 
 function UnsettledPaymentsTable({ transactions, files, saving, onFileChange, onSettle }: { transactions: AccountingTransaction[]; files: Record<string, File | null>; saving: boolean; onFileChange: (transactionId: string, file: File | null) => void; onSettle: (transaction: AccountingTransaction) => void }) {
