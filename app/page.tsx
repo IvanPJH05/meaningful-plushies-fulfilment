@@ -829,6 +829,17 @@ export default function Home() {
   }, [orders, salesRange]);
   const sales = useMemo(() => summarizeSales(reportingOrders, processorSettings, salesFeeSettings.shopifyPercentage), [reportingOrders, processorSettings, salesFeeSettings]);
   const allSalesReportRows = useMemo(() => buildSalesReportRows(orders, processorSettings, salesFeeSettings.shopifyPercentage), [orders, processorSettings, salesFeeSettings]);
+  const processorAccountingTotals = useMemo(() => allSalesReportRows.reduce((totals, row) => {
+    if (row.paymentProcessor === "Stripe") {
+      totals.stripeCollected += row.salePrice;
+      totals.stripeProcessingFees += row.processingFee;
+    }
+    if (row.paymentProcessor === "Xendit") {
+      totals.xenditCollected += row.salePrice;
+      totals.xenditProcessingFees += row.processingFee;
+    }
+    return totals;
+  }, { stripeCollected: 0, stripeProcessingFees: 0, xenditCollected: 0, xenditProcessingFees: 0 }), [allSalesReportRows]);
   const dateFilteredReportRows = useMemo(() => allSalesReportRows.filter((row) => {
     const date = dateKey(row.orderDate);
     return (!reportStartDate || date >= reportStartDate) && (!reportEndDate || date <= reportEndDate);
@@ -1308,6 +1319,22 @@ export default function Home() {
     return { businessEvent: "inventory_purchase", transactionDate: dateKey(new Date().toISOString()), description: "", accountName: "", amount: "", categoryId: "", transactionType: "expense", paymentStatus: "paid_in_full", paymentMethod: "Bank Account", supplier: "", quantity: "", unitCost: "", depositAmount: "", invoiceNumber: "", dueDate: "", supplierTerms: "", taxTreatment: "none", notes: "" };
   }
 
+  function processorFeeForPayout(processor: string, grossAmount: number) {
+    if (processor !== "Stripe" && processor !== "Xendit") return 0;
+    const processorTransactions = accountingTransactions.filter((transaction) => transaction.businessEvent === "payment_processor_paid" && transaction.accountName === processor);
+    const transactionIds = new Set(processorTransactions.map((transaction) => transaction.id));
+    const grossRecorded = processorTransactions.reduce((total, transaction) => total + transaction.amount, 0);
+    const feeRecorded = accountingLedgerEntries
+      .filter((entry) => transactionIds.has(entry.transactionId) && entry.accountName === "Payment Processing Fees" && entry.entryType === "debit")
+      .reduce((total, entry) => total + entry.amount, 0);
+    const grossCollected = processor === "Stripe" ? processorAccountingTotals.stripeCollected : processorAccountingTotals.xenditCollected;
+    const feeTotal = processor === "Stripe" ? processorAccountingTotals.stripeProcessingFees : processorAccountingTotals.xenditProcessingFees;
+    const grossRemaining = Math.max(0, grossCollected - grossRecorded);
+    const feeRemaining = Math.max(0, feeTotal - feeRecorded);
+    if (grossAmount <= 0 || grossRemaining <= 0 || feeRemaining <= 0) return 0;
+    return Math.min(grossAmount, grossAmount >= grossRemaining ? feeRemaining : feeRemaining * grossAmount / grossRemaining);
+  }
+
   function ledgerPreview(transactionId = "preview"): AccountingLedgerEntry[] {
     const quantity = Number(transactionForm.quantity) || 0;
     const unitCost = Number(transactionForm.unitCost) || 0;
@@ -1325,6 +1352,16 @@ export default function Home() {
         return [
           { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: "Drawings", entryType: "debit", amount, memo: "Owner drawing", createdAt: now },
           { id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Bank Account", entryType: "credit", amount, memo: "Cash withdrawn from bank", createdAt: now },
+        ];
+      }
+      if (transactionForm.categoryId === "Stripe" || transactionForm.categoryId === "Xendit") {
+        const processorFee = processorFeeForPayout(transactionForm.categoryId, amount);
+        const bankAmount = Math.max(0, amount - processorFee);
+        return [
+          { id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Bank Account", entryType: "debit", amount: bankAmount, memo: "Transfer to bank", createdAt: now },
+          ...(processorFee > 0 ? [{ id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Payment Processing Fees", entryType: "debit" as const, amount: processorFee, memo: `${transactionForm.categoryId} payment processing fees`, createdAt: now }] : []),
+          { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: transactionForm.categoryId, entryType: "credit", amount: bankAmount, memo: "Transfer to bank", createdAt: now },
+          ...(processorFee > 0 ? [{ id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: transactionForm.categoryId, entryType: "credit" as const, amount: processorFee, memo: "Payment processing fees", createdAt: now }] : []),
         ];
       }
       return [
@@ -1789,6 +1826,7 @@ export default function Home() {
         onSettlementFileChange={(transactionId, file) => setSettlementFiles((current) => ({ ...current, [transactionId]: file }))}
         onSettleTransaction={settleAccountingTransaction}
         sales={sales}
+        processorAccountingTotals={processorAccountingTotals}
         categoryName={categoryName}
       />}
 
@@ -1942,6 +1980,7 @@ function AccountingWorkspacePage({
   onSettlementFileChange,
   onSettleTransaction,
   sales,
+  processorAccountingTotals,
   categoryName,
 }: {
   view: View;
@@ -1978,6 +2017,7 @@ function AccountingWorkspacePage({
   onSettlementFileChange: (transactionId: string, file: File | null) => void;
   onSettleTransaction: (transaction: AccountingTransaction) => void;
   sales: SalesSummary;
+  processorAccountingTotals: { stripeCollected: number; stripeProcessingFees: number; xenditCollected: number; xenditProcessingFees: number };
   categoryName: (categoryId: string) => string;
 }) {
   const incomeTransactions = transactions.filter((transaction) => transaction.transactionType === "income");
@@ -2021,13 +2061,27 @@ function AccountingWorkspacePage({
     const selectedAccountLabel = accountOptions.find((option) => option.value === transactionForm.categoryId)?.label ?? transactionForm.categoryId;
     const calculatedAmount = Number(transactionForm.amount) || ((Number(transactionForm.quantity) || 0) * (Number(transactionForm.unitCost) || 0));
     const processorPayouts = transactions.filter((transaction) => transaction.businessEvent === "payment_processor_paid");
+    const processorPayoutIds = new Set(processorPayouts.map((transaction) => transaction.id));
     const stripePaid = processorPayouts.filter((transaction) => transaction.accountName === "Stripe").reduce((total, transaction) => total + transaction.amount, 0);
     const xenditPaid = processorPayouts.filter((transaction) => transaction.accountName === "Xendit").reduce((total, transaction) => total + transaction.amount, 0);
     const ownerEquity = processorPayouts.filter((transaction) => transaction.accountName === "Owner's Equity").reduce((total, transaction) => total + transaction.amount, 0);
     const drawings = processorPayouts.filter((transaction) => transaction.accountName === "Drawings").reduce((total, transaction) => total + transaction.amount, 0);
-    const bankBalance = sales.bankTransfer + stripePaid + xenditPaid + ownerEquity - drawings;
+    const bankLedgerNet = ledgerEntries
+      .filter((entry) => processorPayoutIds.has(entry.transactionId) && entry.accountName === "Bank Account")
+      .reduce((total, entry) => total + (entry.entryType === "debit" ? entry.amount : -entry.amount), 0);
+    const bankBalance = sales.bankTransfer + bankLedgerNet;
     const stripeBalance = Math.max(0, sales.stripeCollected - stripePaid);
     const xenditBalance = Math.max(0, sales.xenditCollected - xenditPaid);
+    const stripeFeePosted = ledgerEntries.filter((entry) => processorPayoutIds.has(entry.transactionId) && entry.accountName === "Payment Processing Fees" && entry.memo.toLowerCase().includes("stripe")).reduce((total, entry) => total + entry.amount, 0);
+    const xenditFeePosted = ledgerEntries.filter((entry) => processorPayoutIds.has(entry.transactionId) && entry.accountName === "Payment Processing Fees" && entry.memo.toLowerCase().includes("xendit")).reduce((total, entry) => total + entry.amount, 0);
+    const stripeFeeRemaining = Math.max(0, processorAccountingTotals.stripeProcessingFees - stripeFeePosted);
+    const xenditFeeRemaining = Math.max(0, processorAccountingTotals.xenditProcessingFees - xenditFeePosted);
+    const selectedProcessorFee = transactionForm.categoryId === "Stripe"
+      ? Math.min(calculatedAmount, stripeBalance > 0 ? stripeFeeRemaining * calculatedAmount / stripeBalance : stripeFeeRemaining)
+      : transactionForm.categoryId === "Xendit"
+        ? Math.min(calculatedAmount, xenditBalance > 0 ? xenditFeeRemaining * calculatedAmount / xenditBalance : xenditFeeRemaining)
+        : 0;
+    const selectedNetBankAmount = Math.max(0, calculatedAmount - selectedProcessorFee);
     const processorBalance = transactionForm.categoryId === "Stripe"
       ? stripeBalance
       : transactionForm.categoryId === "Xendit"
@@ -2041,15 +2095,15 @@ function AccountingWorkspacePage({
       <div className="accounting-hero card"><div><p>CASH</p><h2>Payment processor payouts</h2><span>Collection totals come from the fulfilment sales report. When Stripe or Xendit pays out, record the payout here: debit Bank, credit the payment processor.</span></div><div className="accounting-status-pill">{formatMoney(sales.totalCollected)}</div></div>
       <section className="sales-stats">
         <MoneyStat label="Bank transfer collected" value={sales.bankTransfer} tone="transfer" />
-        <MoneyStat label="Stripe collected" value={sales.stripeCollected} tone="sales" />
-        <MoneyStat label="Xendit collected" value={sales.xenditCollected} tone="collected" />
+        <MoneyStatWithNote label="Stripe collected" value={sales.stripeCollected} tone="sales" note={`Fees ${formatMoney(processorAccountingTotals.stripeProcessingFees)}`} />
+        <MoneyStatWithNote label="Xendit collected" value={sales.xenditCollected} tone="collected" note={`Fees ${formatMoney(processorAccountingTotals.xenditProcessingFees)}`} />
         <MoneyStat label="Total collected" value={sales.totalCollected} tone="sales" />
-        <MoneyStat label="Cash after fees" value={sales.collected} tone="collected" />
+        <MoneyStat label="Cash after processor fees" value={sales.totalCollected - sales.processingFees} tone="collected" />
       </section>
       <section className="bookkeeping-balance-row">
         <MoneyStat label="Bank Account" value={bankBalance} tone="collected" />
-        <MoneyStat label="Stripe" value={stripeBalance} tone="sales" />
-        <MoneyStat label="Xendit" value={xenditBalance} tone="transfer" />
+        <MoneyStatWithNote label="Stripe" value={stripeBalance} tone="sales" note={`Fee left ${formatMoney(stripeFeeRemaining)}`} />
+        <MoneyStatWithNote label="Xendit" value={xenditBalance} tone="transfer" note={`Fee left ${formatMoney(xenditFeeRemaining)}`} />
         <MoneyStat label="Owner's Equity" value={ownerEquity} tone="sales" />
         <MoneyStat label="Drawings" value={drawings} tone="fees" />
       </section>
@@ -2059,13 +2113,13 @@ function AccountingWorkspacePage({
           <label>Date received<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label>
           <label>Transaction type<select value={transactionForm.categoryId} onChange={(input) => onTransactionFormChange({ categoryId: input.target.value, accountName: "", amount: input.target.value === "Stripe" ? String(stripeBalance || "") : input.target.value === "Xendit" ? String(xenditBalance || "") : "" })}><option value="">Choose transaction</option><option value="Stripe">Stripe payout</option><option value="Xendit">Xendit payout</option><option value="Bank Transfer">Bank transfer received</option><option value="Owner's Equity">Owner's Equity</option><option value="Drawings">Drawings</option></select></label>
           {transactionForm.categoryId && <p className="accounting-file-name">{transactionForm.categoryId === "Bank Transfer" ? "Bank transfer sales are already in bank. Use this only if you want to record a manual received amount." : `Unrecorded balance from sales report: ${formatMoney(processorBalance)}`}</p>}
-          <label>Amount received<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onTransactionFormChange({ amount: input.target.value })} /></label>
+          <label>{transactionForm.categoryId === "Stripe" || transactionForm.categoryId === "Xendit" ? "Gross processor amount" : "Amount received"}<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onTransactionFormChange({ amount: input.target.value })} /></label>
           <label>Description<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder="Example: Stripe payout to bank" /></label>
           <label>Source document<input type="file" accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" onChange={(event) => onTransactionFileChange(event.target.files?.[0] ?? null)} /></label>
           {transactionFile && <p className="accounting-file-name">{transactionFile.name}</p>}
           <section className="posting-preview">
             <h3>Posting preview</h3>
-            {transactionForm.categoryId === "Drawings" ? <><div><span>Debit Drawings</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>Credit Bank Account</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></> : <><div><span>Debit Bank Account</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>Credit {transactionForm.categoryId || "payment processor"}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></>}
+            {transactionForm.categoryId === "Drawings" ? <><div><span>Debit Drawings</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>Credit Bank Account</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></> : transactionForm.categoryId === "Stripe" || transactionForm.categoryId === "Xendit" ? <><div><span>Debit Bank Account</span><strong>{formatMoney(selectedNetBankAmount)}</strong></div>{selectedProcessorFee > 0 && <div><span>Debit Payment Processing Fees</span><strong>{formatMoney(selectedProcessorFee)}</strong></div>}<div><span>Credit {transactionForm.categoryId} - Transfer to bank</span><strong>{formatMoney(selectedNetBankAmount)}</strong></div>{selectedProcessorFee > 0 && <div><span>Credit {transactionForm.categoryId} - Payment processing fees</span><strong>{formatMoney(selectedProcessorFee)}</strong></div>}</> : <><div><span>Debit Bank Account</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>Credit {transactionForm.categoryId || "payment processor"}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></>}
           </section>
           <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? "Saving..." : "Save payout"}</button>
         </div>
@@ -2417,6 +2471,10 @@ function Stat({ label, value, color }: { label: string; value: number; color: st
 
 function MoneyStat({ label, value, tone }: { label: string; value: number; tone: string }) {
   return <article className={`money-stat ${tone}`}><span>{label}</span><strong>{formatMoney(value)}</strong></article>;
+}
+
+function MoneyStatWithNote({ label, value, tone, note }: { label: string; value: number; tone: string; note: string }) {
+  return <article className={`money-stat ${tone}`}><span>{label}</span><em>{note}</em><strong>{formatMoney(value)}</strong></article>;
 }
 
 function SelectableMoneyStat({ label, value, tone, selected, options, onChange }: { label: string; value: number; tone: string; selected: string; options: [string, string][]; onChange: (value: string) => void }) {
