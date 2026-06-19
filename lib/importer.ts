@@ -201,6 +201,7 @@ export function importShopifyData(
           shared["Payment Method"] || current?.paymentProcessor || "",
           isZeroCashOrder,
         ),
+        shippingMethod: shared["Shipping Method"] || current?.shippingMethod || "",
         product: productName(lineName, personalization.product || current?.product || ""),
         character: character || current?.character || "",
         setIndicator: total > 1 ? `(${index + 1},${total})` : "",

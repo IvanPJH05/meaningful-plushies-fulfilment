@@ -136,6 +136,7 @@ export type Order = {
   refundedAmount: number;
   outstandingBalance: number;
   paymentProcessor: string;
+  shippingMethod?: string;
   product: string;
   character: string;
   setIndicator: string;
