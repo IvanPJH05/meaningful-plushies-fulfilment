@@ -396,9 +396,6 @@ const fulfilmentNavItems: NavItem[] = [
 
 const fulfilmentAdminNavItems: NavItem[] = [
   { view: "sales_report", label: "Sales Report", icon: "report" },
-  { view: "stock", label: "Stock Count", icon: "stock" },
-  { view: "history", label: "History", icon: "history" },
-  { view: "settings", label: "Settings", icon: "settings" },
 ];
 
 const accountingNavItems: NavItem[] = [

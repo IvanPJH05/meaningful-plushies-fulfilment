@@ -27,6 +27,26 @@
   cursor: pointer;
 }
 
+.side-nav {
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: #49627f #13233a;
+}
+
+.side-nav::-webkit-scrollbar {
+  width: 8px;
+}
+
+.side-nav::-webkit-scrollbar-track {
+  background: #13233a;
+}
+
+.side-nav::-webkit-scrollbar-thumb {
+  background: #49627f;
+  border-radius: 999px;
+}
+
 .side-nav nav button {
   display: flex;
   align-items: center;
