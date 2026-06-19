@@ -57,7 +57,7 @@ type CollectedMetric = "bankTransfer" | "stripeCollected" | "xenditCollected" | 
 type DiscountMetric = "productDiscounted" | "shippingDiscounted";
 type FeeMetric = "processingFees" | "shopifyFees" | "totalFees";
 type FinancialReportType = "income_statement" | "balance_sheet" | "cash_summary";
-type AccountingPeriodMode = "this_month" | "custom";
+type AccountingPeriodMode = "this_month" | "lifetime" | "custom";
 type CashFlowActivity = "operating" | "investing" | "financing";
 type StoredUiPreferences = {
   view?: View;
@@ -2389,13 +2389,19 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
     setAccountingStartDate(monthStartKey());
     setAccountingEndDate(monthEndKey());
   }
+  function useLifetimePeriod() {
+    setAccountingPeriodMode("lifetime");
+    setAccountingStartDate("");
+    setAccountingEndDate("");
+  }
   function useCustomPeriod() {
     setAccountingPeriodMode("custom");
   }
   const periodLabel = accountingStartDate || accountingEndDate
     ? `${accountingStartDate ? formatDate(accountingStartDate) : "Beginning"} to ${accountingEndDate ? formatDate(accountingEndDate) : "Today"}`
     : "All dates";
-  const dateFilter = <section className="card accounting-date-filter"><div><strong>Accounting period</strong><span>This date range is shared by General Journal, T Accounts, and Financial Reports.</span></div><div className="range-tabs accounting-period-tabs"><button className={accountingPeriodMode === "this_month" ? "active" : ""} onClick={useThisMonthPeriod}>This month</button><button className={accountingPeriodMode === "custom" ? "active" : ""} onClick={useCustomPeriod}>Calendar</button></div>{accountingPeriodMode === "custom" && <><label>From<input type="date" value={accountingStartDate} onChange={(event) => setAccountingStartDate(event.target.value)} /></label><label>To<input type="date" value={accountingEndDate} onChange={(event) => setAccountingEndDate(event.target.value)} /></label></>}<button className="button secondary" onClick={() => { setAccountingPeriodMode("custom"); setAccountingStartDate(""); setAccountingEndDate(""); }}>All dates</button></section>;
+  const dateInputsDisabled = accountingPeriodMode !== "custom";
+  const dateFilter = <section className="card accounting-date-filter"><div className="accounting-date-copy"><strong>Accounting period</strong><span>This date range is shared by General Journal, T Accounts, and Financial Reports.</span></div><div className="accounting-period-panel"><div className="accounting-period-selector"><button className={accountingPeriodMode === "this_month" ? "active" : ""} onClick={useThisMonthPeriod}>This month</button><button className={accountingPeriodMode === "lifetime" ? "active" : ""} onClick={useLifetimePeriod}>Lifetime</button><button className={accountingPeriodMode === "custom" ? "active" : ""} onClick={useCustomPeriod}>Calendar</button></div><label className={dateInputsDisabled ? "locked" : ""}>From<input type="date" value={accountingStartDate} disabled={dateInputsDisabled} onChange={(event) => setAccountingStartDate(event.target.value)} /></label><label className={dateInputsDisabled ? "locked" : ""}>To<input type="date" value={accountingEndDate} disabled={dateInputsDisabled} onChange={(event) => setAccountingEndDate(event.target.value)} /></label></div></section>;
   const balanceForAccount = (accountName: string, entries = periodLedgerEntries) => entries
     .filter((entry) => entry.accountName === accountName)
     .reduce((total, entry) => total + (entry.entryType === "debit" ? entry.amount : -entry.amount), 0);
@@ -2583,7 +2589,11 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
       <MoneyStat label="Journal credits" value={totalCredits} tone="collected" />
       <MoneyStat label="Out of balance" value={Math.abs(totalDebits - totalCredits)} tone={Math.abs(totalDebits - totalCredits) > 0.01 ? "fees" : "transfer"} />
     </section>
-    <section className="card accounting-table-card general-journal-card"><h3>Journal entries</h3><div className="table-scroll general-journal-scroll"><table className="orders-table general-journal-table"><colgroup><col className="journal-date-col" /><col className="journal-ref-col" /><col className="journal-account-col" /><col className="journal-description-col" /><col className="journal-money-col" /><col className="journal-money-col" /></colgroup><thead><tr><th>Date</th><th>Reference</th><th>Account</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead><tbody>{journalRows.map((row) => <tr key={row.id}><td>{formatDate(row.date)}</td><td>{row.reference}</td><td><strong>{row.account}</strong><br /><small>{row.accountNote}</small></td><td>{row.description}</td><td>{row.debit ? formatMoney(row.debit) : "-"}</td><td>{row.credit ? formatMoney(row.credit) : "-"}</td></tr>)}</tbody></table>{!journalRows.length && <div className="empty"><strong>No journal entries in this period</strong><p>Change the date range or save more bookkeeping transactions.</p></div>}</div></section>
+    <section className="card accounting-table-card general-journal-card"><h3>Journal entries</h3><div className="table-scroll general-journal-scroll"><table className="orders-table general-journal-table"><colgroup><col className="journal-date-col" /><col className="journal-ref-col" /><col className="journal-account-col" /><col className="journal-description-col" /><col className="journal-money-col" /><col className="journal-money-col" /></colgroup><thead><tr><th>Date</th><th>Reference</th><th>Account</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead><tbody>{journalRows.map((row, index) => {
+      const nextRow = journalRows[index + 1];
+      const isGroupEnd = !nextRow || nextRow.reference !== row.reference || nextRow.date !== row.date;
+      return <tr key={row.id} className={isGroupEnd ? "journal-group-end" : ""}><td>{formatDate(row.date)}</td><td>{row.reference}</td><td><strong>{row.account}</strong><br /><small>{row.accountNote}</small></td><td>{row.description}</td><td>{row.debit ? formatMoney(row.debit) : "-"}</td><td>{row.credit ? formatMoney(row.credit) : "-"}</td></tr>;
+    })}</tbody></table>{!journalRows.length && <div className="empty"><strong>No journal entries in this period</strong><p>Change the date range or save more bookkeeping transactions.</p></div>}</div></section>
   </section>;
 }
 

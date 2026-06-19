@@ -39,13 +39,19 @@
 .t-amount-col { width: 11%; }
 .t-account-selector { display: grid; gap: 6px; max-width: 360px; margin: 12px 0 8px; color: var(--muted); font-size: 11px; font-weight: 800; }
 .t-account-selector select { height: 38px; border: 1px solid #d7dfe9; border-radius: 7px; padding: 0 10px; background: #fff; color: var(--text); }
-.accounting-date-filter { display: flex; gap: 12px; align-items: flex-end; margin: 16px 0; padding: 14px 16px; }
-.accounting-date-filter > div { margin-right: auto; }
+.accounting-date-filter { display: grid; grid-template-columns: minmax(220px, 1fr) auto; gap: 18px; align-items: end; margin: 16px 0; padding: 14px 16px; }
+.accounting-date-copy { margin-right: auto; }
 .accounting-date-filter strong,
 .accounting-date-filter span { display: block; }
 .accounting-date-filter span { margin-top: 3px; color: var(--muted); font-size: 10px; }
 .accounting-date-filter label { display: grid; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 800; }
 .accounting-date-filter input { height: 38px; border: 1px solid #d7dfe9; border-radius: 7px; padding: 0 10px; background: #fff; color: var(--text); }
+.accounting-period-panel { display: grid; grid-template-columns: auto 138px 138px; gap: 10px; align-items: end; }
+.accounting-period-selector { display: flex; gap: 5px; padding: 5px; border: 1px solid #cfdbeb; border-radius: 999px; background: linear-gradient(135deg, #edf4ff, #f8fbff); box-shadow: inset 0 1px 0 rgba(255,255,255,.8); }
+.accounting-period-selector button { border: 0; border-radius: 999px; padding: 9px 13px; background: transparent; color: #526985; font-size: 10px; font-weight: 850; cursor: pointer; }
+.accounting-period-selector button.active { background: #174f91; color: #fff; box-shadow: 0 5px 14px rgba(23, 79, 145, .22); }
+.accounting-date-filter label.locked { color: #2f3d50; }
+.accounting-date-filter label.locked input:disabled { border-color: #b8c5d6; background: #dbe4ef; color: #223247; opacity: 1; }
 .financial-report-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: start; }
 .financial-report-grid .accounting-report { padding: 18px; }
 .financial-report-grid .accounting-report h3 { margin-top: 0; }
@@ -71,6 +77,14 @@
 .statement-reconciliation.ok { background: #e9f8f0; color: #106a47; }
 .statement-reconciliation.error { background: #fff1f2; color: #b4232e; }
 .accounting-period-tabs { min-width: 220px; }
+.general-journal-table tr.journal-group-end td { border-bottom: 3px solid #9eb1c8; }
+.general-journal-table tr.journal-group-end td:first-child { box-shadow: inset 4px 0 0 #315f9e; }
+
+@media (max-width: 1100px) {
+  .accounting-date-filter { grid-template-columns: 1fr; }
+  .accounting-period-panel { grid-template-columns: 1fr 1fr; }
+  .accounting-period-selector { grid-column: 1 / -1; width: fit-content; }
+}
 
 @page financial-report {
   size: A4 portrait;
