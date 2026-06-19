@@ -1,5 +1,7 @@
 
-.t-account-scroll{max-height:none;overflow:auto}
+.t-account-card{height:auto!important;max-height:none!important;overflow:visible!important}
+.t-account-list{height:auto!important;max-height:none!important;overflow:visible!important}
+.t-account-scroll{height:auto!important;max-height:none!important;overflow-x:auto!important;overflow-y:visible!important}
 .orders-table.t-account-table{table-layout:fixed;min-width:980px;white-space:normal}
 .orders-table.t-account-table .t-date-col{width:16%}
 .orders-table.t-account-table .t-details-col{width:23%}

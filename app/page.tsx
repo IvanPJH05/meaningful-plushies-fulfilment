@@ -2050,10 +2050,8 @@ function AccountingWorkspacePage({
       .filter((entry) => processorPayoutIds.has(entry.transactionId) && entry.accountName === "Bank Account")
       .reduce((total, entry) => total + (entry.entryType === "debit" ? entry.amount : -entry.amount), 0);
     const bankBalance = sales.bankTransfer + bankLedgerNet;
-    const stripeNetCollected = Math.max(0, processorAccountingTotals.stripeCollected - processorAccountingTotals.stripeProcessingFees);
-    const xenditNetCollected = Math.max(0, processorAccountingTotals.xenditCollected - processorAccountingTotals.xenditProcessingFees);
-    const stripeBalance = Math.max(0, stripeNetCollected - stripePaid);
-    const xenditBalance = Math.max(0, xenditNetCollected - xenditPaid);
+    const stripeBalance = Math.max(0, processorAccountingTotals.stripeCollected - processorAccountingTotals.stripeProcessingFees - stripePaid);
+    const xenditBalance = Math.max(0, processorAccountingTotals.xenditCollected - processorAccountingTotals.xenditProcessingFees - xenditPaid);
     const processorFeeBalance = processorAccountingTotals.stripeProcessingFees + processorAccountingTotals.xenditProcessingFees;
     const processorBalance = transactionForm.categoryId === "Stripe"
       ? stripeBalance
@@ -2068,15 +2066,15 @@ function AccountingWorkspacePage({
       <div className="accounting-hero card"><div><p>CASH</p><h2>Payment processor payouts</h2><span>Collection totals come from the fulfilment sales report. When Stripe or Xendit pays out, record the payout here: debit Bank, credit the payment processor.</span></div><div className="accounting-status-pill">{formatMoney(sales.totalCollected)}</div></div>
       <section className="sales-stats">
         <MoneyStat label="Bank transfer collected" value={sales.bankTransfer} tone="transfer" />
-        <MoneyStatWithNote label="Stripe collected" value={sales.stripeCollected} tone="sales" note={`Fees ${formatMoney(processorAccountingTotals.stripeProcessingFees)}`} />
-        <MoneyStatWithNote label="Xendit collected" value={sales.xenditCollected} tone="collected" note={`Fees ${formatMoney(processorAccountingTotals.xenditProcessingFees)}`} />
+        <MoneyStat label="Stripe collected" value={sales.stripeCollected} tone="sales" />
+        <MoneyStat label="Xendit collected" value={sales.xenditCollected} tone="collected" />
         <MoneyStat label="Total collected" value={sales.totalCollected} tone="sales" />
         <MoneyStat label="Cash after processor fees" value={sales.totalCollected - sales.processingFees} tone="collected" />
       </section>
       <section className="bookkeeping-balance-row">
         <MoneyStat label="Bank Account" value={bankBalance} tone="collected" />
-        <MoneyStatWithNote label="Stripe" value={stripeBalance} tone="sales" note={`Net after fees ${formatMoney(stripeNetCollected)}`} />
-        <MoneyStatWithNote label="Xendit" value={xenditBalance} tone="transfer" note={`Net after fees ${formatMoney(xenditNetCollected)}`} />
+        <MoneyStat label="Stripe" value={stripeBalance} tone="sales" />
+        <MoneyStat label="Xendit" value={xenditBalance} tone="transfer" />
         <MoneyStat label="Payment Processing Fees" value={processorFeeBalance} tone="fees" />
         <MoneyStat label="Owner's Equity" value={ownerEquity} tone="sales" />
         <MoneyStat label="Drawings" value={drawings} tone="fees" />
@@ -2385,7 +2383,7 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
             ];
             const rowCount = Math.max(debitRows.length, creditRows.length, 1);
             const sideTotal = Math.max(debitRows.reduce((total, row) => total + row.amount, 0), creditRows.reduce((total, row) => total + row.amount, 0));
-            return <article className="card accounting-table-card" key={`${section.title}-${accountName}`}>
+            return <article className="card accounting-table-card t-account-card" key={`${section.title}-${accountName}`}>
               <h3>{accountName}</h3>
               <div className="table-scroll t-account-scroll"><table className="orders-table t-account-table"><colgroup><col className="t-date-col" /><col className="t-details-col" /><col className="t-amount-col" /><col className="t-date-col" /><col className="t-details-col" /><col className="t-amount-col" /></colgroup><thead><tr><th colSpan={3}>Debit</th><th colSpan={3}>Credit</th></tr><tr><th>Date</th><th>Details</th><th>Amount</th><th>Date</th><th>Details</th><th>Amount</th></tr></thead><tbody>{Array.from({ length: rowCount }).map((_, index) => {
                 const debit = debitRows[index];
