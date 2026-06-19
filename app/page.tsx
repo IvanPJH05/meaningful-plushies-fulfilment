@@ -2226,7 +2226,11 @@ function AccountingDocumentsTable({ documents, categoryName, onOpen, onDelete }:
 }
 
 function AccountingTransactionsTable({ transactions, ledgerEntries, documents, categoryName, onOpenDocument, onDelete }: { transactions: AccountingTransaction[]; ledgerEntries: AccountingLedgerEntry[]; documents: AccountingDocument[]; categoryName: (categoryId: string) => string; onOpenDocument: (document: AccountingDocument) => void; onDelete: (transaction: AccountingTransaction) => void }) {
-  return <section className="card accounting-table-card"><h3>Transaction ledger</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>Date</th><th>Description</th><th>Business event</th><th>Account</th><th>Payment</th><th>Ledger posting</th><th>Document</th><th /></tr></thead><tbody>{transactions.map((transaction) => {
+  const sortedTransactions = [...transactions].sort((a, b) => {
+    const dateCompare = dateKey(a.transactionDate).localeCompare(dateKey(b.transactionDate));
+    return dateCompare || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id);
+  });
+  return <section className="card accounting-table-card"><h3>Transaction ledger</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>Date</th><th>Description</th><th>Business event</th><th>Account</th><th>Payment</th><th>Ledger posting</th><th>Document</th><th /></tr></thead><tbody>{sortedTransactions.map((transaction) => {
     const entries = ledgerEntries.filter((entry) => entry.transactionId === transaction.id);
     const document = documents.find((item) => item.id === transaction.documentId);
     const paymentLabel = transaction.paymentStatus === "deposit_paid" ? `Deposit ${formatMoney(transaction.depositAmount)}` : transaction.paymentStatus === "on_credit" ? "On Credit" : "Paid In Full";
@@ -2285,25 +2289,40 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
     groups[entry.accountName] = [...(groups[entry.accountName] ?? []), entry];
     return groups;
   }, {});
-  const tAccountSections: { title: string; reportSections: string[]; names: string[] }[] = [
-    { title: "Inventory", reportSections: [bookkeepingSectionConfigs.inventory.reportSection], names: [] },
-    { title: "Expense", reportSections: [bookkeepingSectionConfigs.expense.reportSection], names: ["Payment Processing Fees"] },
-    { title: "Assets", reportSections: [bookkeepingSectionConfigs.asset.reportSection], names: [] },
-    { title: "Marketing", reportSections: [bookkeepingSectionConfigs.marketing.reportSection], names: [] },
-    { title: "Cash", reportSections: [], names: ["Bank Account", "Stripe", "Xendit", "Payment Processing Fees", "Owner's Equity", "Drawings"] },
-    { title: "Sales", reportSections: [], names: ["Sales"] },
+  const tAccountSections: { title: string; reportSections: string[]; names: string[]; eventValues?: AccountingTransaction["businessEvent"][] }[] = [
+    { title: "Inventory", reportSections: [bookkeepingSectionConfigs.inventory.reportSection], names: ["Inventory", ...businessEvents.find((event) => event.value === "inventory_purchase")!.accounts], eventValues: ["inventory_purchase"] },
+    { title: "Expense", reportSections: [bookkeepingSectionConfigs.expense.reportSection, "Admin Fees", "Software Expenses", "Tax", "Salary", "COGS"], names: ["Expenses", "Payment Processing Fees", ...businessEvents.find((event) => event.value === "expense")!.accounts], eventValues: ["expense"] },
+    { title: "Assets", reportSections: [bookkeepingSectionConfigs.asset.reportSection, "Non Current Assets"], names: ["Equipment", ...businessEvents.find((event) => event.value === "asset_purchase")!.accounts], eventValues: ["asset_purchase"] },
+    { title: "Marketing", reportSections: [bookkeepingSectionConfigs.marketing.reportSection, "Marketing Expenses"], names: ["Marketing Expenses", ...businessEvents.find((event) => event.value === "marketing_expense")!.accounts], eventValues: ["marketing_expense"] },
+    { title: "Cash", reportSections: [], names: ["Bank Account", "Stripe", "Xendit", "Payment Processing Fees", "Owner's Equity", "Drawings"], eventValues: ["payment_processor_paid"] },
+    { title: "Sales", reportSections: ["Revenue"], names: ["Sales", "Shopify Sales", "TikTok Shop Sales", "Shipping Revenue"] },
   ];
+  const cashAccountNames = new Set(["Bank Account", "Payment Processors", "Stripe", "Xendit", "TikTok Shop", "Owner Capital", "Owner Drawings"]);
+  const categoryBelongsToSection = (category: AccountingCategory, section: typeof tAccountSections[number]) => {
+    if (!category.active) return false;
+    const parentName = category.parentId ? categoryName(category.parentId) : "";
+    if (section.title === "Cash") return cashAccountNames.has(category.name) || cashAccountNames.has(parentName);
+    if (section.title === "Inventory") return category.name === "Inventory" || parentName === "Inventory" || category.reportSection === bookkeepingSectionConfigs.inventory.reportSection;
+    if (section.title === "Marketing") return category.reportSection === bookkeepingSectionConfigs.marketing.reportSection || category.reportSection === "Marketing Expenses";
+    if (section.title === "Assets") return category.accountType === "asset" && !cashAccountNames.has(category.name) && !cashAccountNames.has(parentName) && category.name !== "Inventory" && parentName !== "Inventory";
+    if (section.title === "Expense") return category.accountType === "expense" && category.reportSection !== "Marketing Expenses" && category.reportSection !== bookkeepingSectionConfigs.marketing.reportSection;
+    if (section.title === "Sales") return category.accountType === "revenue" || category.reportSection === "Revenue";
+    return section.reportSections.includes(category.reportSection);
+  };
   const sectionAccountNames = (section: typeof tAccountSections[number]) => {
     const savedNames = categories
-      .filter((category) => category.active && section.reportSections.includes(category.reportSection))
+      .filter((category) => categoryBelongsToSection(category, section))
       .map((category) => category.name);
     const allNames = new Set([...section.names, ...savedNames]);
+    transactions.forEach((transaction) => {
+      if (section.eventValues?.includes(transaction.businessEvent)) allNames.add(transaction.accountName || categoryName(transaction.categoryId));
+    });
     allLedgerEntries.forEach((entry) => {
       const category = categories.find((item) => item.id === entry.accountId);
-      if (category && section.reportSections.includes(category.reportSection)) allNames.add(entry.accountName);
+      if (category && categoryBelongsToSection(category, section)) allNames.add(entry.accountName);
       if (section.names.includes(entry.accountName)) allNames.add(entry.accountName);
     });
-    return [...allNames].sort((a, b) => a.localeCompare(b));
+    return [...allNames].filter(Boolean).sort((a, b) => a.localeCompare(b));
   };
   const totalTAccounts = tAccountSections.reduce((total, section) => total + sectionAccountNames(section).length, 0);
   const selectedSection = tAccountSections.find((section) => section.title === selectedTAccountSection) ?? tAccountSections[0];
@@ -2362,7 +2381,10 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
         <div className="reporting-header"><div><strong>{section.title}</strong><span>{accountNames.length} T account{accountNames.length === 1 ? "" : "s"}</span></div></div>
         <section className="t-account-list">
           {accountNames.map((accountName) => {
-            const entries = accountGroups[accountName] ?? [];
+            const entries = [...(accountGroups[accountName] ?? [])].sort((a, b) => {
+              const dateCompare = entryDate(a).localeCompare(entryDate(b));
+              return dateCompare || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id);
+            });
             const openingBalance = entries.filter((entry) => isBeforeAccountingRange(entryDate(entry))).reduce((total, entry) => total + (entry.entryType === "debit" ? entry.amount : -entry.amount), 0);
             const periodEntries = entries.filter((entry) => isInAccountingRange(entryDate(entry)));
             const debits = periodEntries.filter((entry) => entry.entryType === "debit");
