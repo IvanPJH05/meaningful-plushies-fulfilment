@@ -217,7 +217,7 @@ const businessEvents = [
   { group: "Money out", value: "expense", label: "Expenses", transactionLabel: "Expense", accountingMapping: "Expenses", accounts: ["Labour", "Samples", "JnT (Carriage Outwards)"] },
   { group: "Money out", value: "asset_purchase", label: "Assets", transactionLabel: "Asset Purchase", accountingMapping: "Assets", accounts: ["New asset"] },
   { group: "Money out", value: "marketing_expense", label: "Marketing", transactionLabel: "Marketing Expense", accountingMapping: "Marketing", accounts: ["Meta ads", "TikTok ads"] },
-  { group: "Money in", value: "payment_processor_paid", label: "Payment Processor Paid", transactionLabel: "Payment Processor Paid", accountingMapping: "Money In", accounts: ["Bank Transfer", "Stripe", "Xendit", "Owner's Equity", "Drawings"] },
+  { group: "Money in", value: "payment_processor_paid", label: "Cash", transactionLabel: "Cash", accountingMapping: "Cash", accounts: ["Bank Transfer", "Stripe", "Xendit", "Owner's Equity", "Drawings"] },
 ] as const;
 const bookkeepingEventByView: Partial<Record<View, (typeof businessEvents)[number]["value"]>> = {
   accounting_transactions: "inventory_purchase",
@@ -395,7 +395,7 @@ const accountingNavItems: NavItem[] = [
   { view: "accounting_documents", label: "Expenses", icon: "documents" },
   { view: "accounting_balance_sheet", label: "Assets", icon: "accounting" },
   { view: "accounting_profit_loss", label: "Marketing", icon: "report" },
-  { view: "accounting_cash_flow", label: "Money In", icon: "cash" },
+  { view: "accounting_cash_flow", label: "Cash", icon: "cash" },
   { view: "accounting_settings", label: "Book Keeping Settings", icon: "settings" },
 ];
 const formalAccountingNavItems: NavItem[] = [
@@ -2035,7 +2035,7 @@ function AccountingWorkspacePage({
             ? 0
           : 0;
     if (isMoneyIn) return <section className="accounting-workspace">
-      <div className="accounting-hero card"><div><p>MONEY IN</p><h2>Payment processor payouts</h2><span>Collection totals come from the fulfilment sales report. When Stripe or Xendit pays out, record the payout here: debit Bank, credit the payment processor.</span></div><div className="accounting-status-pill">{formatMoney(sales.totalCollected)}</div></div>
+      <div className="accounting-hero card"><div><p>CASH</p><h2>Payment processor payouts</h2><span>Collection totals come from the fulfilment sales report. When Stripe or Xendit pays out, record the payout here: debit Bank, credit the payment processor.</span></div><div className="accounting-status-pill">{formatMoney(sales.totalCollected)}</div></div>
       <section className="sales-stats">
         <MoneyStat label="Bank transfer collected" value={sales.bankTransfer} tone="transfer" />
         <MoneyStat label="Stripe collected" value={sales.stripeCollected} tone="sales" />
@@ -2221,30 +2221,55 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
     groups[entry.accountName] = [...(groups[entry.accountName] ?? []), entry];
     return groups;
   }, {});
-  const accountNames = Object.keys(accountGroups).sort((a, b) => a.localeCompare(b));
+  const tAccountSections: { title: string; reportSections: string[]; names: string[] }[] = [
+    { title: "Inventory", reportSections: [bookkeepingSectionConfigs.inventory.reportSection], names: [] },
+    { title: "Expense", reportSections: [bookkeepingSectionConfigs.expense.reportSection], names: [] },
+    { title: "Assets", reportSections: [bookkeepingSectionConfigs.asset.reportSection], names: [] },
+    { title: "Marketing", reportSections: [bookkeepingSectionConfigs.marketing.reportSection], names: [] },
+    { title: "Cash", reportSections: [], names: ["Bank Account", "Stripe", "Xendit", "Owner's Equity", "Drawings"] },
+  ];
+  const sectionAccountNames = (section: typeof tAccountSections[number]) => {
+    const savedNames = categories
+      .filter((category) => category.active && section.reportSections.includes(category.reportSection))
+      .map((category) => category.name);
+    const allNames = new Set([...section.names, ...savedNames]);
+    ledgerEntries.forEach((entry) => {
+      const category = categories.find((item) => item.id === entry.accountId);
+      if (category && section.reportSections.includes(category.reportSection)) allNames.add(entry.accountName);
+      if (section.names.includes(entry.accountName)) allNames.add(entry.accountName);
+    });
+    return [...allNames].sort((a, b) => a.localeCompare(b));
+  };
+  const totalTAccounts = tAccountSections.reduce((total, section) => total + sectionAccountNames(section).length, 0);
 
   if (view === "accounting_t_accounts") return <section className="accounting-workspace">
-    <div className="accounting-hero card"><div><p>ACCOUNTING</p><h2>T Accounts</h2><span>Posted from the bookkeeping ledger entries. Debits and credits are grouped by account so you can see each account movement.</span></div><div className="accounting-status-pill">{accountNames.length} accounts</div></div>
+    <div className="accounting-hero card"><div><p>ACCOUNTING</p><h2>T Accounts</h2><span>All created bookkeeping accounts appear here, even before they have transactions. Debits and credits are grouped by account section.</span></div><div className="accounting-status-pill">{totalTAccounts} accounts</div></div>
     <section className="accounting-summary-grid">
       <MoneyStat label="Total debits" value={totalDebits} tone="sales" />
       <MoneyStat label="Total credits" value={totalCredits} tone="collected" />
       <MoneyStat label="Difference" value={Math.abs(totalDebits - totalCredits)} tone={Math.abs(totalDebits - totalCredits) > 0.01 ? "fees" : "transfer"} />
     </section>
-    <section className="accounting-module-grid">
-      {accountNames.map((accountName) => {
-        const entries = accountGroups[accountName];
-        const debits = entries.filter((entry) => entry.entryType === "debit");
-        const credits = entries.filter((entry) => entry.entryType === "credit");
-        const debitTotal = debits.reduce((total, entry) => total + entry.amount, 0);
-        const creditTotal = credits.reduce((total, entry) => total + entry.amount, 0);
-        return <article className="card accounting-table-card" key={accountName}>
-          <h3>{accountName}</h3>
-          <div className="table-scroll"><table className="orders-table"><thead><tr><th>Debit</th><th>Credit</th></tr></thead><tbody><tr><td>{debits.map((entry) => <div className="ledger-line" key={entry.id}><span>{transactionById.get(entry.transactionId)?.description || entry.memo}</span><strong>{formatMoney(entry.amount)}</strong></div>)}</td><td>{credits.map((entry) => <div className="ledger-line" key={entry.id}><span>{transactionById.get(entry.transactionId)?.description || entry.memo}</span><strong>{formatMoney(entry.amount)}</strong></div>)}</td></tr><tr><td><strong>{formatMoney(debitTotal)}</strong></td><td><strong>{formatMoney(creditTotal)}</strong></td></tr></tbody></table></div>
-          <p className="accounting-file-name">Balance: {formatMoney(Math.abs(debitTotal - creditTotal))} {debitTotal >= creditTotal ? "debit" : "credit"}</p>
-        </article>;
-      })}
-      {!accountNames.length && <div className="empty"><strong>No T accounts yet</strong><p>Create bookkeeping transactions first, then the accounting entries will appear here.</p></div>}
-    </section>
+    {tAccountSections.map((section) => {
+      const accountNames = sectionAccountNames(section);
+      return <section className="accounting-workspace" key={section.title}>
+        <div className="reporting-header"><div><strong>{section.title}</strong><span>{accountNames.length} T account{accountNames.length === 1 ? "" : "s"}</span></div></div>
+        <section className="accounting-module-grid">
+          {accountNames.map((accountName) => {
+            const entries = accountGroups[accountName] ?? [];
+            const debits = entries.filter((entry) => entry.entryType === "debit");
+            const credits = entries.filter((entry) => entry.entryType === "credit");
+            const debitTotal = debits.reduce((total, entry) => total + entry.amount, 0);
+            const creditTotal = credits.reduce((total, entry) => total + entry.amount, 0);
+            return <article className="card accounting-table-card" key={`${section.title}-${accountName}`}>
+              <h3>{accountName}</h3>
+              <div className="table-scroll"><table className="orders-table"><thead><tr><th>Debit</th><th>Credit</th></tr></thead><tbody><tr><td>{debits.length ? debits.map((entry) => <div className="ledger-line" key={entry.id}><span>{transactionById.get(entry.transactionId)?.description || entry.memo}</span><strong>{formatMoney(entry.amount)}</strong></div>) : <small>No debit entries yet</small>}</td><td>{credits.length ? credits.map((entry) => <div className="ledger-line" key={entry.id}><span>{transactionById.get(entry.transactionId)?.description || entry.memo}</span><strong>{formatMoney(entry.amount)}</strong></div>) : <small>No credit entries yet</small>}</td></tr><tr><td><strong>{formatMoney(debitTotal)}</strong></td><td><strong>{formatMoney(creditTotal)}</strong></td></tr></tbody></table></div>
+              <p className="accounting-file-name">Balance: {formatMoney(Math.abs(debitTotal - creditTotal))} {debitTotal >= creditTotal ? "debit" : "credit"}</p>
+            </article>;
+          })}
+          {!accountNames.length && <div className="empty"><strong>No {section.title.toLowerCase()} accounts yet</strong><p>Add category items in Book Keeping Settings and they will appear here.</p></div>}
+        </section>
+      </section>;
+    })}
   </section>;
 
   return <section className="accounting-workspace">
