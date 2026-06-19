@@ -2416,7 +2416,7 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
   const financialReportLabels: Record<FinancialReportType, string> = {
     income_statement: "Income Statement",
     balance_sheet: "Balance Sheet",
-    cash_summary: "Cash Summary",
+    cash_summary: "Cash Flow Statement",
   };
 
   if (view === "accounting_financial_reports") return <section className="accounting-workspace">
@@ -2448,10 +2448,10 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
         <div className="statement-grand-total"><span>Total equity and liabilities</span><strong>{formatMoney(totalEquity)}</strong></div>
       </div>}
       {selectedFinancialReport === "cash_summary" && <div className="statement-table">
-        <div className="statement-section-title">Cash and Cash Equivalents</div>
+        <div className="statement-section-title">Cash Flows</div>
         {cashBalances.map((item) => <div className="statement-row" key={item.name}><span>{item.name}</span><strong>{formatMoney(item.balance)}</strong></div>)}
         {!cashBalances.length && <div className="statement-row muted"><span>No cash movements recorded</span><strong>{formatMoney(0)}</strong></div>}
-        <div className="statement-grand-total"><span>Total cash position</span><strong>{formatMoney(cashBalances.reduce((total, item) => total + item.balance, 0))}</strong></div>
+        <div className="statement-grand-total"><span>Net cash flow</span><strong>{formatMoney(cashBalances.reduce((total, item) => total + item.balance, 0))}</strong></div>
       </div>}
     </section>
   </section>;
