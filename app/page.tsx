@@ -1242,6 +1242,10 @@ export default function Home() {
 
   function uploadEnvelopeFont(file: File | null) {
     if (!file) return;
+    if (!/\.(otf|ttf)$/i.test(file.name)) {
+      setNotice("Please upload a .otf or .ttf font file. PDF generation cannot reliably embed woff or woff2 files.");
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       const result = String(reader.result ?? "");
@@ -2838,9 +2842,12 @@ function PackingSlip({ order }: { order: Order }) {
 
 function EnvelopeSettingsPanel({ settings, onChange, onFontUpload, onReset }: { settings: EnvelopePrintSettings; onChange: (patch: Partial<EnvelopePrintSettings>) => void; onFontUpload: (file: File | null) => void; onReset: () => void }) {
   const numberChange = (key: keyof EnvelopePrintSettings) => (event: ChangeEvent<HTMLInputElement>) => onChange({ [key]: Number(event.target.value) } as Partial<EnvelopePrintSettings>);
+  const previewFontFamily = settings.fontBase64 ? "EnvelopeUploadedFont" : undefined;
   return <section className="envelope-settings">
+    {settings.fontBase64 && <style>{`@font-face{font-family:"EnvelopeUploadedFont";src:url(data:font/opentype;base64,${settings.fontBase64}) format("opentype");font-display:block;}`}</style>}
     <div className="envelope-settings-header"><div><strong>Envelope print settings</strong><span>Upload any font, then tune the size and text box placement without changing code.</span></div><button className="view-button" type="button" onClick={onReset}>Reset</button></div>
-    <label className="envelope-font-upload"><span>Font file</span><input type="file" accept=".otf,.ttf,.woff,.woff2,font/*" onChange={(event) => onFontUpload(event.target.files?.[0] ?? null)} /><strong>{settings.fontName || "No font uploaded yet"}</strong><small>Required before generating the PDF.</small></label>
+    <label className="envelope-font-upload"><span>Font file</span><input type="file" accept=".otf,.ttf,font/otf,font/ttf" onChange={(event) => onFontUpload(event.target.files?.[0] ?? null)} /><strong>{settings.fontName || "No font uploaded yet"}</strong><small>Use .otf or .ttf. Required before generating the PDF.</small></label>
+    <div className="envelope-font-sample" style={{ fontFamily: previewFontFamily }}><span>Font preview</span><strong>SNUGGLEBEAR</strong><small>{settings.fontBase64 ? "This is the font that will be sent to the PDF generator." : "Upload a font to see the preview here."}</small></div>
     <div className="envelope-settings-grid">
       <label>Font size<input type="number" step="1" value={settings.fontSize} onChange={numberChange("fontSize")} /></label>
       <label>Minimum size<input type="number" step="1" value={settings.minFontSize} onChange={numberChange("minFontSize")} /></label>

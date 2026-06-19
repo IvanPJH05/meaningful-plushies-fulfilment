@@ -11,7 +11,6 @@ const TEXT_BOX_WIDTH = 300;
 const TEXT_BOX_HEIGHT = 150;
 const LINE_HEIGHT_RATIO = 0.96;
 const CHARACTER_SPACING = 2.5;
-const FAUX_BOLD_OFFSET = 0.65;
 const TOP_TEXT_BOX_CENTER = { x: 301.8, y: 1564.2 };
 const BOTTOM_TEXT_BOX_CENTER = { x: 301.8, y: 135.6 };
 const NAME_COLOR = rgb(0.26, 0.37, 0.46);
@@ -147,20 +146,15 @@ function drawCenteredName(
     for (const character of line) {
       const characterWidth = font.widthOfTextAtSize(character, size);
       if (character !== " ") {
-        const drawAt = (offsetX: number, offsetY: number) => {
-          const point = rotatedPoint(center, angle, cursor + offsetX, localY + offsetY);
-          page.drawText(character, {
-            x: point.x,
-            y: point.y,
-            size,
-            font,
-            color: NAME_COLOR,
-            rotate: degrees(angle),
-          });
-        };
-        drawAt(0, 0);
-        drawAt(FAUX_BOLD_OFFSET, 0);
-        drawAt(0, FAUX_BOLD_OFFSET);
+        const point = rotatedPoint(center, angle, cursor, localY);
+        page.drawText(character, {
+          x: point.x,
+          y: point.y,
+          size,
+          font,
+          color: NAME_COLOR,
+          rotate: degrees(angle),
+        });
       }
       cursor += characterWidth + settings.letterSpacing;
     }
@@ -177,7 +171,7 @@ export async function POST(request: Request) {
     const settings = normalizeSettings(body.settings);
     const templateBase64 = await readFile(path.join(process.cwd(), "assets", "envelope-base.pdf.b64"), "utf8");
     const templateBytes = Buffer.from(templateBase64, "base64");
-    const fontBytes = Buffer.from(body.fontBase64.replace(/^data:font\/[^;]+;base64,/, ""), "base64");
+    const fontBytes = Buffer.from(body.fontBase64.replace(/^data:[^;]+;base64,/, ""), "base64");
 
     const template = await PDFDocument.load(templateBytes);
     const output = await PDFDocument.create();
