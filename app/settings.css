@@ -135,6 +135,23 @@
 .orders-table tr.express-shipping-row td { background: #fff8e8; }
 .orders-table tr.express-shipping-row:hover td { background: #fff1cc; }
 .shipping-badge { display: inline-flex; margin-left: 7px; padding: 3px 7px; border-radius: 999px; background: #ffedbd; color: #9a5a00; font-size: 9px; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; vertical-align: middle; }
+.orders-table tr.has-source-document { cursor: pointer; }
+.orders-table tr.has-source-document td { background: #f6faff; }
+.orders-table tr.has-source-document:hover td { background: #edf6ff; }
+.source-document-text { color: #1f67b5; }
+.source-document-pill { display: inline-flex; margin-left: 8px; padding: 3px 7px; border-radius: 999px; background: #e8f2ff; color: #1f67b5; font-size: 9px; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; vertical-align: middle; }
+.document-link { color: #1f67b5 !important; font-weight: 850; }
+.file-library-card .ledger-line { min-width: 220px; }
+.document-preview-backdrop { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 24px; background: rgba(10, 24, 42, .58); backdrop-filter: blur(2px); }
+.document-preview-modal { display: flex; flex-direction: column; width: min(1080px, 94vw); height: min(820px, 90vh); overflow: hidden; border: 1px solid #d8e3f0; border-radius: 16px; background: #fff; box-shadow: 0 24px 70px rgba(10, 24, 42, .28); }
+.document-preview-modal header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 18px 20px; border-bottom: 1px solid #e5edf6; background: linear-gradient(135deg, #f7fbff, #eef6ff); }
+.document-preview-modal header p { margin: 0 0 5px; color: #315f9e; font-size: 10px; font-weight: 900; letter-spacing: .14em; }
+.document-preview-modal header h2 { margin: 0; font-size: 20px; }
+.document-preview-modal header span { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; }
+.document-preview-frame { flex: 1; width: 100%; border: 0; background: #f4f7fb; }
+.document-preview-image { flex: 1; max-width: 100%; min-height: 0; object-fit: contain; background: #f4f7fb; }
+.document-preview-error { margin: 16px; }
+.document-preview-modal footer { display: flex; justify-content: flex-end; padding: 12px 18px; border-top: 1px solid #e5edf6; background: #fbfdff; }
 .report-controls { display: flex; justify-content: space-between; gap: 18px; align-items: flex-end; padding: 18px; margin-bottom: 14px; }
 .report-controls > div { display: flex; gap: 10px; align-items: flex-end; }
 .report-controls label { display: grid; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 750; }

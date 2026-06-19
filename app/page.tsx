@@ -48,7 +48,7 @@ type View =
   | "accounting_dashboard" | "accounting_documents" | "accounting_transactions" | "accounting_profit_loss" | "accounting_balance_sheet"
   | "accounting_cash_flow" | "accounting_general_ledger" | "accounting_trial_balance" | "accounting_payable" | "accounting_receivable"
   | "accounting_bank_reconciliation" | "accounting_product_profitability" | "accounting_marketing_profitability" | "accounting_cash_position"
-  | "accounting_tax_reports" | "accounting_settings" | "accounting_general_journal" | "accounting_t_accounts" | "accounting_financial_reports";
+  | "accounting_tax_reports" | "accounting_settings" | "accounting_files" | "accounting_general_journal" | "accounting_t_accounts" | "accounting_financial_reports";
 type Workspace = "fulfilment" | "accounting" | "formal_accounting" | "inventory" | "reports" | "settings";
 type SalesRange = "active" | "today" | "7d" | "30d" | "lifetime";
 type SortKey = "orderNumber" | "importedAt" | "updatedAt";
@@ -284,6 +284,7 @@ const accountingViews: readonly View[] = [
   "accounting_dashboard",
   "accounting_transactions",
   "accounting_payable",
+  "accounting_files",
   "accounting_documents",
   "accounting_balance_sheet",
   "accounting_profit_loss",
@@ -403,6 +404,7 @@ const fulfilmentAdminNavItems: NavItem[] = [
 const accountingNavItems: NavItem[] = [
   { view: "accounting_dashboard", label: "Book Keeping Book", icon: "ledger" },
   { view: "accounting_payable", label: "Unsettled Payments", icon: "cash" },
+  { view: "accounting_files", label: "Files", icon: "documents" },
   { view: "accounting_transactions", label: "Inventory", icon: "stock" },
   { view: "accounting_documents", label: "Expenses", icon: "documents" },
   { view: "accounting_balance_sheet", label: "Assets", icon: "accounting" },
@@ -459,6 +461,13 @@ function monthEndKey(date = new Date()) {
 
 function formatMoney(value: number, currency = "MYR") {
   return new Intl.NumberFormat("en-MY", { style: "currency", currency }).format(value);
+}
+
+function formatFileSize(size: number) {
+  if (!Number.isFinite(size) || size <= 0) return "-";
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function readableError(error: unknown, fallback: string) {
@@ -616,6 +625,9 @@ export default function Home() {
   const [accountingDocumentFile, setAccountingDocumentFile] = useState<File | null>(null);
   const [transactionDocumentFile, setTransactionDocumentFile] = useState<File | null>(null);
   const [settlementFiles, setSettlementFiles] = useState<Record<string, File | null>>({});
+  const [previewDocument, setPreviewDocument] = useState<AccountingDocument | null>(null);
+  const [previewDocumentUrl, setPreviewDocumentUrl] = useState("");
+  const [previewDocumentError, setPreviewDocumentError] = useState("");
   const [savingAccounting, setSavingAccounting] = useState(false);
   const [documentForm, setDocumentForm] = useState<AccountingDocumentForm>({
     name: "",
@@ -1758,10 +1770,13 @@ export default function Home() {
   }
 
   async function openAccountingDocument(document: AccountingDocument) {
+    setPreviewDocument(document);
+    setPreviewDocumentUrl("");
+    setPreviewDocumentError("");
     try {
-      window.open(await createAccountingDocumentSignedUrl(document.filePath), "_blank", "noopener,noreferrer");
+      setPreviewDocumentUrl(await createAccountingDocumentSignedUrl(document.filePath));
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Could not open document.");
+      setPreviewDocumentError(error instanceof Error ? error.message : "Could not open document.");
     }
   }
 
@@ -1957,6 +1972,7 @@ export default function Home() {
     </section>
 
     {selected && <OrderDrawer order={selected} role={session.role} actor={session.displayName} onClose={() => setSelectedId(null)} onUpdate={(patch) => updateOrder(selected.id, patch)} onStatus={(status) => setStatus(selected, status)} />}
+    {previewDocument && <DocumentPreviewModal document={previewDocument} url={previewDocumentUrl} error={previewDocumentError} onClose={() => { setPreviewDocument(null); setPreviewDocumentUrl(""); setPreviewDocumentError(""); }} />}
   </main>;
 }
 
@@ -2071,6 +2087,11 @@ function AccountingWorkspacePage({
   if (view === "accounting_payable") return <section className="accounting-workspace">
     <div className="accounting-hero card"><div><p>UNSETTLED PAYMENTS</p><h2>Deposits and credit purchases</h2><span>Transactions stay here until the remaining payment is marked paid. Upload the payment proof when you settle it.</span></div><div className="accounting-status-pill">{unsettledTransactions.length} unsettled</div></div>
     <UnsettledPaymentsTable transactions={unsettledTransactions} files={settlementFiles} saving={saving} onFileChange={onSettlementFileChange} onSettle={onSettleTransaction} />
+  </section>;
+
+  if (view === "accounting_files") return <section className="accounting-workspace">
+    <div className="accounting-hero card"><div><p>SOURCE DOCUMENTS</p><h2>Files linked to transactions</h2><span>Every receipt, invoice, payment proof, or source document attached to a bookkeeping transaction appears here.</span></div><div className="accounting-status-pill">{documents.filter((document) => transactions.some((transaction) => transaction.documentId === document.id)).length} files</div></div>
+    <AccountingFilesTable documents={documents} transactions={transactions} ledgerEntries={ledgerEntries} categoryName={categoryName} onOpen={onOpenDocument} />
   </section>;
 
   if (categoryEvent) {
@@ -2257,6 +2278,31 @@ function AccountingDocumentsTable({ documents, categoryName, onOpen, onDelete }:
   return <section className="card accounting-table-card"><h3>Uploaded documents</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>Date</th><th>Name</th><th>Supplier</th><th>Category</th><th>Type</th><th>Amount</th><th>File</th><th /></tr></thead><tbody>{documents.map((document) => <tr key={document.id}><td>{formatDate(document.documentDate)}</td><td><strong>{document.name}</strong><br /><small>{document.description || document.fileName}</small></td><td>{document.supplier || "-"}</td><td>{categoryName(document.categoryId)}</td><td>{document.transactionType}</td><td><strong>{formatMoney(document.amount)}</strong></td><td><button className="view-button" onClick={() => onOpen(document)}>Open</button></td><td><button className="view-button danger-text" onClick={() => onDelete(document)}>Delete</button></td></tr>)}</tbody></table>{!documents.length && <div className="empty"><strong>No documents uploaded yet</strong><p>Use the form to upload the first receipt or invoice.</p></div>}</div></section>;
 }
 
+function AccountingFilesTable({ documents, transactions, ledgerEntries, categoryName, onOpen }: { documents: AccountingDocument[]; transactions: AccountingTransaction[]; ledgerEntries: AccountingLedgerEntry[]; categoryName: (categoryId: string) => string; onOpen: (document: AccountingDocument) => void }) {
+  const rows = documents
+    .map((document) => ({ document, transaction: transactions.find((item) => item.documentId === document.id) }))
+    .filter((row): row is { document: AccountingDocument; transaction: AccountingTransaction } => Boolean(row.transaction))
+    .sort((a, b) => {
+      const dateCompare = dateKey(a.transaction.transactionDate).localeCompare(dateKey(b.transaction.transactionDate));
+      return dateCompare || a.transaction.createdAt.localeCompare(b.transaction.createdAt) || a.document.fileName.localeCompare(b.document.fileName);
+    });
+  return <section className="card accounting-table-card file-library-card">
+    <h3>Linked source documents</h3>
+    <div className="table-scroll"><table className="orders-table"><thead><tr><th>Date</th><th>File</th><th>Linked transaction</th><th>Account</th><th>Posting</th><th>Amount</th><th>Preview</th></tr></thead><tbody>{rows.map(({ document, transaction }) => {
+      const entries = ledgerEntries.filter((entry) => entry.transactionId === transaction.id);
+      return <tr key={document.id} className="has-source-document" onClick={(event) => { if ((event.target as HTMLElement).closest("button,a,input")) return; onOpen(document); }}>
+        <td>{formatDate(transaction.transactionDate)}</td>
+        <td><strong className="source-document-text">{document.name || document.fileName}</strong><br /><small>{document.fileName} | {formatFileSize(document.fileSize)}</small></td>
+        <td><strong>{transaction.description}</strong><br /><small>{transaction.supplier || transaction.source || "-"}</small></td>
+        <td>{categoryName(transaction.categoryId)}</td>
+        <td>{entries.length ? entries.map((entry) => <div key={entry.id} className="ledger-line"><span>{entry.entryType === "debit" ? "Debit" : "Credit"} {entry.accountName}</span><strong>{formatMoney(entry.amount)}</strong></div>) : "-"}</td>
+        <td><strong>{formatMoney(transaction.amount)}</strong></td>
+        <td><button className="view-button document-link" onClick={() => onOpen(document)}>View file</button></td>
+      </tr>;
+    })}</tbody></table>{!rows.length && <div className="empty"><strong>No linked source documents yet</strong><p>Attach a file when creating a bookkeeping transaction, and it will appear here.</p></div>}</div>
+  </section>;
+}
+
 function AccountingTransactionsTable({ transactions, ledgerEntries, documents, categoryName, onOpenDocument, onDelete }: { transactions: AccountingTransaction[]; ledgerEntries: AccountingLedgerEntry[]; documents: AccountingDocument[]; categoryName: (categoryId: string) => string; onOpenDocument: (document: AccountingDocument) => void; onDelete: (transaction: AccountingTransaction) => void }) {
   const sortedTransactions = [...transactions].sort((a, b) => {
     const dateCompare = dateKey(a.transactionDate).localeCompare(dateKey(b.transactionDate));
@@ -2265,9 +2311,29 @@ function AccountingTransactionsTable({ transactions, ledgerEntries, documents, c
   return <section className="card accounting-table-card"><h3>Transaction ledger</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>Date</th><th>Description</th><th>Business event</th><th>Account</th><th>Payment</th><th>Ledger posting</th><th>Document</th><th /></tr></thead><tbody>{sortedTransactions.map((transaction) => {
     const entries = ledgerEntries.filter((entry) => entry.transactionId === transaction.id);
     const document = documents.find((item) => item.id === transaction.documentId);
-    const paymentLabel = transaction.paymentStatus === "deposit_paid" ? `Deposit ${formatMoney(transaction.depositAmount)}` : transaction.paymentStatus === "on_credit" ? "On Credit" : "Paid In Full";
+	    const paymentLabel = transaction.paymentStatus === "deposit_paid" ? `Deposit ${formatMoney(transaction.depositAmount)}` : transaction.paymentStatus === "on_credit" ? "On Credit" : "Paid In Full";
+	    if (document) return <tr key={transaction.id} className="has-source-document" onClick={(event) => { if ((event.target as HTMLElement).closest("button,a,input")) return; onOpenDocument(document); }}><td>{formatDate(transaction.transactionDate)}</td><td><strong className="source-document-text">{transaction.description}</strong><span className="source-document-pill">Source document</span><br /><small>{transaction.supplier || transaction.source}{transaction.invoiceNumber ? ` - Invoice ${transaction.invoiceNumber}` : ""}</small></td><td>{businessEvents.find((event) => event.value === transaction.businessEvent)?.label ?? (transaction.businessEvent || "-")}</td><td>{categoryName(transaction.categoryId)}</td><td>{paymentLabel}<br /><small>{transaction.paymentStatus === "on_credit" ? transaction.dueDate || transaction.supplierTerms || "Outstanding" : transaction.paymentMethod || "Bank Account"}</small></td><td>{entries.length ? entries.map((entry, index) => <div key={entry.id} className="ledger-line"><span>{index === 0 ? `Record ${entry.accountName}` : entry.accountName.includes("Payable") || entry.accountName.includes("Receivable") ? `Outstanding ${entry.accountName}` : `Payment from ${entry.accountName}`}</span><strong>{formatMoney(entry.amount)}</strong></div>) : <small>{formatMoney(transaction.amount)}</small>}</td><td><button className="view-button document-link" onClick={() => onOpenDocument(document)}>View file</button></td><td><button className="view-button danger-text" onClick={() => onDelete(transaction)}>Delete</button></td></tr>;
     return <tr key={transaction.id}><td>{formatDate(transaction.transactionDate)}</td><td><strong>{transaction.description}</strong><br /><small>{transaction.supplier || transaction.source}{transaction.invoiceNumber ? ` · Invoice ${transaction.invoiceNumber}` : ""}</small></td><td>{businessEvents.find((event) => event.value === transaction.businessEvent)?.label ?? (transaction.businessEvent || "-")}</td><td>{categoryName(transaction.categoryId)}</td><td>{paymentLabel}<br /><small>{transaction.paymentStatus === "on_credit" ? transaction.dueDate || transaction.supplierTerms || "Outstanding" : transaction.paymentMethod || "Bank Account"}</small></td><td>{entries.length ? entries.map((entry, index) => <div key={entry.id} className="ledger-line"><span>{index === 0 ? `Record ${entry.accountName}` : entry.accountName.includes("Payable") || entry.accountName.includes("Receivable") ? `Outstanding ${entry.accountName}` : `Payment from ${entry.accountName}`}</span><strong>{formatMoney(entry.amount)}</strong></div>) : <small>{formatMoney(transaction.amount)}</small>}</td><td>{document ? <button className="view-button" onClick={() => onOpenDocument(document)}>Open</button> : "-"}</td><td><button className="view-button danger-text" onClick={() => onDelete(transaction)}>Delete</button></td></tr>;
   })}</tbody></table>{!transactions.length && <div className="empty"><strong>No transactions yet</strong><p>Record a business event to start the ledger.</p></div>}</div></section>;
+}
+
+function DocumentPreviewModal({ document, url, error, onClose }: { document: AccountingDocument; url: string; error: string; onClose: () => void }) {
+  const isImage = document.fileType.startsWith("image/");
+  const isPdf = document.fileType === "application/pdf" || document.fileName.toLowerCase().endsWith(".pdf");
+  return <div className="document-preview-backdrop" role="dialog" aria-modal="true" aria-label={`Preview ${document.name}`} onClick={onClose}>
+    <section className="document-preview-modal" onClick={(event) => event.stopPropagation()}>
+      <header>
+        <div><p>SOURCE DOCUMENT</p><h2>{document.name || document.fileName}</h2><span>{document.fileName} | {formatFileSize(document.fileSize)}</span></div>
+        <button className="view-button" onClick={onClose}>Close</button>
+      </header>
+      {error && <div className="notice document-preview-error"><span>{error}</span></div>}
+      {!error && !url && <div className="preview-empty"><strong>Loading file...</strong><p>Creating a secure preview link from Supabase.</p></div>}
+      {!error && url && isImage && <img className="document-preview-image" src={url} alt={document.name || document.fileName} />}
+      {!error && url && isPdf && <iframe className="document-preview-frame" src={url} title={document.name || document.fileName} />}
+      {!error && url && !isImage && !isPdf && <div className="preview-empty"><strong>Preview not available for this file type</strong><p>You can still open or download the source document.</p><a className="button primary" href={url} target="_blank" rel="noreferrer">Open file</a></div>}
+      {url && <footer><a className="view-button document-link" href={url} target="_blank" rel="noreferrer">Open in new tab</a></footer>}
+    </section>
+  </div>;
 }
 
 function isExpressShipping(order: Pick<Order, "shippingMethod">) {
