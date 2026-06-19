@@ -2000,9 +2000,13 @@ function AccountingWorkspacePage({
   processorAccountingTotals: { stripeCollected: number; stripeProcessingFees: number; xenditCollected: number; xenditProcessingFees: number };
   categoryName: (categoryId: string) => string;
 }) {
-  const incomeTransactions = transactions.filter((transaction) => transaction.transactionType === "income" || transaction.businessEvent === "payment_processor_paid");
+  const cashTransferTransactionIds = new Set(transactions.filter((transaction) => transaction.businessEvent === "payment_processor_paid").map((transaction) => transaction.id));
+  const incomeTransactions = transactions.filter((transaction) => transaction.transactionType === "income");
+  const cashTransferToBank = ledgerEntries
+    .filter((entry) => cashTransferTransactionIds.has(entry.transactionId) && entry.accountName === "Bank Account" && entry.entryType === "debit" && entry.memo.toLowerCase().includes("transfer to bank"))
+    .reduce((total, entry) => total + entry.amount, 0);
   const expenseTransactions = transactions.filter((transaction) => transaction.transactionType === "expense");
-  const income = incomeTransactions.reduce((total, transaction) => total + transaction.amount, 0);
+  const income = incomeTransactions.reduce((total, transaction) => total + transaction.amount, 0) + cashTransferToBank;
   const expenses = expenseTransactions.reduce((total, transaction) => total + transaction.amount, 0);
   const profit = income - expenses;
   const event = businessEvents.find((item) => item.value === transactionForm.businessEvent) ?? businessEvents[0];
@@ -2323,6 +2327,43 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
   const visibleAccountNames = selectedTAccountName === "all" ? selectedSectionAccountNames : selectedSectionAccountNames.filter((name) => name === selectedTAccountName);
   const filteredTransactions = sortedTransactions.filter((transaction) => isInAccountingRange(dateKey(transaction.transactionDate)));
   const filteredGeneratedSalesGroups = generatedSalesGroups.filter((group) => isInAccountingRange(group.date));
+  const manualJournalRows = filteredTransactions.flatMap((transaction) => {
+    const entries = entriesByTransaction[transaction.id] ?? [];
+    if (!entries.length) return [{
+      id: transaction.id,
+      date: dateKey(transaction.transactionDate),
+      reference: transaction.id.slice(0, 8),
+      account: transaction.accountName || categoryName(transaction.categoryId),
+      accountNote: "Posted from book keeping",
+      description: transaction.description,
+      debit: transaction.debit,
+      credit: transaction.credit,
+      lineIndex: 0,
+    }];
+    return entries.map((entry, index) => ({
+      id: entry.id,
+      date: dateKey(transaction.transactionDate),
+      reference: transaction.id.slice(0, 8),
+      account: entry.accountName,
+      accountNote: categories.find((category) => category.id === entry.accountId)?.reportSection || "Posted from book keeping",
+      description: index === 0 ? transaction.description : entry.memo,
+      debit: entry.entryType === "debit" ? entry.amount : 0,
+      credit: entry.entryType === "credit" ? entry.amount : 0,
+      lineIndex: index,
+    }));
+  });
+  const generatedJournalRows = filteredGeneratedSalesGroups.flatMap((group) => group.entries.map((entry, index) => ({
+    id: entry.id,
+    date: group.date,
+    reference: group.id.replace("sales-", "").slice(0, 14),
+    account: entry.accountName,
+    accountNote: entry.accountName === "Sales" ? "Automatic Sales" : entry.accountName === "Payment Processing Fees" ? "Automatic Expense" : "Automatic Cash",
+    description: index === 0 ? group.description : entry.memo,
+    debit: entry.entryType === "debit" ? entry.amount : 0,
+    credit: entry.entryType === "credit" ? entry.amount : 0,
+    lineIndex: index,
+  })));
+  const journalRows = [...manualJournalRows, ...generatedJournalRows].sort((a, b) => a.date.localeCompare(b.date) || a.reference.localeCompare(b.reference) || a.lineIndex - b.lineIndex || a.id.localeCompare(b.id));
   const dateFilter = <section className="card accounting-date-filter"><div><strong>Accounting period</strong><span>This date range is shared by General Journal, T Accounts, and Financial Reports.</span></div><label>From<input type="date" value={accountingStartDate} onChange={(event) => setAccountingStartDate(event.target.value)} /></label><label>To<input type="date" value={accountingEndDate} onChange={(event) => setAccountingEndDate(event.target.value)} /></label><button className="button secondary" onClick={() => { setAccountingStartDate(""); setAccountingEndDate(""); }}>Clear</button></section>;
   const balanceForAccount = (accountName: string, entries = periodLedgerEntries) => entries
     .filter((entry) => entry.accountName === accountName)
@@ -2421,11 +2462,7 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
       <MoneyStat label="Journal credits" value={totalCredits} tone="collected" />
       <MoneyStat label="Out of balance" value={Math.abs(totalDebits - totalCredits)} tone={Math.abs(totalDebits - totalCredits) > 0.01 ? "fees" : "transfer"} />
     </section>
-    <section className="card accounting-table-card"><h3>Journal entries</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>Date</th><th>Reference</th><th>Account</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead><tbody>{filteredTransactions.flatMap((transaction) => {
-      const entries = entriesByTransaction[transaction.id] ?? [];
-      if (!entries.length) return [<tr key={transaction.id}><td>{formatDate(transaction.transactionDate)}</td><td>{transaction.id.slice(0, 8)}</td><td>{transaction.accountName || categoryName(transaction.categoryId)}</td><td>{transaction.description}</td><td>{transaction.debit ? formatMoney(transaction.debit) : "-"}</td><td>{transaction.credit ? formatMoney(transaction.credit) : "-"}</td></tr>];
-      return entries.map((entry, index) => <tr key={entry.id}><td>{index === 0 ? formatDate(transaction.transactionDate) : ""}</td><td>{index === 0 ? transaction.id.slice(0, 8) : ""}</td><td><strong>{entry.accountName}</strong><br /><small>{categories.find((category) => category.id === entry.accountId)?.reportSection || "Posted from book keeping"}</small></td><td>{index === 0 ? transaction.description : entry.memo}</td><td>{entry.entryType === "debit" ? formatMoney(entry.amount) : "-"}</td><td>{entry.entryType === "credit" ? formatMoney(entry.amount) : "-"}</td></tr>);
-    }).concat(filteredGeneratedSalesGroups.flatMap((group) => group.entries.map((entry, index) => <tr key={entry.id}><td>{index === 0 ? formatDate(group.date) : ""}</td><td>{index === 0 ? group.id.replace("sales-", "").slice(0, 14) : ""}</td><td><strong>{entry.accountName}</strong><br /><small>{entry.accountName === "Sales" ? "Automatic Sales" : entry.accountName === "Payment Processing Fees" ? "Automatic Expense" : "Automatic Cash"}</small></td><td>{index === 0 ? group.description : entry.memo}</td><td>{entry.entryType === "debit" ? formatMoney(entry.amount) : "-"}</td><td>{entry.entryType === "credit" ? formatMoney(entry.amount) : "-"}</td></tr>)))}</tbody></table>{!filteredTransactions.length && !filteredGeneratedSalesGroups.length && <div className="empty"><strong>No journal entries in this period</strong><p>Change the date range or save more bookkeeping transactions.</p></div>}</div></section>
+    <section className="card accounting-table-card general-journal-card"><h3>Journal entries</h3><div className="table-scroll general-journal-scroll"><table className="orders-table general-journal-table"><colgroup><col className="journal-date-col" /><col className="journal-ref-col" /><col className="journal-account-col" /><col className="journal-description-col" /><col className="journal-money-col" /><col className="journal-money-col" /></colgroup><thead><tr><th>Date</th><th>Reference</th><th>Account</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead><tbody>{journalRows.map((row) => <tr key={row.id}><td>{formatDate(row.date)}</td><td>{row.reference}</td><td><strong>{row.account}</strong><br /><small>{row.accountNote}</small></td><td>{row.description}</td><td>{row.debit ? formatMoney(row.debit) : "-"}</td><td>{row.credit ? formatMoney(row.credit) : "-"}</td></tr>)}</tbody></table>{!journalRows.length && <div className="empty"><strong>No journal entries in this period</strong><p>Change the date range or save more bookkeeping transactions.</p></div>}</div></section>
   </section>;
 }
 
