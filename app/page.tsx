@@ -58,6 +58,7 @@ type DiscountMetric = "productDiscounted" | "shippingDiscounted";
 type FeeMetric = "processingFees" | "shopifyFees" | "totalFees";
 type FinancialReportType = "income_statement" | "balance_sheet" | "cash_summary";
 type AccountingPeriodMode = "this_month" | "custom";
+type CashFlowActivity = "operating" | "investing" | "financing";
 type StoredUiPreferences = {
   view?: View;
   query?: string;
@@ -2398,6 +2399,48 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
   const balanceForAccount = (accountName: string, entries = periodLedgerEntries) => entries
     .filter((entry) => entry.accountName === accountName)
     .reduce((total, entry) => total + (entry.entryType === "debit" ? entry.amount : -entry.amount), 0);
+  const cashMovementForEntry = (entry: AccountingLedgerEntry) => entry.entryType === "debit" ? entry.amount : -entry.amount;
+  const openingCashBalance = allLedgerEntries
+    .filter((entry) => entry.accountName === "Bank Account" && isBeforeAccountingRange(entryDate(entry)))
+    .reduce((total, entry) => total + cashMovementForEntry(entry), 0);
+  const bankPeriodEntries = allLedgerEntries.filter((entry) => entry.accountName === "Bank Account" && isInAccountingRange(entryDate(entry)));
+  const cashFlowActivityForEntry = (entry: AccountingLedgerEntry): CashFlowActivity => {
+    const transaction = transactionById.get(entry.transactionId);
+    const event = transaction?.businessEvent ?? "";
+    const category = transaction?.categoryId ?? transaction?.accountName ?? "";
+    const text = `${event} ${category} ${transaction?.description ?? ""} ${entry.memo}`.toLowerCase();
+    if (event === "asset_purchase" || text.includes("equipment") || text.includes("asset")) return "investing";
+    if (text.includes("owner") || text.includes("drawing") || text.includes("loan")) return "financing";
+    return "operating";
+  };
+  const cashFlowDetailForEntry = (entry: AccountingLedgerEntry) => {
+    const transaction = transactionById.get(entry.transactionId);
+    const generatedDescription = generatedTransactionDescriptions.get(entry.transactionId);
+    if (generatedDescription) return generatedDescription;
+    if (transaction?.businessEvent === "payment_processor_paid" && transaction.accountName) return `${transaction.accountName} payout received`;
+    return transaction?.description || entry.memo || entry.accountName;
+  };
+  const cashFlowRows = bankPeriodEntries
+    .map((entry) => ({
+      id: entry.id,
+      date: entryDate(entry),
+      activity: cashFlowActivityForEntry(entry),
+      details: cashFlowDetailForEntry(entry),
+      amount: cashMovementForEntry(entry),
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.details.localeCompare(b.details) || a.id.localeCompare(b.id));
+  const cashFlowSections: { key: CashFlowActivity; title: string }[] = [
+    { key: "operating", title: "Cash Flows From Operating Activities" },
+    { key: "investing", title: "Cash Flows From Investing Activities" },
+    { key: "financing", title: "Cash Flows From Financing Activities" },
+  ];
+  const cashFlowSectionTotal = (activity: CashFlowActivity) => cashFlowRows
+    .filter((row) => row.activity === activity)
+    .reduce((total, row) => total + row.amount, 0);
+  const netCashFlow = cashFlowRows.reduce((total, row) => total + row.amount, 0);
+  const closingCashBalance = openingCashBalance + netCashFlow;
+  const bankAccountClosingBalance = balanceForAccount("Bank Account", allLedgerEntries.filter((entry) => !accountingEndDate || entryDate(entry) <= accountingEndDate));
+  const cashReconciles = Math.abs(closingCashBalance - bankAccountClosingBalance) < 0.01;
   const balancesForNames = (names: string[]) => names.map((name) => ({ name, balance: balanceForAccount(name) })).filter((item) => Math.abs(item.balance) > 0.005);
   const inventoryBalances = balancesForNames(sectionAccountNames(tAccountSections[0]));
   const expenseBalances = balancesForNames(sectionAccountNames(tAccountSections[1]));
@@ -2448,10 +2491,20 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
         <div className="statement-grand-total"><span>Total equity and liabilities</span><strong>{formatMoney(totalEquity)}</strong></div>
       </div>}
       {selectedFinancialReport === "cash_summary" && <div className="statement-table">
-        <div className="statement-section-title">Cash Flows</div>
-        {cashBalances.map((item) => <div className="statement-row" key={item.name}><span>{item.name}</span><strong>{formatMoney(item.balance)}</strong></div>)}
-        {!cashBalances.length && <div className="statement-row muted"><span>No cash movements recorded</span><strong>{formatMoney(0)}</strong></div>}
-        <div className="statement-grand-total"><span>Net cash flow</span><strong>{formatMoney(cashBalances.reduce((total, item) => total + item.balance, 0))}</strong></div>
+        <div className="statement-row"><span>Opening cash balance</span><strong>{formatMoney(openingCashBalance)}</strong></div>
+        {cashFlowSections.map((section) => {
+          const rows = cashFlowRows.filter((row) => row.activity === section.key);
+          const total = cashFlowSectionTotal(section.key);
+          return <div className="cash-flow-section" key={section.key}>
+            <div className="statement-section-title">{section.title}</div>
+            {rows.map((row) => <div className="statement-row cash-flow-row" key={row.id}><span><small>{formatDate(row.date)}</small>{row.details}</span><strong>{formatMoney(row.amount)}</strong></div>)}
+            {!rows.length && <div className="statement-row muted"><span>No cash movements recorded</span><strong>{formatMoney(0)}</strong></div>}
+            <div className="statement-total"><span>Net cash from {section.key} activities</span><strong>{formatMoney(total)}</strong></div>
+          </div>;
+        })}
+        <div className="statement-grand-total"><span>Net increase / (decrease) in cash</span><strong>{formatMoney(netCashFlow)}</strong></div>
+        <div className="statement-total"><span>Closing cash balance</span><strong>{formatMoney(closingCashBalance)}</strong></div>
+        <div className={`statement-reconciliation ${cashReconciles ? "ok" : "error"}`}><span>Reconciliation to Bank Account</span><strong>{cashReconciles ? "Matched" : `Difference ${formatMoney(closingCashBalance - bankAccountClosingBalance)}`}</strong></div>
       </div>}
     </section>
   </section>;

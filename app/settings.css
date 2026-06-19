@@ -65,6 +65,11 @@
 .statement-row.muted strong { color: var(--muted); }
 .statement-total { border-top: 1px solid #d7e2ee; font-weight: 850; }
 .statement-grand-total { margin-top: 10px; padding: 13px 0; border-top: 2px solid #243b5a; border-bottom: 3px double #243b5a; font-size: 18px; font-weight: 900; }
+.cash-flow-section { display: contents; }
+.cash-flow-row small { display: inline-block; min-width: 92px; color: var(--muted); font-weight: 750; }
+.statement-reconciliation { display: grid; grid-template-columns: 1fr auto; gap: 20px; margin-top: 12px; padding: 11px 13px; border-radius: 8px; font-weight: 850; }
+.statement-reconciliation.ok { background: #e9f8f0; color: #106a47; }
+.statement-reconciliation.error { background: #fff1f2; color: #b4232e; }
 .accounting-period-tabs { min-width: 220px; }
 
 @page financial-report {
