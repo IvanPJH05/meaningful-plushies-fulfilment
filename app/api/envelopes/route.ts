@@ -16,20 +16,59 @@ const TOP_TEXT_BOX_CENTER = { x: 301.8, y: 1564.2 };
 const BOTTOM_TEXT_BOX_CENTER = { x: 301.8, y: 135.6 };
 const NAME_COLOR = rgb(0.26, 0.37, 0.46);
 
+type EnvelopePdfSettings = {
+  fontSize?: number;
+  minFontSize?: number;
+  letterSpacing?: number;
+  lineHeight?: number;
+  textBoxWidth?: number;
+  textBoxHeight?: number;
+  topX?: number;
+  topY?: number;
+  bottomX?: number;
+  bottomY?: number;
+};
+
+function numberSetting(value: unknown, fallback: number, min: number, max: number) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, number));
+}
+
+function normalizeSettings(settings: EnvelopePdfSettings = {}) {
+  const fontSize = numberSetting(settings.fontSize, BASE_FONT_SIZE, 8, 140);
+  return {
+    fontSize,
+    minFontSize: Math.min(fontSize, numberSetting(settings.minFontSize, MIN_FONT_SIZE, 8, 140)),
+    letterSpacing: numberSetting(settings.letterSpacing, CHARACTER_SPACING, -10, 30),
+    lineHeight: numberSetting(settings.lineHeight, LINE_HEIGHT_RATIO, 0.5, 2),
+    textBoxWidth: numberSetting(settings.textBoxWidth, TEXT_BOX_WIDTH, 50, 900),
+    textBoxHeight: numberSetting(settings.textBoxHeight, TEXT_BOX_HEIGHT, 30, 500),
+    topCenter: {
+      x: numberSetting(settings.topX, TOP_TEXT_BOX_CENTER.x, -500, 2000),
+      y: numberSetting(settings.topY, TOP_TEXT_BOX_CENTER.y, -500, 2500),
+    },
+    bottomCenter: {
+      x: numberSetting(settings.bottomX, BOTTOM_TEXT_BOX_CENTER.x, -500, 2000),
+      y: numberSetting(settings.bottomY, BOTTOM_TEXT_BOX_CENTER.y, -500, 2500),
+    },
+  };
+}
+
 function cleanName(value: unknown) {
   return String(value ?? "").replace(/\s+/g, " ").trim().toUpperCase().slice(0, 60);
 }
 
-function lineWidth(font: PDFFont, text: string, size: number) {
-  return font.widthOfTextAtSize(text, size) + Math.max(0, text.length - 1) * CHARACTER_SPACING;
+function lineWidth(font: PDFFont, text: string, size: number, letterSpacing: number) {
+  return font.widthOfTextAtSize(text, size) + Math.max(0, text.length - 1) * letterSpacing;
 }
 
-function splitLongWord(font: PDFFont, word: string, size: number) {
+function splitLongWord(font: PDFFont, word: string, size: number, textBoxWidth: number, letterSpacing: number) {
   const chunks: string[] = [];
   let current = "";
   for (const character of word) {
     const candidate = `${current}${character}`;
-    if (current && lineWidth(font, candidate, size) > TEXT_BOX_WIDTH) {
+    if (current && lineWidth(font, candidate, size, letterSpacing) > textBoxWidth) {
       chunks.push(current);
       current = character;
     } else {
@@ -40,23 +79,23 @@ function splitLongWord(font: PDFFont, word: string, size: number) {
   return chunks;
 }
 
-function wrapName(font: PDFFont, name: string, size: number) {
+function wrapName(font: PDFFont, name: string, size: number, textBoxWidth: number, letterSpacing: number) {
   const words = name.split(" ").filter(Boolean);
   const lines: string[] = [];
   let current = "";
 
   for (const word of words) {
-    if (lineWidth(font, word, size) > TEXT_BOX_WIDTH) {
+    if (lineWidth(font, word, size, letterSpacing) > textBoxWidth) {
       if (current) {
         lines.push(current);
         current = "";
       }
-      lines.push(...splitLongWord(font, word, size));
+      lines.push(...splitLongWord(font, word, size, textBoxWidth, letterSpacing));
       continue;
     }
 
     const candidate = current ? `${current} ${word}` : word;
-    if (current && lineWidth(font, candidate, size) > TEXT_BOX_WIDTH) {
+    if (current && lineWidth(font, candidate, size, letterSpacing) > textBoxWidth) {
       lines.push(current);
       current = word;
     } else {
@@ -68,13 +107,13 @@ function wrapName(font: PDFFont, name: string, size: number) {
   return lines.map((line) => line.trim()).filter(Boolean);
 }
 
-function layoutName(font: PDFFont, name: string) {
-  for (let size = BASE_FONT_SIZE; size >= MIN_FONT_SIZE; size -= 1) {
-    const lines = wrapName(font, name, size);
-    const height = Math.max(1, lines.length) * size * LINE_HEIGHT_RATIO;
-    if (lines.length <= 3 && height <= TEXT_BOX_HEIGHT) return { lines, size };
+function layoutName(font: PDFFont, name: string, settings: ReturnType<typeof normalizeSettings>) {
+  for (let size = settings.fontSize; size >= settings.minFontSize; size -= 1) {
+    const lines = wrapName(font, name, size, settings.textBoxWidth, settings.letterSpacing);
+    const height = Math.max(1, lines.length) * size * settings.lineHeight;
+    if (lines.length <= 3 && height <= settings.textBoxHeight) return { lines, size };
   }
-  return { lines: wrapName(font, name, MIN_FONT_SIZE).slice(0, 3), size: MIN_FONT_SIZE };
+  return { lines: wrapName(font, name, settings.minFontSize, settings.textBoxWidth, settings.letterSpacing).slice(0, 3), size: settings.minFontSize };
 }
 
 function rotatedPoint(center: { x: number; y: number }, angle: number, localX: number, localY: number) {
@@ -95,14 +134,15 @@ function drawCenteredName(
   name: string,
   center: { x: number; y: number },
   angle: number,
+  settings: ReturnType<typeof normalizeSettings>,
 ) {
   if (!name) return;
 
-  const { lines, size } = layoutName(font, name);
-  const lineHeight = size * LINE_HEIGHT_RATIO;
+  const { lines, size } = layoutName(font, name, settings);
+  const lineHeight = size * settings.lineHeight;
   lines.forEach((line, index) => {
     const localY = ((lines.length - 1) / 2 - index) * lineHeight;
-    let cursor = -lineWidth(font, line, size) / 2;
+    let cursor = -lineWidth(font, line, size, settings.letterSpacing) / 2;
 
     for (const character of line) {
       const characterWidth = font.widthOfTextAtSize(character, size);
@@ -122,23 +162,22 @@ function drawCenteredName(
         drawAt(FAUX_BOLD_OFFSET, 0);
         drawAt(0, FAUX_BOLD_OFFSET);
       }
-      cursor += characterWidth + CHARACTER_SPACING;
+      cursor += characterWidth + settings.letterSpacing;
     }
   });
 }
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json() as { names?: unknown[] };
+    const body = await request.json() as { names?: unknown[]; fontBase64?: unknown; settings?: EnvelopePdfSettings };
     const names = (body.names ?? []).map(cleanName).filter(Boolean);
     if (!names.length) return new Response("Choose at least one order.", { status: 400 });
+    if (typeof body.fontBase64 !== "string" || !body.fontBase64.trim()) return new Response("Upload an envelope font before generating the PDF.", { status: 400 });
 
-    const [templateBase64, fontBase64] = await Promise.all([
-      readFile(path.join(process.cwd(), "assets", "envelope-base.pdf.b64"), "utf8"),
-      readFile(path.join(process.cwd(), "assets", "Jingleberry.otf.b64"), "utf8"),
-    ]);
+    const settings = normalizeSettings(body.settings);
+    const templateBase64 = await readFile(path.join(process.cwd(), "assets", "envelope-base.pdf.b64"), "utf8");
     const templateBytes = Buffer.from(templateBase64, "base64");
-    const fontBytes = Buffer.from(fontBase64, "base64");
+    const fontBytes = Buffer.from(body.fontBase64.replace(/^data:font\/[^;]+;base64,/, ""), "base64");
 
     const template = await PDFDocument.load(templateBytes);
     const output = await PDFDocument.create();
@@ -148,8 +187,8 @@ export async function POST(request: Request) {
     for (let index = 0; index < names.length; index += 2) {
       const [page] = await output.copyPages(template, [0]);
       output.addPage(page);
-      drawCenteredName(page, font, names[index], TOP_TEXT_BOX_CENTER, 225);
-      drawCenteredName(page, font, names[index + 1] ?? "", BOTTOM_TEXT_BOX_CENTER, 315);
+      drawCenteredName(page, font, names[index], settings.topCenter, 225, settings);
+      drawCenteredName(page, font, names[index + 1] ?? "", settings.bottomCenter, 315, settings);
     }
 
     const pdfBytes = await output.save();

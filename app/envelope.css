@@ -1,6 +1,6 @@
 .envelope-page { display: grid; grid-template-columns: minmax(360px, .8fr) minmax(500px, 1.2fr); gap: 15px; align-items: start; }
 .envelope-controls { overflow: hidden; }
-.envelope-heading { display: flex; justify-content: space-between; gap: 16px; align-items: start; padding: 19px; border-bottom: 1px solid var(--line); }
+.envelope-heading { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; padding: 19px; border-bottom: 1px solid var(--line); }
 .envelope-heading h2 { margin: 0; font-size: 16px; }
 .envelope-heading p { margin: 5px 0 0; color: #78869a; font-size: 11px; line-height: 1.5; }
 .envelope-controls .manual-entry { padding: 0 19px 16px; }
@@ -26,6 +26,19 @@
 .canva-connection strong,.canva-connection span { display: block; }
 .canva-connection strong { font-size: 11px; }
 .canva-connection span { margin-top: 3px; color: #78869a; font-size: 9px; }
+.envelope-settings { display: grid; gap: 12px; padding: 14px 16px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: #f8fbff; }
+.envelope-settings-header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.envelope-settings-header strong,.envelope-settings-header span { display: block; }
+.envelope-settings-header strong { font-size: 12px; }
+.envelope-settings-header span { margin-top: 4px; color: #78869a; font-size: 10px; line-height: 1.45; }
+.envelope-font-upload { display: grid; gap: 5px; padding: 11px; border: 1px dashed #b9c9db; border-radius: 8px; background: #fff; cursor: pointer; }
+.envelope-font-upload span,.envelope-settings-grid label { color: #63728a; font-size: 9px; font-weight: 850; letter-spacing: .05em; text-transform: uppercase; }
+.envelope-font-upload input { width: 100%; font-size: 10px; }
+.envelope-font-upload strong { color: #1e3a5f; font-size: 11px; }
+.envelope-font-upload small { color: #78869a; font-size: 9px; }
+.envelope-settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.envelope-settings-grid label { display: grid; gap: 5px; }
+.envelope-settings-grid input { width: 100%; height: 34px; border: 1px solid #d7dfe9; border-radius: 7px; background: #fff; padding: 0 9px; color: var(--text); font-size: 11px; }
 .envelope-preview { padding: 17px; border-radius: 9px; background: #e7ebf0; min-height: 620px; }
 .envelope-sheet-list { display: grid; gap: 18px; }
 .envelope-sheet { display: grid; grid-template-columns: auto 1fr 1fr; gap: 12px; align-items: center; padding: 18px; background: #fff; border: 1px solid #cfd5dc; border-radius: 9px; box-shadow: 0 5px 15px rgba(28,42,58,.08); }

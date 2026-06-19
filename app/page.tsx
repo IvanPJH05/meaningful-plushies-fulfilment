@@ -3,7 +3,7 @@
 import "./settings.css";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { FormEvent, SVGProps } from "react";
+import type { ChangeEvent, FormEvent, SVGProps } from "react";
 import { detectCsvKind, fulfilledOrdersCsv, importShopifyData, normalizePaymentProcessor } from "../lib/importer";
 import { buildSalesReportRows, summarizeSales, type SalesReportRow, type SalesSummary } from "../lib/sales";
 import { stockCharacters, summarizeStock } from "../lib/stock";
@@ -60,6 +60,20 @@ type FeeMetric = "processingFees" | "shopifyFees" | "totalFees";
 type FinancialReportType = "income_statement" | "balance_sheet" | "cash_summary";
 type AccountingPeriodMode = "this_month" | "lifetime" | "custom";
 type CashFlowActivity = "operating" | "investing" | "financing";
+type EnvelopePrintSettings = {
+  fontName: string;
+  fontBase64: string;
+  fontSize: number;
+  minFontSize: number;
+  letterSpacing: number;
+  lineHeight: number;
+  textBoxWidth: number;
+  textBoxHeight: number;
+  topX: number;
+  topY: number;
+  bottomX: number;
+  bottomY: number;
+};
 type StoredUiPreferences = {
   view?: View;
   query?: string;
@@ -329,6 +343,21 @@ const sortChoiceLabels: Record<SortChoice, string> = {
 const fulfilmentColumnValues: readonly FulfilmentColumn[] = ["orderNumber", "meaningfulMessage", "plushName", "character", "idWebsiteLink", "customerName", "phone"];
 const sessionStorageKey = "meaningful-plushies-dashboard-session";
 const uiStorageKey = "meaningful-plushies-ui-preferences";
+const envelopeSettingsStorageKey = "meaningful-plushies-envelope-print-settings";
+const defaultEnvelopePrintSettings: EnvelopePrintSettings = {
+  fontName: "",
+  fontBase64: "",
+  fontSize: 56,
+  minFontSize: 34,
+  letterSpacing: 2.5,
+  lineHeight: 0.96,
+  textBoxWidth: 300,
+  textBoxHeight: 150,
+  topX: 301.8,
+  topY: 1564.2,
+  bottomX: 301.8,
+  bottomY: 135.6,
+};
 
 const collectedMetricLabels: Record<CollectedMetric, string> = {
   bankTransfer: "Bank transfer collected",
@@ -538,6 +567,10 @@ function readStoredUi() {
   return readJson<StoredUiPreferences>(uiStorageKey) ?? {};
 }
 
+function readStoredEnvelopeSettings(): EnvelopePrintSettings {
+  return { ...defaultEnvelopePrintSettings, ...(readJson<Partial<EnvelopePrintSettings>>(envelopeSettingsStorageKey) ?? {}) };
+}
+
 function choice<T extends string>(value: unknown, fallback: T, allowed: readonly T[]) {
   return typeof value === "string" && allowed.includes(value as T) ? value as T : fallback;
 }
@@ -589,6 +622,7 @@ function viewTitle(view: View) {
 export default function Home() {
   const storedSession = readStoredSession();
   const storedUi = readStoredUi();
+  const storedEnvelopeSettings = readStoredEnvelopeSettings();
   const [session, setSession] = useState<Session | null>(() => storedSession);
   const [view, setView] = useState<View>(() => permittedView(storedUi.view, storedSession?.role));
   const [orders, setOrders] = useState<Order[]>([]);
@@ -681,6 +715,7 @@ export default function Home() {
   const [fulfilmentColumns, setFulfilmentColumns] = useState<FulfilmentColumn[]>(() => cleanFulfilmentColumns(storedUi.fulfilmentColumns));
   const [manualOrderIds, setManualOrderIds] = useState("");
   const [manualEnvelopeIds, setManualEnvelopeIds] = useState("");
+  const [envelopePrintSettings, setEnvelopePrintSettings] = useState<EnvelopePrintSettings>(() => storedEnvelopeSettings);
   const [orderCsv, setOrderCsv] = useState("");
   const [metafieldCsv, setMetafieldCsv] = useState("");
   const [notice, setNotice] = useState("");
@@ -798,6 +833,10 @@ export default function Home() {
     reportEndDate,
     fulfilmentColumns,
   ]);
+
+  useEffect(() => {
+    writeJson(envelopeSettingsStorageKey, envelopePrintSettings);
+  }, [envelopePrintSettings]);
 
   useEffect(() => {
     if (session?.role !== "admin") return;
@@ -1197,14 +1236,36 @@ export default function Home() {
     setNotice(`${matches.length} envelope name${matches.length === 1 ? "" : "s"} added in the order entered.`);
   }
 
+  function updateEnvelopePrintSettings(patch: Partial<EnvelopePrintSettings>) {
+    setEnvelopePrintSettings((current) => ({ ...current, ...patch }));
+  }
+
+  function uploadEnvelopeFont(file: File | null) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result ?? "");
+      const fontBase64 = result.includes(",") ? result.split(",").pop() ?? "" : result;
+      updateEnvelopePrintSettings({ fontName: file.name, fontBase64 });
+      setNotice(`${file.name} loaded for envelope printing.`);
+    };
+    reader.onerror = () => setNotice("Could not load that font file.");
+    reader.readAsDataURL(file);
+  }
+
   async function printEnvelopes() {
     if (!envelopeOrders.length) return;
+    if (!envelopePrintSettings.fontBase64) return setNotice("Upload the font you want to use before generating envelopes.");
     try {
       setNotice("Generating the A4 envelope PDF...");
       const response = await fetch("/api/envelopes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ names: envelopeOrders.map((order) => order.plushName || "UNNAMED PLUSHIE") }),
+        body: JSON.stringify({
+          names: envelopeOrders.map((order) => order.plushName || "UNNAMED PLUSHIE"),
+          fontBase64: envelopePrintSettings.fontBase64,
+          settings: envelopePrintSettings,
+        }),
       });
       if (!response.ok) throw new Error(await response.text() || "Envelope PDF could not be generated.");
       const url = URL.createObjectURL(await response.blob());
@@ -1813,7 +1874,7 @@ export default function Home() {
     </aside>
 
     <section className="main-area">
-      <header className="topbar"><div><p>{workspaceTitle.toUpperCase()} WORKSPACE</p><h1>{viewTitle(view)}</h1></div><div className="top-actions"><span className={`role-badge ${session.role}`}>{session.role}</span>{view === "packing_slips" && <button className="button primary print-trigger" onClick={printPackingSlips}>Print {packingOrders.length} A6 slip{packingOrders.length === 1 ? "" : "s"}</button>}{view === "print_envelope" && <button className="button primary" disabled={!envelopeOrders.length} onClick={printEnvelopes}>Generate {envelopePages.length} A4 page{envelopePages.length === 1 ? "" : "s"}</button>}{view === "sales_report" && <button className="button primary" onClick={() => printView("print-sales-report")}>Print / Save PDF</button>}{workspace === "fulfilment" && view !== "import" && <button className="button secondary" onClick={() => setView("import")}>Import CSV</button>}</div></header>
+      <header className="topbar"><div><p>{workspaceTitle.toUpperCase()} WORKSPACE</p><h1>{viewTitle(view)}</h1></div><div className="top-actions"><span className={`role-badge ${session.role}`}>{session.role}</span>{view === "packing_slips" && <button className="button primary print-trigger" onClick={printPackingSlips}>Print {packingOrders.length} A6 slip{packingOrders.length === 1 ? "" : "s"}</button>}{view === "print_envelope" && <button className="button primary" disabled={!envelopeOrders.length || !envelopePrintSettings.fontBase64} onClick={printEnvelopes}>Generate {envelopePages.length} A4 page{envelopePages.length === 1 ? "" : "s"}</button>}{view === "sales_report" && <button className="button primary" onClick={() => printView("print-sales-report")}>Print / Save PDF</button>}{workspace === "fulfilment" && view !== "import" && <button className="button secondary" onClick={() => setView("import")}>Import CSV</button>}</div></header>
       {databaseError && <div className="notice"><span>Database connection: {databaseError}</span></div>}
       {loadingOrders && <div className="notice"><span>Loading shared orders from Supabase...</span></div>}
       {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice("")}>x</button></div>}
@@ -1916,11 +1977,11 @@ export default function Home() {
       {view === "print_envelope" && <section className="envelope-page">
         <div className="envelope-controls card no-envelope-print">
           <div className="packing-manual"><div><h2>Choose orders to print</h2><p>Enter order IDs, choose a stage, or select every order shown in that stage.</p></div><div className="manual-entry"><input value={manualEnvelopeIds} onChange={(event) => setManualEnvelopeIds(event.target.value)} onKeyDown={(event) => event.key === "Enter" && selectManualEnvelopeOrders()} placeholder="Example: 1402, 1403, 1404" /><button className="button primary" onClick={selectManualEnvelopeOrders}>Add order IDs</button></div></div>
-          <div className="canva-connection connected"><div><strong>Print-ready PDF generator</strong><span>The original envelope artwork and Jingleberry font are built in. No Canva connection is required.</span></div></div>
+          <EnvelopeSettingsPanel settings={envelopePrintSettings} onChange={updateEnvelopePrintSettings} onFontUpload={uploadEnvelopeFont} onReset={() => setEnvelopePrintSettings(defaultEnvelopePrintSettings)} />
           <div className="packing-list-header"><div><strong>Available orders</strong><span>Order number, descending</span></div><select value={envelopeStatusFilter} onChange={(event) => setEnvelopeStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><div className="packing-list-actions"><button onClick={() => setEnvelopeSelection((current) => [...new Set([...current, ...envelopeAvailableOrders.map((order) => order.id)])])}>Select shown</button><button onClick={() => setEnvelopeSelection([])}>Clear</button></div></div>
           <div className="packing-order-list">{envelopeAvailableOrders.map((order) => { const selectedIndex = envelopeSelection.indexOf(order.id); return <label key={order.id}><input type="checkbox" checked={selectedIndex >= 0} onChange={() => setEnvelopeSelection((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><div><strong>{orderLabel(order)} | {(order.plushName || "Unnamed plushie").toUpperCase()}</strong><span>{order.customerName || "No customer"} | {order.character || "No character"}</span></div>{selectedIndex >= 0 ? <b className="envelope-order-position">{selectedIndex + 1}</b> : <StatusPill status={order.status} />}</label>; })}</div>
         </div>
-        <div className="envelope-preview"><div className="preview-heading"><div><h2>A4 page order</h2><p>Two uppercase Jingleberry names are placed on each page using the supplied envelope artwork.</p></div><span>{envelopePages.length} pages</span></div>{envelopePages.length ? <div className="envelope-sheet-list">{envelopePages.map((pageOrders, index) => <EnvelopeSheet key={index} pageNumber={index + 1} orders={pageOrders} />)}</div> : <div className="preview-empty"><strong>No orders selected</strong><p>Choose orders from the list to build the envelope pages.</p></div>}</div>
+        <div className="envelope-preview"><div className="preview-heading"><div><h2>A4 page order</h2><p>Two uppercase names are placed on each page using your uploaded font and envelope settings.</p></div><span>{envelopePages.length} pages</span></div>{envelopePages.length ? <div className="envelope-sheet-list">{envelopePages.map((pageOrders, index) => <EnvelopeSheet key={index} pageNumber={index + 1} orders={pageOrders} settings={envelopePrintSettings} />)}</div> : <div className="preview-empty"><strong>No orders selected</strong><p>Choose orders from the list to build the envelope pages.</p></div>}</div>
       </section>}
 
       {view === "sales_report" && session.role === "admin" && <section className="sales-report-page">
@@ -2775,8 +2836,28 @@ function PackingSlip({ order }: { order: Order }) {
   return <article className="a6-slip"><header><span>ORDER ID</span><strong>{orderLabel(order)}</strong></header><div className="slip-fields"><div className="primary-slip-field"><label>CHARACTER:</label><p>{order.character || "-"}</p></div><div className="primary-slip-field"><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{order.remark || "-"}</p></div></div><footer>Meaningful Plushies</footer></article>;
 }
 
-function EnvelopeSheet({ orders, pageNumber }: { orders: Order[]; pageNumber: number }) {
-  return <article className="envelope-sheet"><span>PAGE {pageNumber}</span><div><small>TOP NAME</small><strong>{(orders[0]?.plushName || "-").toUpperCase()}</strong></div><div><small>BOTTOM NAME</small><strong>{(orders[1]?.plushName || "-").toUpperCase()}</strong></div></article>;
+function EnvelopeSettingsPanel({ settings, onChange, onFontUpload, onReset }: { settings: EnvelopePrintSettings; onChange: (patch: Partial<EnvelopePrintSettings>) => void; onFontUpload: (file: File | null) => void; onReset: () => void }) {
+  const numberChange = (key: keyof EnvelopePrintSettings) => (event: ChangeEvent<HTMLInputElement>) => onChange({ [key]: Number(event.target.value) } as Partial<EnvelopePrintSettings>);
+  return <section className="envelope-settings">
+    <div className="envelope-settings-header"><div><strong>Envelope print settings</strong><span>Upload any font, then tune the size and text box placement without changing code.</span></div><button className="view-button" type="button" onClick={onReset}>Reset</button></div>
+    <label className="envelope-font-upload"><span>Font file</span><input type="file" accept=".otf,.ttf,.woff,.woff2,font/*" onChange={(event) => onFontUpload(event.target.files?.[0] ?? null)} /><strong>{settings.fontName || "No font uploaded yet"}</strong><small>Required before generating the PDF.</small></label>
+    <div className="envelope-settings-grid">
+      <label>Font size<input type="number" step="1" value={settings.fontSize} onChange={numberChange("fontSize")} /></label>
+      <label>Minimum size<input type="number" step="1" value={settings.minFontSize} onChange={numberChange("minFontSize")} /></label>
+      <label>Letter spacing<input type="number" step="0.1" value={settings.letterSpacing} onChange={numberChange("letterSpacing")} /></label>
+      <label>Line height<input type="number" step="0.01" value={settings.lineHeight} onChange={numberChange("lineHeight")} /></label>
+      <label>Box width<input type="number" step="1" value={settings.textBoxWidth} onChange={numberChange("textBoxWidth")} /></label>
+      <label>Box height<input type="number" step="1" value={settings.textBoxHeight} onChange={numberChange("textBoxHeight")} /></label>
+      <label>Top X<input type="number" step="0.1" value={settings.topX} onChange={numberChange("topX")} /></label>
+      <label>Top Y<input type="number" step="0.1" value={settings.topY} onChange={numberChange("topY")} /></label>
+      <label>Bottom X<input type="number" step="0.1" value={settings.bottomX} onChange={numberChange("bottomX")} /></label>
+      <label>Bottom Y<input type="number" step="0.1" value={settings.bottomY} onChange={numberChange("bottomY")} /></label>
+    </div>
+  </section>;
+}
+
+function EnvelopeSheet({ orders, pageNumber, settings }: { orders: Order[]; pageNumber: number; settings: EnvelopePrintSettings }) {
+  return <article className="envelope-sheet"><span>PAGE {pageNumber}</span><div><small>TOP NAME | X {settings.topX}, Y {settings.topY}</small><strong>{(orders[0]?.plushName || "-").toUpperCase()}</strong></div><div><small>BOTTOM NAME | X {settings.bottomX}, Y {settings.bottomY}</small><strong>{(orders[1]?.plushName || "-").toUpperCase()}</strong></div></article>;
 }
 
 type IconName = "orders" | "fulfilment" | "packing" | "envelope" | "import" | "shipped" | "logout" | "search" | "history" | "drag" | "settings" | "stock" | "report" | "accounting" | "cash" | "documents" | "ledger" | "tax";
