@@ -2242,7 +2242,7 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
         { id: `${group.id}-fee-processor`, transactionId: group.id, accountId: "", accountName: group.processor, entryType: "credit", amount: group.processingFees, memo: `${group.processor} fees deducted`, createdAt: group.date },
       );
     }
-    return { ...group, description: `${group.processor} sales for ${formatDate(group.date)}`, entries };
+    return { ...group, description: `${group.processor} sales`, entries };
   });
   const allLedgerEntries = [...ledgerEntries, ...generatedSalesGroups.flatMap((group) => group.entries)];
   const transactionById = new Map(transactions.map((transaction) => [transaction.id, transaction]));
@@ -2324,7 +2324,7 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
             const sideTotal = Math.max(debitRows.reduce((total, row) => total + row.amount, 0), creditRows.reduce((total, row) => total + row.amount, 0));
             return <article className="card accounting-table-card" key={`${section.title}-${accountName}`}>
               <h3>{accountName}</h3>
-              <div className="table-scroll"><table className="orders-table t-account-table"><thead><tr><th colSpan={3}>Debit</th><th colSpan={3}>Credit</th></tr><tr><th>Date</th><th>Details</th><th>Amount</th><th>Date</th><th>Details</th><th>Amount</th></tr></thead><tbody>{Array.from({ length: rowCount }).map((_, index) => {
+              <div className="table-scroll t-account-scroll"><table className="orders-table t-account-table"><colgroup><col className="t-date-col" /><col className="t-details-col" /><col className="t-amount-col" /><col className="t-date-col" /><col className="t-details-col" /><col className="t-amount-col" /></colgroup><thead><tr><th colSpan={3}>Debit</th><th colSpan={3}>Credit</th></tr><tr><th>Date</th><th>Details</th><th>Amount</th><th>Date</th><th>Details</th><th>Amount</th></tr></thead><tbody>{Array.from({ length: rowCount }).map((_, index) => {
                 const debit = debitRows[index];
                 const credit = creditRows[index];
                 return <tr key={`${accountName}-${index}`}><td>{debit?.date ? formatDate(debit.date) : ""}</td><td>{debit?.details ?? ""}</td><td>{debit ? formatMoney(debit.amount) : ""}</td><td>{credit?.date ? formatDate(credit.date) : ""}</td><td>{credit?.details ?? ""}</td><td>{credit ? formatMoney(credit.amount) : ""}</td></tr>;

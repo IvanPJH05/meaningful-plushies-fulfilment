@@ -22,13 +22,21 @@
 .t-account-tabs { width: fit-content; margin: 18px 0 6px; flex-wrap: wrap; }
 .t-account-list { display: grid; grid-template-columns: 1fr; gap: 14px; }
 .t-account-list .accounting-table-card { width: 100%; overflow: hidden; }
+.t-account-scroll { overflow: visible; }
 .t-account-table { table-layout: fixed; width: 100%; }
 .t-account-table th { font-size: 12px; }
-.t-account-table td { vertical-align: top; font-size: 13px; border-bottom: 1px solid #dbe4ef; }
+.t-account-table th,
+.t-account-table td { border-left: 1px solid #e4ebf4; }
+.t-account-table th:first-child,
+.t-account-table td:first-child { border-left: 0; }
+.t-account-table td { vertical-align: top; font-size: 13px; line-height: 1.45; border-bottom: 1px solid #dbe4ef; white-space: normal; overflow-wrap: anywhere; }
 .t-account-table td:nth-child(3),
 .t-account-table td:nth-child(6) { font-weight: 800; white-space: nowrap; }
 .t-account-table th:nth-child(4),
 .t-account-table td:nth-child(4) { border-left: 2px solid #cad6e5; }
+.t-date-col { width: 16%; }
+.t-details-col { width: 23%; }
+.t-amount-col { width: 11%; }
 .t-account-selector { display: grid; gap: 6px; max-width: 360px; margin: 12px 0 8px; color: var(--muted); font-size: 11px; font-weight: 800; }
 .t-account-selector select { height: 38px; border: 1px solid #d7dfe9; border-radius: 7px; padding: 0 10px; background: #fff; color: var(--text); }
 .accounting-date-filter { display: flex; gap: 12px; align-items: flex-end; margin: 16px 0; padding: 14px 16px; }
