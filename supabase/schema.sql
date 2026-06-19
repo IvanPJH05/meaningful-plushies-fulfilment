@@ -274,6 +274,22 @@ create table if not exists public.accounting_ledger_entries (
   created_at timestamptz not null default now()
 );
 
+alter table public.accounting_transactions drop constraint if exists accounting_transactions_transaction_type_check;
+alter table public.accounting_transactions add constraint accounting_transactions_transaction_type_check
+  check (transaction_type in (
+    'income', 'expense', 'transfer',
+    'Revenue', 'Expense', 'Asset Purchase', 'Liability', 'Equity', 'Tax',
+    'Inventory Purchase', 'Loan', 'Owner Contribution', 'Owner Withdrawal'
+  ));
+
+alter table public.accounting_documents drop constraint if exists accounting_documents_transaction_type_check;
+alter table public.accounting_documents add constraint accounting_documents_transaction_type_check
+  check (transaction_type in (
+    'income', 'expense',
+    'Revenue', 'Expense', 'Asset Purchase', 'Liability', 'Equity', 'Tax',
+    'Inventory Purchase', 'Loan', 'Owner Contribution', 'Owner Withdrawal'
+  ));
+
 insert into public.accounting_categories(name, account_type, report_section)
 values
   ('Sales Revenue', 'income', 'Revenue'),

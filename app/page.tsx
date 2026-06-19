@@ -367,6 +367,12 @@ function formatMoney(value: number, currency = "MYR") {
   return new Intl.NumberFormat("en-MY", { style: "currency", currency }).format(value);
 }
 
+function readableError(error: unknown, fallback: string) {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") return error.message;
+  return fallback;
+}
+
 function printView(className: "print-packing" | "print-sales-report") {
   document.body.classList.add(className);
   const cleanup = () => document.body.classList.remove(className);
@@ -1389,7 +1395,7 @@ export default function Home() {
       await loadSharedData();
       setNotice("Transaction added.");
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Could not create transaction.");
+      setNotice(readableError(error, "Could not create transaction."));
     } finally {
       setSavingAccounting(false);
     }
