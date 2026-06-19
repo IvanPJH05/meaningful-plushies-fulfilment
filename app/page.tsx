@@ -155,18 +155,21 @@ const stockPurchaseAccounts = [
   "Boxes",
   "NFC Chips",
 ] as const;
+const bookkeepingInventoryStockKeys = ["BILLY", "TOOTSIE", "HUNNIE", "DRAGON WARRIOR", "PACKAGING", "BOXES", "BUBBLE WRAP", "CARRIAGE INWARD", "WAX SEAL"];
 const businessEvents = [
-  { group: "Category", value: "inventory_purchase", label: "Purchases (Inventory)", transactionLabel: "Inventory Purchase", accountingMapping: "Inventory", accounts: ["Plushie", "Speakers", "NFC Card", "Packaging", "Carton Boxes"] },
-  { group: "Category", value: "marketing_expense", label: "Marketing", transactionLabel: "Marketing Expense", accountingMapping: "Marketing Expenses", accounts: ["Meta Advertising", "TikTok Advertising", "Influencer Marketing", "Affiliate Commissions", "Content Creation"] },
-  { group: "Category", value: "software_expense", label: "Software & Subscriptions", transactionLabel: "Software Expense", accountingMapping: "Software Expenses", accounts: ["Shopify Subscription", "ChatGPT Subscription", "Canva Subscription", "Upload Lift", "Domain & Hosting", "Other Software"] },
-  { group: "Category", value: "administrative_expense", label: "Administrative Expenses", transactionLabel: "Administrative Expense", accountingMapping: "Admin Fees", accounts: ["Professional Fees", "Bank Charges", "Office Expenses", "Samples & Testing", "Miscellaneous Expenses"] },
-  { group: "Category", value: "operating_expense", label: "Operating Expenses", transactionLabel: "Operating Expense", accountingMapping: "Operating Expense", accounts: ["Salary", "Carriage Outwards"] },
-  { group: "Category", value: "equipment_purchase", label: "Equipment & Assets", transactionLabel: "Equipment Purchase", accountingMapping: "Equipment", accounts: ["Printers", "Heat Press Machines", "Sewing Machines", "Computers", "Cameras", "Other Equipment"] },
-  { group: "Category", value: "bank_transfer", label: "Bank & Transfers", transactionLabel: "Bank Transfer", accountingMapping: "Bank Account", accounts: ["Bank Transfer", "Xendit Payout", "Stripe Payout", "TikTok Payout"] },
-  { group: "Category", value: "owner_transaction", label: "Owner Transactions", transactionLabel: "Owner Transaction", accountingMapping: "Equity", accounts: ["Owner Capital Injection", "Owner Drawings"] },
-  { group: "Category", value: "loan", label: "Loans", transactionLabel: "Loan Transaction", accountingMapping: "Loan", accounts: ["Loan Received", "Loan Repayment"] },
-  { group: "Category", value: "tax", label: "Tax", transactionLabel: "Tax Transaction", accountingMapping: "Tax Payable", accounts: ["Tax Payment", "Tax Penalty"] },
+  { group: "Money out", value: "inventory_purchase", label: "Inventory", transactionLabel: "Inventory Purchase", accountingMapping: "Inventory", accounts: ["Plush toy", "Packaging", "Carton Box", "Bubble wrap", "Carriage Inward", "Wax seal"] },
+  { group: "Money out", value: "expense", label: "Expenses", transactionLabel: "Expense", accountingMapping: "Expenses", accounts: ["Labour", "Samples", "JnT (Carriage Outwards)"] },
+  { group: "Money out", value: "asset_purchase", label: "Assets", transactionLabel: "Asset Purchase", accountingMapping: "Assets", accounts: ["New asset"] },
+  { group: "Money out", value: "marketing_expense", label: "Marketing", transactionLabel: "Marketing Expense", accountingMapping: "Marketing", accounts: ["Meta ads", "TikTok ads"] },
+  { group: "Money in", value: "payment_processor_paid", label: "Payment Processor Paid", transactionLabel: "Payment Processor Paid", accountingMapping: "Money In", accounts: ["From sales report"] },
 ] as const;
+const bookkeepingEventByView: Partial<Record<View, (typeof businessEvents)[number]["value"]>> = {
+  accounting_transactions: "inventory_purchase",
+  accounting_documents: "expense",
+  accounting_balance_sheet: "asset_purchase",
+  accounting_profit_loss: "marketing_expense",
+  accounting_cash_flow: "payment_processor_paid",
+};
 
 const accountingPresetAccounts: Omit<AccountingCategory, "id" | "parentId" | "active">[] = [
   { name: "Bank Account", accountType: "asset", reportSection: "Current Assets", dataSourceType: "system_generated", sourceModule: "Payment Processor", sourceEntity: "Payouts", postingTrigger: "Payout Received", allowSubAccounts: false, allowedTransactionTypes: [] },
@@ -219,21 +222,12 @@ const processorAccounts = ["Xendit", "Stripe", "TikTok Shop"] as const;
 const fulfilmentViews: readonly View[] = ["orders", "fulfilment", "packing_slips", "print_envelope", "import", "fulfilled"];
 const accountingViews: readonly View[] = [
   "accounting_dashboard",
-  "accounting_documents",
   "accounting_transactions",
-  "accounting_profit_loss",
-  "accounting_balance_sheet",
-  "accounting_cash_flow",
-  "accounting_general_ledger",
-  "accounting_trial_balance",
   "accounting_payable",
-  "accounting_receivable",
-  "accounting_bank_reconciliation",
-  "accounting_product_profitability",
-  "accounting_marketing_profitability",
-  "accounting_cash_position",
-  "accounting_tax_reports",
-  "accounting_settings",
+  "accounting_documents",
+  "accounting_balance_sheet",
+  "accounting_profit_loss",
+  "accounting_cash_flow",
 ];
 const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "stock", "sales_report", ...accountingViews];
 const adminOnlyViews = new Set<View>(["history", "settings", "stock", "sales_report", ...accountingViews]);
@@ -246,7 +240,7 @@ const workspaceDefaultViews: Record<Workspace, View> = {
 };
 const workspaceLabels: Record<Workspace, string> = {
   fulfilment: "Fulfilment",
-  accounting: "Accounting",
+  accounting: "Book Keeping",
   inventory: "Inventory",
   reports: "Reports",
   settings: "Settings",
@@ -335,22 +329,13 @@ const fulfilmentAdminNavItems: NavItem[] = [
 ];
 
 const accountingNavItems: NavItem[] = [
-  { view: "accounting_dashboard", label: "Overview", icon: "accounting" },
-  { view: "accounting_documents", label: "Documents", icon: "documents" },
-  { view: "accounting_transactions", label: "Transactions", icon: "cash" },
-  { view: "accounting_profit_loss", label: "Profit & Loss", icon: "report" },
-  { view: "accounting_balance_sheet", label: "Balance Sheet", icon: "ledger" },
-  { view: "accounting_cash_flow", label: "Cash Flow", icon: "cash" },
-  { view: "accounting_general_ledger", label: "General Ledger", icon: "ledger" },
-  { view: "accounting_trial_balance", label: "Trial Balance", icon: "ledger" },
-  { view: "accounting_payable", label: "Payables", icon: "cash" },
-  { view: "accounting_receivable", label: "Receivables", icon: "cash" },
-  { view: "accounting_bank_reconciliation", label: "Bank Reconciliation", icon: "ledger" },
-  { view: "accounting_product_profitability", label: "Product Profitability", icon: "report" },
-  { view: "accounting_marketing_profitability", label: "Marketing Profitability", icon: "report" },
-  { view: "accounting_cash_position", label: "Cash Position", icon: "cash" },
-  { view: "accounting_tax_reports", label: "Tax Reports", icon: "tax" },
-  { view: "accounting_settings", label: "Accounting Settings", icon: "settings" },
+  { view: "accounting_dashboard", label: "Book Keeping Book", icon: "ledger" },
+  { view: "accounting_payable", label: "Unsettled Payments", icon: "cash" },
+  { view: "accounting_transactions", label: "Inventory", icon: "stock" },
+  { view: "accounting_documents", label: "Expenses", icon: "documents" },
+  { view: "accounting_balance_sheet", label: "Assets", icon: "accounting" },
+  { view: "accounting_profit_loss", label: "Marketing", icon: "report" },
+  { view: "accounting_cash_flow", label: "Money In", icon: "cash" },
 ];
 
 const inventoryNavItems: NavItem[] = [{ view: "stock", label: "Stock Count", icon: "stock" }];
@@ -358,7 +343,6 @@ const reportsNavItems: NavItem[] = [{ view: "sales_report", label: "Sales Report
 const settingsNavItems: NavItem[] = [
   { view: "settings", label: "Fulfilment Settings", icon: "settings" },
   { view: "history", label: "History", icon: "history" },
-  { view: "accounting_settings", label: "Accounting Settings", icon: "settings" },
 ];
 
 function formatDate(value: string, withTime = false) {
@@ -529,6 +513,7 @@ export default function Home() {
   const [accountingLedgerEntries, setAccountingLedgerEntries] = useState<AccountingLedgerEntry[]>([]);
   const [accountingDocumentFile, setAccountingDocumentFile] = useState<File | null>(null);
   const [transactionDocumentFile, setTransactionDocumentFile] = useState<File | null>(null);
+  const [settlementFiles, setSettlementFiles] = useState<Record<string, File | null>>({});
   const [savingAccounting, setSavingAccounting] = useState(false);
   const [documentForm, setDocumentForm] = useState<AccountingDocumentForm>({
     name: "",
@@ -706,6 +691,17 @@ export default function Home() {
   useEffect(() => {
     if (session?.role === "staff" && adminOnlyViews.has(view)) setView("orders");
   }, [session, view]);
+
+  useEffect(() => {
+    const businessEvent = bookkeepingEventByView[view];
+    if (!businessEvent) return;
+    setTransactionForm((current) => current.businessEvent === businessEvent ? current : {
+      ...emptyTransactionForm(),
+      businessEvent,
+      categoryId: "",
+      accountName: "",
+    });
+  }, [view]);
 
   const selected = orders.find((order) => order.id === selectedId) ?? null;
   const packingOrders = orders.filter((order) => packingSelection.includes(order.id));
@@ -1134,11 +1130,22 @@ export default function Home() {
 
   function mappedAccountName(event: ReturnType<typeof selectedBusinessEvent>, selection: string) {
     const directMap: Record<string, string> = {
+      "Plush toy": "Inventory",
       Plushie: "Inventory",
-      Speakers: "Speakers",
       "NFC Card": "NFC Chips",
-      Packaging: "Packaging Cost",
-      "Carton Boxes": "Boxes",
+      Packaging: "Inventory",
+      "Carton Box": "Inventory",
+      "Carton Boxes": "Inventory",
+      "Bubble wrap": "Inventory",
+      "Carriage Inward": "Inventory",
+      "Wax seal": "Inventory",
+      Labour: "Labour Cost",
+      Samples: "Samples & Testing",
+      "JnT (Carriage Outwards)": "Shipping Cost",
+      "Meta ads": "Meta Advertising",
+      "TikTok ads": "TikTok Advertising",
+      "New asset": "Equipment",
+      "From sales report": "Bank Account",
       Salary: "Salary Expense",
       "Carriage Outwards": "Shipping Cost",
       Printers: "Equipment",
@@ -1174,7 +1181,9 @@ export default function Home() {
   }
 
   function ledgerPreview(transactionId = "preview") {
-    const amount = Number(transactionForm.amount);
+    const quantity = Number(transactionForm.quantity) || 0;
+    const unitCost = Number(transactionForm.unitCost) || 0;
+    const amount = Number(transactionForm.amount) || (quantity > 0 && unitCost > 0 ? quantity * unitCost : 0);
     if (!Number.isFinite(amount) || amount <= 0) return [];
     const event = selectedBusinessEvent();
     const account = selectedAccountingAccount();
@@ -1183,7 +1192,7 @@ export default function Home() {
     const paidAmount = transactionForm.paymentStatus === "paid_in_full" ? amount : transactionForm.paymentStatus === "deposit_paid" ? depositAmount : 0;
     const outstandingAmount = Math.max(0, amount - paidAmount);
     const now = new Date().toISOString();
-    const primaryIsCredit = ["owner_transaction", "loan"].includes(event.value) && ["Owner Capital Injection", "Loan Received"].includes(transactionForm.categoryId);
+    const primaryIsCredit = event.value === "payment_processor_paid" || (["owner_transaction", "loan"].includes(event.value) && ["Owner Capital Injection", "Loan Received"].includes(transactionForm.categoryId));
     const transferOrRepayment = ["bank_transfer"].includes(event.value) || ["Owner Drawings", "Loan Repayment", "Tax Payment"].includes(transactionForm.categoryId);
     const entries: AccountingLedgerEntry[] = [];
     const primaryEntryType: "debit" | "credit" = primaryIsCredit ? "credit" : "debit";
@@ -1267,9 +1276,10 @@ export default function Home() {
   }
 
   async function createManualAccountingTransaction() {
-    const amount = Number(transactionForm.amount);
     const quantity = Number(transactionForm.quantity) || 0;
     const unitCost = Number(transactionForm.unitCost) || 0;
+    let amount = Number(transactionForm.amount);
+    if ((!Number.isFinite(amount) || amount <= 0) && quantity > 0 && unitCost > 0) amount = quantity * unitCost;
     const depositAmount = Number(transactionForm.depositAmount) || 0;
     if (!transactionForm.description.trim()) return setNotice("Add a transaction description.");
     if (!Number.isFinite(amount) || amount < 0) return setNotice("Enter a valid transaction amount.");
@@ -1288,8 +1298,8 @@ export default function Home() {
         account = {
           id: crypto.randomUUID(),
           name: transactionForm.accountName.trim(),
-          accountType: event.value === "inventory_purchase" || event.value === "equipment_purchase" ? "asset" : "expense",
-          reportSection: event.value === "inventory_purchase" ? "Current Assets" : event.value === "equipment_purchase" ? "Non Current Assets" : "Expenses",
+          accountType: event.value === "inventory_purchase" || event.value === "asset_purchase" ? "asset" : "expense",
+          reportSection: event.value === "inventory_purchase" ? "Current Assets" : event.value === "asset_purchase" ? "Non Current Assets" : "Expenses",
           parentId: event.value === "inventory_purchase" ? inventoryParent?.id ?? "" : "",
           dataSourceType: "manual",
           sourceModule: "Manual Transactions",
@@ -1316,7 +1326,7 @@ export default function Home() {
           documentDate: transactionForm.transactionDate,
           amount,
           categoryId: account?.id ?? "",
-          transactionType: event.value === "bank_transfer" ? "income" : "expense",
+          transactionType: event.value === "payment_processor_paid" ? "income" : "expense",
           taxTreatment: transactionForm.taxTreatment,
           notes: transactionForm.notes.trim(),
           uploadedBy: actor,
@@ -1333,9 +1343,9 @@ export default function Home() {
         businessEvent: transactionForm.businessEvent,
         transactionDate: transactionForm.transactionDate,
         description: transactionForm.description.trim(),
-        accountName: transactionForm.categoryId || account?.name || transactionForm.accountName.trim() || "Cash",
+        accountName: transactionForm.categoryId === "New asset" ? transactionForm.accountName.trim() : transactionForm.categoryId || account?.name || transactionForm.accountName.trim() || "Cash",
         categoryId: account?.id ?? "",
-        transactionType: event.value === "bank_transfer" ? "transfer" : "expense",
+        transactionType: event.value === "payment_processor_paid" ? "income" : "expense",
         paymentStatus: transactionForm.paymentStatus,
         paymentMethod: transactionForm.paymentMethod,
         supplier: transactionForm.supplier.trim(),
@@ -1365,6 +1375,9 @@ export default function Home() {
           : stockSource.includes("SPEAKER") ? "VOICE"
           : stockSource.includes("NFC") ? "NFC"
           : stockSource.includes("BOX") || stockSource.includes("CARTON") ? "BOXES"
+          : stockSource.includes("BUBBLE") ? "BUBBLE WRAP"
+          : stockSource.includes("WAX") ? "WAX SEAL"
+          : stockSource.includes("CARRIAGE") ? "CARRIAGE INWARD"
           : stockSource.includes("PACK") ? "PACKAGING"
           : stockSource.trim();
         const currentStock = stockSettings.find((setting) => setting.itemKey === stockKey)?.initialStock ?? 0;
@@ -1393,6 +1406,97 @@ export default function Home() {
     await saveAccountingLedgerEntries(transaction.id, []);
     await deleteAccountingTransaction(transaction.id);
     await loadSharedData();
+  }
+
+  function unsettledAmount(transaction: AccountingTransaction) {
+    if (transaction.paymentStatus === "deposit_paid") return Math.max(0, transaction.amount - transaction.depositAmount);
+    if (transaction.paymentStatus === "on_credit" || transaction.paymentStatus === "pay_later") return transaction.amount;
+    return 0;
+  }
+
+  async function settleAccountingTransaction(transaction: AccountingTransaction) {
+    const amount = unsettledAmount(transaction);
+    if (amount <= 0) return setNotice("This payment is already settled.");
+    setSavingAccounting(true);
+    try {
+      const actor = session?.displayName ?? "Admin";
+      const now = new Date().toISOString();
+      const file = settlementFiles[transaction.id];
+      let documentId = "";
+      if (file) {
+        documentId = crypto.randomUUID();
+        const filePath = await uploadAccountingDocumentFile(file, documentId);
+        await saveAccountingDocument({
+          id: documentId,
+          filePath,
+          fileName: file.name,
+          fileType: file.type || "application/octet-stream",
+          fileSize: file.size,
+          name: `Payment proof - ${transaction.description}`,
+          supplier: transaction.supplier,
+          description: `Settlement for ${transaction.description}`,
+          documentDate: dateKey(now),
+          amount,
+          categoryId: transaction.categoryId,
+          transactionType: transaction.transactionType === "income" ? "income" : "expense",
+          taxTreatment: transaction.taxTreatment,
+          notes: transaction.notes,
+          uploadedBy: actor,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+      await saveAccountingTransaction({
+        ...transaction,
+        paymentStatus: "paid_in_full",
+        depositAmount: transaction.amount,
+        updatedAt: now,
+      });
+      const paymentId = crypto.randomUUID();
+      const entries: AccountingLedgerEntry[] = [
+        { id: crypto.randomUUID(), transactionId: paymentId, accountId: transaction.categoryId, accountName: "Accounts Payable", entryType: "debit", amount, memo: "Settlement paid", createdAt: now },
+        { id: crypto.randomUUID(), transactionId: paymentId, accountId: "", accountName: "Bank Account", entryType: "credit", amount, memo: "Payment from bank", createdAt: now },
+      ];
+      await saveAccountingTransaction({
+        id: paymentId,
+        source: documentId ? "document" : "manual",
+        sourceId: documentId,
+        documentId,
+        businessEvent: "settle_payment",
+        transactionDate: dateKey(now),
+        description: `Paid unsettled balance: ${transaction.description}`,
+        accountName: "Accounts Payable",
+        categoryId: transaction.categoryId,
+        transactionType: "transfer",
+        paymentStatus: "paid_in_full",
+        paymentMethod: "Bank Account",
+        supplier: transaction.supplier,
+        quantity: 0,
+        unitCost: 0,
+        depositAmount: amount,
+        invoiceNumber: transaction.invoiceNumber,
+        dueDate: "",
+        supplierTerms: "",
+        debit: amount,
+        credit: amount,
+        amount,
+        currency: "MYR",
+        taxTreatment: transaction.taxTreatment,
+        notes: `Settlement for transaction ${transaction.id}`,
+        createdBy: actor,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await saveAccountingLedgerEntries(paymentId, entries);
+      await insertSharedActivity({ id: crypto.randomUUID(), action: "Unsettled payment marked paid", detail: `${transaction.description} (${formatMoney(amount)})`, actor, createdAt: now });
+      setSettlementFiles((current) => ({ ...current, [transaction.id]: null }));
+      await loadSharedData();
+      setNotice("Payment marked as paid and recorded in the book.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not settle payment.");
+    } finally {
+      setSavingAccounting(false);
+    }
   }
 
   async function saveAccountSettings() {
@@ -1502,6 +1606,9 @@ export default function Home() {
         onDeleteDocument={removeAccountingDocument}
         onDeleteTransaction={removeAccountingTransaction}
         transactionDocuments={accountingDocuments}
+        settlementFiles={settlementFiles}
+        onSettlementFileChange={(transactionId, file) => setSettlementFiles((current) => ({ ...current, [transactionId]: file }))}
+        onSettleTransaction={settleAccountingTransaction}
         categoryName={categoryName}
       />}
 
@@ -1586,7 +1693,7 @@ export default function Home() {
         <div className="account-list">{accounts.map((account) => <div className="account-row" key={account.id}><strong>@{account.username}</strong><input value={account.displayName} onChange={(event) => setAccounts((current) => current.map((item) => item.id === account.id ? { ...item, displayName: event.target.value } : item))} /><select value={account.role} onChange={(event) => setAccounts((current) => current.map((item) => item.id === account.id ? { ...item, role: event.target.value as UserRole } : item))}><option value="staff">Staff</option><option value="admin">Admin</option></select><input type="password" placeholder="New password (optional)" value={accountPasswords[account.id] ?? ""} onChange={(event) => setAccountPasswords((current) => ({ ...current, [account.id]: event.target.value }))} /><label><input type="checkbox" checked={account.active} onChange={(event) => setAccounts((current) => current.map((item) => item.id === account.id ? { ...item, active: event.target.checked } : item))} /> Active</label><button className="button primary" onClick={() => saveAccount(account, accountPasswords[account.id])}>Save</button></div>)}</div>
 
         <div className="settings-heading"><div><h2>Initial stock</h2><p>Character stock is separate. Voice stock is one shared pool, so any 5s, 10s, or 20s sale deducts one unit.</p></div></div>
-        <div className="stock-settings">{[...stockCharacters, "VOICE"].map((itemKey) => { const setting = stockSettings.find((item) => item.itemKey === itemKey) ?? { itemKey, initialStock: 0 }; return <div key={itemKey}><strong>{itemKey === "VOICE" ? "SHARED VOICE UNITS" : itemKey}</strong><input type="number" min="0" step="1" value={setting.initialStock} onChange={(event) => setStockSettings((current) => [...current.filter((item) => item.itemKey !== itemKey), { itemKey, initialStock: Number(event.target.value) }])} /><button className="button primary" onClick={() => saveStock(setting)}>Save</button></div>; })}</div>
+        <div className="stock-settings">{[...bookkeepingInventoryStockKeys, "VOICE"].map((itemKey) => { const setting = stockSettings.find((item) => item.itemKey === itemKey) ?? { itemKey, initialStock: 0 }; return <div key={itemKey}><strong>{itemKey === "VOICE" ? "SHARED VOICE UNITS" : itemKey}</strong><input type="number" min="0" step="1" value={setting.initialStock} onChange={(event) => setStockSettings((current) => [...current.filter((item) => item.itemKey !== itemKey), { itemKey, initialStock: Number(event.target.value) }])} /><button className="button primary" onClick={() => saveStock(setting)}>Save</button></div>; })}</div>
 
         <div className="settings-heading"><div><h2>Payment processor fees</h2><p>New Shopify payment methods appear here automatically. Set a percentage, a fixed RM amount, both, or leave both at zero for no fee.</p></div><span>{processorSettings.length} processors</span></div>
         <div className="processor-list">
@@ -1639,6 +1746,9 @@ function AccountingWorkspacePage({
   onDeleteDocument,
   onDeleteTransaction,
   transactionDocuments,
+  settlementFiles,
+  onSettlementFileChange,
+  onSettleTransaction,
   categoryName,
 }: {
   view: View;
@@ -1668,6 +1778,9 @@ function AccountingWorkspacePage({
   onDeleteDocument: (document: AccountingDocument) => void;
   onDeleteTransaction: (transaction: AccountingTransaction) => void;
   transactionDocuments: AccountingDocument[];
+  settlementFiles: Record<string, File | null>;
+  onSettlementFileChange: (transactionId: string, file: File | null) => void;
+  onSettleTransaction: (transaction: AccountingTransaction) => void;
   categoryName: (categoryId: string) => string;
 }) {
   const incomeTransactions = transactions.filter((transaction) => transaction.transactionType === "income");
@@ -1685,6 +1798,54 @@ function AccountingWorkspacePage({
   const categoryOptions = categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>);
   const groupedEvents = Array.from(new Set(businessEvents.map((item) => item.group)));
   const parentOptions = categories.filter((category) => category.allowSubAccounts && !category.parentId);
+  const categoryEventValue = bookkeepingEventByView[view];
+  const categoryEvent = businessEvents.find((item) => item.value === categoryEventValue);
+  const unsettledTransactions = transactions.filter((transaction) => ["deposit_paid", "on_credit", "pay_later"].includes(transaction.paymentStatus));
+
+  if (view === "accounting_dashboard") return <section className="accounting-workspace">
+    <div className="accounting-hero card"><div><p>BOOK KEEPING BOOK</p><h2>All transactions</h2><span>Every money-in and money-out record saved from the bookkeeping category pages.</span></div><div className="accounting-status-pill">{transactions.length} records</div></div>
+    <section className="accounting-summary-grid">
+      <MoneyStat label="Money in" value={income} tone="collected" />
+      <MoneyStat label="Money out" value={expenses} tone="fees" />
+      <MoneyStat label="Net" value={profit} tone={profit < 0 ? "fees" : "sales"} />
+    </section>
+    <AccountingTransactionsTable transactions={transactions} ledgerEntries={ledgerEntries} documents={transactionDocuments} categoryName={categoryName} onOpenDocument={onOpenDocument} onDelete={onDeleteTransaction} />
+  </section>;
+
+  if (view === "accounting_payable") return <section className="accounting-workspace">
+    <div className="accounting-hero card"><div><p>UNSETTLED PAYMENTS</p><h2>Deposits and credit purchases</h2><span>Transactions stay here until the remaining payment is marked paid. Upload the payment proof when you settle it.</span></div><div className="accounting-status-pill">{unsettledTransactions.length} unsettled</div></div>
+    <UnsettledPaymentsTable transactions={unsettledTransactions} files={settlementFiles} saving={saving} onFileChange={onSettlementFileChange} onSettle={onSettleTransaction} />
+  </section>;
+
+  if (categoryEvent) {
+    const isInventory = categoryEvent.value === "inventory_purchase";
+    const isAsset = categoryEvent.value === "asset_purchase";
+    const isMoneyIn = categoryEvent.value === "payment_processor_paid";
+    const calculatedAmount = Number(transactionForm.amount) || ((Number(transactionForm.quantity) || 0) * (Number(transactionForm.unitCost) || 0));
+    return <section className="accounting-workspace">
+      <div className="accounting-hero card"><div><p>{categoryEvent.group.toUpperCase()}</p><h2>{categoryEvent.label}</h2><span>{isInventory ? "Record stock bought by batch. Quantity updates the inventory stock settings after saving." : isMoneyIn ? "Record payout money received from payment processors or sales reports." : "Record a simple bookkeeping transaction with source document proof."}</span></div><div className="accounting-status-pill">{formatMoney(calculatedAmount || 0)}</div></div>
+      <section className="accounting-form-grid">
+        <div className="accounting-form card">
+          <h3>New {categoryEvent.label} record</h3>
+          <label>Date<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label>
+          <label>{isInventory ? "Inventory item" : isMoneyIn ? "Money in type" : "Category"}<select value={transactionForm.categoryId} onChange={(input) => onTransactionFormChange({ categoryId: input.target.value, accountName: "" })}><option value="">Choose</option>{categoryEvent.accounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>
+          {isInventory && transactionForm.categoryId === "Plush toy" && <label>Plush character<select value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })}><option value="">Choose character</option><option value="BILLY">BILLY</option><option value="TOOTSIE">TOOTSIE</option><option value="HUNNIE">HUNNIE</option><option value="DRAGON WARRIOR">DRAGON WARRIOR</option></select></label>}
+          {isAsset && <label>Asset name<input value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })} placeholder="Example: Printer, heat press machine..." /></label>}
+          <div className="accounting-two-cols"><label>{isInventory ? "Unit price" : "Amount"}<input type="number" min="0" step="0.01" value={isInventory ? transactionForm.unitCost : transactionForm.amount} onChange={(input) => onTransactionFormChange(isInventory ? { unitCost: input.target.value, amount: String((Number(input.target.value) || 0) * (Number(transactionForm.quantity) || 0) || "") } : { amount: input.target.value })} /></label>{isInventory ? <label>Quantity bought<input type="number" min="0" step="1" value={transactionForm.quantity} onChange={(input) => onTransactionFormChange({ quantity: input.target.value, amount: String((Number(input.target.value) || 0) * (Number(transactionForm.unitCost) || 0) || "") })} /></label> : <label>Supplier / source<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder={isMoneyIn ? "Stripe, Xendit, TikTok Shop..." : "Supplier name"} /></label>}</div>
+          {isInventory && <label>Total batch cost<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onTransactionFormChange({ amount: input.target.value })} placeholder="Auto-calculates from unit price x quantity" /></label>}
+          {isInventory && <label>Supplier<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder="Supplier name" /></label>}
+          <label>Description<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder={isInventory ? "Example: June Billy plush batch" : "Short note for the book"} /></label>
+          {!isMoneyIn && <><h3>Payment</h3><label>Payment method<select value={transactionForm.paymentStatus} onChange={(input) => onTransactionFormChange({ paymentStatus: input.target.value as AccountingTransactionForm["paymentStatus"] })}><option value="paid_in_full">Bank</option><option value="deposit_paid">Deposit Paid</option><option value="on_credit">On Credit</option></select></label></>}
+          {transactionForm.paymentStatus === "deposit_paid" && <div className="accounting-two-cols"><label>Deposit paid<input type="number" min="0" step="0.01" value={transactionForm.depositAmount} onChange={(input) => onTransactionFormChange({ depositAmount: input.target.value })} /></label><label>Remaining<input readOnly value={formatMoney(Math.max(0, calculatedAmount - (Number(transactionForm.depositAmount) || 0)))} /></label></div>}
+          <label>Source document<input type="file" accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" onChange={(event) => onTransactionFileChange(event.target.files?.[0] ?? null)} /></label>
+          {transactionFile && <p className="accounting-file-name">{transactionFile.name}</p>}
+          <label>Notes<textarea value={transactionForm.notes} onChange={(event) => onTransactionFormChange({ notes: event.target.value })} /></label>
+          <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? "Saving..." : "Save to book"}</button>
+        </div>
+        <AccountingTransactionsTable transactions={transactions.filter((transaction) => transaction.businessEvent === categoryEvent.value)} ledgerEntries={ledgerEntries} documents={transactionDocuments} categoryName={categoryName} onOpenDocument={onOpenDocument} onDelete={onDeleteTransaction} />
+      </section>
+    </section>;
+  }
 
   if (view === "accounting_documents") return <section className="accounting-workspace">
     <div className="accounting-hero card"><div><p>DOCUMENT INBOX</p><h2>Upload accounting documents</h2><span>Upload receipts, invoices, bank statements, or expense proof. Each upload also creates a transaction.</span></div><div className="accounting-status-pill">{documents.length} documents</div></div>
@@ -1791,6 +1952,14 @@ function AccountingTransactionsTable({ transactions, ledgerEntries, documents, c
     const paymentLabel = transaction.paymentStatus === "deposit_paid" ? `Deposit ${formatMoney(transaction.depositAmount)}` : transaction.paymentStatus === "on_credit" ? "On Credit" : "Paid In Full";
     return <tr key={transaction.id}><td>{formatDate(transaction.transactionDate)}</td><td><strong>{transaction.description}</strong><br /><small>{transaction.supplier || transaction.source}{transaction.invoiceNumber ? ` · Invoice ${transaction.invoiceNumber}` : ""}</small></td><td>{businessEvents.find((event) => event.value === transaction.businessEvent)?.label ?? (transaction.businessEvent || "-")}</td><td>{categoryName(transaction.categoryId)}</td><td>{paymentLabel}<br /><small>{transaction.paymentStatus === "on_credit" ? transaction.dueDate || transaction.supplierTerms || "Outstanding" : transaction.paymentMethod || "Bank Account"}</small></td><td>{entries.length ? entries.map((entry, index) => <div key={entry.id} className="ledger-line"><span>{index === 0 ? `Record ${entry.accountName}` : entry.accountName.includes("Payable") || entry.accountName.includes("Receivable") ? `Outstanding ${entry.accountName}` : `Payment from ${entry.accountName}`}</span><strong>{formatMoney(entry.amount)}</strong></div>) : <small>{formatMoney(transaction.amount)}</small>}</td><td>{document ? <button className="view-button" onClick={() => onOpenDocument(document)}>Open</button> : "-"}</td><td><button className="view-button danger-text" onClick={() => onDelete(transaction)}>Delete</button></td></tr>;
   })}</tbody></table>{!transactions.length && <div className="empty"><strong>No transactions yet</strong><p>Record a business event to start the ledger.</p></div>}</div></section>;
+}
+
+function UnsettledPaymentsTable({ transactions, files, saving, onFileChange, onSettle }: { transactions: AccountingTransaction[]; files: Record<string, File | null>; saving: boolean; onFileChange: (transactionId: string, file: File | null) => void; onSettle: (transaction: AccountingTransaction) => void }) {
+  function remaining(transaction: AccountingTransaction) {
+    if (transaction.paymentStatus === "deposit_paid") return Math.max(0, transaction.amount - transaction.depositAmount);
+    return transaction.amount;
+  }
+  return <section className="card accounting-table-card"><h3>To be paid</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>Date</th><th>Description</th><th>Supplier</th><th>Total</th><th>Paid</th><th>Remaining</th><th>Payment proof</th><th /></tr></thead><tbody>{transactions.map((transaction) => <tr key={transaction.id}><td>{formatDate(transaction.transactionDate)}</td><td><strong>{transaction.description}</strong><br /><small>{transaction.invoiceNumber ? `Invoice ${transaction.invoiceNumber}` : transaction.businessEvent}</small></td><td>{transaction.supplier || "-"}</td><td>{formatMoney(transaction.amount)}</td><td>{transaction.paymentStatus === "deposit_paid" ? formatMoney(transaction.depositAmount) : "-"}</td><td><strong>{formatMoney(remaining(transaction))}</strong></td><td><label className="inline-file-input"><input type="file" accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" onChange={(event) => onFileChange(transaction.id, event.target.files?.[0] ?? null)} />{files[transaction.id]?.name || "Upload proof"}</label></td><td><button className="view-button" disabled={saving} onClick={() => onSettle(transaction)}>Mark paid</button></td></tr>)}</tbody></table>{!transactions.length && <div className="empty"><strong>No unsettled payments</strong><p>Deposit-paid and on-credit transactions will appear here until they are marked paid.</p></div>}</div></section>;
 }
 
 function Login({ onLogin }: { onLogin: (session: Session) => void }) {
