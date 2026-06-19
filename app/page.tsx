@@ -56,6 +56,8 @@ type SortDirection = "asc" | "desc";
 type CollectedMetric = "bankTransfer" | "stripeCollected" | "xenditCollected" | "totalCollected";
 type DiscountMetric = "productDiscounted" | "shippingDiscounted";
 type FeeMetric = "processingFees" | "shopifyFees" | "totalFees";
+type FinancialReportType = "income_statement" | "balance_sheet" | "cash_summary";
+type AccountingPeriodMode = "this_month" | "custom";
 type StoredUiPreferences = {
   view?: View;
   query?: string;
@@ -430,6 +432,21 @@ function dateKey(value: string) {
   return `${year}-${month}-${day}`;
 }
 
+function localDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function monthStartKey(date = new Date()) {
+  return localDateKey(new Date(date.getFullYear(), date.getMonth(), 1));
+}
+
+function monthEndKey(date = new Date()) {
+  return localDateKey(new Date(date.getFullYear(), date.getMonth() + 1, 0));
+}
+
 function formatMoney(value: number, currency = "MYR") {
   return new Intl.NumberFormat("en-MY", { style: "currency", currency }).format(value);
 }
@@ -440,7 +457,7 @@ function readableError(error: unknown, fallback: string) {
   return fallback;
 }
 
-function printView(className: "print-packing" | "print-sales-report") {
+function printView(className: "print-packing" | "print-sales-report" | "print-financial-report") {
   document.body.classList.add(className);
   const cleanup = () => document.body.classList.remove(className);
   window.addEventListener("afterprint", cleanup, { once: true });
@@ -2238,8 +2255,10 @@ function AccountingTransactionsTable({ transactions, ledgerEntries, documents, c
 function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, categories, salesRows, categoryName }: { view: View; transactions: AccountingTransaction[]; ledgerEntries: AccountingLedgerEntry[]; categories: AccountingCategory[]; salesRows: SalesReportRow[]; categoryName: (categoryId: string) => string }) {
   const [selectedTAccountSection, setSelectedTAccountSection] = useState("Cash");
   const [selectedTAccountName, setSelectedTAccountName] = useState("all");
-  const [accountingStartDate, setAccountingStartDate] = useState("");
-  const [accountingEndDate, setAccountingEndDate] = useState("");
+  const [selectedFinancialReport, setSelectedFinancialReport] = useState<FinancialReportType>("income_statement");
+  const [accountingPeriodMode, setAccountingPeriodMode] = useState<AccountingPeriodMode>("this_month");
+  const [accountingStartDate, setAccountingStartDate] = useState(monthStartKey());
+  const [accountingEndDate, setAccountingEndDate] = useState(monthEndKey());
   const sortedTransactions = [...transactions].sort((a, b) => {
     const dateCompare = new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime();
     return dateCompare || a.createdAt.localeCompare(b.createdAt);
@@ -2364,7 +2383,18 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
     lineIndex: index,
   })));
   const journalRows = [...manualJournalRows, ...generatedJournalRows].sort((a, b) => a.date.localeCompare(b.date) || a.reference.localeCompare(b.reference) || a.lineIndex - b.lineIndex || a.id.localeCompare(b.id));
-  const dateFilter = <section className="card accounting-date-filter"><div><strong>Accounting period</strong><span>This date range is shared by General Journal, T Accounts, and Financial Reports.</span></div><label>From<input type="date" value={accountingStartDate} onChange={(event) => setAccountingStartDate(event.target.value)} /></label><label>To<input type="date" value={accountingEndDate} onChange={(event) => setAccountingEndDate(event.target.value)} /></label><button className="button secondary" onClick={() => { setAccountingStartDate(""); setAccountingEndDate(""); }}>Clear</button></section>;
+  function useThisMonthPeriod() {
+    setAccountingPeriodMode("this_month");
+    setAccountingStartDate(monthStartKey());
+    setAccountingEndDate(monthEndKey());
+  }
+  function useCustomPeriod() {
+    setAccountingPeriodMode("custom");
+  }
+  const periodLabel = accountingStartDate || accountingEndDate
+    ? `${accountingStartDate ? formatDate(accountingStartDate) : "Beginning"} to ${accountingEndDate ? formatDate(accountingEndDate) : "Today"}`
+    : "All dates";
+  const dateFilter = <section className="card accounting-date-filter"><div><strong>Accounting period</strong><span>This date range is shared by General Journal, T Accounts, and Financial Reports.</span></div><div className="range-tabs accounting-period-tabs"><button className={accountingPeriodMode === "this_month" ? "active" : ""} onClick={useThisMonthPeriod}>This month</button><button className={accountingPeriodMode === "custom" ? "active" : ""} onClick={useCustomPeriod}>Calendar</button></div>{accountingPeriodMode === "custom" && <><label>From<input type="date" value={accountingStartDate} onChange={(event) => setAccountingStartDate(event.target.value)} /></label><label>To<input type="date" value={accountingEndDate} onChange={(event) => setAccountingEndDate(event.target.value)} /></label></>}<button className="button secondary" onClick={() => { setAccountingPeriodMode("custom"); setAccountingStartDate(""); setAccountingEndDate(""); }}>All dates</button></section>;
   const balanceForAccount = (accountName: string, entries = periodLedgerEntries) => entries
     .filter((entry) => entry.accountName === accountName)
     .reduce((total, entry) => total + (entry.entryType === "debit" ? entry.amount : -entry.amount), 0);
@@ -2383,19 +2413,46 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
   const totalAssets = assetReportRows.reduce((total, item) => total + item.balance, 0);
   const equityRows = balancesForNames(["Owner's Equity", "Drawings"]);
   const totalEquity = equityRows.reduce((total, item) => total + (item.name === "Drawings" ? -Math.abs(item.balance) : Math.abs(item.balance)), 0) + netProfit;
+  const financialReportLabels: Record<FinancialReportType, string> = {
+    income_statement: "Income Statement",
+    balance_sheet: "Balance Sheet",
+    cash_summary: "Cash Summary",
+  };
 
   if (view === "accounting_financial_reports") return <section className="accounting-workspace">
-    <div className="accounting-hero card"><div><p>ACCOUNTING</p><h2>Financial Reports</h2><span>Built from the Book Keeping records, automatic sales journal entries, and T account balances for the selected period.</span></div><div className="accounting-status-pill">{formatMoney(netProfit)}</div></div>
+    <div className="accounting-hero card"><div><p>ACCOUNTING</p><h2>Financial Reports</h2><span>Choose one statement, set the accounting period, then print or save as PDF.</span></div><div className="accounting-status-pill">{financialReportLabels[selectedFinancialReport]}</div></div>
     {dateFilter}
-    <section className="accounting-summary-grid">
-      <MoneyStat label="Sales revenue" value={salesRevenue} tone="sales" />
-      <MoneyStat label="Expenses" value={totalExpenses} tone="fees" />
-      <MoneyStat label="Net profit" value={netProfit} tone={netProfit < 0 ? "fees" : "collected"} />
-    </section>
-    <section className="financial-report-grid">
-      <section className="card accounting-report"><h3>Income Statement</h3><div><span>Sales</span><strong>{formatMoney(salesRevenue)}</strong></div>{operatingExpenses.map((item) => <div key={item.name}><span>{item.name}</span><strong>({formatMoney(Math.abs(item.balance))})</strong></div>)}<div><span><strong>Net profit</strong></span><strong>{formatMoney(netProfit)}</strong></div></section>
-      <section className="card accounting-report"><h3>Balance Sheet</h3>{assetReportRows.map((item) => <div key={item.name}><span>{item.name}</span><strong>{formatMoney(item.balance)}</strong></div>)}<div><span><strong>Total assets</strong></span><strong>{formatMoney(totalAssets)}</strong></div><div><span>Current year earnings</span><strong>{formatMoney(netProfit)}</strong></div>{equityRows.map((item) => <div key={item.name}><span>{item.name}</span><strong>{formatMoney(item.name === "Drawings" ? -Math.abs(item.balance) : Math.abs(item.balance))}</strong></div>)}<div><span><strong>Total equity</strong></span><strong>{formatMoney(totalEquity)}</strong></div></section>
-      <section className="card accounting-report"><h3>Cash Summary</h3>{cashBalances.map((item) => <div key={item.name}><span>{item.name}</span><strong>{formatMoney(item.balance)}</strong></div>)}{!cashBalances.length && <div className="empty"><strong>No cash movements</strong><p>Import sales or record cash transactions to populate this report.</p></div>}</section>
+    <div className="range-tabs t-account-tabs no-print">{(Object.entries(financialReportLabels) as [FinancialReportType, string][]).map(([key, label]) => <button key={key} className={selectedFinancialReport === key ? "active" : ""} onClick={() => setSelectedFinancialReport(key)}>{label}</button>)}</div>
+    <div className="financial-report-actions no-print"><button className="button primary" onClick={() => printView("print-financial-report")}>Print / Save PDF</button></div>
+    <section className="financial-statement card">
+      <header className="financial-statement-title"><p>Meaningful Plushies</p><h2>{financialReportLabels[selectedFinancialReport]}</h2><span>{selectedFinancialReport === "balance_sheet" ? `As at ${accountingEndDate ? formatDate(accountingEndDate) : formatDate(dateKey(new Date().toISOString()))}` : `For the period ${periodLabel}`}</span></header>
+      {selectedFinancialReport === "income_statement" && <div className="statement-table">
+        <div className="statement-section-title">Revenue</div>
+        <div className="statement-row"><span>Sales revenue</span><strong>{formatMoney(salesRevenue)}</strong></div>
+        <div className="statement-total"><span>Total revenue</span><strong>{formatMoney(salesRevenue)}</strong></div>
+        <div className="statement-section-title">Less: Expenses</div>
+        {operatingExpenses.map((item) => <div className="statement-row" key={item.name}><span>{item.name}</span><strong>{formatMoney(Math.abs(item.balance))}</strong></div>)}
+        {!operatingExpenses.length && <div className="statement-row muted"><span>No expenses recorded</span><strong>{formatMoney(0)}</strong></div>}
+        <div className="statement-total"><span>Total expenses</span><strong>{formatMoney(totalExpenses)}</strong></div>
+        <div className="statement-grand-total"><span>Net profit / (loss)</span><strong>{formatMoney(netProfit)}</strong></div>
+      </div>}
+      {selectedFinancialReport === "balance_sheet" && <div className="statement-table">
+        <div className="statement-section-title">Assets</div>
+        {assetReportRows.map((item) => <div className="statement-row" key={item.name}><span>{item.name}</span><strong>{formatMoney(item.balance)}</strong></div>)}
+        {!assetReportRows.length && <div className="statement-row muted"><span>No assets recorded</span><strong>{formatMoney(0)}</strong></div>}
+        <div className="statement-total"><span>Total assets</span><strong>{formatMoney(totalAssets)}</strong></div>
+        <div className="statement-section-title">Equity</div>
+        <div className="statement-row"><span>Current year earnings</span><strong>{formatMoney(netProfit)}</strong></div>
+        {equityRows.map((item) => <div className="statement-row" key={item.name}><span>{item.name}</span><strong>{formatMoney(item.name === "Drawings" ? -Math.abs(item.balance) : Math.abs(item.balance))}</strong></div>)}
+        <div className="statement-total"><span>Total equity</span><strong>{formatMoney(totalEquity)}</strong></div>
+        <div className="statement-grand-total"><span>Total equity and liabilities</span><strong>{formatMoney(totalEquity)}</strong></div>
+      </div>}
+      {selectedFinancialReport === "cash_summary" && <div className="statement-table">
+        <div className="statement-section-title">Cash and Cash Equivalents</div>
+        {cashBalances.map((item) => <div className="statement-row" key={item.name}><span>{item.name}</span><strong>{formatMoney(item.balance)}</strong></div>)}
+        {!cashBalances.length && <div className="statement-row muted"><span>No cash movements recorded</span><strong>{formatMoney(0)}</strong></div>}
+        <div className="statement-grand-total"><span>Total cash position</span><strong>{formatMoney(cashBalances.reduce((total, item) => total + item.balance, 0))}</strong></div>
+      </div>}
     </section>
   </section>;
 
