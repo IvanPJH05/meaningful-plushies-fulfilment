@@ -1244,8 +1244,8 @@ export default function Home() {
       .filter((name) => !savedNames.has(name.toLowerCase()))
       .map((name) => ({ value: name, label: name }));
     const savedOptions = saved.map((category) => ({ value: category.id, label: category.name }));
-    if (event.value === "asset_purchase") return [{ value: newAssetOptionValue, label: "+ New asset" }, ...savedOptions];
-    return [...savedOptions, ...defaultOptions];
+    const newLabel = event.value === "asset_purchase" ? "+ New asset" : "+ New account";
+    return [{ value: newAssetOptionValue, label: newLabel }, ...savedOptions, ...defaultOptions];
   }
 
   function mappedAccountName(event: ReturnType<typeof selectedBusinessEvent>, selection: string) {
@@ -2000,7 +2000,7 @@ function AccountingWorkspacePage({
   processorAccountingTotals: { stripeCollected: number; stripeProcessingFees: number; xenditCollected: number; xenditProcessingFees: number };
   categoryName: (categoryId: string) => string;
 }) {
-  const incomeTransactions = transactions.filter((transaction) => transaction.transactionType === "income");
+  const incomeTransactions = transactions.filter((transaction) => transaction.transactionType === "income" || transaction.businessEvent === "payment_processor_paid");
   const expenseTransactions = transactions.filter((transaction) => transaction.transactionType === "expense");
   const income = incomeTransactions.reduce((total, transaction) => total + transaction.amount, 0);
   const expenses = expenseTransactions.reduce((total, transaction) => total + transaction.amount, 0);
@@ -2039,6 +2039,7 @@ function AccountingWorkspacePage({
     const isAsset = categoryEvent.value === "asset_purchase";
     const isMoneyIn = categoryEvent.value === "payment_processor_paid";
     const selectedAccountLabel = accountOptions.find((option) => option.value === transactionForm.categoryId)?.label ?? transactionForm.categoryId;
+    const newAccountLabel = isAsset ? "New asset name" : isInventory ? "New inventory account name" : categoryEvent.value === "marketing_expense" ? "New marketing account name" : "New expense account name";
     const calculatedAmount = Number(transactionForm.amount) || ((Number(transactionForm.quantity) || 0) * (Number(transactionForm.unitCost) || 0));
     const processorPayouts = transactions.filter((transaction) => transaction.businessEvent === "payment_processor_paid");
     const processorPayoutIds = new Set(processorPayouts.map((transaction) => transaction.id));
@@ -2106,7 +2107,7 @@ function AccountingWorkspacePage({
           <label>Date<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label>
           <label>{isInventory ? "Inventory item" : isMoneyIn ? "Money in type" : isAsset ? "Asset" : "Category"}<select value={transactionForm.categoryId} onChange={(input) => onTransactionFormChange({ categoryId: input.target.value, accountName: "" })}><option value="">Choose</option>{accountOptions.map((account) => <option key={account.value} value={account.value}>{account.label}</option>)}</select></label>
           {isInventory && selectedAccountLabel === "Plush toy" && <label>Plush character<select value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })}><option value="">Choose character</option><option value="BILLY">BILLY</option><option value="TOOTSIE">TOOTSIE</option><option value="HUNNIE">HUNNIE</option><option value="DRAGON WARRIOR">DRAGON WARRIOR</option></select></label>}
-          {isAsset && transactionForm.categoryId === newAssetOptionValue && <label>New asset name<input value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })} placeholder="Example: Printer, heat press machine..." /></label>}
+          {transactionForm.categoryId === newAssetOptionValue && <label>{newAccountLabel}<input value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })} placeholder={isAsset ? "Example: Printer, heat press machine..." : isInventory ? "Example: Speaker, wax seal, bubble wrap..." : categoryEvent.value === "marketing_expense" ? "Example: Meta ads, TikTok ads..." : "Example: Labour, samples, JnT..."} /></label>}
           <div className="accounting-two-cols"><label>{isInventory ? "Unit price" : "Amount"}<input type="number" min="0" step="0.01" value={isInventory ? transactionForm.unitCost : transactionForm.amount} onChange={(input) => onTransactionFormChange(isInventory ? { unitCost: input.target.value, amount: String((Number(input.target.value) || 0) * (Number(transactionForm.quantity) || 0) || "") } : { amount: input.target.value })} /></label>{isInventory ? <label>Quantity bought<input type="number" min="0" step="1" value={transactionForm.quantity} onChange={(input) => onTransactionFormChange({ quantity: input.target.value, amount: String((Number(input.target.value) || 0) * (Number(transactionForm.unitCost) || 0) || "") })} /></label> : <label>Supplier / source<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder={isMoneyIn ? "Stripe, Xendit, TikTok Shop..." : "Supplier name"} /></label>}</div>
           {isInventory && <label>Total batch cost<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onTransactionFormChange({ amount: input.target.value })} placeholder="Auto-calculates from unit price x quantity" /></label>}
           {isInventory && <label>Supplier<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder="Supplier name" /></label>}
@@ -2178,21 +2179,13 @@ function AccountingWorkspacePage({
 
   if (view === "accounting_settings") {
     const sectionEntries = Object.entries(bookkeepingSectionConfigs) as [BookkeepingSectionKey, typeof bookkeepingSectionConfigs[BookkeepingSectionKey]][];
-    const selectedConfig = bookkeepingSectionConfigs[bookkeepingCategoryForm.section];
     return <section className="accounting-workspace">
-      <div className="accounting-hero card"><div><p>BOOK KEEPING SETTINGS</p><h2>Category accounts</h2><span>Add the items you want to use in Inventory, Expenses, Assets, and Marketing. Each item is saved as its own account for future T-accounts and financial statements.</span></div><div className="accounting-status-pill">{categories.filter((category) => Object.values(bookkeepingSectionConfigs).some((config) => config.reportSection === category.reportSection)).length} items</div></div>
-      <section className="accounting-form-grid">
-        <div className="accounting-form card">
-          <h3>Add category item</h3>
-          <label>Section<select value={bookkeepingCategoryForm.section} onChange={(event) => onBookkeepingCategoryFormChange({ section: event.target.value as BookkeepingSectionKey, name: "" })}>{sectionEntries.map(([key, config]) => <option key={key} value={key}>{config.label}</option>)}</select></label>
-          <label>{selectedConfig.singularLabel} name<input value={bookkeepingCategoryForm.name} onChange={(event) => onBookkeepingCategoryFormChange({ name: event.target.value })} placeholder={bookkeepingCategoryForm.section === "asset" ? "Example: Printer, camera, heat press machine" : "Example: Speaker, Meta ads, samples"} /></label>
-          <p className="accounting-file-name">This will appear as an option in the {selectedConfig.label.toLowerCase()} page and will be treated as its own account.</p>
-          <button className="button primary" disabled={saving} onClick={onSaveBookkeepingCategory}>{saving ? "Saving..." : "Add item"}</button>
-        </div>
+      <div className="accounting-hero card"><div><p>BOOK KEEPING SETTINGS</p><h2>Saved accounts</h2><span>Create new accounts directly from Inventory, Expenses, Assets, or Marketing by choosing + New account in the entry form.</span></div><div className="accounting-status-pill">{categories.filter((category) => Object.values(bookkeepingSectionConfigs).some((config) => config.reportSection === category.reportSection)).length} items</div></div>
+      <section>
         <section className="card accounting-table-card"><h3>Saved category accounts</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>Section</th><th>Account item</th><th>Type</th><th>Parent</th></tr></thead><tbody>{sectionEntries.flatMap(([key, config]) => {
           const rows = categories.filter((category) => category.reportSection === config.reportSection).sort((a, b) => a.name.localeCompare(b.name));
           return rows.map((account) => <tr key={account.id}><td>{config.label}</td><td><strong>{account.name}</strong><br /><small>Used by {config.sourceEntity}</small></td><td>{account.accountType}</td><td>{account.parentId ? categoryName(account.parentId) : config.parentAccount}</td></tr>);
-        })}</tbody></table></div></section>
+        })}</tbody></table>{!categories.some((category) => Object.values(bookkeepingSectionConfigs).some((config) => config.reportSection === category.reportSection)) && <div className="empty"><strong>No saved category accounts yet</strong><p>Create one from a bookkeeping entry form using + New account.</p></div>}</div></section>
       </section>
     </section>;
   }
