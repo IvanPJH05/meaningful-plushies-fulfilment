@@ -1360,8 +1360,7 @@ export default function Home() {
         return [
           { id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Bank Account", entryType: "debit", amount: bankAmount, memo: "Transfer to bank", createdAt: now },
           ...(processorFee > 0 ? [{ id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Payment Processing Fees", entryType: "debit" as const, amount: processorFee, memo: `${transactionForm.categoryId} payment processing fees`, createdAt: now }] : []),
-          { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: transactionForm.categoryId, entryType: "credit", amount: bankAmount, memo: "Transfer to bank", createdAt: now },
-          ...(processorFee > 0 ? [{ id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: transactionForm.categoryId, entryType: "credit" as const, amount: processorFee, memo: "Payment processing fees", createdAt: now }] : []),
+          { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: transactionForm.categoryId, entryType: "credit", amount, memo: "Transfer to bank and payment processing fees", createdAt: now },
         ];
       }
       return [
@@ -2119,7 +2118,7 @@ function AccountingWorkspacePage({
           {transactionFile && <p className="accounting-file-name">{transactionFile.name}</p>}
           <section className="posting-preview">
             <h3>Posting preview</h3>
-            {transactionForm.categoryId === "Drawings" ? <><div><span>Debit Drawings</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>Credit Bank Account</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></> : transactionForm.categoryId === "Stripe" || transactionForm.categoryId === "Xendit" ? <><div><span>Debit Bank Account</span><strong>{formatMoney(selectedNetBankAmount)}</strong></div>{selectedProcessorFee > 0 && <div><span>Debit Payment Processing Fees</span><strong>{formatMoney(selectedProcessorFee)}</strong></div>}<div><span>Credit {transactionForm.categoryId} - Transfer to bank</span><strong>{formatMoney(selectedNetBankAmount)}</strong></div>{selectedProcessorFee > 0 && <div><span>Credit {transactionForm.categoryId} - Payment processing fees</span><strong>{formatMoney(selectedProcessorFee)}</strong></div>}</> : <><div><span>Debit Bank Account</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>Credit {transactionForm.categoryId || "payment processor"}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></>}
+            {transactionForm.categoryId === "Drawings" ? <><div><span>Debit Drawings</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>Credit Bank Account</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></> : transactionForm.categoryId === "Stripe" || transactionForm.categoryId === "Xendit" ? <><div><span>Debit Bank Account</span><strong>{formatMoney(selectedNetBankAmount)}</strong></div>{selectedProcessorFee > 0 && <div><span>Debit Payment Processing Fees</span><strong>{formatMoney(selectedProcessorFee)}</strong></div>}<div><span>Credit {transactionForm.categoryId}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></> : <><div><span>Debit Bank Account</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>Credit {transactionForm.categoryId || "payment processor"}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></>}
           </section>
           <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? "Saving..." : "Save payout"}</button>
         </div>
@@ -2294,7 +2293,6 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
     if (group.processingFees > 0 && (group.processor === "Stripe" || group.processor === "Xendit")) {
       entries.push(
         { id: `${group.id}-fee-expense`, transactionId: group.id, accountId: "", accountName: "Payment Processing Fees", entryType: "debit", amount: group.processingFees, memo: `${group.processor} processing fees`, createdAt: group.date },
-        { id: `${group.id}-fee-processor`, transactionId: group.id, accountId: "", accountName: group.processor, entryType: "credit", amount: group.processingFees, memo: `${group.processor} fees deducted`, createdAt: group.date },
       );
     }
     return { ...group, description: `${group.processor} sales`, entries };
