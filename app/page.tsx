@@ -5,7 +5,7 @@ import "./settings.css";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FormEvent, SVGProps } from "react";
 import { fulfilledOrdersCsv, importShopifyData, normalizePaymentProcessor } from "../lib/importer";
-import { buildSalesReportRows, summarizeSales, type SalesSummary } from "../lib/sales";
+import { buildSalesReportRows, summarizeSales, type SalesReportRow, type SalesSummary } from "../lib/sales";
 import { stockCharacters, summarizeStock } from "../lib/stock";
 import {
   createDashboardAccount,
@@ -1795,6 +1795,7 @@ export default function Home() {
         transactions={accountingTransactions}
         ledgerEntries={accountingLedgerEntries}
         categories={accountingCategories}
+        salesRows={allSalesReportRows}
         categoryName={categoryName}
       />}
 
@@ -2205,7 +2206,8 @@ function AccountingTransactionsTable({ transactions, ledgerEntries, documents, c
   })}</tbody></table>{!transactions.length && <div className="empty"><strong>No transactions yet</strong><p>Record a business event to start the ledger.</p></div>}</div></section>;
 }
 
-function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, categories, categoryName }: { view: View; transactions: AccountingTransaction[]; ledgerEntries: AccountingLedgerEntry[]; categories: AccountingCategory[]; categoryName: (categoryId: string) => string }) {
+function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, categories, salesRows, categoryName }: { view: View; transactions: AccountingTransaction[]; ledgerEntries: AccountingLedgerEntry[]; categories: AccountingCategory[]; salesRows: SalesReportRow[]; categoryName: (categoryId: string) => string }) {
+  const [selectedTAccountSection, setSelectedTAccountSection] = useState("Cash");
   const sortedTransactions = [...transactions].sort((a, b) => {
     const dateCompare = new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime();
     return dateCompare || a.createdAt.localeCompare(b.createdAt);
@@ -2214,26 +2216,50 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
     groups[entry.transactionId] = [...(groups[entry.transactionId] ?? []), entry];
     return groups;
   }, {});
-  const totalDebits = ledgerEntries.filter((entry) => entry.entryType === "debit").reduce((total, entry) => total + entry.amount, 0);
-  const totalCredits = ledgerEntries.filter((entry) => entry.entryType === "credit").reduce((total, entry) => total + entry.amount, 0);
+  const generatedSalesGroups = Object.values(salesRows.reduce<Record<string, { id: string; date: string; processor: string; salePrice: number; processingFees: number }>>((groups, row) => {
+    const processor = row.paymentProcessor === "Bank Transfer" ? "Bank Transfer" : row.paymentProcessor === "Stripe" ? "Stripe" : row.paymentProcessor === "Xendit" ? "Xendit" : row.paymentProcessor || "Unassigned";
+    const key = `${dateKey(row.orderDate)}-${processor}`;
+    groups[key] = groups[key] ?? { id: `sales-${key}`, date: dateKey(row.orderDate), processor, salePrice: 0, processingFees: 0 };
+    groups[key].salePrice += row.salePrice;
+    groups[key].processingFees += row.totalFees;
+    return groups;
+  }, {})).sort((a, b) => a.date.localeCompare(b.date) || a.processor.localeCompare(b.processor)).map((group) => {
+    const cashAccount = group.processor === "Bank Transfer" ? "Bank Account" : group.processor;
+    const entries: AccountingLedgerEntry[] = [
+      { id: `${group.id}-cash`, transactionId: group.id, accountId: "", accountName: cashAccount, entryType: "debit", amount: group.salePrice, memo: `${group.processor} sales collected`, createdAt: group.date },
+      { id: `${group.id}-sales`, transactionId: group.id, accountId: "", accountName: "Sales", entryType: "credit", amount: group.salePrice, memo: `${group.processor} daily sales`, createdAt: group.date },
+    ];
+    if (group.processingFees > 0 && (group.processor === "Stripe" || group.processor === "Xendit")) {
+      entries.push(
+        { id: `${group.id}-fee-expense`, transactionId: group.id, accountId: "", accountName: "Payment Processing Fees", entryType: "debit", amount: group.processingFees, memo: `${group.processor} processing fees`, createdAt: group.date },
+        { id: `${group.id}-fee-processor`, transactionId: group.id, accountId: "", accountName: group.processor, entryType: "credit", amount: group.processingFees, memo: `${group.processor} fees deducted`, createdAt: group.date },
+      );
+    }
+    return { ...group, description: `${group.processor} sales for ${formatDate(group.date)}`, entries };
+  });
+  const allLedgerEntries = [...ledgerEntries, ...generatedSalesGroups.flatMap((group) => group.entries)];
+  const totalDebits = allLedgerEntries.filter((entry) => entry.entryType === "debit").reduce((total, entry) => total + entry.amount, 0);
+  const totalCredits = allLedgerEntries.filter((entry) => entry.entryType === "credit").reduce((total, entry) => total + entry.amount, 0);
   const transactionById = new Map(transactions.map((transaction) => [transaction.id, transaction]));
-  const accountGroups = ledgerEntries.reduce<Record<string, AccountingLedgerEntry[]>>((groups, entry) => {
+  const generatedTransactionDescriptions = new Map(generatedSalesGroups.map((group) => [group.id, group.description]));
+  const accountGroups = allLedgerEntries.reduce<Record<string, AccountingLedgerEntry[]>>((groups, entry) => {
     groups[entry.accountName] = [...(groups[entry.accountName] ?? []), entry];
     return groups;
   }, {});
   const tAccountSections: { title: string; reportSections: string[]; names: string[] }[] = [
     { title: "Inventory", reportSections: [bookkeepingSectionConfigs.inventory.reportSection], names: [] },
-    { title: "Expense", reportSections: [bookkeepingSectionConfigs.expense.reportSection], names: [] },
+    { title: "Expense", reportSections: [bookkeepingSectionConfigs.expense.reportSection], names: ["Payment Processing Fees"] },
     { title: "Assets", reportSections: [bookkeepingSectionConfigs.asset.reportSection], names: [] },
     { title: "Marketing", reportSections: [bookkeepingSectionConfigs.marketing.reportSection], names: [] },
     { title: "Cash", reportSections: [], names: ["Bank Account", "Stripe", "Xendit", "Owner's Equity", "Drawings"] },
+    { title: "Sales", reportSections: [], names: ["Sales"] },
   ];
   const sectionAccountNames = (section: typeof tAccountSections[number]) => {
     const savedNames = categories
       .filter((category) => category.active && section.reportSections.includes(category.reportSection))
       .map((category) => category.name);
     const allNames = new Set([...section.names, ...savedNames]);
-    ledgerEntries.forEach((entry) => {
+    allLedgerEntries.forEach((entry) => {
       const category = categories.find((item) => item.id === entry.accountId);
       if (category && section.reportSections.includes(category.reportSection)) allNames.add(entry.accountName);
       if (section.names.includes(entry.accountName)) allNames.add(entry.accountName);
@@ -2249,11 +2275,12 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
       <MoneyStat label="Total credits" value={totalCredits} tone="collected" />
       <MoneyStat label="Difference" value={Math.abs(totalDebits - totalCredits)} tone={Math.abs(totalDebits - totalCredits) > 0.01 ? "fees" : "transfer"} />
     </section>
-    {tAccountSections.map((section) => {
+    <div className="range-tabs t-account-tabs">{tAccountSections.map((section) => <button key={section.title} className={selectedTAccountSection === section.title ? "active" : ""} onClick={() => setSelectedTAccountSection(section.title)}>{section.title}</button>)}</div>
+    {tAccountSections.filter((section) => section.title === selectedTAccountSection).map((section) => {
       const accountNames = sectionAccountNames(section);
       return <section className="accounting-workspace" key={section.title}>
         <div className="reporting-header"><div><strong>{section.title}</strong><span>{accountNames.length} T account{accountNames.length === 1 ? "" : "s"}</span></div></div>
-        <section className="accounting-module-grid">
+        <section className="t-account-list">
           {accountNames.map((accountName) => {
             const entries = accountGroups[accountName] ?? [];
             const debits = entries.filter((entry) => entry.entryType === "debit");
@@ -2262,7 +2289,7 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
             const creditTotal = credits.reduce((total, entry) => total + entry.amount, 0);
             return <article className="card accounting-table-card" key={`${section.title}-${accountName}`}>
               <h3>{accountName}</h3>
-              <div className="table-scroll"><table className="orders-table"><thead><tr><th>Debit</th><th>Credit</th></tr></thead><tbody><tr><td>{debits.length ? debits.map((entry) => <div className="ledger-line" key={entry.id}><span>{transactionById.get(entry.transactionId)?.description || entry.memo}</span><strong>{formatMoney(entry.amount)}</strong></div>) : <small>No debit entries yet</small>}</td><td>{credits.length ? credits.map((entry) => <div className="ledger-line" key={entry.id}><span>{transactionById.get(entry.transactionId)?.description || entry.memo}</span><strong>{formatMoney(entry.amount)}</strong></div>) : <small>No credit entries yet</small>}</td></tr><tr><td><strong>{formatMoney(debitTotal)}</strong></td><td><strong>{formatMoney(creditTotal)}</strong></td></tr></tbody></table></div>
+              <div className="table-scroll"><table className="orders-table t-account-table"><thead><tr><th>Debit</th><th>Credit</th></tr></thead><tbody><tr><td>{debits.length ? debits.map((entry) => <div className="ledger-line" key={entry.id}><span>{transactionById.get(entry.transactionId)?.description || generatedTransactionDescriptions.get(entry.transactionId) || entry.memo}</span><strong>{formatMoney(entry.amount)}</strong></div>) : <small>No debit entries yet</small>}</td><td>{credits.length ? credits.map((entry) => <div className="ledger-line" key={entry.id}><span>{transactionById.get(entry.transactionId)?.description || generatedTransactionDescriptions.get(entry.transactionId) || entry.memo}</span><strong>{formatMoney(entry.amount)}</strong></div>) : <small>No credit entries yet</small>}</td></tr><tr><td><strong>{formatMoney(debitTotal)}</strong></td><td><strong>{formatMoney(creditTotal)}</strong></td></tr></tbody></table></div>
               <p className="accounting-file-name">Balance: {formatMoney(Math.abs(debitTotal - creditTotal))} {debitTotal >= creditTotal ? "debit" : "credit"}</p>
             </article>;
           })}
@@ -2283,7 +2310,7 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
       const entries = entriesByTransaction[transaction.id] ?? [];
       if (!entries.length) return [<tr key={transaction.id}><td>{formatDate(transaction.transactionDate)}</td><td>{transaction.id.slice(0, 8)}</td><td>{transaction.accountName || categoryName(transaction.categoryId)}</td><td>{transaction.description}</td><td>{transaction.debit ? formatMoney(transaction.debit) : "-"}</td><td>{transaction.credit ? formatMoney(transaction.credit) : "-"}</td></tr>];
       return entries.map((entry, index) => <tr key={entry.id}><td>{index === 0 ? formatDate(transaction.transactionDate) : ""}</td><td>{index === 0 ? transaction.id.slice(0, 8) : ""}</td><td><strong>{entry.accountName}</strong><br /><small>{categories.find((category) => category.id === entry.accountId)?.reportSection || "Posted from book keeping"}</small></td><td>{index === 0 ? transaction.description : entry.memo}</td><td>{entry.entryType === "debit" ? formatMoney(entry.amount) : "-"}</td><td>{entry.entryType === "credit" ? formatMoney(entry.amount) : "-"}</td></tr>);
-    })}</tbody></table>{!sortedTransactions.length && <div className="empty"><strong>No journal entries yet</strong><p>Save transactions in Book Keeping first. They will flow into this journal automatically.</p></div>}</div></section>
+    }).concat(generatedSalesGroups.flatMap((group) => group.entries.map((entry, index) => <tr key={entry.id}><td>{index === 0 ? formatDate(group.date) : ""}</td><td>{index === 0 ? group.id.replace("sales-", "").slice(0, 14) : ""}</td><td><strong>{entry.accountName}</strong><br /><small>{entry.accountName === "Sales" ? "Automatic Sales" : entry.accountName === "Payment Processing Fees" ? "Automatic Expense" : "Automatic Cash"}</small></td><td>{index === 0 ? group.description : entry.memo}</td><td>{entry.entryType === "debit" ? formatMoney(entry.amount) : "-"}</td><td>{entry.entryType === "credit" ? formatMoney(entry.amount) : "-"}</td></tr>)))}</tbody></table>{!sortedTransactions.length && !generatedSalesGroups.length && <div className="empty"><strong>No journal entries yet</strong><p>Save transactions in Book Keeping or import sales first. They will flow into this journal automatically.</p></div>}</div></section>
   </section>;
 }
 
