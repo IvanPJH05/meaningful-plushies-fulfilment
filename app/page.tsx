@@ -48,7 +48,7 @@ type View =
   | "accounting_dashboard" | "accounting_documents" | "accounting_transactions" | "accounting_profit_loss" | "accounting_balance_sheet"
   | "accounting_cash_flow" | "accounting_general_ledger" | "accounting_trial_balance" | "accounting_payable" | "accounting_receivable"
   | "accounting_bank_reconciliation" | "accounting_product_profitability" | "accounting_marketing_profitability" | "accounting_cash_position"
-  | "accounting_tax_reports" | "accounting_settings" | "accounting_general_journal" | "accounting_t_accounts";
+  | "accounting_tax_reports" | "accounting_settings" | "accounting_general_journal" | "accounting_t_accounts" | "accounting_financial_reports";
 type Workspace = "fulfilment" | "accounting" | "formal_accounting" | "inventory" | "reports" | "settings";
 type SalesRange = "active" | "today" | "7d" | "30d" | "lifetime";
 type SortKey = "orderNumber" | "importedAt" | "updatedAt";
@@ -286,7 +286,7 @@ const accountingViews: readonly View[] = [
   "accounting_cash_flow",
   "accounting_settings",
 ];
-const formalAccountingViews: readonly View[] = ["accounting_general_journal", "accounting_t_accounts"];
+const formalAccountingViews: readonly View[] = ["accounting_general_journal", "accounting_t_accounts", "accounting_financial_reports"];
 const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "stock", "sales_report", ...accountingViews, ...formalAccountingViews];
 const adminOnlyViews = new Set<View>(["history", "settings", "stock", "sales_report", ...accountingViews, ...formalAccountingViews]);
 const workspaceDefaultViews: Record<Workspace, View> = {
@@ -401,6 +401,7 @@ const accountingNavItems: NavItem[] = [
 const formalAccountingNavItems: NavItem[] = [
   { view: "accounting_general_journal", label: "General Journal", icon: "ledger" },
   { view: "accounting_t_accounts", label: "T Accounts", icon: "accounting" },
+  { view: "accounting_financial_reports", label: "Financial Reports", icon: "report" },
 ];
 
 const inventoryNavItems: NavItem[] = [{ view: "stock", label: "Stock Count", icon: "stock" }];
@@ -2283,7 +2284,39 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
   const visibleAccountNames = selectedTAccountName === "all" ? selectedSectionAccountNames : selectedSectionAccountNames.filter((name) => name === selectedTAccountName);
   const filteredTransactions = sortedTransactions.filter((transaction) => isInAccountingRange(dateKey(transaction.transactionDate)));
   const filteredGeneratedSalesGroups = generatedSalesGroups.filter((group) => isInAccountingRange(group.date));
-  const dateFilter = <section className="card accounting-date-filter"><div><strong>Accounting period</strong><span>This date range is shared by General Journal and T Accounts.</span></div><label>From<input type="date" value={accountingStartDate} onChange={(event) => setAccountingStartDate(event.target.value)} /></label><label>To<input type="date" value={accountingEndDate} onChange={(event) => setAccountingEndDate(event.target.value)} /></label><button className="button secondary" onClick={() => { setAccountingStartDate(""); setAccountingEndDate(""); }}>Clear</button></section>;
+  const dateFilter = <section className="card accounting-date-filter"><div><strong>Accounting period</strong><span>This date range is shared by General Journal, T Accounts, and Financial Reports.</span></div><label>From<input type="date" value={accountingStartDate} onChange={(event) => setAccountingStartDate(event.target.value)} /></label><label>To<input type="date" value={accountingEndDate} onChange={(event) => setAccountingEndDate(event.target.value)} /></label><button className="button secondary" onClick={() => { setAccountingStartDate(""); setAccountingEndDate(""); }}>Clear</button></section>;
+  const balanceForAccount = (accountName: string, entries = periodLedgerEntries) => entries
+    .filter((entry) => entry.accountName === accountName)
+    .reduce((total, entry) => total + (entry.entryType === "debit" ? entry.amount : -entry.amount), 0);
+  const balancesForNames = (names: string[]) => names.map((name) => ({ name, balance: balanceForAccount(name) })).filter((item) => Math.abs(item.balance) > 0.005);
+  const inventoryBalances = balancesForNames(sectionAccountNames(tAccountSections[0]));
+  const expenseBalances = balancesForNames(sectionAccountNames(tAccountSections[1]));
+  const assetBalances = balancesForNames(sectionAccountNames(tAccountSections[2]));
+  const marketingBalances = balancesForNames(sectionAccountNames(tAccountSections[3]));
+  const cashBalances = balancesForNames(sectionAccountNames(tAccountSections[4]));
+  const salesRevenue = Math.abs(balanceForAccount("Sales"));
+  const operatingExpenses = [...expenseBalances, ...marketingBalances];
+  const totalExpenses = operatingExpenses.reduce((total, item) => total + Math.max(0, item.balance), 0);
+  const netProfit = salesRevenue - totalExpenses;
+  const assetReportRows = [...cashBalances, ...inventoryBalances, ...assetBalances];
+  const totalAssets = assetReportRows.reduce((total, item) => total + item.balance, 0);
+  const equityRows = balancesForNames(["Owner's Equity", "Drawings"]);
+  const totalEquity = equityRows.reduce((total, item) => total + (item.name === "Drawings" ? -Math.abs(item.balance) : Math.abs(item.balance)), 0) + netProfit;
+
+  if (view === "accounting_financial_reports") return <section className="accounting-workspace">
+    <div className="accounting-hero card"><div><p>ACCOUNTING</p><h2>Financial Reports</h2><span>Built from the Book Keeping records, automatic sales journal entries, and T account balances for the selected period.</span></div><div className="accounting-status-pill">{formatMoney(netProfit)}</div></div>
+    {dateFilter}
+    <section className="accounting-summary-grid">
+      <MoneyStat label="Sales revenue" value={salesRevenue} tone="sales" />
+      <MoneyStat label="Expenses" value={totalExpenses} tone="fees" />
+      <MoneyStat label="Net profit" value={netProfit} tone={netProfit < 0 ? "fees" : "collected"} />
+    </section>
+    <section className="financial-report-grid">
+      <section className="card accounting-report"><h3>Income Statement</h3><div><span>Sales</span><strong>{formatMoney(salesRevenue)}</strong></div>{operatingExpenses.map((item) => <div key={item.name}><span>{item.name}</span><strong>({formatMoney(Math.abs(item.balance))})</strong></div>)}<div><span><strong>Net profit</strong></span><strong>{formatMoney(netProfit)}</strong></div></section>
+      <section className="card accounting-report"><h3>Balance Sheet</h3>{assetReportRows.map((item) => <div key={item.name}><span>{item.name}</span><strong>{formatMoney(item.balance)}</strong></div>)}<div><span><strong>Total assets</strong></span><strong>{formatMoney(totalAssets)}</strong></div><div><span>Current year earnings</span><strong>{formatMoney(netProfit)}</strong></div>{equityRows.map((item) => <div key={item.name}><span>{item.name}</span><strong>{formatMoney(item.name === "Drawings" ? -Math.abs(item.balance) : Math.abs(item.balance))}</strong></div>)}<div><span><strong>Total equity</strong></span><strong>{formatMoney(totalEquity)}</strong></div></section>
+      <section className="card accounting-report"><h3>Cash Summary</h3>{cashBalances.map((item) => <div key={item.name}><span>{item.name}</span><strong>{formatMoney(item.balance)}</strong></div>)}{!cashBalances.length && <div className="empty"><strong>No cash movements</strong><p>Import sales or record cash transactions to populate this report.</p></div>}</section>
+    </section>
+  </section>;
 
   if (view === "accounting_t_accounts") return <section className="accounting-workspace">
     <div className="accounting-hero card"><div><p>ACCOUNTING</p><h2>T Accounts</h2><span>All created bookkeeping accounts appear here, even before they have transactions. Debits and credits are grouped by account section.</span></div><div className="accounting-status-pill">{totalTAccounts} accounts</div></div>
