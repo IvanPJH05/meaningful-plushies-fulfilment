@@ -65,6 +65,7 @@ type EnvelopePrintSettings = {
   fontBase64: string;
   fontSize: number;
   minFontSize: number;
+  boldness: number;
   letterSpacing: number;
   lineHeight: number;
   textBoxWidth: number;
@@ -349,6 +350,7 @@ const defaultEnvelopePrintSettings: EnvelopePrintSettings = {
   fontBase64: "",
   fontSize: 56,
   minFontSize: 34,
+  boldness: 0,
   letterSpacing: 2.5,
   lineHeight: 0.96,
   textBoxWidth: 300,
@@ -1277,6 +1279,9 @@ export default function Home() {
     canvasContext.textAlign = "center";
     canvasContext.textBaseline = "middle";
     canvasContext.fillStyle = "#425e75";
+    canvasContext.strokeStyle = "#425e75";
+    canvasContext.lineJoin = "round";
+    canvasContext.lineCap = "round";
 
     function measure(text: string, size: number) {
       canvasContext.font = `${size}px "${family}"`;
@@ -1310,8 +1315,13 @@ export default function Home() {
     canvasContext.font = `${fontSize}px "${family}"`;
     const lineHeight = fontSize * settings.lineHeight;
     const startY = settings.textBoxHeight / 2 - ((lines.length - 1) * lineHeight) / 2;
+    const boldness = Math.max(0, Math.min(8, settings.boldness || 0));
+    if (boldness > 0) canvasContext.lineWidth = boldness;
     lines.forEach((line, index) => {
-      canvasContext.fillText(line, settings.textBoxWidth / 2, startY + index * lineHeight);
+      const x = settings.textBoxWidth / 2;
+      const y = startY + index * lineHeight;
+      if (boldness > 0) canvasContext.strokeText(line, x, y);
+      canvasContext.fillText(line, x, y);
     });
 
     document.fonts.delete(fontFace);
@@ -2917,10 +2927,11 @@ function EnvelopeSettingsPanel({ settings, onChange, onFontUpload, onReset }: { 
     {settings.fontBase64 && <style>{`@font-face{font-family:"EnvelopeUploadedFont";src:url(data:font/opentype;base64,${settings.fontBase64}) format("opentype");font-display:block;}`}</style>}
     <div className="envelope-settings-header"><div><strong>Print Envelope</strong><span>Upload any font, then tune the size and text box placement. Names are rendered as all caps before the PDF is created.</span></div><button className="view-button" type="button" onClick={onReset}>Reset</button></div>
     <label className="envelope-font-upload"><span>Font file</span><input type="file" accept=".otf,.ttf,font/otf,font/ttf" onChange={(event) => onFontUpload(event.target.files?.[0] ?? null)} /><strong>{settings.fontName || "No font uploaded yet"}</strong><small>Use .otf or .ttf. Required before generating the PDF.</small></label>
-    <div className="envelope-font-sample" style={{ fontFamily: previewFontFamily }}><span>Font preview</span><strong>SNUGGLEBEAR</strong><small>{settings.fontBase64 ? "This is the all-caps style that will become the envelope name image." : "Upload a font to see the preview here."}</small></div>
+    <div className="envelope-font-sample" style={{ fontFamily: previewFontFamily }}><span>Font preview</span><strong style={{ WebkitTextStroke: settings.boldness ? `${settings.boldness / 2}px #425e75` : undefined }}>SNUGGLEBEAR</strong><small>{settings.fontBase64 ? "This is the all-caps style that will become the envelope name image." : "Upload a font to see the preview here."}</small></div>
     <div className="envelope-settings-grid">
       <label>Font size<input type="number" step="1" value={settings.fontSize} onChange={numberChange("fontSize")} /></label>
       <label>Minimum size<input type="number" step="1" value={settings.minFontSize} onChange={numberChange("minFontSize")} /></label>
+      <label>Boldness<input type="number" min="0" max="8" step="0.25" value={settings.boldness} onChange={numberChange("boldness")} /></label>
       <label>Letter spacing<input type="number" step="0.1" value={settings.letterSpacing} onChange={numberChange("letterSpacing")} /></label>
       <label>Line height<input type="number" step="0.01" value={settings.lineHeight} onChange={numberChange("lineHeight")} /></label>
       <label>Box width<input type="number" step="1" value={settings.textBoxWidth} onChange={numberChange("textBoxWidth")} /></label>
