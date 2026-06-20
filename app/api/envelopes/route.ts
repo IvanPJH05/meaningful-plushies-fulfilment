@@ -55,7 +55,7 @@ function normalizeSettings(settings: EnvelopePdfSettings = {}) {
 }
 
 function cleanName(value: unknown) {
-  return String(value ?? "").replace(/\s+/g, " ").trim().toUpperCase().slice(0, 60);
+  return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, 60);
 }
 
 function lineWidth(font: PDFFont, text: string, size: number, letterSpacing: number) {
@@ -141,23 +141,15 @@ function drawCenteredName(
   const lineHeight = size * settings.lineHeight;
   lines.forEach((line, index) => {
     const localY = ((lines.length - 1) / 2 - index) * lineHeight;
-    let cursor = -lineWidth(font, line, size, settings.letterSpacing) / 2;
-
-    for (const character of line) {
-      const characterWidth = font.widthOfTextAtSize(character, size);
-      if (character !== " ") {
-        const point = rotatedPoint(center, angle, cursor, localY);
-        page.drawText(character, {
-          x: point.x,
-          y: point.y,
-          size,
-          font,
-          color: NAME_COLOR,
-          rotate: degrees(angle),
-        });
-      }
-      cursor += characterWidth + settings.letterSpacing;
-    }
+    const point = rotatedPoint(center, angle, -font.widthOfTextAtSize(line, size) / 2, localY);
+    page.drawText(line, {
+      x: point.x,
+      y: point.y,
+      size,
+      font,
+      color: NAME_COLOR,
+      rotate: degrees(angle),
+    });
   });
 }
 
