@@ -1257,17 +1257,83 @@ export default function Home() {
     reader.readAsDataURL(file);
   }
 
+  async function renderEnvelopeNameImage(name: string) {
+    const settings = envelopePrintSettings;
+    const family = `EnvelopePdfFont-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const fontFace = new FontFace(family, `url(data:font/opentype;base64,${settings.fontBase64})`);
+    await fontFace.load();
+    document.fonts.add(fontFace);
+
+    const scale = 4;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.ceil(settings.textBoxWidth * scale);
+    canvas.height = Math.ceil(settings.textBoxHeight * scale);
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Could not prepare the envelope text image.");
+    const canvasContext = context;
+    canvasContext.scale(scale, scale);
+    canvasContext.clearRect(0, 0, settings.textBoxWidth, settings.textBoxHeight);
+    canvasContext.textAlign = "center";
+    canvasContext.textBaseline = "middle";
+    canvasContext.fillStyle = "#425e75";
+
+    function measure(text: string, size: number) {
+      canvasContext.font = `${size}px "${family}"`;
+      return canvasContext.measureText(text).width + Math.max(0, text.length - 1) * settings.letterSpacing;
+    }
+
+    function wrap(size: number) {
+      const words = name.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+      const lines: string[] = [];
+      let current = "";
+      for (const word of words) {
+        const candidate = current ? `${current} ${word}` : word;
+        if (current && measure(candidate, size) > settings.textBoxWidth) {
+          lines.push(current);
+          current = word;
+        } else {
+          current = candidate;
+        }
+      }
+      if (current) lines.push(current);
+      return lines.length ? lines : [name];
+    }
+
+    let fontSize = settings.fontSize;
+    let lines = wrap(fontSize);
+    while (fontSize > settings.minFontSize && (lines.length * fontSize * settings.lineHeight > settings.textBoxHeight || lines.some((line) => measure(line, fontSize) > settings.textBoxWidth))) {
+      fontSize -= 1;
+      lines = wrap(fontSize);
+    }
+
+    canvasContext.font = `${fontSize}px "${family}"`;
+    const lineHeight = fontSize * settings.lineHeight;
+    const startY = settings.textBoxHeight / 2 - ((lines.length - 1) * lineHeight) / 2;
+    lines.forEach((line, index) => {
+      canvasContext.fillText(line, settings.textBoxWidth / 2, startY + index * lineHeight);
+    });
+
+    document.fonts.delete(fontFace);
+    return {
+      pngBase64: canvas.toDataURL("image/png").replace(/^data:image\/png;base64,/, ""),
+      width: settings.textBoxWidth,
+      height: settings.textBoxHeight,
+    };
+  }
+
   async function printEnvelopes() {
     if (!envelopeOrders.length) return;
     if (!envelopePrintSettings.fontBase64) return setNotice("Upload the font you want to use before generating envelopes.");
     try {
-      setNotice("Generating the A4 envelope PDF...");
+      setNotice("Rendering envelope names, then generating the A4 PDF...");
+      const names = envelopeOrders.map((order) => order.plushName || "UNNAMED PLUSHIE");
+      const nameImages = await Promise.all(names.map(renderEnvelopeNameImage));
       const response = await fetch("/api/envelopes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          names: envelopeOrders.map((order) => order.plushName || "UNNAMED PLUSHIE"),
-          fontBase64: envelopePrintSettings.fontBase64,
+          names,
+          nameImages,
           settings: envelopePrintSettings,
         }),
       });
