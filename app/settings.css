@@ -39,6 +39,9 @@
 .t-amount-col { width: 11%; }
 .t-account-selector { display: grid; gap: 6px; max-width: 360px; margin: 12px 0 8px; color: var(--muted); font-size: 11px; font-weight: 800; }
 .t-account-selector select { height: 38px; border: 1px solid #d7dfe9; border-radius: 7px; padding: 0 10px; background: #fff; color: var(--text); }
+.unit-cost-filter { display: grid; gap: 6px; min-width: 220px; color: var(--muted); font-size: 10px; font-weight: 850; text-transform: uppercase; letter-spacing: .04em; }
+.unit-cost-filter select { height: 38px; border: 1px solid #d7dfe9; border-radius: 7px; padding: 0 10px; background: #fff; color: var(--text); font-size: 12px; font-weight: 750; text-transform: none; letter-spacing: 0; }
+.unit-cost-table td strong { color: var(--text); }
 .accounting-date-filter { display: grid; grid-template-columns: minmax(220px, 1fr) auto; gap: 18px; align-items: end; margin: 16px 0; padding: 14px 16px; }
 .accounting-date-copy { margin-right: auto; }
 .accounting-date-filter strong,

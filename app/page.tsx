@@ -48,7 +48,7 @@ type View =
   | "accounting_dashboard" | "accounting_documents" | "accounting_transactions" | "accounting_profit_loss" | "accounting_balance_sheet"
   | "accounting_cash_flow" | "accounting_general_ledger" | "accounting_trial_balance" | "accounting_payable" | "accounting_receivable"
   | "accounting_bank_reconciliation" | "accounting_product_profitability" | "accounting_marketing_profitability" | "accounting_cash_position"
-  | "accounting_tax_reports" | "accounting_settings" | "accounting_files" | "accounting_general_journal" | "accounting_t_accounts" | "accounting_financial_reports";
+  | "accounting_tax_reports" | "accounting_settings" | "accounting_files" | "accounting_general_journal" | "accounting_t_accounts" | "accounting_unit_costs" | "accounting_financial_reports";
 type Workspace = "fulfilment" | "accounting" | "formal_accounting" | "inventory" | "reports" | "settings";
 type SalesRange = "active" | "today" | "7d" | "30d" | "lifetime";
 type SortKey = "orderNumber" | "importedAt" | "updatedAt";
@@ -306,7 +306,7 @@ const accountingViews: readonly View[] = [
   "accounting_cash_flow",
   "accounting_settings",
 ];
-const formalAccountingViews: readonly View[] = ["accounting_general_journal", "accounting_t_accounts", "accounting_financial_reports"];
+const formalAccountingViews: readonly View[] = ["accounting_general_journal", "accounting_t_accounts", "accounting_unit_costs", "accounting_financial_reports"];
 const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "stock", "sales_report", ...accountingViews, ...formalAccountingViews];
 const adminOnlyViews = new Set<View>(["history", "settings", "stock", "sales_report", ...accountingViews, ...formalAccountingViews]);
 const workspaceDefaultViews: Record<Workspace, View> = {
@@ -443,6 +443,7 @@ const accountingNavItems: NavItem[] = [
 const formalAccountingNavItems: NavItem[] = [
   { view: "accounting_general_journal", label: "General Journal", icon: "ledger" },
   { view: "accounting_t_accounts", label: "T Accounts", icon: "accounting" },
+  { view: "accounting_unit_costs", label: "Unit Costs", icon: "stock" },
   { view: "accounting_financial_reports", label: "Financial Reports", icon: "report" },
 ];
 
@@ -2485,6 +2486,7 @@ function isExpressShipping(order: Pick<Order, "shippingMethod">) {
 function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, categories, salesRows, categoryName }: { view: View; transactions: AccountingTransaction[]; ledgerEntries: AccountingLedgerEntry[]; categories: AccountingCategory[]; salesRows: SalesReportRow[]; categoryName: (categoryId: string) => string }) {
   const [selectedTAccountSection, setSelectedTAccountSection] = useState("Cash");
   const [selectedTAccountName, setSelectedTAccountName] = useState("all");
+  const [selectedUnitCostItem, setSelectedUnitCostItem] = useState("all");
   const [selectedFinancialReport, setSelectedFinancialReport] = useState<FinancialReportType>("income_statement");
   const [accountingPeriodMode, setAccountingPeriodMode] = useState<AccountingPeriodMode>("this_month");
   const [accountingStartDate, setAccountingStartDate] = useState(monthStartKey());
@@ -2630,7 +2632,37 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
     ? `${accountingStartDate ? formatDate(accountingStartDate) : "Beginning"} to ${accountingEndDate ? formatDate(accountingEndDate) : "Today"}`
     : "All dates";
   const dateInputsDisabled = accountingPeriodMode !== "custom";
-  const dateFilter = <section className="card accounting-date-filter"><div className="accounting-date-copy"><strong>Accounting period</strong><span>This date range is shared by General Journal, T Accounts, and Financial Reports.</span></div><div className="accounting-period-panel"><div className="accounting-period-selector"><button className={accountingPeriodMode === "this_month" ? "active" : ""} onClick={useThisMonthPeriod}>This month</button><button className={accountingPeriodMode === "lifetime" ? "active" : ""} onClick={useLifetimePeriod}>Lifetime</button><button className={accountingPeriodMode === "custom" ? "active" : ""} onClick={useCustomPeriod}>Calendar</button></div><label className={dateInputsDisabled ? "locked" : ""}>From<input type="date" value={accountingStartDate} disabled={dateInputsDisabled} onChange={(event) => setAccountingStartDate(event.target.value)} /></label><label className={dateInputsDisabled ? "locked" : ""}>To<input type="date" value={accountingEndDate} disabled={dateInputsDisabled} onChange={(event) => setAccountingEndDate(event.target.value)} /></label></div></section>;
+  const dateFilter = <section className="card accounting-date-filter"><div className="accounting-date-copy"><strong>Accounting period</strong><span>This date range is shared by General Journal, T Accounts, Unit Costs, and Financial Reports.</span></div><div className="accounting-period-panel"><div className="accounting-period-selector"><button className={accountingPeriodMode === "this_month" ? "active" : ""} onClick={useThisMonthPeriod}>This month</button><button className={accountingPeriodMode === "lifetime" ? "active" : ""} onClick={useLifetimePeriod}>Lifetime</button><button className={accountingPeriodMode === "custom" ? "active" : ""} onClick={useCustomPeriod}>Calendar</button></div><label className={dateInputsDisabled ? "locked" : ""}>From<input type="date" value={accountingStartDate} disabled={dateInputsDisabled} onChange={(event) => setAccountingStartDate(event.target.value)} /></label><label className={dateInputsDisabled ? "locked" : ""}>To<input type="date" value={accountingEndDate} disabled={dateInputsDisabled} onChange={(event) => setAccountingEndDate(event.target.value)} /></label></div></section>;
+  const unitCostRows = sortedTransactions
+    .filter((transaction) => transaction.businessEvent === "inventory_purchase" && isInAccountingRange(dateKey(transaction.transactionDate)))
+    .map((transaction) => {
+      const quantity = Number(transaction.quantity) || 0;
+      const unitCost = Number(transaction.unitCost) || (quantity > 0 ? transaction.amount / quantity : 0);
+      const categoryLabel = categoryName(transaction.categoryId);
+      return {
+        transaction,
+        itemName: transaction.accountName || (categoryLabel === "Uncategorised" ? "Inventory item" : categoryLabel),
+        categoryLabel,
+        quantity,
+        unitCost,
+        amount: Number(transaction.amount) || 0,
+      };
+    })
+    .filter((row) => row.quantity > 0 || row.unitCost > 0 || row.amount > 0);
+  const unitCostSummaries = Object.values(unitCostRows.reduce<Record<string, { itemName: string; purchaseCount: number; totalQuantity: number; totalCost: number; latestUnitCost: number; latestPurchaseDate: string }>>((groups, row) => {
+    const current = groups[row.itemName] ?? { itemName: row.itemName, purchaseCount: 0, totalQuantity: 0, totalCost: 0, latestUnitCost: 0, latestPurchaseDate: "" };
+    current.purchaseCount += 1;
+    current.totalQuantity += row.quantity;
+    current.totalCost += row.amount;
+    if (!current.latestPurchaseDate || row.transaction.transactionDate >= current.latestPurchaseDate) {
+      current.latestPurchaseDate = row.transaction.transactionDate;
+      current.latestUnitCost = row.unitCost;
+    }
+    groups[row.itemName] = current;
+    return groups;
+  }, {})).sort((a, b) => a.itemName.localeCompare(b.itemName));
+  const visibleUnitCostRows = (selectedUnitCostItem === "all" ? unitCostRows : unitCostRows.filter((row) => row.itemName === selectedUnitCostItem))
+    .sort((a, b) => dateKey(a.transaction.transactionDate).localeCompare(dateKey(b.transaction.transactionDate)) || a.itemName.localeCompare(b.itemName) || a.transaction.createdAt.localeCompare(b.transaction.createdAt));
   const balanceForAccount = (accountName: string, entries = periodLedgerEntries) => entries
     .filter((entry) => entry.accountName === accountName)
     .reduce((total, entry) => total + (entry.entryType === "debit" ? entry.amount : -entry.amount), 0);
@@ -2707,6 +2739,30 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
     balance_sheet: "Balance Sheet",
     cash_summary: "Cash Flow Statement",
   };
+
+  if (view === "accounting_unit_costs") return <section className="accounting-workspace">
+    <div className="accounting-hero card"><div><p>ACCOUNTING</p><h2>Unit Costs</h2><span>Inventory purchases from Book Keeping are grouped here to calculate weighted average unit cost and latest batch cost.</span></div><div className="accounting-status-pill">{unitCostRows.length} batches</div></div>
+    {dateFilter}
+    <section className="accounting-summary-grid">
+      <MoneyStat label="Inventory purchases" value={unitCostRows.reduce((total, row) => total + row.amount, 0)} tone="sales" />
+      <Stat label="Items tracked" value={unitCostSummaries.length} color="navy" />
+      <Stat label="Units bought" value={unitCostRows.reduce((total, row) => total + row.quantity, 0)} color="green" />
+    </section>
+    <section className="card accounting-table-card">
+      <div className="accounting-form-heading"><div><h3>Cost by item</h3><p>Weighted average cost = total purchase cost divided by total units bought for the selected period.</p></div><label className="unit-cost-filter">Item<select value={selectedUnitCostItem} onChange={(event) => setSelectedUnitCostItem(event.target.value)}><option value="all">View all</option>{unitCostSummaries.map((summary) => <option key={summary.itemName} value={summary.itemName}>{summary.itemName}</option>)}</select></label></div>
+      <div className="table-scroll"><table className="orders-table unit-cost-table"><thead><tr><th>Item</th><th>Batches</th><th>Quantity bought</th><th>Total cost</th><th>Weighted avg unit cost</th><th>Latest unit cost</th><th>Latest purchase</th></tr></thead><tbody>
+        {unitCostSummaries.filter((summary) => selectedUnitCostItem === "all" || summary.itemName === selectedUnitCostItem).map((summary) => <tr key={summary.itemName}><td><strong>{summary.itemName}</strong></td><td>{summary.purchaseCount}</td><td>{summary.totalQuantity.toLocaleString("en-MY")}</td><td>{formatMoney(summary.totalCost)}</td><td>{formatMoney(summary.totalQuantity > 0 ? summary.totalCost / summary.totalQuantity : 0)}</td><td>{formatMoney(summary.latestUnitCost)}</td><td>{summary.latestPurchaseDate ? formatDate(summary.latestPurchaseDate) : "-"}</td></tr>)}
+        {!unitCostSummaries.length && <tr><td colSpan={7}>No inventory purchase batches found for this period.</td></tr>}
+      </tbody></table></div>
+    </section>
+    <section className="card accounting-table-card">
+      <h3>Purchase batch details</h3>
+      <div className="table-scroll"><table className="orders-table unit-cost-table"><thead><tr><th>Date</th><th>Item</th><th>Category</th><th>Supplier</th><th>Description</th><th>Quantity</th><th>Unit cost</th><th>Total</th></tr></thead><tbody>
+        {visibleUnitCostRows.map((row) => <tr key={row.transaction.id}><td>{formatDate(row.transaction.transactionDate)}</td><td><strong>{row.itemName}</strong></td><td>{row.categoryLabel}</td><td>{row.transaction.supplier || "-"}</td><td>{row.transaction.description || "-"}</td><td>{row.quantity.toLocaleString("en-MY")}</td><td>{formatMoney(row.unitCost)}</td><td>{formatMoney(row.amount)}</td></tr>)}
+        {!visibleUnitCostRows.length && <tr><td colSpan={8}>No purchase details match this item and period.</td></tr>}
+      </tbody></table></div>
+    </section>
+  </section>;
 
   if (view === "accounting_financial_reports") return <section className="accounting-workspace">
     <div className="accounting-hero card"><div><p>ACCOUNTING</p><h2>Financial Reports</h2><span>Choose one statement, set the accounting period, then print or save as PDF.</span></div><div className="accounting-status-pill">{financialReportLabels[selectedFinancialReport]}</div></div>
