@@ -238,6 +238,7 @@ const businessEvents = [
   { group: "Money out", value: "marketing_expense", label: "Marketing", transactionLabel: "Marketing Expense", accountingMapping: "Marketing", accounts: ["Meta ads", "TikTok ads"] },
   { group: "Money in", value: "payment_processor_paid", label: "Cash", transactionLabel: "Cash", accountingMapping: "Cash", accounts: ["Bank Transfer", "Stripe", "Xendit", "Payment Processing Fees", "Owner's Equity", "Drawings"] },
 ] as const;
+const rejectedInventoryOption = "Rejected Inventory";
 const bookkeepingEventByView: Partial<Record<View, (typeof businessEvents)[number]["value"]>> = {
   accounting_transactions: "inventory_purchase",
   accounting_documents: "expense",
@@ -276,6 +277,7 @@ const accountingPresetAccounts: Omit<AccountingCategory, "id" | "parentId" | "ac
   { name: "SST Expense", accountType: "expense", reportSection: "Tax", dataSourceType: "system_generated", sourceModule: "Tax Engine", sourceEntity: "SST", postingTrigger: "Tax Calculated", allowSubAccounts: false, allowedTransactionTypes: [] },
 ];
 const manualExpenseAccounts = [
+  ["Rejected Inventory", "Expense", false],
   ["Software Expenses", "Expense", true],
   ["Shopify Subscription", "Software Expenses", false],
   ["ChatGPT Subscription", "Software Expenses", false],
@@ -1432,6 +1434,7 @@ export default function Home() {
       .map((name) => ({ value: name, label: name }));
     const savedOptions = saved.map((category) => ({ value: category.id, label: category.name }));
     const newLabel = event.value === "asset_purchase" ? "+ New asset" : "+ New account";
+    if (event.value === "inventory_purchase") return [{ value: rejectedInventoryOption, label: rejectedInventoryOption }, { value: newAssetOptionValue, label: newLabel }, ...savedOptions, ...defaultOptions];
     return [{ value: newAssetOptionValue, label: newLabel }, ...savedOptions, ...defaultOptions];
   }
 
@@ -1446,6 +1449,7 @@ export default function Home() {
       "Bubble wrap": "Inventory",
       "Carriage Inward": "Inventory",
       "Wax seal": "Inventory",
+      "Rejected Inventory": "Rejected Inventory",
       Labour: "Labour Cost",
       Samples: "Samples & Testing",
       "JnT (Carriage Outwards)": "Shipping Cost",
@@ -1493,6 +1497,8 @@ export default function Home() {
     const selectedCategory = selectedCategoryRecord();
     if (selectedCategory) return selectedCategory.name;
     if (transactionForm.categoryId === newAssetOptionValue) return transactionForm.accountName.trim();
+    if (transactionForm.categoryId === rejectedInventoryOption) return transactionForm.accountName.trim() || rejectedInventoryOption;
+    if (transactionForm.categoryId === "Plush toy" && transactionForm.accountName.trim()) return transactionForm.accountName.trim();
     return transactionForm.categoryId || transactionForm.accountName.trim() || event.accountingMapping;
   }
 
@@ -1513,7 +1519,9 @@ export default function Home() {
     if (!Number.isFinite(amount) || amount <= 0) return [];
     const event = selectedBusinessEvent();
     const account = selectedAccountingAccount();
-    const accountName = account?.name || bookkeepingAccountNameForSave(event) || "Selected account";
+    const savedAccountName = bookkeepingAccountNameForSave(event);
+    const accountName = event.value === "inventory_purchase" && savedAccountName ? savedAccountName : account?.name || savedAccountName || "Selected account";
+    const rejectedInventoryItem = transactionForm.categoryId === rejectedInventoryOption ? transactionForm.accountName.trim() || "Inventory" : "";
     const depositAmount = Math.min(amount, Math.max(0, Number(transactionForm.depositAmount) || 0));
     const paidAmount = transactionForm.paymentStatus === "paid_in_full" ? amount : transactionForm.paymentStatus === "deposit_paid" ? depositAmount : 0;
     const outstandingAmount = Math.max(0, amount - paidAmount);
@@ -1534,6 +1542,12 @@ export default function Home() {
       return [
         { id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Bank Account", entryType: "debit", amount, memo: transactionForm.categoryId === "Owner's Equity" ? "Owner capital received" : "Payment received", createdAt: now },
         { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: transactionForm.categoryId || "Payment Processor", entryType: "credit", amount, memo: transactionForm.categoryId === "Owner's Equity" ? "Owner capital" : "Processor balance reduced", createdAt: now },
+      ];
+    }
+    if (rejectedInventoryItem) {
+      return [
+        { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: rejectedInventoryOption, entryType: "debit", amount, memo: `Rejected ${rejectedInventoryItem}`, createdAt: now },
+        { id: crypto.randomUUID(), transactionId, accountId: "", accountName: rejectedInventoryItem, entryType: "credit", amount, memo: "Inventory rejected and removed", createdAt: now },
       ];
     }
     const primaryIsCredit = ["owner_transaction", "loan"].includes(event.value) && ["Owner Capital Injection", "Loan Received"].includes(transactionForm.categoryId);
@@ -1630,6 +1644,7 @@ export default function Home() {
     if (!description) return setNotice("Add a transaction description.");
     if (!Number.isFinite(amount) || amount < 0) return setNotice("Enter a valid transaction amount.");
     if (!transactionForm.categoryId && !transactionForm.accountName.trim()) return setNotice("Choose an account or type the item name.");
+    if (transactionForm.categoryId === rejectedInventoryOption && !transactionForm.accountName.trim()) return setNotice("Choose which inventory item was rejected.");
     if (transactionForm.paymentStatus === "deposit_paid" && (depositAmount <= 0 || depositAmount >= amount)) return setNotice("Enter a deposit amount that is more than 0 and less than the total.");
     setSavingAccounting(true);
     try {
@@ -1638,8 +1653,26 @@ export default function Home() {
       const id = crypto.randomUUID();
       let documentId = "";
       let account = selectedAccountingAccount();
+      const isRejectedInventory = transactionForm.categoryId === rejectedInventoryOption;
       const accountName = bookkeepingAccountNameForSave(event).trim();
       const bookkeepingConfig = bookkeepingConfigForEvent(event.value);
+      if (isRejectedInventory && !accountingCategories.some((category) => category.name === rejectedInventoryOption)) {
+        account = {
+          id: crypto.randomUUID(),
+          name: rejectedInventoryOption,
+          accountType: "expense",
+          reportSection: bookkeepingSectionConfigs.expense.reportSection,
+          parentId: bookkeepingParentId(bookkeepingSectionConfigs.expense),
+          dataSourceType: "manual",
+          sourceModule: "Book Keeping",
+          sourceEntity: "Rejected stock",
+          postingTrigger: "Inventory Rejected",
+          allowSubAccounts: false,
+          allowedTransactionTypes: [],
+          active: true,
+        };
+        await saveAccountingCategory(account);
+      }
       if (!account && accountName) {
         account = {
           id: crypto.randomUUID(),
@@ -1686,10 +1719,10 @@ export default function Home() {
         source: documentId ? "document" : "manual",
         sourceId: documentId,
         documentId,
-        businessEvent: transactionForm.businessEvent,
+        businessEvent: isRejectedInventory ? "inventory_rejected" : transactionForm.businessEvent,
         transactionDate: transactionForm.transactionDate,
         description,
-        accountName: account?.name || accountName || "Cash",
+        accountName: event.value === "inventory_purchase" ? accountName : account?.name || accountName || "Cash",
         categoryId: account?.id ?? "",
         transactionType: event.value === "payment_processor_paid" ? "transfer" : "expense",
         paymentStatus: transactionForm.paymentStatus,
@@ -1727,7 +1760,7 @@ export default function Home() {
           : stockSource.includes("PACK") ? "PACKAGING"
           : stockSource.trim();
         const currentStock = stockSettings.find((setting) => setting.itemKey === stockKey)?.initialStock ?? 0;
-        await saveStockSetting({ itemKey: stockKey, initialStock: currentStock + Math.floor(quantity) });
+        await saveStockSetting({ itemKey: stockKey, initialStock: Math.max(0, currentStock + (isRejectedInventory ? -Math.floor(quantity) : Math.floor(quantity))) });
       }
       await insertSharedActivity({ id: crypto.randomUUID(), action: "Accounting transaction created", detail: `${event.label}: ${description} (${formatMoney(amount)})`, actor, createdAt: now });
       setTransactionForm(emptyTransactionForm());
@@ -2002,6 +2035,7 @@ export default function Home() {
 
       {workspace === "formal_accounting" && session.role === "admin" && <FormalAccountingWorkspacePage
         view={view}
+        orders={orders}
         transactions={accountingTransactions}
         ledgerEntries={accountingLedgerEntries}
         categories={accountingCategories}
@@ -2310,8 +2344,9 @@ function AccountingWorkspacePage({
           <label>Date<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label>
           <label>{isInventory ? "Inventory item" : isMoneyIn ? "Money in type" : isAsset ? "Asset" : "Category"}<select value={transactionForm.categoryId} onChange={(input) => onTransactionFormChange({ categoryId: input.target.value, accountName: "" })}><option value="">Choose</option>{accountOptions.map((account) => <option key={account.value} value={account.value}>{account.label}</option>)}</select></label>
           {isInventory && selectedAccountLabel === "Plush toy" && <label>Plush character<select value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })}><option value="">Choose character</option><option value="BILLY">BILLY</option><option value="TOOTSIE">TOOTSIE</option><option value="HUNNIE">HUNNIE</option><option value="DRAGON WARRIOR">DRAGON WARRIOR</option></select></label>}
+          {isInventory && transactionForm.categoryId === rejectedInventoryOption && <label>Rejected item<select value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })}><option value="">Choose rejected item</option><option value="BILLY">BILLY</option><option value="TOOTSIE">TOOTSIE</option><option value="HUNNIE">HUNNIE</option><option value="DRAGON WARRIOR">DRAGON WARRIOR</option><option value="PACKAGING">PACKAGING</option><option value="BOXES">BOXES</option><option value="BUBBLE WRAP">BUBBLE WRAP</option><option value="WAX SEAL">WAX SEAL</option></select></label>}
           {transactionForm.categoryId === newAssetOptionValue && <label>{newAccountLabel}<input value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })} placeholder={isAsset ? "Example: Printer, heat press machine..." : isInventory ? "Example: Speaker, wax seal, bubble wrap..." : categoryEvent.value === "marketing_expense" ? "Example: Meta ads, TikTok ads..." : "Example: Labour, samples, JnT..."} /></label>}
-          <div className="accounting-two-cols"><label>{isInventory ? "Unit price" : "Amount"}<input type="number" min="0" step="0.01" value={isInventory ? transactionForm.unitCost : transactionForm.amount} onChange={(input) => onTransactionFormChange(isInventory ? { unitCost: input.target.value, amount: String((Number(input.target.value) || 0) * (Number(transactionForm.quantity) || 0) || "") } : { amount: input.target.value })} /></label>{isInventory ? <label>Quantity bought<input type="number" min="0" step="1" value={transactionForm.quantity} onChange={(input) => onTransactionFormChange({ quantity: input.target.value, amount: String((Number(input.target.value) || 0) * (Number(transactionForm.unitCost) || 0) || "") })} /></label> : <label>Supplier / source<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder={isMoneyIn ? "Stripe, Xendit, TikTok Shop..." : "Supplier name"} /></label>}</div>
+          <div className="accounting-two-cols"><label>{isInventory ? "Unit price" : "Amount"}<input type="number" min="0" step="0.01" value={isInventory ? transactionForm.unitCost : transactionForm.amount} onChange={(input) => onTransactionFormChange(isInventory ? { unitCost: input.target.value, amount: String((Number(input.target.value) || 0) * (Number(transactionForm.quantity) || 0) || "") } : { amount: input.target.value })} /></label>{isInventory ? <label>{transactionForm.categoryId === rejectedInventoryOption ? "Quantity rejected" : "Quantity bought"}<input type="number" min="0" step="1" value={transactionForm.quantity} onChange={(input) => onTransactionFormChange({ quantity: input.target.value, amount: String((Number(input.target.value) || 0) * (Number(transactionForm.unitCost) || 0) || "") })} /></label> : <label>Supplier / source<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder={isMoneyIn ? "Stripe, Xendit, TikTok Shop..." : "Supplier name"} /></label>}</div>
           {isInventory && <label>Total batch cost<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onTransactionFormChange({ amount: input.target.value })} placeholder="Auto-calculates from unit price x quantity" /></label>}
           {isInventory && <label>Supplier<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder="Supplier name" /></label>}
           <label>Description<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder={isInventory ? "Example: June Billy plush batch" : "Short note for the book"} /></label>
@@ -2322,7 +2357,7 @@ function AccountingWorkspacePage({
           <label>Notes<textarea value={transactionForm.notes} onChange={(event) => onTransactionFormChange({ notes: event.target.value })} /></label>
           <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? "Saving..." : "Save to book"}</button>
         </div>
-        <AccountingTransactionsTable transactions={transactions.filter((transaction) => transaction.businessEvent === categoryEvent.value)} ledgerEntries={ledgerEntries} documents={transactionDocuments} categoryName={categoryName} onOpenDocument={onOpenDocument} onDelete={onDeleteTransaction} />
+        <AccountingTransactionsTable transactions={transactions.filter((transaction) => transaction.businessEvent === categoryEvent.value || (categoryEvent.value === "inventory_purchase" && transaction.businessEvent === "inventory_rejected"))} ledgerEntries={ledgerEntries} documents={transactionDocuments} categoryName={categoryName} onOpenDocument={onOpenDocument} onDelete={onDeleteTransaction} />
       </section>
     </section>;
   }
@@ -2483,7 +2518,7 @@ function isExpressShipping(order: Pick<Order, "shippingMethod">) {
   return (order.shippingMethod || "").toLowerCase().includes("express");
 }
 
-function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, categories, salesRows, categoryName }: { view: View; transactions: AccountingTransaction[]; ledgerEntries: AccountingLedgerEntry[]; categories: AccountingCategory[]; salesRows: SalesReportRow[]; categoryName: (categoryId: string) => string }) {
+function FormalAccountingWorkspacePage({ view, orders, transactions, ledgerEntries, categories, salesRows, categoryName }: { view: View; orders: Order[]; transactions: AccountingTransaction[]; ledgerEntries: AccountingLedgerEntry[]; categories: AccountingCategory[]; salesRows: SalesReportRow[]; categoryName: (categoryId: string) => string }) {
   const [selectedTAccountSection, setSelectedTAccountSection] = useState("Cash");
   const [selectedTAccountName, setSelectedTAccountName] = useState("all");
   const [selectedUnitCostItem, setSelectedUnitCostItem] = useState("all");
@@ -2491,6 +2526,7 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
   const [accountingPeriodMode, setAccountingPeriodMode] = useState<AccountingPeriodMode>("this_month");
   const [accountingStartDate, setAccountingStartDate] = useState(monthStartKey());
   const [accountingEndDate, setAccountingEndDate] = useState(monthEndKey());
+  const inventoryItemName = (value: string) => value.trim().toUpperCase().replace(/\s+/g, " ");
   const sortedTransactions = [...transactions].sort((a, b) => {
     const dateCompare = new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime();
     return dateCompare || a.createdAt.localeCompare(b.createdAt);
@@ -2524,9 +2560,77 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
     }
     return { ...group, description: `${group.processor} sales`, entries };
   });
-  const allLedgerEntries = [...ledgerEntries, ...generatedSalesGroups.flatMap((group) => group.entries)];
+  const purchaseBatchSources = sortedTransactions
+    .filter((transaction) => transaction.businessEvent === "inventory_purchase" && (!accountingEndDate || dateKey(transaction.transactionDate) <= accountingEndDate))
+    .map((transaction) => {
+      const quantityBought = Number(transaction.quantity) || 0;
+      const unitCost = Number(transaction.unitCost) || (quantityBought > 0 ? transaction.amount / quantityBought : 0);
+      const itemName = inventoryItemName(transaction.accountName || categoryName(transaction.categoryId));
+      return {
+        id: transaction.id,
+        date: dateKey(transaction.transactionDate),
+        createdAt: transaction.createdAt,
+        itemName,
+        description: transaction.description,
+        supplier: transaction.supplier,
+        quantityBought,
+        quantityLeft: quantityBought,
+        quantitySold: 0,
+        quantityRejected: 0,
+        unitCost,
+        totalCost: Number(transaction.amount) || quantityBought * unitCost,
+      };
+    })
+    .filter((batch) => batch.itemName && batch.quantityBought > 0)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  const batchCounters = new Map<string, number>();
+  const purchaseBatchStates = purchaseBatchSources.map((batch) => {
+    const batchNumber = (batchCounters.get(batch.itemName) ?? 0) + 1;
+    batchCounters.set(batch.itemName, batchNumber);
+    return { ...batch, batchNumber };
+  });
+  const cogsGroups: { id: string; date: string; description: string; entries: AccountingLedgerEntry[] }[] = [];
+  const consumptionEvents = [
+    ...orders
+      .filter((order) => {
+        const date = dateKey(order.orderDate);
+        return Boolean(inventoryItemName(order.character)) && (!accountingEndDate || date <= accountingEndDate);
+      })
+      .map((order) => ({ id: `sale-${order.id}`, date: dateKey(order.orderDate), itemName: inventoryItemName(order.character), quantity: 1, type: "sale" as const, inPeriod: (!accountingStartDate || dateKey(order.orderDate) >= accountingStartDate) && (!accountingEndDate || dateKey(order.orderDate) <= accountingEndDate) })),
+    ...sortedTransactions
+      .filter((transaction) => transaction.businessEvent === "inventory_rejected" && (!accountingEndDate || dateKey(transaction.transactionDate) <= accountingEndDate))
+      .map((transaction) => ({ id: `reject-${transaction.id}`, date: dateKey(transaction.transactionDate), itemName: inventoryItemName(transaction.accountName), quantity: Number(transaction.quantity) || (transaction.unitCost > 0 ? transaction.amount / transaction.unitCost : 0), type: "reject" as const, inPeriod: false })),
+  ].filter((event) => event.itemName && event.quantity > 0).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+  consumptionEvents.forEach((event) => {
+    let remaining = event.quantity;
+    for (const batch of purchaseBatchStates) {
+      if (remaining <= 0) break;
+      if (batch.itemName !== event.itemName || batch.quantityLeft <= 0) continue;
+      const used = Math.min(batch.quantityLeft, remaining);
+      batch.quantityLeft -= used;
+      remaining -= used;
+      if (event.type === "reject") {
+        batch.quantityRejected += used;
+      } else {
+        batch.quantitySold += used;
+        if (event.inPeriod) {
+          const amount = used * batch.unitCost;
+          cogsGroups.push({
+            id: `cogs-${event.id}-${batch.id}`,
+            date: event.date,
+            description: `${batch.itemName} FIFO cost from batch ${batch.batchNumber}`,
+            entries: [
+              { id: `cogs-${event.id}-${batch.id}-debit`, transactionId: `cogs-${event.id}-${batch.id}`, accountId: "", accountName: "Plushie Cost", entryType: "debit", amount, memo: `${batch.itemName} sold from batch ${batch.batchNumber}`, createdAt: event.date },
+              { id: `cogs-${event.id}-${batch.id}-credit`, transactionId: `cogs-${event.id}-${batch.id}`, accountId: "", accountName: batch.itemName, entryType: "credit", amount, memo: "Inventory consumed by sale", createdAt: event.date },
+            ],
+          });
+        }
+      }
+    }
+  });
+  const allLedgerEntries = [...ledgerEntries, ...generatedSalesGroups.flatMap((group) => group.entries), ...cogsGroups.flatMap((group) => group.entries)];
   const transactionById = new Map(transactions.map((transaction) => [transaction.id, transaction]));
-  const generatedTransactionDescriptions = new Map(generatedSalesGroups.map((group) => [group.id, group.description]));
+  const generatedTransactionDescriptions = new Map([...generatedSalesGroups.map((group) => [group.id, group.description] as const), ...cogsGroups.map((group) => [group.id, group.description] as const)]);
   const entryDate = (entry: AccountingLedgerEntry) => dateKey(transactionById.get(entry.transactionId)?.transactionDate || entry.createdAt);
   const isInAccountingRange = (date: string) => Boolean(date) && (!accountingStartDate || date >= accountingStartDate) && (!accountingEndDate || date <= accountingEndDate);
   const isBeforeAccountingRange = (date: string) => Boolean(date) && Boolean(accountingStartDate) && date < accountingStartDate;
@@ -2539,7 +2643,7 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
   }, {});
   const tAccountSections: { title: string; reportSections: string[]; names: string[]; eventValues?: AccountingTransaction["businessEvent"][] }[] = [
     { title: "Inventory", reportSections: [bookkeepingSectionConfigs.inventory.reportSection], names: ["Inventory", ...businessEvents.find((event) => event.value === "inventory_purchase")!.accounts], eventValues: ["inventory_purchase"] },
-    { title: "Expense", reportSections: [bookkeepingSectionConfigs.expense.reportSection, "Admin Fees", "Software Expenses", "Tax", "Salary", "COGS"], names: ["Expenses", "Payment Processing Fees", ...businessEvents.find((event) => event.value === "expense")!.accounts], eventValues: ["expense"] },
+    { title: "Expense", reportSections: [bookkeepingSectionConfigs.expense.reportSection, "Admin Fees", "Software Expenses", "Tax", "Salary", "COGS"], names: ["Expenses", "Payment Processing Fees", rejectedInventoryOption, ...businessEvents.find((event) => event.value === "expense")!.accounts], eventValues: ["expense", "inventory_rejected"] },
     { title: "Assets", reportSections: [bookkeepingSectionConfigs.asset.reportSection, "Non Current Assets"], names: ["Equipment", ...businessEvents.find((event) => event.value === "asset_purchase")!.accounts], eventValues: ["asset_purchase"] },
     { title: "Marketing", reportSections: [bookkeepingSectionConfigs.marketing.reportSection, "Marketing Expenses"], names: ["Marketing Expenses", ...businessEvents.find((event) => event.value === "marketing_expense")!.accounts], eventValues: ["marketing_expense"] },
     { title: "Cash", reportSections: [], names: ["Bank Account", "Stripe", "Xendit", "Payment Processing Fees", "Owner's Equity", "Drawings"], eventValues: ["payment_processor_paid"] },
@@ -2614,7 +2718,20 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
     credit: entry.entryType === "credit" ? entry.amount : 0,
     lineIndex: index,
   })));
-  const journalRows = [...manualJournalRows, ...generatedJournalRows].sort((a, b) => a.date.localeCompare(b.date) || a.reference.localeCompare(b.reference) || a.lineIndex - b.lineIndex || a.id.localeCompare(b.id));
+  const generatedCogsJournalRows = cogsGroups
+    .filter((group) => (!accountingStartDate || group.date >= accountingStartDate) && (!accountingEndDate || group.date <= accountingEndDate))
+    .flatMap((group) => group.entries.map((entry, index) => ({
+      id: entry.id,
+      date: group.date,
+      reference: group.id.replace("cogs-", "").slice(0, 14),
+      account: entry.accountName,
+      accountNote: entry.accountName === "Plushie Cost" ? "Automatic COGS" : "Automatic Inventory",
+      description: index === 0 ? group.description : entry.memo,
+      debit: entry.entryType === "debit" ? entry.amount : 0,
+      credit: entry.entryType === "credit" ? entry.amount : 0,
+      lineIndex: index,
+    })));
+  const journalRows = [...manualJournalRows, ...generatedJournalRows, ...generatedCogsJournalRows].sort((a, b) => a.date.localeCompare(b.date) || a.reference.localeCompare(b.reference) || a.lineIndex - b.lineIndex || a.id.localeCompare(b.id));
   function useThisMonthPeriod() {
     setAccountingPeriodMode("this_month");
     setAccountingStartDate(monthStartKey());
@@ -2633,36 +2750,24 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
     : "All dates";
   const dateInputsDisabled = accountingPeriodMode !== "custom";
   const dateFilter = <section className="card accounting-date-filter"><div className="accounting-date-copy"><strong>Accounting period</strong><span>This date range is shared by General Journal, T Accounts, Unit Costs, and Financial Reports.</span></div><div className="accounting-period-panel"><div className="accounting-period-selector"><button className={accountingPeriodMode === "this_month" ? "active" : ""} onClick={useThisMonthPeriod}>This month</button><button className={accountingPeriodMode === "lifetime" ? "active" : ""} onClick={useLifetimePeriod}>Lifetime</button><button className={accountingPeriodMode === "custom" ? "active" : ""} onClick={useCustomPeriod}>Calendar</button></div><label className={dateInputsDisabled ? "locked" : ""}>From<input type="date" value={accountingStartDate} disabled={dateInputsDisabled} onChange={(event) => setAccountingStartDate(event.target.value)} /></label><label className={dateInputsDisabled ? "locked" : ""}>To<input type="date" value={accountingEndDate} disabled={dateInputsDisabled} onChange={(event) => setAccountingEndDate(event.target.value)} /></label></div></section>;
-  const unitCostRows = sortedTransactions
-    .filter((transaction) => transaction.businessEvent === "inventory_purchase" && isInAccountingRange(dateKey(transaction.transactionDate)))
-    .map((transaction) => {
-      const quantity = Number(transaction.quantity) || 0;
-      const unitCost = Number(transaction.unitCost) || (quantity > 0 ? transaction.amount / quantity : 0);
-      const categoryLabel = categoryName(transaction.categoryId);
-      return {
-        transaction,
-        itemName: transaction.accountName || (categoryLabel === "Uncategorised" ? "Inventory item" : categoryLabel),
-        categoryLabel,
-        quantity,
-        unitCost,
-        amount: Number(transaction.amount) || 0,
-      };
-    })
-    .filter((row) => row.quantity > 0 || row.unitCost > 0 || row.amount > 0);
-  const unitCostSummaries = Object.values(unitCostRows.reduce<Record<string, { itemName: string; purchaseCount: number; totalQuantity: number; totalCost: number; latestUnitCost: number; latestPurchaseDate: string }>>((groups, row) => {
-    const current = groups[row.itemName] ?? { itemName: row.itemName, purchaseCount: 0, totalQuantity: 0, totalCost: 0, latestUnitCost: 0, latestPurchaseDate: "" };
+  const unitCostRows = purchaseBatchStates
+    .filter((batch) => (!accountingStartDate || batch.date >= accountingStartDate) && (!accountingEndDate || batch.date <= accountingEndDate));
+  const unitCostSummaries = Object.values(unitCostRows.reduce<Record<string, { itemName: string; purchaseCount: number; totalQuantity: number; quantityLeft: number; quantityRejected: number; totalCost: number; latestUnitCost: number; latestPurchaseDate: string }>>((groups, row) => {
+    const current = groups[row.itemName] ?? { itemName: row.itemName, purchaseCount: 0, totalQuantity: 0, quantityLeft: 0, quantityRejected: 0, totalCost: 0, latestUnitCost: 0, latestPurchaseDate: "" };
     current.purchaseCount += 1;
-    current.totalQuantity += row.quantity;
-    current.totalCost += row.amount;
-    if (!current.latestPurchaseDate || row.transaction.transactionDate >= current.latestPurchaseDate) {
-      current.latestPurchaseDate = row.transaction.transactionDate;
+    current.totalQuantity += row.quantityBought;
+    current.quantityLeft += row.quantityLeft;
+    current.quantityRejected += row.quantityRejected;
+    current.totalCost += row.totalCost;
+    if (!current.latestPurchaseDate || row.date >= current.latestPurchaseDate) {
+      current.latestPurchaseDate = row.date;
       current.latestUnitCost = row.unitCost;
     }
     groups[row.itemName] = current;
     return groups;
   }, {})).sort((a, b) => a.itemName.localeCompare(b.itemName));
   const visibleUnitCostRows = (selectedUnitCostItem === "all" ? unitCostRows : unitCostRows.filter((row) => row.itemName === selectedUnitCostItem))
-    .sort((a, b) => dateKey(a.transaction.transactionDate).localeCompare(dateKey(b.transaction.transactionDate)) || a.itemName.localeCompare(b.itemName) || a.transaction.createdAt.localeCompare(b.transaction.createdAt));
+    .sort((a, b) => a.itemName.localeCompare(b.itemName) || a.date.localeCompare(b.date) || a.batchNumber - b.batchNumber);
   const balanceForAccount = (accountName: string, entries = periodLedgerEntries) => entries
     .filter((entry) => entry.accountName === accountName)
     .reduce((total, entry) => total + (entry.entryType === "debit" ? entry.amount : -entry.amount), 0);
@@ -2741,25 +2846,25 @@ function FormalAccountingWorkspacePage({ view, transactions, ledgerEntries, cate
   };
 
   if (view === "accounting_unit_costs") return <section className="accounting-workspace">
-    <div className="accounting-hero card"><div><p>ACCOUNTING</p><h2>Unit Costs</h2><span>Inventory purchases from Book Keeping are grouped here to calculate weighted average unit cost and latest batch cost.</span></div><div className="accounting-status-pill">{unitCostRows.length} batches</div></div>
+    <div className="accounting-hero card"><div><p>ACCOUNTING</p><h2>Unit Costs</h2><span>Each inventory item is shown by FIFO batch. Sales consume the earliest batch first; rejected inventory is removed as an expense.</span></div><div className="accounting-status-pill">{unitCostRows.length} batches</div></div>
     {dateFilter}
     <section className="accounting-summary-grid">
-      <MoneyStat label="Inventory purchases" value={unitCostRows.reduce((total, row) => total + row.amount, 0)} tone="sales" />
+      <MoneyStat label="Inventory purchases" value={unitCostRows.reduce((total, row) => total + row.totalCost, 0)} tone="sales" />
       <Stat label="Items tracked" value={unitCostSummaries.length} color="navy" />
-      <Stat label="Units bought" value={unitCostRows.reduce((total, row) => total + row.quantity, 0)} color="green" />
+      <Stat label="Units left" value={unitCostRows.reduce((total, row) => total + row.quantityLeft, 0)} color="green" />
     </section>
     <section className="card accounting-table-card">
-      <div className="accounting-form-heading"><div><h3>Cost by item</h3><p>Weighted average cost = total purchase cost divided by total units bought for the selected period.</p></div><label className="unit-cost-filter">Item<select value={selectedUnitCostItem} onChange={(event) => setSelectedUnitCostItem(event.target.value)}><option value="all">View all</option>{unitCostSummaries.map((summary) => <option key={summary.itemName} value={summary.itemName}>{summary.itemName}</option>)}</select></label></div>
-      <div className="table-scroll"><table className="orders-table unit-cost-table"><thead><tr><th>Item</th><th>Batches</th><th>Quantity bought</th><th>Total cost</th><th>Weighted avg unit cost</th><th>Latest unit cost</th><th>Latest purchase</th></tr></thead><tbody>
-        {unitCostSummaries.filter((summary) => selectedUnitCostItem === "all" || summary.itemName === selectedUnitCostItem).map((summary) => <tr key={summary.itemName}><td><strong>{summary.itemName}</strong></td><td>{summary.purchaseCount}</td><td>{summary.totalQuantity.toLocaleString("en-MY")}</td><td>{formatMoney(summary.totalCost)}</td><td>{formatMoney(summary.totalQuantity > 0 ? summary.totalCost / summary.totalQuantity : 0)}</td><td>{formatMoney(summary.latestUnitCost)}</td><td>{summary.latestPurchaseDate ? formatDate(summary.latestPurchaseDate) : "-"}</td></tr>)}
+      <div className="accounting-form-heading"><div><h3>Inventory item overview</h3><p>Quantity left is calculated after FIFO sales and rejected inventory removals.</p></div><label className="unit-cost-filter">Item<select value={selectedUnitCostItem} onChange={(event) => setSelectedUnitCostItem(event.target.value)}><option value="all">View all</option>{unitCostSummaries.map((summary) => <option key={summary.itemName} value={summary.itemName}>{summary.itemName}</option>)}</select></label></div>
+      <div className="table-scroll"><table className="orders-table unit-cost-table"><thead><tr><th>Item</th><th>Batches</th><th>Quantity bought</th><th>Quantity rejected</th><th>Quantity left</th><th>Weighted avg unit cost</th><th>Latest unit cost</th></tr></thead><tbody>
+        {unitCostSummaries.filter((summary) => selectedUnitCostItem === "all" || summary.itemName === selectedUnitCostItem).map((summary) => <tr key={summary.itemName}><td><strong>{summary.itemName}</strong></td><td>{summary.purchaseCount}</td><td>{summary.totalQuantity.toLocaleString("en-MY")}</td><td>{summary.quantityRejected.toLocaleString("en-MY")}</td><td><strong>{summary.quantityLeft.toLocaleString("en-MY")}</strong></td><td>{formatMoney(summary.totalQuantity > 0 ? summary.totalCost / summary.totalQuantity : 0)}</td><td>{formatMoney(summary.latestUnitCost)}</td></tr>)}
         {!unitCostSummaries.length && <tr><td colSpan={7}>No inventory purchase batches found for this period.</td></tr>}
       </tbody></table></div>
     </section>
     <section className="card accounting-table-card">
-      <h3>Purchase batch details</h3>
-      <div className="table-scroll"><table className="orders-table unit-cost-table"><thead><tr><th>Date</th><th>Item</th><th>Category</th><th>Supplier</th><th>Description</th><th>Quantity</th><th>Unit cost</th><th>Total</th></tr></thead><tbody>
-        {visibleUnitCostRows.map((row) => <tr key={row.transaction.id}><td>{formatDate(row.transaction.transactionDate)}</td><td><strong>{row.itemName}</strong></td><td>{row.categoryLabel}</td><td>{row.transaction.supplier || "-"}</td><td>{row.transaction.description || "-"}</td><td>{row.quantity.toLocaleString("en-MY")}</td><td>{formatMoney(row.unitCost)}</td><td>{formatMoney(row.amount)}</td></tr>)}
-        {!visibleUnitCostRows.length && <tr><td colSpan={8}>No purchase details match this item and period.</td></tr>}
+      <h3>FIFO batch details</h3>
+      <div className="table-scroll"><table className="orders-table unit-cost-table"><thead><tr><th>Item</th><th>Date bought</th><th>Batch no.</th><th>Quantity bought</th><th>Quantity sold</th><th>Quantity rejected</th><th>Quantity left</th><th>Price</th><th>Batch cost</th></tr></thead><tbody>
+        {visibleUnitCostRows.map((row) => <tr key={row.id}><td><strong>{row.itemName}</strong></td><td>{formatDate(row.date)}</td><td>Batch {row.batchNumber}</td><td>{row.quantityBought.toLocaleString("en-MY")}</td><td>{row.quantitySold.toLocaleString("en-MY")}</td><td>{row.quantityRejected.toLocaleString("en-MY")}</td><td><strong>{row.quantityLeft.toLocaleString("en-MY")}</strong></td><td>{formatMoney(row.unitCost)}</td><td>{formatMoney(row.totalCost)}</td></tr>)}
+        {!visibleUnitCostRows.length && <tr><td colSpan={9}>No purchase details match this item and period.</td></tr>}
       </tbody></table></div>
     </section>
   </section>;
