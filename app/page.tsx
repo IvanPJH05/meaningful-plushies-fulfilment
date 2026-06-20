@@ -1259,6 +1259,7 @@ export default function Home() {
 
   async function renderEnvelopeNameImage(name: string) {
     const settings = envelopePrintSettings;
+    const printName = name.replace(/\s+/g, " ").trim().toUpperCase();
     const family = `EnvelopePdfFont-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const fontFace = new FontFace(family, `url(data:font/opentype;base64,${settings.fontBase64})`);
     await fontFace.load();
@@ -1283,7 +1284,7 @@ export default function Home() {
     }
 
     function wrap(size: number) {
-      const words = name.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+      const words = printName.split(" ").filter(Boolean);
       const lines: string[] = [];
       let current = "";
       for (const word of words) {
@@ -1296,7 +1297,7 @@ export default function Home() {
         }
       }
       if (current) lines.push(current);
-      return lines.length ? lines : [name];
+      return lines.length ? lines : [printName];
     }
 
     let fontSize = settings.fontSize;
@@ -2047,7 +2048,7 @@ export default function Home() {
       {view === "print_envelope" && <section className="envelope-page">
         <div className="envelope-controls card no-envelope-print">
           <div className="packing-manual"><div><h2>Choose orders to print</h2><p>Enter order IDs, choose a stage, or select every order shown in that stage.</p></div><div className="manual-entry"><input value={manualEnvelopeIds} onChange={(event) => setManualEnvelopeIds(event.target.value)} onKeyDown={(event) => event.key === "Enter" && selectManualEnvelopeOrders()} placeholder="Example: 1402, 1403, 1404" /><button className="button primary" onClick={selectManualEnvelopeOrders}>Add order IDs</button></div></div>
-          <EnvelopeSettingsPanel settings={envelopePrintSettings} onChange={updateEnvelopePrintSettings} onFontUpload={uploadEnvelopeFont} onReset={() => setEnvelopePrintSettings(defaultEnvelopePrintSettings)} />
+          <div className="canva-connection connected"><div><strong>Envelope print settings</strong><span>Font, size, spacing, and text box placement are managed in Settings / Print Settings.</span></div><button className="view-button" onClick={() => setView("settings")}>Open settings</button></div>
           <div className="packing-list-header"><div><strong>Available orders</strong><span>Order number, descending</span></div><select value={envelopeStatusFilter} onChange={(event) => setEnvelopeStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><div className="packing-list-actions"><button onClick={() => setEnvelopeSelection((current) => [...new Set([...current, ...envelopeAvailableOrders.map((order) => order.id)])])}>Select shown</button><button onClick={() => setEnvelopeSelection([])}>Clear</button></div></div>
           <div className="packing-order-list">{envelopeAvailableOrders.map((order) => { const selectedIndex = envelopeSelection.indexOf(order.id); return <label key={order.id}><input type="checkbox" checked={selectedIndex >= 0} onChange={() => setEnvelopeSelection((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><div><strong>{orderLabel(order)} | {(order.plushName || "Unnamed plushie").toUpperCase()}</strong><span>{order.customerName || "No customer"} | {order.character || "No character"}</span></div>{selectedIndex >= 0 ? <b className="envelope-order-position">{selectedIndex + 1}</b> : <StatusPill status={order.status} />}</label>; })}</div>
         </div>
@@ -2079,6 +2080,9 @@ export default function Home() {
 
         <div className="settings-heading"><div><h2>Initial stock</h2><p>Character stock is separate. Voice stock is one shared pool, so any 5s, 10s, or 20s sale deducts one unit.</p></div></div>
         <div className="stock-settings">{[...bookkeepingInventoryStockKeys, "VOICE"].map((itemKey) => { const setting = stockSettings.find((item) => item.itemKey === itemKey) ?? { itemKey, initialStock: 0 }; return <div key={itemKey}><strong>{itemKey === "VOICE" ? "SHARED VOICE UNITS" : itemKey}</strong><input type="number" min="0" step="1" value={setting.initialStock} onChange={(event) => setStockSettings((current) => [...current.filter((item) => item.itemKey !== itemKey), { itemKey, initialStock: Number(event.target.value) }])} /><button className="button primary" onClick={() => saveStock(setting)}>Save</button></div>; })}</div>
+
+        <div className="settings-heading"><div><h2>Print settings</h2><p>Control the Print Envelope font, text size, spacing, and name box placement. Names are converted to all caps before printing.</p></div></div>
+        <EnvelopeSettingsPanel settings={envelopePrintSettings} onChange={updateEnvelopePrintSettings} onFontUpload={uploadEnvelopeFont} onReset={() => setEnvelopePrintSettings(defaultEnvelopePrintSettings)} />
 
         <div className="settings-heading"><div><h2>Payment processor fees</h2><p>New Shopify payment methods appear here automatically. Set a percentage, a fixed RM amount, both, or leave both at zero for no fee.</p></div><span>{processorSettings.length} processors</span></div>
         <div className="processor-list">
@@ -2911,9 +2915,9 @@ function EnvelopeSettingsPanel({ settings, onChange, onFontUpload, onReset }: { 
   const previewFontFamily = settings.fontBase64 ? "EnvelopeUploadedFont" : undefined;
   return <section className="envelope-settings">
     {settings.fontBase64 && <style>{`@font-face{font-family:"EnvelopeUploadedFont";src:url(data:font/opentype;base64,${settings.fontBase64}) format("opentype");font-display:block;}`}</style>}
-    <div className="envelope-settings-header"><div><strong>Envelope print settings</strong><span>Upload any font, then tune the size and text box placement without changing code.</span></div><button className="view-button" type="button" onClick={onReset}>Reset</button></div>
+    <div className="envelope-settings-header"><div><strong>Print Envelope</strong><span>Upload any font, then tune the size and text box placement. Names are rendered as all caps before the PDF is created.</span></div><button className="view-button" type="button" onClick={onReset}>Reset</button></div>
     <label className="envelope-font-upload"><span>Font file</span><input type="file" accept=".otf,.ttf,font/otf,font/ttf" onChange={(event) => onFontUpload(event.target.files?.[0] ?? null)} /><strong>{settings.fontName || "No font uploaded yet"}</strong><small>Use .otf or .ttf. Required before generating the PDF.</small></label>
-    <div className="envelope-font-sample" style={{ fontFamily: previewFontFamily }}><span>Font preview</span><strong>SnuggleBear</strong><small>{settings.fontBase64 ? "This is the font that will be sent to the PDF generator." : "Upload a font to see the preview here."}</small></div>
+    <div className="envelope-font-sample" style={{ fontFamily: previewFontFamily }}><span>Font preview</span><strong>SNUGGLEBEAR</strong><small>{settings.fontBase64 ? "This is the all-caps style that will become the envelope name image." : "Upload a font to see the preview here."}</small></div>
     <div className="envelope-settings-grid">
       <label>Font size<input type="number" step="1" value={settings.fontSize} onChange={numberChange("fontSize")} /></label>
       <label>Minimum size<input type="number" step="1" value={settings.minFontSize} onChange={numberChange("minFontSize")} /></label>
