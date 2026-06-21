@@ -55,7 +55,7 @@ type View =
   | "accounting_cash_flow" | "accounting_general_ledger" | "accounting_trial_balance" | "accounting_payable" | "accounting_receivable"
   | "accounting_bank_reconciliation" | "accounting_product_profitability" | "accounting_marketing_profitability" | "accounting_cash_position"
   | "accounting_tax_reports" | "accounting_settings" | "accounting_files" | "accounting_general_journal" | "accounting_t_accounts" | "accounting_unit_costs" | "accounting_financial_reports"
-  | "content_plan" | "content_ideas";
+  | "content_dashboard" | "content_plan" | "content_ideas";
 type Workspace = "fulfilment" | "accounting" | "formal_accounting" | "inventory" | "reports" | "content" | "settings";
 type SalesRange = "active" | "today" | "7d" | "30d" | "lifetime";
 type SortKey = "orderNumber" | "importedAt" | "updatedAt";
@@ -330,7 +330,7 @@ const accountingViews: readonly View[] = [
   "accounting_settings",
 ];
 const formalAccountingViews: readonly View[] = ["accounting_general_journal", "accounting_t_accounts", "accounting_unit_costs", "accounting_financial_reports"];
-const contentViews: readonly View[] = ["content_plan", "content_ideas"];
+const contentViews: readonly View[] = ["content_dashboard", "content_plan", "content_ideas"];
 const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "stock", "sales_report", ...accountingViews, ...formalAccountingViews, ...contentViews];
 const adminOnlyViews = new Set<View>(["history", "settings", "stock", "sales_report", ...accountingViews, ...formalAccountingViews, ...contentViews]);
 const workspaceDefaultViews: Record<Workspace, View> = {
@@ -339,7 +339,7 @@ const workspaceDefaultViews: Record<Workspace, View> = {
   formal_accounting: "accounting_general_journal",
   inventory: "stock",
   reports: "sales_report",
-  content: "content_plan",
+  content: "content_dashboard",
   settings: "settings",
 };
 const workspaceLabels: Record<Workspace, string> = {
@@ -476,6 +476,7 @@ const formalAccountingNavItems: NavItem[] = [
 const inventoryNavItems: NavItem[] = [{ view: "stock", label: "Stock Count", icon: "stock" }];
 const reportsNavItems: NavItem[] = [{ view: "sales_report", label: "Sales Report", icon: "report" }];
 const contentNavItems: NavItem[] = [
+  { view: "content_dashboard", label: "Dashboard", icon: "report" },
   { view: "content_plan", label: "Planned Content", icon: "calendar" },
   { view: "content_ideas", label: "Idea Brainstorming", icon: "idea" },
 ];
@@ -663,6 +664,7 @@ function viewTitle(view: View) {
     import: "Import Shopify Orders",
     fulfilled: "Shipped Orders",
     history: "Activity History",
+    content_dashboard: "Content Dashboard",
     content_plan: "Planned Content",
     content_ideas: "Idea Brainstorming",
   };
@@ -2130,6 +2132,36 @@ export default function Home() {
     }
   }
 
+  async function moveContentIdeaToPlanned(item: ContentIdeaItem, plannedDate: string) {
+    if (!plannedDate) return setNotice("Choose a planned date before moving the idea.");
+    const now = new Date().toISOString();
+    const referenceNotes = item.references.length
+      ? `\n\nReferences:\n${item.references.map((reference) => `- ${reference.name}: ${reference.url}`).join("\n")}`
+      : "";
+    const planned: ContentPlanItem = {
+      id: crypto.randomUUID(),
+      title: item.title,
+      plannedDate,
+      platform: "Instagram",
+      contentType: "Post",
+      notes: `${item.idea}${referenceNotes}`.trim(),
+      posted: false,
+      postedAt: "",
+      createdBy: session?.displayName ?? "Admin",
+      createdAt: now,
+      updatedAt: now,
+    };
+    try {
+      await saveContentPlanItem(planned);
+      await deleteContentIdea(item.id);
+      await insertSharedActivity({ id: crypto.randomUUID(), action: "Content idea moved to planned", detail: `${item.title} planned for ${formatDate(plannedDate)}.`, actor: session?.displayName ?? "Admin", createdAt: now });
+      await loadSharedData();
+      setNotice("Idea moved to Planned Content.");
+    } catch (error) {
+      setNotice(readableError(error, "Could not move idea to Planned Content."));
+    }
+  }
+
   async function openAccountingDocument(document: AccountingDocument) {
     setPreviewDocument(document);
     setPreviewDocumentUrl("");
@@ -2246,6 +2278,7 @@ export default function Home() {
         onRemoveIdeaReference={removeIdeaReference}
         onSaveIdea={saveContentIdeaItem}
         onDeleteIdea={removeContentIdea}
+        onMoveIdeaToPlanned={moveContentIdeaToPlanned}
       />}
 
       {workspace === "fulfilment" && view !== "import" && view !== "packing_slips" && view !== "print_envelope" && view !== "history" && view !== "settings" && view !== "stock" && view !== "sales_report" && <>
@@ -2734,6 +2767,7 @@ function ContentPlanWorkspacePage({
   onRemoveIdeaReference,
   onSaveIdea,
   onDeleteIdea,
+  onMoveIdeaToPlanned,
 }: {
   view: View;
   items: ContentPlanItem[];
@@ -2749,11 +2783,18 @@ function ContentPlanWorkspacePage({
   onRemoveIdeaReference: (referenceId: string) => void;
   onSaveIdea: () => void;
   onDeleteIdea: (item: ContentIdeaItem) => void;
+  onMoveIdeaToPlanned: (item: ContentIdeaItem, plannedDate: string) => void;
 }) {
   const [visibleMonth, setVisibleMonth] = useState(() => {
     const date = form.plannedDate ? new Date(`${form.plannedDate}T00:00:00`) : new Date();
     return new Date(date.getFullYear(), date.getMonth(), 1);
   });
+  if (view === "content_dashboard") return <ContentDashboardPage
+    items={items}
+    ideas={ideas}
+    onTogglePosted={onTogglePosted}
+    onMoveIdeaToPlanned={onMoveIdeaToPlanned}
+  />;
   if (view === "content_ideas") return <ContentIdeaBrainstormingPage
     ideas={ideas}
     form={ideaForm}
@@ -2827,6 +2868,58 @@ function ContentPlanWorkspacePage({
         <td className="content-notes-cell">{item.notes || "-"}</td>
         <td><button className="view-button danger-text" onClick={() => onDelete(item)}>Delete</button></td>
       </tr>)}</tbody></table>{!items.length && <div className="empty"><strong>No content planned yet</strong><p>Add your first idea and it will appear on the calendar.</p></div>}</div>
+    </section>
+  </section>;
+}
+
+function ContentDashboardPage({
+  items,
+  ideas,
+  onTogglePosted,
+  onMoveIdeaToPlanned,
+}: {
+  items: ContentPlanItem[];
+  ideas: ContentIdeaItem[];
+  onTogglePosted: (item: ContentPlanItem) => void;
+  onMoveIdeaToPlanned: (item: ContentIdeaItem, plannedDate: string) => void;
+}) {
+  const [ideaPlanDates, setIdeaPlanDates] = useState<Record<string, string>>({});
+  const plannedItems = [...items].filter((item) => !item.posted).sort((a, b) => a.plannedDate.localeCompare(b.plannedDate) || a.createdAt.localeCompare(b.createdAt));
+  const doneItems = [...items].filter((item) => item.posted).sort((a, b) => (b.postedAt || b.updatedAt).localeCompare(a.postedAt || a.updatedAt));
+  const sortedIdeas = [...ideas].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.createdAt.localeCompare(a.createdAt));
+  return <section className="content-plan-workspace">
+    <div className="accounting-hero card"><div><p>CONTENT DASHBOARD</p><h2>Plan, brainstorm, and finish content</h2><span>See planned posts and raw ideas in one place. Move good ideas into the calendar, then mark planned content as done once it has been posted.</span></div><div className="content-plan-status"><strong>{plannedItems.length}</strong><span>planned</span><strong>{ideas.length}</strong><span>ideas</span><strong>{doneItems.length}</strong><span>done</span></div></div>
+    <section className="content-dashboard-grid">
+      <section className="card content-dashboard-panel">
+        <div className="content-panel-header"><div><p>PLANNED CONTENT</p><h3>Ready to post</h3></div><span>{plannedItems.length} active</span></div>
+        <div className="content-dashboard-list">
+          {plannedItems.map((item) => <article key={item.id} className="content-dashboard-card planned">
+            <div><strong>{item.title}</strong><span>{formatDate(item.plannedDate)} | {item.platform || "-"} | {item.contentType || "-"}</span></div>
+            {item.notes && <p>{item.notes}</p>}
+            <button className="content-status-button posted" onClick={() => onTogglePosted(item)}>Move to done</button>
+          </article>)}
+          {!plannedItems.length && <div className="empty compact"><strong>No planned content waiting</strong><p>Move ideas here or add posts in Planned Content.</p></div>}
+        </div>
+      </section>
+      <section className="card content-dashboard-panel">
+        <div className="content-panel-header"><div><p>BRAINSTORM IDEAS</p><h3>Move ideas into the calendar</h3></div><span>{ideas.length} ideas</span></div>
+        <div className="content-dashboard-list">
+          {sortedIdeas.map((idea) => {
+            const plannedDate = ideaPlanDates[idea.id] ?? localDateKey(new Date());
+            return <article key={idea.id} className="content-dashboard-card idea">
+              <div><strong>{idea.title}</strong><span>Updated {formatDate(idea.updatedAt, true)}</span></div>
+              <p>{idea.idea}</p>
+              {idea.references.length > 0 && <div className="dashboard-reference-row">{idea.references.slice(0, 3).map((reference) => <a key={reference.id} href={reference.url} target="_blank" rel="noreferrer">{reference.name || reference.url}</a>)}</div>}
+              <div className="dashboard-move-row"><label>Plan date<input type="date" value={plannedDate} onChange={(event) => setIdeaPlanDates((current) => ({ ...current, [idea.id]: event.target.value }))} /></label><button className="button primary" onClick={() => onMoveIdeaToPlanned(idea, plannedDate)}>Move to planned</button></div>
+            </article>;
+          })}
+          {!ideas.length && <div className="empty compact"><strong>No brainstorm ideas yet</strong><p>Add rough ideas in Idea Brainstorming.</p></div>}
+        </div>
+      </section>
+    </section>
+    <section className="card content-dashboard-panel done-panel">
+      <div className="content-panel-header"><div><p>DONE</p><h3>Posted content</h3></div><span>{doneItems.length} posted</span></div>
+      <div className="content-done-list">{doneItems.slice(0, 12).map((item) => <article key={item.id}><strong>{item.title}</strong><span>{formatDate(item.postedAt || item.updatedAt, true)} | planned {formatDate(item.plannedDate)}</span></article>)}{!doneItems.length && <div className="empty compact"><strong>No posted content yet</strong><p>Mark planned items as done after posting.</p></div>}</div>
     </section>
   </section>;
 }
