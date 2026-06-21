@@ -532,13 +532,30 @@ function certificateLink(order: Order, includeProtocol = true) {
   return includeProtocol && link ? `https://${link}` : link;
 }
 
-function sortOrderRecords<T extends Pick<Order, "orderNumber" | "importedAt" | "updatedAt">>(
+function splitShipmentSortValue(order: Pick<Order, "orderNumber" | "setIndicator">) {
+  const text = `${order.orderNumber} ${order.setIndicator ?? ""}`;
+  const match = text.match(/(?:set\s*)?(\d+)\s*(?:[,./]|\bof\b)\s*(\d+)/i);
+  if (!match) return { part: 0, total: 0 };
+  return { part: Number(match[1]) || 0, total: Number(match[2]) || 0 };
+}
+
+function compareSplitShipmentOrder(a: Pick<Order, "orderNumber" | "setIndicator">, b: Pick<Order, "orderNumber" | "setIndicator">) {
+  const aSplit = splitShipmentSortValue(a);
+  const bSplit = splitShipmentSortValue(b);
+  return aSplit.part - bSplit.part || aSplit.total - bSplit.total;
+}
+
+function sortOrderRecords<T extends Pick<Order, "orderNumber" | "importedAt" | "updatedAt" | "setIndicator">>(
   records: T[], key: SortKey, direction: SortDirection,
 ) {
   const multiplier = direction === "asc" ? 1 : -1;
   return [...records].sort((a, b) => {
-    if (key === "orderNumber") return multiplier * (Number(a.orderNumber) - Number(b.orderNumber));
-    return multiplier * (new Date(a[key]).getTime() - new Date(b[key]).getTime());
+    if (key === "orderNumber") {
+      const orderComparison = multiplier * (Number(a.orderNumber) - Number(b.orderNumber));
+      return orderComparison || compareSplitShipmentOrder(a, b);
+    }
+    const dateComparison = multiplier * (new Date(a[key]).getTime() - new Date(b[key]).getTime());
+    return dateComparison || compareSplitShipmentOrder(a, b);
   });
 }
 
@@ -864,7 +881,11 @@ export default function Home() {
   }, [view]);
 
   const selected = orders.find((order) => order.id === selectedId) ?? null;
-  const packingOrders = orders.filter((order) => packingSelection.includes(order.id));
+  const packingOrders = useMemo(() => sortOrderRecords(
+    orders.filter((order) => packingSelection.includes(order.id)),
+    "orderNumber",
+    "desc",
+  ), [orders, packingSelection]);
   const envelopeOrders = envelopeSelection
     .map((id) => orders.find((order) => order.id === id))
     .filter((order): order is Order => Boolean(order));
