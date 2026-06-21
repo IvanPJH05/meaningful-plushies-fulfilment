@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { AccountingCategory, AccountingDocument, AccountingLedgerEntry, AccountingTransaction, DashboardAccount, Order, PaymentProcessorSetting, SalesFeeSetting, StockSetting, UserRole } from "./types";
+import type { AccountingCategory, AccountingDocument, AccountingLedgerEntry, AccountingTransaction, ContentPlanItem, DashboardAccount, Order, PaymentProcessorSetting, SalesFeeSetting, StockSetting, UserRole } from "./types";
 
 export type DashboardSession = DashboardAccount & { token: string };
 
@@ -455,6 +455,56 @@ export async function deleteAccountingTransaction(id: string) {
   if (error) throw error;
 }
 
+function isMissingTableError(error: unknown) {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "42P01");
+}
+
+export async function fetchContentPlanItems(): Promise<ContentPlanItem[]> {
+  const { data, error } = await requireSupabase()
+    .from("content_plan_items")
+    .select("id, title, planned_date, platform, content_type, notes, posted, posted_at, created_by, created_at, updated_at")
+    .order("planned_date", { ascending: true })
+    .order("created_at", { ascending: true });
+  if (error) {
+    if (isMissingTableError(error)) return [];
+    throw error;
+  }
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    title: row.title,
+    plannedDate: row.planned_date,
+    platform: row.platform ?? "",
+    contentType: row.content_type ?? "",
+    notes: row.notes ?? "",
+    posted: Boolean(row.posted),
+    postedAt: row.posted_at ?? "",
+    createdBy: row.created_by ?? "Admin",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+}
+
+export async function saveContentPlanItem(item: ContentPlanItem) {
+  const { error } = await requireSupabase().from("content_plan_items").upsert({
+    id: item.id,
+    title: item.title,
+    planned_date: item.plannedDate,
+    platform: item.platform,
+    content_type: item.contentType,
+    notes: item.notes,
+    posted: item.posted,
+    posted_at: item.postedAt || null,
+    created_by: item.createdBy,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "id" });
+  if (error) throw error;
+}
+
+export async function deleteContentPlanItem(id: string) {
+  const { error } = await requireSupabase().from("content_plan_items").delete().eq("id", id);
+  if (error) throw error;
+}
+
 export function subscribeToSharedData(onChange: () => void) {
   const client = requireSupabase();
   const channel = client.channel("fulfilment-dashboard")
@@ -467,6 +517,7 @@ export function subscribeToSharedData(onChange: () => void) {
     .on("postgres_changes", { event: "*", schema: "public", table: "accounting_transactions" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "accounting_ledger_entries" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "accounting_categories" }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "content_plan_items" }, onChange)
     .subscribe();
   return () => { void client.removeChannel(channel); };
 }

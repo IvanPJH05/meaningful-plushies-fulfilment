@@ -110,6 +110,20 @@ export type AccountingLedgerEntry = {
   createdAt: string;
 };
 
+export type ContentPlanItem = {
+  id: string;
+  title: string;
+  plannedDate: string;
+  platform: string;
+  contentType: string;
+  notes: string;
+  posted: boolean;
+  postedAt: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type StatusEvent = {
   id: string;
   status: OrderStatus;

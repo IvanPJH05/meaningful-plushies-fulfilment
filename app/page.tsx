@@ -10,6 +10,7 @@ import { stockCharacters, summarizeStock } from "../lib/stock";
 import {
   createDashboardAccount,
   createAccountingDocumentSignedUrl,
+  deleteContentPlanItem,
   deleteSharedOrders,
   deleteAccountingDocument,
   deleteAccountingTransaction,
@@ -18,6 +19,7 @@ import {
   fetchAccountingDocuments,
   fetchAccountingLedgerEntries,
   fetchAccountingTransactions,
+  fetchContentPlanItems,
   fetchSharedActivity,
   fetchSharedOrders,
   fetchDashboardAccounts,
@@ -30,6 +32,7 @@ import {
   saveAccountingCategory,
   saveAccountingLedgerEntries,
   saveAccountingTransaction,
+  saveContentPlanItem,
   saveStockSetting,
   savePaymentProcessorSetting,
   saveSalesFeeSettings,
@@ -40,7 +43,7 @@ import {
   upsertSharedOrders,
   type DashboardSession,
 } from "../lib/supabase";
-import { orderStatuses, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type DashboardAccount, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesFeeSetting, type StockSetting, type UserRole } from "../lib/types";
+import { orderStatuses, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type ContentPlanItem, type DashboardAccount, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesFeeSetting, type StockSetting, type UserRole } from "../lib/types";
 
 type Session = DashboardSession;
 type View =
@@ -48,8 +51,9 @@ type View =
   | "accounting_dashboard" | "accounting_documents" | "accounting_transactions" | "accounting_profit_loss" | "accounting_balance_sheet"
   | "accounting_cash_flow" | "accounting_general_ledger" | "accounting_trial_balance" | "accounting_payable" | "accounting_receivable"
   | "accounting_bank_reconciliation" | "accounting_product_profitability" | "accounting_marketing_profitability" | "accounting_cash_position"
-  | "accounting_tax_reports" | "accounting_settings" | "accounting_files" | "accounting_general_journal" | "accounting_t_accounts" | "accounting_unit_costs" | "accounting_financial_reports";
-type Workspace = "fulfilment" | "accounting" | "formal_accounting" | "inventory" | "reports" | "settings";
+  | "accounting_tax_reports" | "accounting_settings" | "accounting_files" | "accounting_general_journal" | "accounting_t_accounts" | "accounting_unit_costs" | "accounting_financial_reports"
+  | "content_plan";
+type Workspace = "fulfilment" | "accounting" | "formal_accounting" | "inventory" | "reports" | "content" | "settings";
 type SalesRange = "active" | "today" | "7d" | "30d" | "lifetime";
 type SortKey = "orderNumber" | "importedAt" | "updatedAt";
 type SortDirection = "asc" | "desc";
@@ -149,6 +153,13 @@ type BookkeepingSectionKey = "inventory" | "expense" | "asset" | "marketing";
 type BookkeepingCategoryForm = {
   section: BookkeepingSectionKey;
   name: string;
+};
+type ContentPlanForm = {
+  title: string;
+  plannedDate: string;
+  platform: string;
+  contentType: string;
+  notes: string;
 };
 type AccountOption = {
   value: string;
@@ -309,14 +320,16 @@ const accountingViews: readonly View[] = [
   "accounting_settings",
 ];
 const formalAccountingViews: readonly View[] = ["accounting_general_journal", "accounting_t_accounts", "accounting_unit_costs", "accounting_financial_reports"];
-const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "stock", "sales_report", ...accountingViews, ...formalAccountingViews];
-const adminOnlyViews = new Set<View>(["history", "settings", "stock", "sales_report", ...accountingViews, ...formalAccountingViews]);
+const contentViews: readonly View[] = ["content_plan"];
+const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "stock", "sales_report", ...accountingViews, ...formalAccountingViews, ...contentViews];
+const adminOnlyViews = new Set<View>(["history", "settings", "stock", "sales_report", ...accountingViews, ...formalAccountingViews, ...contentViews]);
 const workspaceDefaultViews: Record<Workspace, View> = {
   fulfilment: "orders",
   accounting: "accounting_dashboard",
   formal_accounting: "accounting_general_journal",
   inventory: "stock",
   reports: "sales_report",
+  content: "content_plan",
   settings: "settings",
 };
 const workspaceLabels: Record<Workspace, string> = {
@@ -325,6 +338,7 @@ const workspaceLabels: Record<Workspace, string> = {
   formal_accounting: "Accounting",
   inventory: "Inventory",
   reports: "Reports",
+  content: "Content Plan",
   settings: "Settings",
 };
 const orderStatusFilterValues = ["all", ...orderStatuses] as const;
@@ -451,6 +465,7 @@ const formalAccountingNavItems: NavItem[] = [
 
 const inventoryNavItems: NavItem[] = [{ view: "stock", label: "Stock Count", icon: "stock" }];
 const reportsNavItems: NavItem[] = [{ view: "sales_report", label: "Sales Report", icon: "report" }];
+const contentNavItems: NavItem[] = [{ view: "content_plan", label: "Content Calendar", icon: "calendar" }];
 const settingsNavItems: NavItem[] = [
   { view: "settings", label: "Fulfilment Settings", icon: "settings" },
   { view: "history", label: "History", icon: "history" },
@@ -609,6 +624,7 @@ function permittedView(value: unknown, role?: UserRole) {
 }
 
 function workspaceForView(view: View): Workspace {
+  if (contentViews.includes(view)) return "content";
   if (formalAccountingViews.includes(view)) return "formal_accounting";
   if (accountingViews.includes(view)) return "accounting";
   if (view === "stock") return "inventory";
@@ -623,6 +639,7 @@ function navItemsForWorkspace(workspace: Workspace, role: UserRole): NavItem[] {
   if (workspace === "formal_accounting") return formalAccountingNavItems;
   if (workspace === "inventory") return inventoryNavItems;
   if (workspace === "reports") return reportsNavItems;
+  if (workspace === "content") return contentNavItems;
   if (workspace === "settings") return settingsNavItems;
   return [...fulfilmentNavItems, ...fulfilmentAdminNavItems];
 }
@@ -633,9 +650,10 @@ function viewTitle(view: View) {
     import: "Import Shopify Orders",
     fulfilled: "Shipped Orders",
     history: "Activity History",
+    content_plan: "Content Plan",
   };
   if (titleOverrides[view]) return titleOverrides[view]!;
-  const item = [...fulfilmentNavItems, ...fulfilmentAdminNavItems, ...accountingNavItems, ...formalAccountingNavItems, ...inventoryNavItems, ...reportsNavItems, ...settingsNavItems]
+  const item = [...fulfilmentNavItems, ...fulfilmentAdminNavItems, ...accountingNavItems, ...formalAccountingNavItems, ...inventoryNavItems, ...reportsNavItems, ...contentNavItems, ...settingsNavItems]
     .find((navItem) => navItem.view === view);
   if (item) return item.label;
   return "Orders Dashboard";
@@ -675,6 +693,7 @@ export default function Home() {
   const [accountingDocuments, setAccountingDocuments] = useState<AccountingDocument[]>([]);
   const [accountingTransactions, setAccountingTransactions] = useState<AccountingTransaction[]>([]);
   const [accountingLedgerEntries, setAccountingLedgerEntries] = useState<AccountingLedgerEntry[]>([]);
+  const [contentPlanItems, setContentPlanItems] = useState<ContentPlanItem[]>([]);
   const [accountingDocumentFile, setAccountingDocumentFile] = useState<File | null>(null);
   const [transactionDocumentFile, setTransactionDocumentFile] = useState<File | null>(null);
   const [settlementFiles, setSettlementFiles] = useState<Record<string, File | null>>({});
@@ -730,6 +749,13 @@ export default function Home() {
     section: "inventory",
     name: "",
   });
+  const [contentPlanForm, setContentPlanForm] = useState<ContentPlanForm>({
+    title: "",
+    plannedDate: localDateKey(new Date()),
+    platform: "Instagram",
+    contentType: "Post",
+    notes: "",
+  });
   const [accountPasswords, setAccountPasswords] = useState<Record<string, string>>({});
   const [newAccount, setNewAccount] = useState({ username: "", displayName: "", role: "staff" as UserRole, password: "" });
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
@@ -762,9 +788,10 @@ export default function Home() {
         sharedAccountingDocuments,
         sharedAccountingTransactions,
         sharedAccountingLedgerEntries,
+        sharedContentPlanItems,
       ] = await Promise.all([
         fetchSharedOrders(), fetchSharedActivity(), fetchPaymentProcessorSettings(), fetchStockSettings(), fetchSalesFeeSettings(),
-        fetchAccountingCategories(), fetchAccountingDocuments(), fetchAccountingTransactions(), fetchAccountingLedgerEntries(),
+        fetchAccountingCategories(), fetchAccountingDocuments(), fetchAccountingTransactions(), fetchAccountingLedgerEntries(), fetchContentPlanItems(),
       ]);
       setOrders(sharedOrders.map((order) => {
       const status = legacyStatus[order.status] ?? order.status;
@@ -798,6 +825,7 @@ export default function Home() {
       setAccountingDocuments(sharedAccountingDocuments);
       setAccountingTransactions(sharedAccountingTransactions);
       setAccountingLedgerEntries(sharedAccountingLedgerEntries);
+      setContentPlanItems(sharedContentPlanItems);
       setDatabaseError("");
     } catch (error) {
       setDatabaseError(error instanceof Error ? error.message : "Could not load orders from Supabase.");
@@ -1963,6 +1991,64 @@ export default function Home() {
     }
   }
 
+  async function saveContentPlan() {
+    const title = contentPlanForm.title.trim();
+    if (!title) return setNotice("Add a content title.");
+    if (!contentPlanForm.plannedDate) return setNotice("Choose a planned date.");
+    const now = new Date().toISOString();
+    const item: ContentPlanItem = {
+      id: crypto.randomUUID(),
+      title,
+      plannedDate: contentPlanForm.plannedDate,
+      platform: contentPlanForm.platform,
+      contentType: contentPlanForm.contentType,
+      notes: contentPlanForm.notes.trim(),
+      posted: false,
+      postedAt: "",
+      createdBy: session?.displayName ?? "Admin",
+      createdAt: now,
+      updatedAt: now,
+    };
+    try {
+      await saveContentPlanItem(item);
+      await insertSharedActivity({ id: crypto.randomUUID(), action: "Content planned", detail: `${item.title} planned for ${formatDate(item.plannedDate)}.`, actor: session?.displayName ?? "Admin", createdAt: now });
+      setContentPlanForm({ title: "", plannedDate: item.plannedDate, platform: item.platform, contentType: item.contentType, notes: "" });
+      await loadSharedData();
+      setNotice("Content plan saved.");
+    } catch (error) {
+      setNotice(readableError(error, "Could not save content plan."));
+    }
+  }
+
+  async function toggleContentPosted(item: ContentPlanItem) {
+    const now = new Date().toISOString();
+    const updated: ContentPlanItem = {
+      ...item,
+      posted: !item.posted,
+      postedAt: item.posted ? "" : now,
+      updatedAt: now,
+    };
+    try {
+      await saveContentPlanItem(updated);
+      await insertSharedActivity({ id: crypto.randomUUID(), action: updated.posted ? "Content marked posted" : "Content marked unposted", detail: `${updated.title} on ${formatDate(updated.plannedDate)}.`, actor: session?.displayName ?? "Admin", createdAt: now });
+      await loadSharedData();
+    } catch (error) {
+      setNotice(readableError(error, "Could not update content plan."));
+    }
+  }
+
+  async function removeContentPlan(item: ContentPlanItem) {
+    if (!confirm(`Delete ${item.title}?`)) return;
+    try {
+      await deleteContentPlanItem(item.id);
+      await insertSharedActivity({ id: crypto.randomUUID(), action: "Content plan deleted", detail: `${item.title} was removed.`, actor: session?.displayName ?? "Admin", createdAt: new Date().toISOString() });
+      await loadSharedData();
+      setNotice("Content plan deleted.");
+    } catch (error) {
+      setNotice(readableError(error, "Could not delete content plan."));
+    }
+  }
+
   async function openAccountingDocument(document: AccountingDocument) {
     setPreviewDocument(document);
     setPreviewDocumentUrl("");
@@ -1988,7 +2074,7 @@ export default function Home() {
   }
 
   const workspace = workspaceForView(view);
-  const availableWorkspaces: Workspace[] = session.role === "admin" ? ["fulfilment", "accounting", "formal_accounting", "inventory", "reports", "settings"] : ["fulfilment"];
+  const availableWorkspaces: Workspace[] = session.role === "admin" ? ["fulfilment", "accounting", "formal_accounting", "inventory", "reports", "content", "settings"] : ["fulfilment"];
   const sidebarNavItems = navItemsForWorkspace(workspace, session.role);
   const workspaceTitle = workspaceLabels[workspace];
 
@@ -2062,6 +2148,15 @@ export default function Home() {
         categories={accountingCategories}
         salesRows={allSalesReportRows}
         categoryName={categoryName}
+      />}
+
+      {workspace === "content" && session.role === "admin" && <ContentPlanWorkspacePage
+        items={contentPlanItems}
+        form={contentPlanForm}
+        onFormChange={(patch) => setContentPlanForm((current) => ({ ...current, ...patch }))}
+        onSave={saveContentPlan}
+        onTogglePosted={toggleContentPosted}
+        onDelete={removeContentPlan}
       />}
 
       {workspace === "fulfilment" && view !== "import" && view !== "packing_slips" && view !== "print_envelope" && view !== "history" && view !== "settings" && view !== "stock" && view !== "sales_report" && <>
@@ -2533,6 +2628,93 @@ function DocumentPreviewModal({ document, url, error, onClose }: { document: Acc
       {url && <footer><a className="view-button document-link" href={url} target="_blank" rel="noreferrer">Open in new tab</a></footer>}
     </section>
   </div>;
+}
+
+function ContentPlanWorkspacePage({
+  items,
+  form,
+  onFormChange,
+  onSave,
+  onTogglePosted,
+  onDelete,
+}: {
+  items: ContentPlanItem[];
+  form: ContentPlanForm;
+  onFormChange: (patch: Partial<ContentPlanForm>) => void;
+  onSave: () => void;
+  onTogglePosted: (item: ContentPlanItem) => void;
+  onDelete: (item: ContentPlanItem) => void;
+}) {
+  const [visibleMonth, setVisibleMonth] = useState(() => {
+    const date = form.plannedDate ? new Date(`${form.plannedDate}T00:00:00`) : new Date();
+    return new Date(date.getFullYear(), date.getMonth(), 1);
+  });
+  const sortedItems = [...items].sort((a, b) => a.plannedDate.localeCompare(b.plannedDate) || a.createdAt.localeCompare(b.createdAt));
+  const monthStart = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth(), 1);
+  const calendarStart = new Date(monthStart);
+  calendarStart.setDate(calendarStart.getDate() - calendarStart.getDay());
+  const calendarDays = Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(calendarStart);
+    date.setDate(calendarStart.getDate() + index);
+    const key = localDateKey(date);
+    return {
+      key,
+      date,
+      inMonth: date.getMonth() === visibleMonth.getMonth(),
+      items: sortedItems.filter((item) => item.plannedDate === key),
+    };
+  });
+  const plannedCount = items.filter((item) => !item.posted).length;
+  const postedCount = items.filter((item) => item.posted).length;
+  const monthLabel = new Intl.DateTimeFormat("en-MY", { month: "long", year: "numeric" }).format(visibleMonth);
+  const changeMonth = (offset: number) => setVisibleMonth((current) => new Date(current.getFullYear(), current.getMonth() + offset, 1));
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    onSave();
+  }
+  return <section className="content-plan-workspace">
+    <div className="accounting-hero card"><div><p>CONTENT PLAN</p><h2>Content calendar</h2><span>Plan what to post, keep notes for each idea, and mark each item as posted once it goes live.</span></div><div className="content-plan-status"><strong>{plannedCount}</strong><span>planned</span><strong>{postedCount}</strong><span>posted</span></div></div>
+    <section className="content-plan-grid">
+      <form className="content-plan-form card" onSubmit={submit}>
+        <h3>Plan a content item</h3>
+        <label>Title<input value={form.title} onChange={(event) => onFormChange({ title: event.target.value })} placeholder="Example: Father's Day plushie story" /></label>
+        <label>Planned date<input type="date" value={form.plannedDate} onChange={(event) => onFormChange({ plannedDate: event.target.value })} /></label>
+        <div className="accounting-two-cols">
+          <label>Platform<select value={form.platform} onChange={(event) => onFormChange({ platform: event.target.value })}><option>Instagram</option><option>TikTok</option><option>Facebook</option><option>Threads</option><option>Email</option><option>Other</option></select></label>
+          <label>Content type<select value={form.contentType} onChange={(event) => onFormChange({ contentType: event.target.value })}><option>Post</option><option>Reel</option><option>Story</option><option>Carousel</option><option>Video</option><option>Live</option><option>Email</option></select></label>
+        </div>
+        <label>Notes<textarea value={form.notes} onChange={(event) => onFormChange({ notes: event.target.value })} placeholder="Caption angle, hook, props, offer, or anything to remember..." /></label>
+        <button className="button primary" type="submit">Add to calendar</button>
+      </form>
+      <section className="content-calendar card">
+        <div className="content-calendar-header">
+          <button className="view-button" onClick={() => changeMonth(-1)}>Previous</button>
+          <div><strong>{monthLabel}</strong><span>{sortedItems.length} total content item{sortedItems.length === 1 ? "" : "s"}</span></div>
+          <button className="view-button" onClick={() => changeMonth(1)}>Next</button>
+        </div>
+        <div className="content-calendar-weekdays">{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => <span key={day}>{day}</span>)}</div>
+        <div className="content-calendar-grid">
+          {calendarDays.map((day) => <article key={day.key} className={`content-calendar-day ${day.inMonth ? "" : "muted"} ${day.key === form.plannedDate ? "selected" : ""}`} onClick={() => onFormChange({ plannedDate: day.key })}>
+            <strong>{day.date.getDate()}</strong>
+            <div>{day.items.slice(0, 3).map((item) => <span key={item.id} className={item.posted ? "posted" : ""}>{item.platform}: {item.title}</span>)}</div>
+            {day.items.length > 3 && <small>+{day.items.length - 3} more</small>}
+          </article>)}
+        </div>
+      </section>
+    </section>
+    <section className="card accounting-table-card content-plan-list">
+      <h3>Planned content</h3>
+      <div className="table-scroll"><table className="orders-table"><thead><tr><th>Date</th><th>Content</th><th>Platform</th><th>Type</th><th>Status</th><th>Notes</th><th /></tr></thead><tbody>{sortedItems.map((item) => <tr key={item.id} className={item.posted ? "posted-content-row" : ""}>
+        <td>{formatDate(item.plannedDate)}</td>
+        <td><strong>{item.title}</strong><br /><small>Created by {item.createdBy}</small></td>
+        <td>{item.platform || "-"}</td>
+        <td>{item.contentType || "-"}</td>
+        <td><button className={`content-status-button ${item.posted ? "posted" : ""}`} onClick={() => onTogglePosted(item)}>{item.posted ? "Posted" : "Mark posted"}</button>{item.postedAt && <small>{formatDate(item.postedAt, true)}</small>}</td>
+        <td className="content-notes-cell">{item.notes || "-"}</td>
+        <td><button className="view-button danger-text" onClick={() => onDelete(item)}>Delete</button></td>
+      </tr>)}</tbody></table>{!items.length && <div className="empty"><strong>No content planned yet</strong><p>Add your first idea and it will appear on the calendar.</p></div>}</div>
+    </section>
+  </section>;
 }
 
 function isExpressShipping(order: Pick<Order, "shippingMethod">) {
@@ -3130,7 +3312,7 @@ function EnvelopeSheet({ orders, pageNumber, settings }: { orders: Order[]; page
   return <article className="envelope-sheet"><span>PAGE {pageNumber}</span><div><small>TOP NAME | X {settings.topX}, Y {settings.topY}</small><strong>{(orders[0]?.plushName || "-").toUpperCase()}</strong></div><div><small>BOTTOM NAME | X {settings.bottomX}, Y {settings.bottomY}</small><strong>{(orders[1]?.plushName || "-").toUpperCase()}</strong></div></article>;
 }
 
-type IconName = "orders" | "fulfilment" | "packing" | "envelope" | "import" | "shipped" | "logout" | "search" | "history" | "drag" | "settings" | "stock" | "report" | "accounting" | "cash" | "documents" | "ledger" | "tax";
+type IconName = "orders" | "fulfilment" | "packing" | "envelope" | "import" | "shipped" | "logout" | "search" | "history" | "drag" | "settings" | "stock" | "report" | "accounting" | "cash" | "documents" | "ledger" | "tax" | "calendar";
 
 function Icon({ name }: { name: IconName }) {
   const common: SVGProps<SVGSVGElement> = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true };
@@ -3150,6 +3332,7 @@ function Icon({ name }: { name: IconName }) {
   if (name === "documents") return <svg {...common}><path d="M7 3h8l4 4v14H7z"/><path d="M15 3v5h4M10 12h6M10 16h6M5 7v14"/></svg>;
   if (name === "ledger") return <svg {...common}><path d="M5 4h14v16H5zM9 4v16M5 9h14M5 14h14"/></svg>;
   if (name === "tax") return <svg {...common}><path d="M7 17 17 7"/><circle cx="7" cy="7" r="2"/><circle cx="17" cy="17" r="2"/></svg>;
+  if (name === "calendar") return <svg {...common}><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg>;
   if (name === "drag") return <svg {...common}><circle cx="8" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="17" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="17" r="1" fill="currentColor" stroke="none"/></svg>;
   return <svg {...common}><path d="M12 8v5l3 2"/><circle cx="12" cy="12" r="9"/></svg>;
 }
