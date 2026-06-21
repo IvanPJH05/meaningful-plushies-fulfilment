@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { AccountingCategory, AccountingDocument, AccountingLedgerEntry, AccountingTransaction, ContentPlanItem, DashboardAccount, Order, PaymentProcessorSetting, SalesFeeSetting, StockSetting, UserRole } from "./types";
+import type { AccountingCategory, AccountingDocument, AccountingLedgerEntry, AccountingTransaction, ContentIdeaItem, ContentIdeaReference, ContentPlanItem, DashboardAccount, Order, PaymentProcessorSetting, SalesFeeSetting, StockSetting, UserRole } from "./types";
 
 export type DashboardSession = DashboardAccount & { token: string };
 
@@ -505,6 +505,59 @@ export async function deleteContentPlanItem(id: string) {
   if (error) throw error;
 }
 
+function cleanIdeaReferences(value: unknown): ContentIdeaReference[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((reference) => {
+      if (!reference || typeof reference !== "object") return null;
+      const item = reference as Partial<ContentIdeaReference>;
+      return {
+        id: String(item.id || crypto.randomUUID()),
+        name: String(item.name || "").trim(),
+        url: String(item.url || "").trim(),
+      };
+    })
+    .filter((reference): reference is ContentIdeaReference => Boolean(reference?.name || reference?.url));
+}
+
+export async function fetchContentIdeas(): Promise<ContentIdeaItem[]> {
+  const { data, error } = await requireSupabase()
+    .from("content_idea_items")
+    .select("id, title, idea, reference_links, created_by, created_at, updated_at")
+    .order("updated_at", { ascending: false })
+    .order("created_at", { ascending: false });
+  if (error) {
+    if (isMissingTableError(error)) return [];
+    throw error;
+  }
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    title: row.title,
+    idea: row.idea ?? "",
+    references: cleanIdeaReferences(row.reference_links),
+    createdBy: row.created_by ?? "Admin",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+}
+
+export async function saveContentIdea(item: ContentIdeaItem) {
+  const { error } = await requireSupabase().from("content_idea_items").upsert({
+    id: item.id,
+    title: item.title,
+    idea: item.idea,
+    reference_links: item.references,
+    created_by: item.createdBy,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "id" });
+  if (error) throw error;
+}
+
+export async function deleteContentIdea(id: string) {
+  const { error } = await requireSupabase().from("content_idea_items").delete().eq("id", id);
+  if (error) throw error;
+}
+
 export function subscribeToSharedData(onChange: () => void) {
   const client = requireSupabase();
   const channel = client.channel("fulfilment-dashboard")
@@ -518,6 +571,7 @@ export function subscribeToSharedData(onChange: () => void) {
     .on("postgres_changes", { event: "*", schema: "public", table: "accounting_ledger_entries" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "accounting_categories" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "content_plan_items" }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "content_idea_items" }, onChange)
     .subscribe();
   return () => { void client.removeChannel(channel); };
 }

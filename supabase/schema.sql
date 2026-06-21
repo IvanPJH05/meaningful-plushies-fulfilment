@@ -293,6 +293,19 @@ create index if not exists content_plan_items_planned_date_idx
 create index if not exists content_plan_items_posted_idx
   on public.content_plan_items (posted);
 
+create table if not exists public.content_idea_items (
+  id text primary key,
+  title text not null,
+  idea text not null default '',
+  reference_links jsonb not null default '[]'::jsonb,
+  created_by text not null default 'Admin',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists content_idea_items_updated_idx
+  on public.content_idea_items (updated_at desc, created_at desc);
+
 alter table public.accounting_transactions drop constraint if exists accounting_transactions_transaction_type_check;
 alter table public.accounting_transactions add constraint accounting_transactions_transaction_type_check
   check (transaction_type in (
@@ -330,6 +343,7 @@ alter table public.accounting_documents enable row level security;
 alter table public.accounting_transactions enable row level security;
 alter table public.accounting_ledger_entries enable row level security;
 alter table public.content_plan_items enable row level security;
+alter table public.content_idea_items enable row level security;
 
 drop policy if exists "shared accounting reads categories" on public.accounting_categories;
 drop policy if exists "shared accounting changes categories" on public.accounting_categories;
@@ -356,6 +370,11 @@ drop policy if exists "shared content plan changes items" on public.content_plan
 create policy "shared content plan reads items" on public.content_plan_items for select to anon, authenticated using (true);
 create policy "shared content plan changes items" on public.content_plan_items for all to anon, authenticated using (true) with check (true);
 
+drop policy if exists "shared content ideas reads items" on public.content_idea_items;
+drop policy if exists "shared content ideas changes items" on public.content_idea_items;
+create policy "shared content ideas reads items" on public.content_idea_items for select to anon, authenticated using (true);
+create policy "shared content ideas changes items" on public.content_idea_items for all to anon, authenticated using (true) with check (true);
+
 drop policy if exists "shared accounting reads document files" on storage.objects;
 drop policy if exists "shared accounting inserts document files" on storage.objects;
 drop policy if exists "shared accounting updates document files" on storage.objects;
@@ -370,6 +389,7 @@ grant select, insert, update, delete on public.accounting_documents to anon, aut
 grant select, insert, update, delete on public.accounting_transactions to anon, authenticated;
 grant select, insert, update, delete on public.accounting_ledger_entries to anon, authenticated;
 grant select, insert, update, delete on public.content_plan_items to anon, authenticated;
+grant select, insert, update, delete on public.content_idea_items to anon, authenticated;
 
 do $$
 begin
@@ -432,5 +452,11 @@ begin
     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'content_plan_items'
   ) then
     alter publication supabase_realtime add table public.content_plan_items;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'content_idea_items'
+  ) then
+    alter publication supabase_realtime add table public.content_idea_items;
   end if;
 end $$;

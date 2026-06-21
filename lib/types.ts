@@ -124,6 +124,22 @@ export type ContentPlanItem = {
   updatedAt: string;
 };
 
+export type ContentIdeaReference = {
+  id: string;
+  name: string;
+  url: string;
+};
+
+export type ContentIdeaItem = {
+  id: string;
+  title: string;
+  idea: string;
+  references: ContentIdeaReference[];
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type StatusEvent = {
   id: string;
   status: OrderStatus;

@@ -10,6 +10,7 @@ import { stockCharacters, summarizeStock } from "../lib/stock";
 import {
   createDashboardAccount,
   createAccountingDocumentSignedUrl,
+  deleteContentIdea,
   deleteContentPlanItem,
   deleteSharedOrders,
   deleteAccountingDocument,
@@ -19,6 +20,7 @@ import {
   fetchAccountingDocuments,
   fetchAccountingLedgerEntries,
   fetchAccountingTransactions,
+  fetchContentIdeas,
   fetchContentPlanItems,
   fetchSharedActivity,
   fetchSharedOrders,
@@ -32,6 +34,7 @@ import {
   saveAccountingCategory,
   saveAccountingLedgerEntries,
   saveAccountingTransaction,
+  saveContentIdea,
   saveContentPlanItem,
   saveStockSetting,
   savePaymentProcessorSetting,
@@ -43,7 +46,7 @@ import {
   upsertSharedOrders,
   type DashboardSession,
 } from "../lib/supabase";
-import { orderStatuses, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type ContentPlanItem, type DashboardAccount, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesFeeSetting, type StockSetting, type UserRole } from "../lib/types";
+import { orderStatuses, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type ContentIdeaItem, type ContentIdeaReference, type ContentPlanItem, type DashboardAccount, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesFeeSetting, type StockSetting, type UserRole } from "../lib/types";
 
 type Session = DashboardSession;
 type View =
@@ -52,7 +55,7 @@ type View =
   | "accounting_cash_flow" | "accounting_general_ledger" | "accounting_trial_balance" | "accounting_payable" | "accounting_receivable"
   | "accounting_bank_reconciliation" | "accounting_product_profitability" | "accounting_marketing_profitability" | "accounting_cash_position"
   | "accounting_tax_reports" | "accounting_settings" | "accounting_files" | "accounting_general_journal" | "accounting_t_accounts" | "accounting_unit_costs" | "accounting_financial_reports"
-  | "content_plan";
+  | "content_plan" | "content_ideas";
 type Workspace = "fulfilment" | "accounting" | "formal_accounting" | "inventory" | "reports" | "content" | "settings";
 type SalesRange = "active" | "today" | "7d" | "30d" | "lifetime";
 type SortKey = "orderNumber" | "importedAt" | "updatedAt";
@@ -160,6 +163,13 @@ type ContentPlanForm = {
   platform: string;
   contentType: string;
   notes: string;
+};
+type ContentIdeaForm = {
+  title: string;
+  idea: string;
+  references: ContentIdeaReference[];
+  referenceName: string;
+  referenceUrl: string;
 };
 type AccountOption = {
   value: string;
@@ -320,7 +330,7 @@ const accountingViews: readonly View[] = [
   "accounting_settings",
 ];
 const formalAccountingViews: readonly View[] = ["accounting_general_journal", "accounting_t_accounts", "accounting_unit_costs", "accounting_financial_reports"];
-const contentViews: readonly View[] = ["content_plan"];
+const contentViews: readonly View[] = ["content_plan", "content_ideas"];
 const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "stock", "sales_report", ...accountingViews, ...formalAccountingViews, ...contentViews];
 const adminOnlyViews = new Set<View>(["history", "settings", "stock", "sales_report", ...accountingViews, ...formalAccountingViews, ...contentViews]);
 const workspaceDefaultViews: Record<Workspace, View> = {
@@ -465,7 +475,10 @@ const formalAccountingNavItems: NavItem[] = [
 
 const inventoryNavItems: NavItem[] = [{ view: "stock", label: "Stock Count", icon: "stock" }];
 const reportsNavItems: NavItem[] = [{ view: "sales_report", label: "Sales Report", icon: "report" }];
-const contentNavItems: NavItem[] = [{ view: "content_plan", label: "Content Calendar", icon: "calendar" }];
+const contentNavItems: NavItem[] = [
+  { view: "content_plan", label: "Planned Content", icon: "calendar" },
+  { view: "content_ideas", label: "Idea Brainstorming", icon: "idea" },
+];
 const settingsNavItems: NavItem[] = [
   { view: "settings", label: "Fulfilment Settings", icon: "settings" },
   { view: "history", label: "History", icon: "history" },
@@ -650,7 +663,8 @@ function viewTitle(view: View) {
     import: "Import Shopify Orders",
     fulfilled: "Shipped Orders",
     history: "Activity History",
-    content_plan: "Content Plan",
+    content_plan: "Planned Content",
+    content_ideas: "Idea Brainstorming",
   };
   if (titleOverrides[view]) return titleOverrides[view]!;
   const item = [...fulfilmentNavItems, ...fulfilmentAdminNavItems, ...accountingNavItems, ...formalAccountingNavItems, ...inventoryNavItems, ...reportsNavItems, ...contentNavItems, ...settingsNavItems]
@@ -694,6 +708,7 @@ export default function Home() {
   const [accountingTransactions, setAccountingTransactions] = useState<AccountingTransaction[]>([]);
   const [accountingLedgerEntries, setAccountingLedgerEntries] = useState<AccountingLedgerEntry[]>([]);
   const [contentPlanItems, setContentPlanItems] = useState<ContentPlanItem[]>([]);
+  const [contentIdeas, setContentIdeas] = useState<ContentIdeaItem[]>([]);
   const [accountingDocumentFile, setAccountingDocumentFile] = useState<File | null>(null);
   const [transactionDocumentFile, setTransactionDocumentFile] = useState<File | null>(null);
   const [settlementFiles, setSettlementFiles] = useState<Record<string, File | null>>({});
@@ -756,6 +771,13 @@ export default function Home() {
     contentType: "Post",
     notes: "",
   });
+  const [contentIdeaForm, setContentIdeaForm] = useState<ContentIdeaForm>({
+    title: "",
+    idea: "",
+    references: [],
+    referenceName: "",
+    referenceUrl: "",
+  });
   const [accountPasswords, setAccountPasswords] = useState<Record<string, string>>({});
   const [newAccount, setNewAccount] = useState({ username: "", displayName: "", role: "staff" as UserRole, password: "" });
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
@@ -789,9 +811,10 @@ export default function Home() {
         sharedAccountingTransactions,
         sharedAccountingLedgerEntries,
         sharedContentPlanItems,
+        sharedContentIdeas,
       ] = await Promise.all([
         fetchSharedOrders(), fetchSharedActivity(), fetchPaymentProcessorSettings(), fetchStockSettings(), fetchSalesFeeSettings(),
-        fetchAccountingCategories(), fetchAccountingDocuments(), fetchAccountingTransactions(), fetchAccountingLedgerEntries(), fetchContentPlanItems(),
+        fetchAccountingCategories(), fetchAccountingDocuments(), fetchAccountingTransactions(), fetchAccountingLedgerEntries(), fetchContentPlanItems(), fetchContentIdeas(),
       ]);
       setOrders(sharedOrders.map((order) => {
       const status = legacyStatus[order.status] ?? order.status;
@@ -826,6 +849,7 @@ export default function Home() {
       setAccountingTransactions(sharedAccountingTransactions);
       setAccountingLedgerEntries(sharedAccountingLedgerEntries);
       setContentPlanItems(sharedContentPlanItems);
+      setContentIdeas(sharedContentIdeas);
       setDatabaseError("");
     } catch (error) {
       setDatabaseError(error instanceof Error ? error.message : "Could not load orders from Supabase.");
@@ -2049,6 +2073,63 @@ export default function Home() {
     }
   }
 
+  function addIdeaReference() {
+    const name = contentIdeaForm.referenceName.trim();
+    const url = contentIdeaForm.referenceUrl.trim();
+    if (!name || !url) return setNotice("Add both a reference name and link.");
+    setContentIdeaForm((current) => ({
+      ...current,
+      references: [...current.references, { id: crypto.randomUUID(), name, url }],
+      referenceName: "",
+      referenceUrl: "",
+    }));
+  }
+
+  function removeIdeaReference(referenceId: string) {
+    setContentIdeaForm((current) => ({
+      ...current,
+      references: current.references.filter((reference) => reference.id !== referenceId),
+    }));
+  }
+
+  async function saveContentIdeaItem() {
+    const title = contentIdeaForm.title.trim();
+    const idea = contentIdeaForm.idea.trim();
+    if (!title) return setNotice("Add an idea title.");
+    if (!idea) return setNotice("Write down the idea first.");
+    const now = new Date().toISOString();
+    const item: ContentIdeaItem = {
+      id: crypto.randomUUID(),
+      title,
+      idea,
+      references: contentIdeaForm.references,
+      createdBy: session?.displayName ?? "Admin",
+      createdAt: now,
+      updatedAt: now,
+    };
+    try {
+      await saveContentIdea(item);
+      await insertSharedActivity({ id: crypto.randomUUID(), action: "Content idea saved", detail: `${item.title} saved with ${item.references.length} reference${item.references.length === 1 ? "" : "s"}.`, actor: session?.displayName ?? "Admin", createdAt: now });
+      setContentIdeaForm({ title: "", idea: "", references: [], referenceName: "", referenceUrl: "" });
+      await loadSharedData();
+      setNotice("Content idea saved.");
+    } catch (error) {
+      setNotice(readableError(error, "Could not save content idea."));
+    }
+  }
+
+  async function removeContentIdea(item: ContentIdeaItem) {
+    if (!confirm(`Delete ${item.title}?`)) return;
+    try {
+      await deleteContentIdea(item.id);
+      await insertSharedActivity({ id: crypto.randomUUID(), action: "Content idea deleted", detail: `${item.title} was removed.`, actor: session?.displayName ?? "Admin", createdAt: new Date().toISOString() });
+      await loadSharedData();
+      setNotice("Content idea deleted.");
+    } catch (error) {
+      setNotice(readableError(error, "Could not delete content idea."));
+    }
+  }
+
   async function openAccountingDocument(document: AccountingDocument) {
     setPreviewDocument(document);
     setPreviewDocumentUrl("");
@@ -2151,12 +2232,20 @@ export default function Home() {
       />}
 
       {workspace === "content" && session.role === "admin" && <ContentPlanWorkspacePage
+        view={view}
         items={contentPlanItems}
         form={contentPlanForm}
+        ideas={contentIdeas}
+        ideaForm={contentIdeaForm}
         onFormChange={(patch) => setContentPlanForm((current) => ({ ...current, ...patch }))}
+        onIdeaFormChange={(patch) => setContentIdeaForm((current) => ({ ...current, ...patch }))}
         onSave={saveContentPlan}
         onTogglePosted={toggleContentPosted}
         onDelete={removeContentPlan}
+        onAddIdeaReference={addIdeaReference}
+        onRemoveIdeaReference={removeIdeaReference}
+        onSaveIdea={saveContentIdeaItem}
+        onDeleteIdea={removeContentIdea}
       />}
 
       {workspace === "fulfilment" && view !== "import" && view !== "packing_slips" && view !== "print_envelope" && view !== "history" && view !== "settings" && view !== "stock" && view !== "sales_report" && <>
@@ -2631,24 +2720,49 @@ function DocumentPreviewModal({ document, url, error, onClose }: { document: Acc
 }
 
 function ContentPlanWorkspacePage({
+  view,
   items,
   form,
+  ideas,
+  ideaForm,
   onFormChange,
+  onIdeaFormChange,
   onSave,
   onTogglePosted,
   onDelete,
+  onAddIdeaReference,
+  onRemoveIdeaReference,
+  onSaveIdea,
+  onDeleteIdea,
 }: {
+  view: View;
   items: ContentPlanItem[];
   form: ContentPlanForm;
+  ideas: ContentIdeaItem[];
+  ideaForm: ContentIdeaForm;
   onFormChange: (patch: Partial<ContentPlanForm>) => void;
+  onIdeaFormChange: (patch: Partial<ContentIdeaForm>) => void;
   onSave: () => void;
   onTogglePosted: (item: ContentPlanItem) => void;
   onDelete: (item: ContentPlanItem) => void;
+  onAddIdeaReference: () => void;
+  onRemoveIdeaReference: (referenceId: string) => void;
+  onSaveIdea: () => void;
+  onDeleteIdea: (item: ContentIdeaItem) => void;
 }) {
   const [visibleMonth, setVisibleMonth] = useState(() => {
     const date = form.plannedDate ? new Date(`${form.plannedDate}T00:00:00`) : new Date();
     return new Date(date.getFullYear(), date.getMonth(), 1);
   });
+  if (view === "content_ideas") return <ContentIdeaBrainstormingPage
+    ideas={ideas}
+    form={ideaForm}
+    onFormChange={onIdeaFormChange}
+    onAddReference={onAddIdeaReference}
+    onRemoveReference={onRemoveIdeaReference}
+    onSave={onSaveIdea}
+    onDelete={onDeleteIdea}
+  />;
   const sortedItems = [...items].sort((a, b) => a.plannedDate.localeCompare(b.plannedDate) || a.createdAt.localeCompare(b.createdAt));
   const monthStart = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth(), 1);
   const calendarStart = new Date(monthStart);
@@ -2713,6 +2827,56 @@ function ContentPlanWorkspacePage({
         <td className="content-notes-cell">{item.notes || "-"}</td>
         <td><button className="view-button danger-text" onClick={() => onDelete(item)}>Delete</button></td>
       </tr>)}</tbody></table>{!items.length && <div className="empty"><strong>No content planned yet</strong><p>Add your first idea and it will appear on the calendar.</p></div>}</div>
+    </section>
+  </section>;
+}
+
+function ContentIdeaBrainstormingPage({
+  ideas,
+  form,
+  onFormChange,
+  onAddReference,
+  onRemoveReference,
+  onSave,
+  onDelete,
+}: {
+  ideas: ContentIdeaItem[];
+  form: ContentIdeaForm;
+  onFormChange: (patch: Partial<ContentIdeaForm>) => void;
+  onAddReference: () => void;
+  onRemoveReference: (referenceId: string) => void;
+  onSave: () => void;
+  onDelete: (item: ContentIdeaItem) => void;
+}) {
+  const sortedIdeas = [...ideas].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.createdAt.localeCompare(a.createdAt));
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    onSave();
+  }
+  return <section className="content-plan-workspace">
+    <div className="accounting-hero card"><div><p>IDEA BRAINSTORMING</p><h2>Content ideas and references</h2><span>Capture rough ideas before they become planned posts. Add named links so every reference stays attached to the idea.</span></div><div className="accounting-status-pill">{ideas.length} idea{ideas.length === 1 ? "" : "s"}</div></div>
+    <section className="content-plan-grid">
+      <form className="content-plan-form card" onSubmit={submit}>
+        <h3>New idea</h3>
+        <label>Idea title<input value={form.title} onChange={(event) => onFormChange({ title: event.target.value })} placeholder="Example: Customer story angle" /></label>
+        <label>Brainstorming notes<textarea value={form.idea} onChange={(event) => onFormChange({ idea: event.target.value })} placeholder="Write the hook, concept, caption angle, shot list, or rough thought..." /></label>
+        <div className="idea-reference-box">
+          <h3>Reference links</h3>
+          <label>Reference name<input value={form.referenceName} onChange={(event) => onFormChange({ referenceName: event.target.value })} placeholder="Example: TikTok hook example" /></label>
+          <label>Reference link<input value={form.referenceUrl} onChange={(event) => onFormChange({ referenceUrl: event.target.value })} placeholder="https://..." /></label>
+          <button className="button secondary" type="button" onClick={onAddReference}>Add reference</button>
+          {form.references.length > 0 && <div className="idea-reference-list">{form.references.map((reference) => <div key={reference.id}><a href={reference.url} target="_blank" rel="noreferrer">{reference.name || reference.url}</a><button type="button" onClick={() => onRemoveReference(reference.id)}>Remove</button></div>)}</div>}
+        </div>
+        <button className="button primary" type="submit">Save idea</button>
+      </form>
+      <section className="idea-board">
+        {sortedIdeas.map((idea) => <article key={idea.id} className="idea-card card">
+          <div className="idea-card-header"><div><strong>{idea.title}</strong><span>Updated {formatDate(idea.updatedAt, true)} by {idea.createdBy}</span></div><button className="view-button danger-text" onClick={() => onDelete(idea)}>Delete</button></div>
+          <p>{idea.idea}</p>
+          {idea.references.length > 0 && <div className="saved-reference-list"><span>References</span>{idea.references.map((reference) => <a key={reference.id} href={reference.url} target="_blank" rel="noreferrer">{reference.name || reference.url}</a>)}</div>}
+        </article>)}
+        {!ideas.length && <div className="empty card"><strong>No brainstorming ideas yet</strong><p>Save ideas here first, then move the best ones into Planned Content when you are ready.</p></div>}
+      </section>
     </section>
   </section>;
 }
@@ -3312,7 +3476,7 @@ function EnvelopeSheet({ orders, pageNumber, settings }: { orders: Order[]; page
   return <article className="envelope-sheet"><span>PAGE {pageNumber}</span><div><small>TOP NAME | X {settings.topX}, Y {settings.topY}</small><strong>{(orders[0]?.plushName || "-").toUpperCase()}</strong></div><div><small>BOTTOM NAME | X {settings.bottomX}, Y {settings.bottomY}</small><strong>{(orders[1]?.plushName || "-").toUpperCase()}</strong></div></article>;
 }
 
-type IconName = "orders" | "fulfilment" | "packing" | "envelope" | "import" | "shipped" | "logout" | "search" | "history" | "drag" | "settings" | "stock" | "report" | "accounting" | "cash" | "documents" | "ledger" | "tax" | "calendar";
+type IconName = "orders" | "fulfilment" | "packing" | "envelope" | "import" | "shipped" | "logout" | "search" | "history" | "drag" | "settings" | "stock" | "report" | "accounting" | "cash" | "documents" | "ledger" | "tax" | "calendar" | "idea";
 
 function Icon({ name }: { name: IconName }) {
   const common: SVGProps<SVGSVGElement> = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true };
@@ -3333,6 +3497,7 @@ function Icon({ name }: { name: IconName }) {
   if (name === "ledger") return <svg {...common}><path d="M5 4h14v16H5zM9 4v16M5 9h14M5 14h14"/></svg>;
   if (name === "tax") return <svg {...common}><path d="M7 17 17 7"/><circle cx="7" cy="7" r="2"/><circle cx="17" cy="17" r="2"/></svg>;
   if (name === "calendar") return <svg {...common}><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg>;
+  if (name === "idea") return <svg {...common}><path d="M9 18h6M10 22h4M8.5 14.5A6 6 0 1 1 15.5 14.5c-.9.7-1.5 1.7-1.5 2.8v.7h-4v-.7c0-1.1-.6-2.1-1.5-2.8Z"/></svg>;
   if (name === "drag") return <svg {...common}><circle cx="8" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="17" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="17" r="1" fill="currentColor" stroke="none"/></svg>;
   return <svg {...common}><path d="M12 8v5l3 2"/><circle cx="12" cy="12" r="9"/></svg>;
 }
