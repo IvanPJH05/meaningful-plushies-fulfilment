@@ -69,6 +69,20 @@ create table if not exists public.stock_settings (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.sales_consumption_mappings (
+  id text primary key,
+  sku text not null,
+  inventory_item text not null default '',
+  quantity_per_sale numeric(12,4) not null default 0 check (quantity_per_sale >= 0),
+  operating_expense_per_sale numeric(12,2) not null default 0 check (operating_expense_per_sale >= 0),
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists sales_consumption_mappings_sku_idx
+  on public.sales_consumption_mappings (sku, active);
+
 insert into public.stock_settings(item_key)
 values ('BILLY'), ('TOOTSIE'), ('HUNNIE'), ('DRAGON WARRIOR'), ('VOICE')
 on conflict (item_key) do nothing;
@@ -138,6 +152,7 @@ alter table public.sales_fee_settings enable row level security;
 alter table public.dashboard_accounts enable row level security;
 alter table public.dashboard_sessions enable row level security;
 alter table public.stock_settings enable row level security;
+alter table public.sales_consumption_mappings enable row level security;
 
 drop policy if exists "shared dashboard reads orders" on public.fulfilment_orders;
 drop policy if exists "shared dashboard inserts orders" on public.fulfilment_orders;
@@ -173,11 +188,21 @@ create policy "shared dashboard reads stock settings" on public.stock_settings f
 create policy "shared dashboard updates stock settings" on public.stock_settings for insert to anon, authenticated with check (true);
 create policy "shared dashboard changes stock settings" on public.stock_settings for update to anon, authenticated using (true) with check (true);
 
+drop policy if exists "shared dashboard reads sales mappings" on public.sales_consumption_mappings;
+drop policy if exists "shared dashboard inserts sales mappings" on public.sales_consumption_mappings;
+drop policy if exists "shared dashboard updates sales mappings" on public.sales_consumption_mappings;
+drop policy if exists "shared dashboard deletes sales mappings" on public.sales_consumption_mappings;
+create policy "shared dashboard reads sales mappings" on public.sales_consumption_mappings for select to anon, authenticated using (true);
+create policy "shared dashboard inserts sales mappings" on public.sales_consumption_mappings for insert to anon, authenticated with check (true);
+create policy "shared dashboard updates sales mappings" on public.sales_consumption_mappings for update to anon, authenticated using (true) with check (true);
+create policy "shared dashboard deletes sales mappings" on public.sales_consumption_mappings for delete to anon, authenticated using (true);
+
 grant select, insert, update, delete on public.fulfilment_orders to anon, authenticated;
 grant select, insert on public.activity_events to anon, authenticated;
 grant select, insert, update on public.payment_processor_settings to anon, authenticated;
 grant select, insert, update on public.sales_fee_settings to anon, authenticated;
 grant select, insert, update on public.stock_settings to anon, authenticated;
+grant select, insert, update, delete on public.sales_consumption_mappings to anon, authenticated;
 grant execute on function public.dashboard_login(text, text) to anon, authenticated;
 grant execute on function public.dashboard_list_accounts(uuid) to anon, authenticated;
 grant execute on function public.dashboard_create_account(uuid, text, text, text, text) to anon, authenticated;
@@ -422,6 +447,12 @@ begin
     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'stock_settings'
   ) then
     alter publication supabase_realtime add table public.stock_settings;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'sales_consumption_mappings'
+  ) then
+    alter publication supabase_realtime add table public.sales_consumption_mappings;
   end if;
   if not exists (
     select 1 from pg_publication_tables

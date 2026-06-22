@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { AccountingCategory, AccountingDocument, AccountingLedgerEntry, AccountingTransaction, ContentIdeaItem, ContentIdeaReference, ContentPlanItem, DashboardAccount, Order, PaymentProcessorSetting, SalesFeeSetting, StockSetting, UserRole } from "./types";
+import type { AccountingCategory, AccountingDocument, AccountingLedgerEntry, AccountingTransaction, ContentIdeaItem, ContentIdeaReference, ContentPlanItem, DashboardAccount, Order, PaymentProcessorSetting, SalesConsumptionMapping, SalesFeeSetting, StockSetting, UserRole } from "./types";
 
 export type DashboardSession = DashboardAccount & { token: string };
 
@@ -185,6 +185,45 @@ export async function saveStockSetting(setting: StockSetting) {
     initial_stock: Math.max(0, Math.floor(setting.initialStock)),
     updated_at: new Date().toISOString(),
   }, { onConflict: "item_key" });
+  if (error) throw error;
+}
+
+export async function fetchSalesConsumptionMappings(): Promise<SalesConsumptionMapping[]> {
+  const { data, error } = await requireSupabase()
+    .from("sales_consumption_mappings")
+    .select("id, sku, inventory_item, quantity_per_sale, operating_expense_per_sale, active, created_at, updated_at")
+    .order("sku", { ascending: true })
+    .order("inventory_item", { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    sku: row.sku,
+    inventoryItem: row.inventory_item ?? "",
+    quantityPerSale: Number(row.quantity_per_sale ?? 0),
+    operatingExpensePerSale: Number(row.operating_expense_per_sale ?? 0),
+    active: row.active !== false,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+}
+
+export async function saveSalesConsumptionMapping(mapping: SalesConsumptionMapping) {
+  const now = new Date().toISOString();
+  const { error } = await requireSupabase().from("sales_consumption_mappings").upsert({
+    id: mapping.id,
+    sku: mapping.sku.trim().toUpperCase(),
+    inventory_item: mapping.inventoryItem.trim().toUpperCase(),
+    quantity_per_sale: Math.max(0, mapping.quantityPerSale),
+    operating_expense_per_sale: Math.max(0, mapping.operatingExpensePerSale),
+    active: mapping.active,
+    created_at: mapping.createdAt || now,
+    updated_at: now,
+  }, { onConflict: "id" });
+  if (error) throw error;
+}
+
+export async function deleteSalesConsumptionMapping(id: string) {
+  const { error } = await requireSupabase().from("sales_consumption_mappings").delete().eq("id", id);
   if (error) throw error;
 }
 
@@ -566,6 +605,7 @@ export function subscribeToSharedData(onChange: () => void) {
     .on("postgres_changes", { event: "*", schema: "public", table: "payment_processor_settings" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "sales_fee_settings" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "stock_settings" }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "sales_consumption_mappings" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "accounting_documents" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "accounting_transactions" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "accounting_ledger_entries" }, onChange)

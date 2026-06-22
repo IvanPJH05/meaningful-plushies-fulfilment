@@ -10,6 +10,7 @@ import { stockCharacters, summarizeStock } from "../lib/stock";
 import {
   createDashboardAccount,
   createAccountingDocumentSignedUrl,
+  deleteSalesConsumptionMapping,
   deleteContentIdea,
   deleteContentPlanItem,
   deleteSharedOrders,
@@ -22,6 +23,7 @@ import {
   fetchAccountingTransactions,
   fetchContentIdeas,
   fetchContentPlanItems,
+  fetchSalesConsumptionMappings,
   fetchSharedActivity,
   fetchSharedOrders,
   fetchDashboardAccounts,
@@ -36,6 +38,7 @@ import {
   saveAccountingTransaction,
   saveContentIdea,
   saveContentPlanItem,
+  saveSalesConsumptionMapping,
   saveStockSetting,
   savePaymentProcessorSetting,
   saveSalesFeeSettings,
@@ -46,7 +49,7 @@ import {
   upsertSharedOrders,
   type DashboardSession,
 } from "../lib/supabase";
-import { orderStatuses, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type ContentIdeaItem, type ContentIdeaReference, type ContentPlanItem, type DashboardAccount, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesFeeSetting, type StockSetting, type UserRole } from "../lib/types";
+import { orderStatuses, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type ContentIdeaItem, type ContentIdeaReference, type ContentPlanItem, type DashboardAccount, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesConsumptionMapping, type SalesFeeSetting, type StockSetting, type UserRole } from "../lib/types";
 
 type Session = DashboardSession;
 type View =
@@ -156,6 +159,12 @@ type BookkeepingSectionKey = "inventory" | "expense" | "asset" | "marketing";
 type BookkeepingCategoryForm = {
   section: BookkeepingSectionKey;
   name: string;
+};
+type SalesConsumptionMappingForm = {
+  sku: string;
+  inventoryItem: string;
+  quantityPerSale: string;
+  operatingExpensePerSale: string;
 };
 type BookkeepingCsvImportRow = {
   id: string;
@@ -334,6 +343,28 @@ const manualExpenseAccounts = [
   ["Tax Penalties", "Tax", false],
 ] as const;
 const cogsAccounts = ["Plushie Cost", "Speaker Cost", "Packaging Cost", "Shipping Cost", "Labour Cost", "NFC Cost", "Other Direct Costs"] as const;
+
+const salesConsumptionMappingFormDefaults: SalesConsumptionMappingForm = {
+  sku: "BILLY",
+  inventoryItem: "PACKAGING",
+  quantityPerSale: "1",
+  operatingExpensePerSale: "0",
+};
+
+function normalizeAccountingItem(value: string) {
+  return value.trim().toUpperCase().replace(/\s+/g, " ");
+}
+
+function cogsAccountForInventoryItem(itemName: string) {
+  const normalized = normalizeAccountingItem(itemName);
+  if (normalized.includes("SPEAKER") || normalized.includes("VOICE")) return "Speaker Cost";
+  if (normalized.includes("NFC")) return "NFC Cost";
+  if (normalized.includes("PACK") || normalized.includes("BOX") || normalized.includes("BUBBLE") || normalized.includes("WAX")) return "Packaging Cost";
+  if (normalized.includes("SHIPPING") || normalized.includes("CARRIAGE")) return "Shipping Cost";
+  if (normalized.includes("LABOUR") || normalized.includes("LABOR")) return "Labour Cost";
+  if (stockCharacters.includes(normalized as (typeof stockCharacters)[number]) || normalized.includes("PLUSH")) return "Plushie Cost";
+  return "Other Direct Costs";
+}
 const processorAccounts = ["Xendit", "Stripe", "TikTok Shop"] as const;
 
 const fulfilmentViews: readonly View[] = ["orders", "fulfilment", "packing_slips", "print_envelope", "import", "fulfilled"];
@@ -821,6 +852,7 @@ export default function Home() {
   const [accountingDocuments, setAccountingDocuments] = useState<AccountingDocument[]>([]);
   const [accountingTransactions, setAccountingTransactions] = useState<AccountingTransaction[]>([]);
   const [accountingLedgerEntries, setAccountingLedgerEntries] = useState<AccountingLedgerEntry[]>([]);
+  const [salesConsumptionMappings, setSalesConsumptionMappings] = useState<SalesConsumptionMapping[]>([]);
   const [contentPlanItems, setContentPlanItems] = useState<ContentPlanItem[]>([]);
   const [contentIdeas, setContentIdeas] = useState<ContentIdeaItem[]>([]);
   const [accountingDocumentFile, setAccountingDocumentFile] = useState<File | null>(null);
@@ -878,6 +910,7 @@ export default function Home() {
     section: "inventory",
     name: "",
   });
+  const [salesConsumptionMappingForm, setSalesConsumptionMappingForm] = useState<SalesConsumptionMappingForm>(salesConsumptionMappingFormDefaults);
   const [contentPlanForm, setContentPlanForm] = useState<ContentPlanForm>({
     title: "",
     plannedDate: localDateKey(new Date()),
@@ -927,11 +960,12 @@ export default function Home() {
         sharedAccountingDocuments,
         sharedAccountingTransactions,
         sharedAccountingLedgerEntries,
+        sharedSalesConsumptionMappings,
         sharedContentPlanItems,
         sharedContentIdeas,
       ] = await Promise.all([
         fetchSharedOrders(), fetchSharedActivity(), fetchPaymentProcessorSettings(), fetchStockSettings(), fetchSalesFeeSettings(),
-        fetchAccountingCategories(), fetchAccountingDocuments(), fetchAccountingTransactions(), fetchAccountingLedgerEntries(), fetchContentPlanItems(), fetchContentIdeas(),
+        fetchAccountingCategories(), fetchAccountingDocuments(), fetchAccountingTransactions(), fetchAccountingLedgerEntries(), fetchSalesConsumptionMappings(), fetchContentPlanItems(), fetchContentIdeas(),
       ]);
       setOrders(sharedOrders.map((order) => {
       const status = legacyStatus[order.status] ?? order.status;
@@ -965,6 +999,7 @@ export default function Home() {
       setAccountingDocuments(sharedAccountingDocuments);
       setAccountingTransactions(sharedAccountingTransactions);
       setAccountingLedgerEntries(sharedAccountingLedgerEntries);
+      setSalesConsumptionMappings(sharedSalesConsumptionMappings);
       setContentPlanItems(sharedContentPlanItems);
       setContentIdeas(sharedContentIdeas);
       setDatabaseError("");
@@ -2350,6 +2385,53 @@ export default function Home() {
     }
   }
 
+  async function saveSalesConsumptionRule() {
+    const sku = normalizeAccountingItem(salesConsumptionMappingForm.sku);
+    const inventoryItem = normalizeAccountingItem(salesConsumptionMappingForm.inventoryItem);
+    const quantityPerSale = Number(salesConsumptionMappingForm.quantityPerSale || 0);
+    const operatingExpensePerSale = Number(salesConsumptionMappingForm.operatingExpensePerSale || 0);
+    if (!sku) return setNotice("Choose the sold SKU or character.");
+    if (!inventoryItem && operatingExpensePerSale <= 0) return setNotice("Choose an inventory item or enter operating expense per sale.");
+    if (inventoryItem && quantityPerSale <= 0) return setNotice("Enter how many inventory units are used per sale.");
+    setSavingAccounting(true);
+    try {
+      const now = new Date().toISOString();
+      const mapping: SalesConsumptionMapping = {
+        id: crypto.randomUUID(),
+        sku,
+        inventoryItem,
+        quantityPerSale: inventoryItem ? quantityPerSale : 0,
+        operatingExpensePerSale,
+        active: true,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await saveSalesConsumptionMapping(mapping);
+      await insertSharedActivity({ id: crypto.randomUUID(), action: "Sales consumption mapping added", detail: `${sku} uses ${inventoryItem || "no inventory"}${operatingExpensePerSale ? ` plus ${formatMoney(operatingExpensePerSale)} operating expense` : ""}.`, actor: session?.displayName ?? "Admin", createdAt: now });
+      setSalesConsumptionMappingForm(salesConsumptionMappingFormDefaults);
+      await loadSharedData();
+      setNotice("Sales consumption mapping saved.");
+    } catch (error) {
+      setNotice(readableError(error, "Could not save sales consumption mapping."));
+    } finally {
+      setSavingAccounting(false);
+    }
+  }
+
+  async function removeSalesConsumptionRule(mapping: SalesConsumptionMapping) {
+    setSavingAccounting(true);
+    try {
+      await deleteSalesConsumptionMapping(mapping.id);
+      await insertSharedActivity({ id: crypto.randomUUID(), action: "Sales consumption mapping removed", detail: `${mapping.sku} to ${mapping.inventoryItem || "operating expense"} removed.`, actor: session?.displayName ?? "Admin", createdAt: new Date().toISOString() });
+      await loadSharedData();
+      setNotice("Sales consumption mapping removed.");
+    } catch (error) {
+      setNotice(readableError(error, "Could not remove sales consumption mapping."));
+    } finally {
+      setSavingAccounting(false);
+    }
+  }
+
   async function saveContentPlan() {
     const title = contentPlanForm.title.trim();
     if (!title) return setNotice("Add a content title.");
@@ -2557,6 +2639,8 @@ export default function Home() {
         transactionForm={transactionForm}
         accountForm={accountForm}
         bookkeepingCategoryForm={bookkeepingCategoryForm}
+        salesConsumptionMappingForm={salesConsumptionMappingForm}
+        salesConsumptionMappings={salesConsumptionMappings}
         selectedFile={accountingDocumentFile}
         transactionFile={transactionDocumentFile}
         saving={savingAccounting}
@@ -2565,6 +2649,7 @@ export default function Home() {
         onInventoryCostFieldChange={onInventoryCostFieldChange}
         onAccountFormChange={(patch) => setAccountForm((current) => ({ ...current, ...patch }))}
         onBookkeepingCategoryFormChange={(patch) => setBookkeepingCategoryForm((current) => ({ ...current, ...patch }))}
+        onSalesConsumptionMappingFormChange={(patch) => setSalesConsumptionMappingForm((current) => ({ ...current, ...patch }))}
         onFileChange={setAccountingDocumentFile}
         onTransactionFileChange={setTransactionDocumentFile}
         onUploadDocument={uploadAccountingDocument}
@@ -2576,6 +2661,8 @@ export default function Home() {
         onClearBookkeepingCsv={() => { setBookkeepingCsvRows([]); setBookkeepingCsvFileName(""); }}
         onSaveAccount={saveAccountSettings}
         onSaveBookkeepingCategory={saveBookkeepingCategory}
+        onSaveSalesConsumptionRule={saveSalesConsumptionRule}
+        onRemoveSalesConsumptionRule={removeSalesConsumptionRule}
         onSetupChart={setupAccountingChart}
         onEditAccount={(account) => setAccountForm({ id: account.id, name: account.name, accountType: account.accountType === "income" ? "revenue" : account.accountType, reportSection: account.reportSection, parentId: account.parentId, dataSourceType: account.dataSourceType, sourceModule: account.sourceModule || "Manual Transactions", sourceEntity: account.sourceEntity, postingTrigger: account.postingTrigger || "Manual Entry", allowSubAccounts: account.allowSubAccounts, active: account.active })}
         postingPreview={ledgerPreview()}
@@ -2599,6 +2686,7 @@ export default function Home() {
         ledgerEntries={accountingLedgerEntries}
         categories={accountingCategories}
         salesRows={allSalesReportRows}
+        salesConsumptionMappings={salesConsumptionMappings}
         categoryName={categoryName}
       />}
 
@@ -2740,6 +2828,8 @@ function AccountingWorkspacePage({
   transactionForm,
   accountForm,
   bookkeepingCategoryForm,
+  salesConsumptionMappingForm,
+  salesConsumptionMappings,
   selectedFile,
   transactionFile,
   saving,
@@ -2748,6 +2838,7 @@ function AccountingWorkspacePage({
   onInventoryCostFieldChange,
   onAccountFormChange,
   onBookkeepingCategoryFormChange,
+  onSalesConsumptionMappingFormChange,
   onFileChange,
   onTransactionFileChange,
   onUploadDocument,
@@ -2759,6 +2850,8 @@ function AccountingWorkspacePage({
   onClearBookkeepingCsv,
   onSaveAccount,
   onSaveBookkeepingCategory,
+  onSaveSalesConsumptionRule,
+  onRemoveSalesConsumptionRule,
   onSetupChart,
   onEditAccount,
   postingPreview,
@@ -2783,6 +2876,8 @@ function AccountingWorkspacePage({
   transactionForm: AccountingTransactionForm;
   accountForm: AccountingAccountForm;
   bookkeepingCategoryForm: BookkeepingCategoryForm;
+  salesConsumptionMappingForm: SalesConsumptionMappingForm;
+  salesConsumptionMappings: SalesConsumptionMapping[];
   selectedFile: File | null;
   transactionFile: File | null;
   saving: boolean;
@@ -2791,6 +2886,7 @@ function AccountingWorkspacePage({
   onInventoryCostFieldChange: (field: InventoryCostField, value: string) => void;
   onAccountFormChange: (patch: Partial<AccountingAccountForm>) => void;
   onBookkeepingCategoryFormChange: (patch: Partial<BookkeepingCategoryForm>) => void;
+  onSalesConsumptionMappingFormChange: (patch: Partial<SalesConsumptionMappingForm>) => void;
   onFileChange: (file: File | null) => void;
   onTransactionFileChange: (file: File | null) => void;
   onUploadDocument: () => void;
@@ -2802,6 +2898,8 @@ function AccountingWorkspacePage({
   onClearBookkeepingCsv: () => void;
   onSaveAccount: () => void;
   onSaveBookkeepingCategory: () => void;
+  onSaveSalesConsumptionRule: () => void;
+  onRemoveSalesConsumptionRule: (mapping: SalesConsumptionMapping) => void;
   onSetupChart: () => void;
   onEditAccount: (account: AccountingCategory) => void;
   postingPreview: AccountingLedgerEntry[];
@@ -2836,6 +2934,10 @@ function AccountingWorkspacePage({
   const categoryOptions = categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>);
   const groupedEvents = Array.from(new Set(businessEvents.map((item) => item.group)));
   const parentOptions = categories.filter((category) => category.allowSubAccounts && !category.parentId);
+  const inventoryMappingOptions = [...new Set([
+    ...bookkeepingInventoryStockKeys,
+    ...categories.filter((category) => category.reportSection === bookkeepingSectionConfigs.inventory.reportSection || category.name === "Inventory" || (category.parentId && categoryName(category.parentId) === "Inventory")).map((category) => normalizeAccountingItem(category.name)),
+  ])].sort((a, b) => a.localeCompare(b));
   const categoryEventValue = bookkeepingEventByView[view];
   const categoryEvent = businessEvents.find((item) => item.value === categoryEventValue);
   const unsettledTransactions = transactions.filter((transaction) => ["deposit_paid", "on_credit", "pay_later"].includes(transaction.paymentStatus));
@@ -3033,6 +3135,16 @@ function AccountingWorkspacePage({
           const rows = categories.filter((category) => category.reportSection === config.reportSection).sort((a, b) => a.name.localeCompare(b.name));
           return rows.map((account) => <tr key={account.id}><td>{config.label}</td><td><strong>{account.name}</strong><br /><small>Used by {config.sourceEntity}</small></td><td>{account.accountType}</td><td>{account.parentId ? categoryName(account.parentId) : config.parentAccount}</td></tr>);
         })}</tbody></table>{!categories.some((category) => Object.values(bookkeepingSectionConfigs).some((config) => config.reportSection === category.reportSection)) && <div className="empty"><strong>No saved category accounts yet</strong><p>Create one from a bookkeeping entry form using + New account.</p></div>}</div></section>
+        <section className="card accounting-table-card">
+          <div className="accounting-form-heading"><div><h3>Sales consumption mapping</h3><p>Tell the system what each sold character uses. This drives FIFO COGS and prepaid operating expense usage.</p></div><button className="button primary" disabled={saving} onClick={onSaveSalesConsumptionRule}>{saving ? "Saving..." : "Add mapping"}</button></div>
+          <div className="accounting-form-grid compact">
+            <label>Sold SKU / character<select value={salesConsumptionMappingForm.sku} onChange={(input) => onSalesConsumptionMappingFormChange({ sku: input.target.value })}>{stockCharacters.map((character) => <option key={character} value={character}>{character}</option>)}</select></label>
+            <label>Inventory item used<select value={salesConsumptionMappingForm.inventoryItem} onChange={(input) => onSalesConsumptionMappingFormChange({ inventoryItem: input.target.value })}><option value="">No inventory item</option>{inventoryMappingOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+            <label>Units used per sale<input type="number" min="0" step="0.0001" value={salesConsumptionMappingForm.quantityPerSale} onChange={(input) => onSalesConsumptionMappingFormChange({ quantityPerSale: input.target.value })} /></label>
+            <label>Operating expense per sale<input type="number" min="0" step="0.01" value={salesConsumptionMappingForm.operatingExpensePerSale} onChange={(input) => onSalesConsumptionMappingFormChange({ operatingExpensePerSale: input.target.value })} placeholder="RM 0.00" /></label>
+          </div>
+          <div className="table-scroll"><table className="orders-table"><thead><tr><th>Sold SKU</th><th>Inventory item</th><th>Units per sale</th><th>Operating expense per sale</th><th /></tr></thead><tbody>{salesConsumptionMappings.map((mapping) => <tr key={mapping.id}><td><strong>{mapping.sku}</strong></td><td>{mapping.inventoryItem || "-"}</td><td>{mapping.quantityPerSale.toLocaleString("en-MY")}</td><td>{formatMoney(mapping.operatingExpensePerSale)}</td><td><button className="view-button danger-text" onClick={() => onRemoveSalesConsumptionRule(mapping)}>Delete</button></td></tr>)}</tbody></table>{!salesConsumptionMappings.length && <div className="empty"><strong>No sales consumption mappings yet</strong><p>Without a mapping, the system falls back to consuming the sold character itself.</p></div>}</div>
+        </section>
       </section>
     </section>;
   }
@@ -3349,7 +3461,7 @@ function isExpressShipping(order: Pick<Order, "shippingMethod">) {
   return (order.shippingMethod || "").toLowerCase().includes("express");
 }
 
-function FormalAccountingWorkspacePage({ view, orders, transactions, ledgerEntries, categories, salesRows, categoryName }: { view: View; orders: Order[]; transactions: AccountingTransaction[]; ledgerEntries: AccountingLedgerEntry[]; categories: AccountingCategory[]; salesRows: SalesReportRow[]; categoryName: (categoryId: string) => string }) {
+function FormalAccountingWorkspacePage({ view, orders, transactions, ledgerEntries, categories, salesRows, salesConsumptionMappings, categoryName }: { view: View; orders: Order[]; transactions: AccountingTransaction[]; ledgerEntries: AccountingLedgerEntry[]; categories: AccountingCategory[]; salesRows: SalesReportRow[]; salesConsumptionMappings: SalesConsumptionMapping[]; categoryName: (categoryId: string) => string }) {
   const [selectedTAccountSection, setSelectedTAccountSection] = useState("Cash");
   const [selectedTAccountName, setSelectedTAccountName] = useState("all");
   const [selectedUnitCostItem, setSelectedUnitCostItem] = useState("all");
@@ -3421,18 +3533,61 @@ function FormalAccountingWorkspacePage({ view, orders, transactions, ledgerEntri
     return { ...batch, batchNumber };
   });
   const cogsGroups: { id: string; date: string; description: string; entries: AccountingLedgerEntry[] }[] = [];
+  const operatingExpenseGroups: { id: string; date: string; description: string; entries: AccountingLedgerEntry[] }[] = [];
+  const activeSalesMappingsBySku = salesConsumptionMappings
+    .filter((mapping) => mapping.active)
+    .reduce<Record<string, SalesConsumptionMapping[]>>((groups, mapping) => {
+      const sku = inventoryItemName(mapping.sku);
+      groups[sku] = [...(groups[sku] ?? []), mapping];
+      return groups;
+    }, {});
   const consumptionEvents = [
     ...orders
-      .filter((order) => {
+      .flatMap((order) => {
         const date = dateKey(order.orderDate);
-        return Boolean(inventoryItemName(order.character)) && (!accountingEndDate || date <= accountingEndDate);
-      })
-      .map((order) => ({ id: `sale-${order.id}`, date: dateKey(order.orderDate), itemName: inventoryItemName(order.character), quantity: 1, type: "sale" as const, inPeriod: (!accountingStartDate || dateKey(order.orderDate) >= accountingStartDate) && (!accountingEndDate || dateKey(order.orderDate) <= accountingEndDate) })),
+        const sku = inventoryItemName(order.character);
+        if (!sku || (accountingEndDate && date > accountingEndDate)) return [];
+        const mappings = activeSalesMappingsBySku[sku] ?? [];
+        const consumptionMappings: SalesConsumptionMapping[] = mappings.length ? mappings : [{
+          id: `fallback-${sku}`,
+          sku,
+          inventoryItem: sku,
+          quantityPerSale: 1,
+          operatingExpensePerSale: 0,
+          active: true,
+          createdAt: "",
+          updatedAt: "",
+        }];
+        const inPeriod = (!accountingStartDate || date >= accountingStartDate) && (!accountingEndDate || date <= accountingEndDate);
+        return consumptionMappings.flatMap((mapping) => {
+          const events: { id: string; date: string; itemName: string; quantity: number; type: "sale"; inPeriod: boolean; sku: string; operatingExpense: number }[] = [];
+          const itemName = inventoryItemName(mapping.inventoryItem);
+          if (itemName && mapping.quantityPerSale > 0) {
+            events.push({ id: `sale-${order.id}-${mapping.id}-inventory`, date, itemName, quantity: mapping.quantityPerSale, type: "sale", inPeriod, sku, operatingExpense: 0 });
+          }
+          if (mapping.operatingExpensePerSale > 0) {
+            events.push({ id: `sale-${order.id}-${mapping.id}-opex`, date, itemName: "PREPAID OPERATING EXPENSE", quantity: 0, type: "sale", inPeriod, sku, operatingExpense: mapping.operatingExpensePerSale });
+          }
+          return events;
+        });
+      }),
     ...sortedTransactions
       .filter((transaction) => transaction.businessEvent === "inventory_rejected" && (!accountingEndDate || dateKey(transaction.transactionDate) <= accountingEndDate))
-      .map((transaction) => ({ id: `reject-${transaction.id}`, date: dateKey(transaction.transactionDate), itemName: inventoryItemName(transaction.accountName), quantity: Number(transaction.quantity) || (transaction.unitCost > 0 ? transaction.amount / transaction.unitCost : 0), type: "reject" as const, inPeriod: false })),
-  ].filter((event) => event.itemName && event.quantity > 0).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+      .map((transaction) => ({ id: `reject-${transaction.id}`, date: dateKey(transaction.transactionDate), itemName: inventoryItemName(transaction.accountName), quantity: Number(transaction.quantity) || (transaction.unitCost > 0 ? transaction.amount / transaction.unitCost : 0), type: "reject" as const, inPeriod: false, sku: "", operatingExpense: 0 })),
+  ].filter((event) => event.itemName && (event.quantity > 0 || event.operatingExpense > 0)).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   consumptionEvents.forEach((event) => {
+    if (event.operatingExpense > 0 && event.inPeriod) {
+      operatingExpenseGroups.push({
+        id: `operating-expense-${event.id}`,
+        date: event.date,
+        description: `${event.sku} operating expense used`,
+        entries: [
+          { id: `operating-expense-${event.id}-debit`, transactionId: `operating-expense-${event.id}`, accountId: "", accountName: "Operating Expense", entryType: "debit", amount: event.operatingExpense, memo: `${event.sku} operating expense used`, createdAt: event.date },
+          { id: `operating-expense-${event.id}-credit`, transactionId: `operating-expense-${event.id}`, accountId: "", accountName: "Prepaid Operating Expense", entryType: "credit", amount: event.operatingExpense, memo: "Prepaid operating expense released by sale", createdAt: event.date },
+        ],
+      });
+      return;
+    }
     let remaining = event.quantity;
     for (const batch of purchaseBatchStates) {
       if (remaining <= 0) break;
@@ -3451,7 +3606,7 @@ function FormalAccountingWorkspacePage({ view, orders, transactions, ledgerEntri
             date: event.date,
             description: `${batch.itemName} FIFO cost from batch ${batch.batchNumber}`,
             entries: [
-              { id: `cogs-${event.id}-${batch.id}-debit`, transactionId: `cogs-${event.id}-${batch.id}`, accountId: "", accountName: "Plushie Cost", entryType: "debit", amount, memo: `${batch.itemName} sold from batch ${batch.batchNumber}`, createdAt: event.date },
+              { id: `cogs-${event.id}-${batch.id}-debit`, transactionId: `cogs-${event.id}-${batch.id}`, accountId: "", accountName: cogsAccountForInventoryItem(batch.itemName), entryType: "debit", amount, memo: `${batch.itemName} sold from batch ${batch.batchNumber}`, createdAt: event.date },
               { id: `cogs-${event.id}-${batch.id}-credit`, transactionId: `cogs-${event.id}-${batch.id}`, accountId: "", accountName: batch.itemName, entryType: "credit", amount, memo: "Inventory consumed by sale", createdAt: event.date },
             ],
           });
@@ -3459,9 +3614,9 @@ function FormalAccountingWorkspacePage({ view, orders, transactions, ledgerEntri
       }
     }
   });
-  const allLedgerEntries = [...ledgerEntries, ...generatedSalesGroups.flatMap((group) => group.entries), ...cogsGroups.flatMap((group) => group.entries)];
+  const allLedgerEntries = [...ledgerEntries, ...generatedSalesGroups.flatMap((group) => group.entries), ...cogsGroups.flatMap((group) => group.entries), ...operatingExpenseGroups.flatMap((group) => group.entries)];
   const transactionById = new Map(transactions.map((transaction) => [transaction.id, transaction]));
-  const generatedTransactionDescriptions = new Map([...generatedSalesGroups.map((group) => [group.id, group.description] as const), ...cogsGroups.map((group) => [group.id, group.description] as const)]);
+  const generatedTransactionDescriptions = new Map([...generatedSalesGroups.map((group) => [group.id, group.description] as const), ...cogsGroups.map((group) => [group.id, group.description] as const), ...operatingExpenseGroups.map((group) => [group.id, group.description] as const)]);
   const entryDate = (entry: AccountingLedgerEntry) => dateKey(transactionById.get(entry.transactionId)?.transactionDate || entry.createdAt);
   const isInAccountingRange = (date: string) => Boolean(date) && (!accountingStartDate || date >= accountingStartDate) && (!accountingEndDate || date <= accountingEndDate);
   const isBeforeAccountingRange = (date: string) => Boolean(date) && Boolean(accountingStartDate) && date < accountingStartDate;
@@ -3474,8 +3629,8 @@ function FormalAccountingWorkspacePage({ view, orders, transactions, ledgerEntri
   }, {});
   const tAccountSections: { title: string; reportSections: string[]; names: string[]; eventValues?: AccountingTransaction["businessEvent"][] }[] = [
     { title: "Inventory", reportSections: [bookkeepingSectionConfigs.inventory.reportSection], names: ["Inventory", ...businessEvents.find((event) => event.value === "inventory_purchase")!.accounts], eventValues: ["inventory_purchase"] },
-    { title: "Expense", reportSections: [bookkeepingSectionConfigs.expense.reportSection, "Admin Fees", "Software Expenses", "Tax", "Salary", "COGS"], names: ["Expenses", "Payment Processing Fees", rejectedInventoryOption, ...businessEvents.find((event) => event.value === "expense")!.accounts], eventValues: ["expense", "inventory_rejected"] },
-    { title: "Assets", reportSections: [bookkeepingSectionConfigs.asset.reportSection, "Non Current Assets"], names: ["Equipment", ...businessEvents.find((event) => event.value === "asset_purchase")!.accounts], eventValues: ["asset_purchase"] },
+    { title: "Expense", reportSections: [bookkeepingSectionConfigs.expense.reportSection, "Admin Fees", "Software Expenses", "Tax", "Salary", "COGS"], names: ["Expenses", "Payment Processing Fees", "Operating Expense", rejectedInventoryOption, ...businessEvents.find((event) => event.value === "expense")!.accounts], eventValues: ["expense", "inventory_rejected"] },
+    { title: "Assets", reportSections: [bookkeepingSectionConfigs.asset.reportSection, "Non Current Assets"], names: ["Equipment", "Prepaid Operating Expense", ...businessEvents.find((event) => event.value === "asset_purchase")!.accounts], eventValues: ["asset_purchase"] },
     { title: "Marketing", reportSections: [bookkeepingSectionConfigs.marketing.reportSection, "Marketing Expenses"], names: ["Marketing Expenses", ...businessEvents.find((event) => event.value === "marketing_expense")!.accounts], eventValues: ["marketing_expense"] },
     { title: "Cash", reportSections: [], names: ["Bank Account", "Stripe", "Xendit", "Payment Processing Fees", "Owner's Equity", "Drawings"], eventValues: ["payment_processor_paid"] },
     { title: "Sales", reportSections: ["Revenue"], names: ["Sales", "Shopify Sales", "TikTok Shop Sales", "Shipping Revenue"] },
@@ -3556,13 +3711,26 @@ function FormalAccountingWorkspacePage({ view, orders, transactions, ledgerEntri
       date: group.date,
       reference: group.id.replace("cogs-", "").slice(0, 14),
       account: entry.accountName,
-      accountNote: entry.accountName === "Plushie Cost" ? "Automatic COGS" : "Automatic Inventory",
+      accountNote: cogsAccounts.includes(entry.accountName as (typeof cogsAccounts)[number]) ? "Automatic COGS" : "Automatic Inventory",
       description: index === 0 ? group.description : entry.memo,
       debit: entry.entryType === "debit" ? entry.amount : 0,
       credit: entry.entryType === "credit" ? entry.amount : 0,
       lineIndex: index,
     })));
-  const journalRows = [...manualJournalRows, ...generatedJournalRows, ...generatedCogsJournalRows].sort((a, b) => a.date.localeCompare(b.date) || a.reference.localeCompare(b.reference) || a.lineIndex - b.lineIndex || a.id.localeCompare(b.id));
+  const generatedOperatingExpenseJournalRows = operatingExpenseGroups
+    .filter((group) => (!accountingStartDate || group.date >= accountingStartDate) && (!accountingEndDate || group.date <= accountingEndDate))
+    .flatMap((group) => group.entries.map((entry, index) => ({
+      id: entry.id,
+      date: group.date,
+      reference: group.id.replace("operating-expense-", "").slice(0, 14),
+      account: entry.accountName,
+      accountNote: entry.accountName === "Operating Expense" ? "Automatic Expense" : "Automatic Prepaid Expense",
+      description: index === 0 ? group.description : entry.memo,
+      debit: entry.entryType === "debit" ? entry.amount : 0,
+      credit: entry.entryType === "credit" ? entry.amount : 0,
+      lineIndex: index,
+    })));
+  const journalRows = [...manualJournalRows, ...generatedJournalRows, ...generatedCogsJournalRows, ...generatedOperatingExpenseJournalRows].sort((a, b) => a.date.localeCompare(b.date) || a.reference.localeCompare(b.reference) || a.lineIndex - b.lineIndex || a.id.localeCompare(b.id));
   function useThisMonthPeriod() {
     setAccountingPeriodMode("this_month");
     setAccountingStartDate(monthStartKey());

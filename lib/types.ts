@@ -33,6 +33,17 @@ export type StockSetting = {
   initialStock: number;
 };
 
+export type SalesConsumptionMapping = {
+  id: string;
+  sku: string;
+  inventoryItem: string;
+  quantityPerSale: number;
+  operatingExpensePerSale: number;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type AccountingCategory = {
   id: string;
   name: string;
