@@ -1765,13 +1765,13 @@ export default function Home() {
     return { businessEvent: "inventory_purchase", transactionDate: dateKey(new Date().toISOString()), description: "", accountName: "", amount: "", categoryId: "", transactionType: "expense", paymentStatus: "paid_in_full", paymentMethod: "Bank Account", supplier: "", quantity: "", unitCost: "", depositAmount: "", invoiceNumber: "", dueDate: "", supplierTerms: "", taxTreatment: "none", notes: "" };
   }
 
-  function ledgerPreview(transactionId = "preview"): AccountingLedgerEntry[] {
+  function ledgerPreview(transactionId = "preview", accountOverride?: AccountingCategory | null): AccountingLedgerEntry[] {
     const quantity = Number(transactionForm.quantity) || 0;
     const unitCost = Number(transactionForm.unitCost) || 0;
     const amount = Number(transactionForm.amount) || (quantity > 0 && unitCost > 0 ? quantity * unitCost : 0);
     if (!Number.isFinite(amount) || amount <= 0) return [];
     const event = selectedBusinessEvent();
-    const account = selectedAccountingAccount();
+    const account = accountOverride ?? selectedAccountingAccount();
     const savedAccountName = bookkeepingAccountNameForSave(event);
     const accountName = event.value === "inventory_purchase" && savedAccountName ? savedAccountName : account?.name || savedAccountName || "Selected account";
     const rejectedInventoryItem = transactionForm.categoryId === rejectedInventoryOption ? transactionForm.accountName.trim() || "Inventory" : "";
@@ -1811,6 +1811,32 @@ export default function Home() {
     if (paidAmount > 0) entries.push({ id: crypto.randomUUID(), transactionId, accountId: "", accountName: transactionForm.paymentMethod || "Bank Account", entryType: primaryIsCredit ? "debit" : "credit", amount: paidAmount, memo: "Payment recorded", createdAt: now });
     if (outstandingAmount > 0) entries.push({ id: crypto.randomUUID(), transactionId, accountId: "", accountName: primaryIsCredit ? "Accounts Receivable" : "Accounts Payable", entryType: primaryIsCredit ? "debit" : "credit", amount: outstandingAmount, memo: "Outstanding balance", createdAt: now });
     return entries;
+  }
+
+  async function ensureBookkeepingTransactionAccount(event: ReturnType<typeof selectedBusinessEvent>, accountName: string, actor: string) {
+    const config = bookkeepingConfigForEvent(event.value);
+    if (!config || !accountName) return selectedAccountingAccount();
+    const existing = accountingCategories.find((category) => category.active && category.reportSection === config.reportSection && category.name.toLowerCase() === accountName.toLowerCase())
+      ?? accountingCategories.find((category) => category.active && category.name.toLowerCase() === accountName.toLowerCase());
+    if (existing) return existing;
+    const account: AccountingCategory = {
+      id: crypto.randomUUID(),
+      name: accountName,
+      accountType: config.accountType,
+      reportSection: config.reportSection,
+      parentId: bookkeepingParentId(config),
+      dataSourceType: "manual",
+      sourceModule: "Book Keeping",
+      sourceEntity: config.sourceEntity,
+      postingTrigger: "Manual Entry",
+      allowSubAccounts: false,
+      allowedTransactionTypes: [],
+      active: true,
+    };
+    await saveAccountingCategory(account);
+    setAccountingCategories((current) => [...current, account].sort((a, b) => `${a.reportSection}-${a.name}`.localeCompare(`${b.reportSection}-${b.name}`)));
+    await insertSharedActivity({ id: crypto.randomUUID(), action: "Bookkeeping account added", detail: `${accountName} added to ${config.label} from a transaction.`, actor, createdAt: new Date().toISOString() });
+    return account;
   }
 
   function stockKeyFromText(value: string) {
@@ -2048,12 +2074,13 @@ export default function Home() {
       const now = new Date().toISOString();
       const id = crypto.randomUUID();
       let documentId = "";
-      let account = selectedAccountingAccount();
       const isRejectedInventory = transactionForm.categoryId === rejectedInventoryOption;
       const accountName = bookkeepingAccountNameForSave(event).trim();
-      const bookkeepingConfig = bookkeepingConfigForEvent(event.value);
-      if (isRejectedInventory && !accountingCategories.some((category) => category.name === rejectedInventoryOption)) {
-        account = {
+      let account = isRejectedInventory ? null : await ensureBookkeepingTransactionAccount(event, accountName, actor);
+      if (isRejectedInventory) {
+        await ensureBookkeepingTransactionAccount(event, accountName, actor);
+        const existingRejectedAccount = accountingCategories.find((category) => category.name.toLowerCase() === rejectedInventoryOption.toLowerCase());
+        account = existingRejectedAccount ?? {
           id: crypto.randomUUID(),
           name: rejectedInventoryOption,
           accountType: "expense",
@@ -2067,24 +2094,7 @@ export default function Home() {
           allowedTransactionTypes: [],
           active: true,
         };
-        await saveAccountingCategory(account);
-      }
-      if (!account && accountName) {
-        account = {
-          id: crypto.randomUUID(),
-          name: accountName,
-          accountType: bookkeepingConfig?.accountType ?? (event.value === "inventory_purchase" || event.value === "asset_purchase" ? "asset" : "expense"),
-          reportSection: bookkeepingConfig?.reportSection ?? (event.value === "inventory_purchase" ? "Current Assets" : event.value === "asset_purchase" ? "Non Current Assets" : "Expenses"),
-          parentId: bookkeepingParentId(bookkeepingConfig),
-          dataSourceType: "manual",
-          sourceModule: "Book Keeping",
-          sourceEntity: bookkeepingConfig?.sourceEntity ?? event.label,
-          postingTrigger: "Manual Entry",
-          allowSubAccounts: false,
-          allowedTransactionTypes: [],
-          active: true,
-        };
-        await saveAccountingCategory(account);
+        if (!existingRejectedAccount) await saveAccountingCategory(account);
       }
       if (transactionDocumentFile) {
         documentId = crypto.randomUUID();
@@ -2109,7 +2119,7 @@ export default function Home() {
           updatedAt: now,
         });
       }
-      const entries = ledgerPreview(id);
+      const entries = ledgerPreview(id, account);
       await saveAccountingTransaction({
         id,
         source: documentId ? "document" : "manual",
