@@ -2427,7 +2427,7 @@ export default function Home() {
       };
       await saveSalesConsumptionMapping(mapping);
       await insertSharedActivity({ id: crypto.randomUUID(), action: "Sales consumption mapping added", detail: `${sku} uses ${inventoryItem || "no inventory"}${operatingExpensePerSale ? ` plus ${formatMoney(operatingExpensePerSale)} operating expense` : ""}.`, actor: session?.displayName ?? "Admin", createdAt: now });
-      setSalesConsumptionMappingForm(salesConsumptionMappingFormDefaults);
+      setSalesConsumptionMappingForm({ ...salesConsumptionMappingFormDefaults, sku });
       await loadSharedData();
       setNotice("Sales consumption mapping saved.");
     } catch (error) {
@@ -3862,6 +3862,8 @@ function FormalAccountingWorkspacePage({
   const nextFifoBatchForItem = (itemName: string) => purchaseBatchStates
     .filter((batch) => batch.itemName === normalizeAccountingItem(itemName) && batch.quantityLeft > 0)
     .sort((a, b) => a.date.localeCompare(b.date) || a.batchNumber - b.batchNumber)[0];
+  const selectedCogsSku = normalizeAccountingItem(salesConsumptionMappingForm.sku || stockCharacters[0]);
+  const selectedSalesConsumptionMappings = salesConsumptionMappings.filter((mapping) => normalizeAccountingItem(mapping.sku) === selectedCogsSku);
   const balanceForAccount = (accountName: string, entries = periodLedgerEntries) => entries
     .filter((entry) => entry.accountName === accountName)
     .reduce((total, entry) => total + (entry.entryType === "debit" ? entry.amount : -entry.amount), 0);
@@ -3960,18 +3962,20 @@ function FormalAccountingWorkspacePage({
           <h3>COGS settings</h3>
           <p>Map each sold character to the inventory it consumes. COGS follows FIFO: the earliest batch price is used first, then the next batch once it runs out.</p>
         </div>
-        <button className="button primary" disabled={saving} onClick={onSaveSalesConsumptionRule}>{saving ? "Saving..." : "Add COGS mapping"}</button>
+      </div>
+      <div className="range-tabs t-account-tabs">
+        {stockCharacters.map((character) => <button key={character} className={selectedCogsSku === character ? "active" : ""} onClick={() => onSalesConsumptionMappingFormChange({ sku: character })}>{character}</button>)}
       </div>
       <div className="accounting-form-grid compact">
-        <label>Sold character<select value={salesConsumptionMappingForm.sku} onChange={(input) => onSalesConsumptionMappingFormChange({ sku: input.target.value })}>{stockCharacters.map((character) => <option key={character} value={character}>{character}</option>)}</select></label>
         <label>Inventory item used<select value={salesConsumptionMappingForm.inventoryItem} onChange={(input) => onSalesConsumptionMappingFormChange({ inventoryItem: input.target.value })}><option value="">No inventory item</option>{inventoryMappingOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
         <label>Units used per sale<input type="number" min="0" step="0.0001" value={salesConsumptionMappingForm.quantityPerSale} onChange={(input) => onSalesConsumptionMappingFormChange({ quantityPerSale: input.target.value })} /></label>
         <label>Operating expense per sale<input type="number" min="0" step="0.01" value={salesConsumptionMappingForm.operatingExpensePerSale} onChange={(input) => onSalesConsumptionMappingFormChange({ operatingExpensePerSale: input.target.value })} placeholder="RM 0.00" /></label>
       </div>
-      <div className="table-scroll"><table className="orders-table unit-cost-table"><thead><tr><th>Sold character</th><th>Inventory used</th><th>Units per sale</th><th>COGS account</th><th>Next FIFO batch</th><th>Operating expense</th><th /></tr></thead><tbody>{salesConsumptionMappings.map((mapping) => {
+      <button className="button primary" disabled={saving} onClick={onSaveSalesConsumptionRule}>{saving ? "Saving..." : `Add item / expense for ${selectedCogsSku}`}</button>
+      <div className="table-scroll"><table className="orders-table unit-cost-table"><thead><tr><th>Inventory used</th><th>Units per sale</th><th>COGS account</th><th>Next FIFO batch</th><th>Operating expense</th><th /></tr></thead><tbody>{selectedSalesConsumptionMappings.map((mapping) => {
         const nextBatch = mapping.inventoryItem ? nextFifoBatchForItem(mapping.inventoryItem) : undefined;
-        return <tr key={mapping.id}><td><strong>{mapping.sku}</strong></td><td>{mapping.inventoryItem || "-"}</td><td>{mapping.quantityPerSale.toLocaleString("en-MY")}</td><td>{mapping.inventoryItem ? cogsAccountForInventoryItem(mapping.inventoryItem) : "-"}</td><td>{nextBatch ? `Batch ${nextBatch.batchNumber} - ${formatMoney(nextBatch.unitCost)} (${nextBatch.quantityLeft.toLocaleString("en-MY")} left)` : mapping.inventoryItem ? "No stock batch left" : "-"}</td><td>{formatMoney(mapping.operatingExpensePerSale)}</td><td><button className="view-button danger-text" onClick={() => onRemoveSalesConsumptionRule(mapping)}>Delete</button></td></tr>;
-      })}</tbody></table>{!salesConsumptionMappings.length && <div className="empty"><strong>No COGS mappings yet</strong><p>Example: Billy uses 1 NFC Card. When Billy is sold, the system debits COGS using the oldest NFC Card batch cost first.</p></div>}</div>
+        return <tr key={mapping.id}><td>{mapping.inventoryItem || "-"}</td><td>{mapping.quantityPerSale.toLocaleString("en-MY")}</td><td>{mapping.inventoryItem ? cogsAccountForInventoryItem(mapping.inventoryItem) : "-"}</td><td>{nextBatch ? `Batch ${nextBatch.batchNumber} - ${formatMoney(nextBatch.unitCost)} (${nextBatch.quantityLeft.toLocaleString("en-MY")} left)` : mapping.inventoryItem ? "No stock batch left" : "-"}</td><td>{formatMoney(mapping.operatingExpensePerSale)}</td><td><button className="view-button danger-text" onClick={() => onRemoveSalesConsumptionRule(mapping)}>Delete</button></td></tr>;
+      })}</tbody></table>{!selectedSalesConsumptionMappings.length && <div className="empty"><strong>No COGS mappings for {selectedCogsSku} yet</strong><p>Add inventory items or an operating expense above. Example: Billy uses 1 NFC Card, then FIFO pulls from the oldest NFC Card batch first.</p></div>}</div>
     </section>
     <section className="card accounting-table-card">
       <div className="accounting-form-heading"><div><h3>Inventory item overview</h3><p>Quantity left is calculated after FIFO sales and rejected inventory removals.</p></div><label className="unit-cost-filter">Item<select value={selectedUnitCostItem} onChange={(event) => setSelectedUnitCostItem(event.target.value)}><option value="all">View all</option>{unitCostSummaries.map((summary) => <option key={summary.itemName} value={summary.itemName}>{summary.itemName}</option>)}</select></label></div>
