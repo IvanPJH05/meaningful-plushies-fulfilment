@@ -3,7 +3,7 @@
 import "./settings.css";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ChangeEvent, FormEvent, SVGProps } from "react";
+import type { ChangeEvent, DragEvent, FormEvent, SVGProps } from "react";
 import { detectCsvKind, fulfilledOrdersCsv, importShopifyData, normalizePaymentProcessor } from "../lib/importer";
 import { buildSalesReportRows, summarizeSales, type SalesReportRow, type SalesSummary } from "../lib/sales";
 import { stockCharacters, summarizeStock } from "../lib/stock";
@@ -2864,7 +2864,7 @@ function AccountingWorkspacePage({
     <section className="csv-import-layout">
       <div className="accounting-form card">
         <h3>Upload CSV</h3>
-        <label className="file-drop compact-file-drop"><input type="file" accept=".csv,text/csv" onChange={(event) => onReadBookkeepingCsv(event.target.files?.[0])} /><strong>Choose bookkeeping CSV</strong><span>{csvFileName || "CSV columns can be in any order"}</span></label>
+        <FileDropZone accept=".csv,text/csv" title="Choose or drop bookkeeping CSV" description={csvFileName || "CSV columns can be in any order"} onFile={(file) => onReadBookkeepingCsv(file ?? undefined)} className="compact-file-drop" />
         <section className="posting-preview">
           <h3>Accepted columns</h3>
           <p>Use any of these common headers. Extra columns are ignored.</p>
@@ -2937,8 +2937,7 @@ function AccountingWorkspacePage({
           {transactionForm.categoryId && <p className="accounting-file-name">{transactionForm.categoryId === "Bank Transfer" ? "Bank transfer sales are already in bank. Use this only if you want to record a manual received amount." : `Unrecorded balance from sales report: ${formatMoney(processorBalance)}`}</p>}
           <label>{transactionForm.categoryId === "Stripe" || transactionForm.categoryId === "Xendit" ? "Net amount received in bank" : "Amount received"}<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onTransactionFormChange({ amount: input.target.value })} /></label>
           <label>Description<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder="Example: Stripe payout to bank" /></label>
-          <label>Source document<input type="file" accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" onChange={(event) => onTransactionFileChange(event.target.files?.[0] ?? null)} /></label>
-          {transactionFile && <p className="accounting-file-name">{transactionFile.name}</p>}
+          <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title="Source document" description="Choose or drop receipt, invoice, CSV, or image" selectedName={transactionFile?.name} onFile={onTransactionFileChange} />
           <section className="posting-preview">
             <h3>Posting preview</h3>
             {transactionForm.categoryId === "Drawings" ? <><div><span>Debit Drawings</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>Credit Bank Account</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></> : transactionForm.categoryId === "Stripe" || transactionForm.categoryId === "Xendit" ? <><div><span>Debit Bank Account</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>Credit {transactionForm.categoryId}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></> : <><div><span>Debit Bank Account</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>Credit {transactionForm.categoryId || "payment processor"}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></>}
@@ -2964,8 +2963,7 @@ function AccountingWorkspacePage({
           <label>Description<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder={isInventory ? "Example: June Billy plush batch" : "Short note for the book"} /></label>
           {!isMoneyIn && <><h3>Payment</h3><label>Payment method<select value={transactionForm.paymentStatus} onChange={(input) => onTransactionFormChange({ paymentStatus: input.target.value as AccountingTransactionForm["paymentStatus"] })}><option value="paid_in_full">Bank</option><option value="deposit_paid">Deposit Paid</option><option value="on_credit">On Credit</option></select></label></>}
           {transactionForm.paymentStatus === "deposit_paid" && <div className="accounting-two-cols"><label>Deposit paid<input type="number" min="0" step="0.01" value={transactionForm.depositAmount} onChange={(input) => onTransactionFormChange({ depositAmount: input.target.value })} /></label><label>Remaining<input readOnly value={formatMoney(Math.max(0, calculatedAmount - (Number(transactionForm.depositAmount) || 0)))} /></label></div>}
-          <label>Source document<input type="file" accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" onChange={(event) => onTransactionFileChange(event.target.files?.[0] ?? null)} /></label>
-          {transactionFile && <p className="accounting-file-name">{transactionFile.name}</p>}
+          <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title="Source document" description="Choose or drop receipt, invoice, CSV, or image" selectedName={transactionFile?.name} onFile={onTransactionFileChange} />
           <label>Notes<textarea value={transactionForm.notes} onChange={(event) => onTransactionFormChange({ notes: event.target.value })} /></label>
           <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? "Saving..." : "Save to book"}</button>
         </div>
@@ -2979,8 +2977,7 @@ function AccountingWorkspacePage({
     <section className="accounting-form-grid">
       <div className="accounting-form card">
         <h3>New document</h3>
-        <label>File<input type="file" accept="application/pdf,image/png,image/jpeg,image/webp" onChange={(event) => onFileChange(event.target.files?.[0] ?? null)} /></label>
-        {selectedFile && <p className="accounting-file-name">{selectedFile.name}</p>}
+        <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp" title="File" description="Choose or drop receipt, invoice, statement, or image" selectedName={selectedFile?.name} onFile={onFileChange} />
         <label>Name<input value={documentForm.name} onChange={(event) => onDocumentFormChange({ name: event.target.value })} placeholder="June supplier invoice" /></label>
         <label>Supplier / source<input value={documentForm.supplier} onChange={(event) => onDocumentFormChange({ supplier: event.target.value })} placeholder="Shopify, Meta, supplier name..." /></label>
         <label>Description<input value={documentForm.description} onChange={(event) => onDocumentFormChange({ description: event.target.value })} placeholder="What is this for?" /></label>
@@ -3007,8 +3004,7 @@ function AccountingWorkspacePage({
         <div className="accounting-two-cols"><label>Date<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label><label>Total amount<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => event.value === "inventory_purchase" ? onInventoryCostFieldChange("amount", input.target.value) : onTransactionFormChange({ amount: input.target.value })} /></label></div>
         <div className="accounting-two-cols"><label>Supplier / customer<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder="Supplier, customer, platform..." /></label><label>Invoice number<input value={transactionForm.invoiceNumber} onChange={(input) => onTransactionFormChange({ invoiceNumber: input.target.value })} placeholder="Optional" /></label></div>
         <label>Description<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder="Boxes purchase, Meta ad spend, payout..." /></label>
-        <label>Receipt / invoice / payment slip<input type="file" accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" onChange={(event) => onTransactionFileChange(event.target.files?.[0] ?? null)} /></label>
-        {transactionFile && <p className="accounting-file-name">{transactionFile.name}</p>}
+        <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title="Receipt / invoice / payment slip" description="Choose or drop the source document" selectedName={transactionFile?.name} onFile={onTransactionFileChange} />
         {event.value === "inventory_purchase" && <div className="accounting-two-cols"><label>Quantity<input type="number" min="0" step="1" value={transactionForm.quantity} onChange={(input) => onInventoryCostFieldChange("quantity", input.target.value)} /></label><label>Unit cost<input type="number" min="0" step="0.01" value={transactionForm.unitCost} onChange={(input) => onInventoryCostFieldChange("unitCost", input.target.value)} /></label></div>}
         <h3>Step 4: Payment terms</h3>
         <label>Payment type<select value={transactionForm.paymentStatus} onChange={(input) => onTransactionFormChange({ paymentStatus: input.target.value as AccountingTransactionForm["paymentStatus"] })}><option value="paid_in_full">Paid In Full</option><option value="deposit_paid">Deposit Paid</option><option value="on_credit">On Credit</option></select></label>
@@ -3826,7 +3822,7 @@ function UnsettledPaymentsTable({ transactions, files, saving, onFileChange, onS
     if (transaction.paymentStatus === "deposit_paid") return Math.max(0, transaction.amount - transaction.depositAmount);
     return transaction.amount;
   }
-  return <section className="card accounting-table-card"><h3>To be paid</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>Date</th><th>Description</th><th>Supplier</th><th>Total</th><th>Paid</th><th>Remaining</th><th>Payment proof</th><th /></tr></thead><tbody>{transactions.map((transaction) => <tr key={transaction.id}><td>{formatDate(transaction.transactionDate)}</td><td><strong>{transaction.description}</strong><br /><small>{transaction.invoiceNumber ? `Invoice ${transaction.invoiceNumber}` : transaction.businessEvent}</small></td><td>{transaction.supplier || "-"}</td><td>{formatMoney(transaction.amount)}</td><td>{transaction.paymentStatus === "deposit_paid" ? formatMoney(transaction.depositAmount) : "-"}</td><td><strong>{formatMoney(remaining(transaction))}</strong></td><td><label className="inline-file-input"><input type="file" accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" onChange={(event) => onFileChange(transaction.id, event.target.files?.[0] ?? null)} />{files[transaction.id]?.name || "Upload proof"}</label></td><td><button className="view-button" disabled={saving} onClick={() => onSettle(transaction)}>Mark paid</button></td></tr>)}</tbody></table>{!transactions.length && <div className="empty"><strong>No unsettled payments</strong><p>Deposit-paid and on-credit transactions will appear here until they are marked paid.</p></div>}</div></section>;
+  return <section className="card accounting-table-card"><h3>To be paid</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>Date</th><th>Description</th><th>Supplier</th><th>Total</th><th>Paid</th><th>Remaining</th><th>Payment proof</th><th /></tr></thead><tbody>{transactions.map((transaction) => <tr key={transaction.id}><td>{formatDate(transaction.transactionDate)}</td><td><strong>{transaction.description}</strong><br /><small>{transaction.invoiceNumber ? `Invoice ${transaction.invoiceNumber}` : transaction.businessEvent}</small></td><td>{transaction.supplier || "-"}</td><td>{formatMoney(transaction.amount)}</td><td>{transaction.paymentStatus === "deposit_paid" ? formatMoney(transaction.depositAmount) : "-"}</td><td><strong>{formatMoney(remaining(transaction))}</strong></td><td><FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title="Upload proof" description="Drop file here" selectedName={files[transaction.id]?.name} onFile={(file) => onFileChange(transaction.id, file)} className="inline-file-drop-zone" /></td><td><button className="view-button" disabled={saving} onClick={() => onSettle(transaction)}>Mark paid</button></td></tr>)}</tbody></table>{!transactions.length && <div className="empty"><strong>No unsettled payments</strong><p>Deposit-paid and on-credit transactions will appear here until they are marked paid.</p></div>}</div></section>;
 }
 
 function Login({ onLogin }: { onLogin: (session: Session) => void }) {
@@ -3874,8 +3870,31 @@ function StatusPill({ status }: { status: OrderStatus }) {
   return <span className={`status-pill status-${status}`}>{statusLabels[status]}</span>;
 }
 
+function FileDropZone({ accept, title, description, selectedName, className = "", onFile }: { accept: string; title: string; description?: string; selectedName?: string; className?: string; onFile: (file: File | null) => void }) {
+  const [dragging, setDragging] = useState(false);
+  function chooseFile(file: File | undefined) {
+    onFile(file ?? null);
+  }
+  function onDrop(event: DragEvent<HTMLLabelElement>) {
+    event.preventDefault();
+    setDragging(false);
+    chooseFile(event.dataTransfer.files?.[0]);
+  }
+  return <label
+    className={`file-drop file-drop-zone ${dragging ? "dragging" : ""} ${className}`}
+    onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
+    onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
+    onDragLeave={(event) => { event.preventDefault(); setDragging(false); }}
+    onDrop={onDrop}
+  >
+    <input type="file" accept={accept} onChange={(event) => chooseFile(event.target.files?.[0])} />
+    <strong>{selectedName || title}</strong>
+    <span>{selectedName ? "File ready. Drop another file to replace it." : description || "Click to choose, or drag and drop a file here"}</span>
+  </label>;
+}
+
 function ImportBox({ number, title, required, value, onChange, onFile, placeholder }: { number: string; title: string; required?: boolean; value: string; onChange: (value: string) => void; onFile: (file?: File) => void; placeholder: string }) {
-  return <article className="card import-box"><div className="import-heading"><span>{number}</span><div><h3>{title}</h3><p>{required ? "Required" : "Optional, but recommended"}</p></div></div><label className="file-drop"><input type="file" accept=".csv,text/csv" onChange={(event) => onFile(event.target.files?.[0])} /><strong>Choose CSV file</strong><span>or paste the CSV content below</span></label><textarea value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} /></article>;
+  return <article className="card import-box"><div className="import-heading"><span>{number}</span><div><h3>{title}</h3><p>{required ? "Required" : "Optional, but recommended"}</p></div></div><FileDropZone accept=".csv,text/csv" title="Choose or drop CSV file" description="or paste the CSV content below" onFile={(file) => onFile(file ?? undefined)} /><textarea value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} /></article>;
 }
 
 function OrderDrawer({ order, role, actor, onClose, onUpdate, onStatus }: { order: Order; role: UserRole; actor: string; onClose: () => void; onUpdate: (patch: Partial<Order>) => void; onStatus: (status: OrderStatus) => void }) {
@@ -3896,7 +3915,7 @@ function OrderDrawer({ order, role, actor, onClose, onUpdate, onStatus }: { orde
     <section className="detail-section"><h3>Customer and order</h3><div className="field-grid"><Field label="Order number" value={`#${order.orderNumber}`} /><Field label="Order date" value={formatDate(order.orderDate, true)} /><Field label="Payment method" value={order.paymentProcessor || "Unknown"} /><Editable label="Customer name" value={order.customerName} disabled={!admin} onChange={(value) => onUpdate({ customerName: value })} /><Editable label="Phone" value={order.phone} disabled={!admin} onChange={(value) => onUpdate({ phone: value })} /><Editable wide label="Address" value={order.address} disabled={!admin} onChange={(value) => onUpdate({ address: value })} /></div></section>
     <section className="detail-section"><h3>Plushie details</h3><div className="field-grid"><Editable label="Product name" value={order.product} disabled={!admin} onChange={(value) => onUpdate({ product: value })} /><Editable label="Character" value={order.character} disabled={!admin} onChange={(value) => onUpdate({ character: value })} /><Editable label="Set indicator" value={order.setIndicator ?? ""} disabled={!admin} onChange={(value) => onUpdate({ setIndicator: value })} /><Editable label="ID website link" value={order.idWebsiteLink ?? ""} disabled={!admin} onChange={(value) => onUpdate({ idWebsiteLink: value })} /><Editable label="Voice length" value={String(order.voiceLength || "")} disabled={!admin} onChange={(value) => onUpdate({ voiceLength: Number(value) || 0 })} /><Editable label="Plush name" value={order.plushName} disabled={!admin} onChange={(value) => onUpdate({ plushName: value })} /><Editable wide label="Remark" value={order.remark ?? ""} disabled={!admin} onChange={(value) => onUpdate({ remark: value })} /><Editable wide textarea label="Meaningful note" value={order.meaningfulNote} disabled={!admin} onChange={(value) => onUpdate({ meaningfulNote: value })} /><div className="field wide"><label>Meaningful message</label>{order.meaningfulMessage ? <a href={order.meaningfulMessage} target="_blank" rel="noreferrer">Open customer message</a> : <span>Not provided</span>}</div><div className="field"><label>Voice upload</label>{admin ? <select value={order.voiceUploadStatus} onChange={(event) => onUpdate({ voiceUploadStatus: event.target.value as Order["voiceUploadStatus"] })}><option value="missing">Missing</option><option value="received">Received</option><option value="checked">Checked</option></select> : <strong>{order.voiceUploadStatus}</strong>}</div></div></section>
     <section className="detail-section"><h3>Delivery</h3><div className="field-grid"><Field label="Shipping method" value={order.shippingMethod || "Not imported"} /><Editable label="Courier" value={order.courier} disabled={!admin} placeholder="J&T Express" onChange={(value) => onUpdate({ courier: value })} /><Editable label="Tracking number" value={order.trackingNumber} disabled={!admin} placeholder="Enter tracking number" onChange={(value) => onUpdate({ trackingNumber: value })} /></div></section>
-    <section className="detail-section"><h3>Tailor / packing photo</h3><div className="photo-field">{order.photoDataUrl ? <img src={order.photoDataUrl} alt="Tailor or packing evidence" /> : <div className="photo-placeholder">No photo uploaded</div>}{admin && <label className="button secondary"><input type="file" accept="image/*" onChange={(event) => uploadPhoto(event.target.files?.[0])} />{order.photoDataUrl ? "Replace photo" : "Upload photo"}</label>} {order.photoName && <small>{order.photoName}</small>}</div></section>
+    <section className="detail-section"><h3>Tailor / packing photo</h3><div className="photo-field">{order.photoDataUrl ? <img src={order.photoDataUrl} alt="Tailor or packing evidence" /> : <div className="photo-placeholder">No photo uploaded</div>}{admin && <FileDropZone accept="image/*" title={order.photoDataUrl ? "Replace photo" : "Upload photo"} description="Click or drop an image" selectedName={order.photoName} onFile={(file) => uploadPhoto(file ?? undefined)} className="photo-file-drop" />}</div></section>
     <section className="detail-section"><h3>Internal notes</h3><textarea className="notes" value={order.internalNotes} disabled={!admin} onChange={(event) => onUpdate({ internalNotes: event.target.value })} placeholder="Add notes visible to your team..." /></section>
     <section className="detail-section"><h3>Status history</h3><div className="history">{[...order.statusHistory].reverse().map((event) => <div key={event.id}><span></span><div><strong>{statusLabels[event.status]}</strong><p>{event.changedBy} | {formatDate(event.changedAt, true)}</p>{event.note && <small>{event.note}</small>}</div></div>)}</div></section>
     {!admin && <p className="permission-note">Signed in as Staff. You can only move orders to the next stage.</p>}
@@ -3921,7 +3940,7 @@ function EnvelopeSettingsPanel({ settings, onChange, onFontUpload, onReset }: { 
   return <section className="envelope-settings">
     {settings.fontBase64 && <style>{`@font-face{font-family:"EnvelopeUploadedFont";src:url(data:font/opentype;base64,${settings.fontBase64}) format("opentype");font-display:block;}`}</style>}
     <div className="envelope-settings-header"><div><strong>Print Envelope</strong><span>Upload any font, then tune the size and text box placement. Names are rendered as all caps before the PDF is created.</span></div><button className="view-button" type="button" onClick={onReset}>Reset</button></div>
-    <label className="envelope-font-upload"><span>Font file</span><input type="file" accept=".otf,.ttf,font/otf,font/ttf" onChange={(event) => onFontUpload(event.target.files?.[0] ?? null)} /><strong>{settings.fontName || "No font uploaded yet"}</strong><small>Use .otf or .ttf. Required before generating the PDF.</small></label>
+    <FileDropZone accept=".otf,.ttf,font/otf,font/ttf" title="Font file" description="Use .otf or .ttf. Click or drop the font here." selectedName={settings.fontName || ""} onFile={onFontUpload} className="envelope-font-upload" />
     <div className="envelope-font-sample" style={{ fontFamily: previewFontFamily }}><span>Font preview</span><strong style={{ WebkitTextStroke: settings.boldness ? `${settings.boldness / 2}px #425e75` : undefined }}>SNUGGLEBEAR</strong><small>{settings.fontBase64 ? "This is the all-caps style that will become the envelope name image." : "Upload a font to see the preview here."}</small></div>
     <div className="envelope-settings-grid">
       <label>Font size<input type="number" step="1" value={settings.fontSize} onChange={numberChange("fontSize")} /></label>

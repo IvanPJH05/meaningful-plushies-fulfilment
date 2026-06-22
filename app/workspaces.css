@@ -149,6 +149,57 @@
   height: 132px;
 }
 
+.file-drop-zone {
+  transition: border-color .15s ease, background .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+
+.file-drop-zone input {
+  display: none !important;
+}
+
+.file-drop-zone.dragging {
+  border-color: #1769e0;
+  background: #eef5ff;
+  box-shadow: 0 0 0 3px rgba(23, 105, 224, .12);
+  transform: translateY(-1px);
+}
+
+.accounting-form .file-drop-zone {
+  min-height: 96px;
+  display: flex;
+  color: #315a8f;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.accounting-form .file-drop-zone strong,
+.accounting-form .file-drop-zone span {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.inline-file-drop-zone {
+  min-width: 175px;
+  height: auto;
+  min-height: 58px;
+  padding: 8px 10px;
+  text-align: center;
+}
+
+.inline-file-drop-zone strong {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.photo-file-drop {
+  width: 190px;
+  height: 82px;
+  padding: 10px;
+}
+
 .csv-import-actions {
   display: flex;
   gap: 10px;
