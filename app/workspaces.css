@@ -138,6 +138,27 @@
   align-items: start;
 }
 
+.csv-import-layout {
+  display: grid;
+  grid-template-columns: minmax(310px, 390px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.compact-file-drop {
+  height: 132px;
+}
+
+.csv-import-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.csv-warning-row td {
+  background: #fff8eb;
+}
+
 .accounting-form,
 .accounting-table-card,
 .accounting-report {
@@ -838,6 +859,10 @@
   }
 
   .accounting-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .csv-import-layout {
     grid-template-columns: 1fr;
   }
 

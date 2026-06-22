@@ -51,7 +51,7 @@ import { orderStatuses, type AccountingCategory, type AccountingDocument, type A
 type Session = DashboardSession;
 type View =
   | "orders" | "fulfilment" | "packing_slips" | "print_envelope" | "import" | "fulfilled" | "history" | "settings" | "stock" | "sales_report"
-  | "accounting_dashboard" | "accounting_documents" | "accounting_transactions" | "accounting_profit_loss" | "accounting_balance_sheet"
+  | "accounting_dashboard" | "accounting_documents" | "accounting_transactions" | "accounting_csv_import" | "accounting_profit_loss" | "accounting_balance_sheet"
   | "accounting_cash_flow" | "accounting_general_ledger" | "accounting_trial_balance" | "accounting_payable" | "accounting_receivable"
   | "accounting_bank_reconciliation" | "accounting_product_profitability" | "accounting_marketing_profitability" | "accounting_cash_position"
   | "accounting_tax_reports" | "accounting_settings" | "accounting_files" | "accounting_general_journal" | "accounting_t_accounts" | "accounting_unit_costs" | "accounting_financial_reports"
@@ -156,6 +156,24 @@ type BookkeepingSectionKey = "inventory" | "expense" | "asset" | "marketing";
 type BookkeepingCategoryForm = {
   section: BookkeepingSectionKey;
   name: string;
+};
+type BookkeepingCsvImportRow = {
+  id: string;
+  rowNumber: number;
+  transactionDate: string;
+  description: string;
+  businessEvent: (typeof businessEvents)[number]["value"];
+  categoryName: string;
+  supplier: string;
+  amount: number;
+  quantity: number;
+  unitCost: number;
+  paymentStatus: AccountingTransactionForm["paymentStatus"];
+  paymentMethod: string;
+  depositAmount: number;
+  invoiceNumber: string;
+  notes: string;
+  warnings: string[];
 };
 type ContentPlanForm = {
   title: string;
@@ -321,6 +339,7 @@ const fulfilmentViews: readonly View[] = ["orders", "fulfilment", "packing_slips
 const accountingViews: readonly View[] = [
   "accounting_dashboard",
   "accounting_transactions",
+  "accounting_csv_import",
   "accounting_payable",
   "accounting_files",
   "accounting_documents",
@@ -459,6 +478,7 @@ const accountingNavItems: NavItem[] = [
   { view: "accounting_dashboard", label: "Book Keeping Book", icon: "ledger" },
   { view: "accounting_payable", label: "Unsettled Payments", icon: "cash" },
   { view: "accounting_files", label: "Files", icon: "documents" },
+  { view: "accounting_csv_import", label: "CSV Import", icon: "import" },
   { view: "accounting_transactions", label: "Inventory", icon: "stock" },
   { view: "accounting_documents", label: "Expenses", icon: "documents" },
   { view: "accounting_balance_sheet", label: "Assets", icon: "accounting" },
@@ -534,6 +554,73 @@ function readableError(error: unknown, fallback: string) {
   if (error instanceof Error) return error.message;
   if (error && typeof error === "object" && "message" in error && typeof error.message === "string") return error.message;
   return fallback;
+}
+
+function parseLooseCsv(text: string) {
+  const rows: string[][] = [];
+  let cell = "";
+  let row: string[] = [];
+  let quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+    if (char === '"' && quoted && next === '"') {
+      cell += '"';
+      index += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (char === "," && !quoted) {
+      row.push(cell);
+      cell = "";
+    } else if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && next === "\n") index += 1;
+      row.push(cell);
+      if (row.some((value) => value.trim())) rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+  row.push(cell);
+  if (row.some((value) => value.trim())) rows.push(row);
+  return rows;
+}
+
+function normalizeHeader(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function parseCsvAmount(value: string) {
+  const cleaned = value.replace(/[^\d.,()-]/g, "").replace(/,/g, "");
+  if (!cleaned) return 0;
+  const negative = cleaned.includes("(") && cleaned.includes(")");
+  const amount = Number(cleaned.replace(/[()]/g, ""));
+  return Number.isFinite(amount) ? Math.abs(amount) * (negative ? -1 : 1) : 0;
+}
+
+function csvColumn(row: Record<string, string>, aliases: string[]) {
+  for (const alias of aliases) {
+    const value = row[normalizeHeader(alias)];
+    if (value !== undefined && value !== "") return value.trim();
+  }
+  return "";
+}
+
+function inferBookkeepingEvent(category: string, type: string): (typeof businessEvents)[number]["value"] {
+  const text = `${category} ${type}`.toLowerCase();
+  if (text.includes("asset") || text.includes("equipment") || text.includes("printer") || text.includes("machine") || text.includes("camera")) return "asset_purchase";
+  if (text.includes("marketing") || text.includes("meta") || text.includes("tiktok ad") || text.includes("advertis") || text.includes("influencer")) return "marketing_expense";
+  if (text.includes("cash") || text.includes("stripe") || text.includes("xendit") || text.includes("payout") || text.includes("bank transfer") || text.includes("owner")) return "payment_processor_paid";
+  if (text.includes("inventory") || text.includes("plush") || text.includes("speaker") || text.includes("nfc") || text.includes("packaging") || text.includes("box") || text.includes("wax") || text.includes("bubble")) return "inventory_purchase";
+  return "expense";
+}
+
+function parseBookkeepingPaymentStatus(value: string): AccountingTransactionForm["paymentStatus"] {
+  const text = value.toLowerCase();
+  if (text.includes("deposit")) return "deposit_paid";
+  if (text.includes("credit") || text.includes("unpaid") || text.includes("pay later") || text.includes("outstanding")) return "on_credit";
+  return "paid_in_full";
 }
 
 function printView(className: "print-packing" | "print-sales-report" | "print-financial-report") {
@@ -780,6 +867,8 @@ export default function Home() {
     referenceName: "",
     referenceUrl: "",
   });
+  const [bookkeepingCsvRows, setBookkeepingCsvRows] = useState<BookkeepingCsvImportRow[]>([]);
+  const [bookkeepingCsvFileName, setBookkeepingCsvFileName] = useState("");
   const [accountPasswords, setAccountPasswords] = useState<Record<string, string>>({});
   const [newAccount, setNewAccount] = useState({ username: "", displayName: "", role: "staff" as UserRole, password: "" });
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
@@ -1469,6 +1558,58 @@ export default function Home() {
     else setMetafieldCsv(text);
   }
 
+  async function readBookkeepingCsv(file: File | undefined) {
+    if (!file) return;
+    const text = await file.text();
+    const parsedRows = parseLooseCsv(text);
+    if (parsedRows.length < 2) {
+      setBookkeepingCsvRows([]);
+      setBookkeepingCsvFileName(file.name);
+      return setNotice("That CSV does not have enough rows to import.");
+    }
+    const headers = parsedRows[0].map(normalizeHeader);
+    const rows = parsedRows.slice(1).map((cells, index) => {
+      const row = headers.reduce<Record<string, string>>((values, header, cellIndex) => {
+        values[header] = cells[cellIndex]?.trim() ?? "";
+        return values;
+      }, {});
+      const categoryName = csvColumn(row, ["category", "account", "item", "type", "expense category"]) || "Expenses";
+      const eventType = csvColumn(row, ["business event", "event", "section", "transaction type", "type"]);
+      const quantity = Number(csvColumn(row, ["quantity", "qty"])) || 0;
+      const unitCost = parseCsvAmount(csvColumn(row, ["unit cost", "unit price", "price"]));
+      const amountValue = parseCsvAmount(csvColumn(row, ["amount", "total", "total amount", "debit", "credit"]));
+      const amount = Math.abs(amountValue || (quantity > 0 && unitCost > 0 ? quantity * unitCost : 0));
+      const transactionDate = dateKey(csvColumn(row, ["date", "transaction date", "paid date", "document date"])) || localDateKey(new Date());
+      const description = csvColumn(row, ["description", "details", "memo", "note", "notes", "name"]) || categoryName;
+      const paymentStatus = parseBookkeepingPaymentStatus(csvColumn(row, ["payment status", "status", "payment type"]));
+      const depositAmount = Math.abs(parseCsvAmount(csvColumn(row, ["deposit", "deposit amount", "amount paid"])));
+      const warnings: string[] = [];
+      if (!amount) warnings.push("No amount detected");
+      if (!transactionDate) warnings.push("No date detected");
+      return {
+        id: crypto.randomUUID(),
+        rowNumber: index + 2,
+        transactionDate,
+        description,
+        businessEvent: inferBookkeepingEvent(categoryName, eventType),
+        categoryName,
+        supplier: csvColumn(row, ["supplier", "vendor", "payee", "source", "customer"]),
+        amount,
+        quantity,
+        unitCost,
+        paymentStatus,
+        paymentMethod: csvColumn(row, ["payment method", "bank", "paid from", "funding source"]) || "Bank Account",
+        depositAmount,
+        invoiceNumber: csvColumn(row, ["invoice", "invoice number", "receipt number", "reference", "ref"]),
+        notes: csvColumn(row, ["notes", "note", "remark", "remarks"]),
+        warnings,
+      } satisfies BookkeepingCsvImportRow;
+    });
+    setBookkeepingCsvFileName(file.name);
+    setBookkeepingCsvRows(rows);
+    setNotice(`${rows.length} bookkeeping row${rows.length === 1 ? "" : "s"} ready to review.`);
+  }
+
   function categoryName(categoryId: string) {
     return accountingCategories.find((category) => category.id === categoryId)?.name ?? "Uncategorised";
   }
@@ -1633,6 +1774,149 @@ export default function Home() {
     if (paidAmount > 0) entries.push({ id: crypto.randomUUID(), transactionId, accountId: "", accountName: transactionForm.paymentMethod || "Bank Account", entryType: primaryIsCredit ? "debit" : "credit", amount: paidAmount, memo: "Payment recorded", createdAt: now });
     if (outstandingAmount > 0) entries.push({ id: crypto.randomUUID(), transactionId, accountId: "", accountName: primaryIsCredit ? "Accounts Receivable" : "Accounts Payable", entryType: primaryIsCredit ? "debit" : "credit", amount: outstandingAmount, memo: "Outstanding balance", createdAt: now });
     return entries;
+  }
+
+  function stockKeyFromText(value: string) {
+    const stockSource = value.toUpperCase();
+    return stockSource.includes("BILLY") ? "BILLY"
+      : stockSource.includes("TOOTSIE") ? "TOOTSIE"
+      : stockSource.includes("HUNNIE") ? "HUNNIE"
+      : stockSource.includes("DRAGON") ? "DRAGON WARRIOR"
+      : stockSource.includes("SPEAKER") ? "VOICE"
+      : stockSource.includes("NFC") ? "NFC"
+      : stockSource.includes("BOX") || stockSource.includes("CARTON") ? "BOXES"
+      : stockSource.includes("BUBBLE") ? "BUBBLE WRAP"
+      : stockSource.includes("WAX") ? "WAX SEAL"
+      : stockSource.includes("CARRIAGE") ? "CARRIAGE INWARD"
+      : stockSource.includes("PACK") ? "PACKAGING"
+      : stockSource.trim();
+  }
+
+  function bookkeepingConfigForImport(eventValue: BookkeepingCsvImportRow["businessEvent"]) {
+    if (eventValue === "inventory_purchase") return bookkeepingSectionConfigs.inventory;
+    if (eventValue === "asset_purchase") return bookkeepingSectionConfigs.asset;
+    if (eventValue === "marketing_expense") return bookkeepingSectionConfigs.marketing;
+    if (eventValue === "expense") return bookkeepingSectionConfigs.expense;
+    return null;
+  }
+
+  async function categoryForBookkeepingImport(row: BookkeepingCsvImportRow, actor: string, knownCategories: AccountingCategory[]) {
+    const config = bookkeepingConfigForImport(row.businessEvent);
+    if (!config) return null;
+    const name = row.categoryName.trim() || config.parentAccount;
+    const existing = knownCategories.find((category) => category.reportSection === config.reportSection && category.name.toLowerCase() === name.toLowerCase())
+      ?? knownCategories.find((category) => category.name.toLowerCase() === name.toLowerCase());
+    if (existing) return existing;
+    const account: AccountingCategory = {
+      id: crypto.randomUUID(),
+      name,
+      accountType: config.accountType,
+      reportSection: config.reportSection,
+      parentId: bookkeepingParentId(config),
+      dataSourceType: "manual",
+      sourceModule: "Book Keeping CSV",
+      sourceEntity: config.sourceEntity,
+      postingTrigger: "CSV Import",
+      allowSubAccounts: false,
+      allowedTransactionTypes: [],
+      active: true,
+    };
+    await saveAccountingCategory(account);
+    knownCategories.push(account);
+    await insertSharedActivity({ id: crypto.randomUUID(), action: "Bookkeeping category added", detail: `${name} imported from CSV.`, actor, createdAt: new Date().toISOString() });
+    return account;
+  }
+
+  function csvImportLedgerEntries(row: BookkeepingCsvImportRow, account: AccountingCategory | null, transactionId: string, createdAt: string): AccountingLedgerEntry[] {
+    const amount = row.amount;
+    if (amount <= 0) return [];
+    if (row.businessEvent === "payment_processor_paid") {
+      const processor = row.categoryName.toLowerCase().includes("stripe") ? "Stripe"
+        : row.categoryName.toLowerCase().includes("xendit") ? "Xendit"
+        : row.categoryName.toLowerCase().includes("drawing") ? "Drawings"
+        : row.categoryName.toLowerCase().includes("owner") ? "Owner's Equity"
+        : row.categoryName || "Bank Transfer";
+      if (processor === "Drawings") return [
+        { id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Drawings", entryType: "debit", amount, memo: row.description, createdAt },
+        { id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Bank Account", entryType: "credit", amount, memo: "Cash withdrawn from bank", createdAt },
+      ];
+      return [
+        { id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Bank Account", entryType: "debit", amount, memo: row.description, createdAt },
+        { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: processor, entryType: "credit", amount, memo: processor === "Owner's Equity" ? "Owner capital" : "CSV cash entry", createdAt },
+      ];
+    }
+    const paidAmount = row.paymentStatus === "paid_in_full" ? amount : row.paymentStatus === "deposit_paid" ? Math.min(amount, Math.max(0, row.depositAmount)) : 0;
+    const outstandingAmount = Math.max(0, amount - paidAmount);
+    const accountName = account?.name ?? row.categoryName;
+    const entries: AccountingLedgerEntry[] = [
+      { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName, entryType: "debit", amount, memo: row.description, createdAt },
+    ];
+    if (paidAmount > 0) entries.push({ id: crypto.randomUUID(), transactionId, accountId: "", accountName: row.paymentMethod || "Bank Account", entryType: "credit", amount: paidAmount, memo: "Payment recorded", createdAt });
+    if (outstandingAmount > 0) entries.push({ id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Accounts Payable", entryType: "credit", amount: outstandingAmount, memo: "Outstanding balance", createdAt });
+    return entries;
+  }
+
+  async function importBookkeepingCsvRows() {
+    const importable = bookkeepingCsvRows.filter((row) => row.amount > 0);
+    if (!importable.length) return setNotice("There are no valid CSV rows to import.");
+    setSavingAccounting(true);
+    try {
+      const actor = session?.displayName ?? "Admin";
+      let imported = 0;
+      const knownCategories = [...accountingCategories];
+      for (const row of importable) {
+        const now = new Date().toISOString();
+        const transactionId = crypto.randomUUID();
+        const account = await categoryForBookkeepingImport(row, actor, knownCategories);
+        const entries = csvImportLedgerEntries(row, account, transactionId, now);
+        await saveAccountingTransaction({
+          id: transactionId,
+          source: "manual",
+          sourceId: bookkeepingCsvFileName,
+          documentId: "",
+          businessEvent: row.businessEvent,
+          transactionDate: row.transactionDate,
+          description: row.description,
+          accountName: account?.name ?? row.categoryName,
+          categoryId: account?.id ?? "",
+          transactionType: row.businessEvent === "payment_processor_paid" ? "transfer" : "expense",
+          paymentStatus: row.paymentStatus,
+          paymentMethod: row.paymentMethod || "Bank Account",
+          supplier: row.supplier,
+          quantity: row.quantity,
+          unitCost: row.unitCost,
+          depositAmount: row.paymentStatus === "deposit_paid" ? row.depositAmount : row.paymentStatus === "paid_in_full" ? row.amount : 0,
+          invoiceNumber: row.invoiceNumber,
+          dueDate: "",
+          supplierTerms: "",
+          debit: entries.filter((entry) => entry.entryType === "debit").reduce((total, entry) => total + entry.amount, 0),
+          credit: entries.filter((entry) => entry.entryType === "credit").reduce((total, entry) => total + entry.amount, 0),
+          amount: row.amount,
+          currency: "MYR",
+          taxTreatment: "none",
+          notes: row.notes,
+          createdBy: actor,
+          createdAt: now,
+          updatedAt: now,
+        });
+        await saveAccountingLedgerEntries(transactionId, entries);
+        if (row.businessEvent === "inventory_purchase" && row.quantity > 0) {
+          const stockKey = stockKeyFromText(`${row.categoryName} ${row.description}`);
+          const currentStock = stockSettings.find((setting) => setting.itemKey === stockKey)?.initialStock ?? 0;
+          await saveStockSetting({ itemKey: stockKey, initialStock: Math.max(0, currentStock + Math.floor(row.quantity)) });
+        }
+        imported += 1;
+      }
+      await insertSharedActivity({ id: crypto.randomUUID(), action: "Bookkeeping CSV import", detail: `${imported} transaction${imported === 1 ? "" : "s"} imported from ${bookkeepingCsvFileName || "CSV"}.`, actor, createdAt: new Date().toISOString() });
+      setBookkeepingCsvRows([]);
+      setBookkeepingCsvFileName("");
+      await loadSharedData();
+      setNotice(`${imported} bookkeeping transaction${imported === 1 ? "" : "s"} imported.`);
+    } catch (error) {
+      setNotice(readableError(error, "Could not import bookkeeping CSV."));
+    } finally {
+      setSavingAccounting(false);
+    }
   }
 
   async function uploadAccountingDocument() {
@@ -2235,6 +2519,11 @@ export default function Home() {
         onTransactionFileChange={setTransactionDocumentFile}
         onUploadDocument={uploadAccountingDocument}
         onCreateTransaction={createManualAccountingTransaction}
+        onReadBookkeepingCsv={readBookkeepingCsv}
+        csvRows={bookkeepingCsvRows}
+        csvFileName={bookkeepingCsvFileName}
+        onImportBookkeepingCsv={importBookkeepingCsvRows}
+        onClearBookkeepingCsv={() => { setBookkeepingCsvRows([]); setBookkeepingCsvFileName(""); }}
         onSaveAccount={saveAccountSettings}
         onSaveBookkeepingCategory={saveBookkeepingCategory}
         onSetupChart={setupAccountingChart}
@@ -2412,6 +2701,11 @@ function AccountingWorkspacePage({
   onTransactionFileChange,
   onUploadDocument,
   onCreateTransaction,
+  onReadBookkeepingCsv,
+  csvRows,
+  csvFileName,
+  onImportBookkeepingCsv,
+  onClearBookkeepingCsv,
   onSaveAccount,
   onSaveBookkeepingCategory,
   onSetupChart,
@@ -2449,6 +2743,11 @@ function AccountingWorkspacePage({
   onTransactionFileChange: (file: File | null) => void;
   onUploadDocument: () => void;
   onCreateTransaction: () => void;
+  onReadBookkeepingCsv: (file: File | undefined) => void;
+  csvRows: BookkeepingCsvImportRow[];
+  csvFileName: string;
+  onImportBookkeepingCsv: () => void;
+  onClearBookkeepingCsv: () => void;
   onSaveAccount: () => void;
   onSaveBookkeepingCategory: () => void;
   onSetupChart: () => void;
@@ -2507,6 +2806,30 @@ function AccountingWorkspacePage({
   if (view === "accounting_files") return <section className="accounting-workspace">
     <div className="accounting-hero card"><div><p>SOURCE DOCUMENTS</p><h2>Files linked to transactions</h2><span>Every receipt, invoice, payment proof, or source document attached to a bookkeeping transaction appears here.</span></div><div className="accounting-status-pill">{documents.filter((document) => transactions.some((transaction) => transaction.documentId === document.id)).length} files</div></div>
     <AccountingFilesTable documents={documents} transactions={transactions} ledgerEntries={ledgerEntries} categoryName={categoryName} onOpen={onOpenDocument} />
+  </section>;
+
+  if (view === "accounting_csv_import") return <section className="accounting-workspace">
+    <div className="accounting-hero card"><div><p>BOOK KEEPING CSV IMPORT</p><h2>Import transactions automatically</h2><span>Upload a CSV and the system will map each row into bookkeeping entries. Review the preview before saving.</span></div><div className="accounting-status-pill">{csvRows.length} rows</div></div>
+    <section className="csv-import-layout">
+      <div className="accounting-form card">
+        <h3>Upload CSV</h3>
+        <label className="file-drop compact-file-drop"><input type="file" accept=".csv,text/csv" onChange={(event) => onReadBookkeepingCsv(event.target.files?.[0])} /><strong>Choose bookkeeping CSV</strong><span>{csvFileName || "CSV columns can be in any order"}</span></label>
+        <section className="posting-preview">
+          <h3>Accepted columns</h3>
+          <p>Use any of these common headers. Extra columns are ignored.</p>
+          <div><span>Date</span><strong>date, transaction date</strong></div>
+          <div><span>Details</span><strong>description, memo, notes</strong></div>
+          <div><span>Category</span><strong>category, account, item</strong></div>
+          <div><span>Amount</span><strong>amount, total, debit, credit</strong></div>
+          <div><span>Inventory</span><strong>quantity, unit cost</strong></div>
+        </section>
+        <div className="csv-import-actions"><button className="button primary" disabled={!csvRows.some((row) => row.amount > 0) || saving} onClick={onImportBookkeepingCsv}>{saving ? "Importing..." : `Import ${csvRows.filter((row) => row.amount > 0).length} rows`}</button><button className="button secondary" type="button" onClick={onClearBookkeepingCsv}>Clear</button></div>
+      </div>
+      <section className="card accounting-table-card">
+        <h3>Import preview</h3>
+        <div className="table-scroll"><table className="orders-table"><thead><tr><th>Row</th><th>Date</th><th>Detected type</th><th>Category</th><th>Description</th><th>Amount</th><th>Payment</th><th>Warnings</th></tr></thead><tbody>{csvRows.map((row) => <tr key={row.id} className={row.warnings.length ? "csv-warning-row" : ""}><td>{row.rowNumber}</td><td>{formatDate(row.transactionDate)}</td><td>{businessEvents.find((event) => event.value === row.businessEvent)?.label}</td><td><strong>{row.categoryName}</strong>{row.quantity > 0 && <><br /><small>{row.quantity} x {formatMoney(row.unitCost)}</small></>}</td><td>{row.description}<br /><small>{row.supplier || "-"}</small></td><td><strong>{formatMoney(row.amount)}</strong></td><td>{row.paymentStatus.replace(/_/g, " ")}<br /><small>{row.paymentMethod}</small></td><td>{row.warnings.length ? row.warnings.join(", ") : "-"}</td></tr>)}</tbody></table>{!csvRows.length && <div className="empty"><strong>No CSV loaded yet</strong><p>Upload a CSV to preview the bookkeeping entries before importing.</p></div>}</div>
+      </section>
+    </section>
   </section>;
 
   if (categoryEvent) {
