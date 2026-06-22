@@ -3662,9 +3662,16 @@ function FormalAccountingWorkspacePage({ view, orders, transactions, ledgerEntri
   const marketingBalances = balancesForNames(sectionAccountNames(tAccountSections[3]));
   const cashBalances = balancesForNames(sectionAccountNames(tAccountSections[4]));
   const salesRevenue = Math.abs(balanceForAccount("Sales"));
+  const cogsAccountNames = [...new Set([
+    ...cogsAccounts,
+    ...categories.filter((category) => category.accountType === "cost_of_sales" || category.reportSection === "COGS").map((category) => category.name),
+  ])];
+  const costOfGoodsSoldRows = balancesForNames(cogsAccountNames);
+  const totalCostOfGoodsSold = costOfGoodsSoldRows.reduce((total, item) => total + Math.abs(item.balance), 0);
+  const grossProfit = salesRevenue - totalCostOfGoodsSold;
   const operatingExpenses = [...expenseBalances, ...marketingBalances];
   const totalExpenses = operatingExpenses.reduce((total, item) => total + Math.max(0, item.balance), 0);
-  const netProfit = salesRevenue - totalExpenses;
+  const netProfit = grossProfit - totalExpenses;
   const balanceSheetCashBalances = cashBalances.filter((item) => item.name !== "Payment Processing Fees");
   const assetReportRows = [...balanceSheetCashBalances, ...inventoryBalances, ...assetBalances];
   const totalAssets = assetReportRows.reduce((total, item) => total + item.balance, 0);
@@ -3711,7 +3718,12 @@ function FormalAccountingWorkspacePage({ view, orders, transactions, ledgerEntri
         <div className="statement-section-title">Revenue</div>
         <div className="statement-row"><span>Sales revenue</span><strong>{formatMoney(salesRevenue)}</strong></div>
         <div className="statement-total"><span>Total revenue</span><strong>{formatMoney(salesRevenue)}</strong></div>
-        <div className="statement-section-title">Less: Expenses</div>
+        <div className="statement-section-title">Less: Cost of Goods Sold</div>
+        {costOfGoodsSoldRows.map((item) => <div className="statement-row" key={item.name}><span>{item.name}</span><strong>{formatMoney(Math.abs(item.balance))}</strong></div>)}
+        {!costOfGoodsSoldRows.length && <div className="statement-row muted"><span>No cost of goods sold recorded</span><strong>{formatMoney(0)}</strong></div>}
+        <div className="statement-total"><span>Total cost of goods sold</span><strong>{formatMoney(totalCostOfGoodsSold)}</strong></div>
+        <div className="statement-grand-total statement-gross-profit"><span>Gross profit</span><strong>{formatMoney(grossProfit)}</strong></div>
+        <div className="statement-section-title">Less: Operating Expenses</div>
         {operatingExpenses.map((item) => <div className="statement-row" key={item.name}><span>{item.name}</span><strong>{formatMoney(Math.abs(item.balance))}</strong></div>)}
         {!operatingExpenses.length && <div className="statement-row muted"><span>No expenses recorded</span><strong>{formatMoney(0)}</strong></div>}
         <div className="statement-total"><span>Total expenses</span><strong>{formatMoney(totalExpenses)}</strong></div>
