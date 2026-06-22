@@ -1652,7 +1652,8 @@ export default function Home() {
   }
 
   function selectedBusinessEvent() {
-    return businessEvents.find((event) => event.value === transactionForm.businessEvent) ?? businessEvents[0];
+    const pageBusinessEvent = bookkeepingEventByView[view];
+    return businessEvents.find((event) => event.value === (pageBusinessEvent ?? transactionForm.businessEvent)) ?? businessEvents[0];
   }
 
   function bookkeepingConfigForEvent(eventValue: string) {
@@ -2125,7 +2126,7 @@ export default function Home() {
         source: documentId ? "document" : "manual",
         sourceId: documentId,
         documentId,
-        businessEvent: isRejectedInventory ? "inventory_rejected" : transactionForm.businessEvent,
+        businessEvent: isRejectedInventory ? "inventory_rejected" : event.value,
         transactionDate: transactionForm.transactionDate,
         description,
         accountName: event.value === "inventory_purchase" ? accountName : account?.name || accountName || "Cash",
@@ -2169,7 +2170,7 @@ export default function Home() {
         await saveStockSetting({ itemKey: stockKey, initialStock: Math.max(0, currentStock + (isRejectedInventory ? -Math.floor(quantity) : Math.floor(quantity))) });
       }
       await insertSharedActivity({ id: crypto.randomUUID(), action: "Accounting transaction created", detail: `${event.label}: ${description} (${formatMoney(amount)})`, actor, createdAt: now });
-      setTransactionForm(emptyTransactionForm());
+      setTransactionForm({ ...emptyTransactionForm(), businessEvent: event.value });
       setInventoryCostManualFields([]);
       setTransactionDocumentFile(null);
       await loadSharedData();
