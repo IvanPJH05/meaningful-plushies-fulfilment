@@ -189,6 +189,7 @@ type ContentIdeaForm = {
   referenceName: string;
   referenceUrl: string;
 };
+type InventoryCostField = "unitCost" | "quantity" | "amount";
 type AccountOption = {
   value: string;
   label: string;
@@ -628,7 +629,11 @@ function formatCalculatorNumber(value: number, decimals = 2) {
   return Number(value.toFixed(decimals)).toString();
 }
 
-function calculateInventoryCostFields(current: AccountingTransactionForm, changed: Partial<Pick<AccountingTransactionForm, "unitCost" | "quantity" | "amount">>) {
+function calculateInventoryCostFields(
+  current: AccountingTransactionForm,
+  changed: Partial<Pick<AccountingTransactionForm, "unitCost" | "quantity" | "amount">>,
+  manualFields: InventoryCostField[],
+) {
   const next = { ...current, ...changed };
   const unitCost = Number(next.unitCost);
   const quantity = Number(next.quantity);
@@ -636,16 +641,10 @@ function calculateInventoryCostFields(current: AccountingTransactionForm, change
   const hasUnitCost = Number.isFinite(unitCost) && unitCost > 0;
   const hasQuantity = Number.isFinite(quantity) && quantity > 0;
   const hasAmount = Number.isFinite(amount) && amount > 0;
-  if (changed.unitCost !== undefined || changed.quantity !== undefined) {
-    if (hasUnitCost && hasQuantity) return { ...changed, amount: formatCalculatorNumber(unitCost * quantity) };
-    if (changed.quantity !== undefined && hasAmount && hasQuantity && !hasUnitCost) return { ...changed, unitCost: formatCalculatorNumber(amount / quantity, 4) };
-    if (changed.unitCost !== undefined && hasAmount && hasUnitCost && !hasQuantity) return { ...changed, quantity: formatCalculatorNumber(amount / unitCost, 4) };
-  }
-  if (changed.amount !== undefined) {
-    if (hasAmount && hasQuantity && !hasUnitCost) return { ...changed, unitCost: formatCalculatorNumber(amount / quantity, 4) };
-    if (hasAmount && hasUnitCost && !hasQuantity) return { ...changed, quantity: formatCalculatorNumber(amount / unitCost, 4) };
-    if (hasUnitCost && hasQuantity) return changed;
-  }
+  const manual = new Set(manualFields);
+  if (manual.has("unitCost") && manual.has("quantity") && hasUnitCost && hasQuantity) return { ...changed, amount: formatCalculatorNumber(unitCost * quantity) };
+  if (manual.has("amount") && manual.has("quantity") && hasAmount && hasQuantity) return { ...changed, unitCost: formatCalculatorNumber(amount / quantity, 4) };
+  if (manual.has("amount") && manual.has("unitCost") && hasAmount && hasUnitCost) return { ...changed, quantity: formatCalculatorNumber(amount / unitCost, 4) };
   return changed;
 }
 
@@ -895,6 +894,7 @@ export default function Home() {
   });
   const [bookkeepingCsvRows, setBookkeepingCsvRows] = useState<BookkeepingCsvImportRow[]>([]);
   const [bookkeepingCsvFileName, setBookkeepingCsvFileName] = useState("");
+  const [inventoryCostManualFields, setInventoryCostManualFields] = useState<InventoryCostField[]>([]);
   const [accountPasswords, setAccountPasswords] = useState<Record<string, string>>({});
   const [newAccount, setNewAccount] = useState({ username: "", displayName: "", role: "staff" as UserRole, password: "" });
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
@@ -1640,6 +1640,17 @@ export default function Home() {
     return accountingCategories.find((category) => category.id === categoryId)?.name ?? "Uncategorised";
   }
 
+  function onInventoryCostFieldChange(field: InventoryCostField, value: string) {
+    setInventoryCostManualFields((current) => {
+      const nextManualFields = [...current.filter((item) => item !== field), field].slice(-2);
+      setTransactionForm((form) => ({
+        ...form,
+        ...calculateInventoryCostFields(form, { [field]: value }, nextManualFields),
+      }));
+      return nextManualFields;
+    });
+  }
+
   function selectedBusinessEvent() {
     return businessEvents.find((event) => event.value === transactionForm.businessEvent) ?? businessEvents[0];
   }
@@ -2149,6 +2160,7 @@ export default function Home() {
       }
       await insertSharedActivity({ id: crypto.randomUUID(), action: "Accounting transaction created", detail: `${event.label}: ${description} (${formatMoney(amount)})`, actor, createdAt: now });
       setTransactionForm(emptyTransactionForm());
+      setInventoryCostManualFields([]);
       setTransactionDocumentFile(null);
       await loadSharedData();
       setNotice("Transaction added.");
@@ -2539,6 +2551,7 @@ export default function Home() {
         saving={savingAccounting}
         onDocumentFormChange={(patch) => setDocumentForm((current) => ({ ...current, ...patch }))}
         onTransactionFormChange={(patch) => setTransactionForm((current) => ({ ...current, ...patch }))}
+        onInventoryCostFieldChange={onInventoryCostFieldChange}
         onAccountFormChange={(patch) => setAccountForm((current) => ({ ...current, ...patch }))}
         onBookkeepingCategoryFormChange={(patch) => setBookkeepingCategoryForm((current) => ({ ...current, ...patch }))}
         onFileChange={setAccountingDocumentFile}
@@ -2721,6 +2734,7 @@ function AccountingWorkspacePage({
   saving,
   onDocumentFormChange,
   onTransactionFormChange,
+  onInventoryCostFieldChange,
   onAccountFormChange,
   onBookkeepingCategoryFormChange,
   onFileChange,
@@ -2763,6 +2777,7 @@ function AccountingWorkspacePage({
   saving: boolean;
   onDocumentFormChange: (patch: Partial<AccountingDocumentForm>) => void;
   onTransactionFormChange: (patch: Partial<AccountingTransactionForm>) => void;
+  onInventoryCostFieldChange: (field: InventoryCostField, value: string) => void;
   onAccountFormChange: (patch: Partial<AccountingAccountForm>) => void;
   onBookkeepingCategoryFormChange: (patch: Partial<BookkeepingCategoryForm>) => void;
   onFileChange: (file: File | null) => void;
@@ -2933,8 +2948,8 @@ function AccountingWorkspacePage({
           {isInventory && selectedAccountLabel === "Plush toy" && <label>Plush character<select value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })}><option value="">Choose character</option><option value="BILLY">BILLY</option><option value="TOOTSIE">TOOTSIE</option><option value="HUNNIE">HUNNIE</option><option value="DRAGON WARRIOR">DRAGON WARRIOR</option></select></label>}
           {isInventory && transactionForm.categoryId === rejectedInventoryOption && <label>Rejected item<select value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })}><option value="">Choose rejected item</option><option value="BILLY">BILLY</option><option value="TOOTSIE">TOOTSIE</option><option value="HUNNIE">HUNNIE</option><option value="DRAGON WARRIOR">DRAGON WARRIOR</option><option value="PACKAGING">PACKAGING</option><option value="BOXES">BOXES</option><option value="BUBBLE WRAP">BUBBLE WRAP</option><option value="WAX SEAL">WAX SEAL</option></select></label>}
           {transactionForm.categoryId === newAssetOptionValue && <label>{newAccountLabel}<input value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })} placeholder={isAsset ? "Example: Printer, heat press machine..." : isInventory ? "Example: Speaker, wax seal, bubble wrap..." : categoryEvent.value === "marketing_expense" ? "Example: Meta ads, TikTok ads..." : "Example: Labour, samples, JnT..."} /></label>}
-          <div className="accounting-two-cols"><label>{isInventory ? "Unit price" : "Amount"}<input type="number" min="0" step="0.01" value={isInventory ? transactionForm.unitCost : transactionForm.amount} onChange={(input) => onTransactionFormChange(isInventory ? calculateInventoryCostFields(transactionForm, { unitCost: input.target.value }) : { amount: input.target.value })} /></label>{isInventory ? <label>{transactionForm.categoryId === rejectedInventoryOption ? "Quantity rejected" : "Quantity bought"}<input type="number" min="0" step="1" value={transactionForm.quantity} onChange={(input) => onTransactionFormChange(calculateInventoryCostFields(transactionForm, { quantity: input.target.value }))} /></label> : <label>Supplier / source<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder={isMoneyIn ? "Stripe, Xendit, TikTok Shop..." : "Supplier name"} /></label>}</div>
-          {isInventory && <label>Total batch cost<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onTransactionFormChange(calculateInventoryCostFields(transactionForm, { amount: input.target.value }))} placeholder="Enter any 2 fields and the missing one calculates" /></label>}
+          <div className="accounting-two-cols"><label>{isInventory ? "Unit price" : "Amount"}<input type="number" min="0" step="0.01" value={isInventory ? transactionForm.unitCost : transactionForm.amount} onChange={(input) => isInventory ? onInventoryCostFieldChange("unitCost", input.target.value) : onTransactionFormChange({ amount: input.target.value })} /></label>{isInventory ? <label>{transactionForm.categoryId === rejectedInventoryOption ? "Quantity rejected" : "Quantity bought"}<input type="number" min="0" step="1" value={transactionForm.quantity} onChange={(input) => onInventoryCostFieldChange("quantity", input.target.value)} /></label> : <label>Supplier / source<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder={isMoneyIn ? "Stripe, Xendit, TikTok Shop..." : "Supplier name"} /></label>}</div>
+          {isInventory && <label>Total batch cost<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onInventoryCostFieldChange("amount", input.target.value)} placeholder="Enter any 2 fields and the missing one calculates" /></label>}
           {isInventory && <label>Supplier<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder="Supplier name" /></label>}
           <label>Description<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder={isInventory ? "Example: June Billy plush batch" : "Short note for the book"} /></label>
           {!isMoneyIn && <><h3>Payment</h3><label>Payment method<select value={transactionForm.paymentStatus} onChange={(input) => onTransactionFormChange({ paymentStatus: input.target.value as AccountingTransactionForm["paymentStatus"] })}><option value="paid_in_full">Bank</option><option value="deposit_paid">Deposit Paid</option><option value="on_credit">On Credit</option></select></label></>}
@@ -2979,12 +2994,12 @@ function AccountingWorkspacePage({
         {event.value === "inventory_purchase" && transactionForm.categoryId === "Plushie" && <label>Which plushie / character?<input value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })} placeholder="Billy, Tootsie, Hunnie, Dragon Warrior..." /></label>}
         {!accountOptions.length && <p className="accounting-file-name">No accounts are configured for this category yet.</p>}
         <h3>Step 3: Transaction details</h3>
-        <div className="accounting-two-cols"><label>Date<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label><label>Total amount<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onTransactionFormChange(event.value === "inventory_purchase" ? calculateInventoryCostFields(transactionForm, { amount: input.target.value }) : { amount: input.target.value })} /></label></div>
+        <div className="accounting-two-cols"><label>Date<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label><label>Total amount<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => event.value === "inventory_purchase" ? onInventoryCostFieldChange("amount", input.target.value) : onTransactionFormChange({ amount: input.target.value })} /></label></div>
         <div className="accounting-two-cols"><label>Supplier / customer<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder="Supplier, customer, platform..." /></label><label>Invoice number<input value={transactionForm.invoiceNumber} onChange={(input) => onTransactionFormChange({ invoiceNumber: input.target.value })} placeholder="Optional" /></label></div>
         <label>Description<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder="Boxes purchase, Meta ad spend, payout..." /></label>
         <label>Receipt / invoice / payment slip<input type="file" accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" onChange={(event) => onTransactionFileChange(event.target.files?.[0] ?? null)} /></label>
         {transactionFile && <p className="accounting-file-name">{transactionFile.name}</p>}
-        {event.value === "inventory_purchase" && <div className="accounting-two-cols"><label>Quantity<input type="number" min="0" step="1" value={transactionForm.quantity} onChange={(input) => onTransactionFormChange(calculateInventoryCostFields(transactionForm, { quantity: input.target.value }))} /></label><label>Unit cost<input type="number" min="0" step="0.01" value={transactionForm.unitCost} onChange={(input) => onTransactionFormChange(calculateInventoryCostFields(transactionForm, { unitCost: input.target.value }))} /></label></div>}
+        {event.value === "inventory_purchase" && <div className="accounting-two-cols"><label>Quantity<input type="number" min="0" step="1" value={transactionForm.quantity} onChange={(input) => onInventoryCostFieldChange("quantity", input.target.value)} /></label><label>Unit cost<input type="number" min="0" step="0.01" value={transactionForm.unitCost} onChange={(input) => onInventoryCostFieldChange("unitCost", input.target.value)} /></label></div>}
         <h3>Step 4: Payment terms</h3>
         <label>Payment type<select value={transactionForm.paymentStatus} onChange={(input) => onTransactionFormChange({ paymentStatus: input.target.value as AccountingTransactionForm["paymentStatus"] })}><option value="paid_in_full">Paid In Full</option><option value="deposit_paid">Deposit Paid</option><option value="on_credit">On Credit</option></select></label>
         {transactionForm.paymentStatus !== "on_credit" && <label>Funding source<select value={transactionForm.paymentMethod} onChange={(input) => onTransactionFormChange({ paymentMethod: input.target.value })}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>}
