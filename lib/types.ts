@@ -20,6 +20,22 @@ export type SalesFeeSetting = {
   shopifyPercentage: number;
 };
 
+export type EnvelopePrintSettings = {
+  fontName: string;
+  fontBase64: string;
+  fontSize: number;
+  minFontSize: number;
+  boldness: number;
+  letterSpacing: number;
+  lineHeight: number;
+  textBoxWidth: number;
+  textBoxHeight: number;
+  topX: number;
+  topY: number;
+  bottomX: number;
+  bottomY: number;
+};
+
 export type DashboardAccount = {
   id: string;
   username: string;

@@ -51,6 +51,8 @@
 .envelope-sheet small,.envelope-sheet strong { display: block; }
 .envelope-sheet small { color: #78869a; font-size: 8px; font-weight: 800; }
 .envelope-sheet strong { margin-top: 6px; overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+.envelope-manual-name { width: 100%; margin-top: 6px; border: 1px solid #cfdced; border-radius: 7px; background: #fff; padding: 8px 10px; color: var(--text); font-size: 15px; font-weight: 850; text-transform: uppercase; outline: 0; }
+.envelope-manual-name:focus { border-color: #1769e0; box-shadow: 0 0 0 3px rgba(23,105,224,.12); }
 
 @media (max-width: 1100px) { .envelope-page { grid-template-columns: 1fr; } .envelope-order-list { max-height: 340px; } }
 @media (max-width: 650px) { .envelope-heading { flex-direction: column; } .envelope-selection-summary { grid-template-columns: 1fr auto; } .envelope-selection-summary span { grid-column: 1 / -1; } }

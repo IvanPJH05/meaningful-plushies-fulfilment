@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { AccountingCategory, AccountingDocument, AccountingLedgerEntry, AccountingTransaction, ContentIdeaItem, ContentIdeaReference, ContentPlanItem, DashboardAccount, Order, PaymentProcessorSetting, SalesConsumptionMapping, SalesFeeSetting, StockSetting, UserRole } from "./types";
+import type { AccountingCategory, AccountingDocument, AccountingLedgerEntry, AccountingTransaction, ContentIdeaItem, ContentIdeaReference, ContentPlanItem, DashboardAccount, EnvelopePrintSettings, Order, PaymentProcessorSetting, SalesConsumptionMapping, SalesFeeSetting, StockSetting, UserRole } from "./types";
 
 export type DashboardSession = DashboardAccount & { token: string };
 
@@ -109,6 +109,53 @@ export async function saveSalesFeeSettings(setting: SalesFeeSetting) {
   const { error } = await requireSupabase().from("sales_fee_settings").upsert({
     id: "default",
     shopify_percentage: Math.max(0, setting.shopifyPercentage),
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "id" });
+  if (error) throw error;
+}
+
+function cleanEnvelopePrintSettings(value: unknown): Partial<EnvelopePrintSettings> {
+  if (!value || typeof value !== "object") return {};
+  const record = value as Record<string, unknown>;
+  const text = (key: keyof EnvelopePrintSettings) => typeof record[key] === "string" ? record[key] as string : undefined;
+  const number = (key: keyof EnvelopePrintSettings) => {
+    const next = Number(record[key]);
+    return Number.isFinite(next) ? next : undefined;
+  };
+  return {
+    ...(text("fontName") !== undefined ? { fontName: text("fontName") } : {}),
+    ...(text("fontBase64") !== undefined ? { fontBase64: text("fontBase64") } : {}),
+    ...(number("fontSize") !== undefined ? { fontSize: number("fontSize") } : {}),
+    ...(number("minFontSize") !== undefined ? { minFontSize: number("minFontSize") } : {}),
+    ...(number("boldness") !== undefined ? { boldness: number("boldness") } : {}),
+    ...(number("letterSpacing") !== undefined ? { letterSpacing: number("letterSpacing") } : {}),
+    ...(number("lineHeight") !== undefined ? { lineHeight: number("lineHeight") } : {}),
+    ...(number("textBoxWidth") !== undefined ? { textBoxWidth: number("textBoxWidth") } : {}),
+    ...(number("textBoxHeight") !== undefined ? { textBoxHeight: number("textBoxHeight") } : {}),
+    ...(number("topX") !== undefined ? { topX: number("topX") } : {}),
+    ...(number("topY") !== undefined ? { topY: number("topY") } : {}),
+    ...(number("bottomX") !== undefined ? { bottomX: number("bottomX") } : {}),
+    ...(number("bottomY") !== undefined ? { bottomY: number("bottomY") } : {}),
+  };
+}
+
+export async function fetchEnvelopePrintSettings(): Promise<Partial<EnvelopePrintSettings>> {
+  const { data, error } = await requireSupabase()
+    .from("envelope_print_settings")
+    .select("settings")
+    .eq("id", "default")
+    .maybeSingle();
+  if (error) {
+    if (isMissingTableError(error)) return {};
+    throw error;
+  }
+  return cleanEnvelopePrintSettings(data?.settings);
+}
+
+export async function saveEnvelopePrintSettings(settings: EnvelopePrintSettings) {
+  const { error } = await requireSupabase().from("envelope_print_settings").upsert({
+    id: "default",
+    settings,
     updated_at: new Date().toISOString(),
   }, { onConflict: "id" });
   if (error) throw error;
@@ -604,6 +651,7 @@ export function subscribeToSharedData(onChange: () => void) {
     .on("postgres_changes", { event: "*", schema: "public", table: "activity_events" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "payment_processor_settings" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "sales_fee_settings" }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "envelope_print_settings" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "stock_settings" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "sales_consumption_mappings" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "accounting_documents" }, onChange)

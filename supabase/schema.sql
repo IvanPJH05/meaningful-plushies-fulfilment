@@ -45,6 +45,16 @@ insert into public.sales_fee_settings(id)
 values ('default')
 on conflict (id) do nothing;
 
+create table if not exists public.envelope_print_settings (
+  id text primary key default 'default' check (id = 'default'),
+  settings jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+insert into public.envelope_print_settings(id)
+values ('default')
+on conflict (id) do nothing;
+
 create table if not exists public.dashboard_accounts (
   id uuid primary key default gen_random_uuid(),
   username text not null unique check (username = lower(username) and username ~ '^[a-z0-9._-]{3,40}$'),
@@ -149,6 +159,7 @@ alter table public.fulfilment_orders enable row level security;
 alter table public.activity_events enable row level security;
 alter table public.payment_processor_settings enable row level security;
 alter table public.sales_fee_settings enable row level security;
+alter table public.envelope_print_settings enable row level security;
 alter table public.dashboard_accounts enable row level security;
 alter table public.dashboard_sessions enable row level security;
 alter table public.stock_settings enable row level security;
@@ -182,6 +193,13 @@ create policy "shared dashboard reads sales fee settings" on public.sales_fee_se
 create policy "shared dashboard inserts sales fee settings" on public.sales_fee_settings for insert to anon, authenticated with check (true);
 create policy "shared dashboard updates sales fee settings" on public.sales_fee_settings for update to anon, authenticated using (true) with check (true);
 
+drop policy if exists "shared dashboard reads envelope print settings" on public.envelope_print_settings;
+drop policy if exists "shared dashboard inserts envelope print settings" on public.envelope_print_settings;
+drop policy if exists "shared dashboard updates envelope print settings" on public.envelope_print_settings;
+create policy "shared dashboard reads envelope print settings" on public.envelope_print_settings for select to anon, authenticated using (true);
+create policy "shared dashboard inserts envelope print settings" on public.envelope_print_settings for insert to anon, authenticated with check (true);
+create policy "shared dashboard updates envelope print settings" on public.envelope_print_settings for update to anon, authenticated using (true) with check (true);
+
 drop policy if exists "shared dashboard reads stock settings" on public.stock_settings;
 drop policy if exists "shared dashboard updates stock settings" on public.stock_settings;
 create policy "shared dashboard reads stock settings" on public.stock_settings for select to anon, authenticated using (true);
@@ -201,6 +219,7 @@ grant select, insert, update, delete on public.fulfilment_orders to anon, authen
 grant select, insert on public.activity_events to anon, authenticated;
 grant select, insert, update on public.payment_processor_settings to anon, authenticated;
 grant select, insert, update on public.sales_fee_settings to anon, authenticated;
+grant select, insert, update on public.envelope_print_settings to anon, authenticated;
 grant select, insert, update on public.stock_settings to anon, authenticated;
 grant select, insert, update, delete on public.sales_consumption_mappings to anon, authenticated;
 grant execute on function public.dashboard_login(text, text) to anon, authenticated;
@@ -441,6 +460,12 @@ begin
     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'sales_fee_settings'
   ) then
     alter publication supabase_realtime add table public.sales_fee_settings;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'envelope_print_settings'
+  ) then
+    alter publication supabase_realtime add table public.envelope_print_settings;
   end if;
   if not exists (
     select 1 from pg_publication_tables

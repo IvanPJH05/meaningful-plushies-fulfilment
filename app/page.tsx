@@ -23,6 +23,7 @@ import {
   fetchAccountingTransactions,
   fetchContentIdeas,
   fetchContentPlanItems,
+  fetchEnvelopePrintSettings,
   fetchSalesConsumptionMappings,
   fetchSharedActivity,
   fetchSharedOrders,
@@ -38,6 +39,7 @@ import {
   saveAccountingTransaction,
   saveContentIdea,
   saveContentPlanItem,
+  saveEnvelopePrintSettings,
   saveSalesConsumptionMapping,
   saveStockSetting,
   savePaymentProcessorSetting,
@@ -49,7 +51,7 @@ import {
   upsertSharedOrders,
   type DashboardSession,
 } from "../lib/supabase";
-import { orderStatuses, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type ContentIdeaItem, type ContentIdeaReference, type ContentPlanItem, type DashboardAccount, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesConsumptionMapping, type SalesFeeSetting, type StockSetting, type UserRole } from "../lib/types";
+import { orderStatuses, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type ContentIdeaItem, type ContentIdeaReference, type ContentPlanItem, type DashboardAccount, type EnvelopePrintSettings, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesConsumptionMapping, type SalesFeeSetting, type StockSetting, type UserRole } from "../lib/types";
 
 type Session = DashboardSession;
 type View =
@@ -70,21 +72,6 @@ type FeeMetric = "processingFees" | "shopifyFees" | "totalFees";
 type FinancialReportType = "income_statement" | "balance_sheet" | "cash_summary";
 type AccountingPeriodMode = "this_month" | "lifetime" | "custom";
 type CashFlowActivity = "operating" | "investing" | "financing";
-type EnvelopePrintSettings = {
-  fontName: string;
-  fontBase64: string;
-  fontSize: number;
-  minFontSize: number;
-  boldness: number;
-  letterSpacing: number;
-  lineHeight: number;
-  textBoxWidth: number;
-  textBoxHeight: number;
-  topX: number;
-  topY: number;
-  bottomX: number;
-  bottomY: number;
-};
 type StoredUiPreferences = {
   view?: View;
   query?: string;
@@ -183,6 +170,11 @@ type BookkeepingCsvImportRow = {
   invoiceNumber: string;
   notes: string;
   warnings: string[];
+};
+type EnvelopeSlot = {
+  order: Order | null;
+  manualName: string;
+  name: string;
 };
 type ContentPlanForm = {
   title: string;
@@ -945,7 +937,9 @@ export default function Home() {
   const [fulfilmentColumns, setFulfilmentColumns] = useState<FulfilmentColumn[]>(() => cleanFulfilmentColumns(storedUi.fulfilmentColumns));
   const [manualOrderIds, setManualOrderIds] = useState("");
   const [manualEnvelopeIds, setManualEnvelopeIds] = useState("");
+  const [manualEnvelopeNames, setManualEnvelopeNames] = useState<Record<number, string>>({});
   const [envelopePrintSettings, setEnvelopePrintSettings] = useState<EnvelopePrintSettings>(() => storedEnvelopeSettings);
+  const [envelopeSettingsLoaded, setEnvelopeSettingsLoaded] = useState(false);
   const [orderCsv, setOrderCsv] = useState("");
   const [metafieldCsv, setMetafieldCsv] = useState("");
   const [notice, setNotice] = useState("");
@@ -973,9 +967,10 @@ export default function Home() {
         sharedSalesConsumptionMappings,
         sharedContentPlanItems,
         sharedContentIdeas,
+        sharedEnvelopePrintSettings,
       ] = await Promise.all([
         fetchSharedOrders(), fetchSharedActivity(), fetchPaymentProcessorSettings(), fetchStockSettings(), fetchSalesFeeSettings(),
-        fetchAccountingCategories(), fetchAccountingDocuments(), fetchAccountingTransactions(), fetchAccountingLedgerEntries(), fetchSalesConsumptionMappings(), fetchContentPlanItems(), fetchContentIdeas(),
+        fetchAccountingCategories(), fetchAccountingDocuments(), fetchAccountingTransactions(), fetchAccountingLedgerEntries(), fetchSalesConsumptionMappings(), fetchContentPlanItems(), fetchContentIdeas(), fetchEnvelopePrintSettings(),
       ]);
       setOrders(sharedOrders.map((order) => {
       const status = legacyStatus[order.status] ?? order.status;
@@ -1012,6 +1007,8 @@ export default function Home() {
       setSalesConsumptionMappings(sharedSalesConsumptionMappings);
       setContentPlanItems(sharedContentPlanItems);
       setContentIdeas(sharedContentIdeas);
+      setEnvelopePrintSettings({ ...defaultEnvelopePrintSettings, ...readStoredEnvelopeSettings(), ...sharedEnvelopePrintSettings });
+      setEnvelopeSettingsLoaded(true);
       setDatabaseError("");
     } catch (error) {
       setDatabaseError(error instanceof Error ? error.message : "Could not load orders from Supabase.");
@@ -1072,7 +1069,14 @@ export default function Home() {
 
   useEffect(() => {
     writeJson(envelopeSettingsStorageKey, envelopePrintSettings);
-  }, [envelopePrintSettings]);
+    if (!envelopeSettingsLoaded || !supabaseConfigured) return;
+    const saveTimer = window.setTimeout(() => {
+      void saveEnvelopePrintSettings(envelopePrintSettings).catch((error) => {
+        setNotice(error instanceof Error ? `Envelope print settings could not be saved: ${error.message}` : "Envelope print settings could not be saved.");
+      });
+    }, 500);
+    return () => window.clearTimeout(saveTimer);
+  }, [envelopePrintSettings, envelopeSettingsLoaded]);
 
   useEffect(() => {
     if (session?.role !== "admin") return;
@@ -1103,7 +1107,19 @@ export default function Home() {
   const envelopeOrders = envelopeSelection
     .map((id) => orders.find((order) => order.id === id))
     .filter((order): order is Order => Boolean(order));
-  const envelopePages = Array.from({ length: Math.ceil(envelopeOrders.length / 2) }, (_, index) => envelopeOrders.slice(index * 2, index * 2 + 2));
+  const manualEnvelopeLastIndex = Math.max(-1, ...Object.entries(manualEnvelopeNames)
+    .filter(([, name]) => name.trim())
+    .map(([index]) => Number(index)));
+  const envelopeSlotCount = Math.max(envelopeOrders.length, manualEnvelopeLastIndex + 1);
+  const envelopePageCount = Math.ceil(envelopeSlotCount / 2);
+  const envelopeSlots: EnvelopeSlot[] = Array.from({ length: envelopePageCount * 2 }, (_, index) => {
+    const order = envelopeOrders[index] ?? null;
+    const manualName = manualEnvelopeNames[index] ?? "";
+    const name = (order?.plushName || manualName).replace(/\s+/g, " ").trim();
+    return { order, manualName, name };
+  });
+  const envelopePages = Array.from({ length: envelopePageCount }, (_, index) => envelopeSlots.slice(index * 2, index * 2 + 2));
+  const envelopePrintableNames = envelopeSlots.map((slot) => slot.name).filter(Boolean);
   const packingAvailableOrders = useMemo(() => sortOrderRecords(
     orders.filter((order) => packingStatusFilter === "all" || order.status === packingStatusFilter),
     "orderNumber",
@@ -1480,6 +1496,14 @@ export default function Home() {
     setEnvelopePrintSettings((current) => ({ ...current, ...patch }));
   }
 
+  function updateManualEnvelopeName(slotIndex: number, value: string) {
+    setManualEnvelopeNames((current) => {
+      const next = { ...current, [slotIndex]: value };
+      if (!value.trim()) delete next[slotIndex];
+      return next;
+    });
+  }
+
   function uploadEnvelopeFont(file: File | null) {
     if (!file) return;
     if (!/\.(otf|ttf)$/i.test(file.name)) {
@@ -1571,11 +1595,11 @@ export default function Home() {
   }
 
   async function printEnvelopes() {
-    if (!envelopeOrders.length) return;
+    if (!envelopePrintableNames.length) return;
     if (!envelopePrintSettings.fontBase64) return setNotice("Upload the font you want to use before generating envelopes.");
     try {
       setNotice("Rendering envelope names, then generating the A4 PDF...");
-      const names = envelopeOrders.map((order) => order.plushName || "UNNAMED PLUSHIE");
+      const names = envelopePrintableNames;
       const nameImages = await Promise.all(names.map(renderEnvelopeNameImage));
       const response = await fetch("/api/envelopes", {
         method: "POST",
@@ -1595,7 +1619,7 @@ export default function Home() {
       link.click();
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      setNotice(`${envelopePages.length} A4 envelope page${envelopePages.length === 1 ? "" : "s"} generated.`);
+      setNotice(`${Math.ceil(names.length / 2)} A4 envelope page${Math.ceil(names.length / 2) === 1 ? "" : "s"} generated.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Envelope PDF could not be generated.";
       setNotice(`Envelope PDF error: ${message}`);
@@ -2769,7 +2793,7 @@ export default function Home() {
     </aside>
 
     <section className="main-area">
-      <header className="topbar"><div><p>{workspaceTitle.toUpperCase()} WORKSPACE</p><h1>{viewTitle(view)}</h1></div><div className="top-actions"><span className={`role-badge ${session.role}`}>{session.role}</span>{view === "packing_slips" && <button className="button primary print-trigger" onClick={printPackingSlips}>Print {packingOrders.length} A6 slip{packingOrders.length === 1 ? "" : "s"}</button>}{view === "print_envelope" && <button className="button primary" disabled={!envelopeOrders.length || !envelopePrintSettings.fontBase64} onClick={printEnvelopes}>Generate {envelopePages.length} A4 page{envelopePages.length === 1 ? "" : "s"}</button>}{view === "sales_report" && <button className="button primary" onClick={() => printView("print-sales-report")}>Print / Save PDF</button>}{workspace === "fulfilment" && view !== "import" && <button className="button secondary" onClick={() => setView("import")}>Import CSV</button>}</div></header>
+      <header className="topbar"><div><p>{workspaceTitle.toUpperCase()} WORKSPACE</p><h1>{viewTitle(view)}</h1></div><div className="top-actions"><span className={`role-badge ${session.role}`}>{session.role}</span>{view === "packing_slips" && <button className="button primary print-trigger" onClick={printPackingSlips}>Print {packingOrders.length} A6 slip{packingOrders.length === 1 ? "" : "s"}</button>}{view === "print_envelope" && <button className="button primary" disabled={!envelopePrintableNames.length || !envelopePrintSettings.fontBase64} onClick={printEnvelopes}>Generate {Math.ceil(envelopePrintableNames.length / 2)} A4 page{Math.ceil(envelopePrintableNames.length / 2) === 1 ? "" : "s"}</button>}{view === "sales_report" && <button className="button primary" onClick={() => printView("print-sales-report")}>Print / Save PDF</button>}{workspace === "fulfilment" && view !== "import" && <button className="button secondary" onClick={() => setView("import")}>Import CSV</button>}</div></header>
       {databaseError && <div className="notice"><span>Database connection: {databaseError}</span></div>}
       {loadingOrders && <div className="notice"><span>Loading shared orders from Supabase...</span></div>}
       {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice("")}>x</button></div>}
@@ -2921,7 +2945,7 @@ export default function Home() {
           <div className="packing-list-header"><div><strong>Available orders</strong><span>Order number, descending</span></div><select value={envelopeStatusFilter} onChange={(event) => setEnvelopeStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><div className="packing-list-actions"><button onClick={() => setEnvelopeSelection((current) => [...new Set([...current, ...envelopeAvailableOrders.map((order) => order.id)])])}>Select shown</button><button onClick={() => setEnvelopeSelection([])}>Clear</button></div></div>
           <div className="packing-order-list">{envelopeAvailableOrders.map((order) => { const selectedIndex = envelopeSelection.indexOf(order.id); return <label key={order.id}><input type="checkbox" checked={selectedIndex >= 0} onChange={() => setEnvelopeSelection((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><div><strong>{orderLabel(order)} | {(order.plushName || "Unnamed plushie").toUpperCase()}</strong><span>{order.customerName || "No customer"} | {order.character || "No character"}</span></div>{selectedIndex >= 0 ? <b className="envelope-order-position">{selectedIndex + 1}</b> : <StatusPill status={order.status} />}</label>; })}</div>
         </div>
-        <div className="envelope-preview"><div className="preview-heading"><div><h2>A4 page order</h2><p>Two names are placed on each page using your uploaded font and envelope settings.</p></div><span>{envelopePages.length} pages</span></div>{envelopePages.length ? <div className="envelope-sheet-list">{envelopePages.map((pageOrders, index) => <EnvelopeSheet key={index} pageNumber={index + 1} orders={pageOrders} settings={envelopePrintSettings} />)}</div> : <div className="preview-empty"><strong>No orders selected</strong><p>Choose orders from the list to build the envelope pages.</p></div>}</div>
+        <div className="envelope-preview"><div className="preview-heading"><div><h2>A4 page order</h2><p>Two names are placed on each page using your uploaded font and envelope settings.</p></div><span>{envelopePages.length} pages</span></div>{envelopePages.length ? <div className="envelope-sheet-list">{envelopePages.map((pageSlots, index) => <EnvelopeSheet key={index} pageNumber={index + 1} slots={pageSlots} slotOffset={index * 2} settings={envelopePrintSettings} onManualNameChange={updateManualEnvelopeName} />)}</div> : <div className="preview-empty"><strong>No orders selected</strong><p>Choose orders from the list to build the envelope pages.</p></div>}</div>
       </section>}
 
       {view === "sales_report" && session.role === "admin" && <section className="sales-report-page">
@@ -4464,8 +4488,33 @@ function EnvelopeSettingsPanel({ settings, onChange, onFontUpload, onReset }: { 
   </section>;
 }
 
-function EnvelopeSheet({ orders, pageNumber, settings }: { orders: Order[]; pageNumber: number; settings: EnvelopePrintSettings }) {
-  return <article className="envelope-sheet"><span>PAGE {pageNumber}</span><div><small>TOP NAME | X {settings.topX}, Y {settings.topY}</small><strong>{(orders[0]?.plushName || "-").toUpperCase()}</strong></div><div><small>BOTTOM NAME | X {settings.bottomX}, Y {settings.bottomY}</small><strong>{(orders[1]?.plushName || "-").toUpperCase()}</strong></div></article>;
+function EnvelopeSheet({
+  slots,
+  pageNumber,
+  slotOffset,
+  settings,
+  onManualNameChange,
+}: {
+  slots: EnvelopeSlot[];
+  pageNumber: number;
+  slotOffset: number;
+  settings: EnvelopePrintSettings;
+  onManualNameChange: (slotIndex: number, value: string) => void;
+}) {
+  const labels = [
+    `TOP NAME | X ${settings.topX}, Y ${settings.topY}`,
+    `BOTTOM NAME | X ${settings.bottomX}, Y ${settings.bottomY}`,
+  ];
+  return <article className="envelope-sheet"><span>PAGE {pageNumber}</span>{[0, 1].map((position) => {
+    const slot = slots[position] ?? { order: null, manualName: "", name: "" };
+    const slotIndex = slotOffset + position;
+    return <div key={position}>
+      <small>{labels[position]}</small>
+      {slot.order
+        ? <strong>{(slot.order.plushName || "-").toUpperCase()}</strong>
+        : <input className="envelope-manual-name" value={slot.manualName} onChange={(event) => onManualNameChange(slotIndex, event.target.value.toUpperCase())} placeholder="Type name manually" />}
+    </div>;
+  })}</article>;
 }
 
 type IconName = "orders" | "fulfilment" | "packing" | "envelope" | "import" | "shipped" | "logout" | "search" | "history" | "drag" | "settings" | "stock" | "report" | "accounting" | "cash" | "documents" | "ledger" | "tax" | "calendar" | "idea";
