@@ -39,4 +39,6 @@
 .tiktok-shop-page .packing-list-header select{width:100%;height:40px;border:1px solid #d4deeb;border-radius:8px;background:#fff;color:#243248;padding:0 14px;font-weight:700}
 .tiktok-shop-page .packing-controls{overflow:hidden}
 .tiktok-shop-page .packing-order-list{padding-top:0}
+.tiktok-shop-page .json-copy-actions{display:flex;align-items:center;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+.tiktok-shop-page .json-copy-actions .button{min-height:34px;padding:8px 14px}
 @media(max-width:900px){.tiktok-shop-page{grid-template-columns:1fr}.tiktok-shop-page .packing-list-header{grid-template-columns:1fr}.tiktok-shop-page .packing-manual .packing-list-actions{gap:18px}}

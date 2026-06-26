@@ -1249,6 +1249,7 @@ export default function Home() {
   const selectedTikTokCertificatePayload = useMemo<TikTokCertificatePayload[]>(() => tikTokOrders
     .filter((order) => selectedTikTokJsonOrders.includes(order.id))
     .map(tikTokCertificateJson), [tikTokOrders, selectedTikTokJsonOrders]);
+  const selectedTikTokCertificateJson = useMemo(() => JSON.stringify(selectedTikTokCertificatePayload, null, 2), [selectedTikTokCertificatePayload]);
   const processorAccountingTotals = useMemo(() => allSalesReportRows.reduce((totals, row) => {
     if (row.paymentProcessor === "Stripe") {
       totals.stripeCollected += row.salePrice;
@@ -1404,6 +1405,11 @@ export default function Home() {
     if (!link) return setNotice(`#${order.orderNumber} has no certificate code.`);
     await navigator.clipboard.writeText(link);
     setNotice(`Certificate link for #${order.orderNumber} copied without https://.`);
+  }
+
+  async function copyTikTokCertificateJson() {
+    await navigator.clipboard.writeText(selectedTikTokCertificateJson);
+    setNotice(`${selectedTikTokCertificatePayload.length} TikTok JSON ${selectedTikTokCertificatePayload.length === 1 ? "entry" : "entries"} copied.`);
   }
 
   async function runImport() {
@@ -3193,7 +3199,7 @@ export default function Home() {
           <div className="packing-order-list">{tikTokAvailableOrders.map((order) => <label key={order.id}><input type="checkbox" checked={selectedTikTokJsonOrders.includes(order.id)} onChange={() => setSelectedTikTokJsonOrders((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><div><strong>{tikTokShortOrderLabel(order)} | {order.plushName || "Unnamed plushie"}</strong><span>{order.customerName || "No username"} | {order.character || "No character"} {order.voiceLength ? `${order.voiceLength}S` : ""}</span></div><StatusPill status={order.status} /></label>)}</div>
           {!tikTokAvailableOrders.length && <div className="empty"><strong>No TikTok orders in this stage</strong><p>Import TikTok Shop orders first, or choose another stage.</p></div>}
         </div>
-        <div className="packing-preview tiktok-json-panel"><div className="preview-heading"><div><h2>TikTok Shop JSON</h2><p>Selected orders are converted into certificate JSON.</p></div><span>{selectedTikTokCertificatePayload.length} selected</span></div><textarea className="tiktok-json-output" readOnly value={JSON.stringify(selectedTikTokCertificatePayload, null, 2)} /></div>
+        <div className="packing-preview tiktok-json-panel"><div className="preview-heading"><div><h2>TikTok Shop JSON</h2><p>Selected orders are converted into certificate JSON.</p></div><div className="json-copy-actions"><span>{selectedTikTokCertificatePayload.length} selected</span><button className="button primary" type="button" onClick={copyTikTokCertificateJson}>Copy JSON</button></div></div><textarea className="tiktok-json-output" readOnly value={selectedTikTokCertificateJson} /></div>
       </section>}
     </section>
 
