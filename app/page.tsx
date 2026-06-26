@@ -55,7 +55,7 @@ import { orderStatuses, type AccountingCategory, type AccountingDocument, type A
 
 type Session = DashboardSession;
 type View =
-  | "orders" | "fulfilment" | "packing_slips" | "print_envelope" | "import" | "fulfilled" | "history" | "settings" | "stock" | "sales_report"
+  | "orders" | "fulfilment" | "packing_slips" | "print_envelope" | "import" | "tiktok_shop" | "fulfilled" | "history" | "settings" | "stock" | "sales_report"
   | "accounting_dashboard" | "accounting_documents" | "accounting_transactions" | "accounting_csv_import" | "accounting_profit_loss" | "accounting_balance_sheet"
   | "accounting_cash_flow" | "accounting_operating_costs" | "accounting_general_ledger" | "accounting_trial_balance" | "accounting_payable" | "accounting_receivable"
   | "accounting_bank_reconciliation" | "accounting_product_profitability" | "accounting_marketing_profitability" | "accounting_cash_position"
@@ -66,6 +66,7 @@ type SalesRange = "active" | "today" | "7d" | "30d" | "lifetime";
 type SortKey = "orderNumber" | "importedAt" | "updatedAt";
 type SortDirection = "asc" | "desc";
 type SortChoice = `${SortKey}:${SortDirection}`;
+type SourceFilter = "all" | "shopify" | "tiktok";
 type CollectedMetric = "bankTransfer" | "stripeCollected" | "xenditCollected" | "totalCollected";
 type DiscountMetric = "productDiscounted" | "shippingDiscounted";
 type FeeMetric = "processingFees" | "shopifyFees" | "totalFees";
@@ -87,6 +88,8 @@ type StoredUiPreferences = {
   statusFilter?: "all" | OrderStatus;
   packingStatusFilter?: "all" | OrderStatus;
   envelopeStatusFilter?: "all" | OrderStatus;
+  tikTokStatusFilter?: "all" | OrderStatus;
+  sourceFilter?: SourceFilter;
   dashboardStatus?: OrderStatus | "total";
   dashboardStatusTwo?: OrderStatus | "total";
   salesRange?: SalesRange;
@@ -373,7 +376,7 @@ function cogsAccountForInventoryItem(itemName: string) {
 }
 const processorAccounts = ["Xendit", "Stripe", "TikTok Shop"] as const;
 
-const fulfilmentViews: readonly View[] = ["orders", "fulfilment", "packing_slips", "print_envelope", "import", "fulfilled"];
+const fulfilmentViews: readonly View[] = ["orders", "fulfilment", "packing_slips", "print_envelope", "import", "tiktok_shop", "fulfilled"];
 const accountingViews: readonly View[] = [
   "accounting_dashboard",
   "accounting_transactions",
@@ -410,6 +413,7 @@ const workspaceLabels: Record<Workspace, string> = {
   settings: "Settings",
 };
 const orderStatusFilterValues = ["all", ...orderStatuses] as const;
+const sourceFilterValues = ["all", "shopify", "tiktok"] as const;
 const dashboardMetricValues = ["total", ...orderStatuses] as const;
 const salesRangeValues = ["active", "today", "7d", "30d", "lifetime"] as const;
 const collectedMetricValues = ["bankTransfer", "stripeCollected", "xenditCollected", "totalCollected"] as const;
@@ -518,6 +522,7 @@ const fulfilmentNavItems: NavItem[] = [
   { view: "packing_slips", label: "Packing Slips", icon: "packing" },
   { view: "print_envelope", label: "Print Envelope", icon: "envelope" },
   { view: "import", label: "CSV Import", icon: "import" },
+  { view: "tiktok_shop", label: "TikTok Shop", icon: "report" },
 ];
 
 const fulfilmentAdminNavItems: NavItem[] = [
@@ -716,6 +721,21 @@ function orderLabel(order: Order) {
   return `#${order.orderNumber}${order.setIndicator ? ` ${order.setIndicator}` : ""}`;
 }
 
+function tikTokShortOrderLabel(order: Order) {
+  const match = order.orderNumber.match(/\b(TT\d+)\b\s+(\d+)/i);
+  if (!match) return orderLabel(order);
+  return `#${match[1].toUpperCase()} ${match[2].slice(-4)}`;
+}
+
+function packingSlipOrderLabel(order: Order) {
+  return order.salesChannel === "tiktok" ? tikTokShortOrderLabel(order) : orderLabel(order);
+}
+
+function orderSourceMatches(order: Order, source: SourceFilter) {
+  if (source === "all") return true;
+  return (order.salesChannel ?? "shopify") === source;
+}
+
 function certificateLink(order: Order, includeProtocol = true) {
   const link = order.certificateCode
     ? `meaningfulplushies.com/pages/certificate/${order.certificateCode.trim()}`
@@ -831,6 +851,7 @@ function viewTitle(view: View) {
   const titleOverrides: Partial<Record<View, string>> = {
     orders: "Orders Dashboard",
     import: "Import Shopify Orders",
+    tiktok_shop: "TikTok Shop",
     fulfilled: "Shipped Orders",
     history: "Activity History",
     content_dashboard: "Content Dashboard",
@@ -859,6 +880,8 @@ export default function Home() {
   const [envelopeSelection, setEnvelopeSelection] = useState<string[]>([]);
   const [packingStatusFilter, setPackingStatusFilter] = useState<"all" | OrderStatus>(() => choice(storedUi.packingStatusFilter, "all", orderStatusFilterValues));
   const [envelopeStatusFilter, setEnvelopeStatusFilter] = useState<"all" | OrderStatus>(() => choice(storedUi.envelopeStatusFilter, "all", orderStatusFilterValues));
+  const [tikTokStatusFilter, setTikTokStatusFilter] = useState<"all" | OrderStatus>(() => choice(storedUi.tikTokStatusFilter, "all", orderStatusFilterValues));
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>(() => choice(storedUi.sourceFilter, "all", sourceFilterValues));
   const [dashboardStatus, setDashboardStatus] = useState<OrderStatus | "total">(() => choice(storedUi.dashboardStatus, "packed", dashboardMetricValues));
   const [dashboardStatusTwo, setDashboardStatusTwo] = useState<OrderStatus | "total">(() => choice(storedUi.dashboardStatusTwo, "issue", dashboardMetricValues));
   const [salesRange, setSalesRange] = useState<SalesRange>(() => choice(storedUi.salesRange, "active", salesRangeValues));
@@ -1066,6 +1089,8 @@ export default function Home() {
       statusFilter,
       packingStatusFilter,
       envelopeStatusFilter,
+      tikTokStatusFilter,
+      sourceFilter,
       dashboardStatus,
       dashboardStatusTwo,
       salesRange,
@@ -1085,6 +1110,8 @@ export default function Home() {
     statusFilter,
     packingStatusFilter,
     envelopeStatusFilter,
+    tikTokStatusFilter,
+    sourceFilter,
     dashboardStatus,
     dashboardStatusTwo,
     salesRange,
@@ -1152,24 +1179,25 @@ export default function Home() {
   const envelopePages = Array.from({ length: envelopePageCount }, (_, index) => envelopeSlots.slice(index * 2, index * 2 + 2));
   const envelopePrintableNames = envelopeSlots.map((slot) => slot.name).filter(Boolean);
   const packingAvailableOrders = useMemo(() => sortOrderRecords(
-    orders.filter((order) => packingStatusFilter === "all" || order.status === packingStatusFilter),
+    orders.filter((order) => orderSourceMatches(order, sourceFilter) && (packingStatusFilter === "all" || order.status === packingStatusFilter)),
     "orderNumber",
     "desc",
-  ), [orders, packingStatusFilter]);
+  ), [orders, packingStatusFilter, sourceFilter]);
   const envelopeAvailableOrders = useMemo(() => sortOrderRecords(
-    orders.filter((order) => envelopeStatusFilter === "all" || order.status === envelopeStatusFilter),
+    orders.filter((order) => orderSourceMatches(order, sourceFilter) && (envelopeStatusFilter === "all" || order.status === envelopeStatusFilter)),
     "orderNumber",
     "desc",
-  ), [orders, envelopeStatusFilter]);
+  ), [orders, envelopeStatusFilter, sourceFilter]);
   const filtered = useMemo(() => {
     const source = view === "fulfilled" ? orders.filter((order) => order.status === "shipped") : orders;
     const search = query.trim().toLowerCase();
     const matching = source
+      .filter((order) => orderSourceMatches(order, sourceFilter))
       .filter((order) => statusFilter === "all" || order.status === statusFilter)
       .filter((order) => !search || [order.orderNumber, order.customerName, order.phone, order.trackingNumber, order.plushName, order.product, order.character, order.shippingMethod]
         .join(" ").toLowerCase().includes(search));
     return sortOrderRecords(matching, sortKey, sortDirection);
-  }, [orders, query, statusFilter, view, sortKey, sortDirection]);
+  }, [orders, query, sourceFilter, statusFilter, view, sortKey, sortDirection]);
 
   const counts = useMemo(() => ({
     total: orders.filter((order) => order.status !== "shipped").length,
@@ -1197,6 +1225,11 @@ export default function Home() {
     "orderNumber",
     "asc",
   ), [orders]);
+  const tikTokAvailableOrders = useMemo(() => sortOrderRecords(
+    tikTokOrders.filter((order) => tikTokStatusFilter === "all" || order.status === tikTokStatusFilter),
+    "orderNumber",
+    "desc",
+  ), [tikTokOrders, tikTokStatusFilter]);
   const selectedTikTokCertificatePayload = useMemo<TikTokCertificatePayload[]>(() => tikTokOrders
     .filter((order) => selectedTikTokJsonOrders.includes(order.id))
     .map(tikTokCertificateJson), [tikTokOrders, selectedTikTokJsonOrders]);
@@ -2988,7 +3021,7 @@ export default function Home() {
         onMoveIdeaToPlanned={moveContentIdeaToPlanned}
       />}
 
-      {workspace === "fulfilment" && view !== "import" && view !== "packing_slips" && view !== "print_envelope" && view !== "history" && view !== "settings" && view !== "stock" && view !== "sales_report" && <>
+      {workspace === "fulfilment" && view !== "import" && view !== "tiktok_shop" && view !== "packing_slips" && view !== "print_envelope" && view !== "history" && view !== "settings" && view !== "stock" && view !== "sales_report" && <>
         {view === "orders" && <section className="stats">
           <Stat label="Active orders" value={counts.total} color="navy" />
           <Stat label="Uploading audio" value={counts.voice} color="orange" />
@@ -3014,13 +3047,13 @@ export default function Home() {
         </>}
 
         {view !== "fulfilment" && <section className="card orders-card">
-          <div className="toolbar"><div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, customer, phone or tracking..." /></div><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} />{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>Move {selectedOrders.length} to next status</button>}{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>Delete</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>Export CSV</button>}</div>
+          <div className="toolbar"><div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, customer, phone or tracking..." /></div><SourceFilterPills value={sourceFilter} onChange={setSourceFilter} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} />{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>Move {selectedOrders.length} to next status</button>}{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>Delete</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>Export CSV</button>}</div>
           <div className="table-scroll"><table className="orders-table"><thead><tr><th><input type="checkbox" aria-label="Select visible orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th>Order</th><th>Date</th><th>Customer</th><th>Phone</th><th>Character</th><th>Voice</th><th>Plush name</th><th>Status</th><th>Tracking number</th><th>Last updated</th><th>View</th></tr></thead><tbody>{filtered.map((order) => <tr key={order.id} className={isExpressShipping(order) ? "express-shipping-row" : ""}><td><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={selectedOrders.includes(order.id)} onChange={() => toggleOrderSelection(order.id)} /></td><td><strong>{orderLabel(order)}</strong>{order.salesChannel === "tiktok" && <span className="tiktok-badge">TikTok Shop</span>}{isExpressShipping(order) && <span className="shipping-badge">Express</span>}</td><td>{formatDate(order.orderDate)}</td><td><strong>{order.customerName || "-"}</strong></td><td>{order.phone || "-"}</td><td>{order.character || "-"}</td><td>{order.voiceLength ? `${order.voiceLength}s` : "-"}</td><td>{order.plushName || "-"}</td><td><StatusPill status={order.status} /></td><td><code>{order.trackingNumber || "-"}</code></td><td>{formatDate(order.updatedAt, true)}</td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No orders found</strong><p>Try another search or status filter.</p></div>}</div>
           <div className="table-footer">Showing {filtered.length} of {view === "fulfilled" ? orders.filter((order) => order.status === "shipped").length : orders.length} orders</div>
         </section>}
 
         {view === "fulfilment" && <section className="card orders-card">
-          <div className="toolbar"><div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, plush name, character, customer or phone..." /></div><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /><button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>Move {selectedOrders.length} to next status</button>{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>Delete</button>}</div>
+          <div className="toolbar"><div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, plush name, character, customer or phone..." /></div><SourceFilterPills value={sourceFilter} onChange={setSourceFilter} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /><button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>Move {selectedOrders.length} to next status</button>{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>Delete</button>}</div>
           <div className="fulfilment-scroll table-scroll"><table className="orders-table fulfilment-table"><thead><tr><th className="select-column"><input type="checkbox" aria-label="Select visible fulfilment orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th className="locked-order-column">Order ID</th>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <th key={column} className={draggedColumn === column ? "dragging" : ""} draggable onDragStart={(event) => { setDraggedColumn(column); event.dataTransfer.setData("text/plain", column); }} onDragEnd={() => setDraggedColumn(null)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => reorderFulfilmentColumn(event.dataTransfer.getData("text/plain") as FulfilmentColumn, column)}><span className="drag-handle"><Icon name="drag" /></span>{fulfilmentColumnLabels[column]}</th>)}<th>Status</th><th>View</th></tr></thead><tbody>{filtered.map((order) => { const checked = selectedOrders.includes(order.id); const rowClass = [checked ? "selected-row" : "", isExpressShipping(order) ? "express-shipping-row" : ""].filter(Boolean).join(" "); return <tr key={order.id} className={rowClass} onClick={(event) => { if ((event.target as HTMLElement).closest("button,a,input")) return; toggleOrderSelection(order.id); }}><td className="select-column"><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={checked} onChange={() => toggleOrderSelection(order.id)} /></td><td className="locked-order-column"><strong>{orderLabel(order)}</strong>{order.salesChannel === "tiktok" && <span className="tiktok-badge">TikTok Shop</span>}{isExpressShipping(order) && <span className="shipping-badge">Express</span>}</td>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <td key={column} className={column === "idWebsiteLink" ? "certificate-cell" : ""}>{fulfilmentCell(order, column)}</td>)}<td><StatusPill status={order.status} /></td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>; })}</tbody></table>{!filtered.length && <div className="empty"><strong>No fulfilment orders found</strong><p>Try another search or status filter.</p></div>}</div>
           <div className="table-footer">Showing {filtered.length} of {orders.length} orders</div>
         </section>}
@@ -3029,7 +3062,7 @@ export default function Home() {
       {view === "packing_slips" && <section className="packing-page">
         <div className="packing-controls card">
           <div className="packing-manual"><div><h2>Choose orders to print</h2><p>Enter order IDs separated by commas or spaces, or select orders from the list below.</p></div><div className="manual-entry"><input value={manualOrderIds} onChange={(event) => setManualOrderIds(event.target.value)} onKeyDown={(event) => event.key === "Enter" && selectManualOrders()} placeholder="Example: 1359, 1360, 1361" /><button className="button primary" onClick={selectManualOrders}>Add order IDs</button></div></div>
-          <div className="packing-list-header"><div><strong>Available orders</strong><span>Order number, descending</span></div><select value={packingStatusFilter} onChange={(event) => setPackingStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><div className="packing-list-actions"><button onClick={() => setPackingSelection((current) => [...new Set([...current, ...packingAvailableOrders.map((order) => order.id)])])}>Select shown</button><button onClick={() => setPackingSelection([])}>Clear</button></div></div>
+          <div className="packing-list-header"><div><strong>Available orders</strong><span>Order number, descending</span></div><SourceFilterPills value={sourceFilter} onChange={setSourceFilter} /><select value={packingStatusFilter} onChange={(event) => setPackingStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><div className="packing-list-actions"><button onClick={() => setPackingSelection((current) => [...new Set([...current, ...packingAvailableOrders.map((order) => order.id)])])}>Select shown</button><button onClick={() => setPackingSelection([])}>Clear</button></div></div>
           <div className="packing-order-list">{packingAvailableOrders.map((order) => <label key={order.id}><input type="checkbox" checked={packingSelection.includes(order.id)} onChange={() => setPackingSelection((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><div><strong>{orderLabel(order)} | {order.plushName || "Unnamed plushie"}</strong><span>{order.customerName} | {order.character || "No character"}</span></div><StatusPill status={order.status} /></label>)}</div>
         </div>
         <div className="packing-preview"><div className="preview-heading"><div><h2>A6 print preview</h2><p>One packing slip will print on each A6 page.</p></div><span>{packingOrders.length} selected</span></div>{packingOrders.length ? <div className="slip-grid">{packingOrders.map((order) => <PackingSlip order={order} key={order.id} />)}</div> : <div className="preview-empty"><strong>No orders selected</strong><p>Enter order IDs or tick orders from the list.</p></div>}</div>
@@ -3039,7 +3072,7 @@ export default function Home() {
         <div className="envelope-controls card no-envelope-print">
           <div className="packing-manual"><div><h2>Choose orders to print</h2><p>Enter order IDs, choose a stage, or select every order shown in that stage.</p></div><div className="manual-entry"><input value={manualEnvelopeIds} onChange={(event) => setManualEnvelopeIds(event.target.value)} onKeyDown={(event) => event.key === "Enter" && selectManualEnvelopeOrders()} placeholder="Example: 1402, 1403, 1404" /><button className="button primary" onClick={selectManualEnvelopeOrders}>Add order IDs</button></div></div>
           <div className="canva-connection connected"><div><strong>Envelope print settings</strong><span>Font, size, spacing, and text box placement are managed in Settings / Print Settings.</span></div><button className="view-button" onClick={() => setView("settings")}>Open settings</button></div>
-          <div className="packing-list-header"><div><strong>Available orders</strong><span>Order number, descending</span></div><select value={envelopeStatusFilter} onChange={(event) => setEnvelopeStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><div className="packing-list-actions"><button onClick={() => setEnvelopeSelection((current) => [...new Set([...current, ...envelopeAvailableOrders.map((order) => order.id)])])}>Select shown</button><button onClick={() => setEnvelopeSelection([])}>Clear</button></div></div>
+          <div className="packing-list-header"><div><strong>Available orders</strong><span>Order number, descending</span></div><SourceFilterPills value={sourceFilter} onChange={setSourceFilter} /><select value={envelopeStatusFilter} onChange={(event) => setEnvelopeStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><div className="packing-list-actions"><button onClick={() => setEnvelopeSelection((current) => [...new Set([...current, ...envelopeAvailableOrders.map((order) => order.id)])])}>Select shown</button><button onClick={() => setEnvelopeSelection([])}>Clear</button></div></div>
           <div className="packing-order-list">{envelopeAvailableOrders.map((order) => { const selectedIndex = envelopeSelection.indexOf(order.id); return <label key={order.id}><input type="checkbox" checked={selectedIndex >= 0} onChange={() => setEnvelopeSelection((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><div><strong>{orderLabel(order)} | {(order.plushName || "Unnamed plushie").toUpperCase()}</strong><span>{order.customerName || "No customer"} | {order.character || "No character"}</span></div>{selectedIndex >= 0 ? <b className="envelope-order-position">{selectedIndex + 1}</b> : <StatusPill status={order.status} />}</label>; })}</div>
         </div>
         <div className="envelope-preview"><div className="preview-heading"><div><h2>A4 page order</h2><p>Two names are placed on each page using your uploaded font and envelope settings.</p></div><span>{envelopePages.length} pages</span></div>{envelopePages.length ? <div className="envelope-sheet-list">{envelopePages.map((pageSlots, index) => <EnvelopeSheet key={index} pageNumber={index + 1} slots={pageSlots} slotOffset={index * 2} settings={envelopePrintSettings} onManualNameChange={updateManualEnvelopeName} />)}</div> : <div className="preview-empty"><strong>No orders selected</strong><p>Choose orders from the list to build the envelope pages.</p></div>}</div>
@@ -3108,16 +3141,17 @@ export default function Home() {
             </div>
           </div>
           <div className="import-action"><div><strong>Auto certificate code</strong><p>Example: TT1027 + order ending 5022 becomes code 10275022106, then the ID link points to the certificate page.</p></div><button className="button primary large" disabled={!tikTokCsv.trim()} onClick={runTikTokImport}>Import TikTok Shop orders</button></div>
-          <div className="tiktok-json-panel">
-            <div className="settings-heading"><div><h2>TikTok Shop</h2><p>Select the TikTok orders you want, then use the JSON below for the certificate data.</p></div><span>{selectedTikTokCertificatePayload.length} selected</span></div>
-            <div className="tiktok-json-selector">
-              <div className="packing-list-actions"><button onClick={() => setSelectedTikTokJsonOrders(tikTokOrders.map((order) => order.id))}>Select all</button><button onClick={() => setSelectedTikTokJsonOrders([])}>Clear</button></div>
-              {tikTokOrders.map((order) => <label key={order.id}><input type="checkbox" checked={selectedTikTokJsonOrders.includes(order.id)} onChange={() => setSelectedTikTokJsonOrders((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><span><strong>{order.orderNumber}</strong><small>{order.character} {order.voiceLength ? `${order.voiceLength}S` : ""} | {order.plushName || "No plush name"}</small></span></label>)}
-              {!tikTokOrders.length && <div className="empty"><strong>No TikTok orders imported yet</strong><p>Import a TikTok Shop CSV first, then the generated JSON will appear here.</p></div>}
-            </div>
-            <textarea className="tiktok-json-output" readOnly value={JSON.stringify(selectedTikTokCertificatePayload, null, 2)} />
-          </div>
         </section>
+      </section>}
+
+      {view === "tiktok_shop" && <section className="packing-page tiktok-shop-page">
+        <div className="packing-controls card">
+          <div className="packing-manual"><div><h2>TikTok certificate data</h2><p>Choose a stage, select the TikTok orders you need, then copy the generated JSON below.</p></div><div className="packing-list-actions"><button onClick={() => setSelectedTikTokJsonOrders(tikTokAvailableOrders.map((order) => order.id))}>Select shown</button><button onClick={() => setSelectedTikTokJsonOrders([])}>Clear</button></div></div>
+          <div className="packing-list-header"><div><strong>Available TikTok orders</strong><span>{tikTokAvailableOrders.length} shown from {tikTokOrders.length} TikTok orders</span></div><StatusFilterPills value={tikTokStatusFilter} onChange={setTikTokStatusFilter} /></div>
+          <div className="packing-order-list">{tikTokAvailableOrders.map((order) => <label key={order.id}><input type="checkbox" checked={selectedTikTokJsonOrders.includes(order.id)} onChange={() => setSelectedTikTokJsonOrders((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><div><strong>{tikTokShortOrderLabel(order)} | {order.plushName || "Unnamed plushie"}</strong><span>{order.customerName || "No username"} | {order.character || "No character"} {order.voiceLength ? `${order.voiceLength}S` : ""}</span></div><StatusPill status={order.status} /></label>)}</div>
+          {!tikTokAvailableOrders.length && <div className="empty"><strong>No TikTok orders in this stage</strong><p>Import TikTok Shop orders first, or choose another stage.</p></div>}
+        </div>
+        <div className="packing-preview tiktok-json-panel"><div className="preview-heading"><div><h2>TikTok Shop JSON</h2><p>Selected orders are converted into certificate JSON.</p></div><span>{selectedTikTokCertificatePayload.length} selected</span></div><textarea className="tiktok-json-output" readOnly value={JSON.stringify(selectedTikTokCertificatePayload, null, 2)} /></div>
       </section>}
     </section>
 
@@ -4521,6 +4555,11 @@ function StatusFilterPills({ value, onChange }: { value: "all" | OrderStatus; on
   return <div className="status-filter-pills" aria-label="Filter by stage">{(["all", ...orderStatuses] as ("all" | OrderStatus)[]).map((status) => <button type="button" key={status} className={value === status ? "active" : ""} onClick={() => onChange(status)}>{status === "all" ? "All" : statusLabels[status]}</button>)}</div>;
 }
 
+function SourceFilterPills({ value, onChange }: { value: SourceFilter; onChange: (source: SourceFilter) => void }) {
+  const labels: Record<SourceFilter, string> = { all: "All", shopify: "Shopify", tiktok: "TikTok" };
+  return <div className="status-filter-pills source-filter-pills" aria-label="Filter by source">{sourceFilterValues.map((source) => <button type="button" key={source} className={value === source ? "active" : ""} onClick={() => onChange(source)}>{labels[source]}</button>)}</div>;
+}
+
 function StatusPill({ status }: { status: OrderStatus }) {
   return <span className={`status-pill status-${status}`}>{statusLabels[status]}</span>;
 }
@@ -4599,7 +4638,7 @@ function Editable({ label, value, onChange, disabled, placeholder, wide, textare
 }
 
 function PackingSlip({ order }: { order: Order }) {
-  return <article className="a6-slip"><header><span>ORDER ID</span><strong>{orderLabel(order)}</strong></header><div className="slip-fields"><div className="primary-slip-field"><label>CHARACTER:</label><p>{order.character || "-"}</p></div><div className="primary-slip-field"><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{order.remark || "-"}</p></div></div><footer>Meaningful Plushies</footer></article>;
+  return <article className="a6-slip"><header><span>ORDER ID</span><strong>{packingSlipOrderLabel(order)}</strong></header><div className="slip-fields"><div className="primary-slip-field"><label>CHARACTER:</label><p>{order.character || "-"}</p></div><div className="primary-slip-field"><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{order.remark || "-"}</p></div></div><footer>Meaningful Plushies</footer></article>;
 }
 
 function EnvelopeSettingsPanel({ settings, onChange, onFontUpload, onReset }: { settings: EnvelopePrintSettings; onChange: (patch: Partial<EnvelopePrintSettings>) => void; onFontUpload: (file: File | null) => void; onReset: () => void }) {

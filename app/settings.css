@@ -141,7 +141,7 @@
 .tiktok-badge { display: inline-flex; margin-left: 7px; padding: 3px 7px; border-radius: 999px; background: #111827; color: #fff; font-size: 9px; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; vertical-align: middle; }
 .tiktok-import-section { margin-top: 22px; overflow: hidden; }
 .tiktok-import-section .settings-heading { border-bottom: 1px solid var(--line); }
-.tiktok-import-section .import-columns,.tiktok-import-section .import-action,.tiktok-json-panel { margin: 15px; }
+.tiktok-import-section .import-columns,.tiktok-import-section .import-action { margin: 15px; }
 .import-box-header { display: flex; gap: 11px; align-items: center; margin-bottom: 15px; }
 .import-box-header > span { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: #111827; color: white; font-size: 12px; font-weight: 800; }
 .import-box-header strong,.import-box-header small { display: block; }
@@ -154,6 +154,7 @@
 .tiktok-detail-entry textarea { margin-top: 0; min-height: 170px; background: #fff; }
 .tiktok-add-entry { width: 100%; margin-top: 12px; }
 .tiktok-json-panel { border-top: 1px solid var(--line); padding-top: 15px; }
+.tiktok-shop-page .tiktok-json-panel { margin: 0; border-top: 0; }
 .tiktok-json-selector { display: grid; gap: 7px; margin: 12px 0; }
 .tiktok-json-selector label { display: grid; grid-template-columns: auto 1fr; gap: 9px; align-items: center; padding: 9px 10px; border: 1px solid #e1e8f2; border-radius: 8px; background: #f8fbff; }
 .tiktok-json-selector small { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; }
