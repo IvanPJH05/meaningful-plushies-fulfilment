@@ -284,13 +284,21 @@ const bookkeepingSectionConfigs: Record<BookkeepingSectionKey, {
     defaults: ["Meta ads", "TikTok ads"],
   },
 };
+const prepaidOperatingCostAccountName = "Pre-paid Operating Cost";
+const legacyPrepaidOperatingCostAccountNames = ["Prepaid Operating Expense", "Operating Costs"];
+function isPrepaidOperatingCostAccountName(name: string) {
+  return [prepaidOperatingCostAccountName, ...legacyPrepaidOperatingCostAccountNames].some((accountName) => accountName.toLowerCase() === name.toLowerCase());
+}
+function displayAccountingAccountName(name: string) {
+  return isPrepaidOperatingCostAccountName(name) ? prepaidOperatingCostAccountName : name;
+}
 const businessEvents = [
   { group: "Money out", value: "inventory_purchase", label: "Inventory", transactionLabel: "Inventory Purchase", accountingMapping: "Inventory", accounts: ["Plush toy", "Packaging", "Carton Box", "Bubble wrap", "Carriage Inward", "Wax seal"] },
   { group: "Money out", value: "expense", label: "Expenses", transactionLabel: "Expense", accountingMapping: "Expenses", accounts: ["Labour", "Samples", "JnT (Carriage Outwards)"] },
   { group: "Money out", value: "asset_purchase", label: "Assets", transactionLabel: "Asset Purchase", accountingMapping: "Assets", accounts: ["New asset"] },
   { group: "Money out", value: "marketing_expense", label: "Marketing", transactionLabel: "Marketing Expense", accountingMapping: "Marketing", accounts: ["Meta ads", "TikTok ads"] },
   { group: "Money in", value: "payment_processor_paid", label: "Cash", transactionLabel: "Cash", accountingMapping: "Cash", accounts: ["Bank Transfer", "Stripe", "Xendit", "Payment Processing Fees", "Owner's Equity", "Drawings"] },
-  { group: "Money out", value: "operating_cost", label: "Operating Cost", transactionLabel: "Operating Cost", accountingMapping: "Prepaid Operating Expense", accounts: ["Prepaid Operating Expense"] },
+  { group: "Money out", value: "operating_cost", label: "Operating Cost", transactionLabel: "Operating Cost", accountingMapping: prepaidOperatingCostAccountName, accounts: [prepaidOperatingCostAccountName] },
 ] as const;
 const rejectedInventoryOption = "Rejected Inventory";
 const bookkeepingEventByView: Partial<Record<View, (typeof businessEvents)[number]["value"]>> = {
@@ -308,7 +316,7 @@ const accountingPresetAccounts: Omit<AccountingCategory, "id" | "parentId" | "ac
   { name: "Payment Processors", accountType: "asset", reportSection: "Current Assets", dataSourceType: "system_generated", sourceModule: "Payment Processor", sourceEntity: "Processor Balances", postingTrigger: "Payment Received", allowSubAccounts: true, allowedTransactionTypes: [] },
   { name: "Inventory", accountType: "asset", reportSection: "Current Assets", dataSourceType: "hybrid", sourceModule: "Inventory", sourceEntity: "Inventory Items", postingTrigger: "Inventory Purchased", allowSubAccounts: true, allowedTransactionTypes: [] },
   { name: "Prepaid Expenses", accountType: "asset", reportSection: "Current Assets", dataSourceType: "manual", sourceModule: "Manual Transactions", sourceEntity: "", postingTrigger: "Manual Entry", allowSubAccounts: false, allowedTransactionTypes: [] },
-  { name: "Prepaid Operating Expense", accountType: "asset", reportSection: "Current Assets", dataSourceType: "manual", sourceModule: "Book Keeping", sourceEntity: "Operating cost purchases", postingTrigger: "Manual Entry", allowSubAccounts: false, allowedTransactionTypes: [] },
+  { name: prepaidOperatingCostAccountName, accountType: "asset", reportSection: "Current Assets", dataSourceType: "manual", sourceModule: "Book Keeping", sourceEntity: "Operating cost purchases", postingTrigger: "Manual Entry", allowSubAccounts: false, allowedTransactionTypes: [] },
   { name: "Equipment", accountType: "asset", reportSection: "Non Current Assets", dataSourceType: "manual", sourceModule: "Manual Transactions", sourceEntity: "", postingTrigger: "Manual Entry", allowSubAccounts: false, allowedTransactionTypes: [] },
   { name: "Accumulated Depreciation", accountType: "asset", reportSection: "Non Current Assets", dataSourceType: "system_generated", sourceModule: "Depreciation Engine", sourceEntity: "Equipment", postingTrigger: "Depreciation Run", allowSubAccounts: false, allowedTransactionTypes: [] },
   { name: "Accounts Payable", accountType: "liability", reportSection: "Liabilities", dataSourceType: "hybrid", sourceModule: "Manual Transactions", sourceEntity: "Supplier Bills", postingTrigger: "Bill Created", allowSubAccounts: false, allowedTransactionTypes: [] },
@@ -329,7 +337,6 @@ const accountingPresetAccounts: Omit<AccountingCategory, "id" | "parentId" | "ac
   { name: "Affiliate Commissions", accountType: "expense", reportSection: "Marketing Expenses", dataSourceType: "manual", sourceModule: "Manual Transactions", sourceEntity: "", postingTrigger: "Manual Entry", allowSubAccounts: false, allowedTransactionTypes: [] },
   { name: "Content Creation", accountType: "expense", reportSection: "Marketing Expenses", dataSourceType: "manual", sourceModule: "Manual Transactions", sourceEntity: "", postingTrigger: "Manual Entry", allowSubAccounts: false, allowedTransactionTypes: [] },
   { name: "Payment Processor Fees", accountType: "expense", reportSection: "Admin Fees", dataSourceType: "system_generated", sourceModule: "Payment Processor", sourceEntity: "Processor Fees", postingTrigger: "Payment Received", allowSubAccounts: false, allowedTransactionTypes: [] },
-  { name: "Operating Costs", accountType: "expense", reportSection: "Admin Fees", dataSourceType: "manual", sourceModule: "Book Keeping", sourceEntity: "Operating cost purchases", postingTrigger: "Manual Entry", allowSubAccounts: false, allowedTransactionTypes: [] },
   { name: "Operating Expense", accountType: "expense", reportSection: "Admin Fees", dataSourceType: "system_generated", sourceModule: "Fulfilment", sourceEntity: "Sales consumption mappings", postingTrigger: "Payment Received", allowSubAccounts: false, allowedTransactionTypes: [] },
   { name: "Income Tax Expense", accountType: "expense", reportSection: "Tax", dataSourceType: "system_generated", sourceModule: "Tax Engine", sourceEntity: "Profit Tax", postingTrigger: "Tax Calculated", allowSubAccounts: false, allowedTransactionTypes: [] },
   { name: "SST Expense", accountType: "expense", reportSection: "Tax", dataSourceType: "system_generated", sourceModule: "Tax Engine", sourceEntity: "SST", postingTrigger: "Tax Calculated", allowSubAccounts: false, allowedTransactionTypes: [] },
@@ -1923,8 +1930,9 @@ export default function Home() {
       Cameras: "Equipment",
       "Other Equipment": "Equipment",
       "Bank Transfer": "Bank Account",
-      "Prepaid Operating Expense": "Prepaid Operating Expense",
-      "Operating Costs": "Prepaid Operating Expense",
+      "Prepaid Operating Expense": prepaidOperatingCostAccountName,
+      "Operating Costs": prepaidOperatingCostAccountName,
+      [prepaidOperatingCostAccountName]: prepaidOperatingCostAccountName,
       "Xendit Payout": "Xendit",
       "Stripe Payout": "Stripe",
       "TikTok Payout": "TikTok Shop",
@@ -1941,7 +1949,7 @@ export default function Home() {
   function selectedAccountingAccount() {
     const event = selectedBusinessEvent();
     if (event.value === "operating_cost") {
-      return accountingCategories.find((category) => category.name.toLowerCase() === "prepaid operating expense");
+      return accountingCategories.find((category) => isPrepaidOperatingCostAccountName(category.name));
     }
     const selectedCategory = selectedCategoryRecord();
     if (selectedCategory) return selectedCategory;
@@ -1952,7 +1960,7 @@ export default function Home() {
   }
 
   function bookkeepingAccountNameForSave(event: ReturnType<typeof selectedBusinessEvent>) {
-    if (event.value === "operating_cost") return "Prepaid Operating Expense";
+    if (event.value === "operating_cost") return prepaidOperatingCostAccountName;
     const selectedCategory = selectedCategoryRecord();
     if (selectedCategory) return selectedCategory.name;
     if (transactionForm.categoryId === newAssetOptionValue) return transactionForm.accountName.trim();
@@ -2005,10 +2013,10 @@ export default function Home() {
     }
     if (event.value === "operating_cost") {
       const entries: AccountingLedgerEntry[] = [
-        { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: "Prepaid Operating Expense", entryType: "debit", amount, memo: "Prepaid operating cost recorded", createdAt: now },
+        { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: prepaidOperatingCostAccountName, entryType: "debit", amount, memo: "Pre-paid operating cost recorded", createdAt: now },
       ];
-      if (paidAmount > 0) entries.push({ id: crypto.randomUUID(), transactionId, accountId: "", accountName: transactionForm.paymentMethod || "Bank Account", entryType: "credit", amount: paidAmount, memo: "Prepaid operating cost paid", createdAt: now });
-      if (outstandingAmount > 0) entries.push({ id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Accounts Payable", entryType: "credit", amount: outstandingAmount, memo: "Outstanding prepaid operating cost", createdAt: now });
+      if (paidAmount > 0) entries.push({ id: crypto.randomUUID(), transactionId, accountId: "", accountName: transactionForm.paymentMethod || "Bank Account", entryType: "credit", amount: paidAmount, memo: "Pre-paid operating cost paid", createdAt: now });
+      if (outstandingAmount > 0) entries.push({ id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Accounts Payable", entryType: "credit", amount: outstandingAmount, memo: "Outstanding pre-paid operating cost", createdAt: now });
       return entries;
     }
     if (rejectedInventoryItem) {
@@ -2028,6 +2036,28 @@ export default function Home() {
   }
 
   async function ensureBookkeepingTransactionAccount(event: ReturnType<typeof selectedBusinessEvent>, accountName: string, actor: string) {
+    if (event.value === "operating_cost") {
+      const existing = accountingCategories.find((category) => category.active && isPrepaidOperatingCostAccountName(category.name));
+      if (existing) return existing;
+      const account: AccountingCategory = {
+        id: crypto.randomUUID(),
+        name: prepaidOperatingCostAccountName,
+        accountType: "asset",
+        reportSection: "Current Assets",
+        parentId: "",
+        dataSourceType: "manual",
+        sourceModule: "Book Keeping",
+        sourceEntity: "Operating cost purchases",
+        postingTrigger: "Manual Entry",
+        allowSubAccounts: false,
+        allowedTransactionTypes: [],
+        active: true,
+      };
+      await saveAccountingCategory(account);
+      setAccountingCategories((current) => [...current, account].sort((a, b) => `${a.reportSection}-${a.name}`.localeCompare(`${b.reportSection}-${b.name}`)));
+      await insertSharedActivity({ id: crypto.randomUUID(), action: "Bookkeeping account added", detail: `${prepaidOperatingCostAccountName} added for operating costs.`, actor, createdAt: new Date().toISOString() });
+      return account;
+    }
     const config = bookkeepingConfigForEvent(event.value);
     if (!config || !accountName) return selectedAccountingAccount();
     const existing = accountingCategories.find((category) => category.active && category.reportSection === config.reportSection && category.name.toLowerCase() === accountName.toLowerCase())
@@ -2342,7 +2372,7 @@ export default function Home() {
         businessEvent: isRejectedInventory ? "inventory_rejected" : event.value,
         transactionDate: transactionForm.transactionDate,
         description,
-        accountName: event.value === "inventory_purchase" ? accountName : account?.name || accountName || "Cash",
+        accountName: event.value === "operating_cost" ? prepaidOperatingCostAccountName : event.value === "inventory_purchase" ? accountName : account?.name || accountName || "Cash",
         categoryId: account?.id ?? "",
         transactionType: event.value === "payment_processor_paid" ? "transfer" : "expense",
         paymentStatus: transactionForm.paymentStatus,
@@ -3618,8 +3648,8 @@ function AccountingFilesTable({ documents, transactions, ledgerEntries, category
         <td>{formatDate(transaction.transactionDate)}</td>
         <td><strong className="source-document-text">{document.name || document.fileName}</strong><br /><small>{document.fileName} | {formatFileSize(document.fileSize)}</small></td>
         <td><strong>{transaction.description}</strong><br /><small>{transaction.supplier || transaction.source || "-"}</small></td>
-        <td>{categoryName(transaction.categoryId)}</td>
-        <td>{entries.length ? entries.map((entry) => <div key={entry.id} className="ledger-line"><span>{entry.entryType === "debit" ? "Debit" : "Credit"} {entry.accountName}</span><strong>{formatMoney(entry.amount)}</strong></div>) : "-"}</td>
+        <td>{displayAccountingAccountName(transaction.accountName || categoryName(transaction.categoryId))}</td>
+        <td>{entries.length ? entries.map((entry) => <div key={entry.id} className="ledger-line"><span>{entry.entryType === "debit" ? "Debit" : "Credit"} {displayAccountingAccountName(entry.accountName)}</span><strong>{formatMoney(entry.amount)}</strong></div>) : "-"}</td>
         <td><strong>{formatMoney(transaction.amount)}</strong></td>
         <td><button className="view-button document-link" onClick={() => onOpen(document)}>View file</button></td>
       </tr>;
@@ -3636,12 +3666,15 @@ function AccountingTransactionsTable({ transactions, ledgerEntries, documents, c
     const entries = ledgerEntries.filter((entry) => entry.transactionId === transaction.id);
     const document = documents.find((item) => item.id === transaction.documentId);
     const paymentLabel = transaction.paymentStatus === "deposit_paid" ? `Deposit ${formatMoney(transaction.depositAmount)}` : transaction.paymentStatus === "on_credit" ? "On Credit" : "Paid In Full";
-    const ledgerLines = entries.length ? entries.map((entry, index) => <div key={entry.id} className="ledger-line"><span>{index === 0 ? `Record ${entry.accountName}` : entry.accountName.includes("Payable") || entry.accountName.includes("Receivable") ? `Outstanding ${entry.accountName}` : `Payment from ${entry.accountName}`}</span><strong>{formatMoney(entry.amount)}</strong></div>) : <small>{formatMoney(transaction.amount)}</small>;
+    const ledgerLines = entries.length ? entries.map((entry, index) => {
+      const accountName = displayAccountingAccountName(entry.accountName);
+      return <div key={entry.id} className="ledger-line"><span>{index === 0 ? `Record ${accountName}` : accountName.includes("Payable") || accountName.includes("Receivable") ? `Outstanding ${accountName}` : `Payment from ${accountName}`}</span><strong>{formatMoney(entry.amount)}</strong></div>;
+    }) : <small>{formatMoney(transaction.amount)}</small>;
     return <tr key={transaction.id} className={document ? "has-source-document" : ""} onClick={(event) => { if (!document || (event.target as HTMLElement).closest("button,a,input")) return; onOpenDocument(document); }}>
       <td>{formatDate(transaction.transactionDate)}</td>
       <td><strong className={document ? "source-document-text" : ""}>{transaction.description}</strong>{document && <span className="source-document-pill">Source document</span>}<br /><small>{transaction.supplier || transaction.source}{transaction.invoiceNumber ? ` - Invoice ${transaction.invoiceNumber}` : ""}</small></td>
       <td>{businessEvents.find((event) => event.value === transaction.businessEvent)?.label ?? (transaction.businessEvent || "-")}</td>
-      <td>{categoryName(transaction.categoryId)}</td>
+      <td>{displayAccountingAccountName(transaction.accountName || categoryName(transaction.categoryId))}</td>
       <td>{paymentLabel}<br /><small>{transaction.paymentStatus === "on_credit" ? transaction.dueDate || transaction.supplierTerms || "Outstanding" : transaction.paymentMethod || "Bank Account"}</small></td>
       <td>{ledgerLines}</td>
       <td>{document ? <button className="view-button document-link" onClick={() => onOpenDocument(document)}>View file</button> : "-"}</td>
@@ -4044,7 +4077,7 @@ function FormalAccountingWorkspacePage({
         description: `${event.sku} operating expense used`,
         entries: [
           { id: `operating-expense-${event.id}-debit`, transactionId: `operating-expense-${event.id}`, accountId: "", accountName: "Operating Expense", entryType: "debit", amount: event.operatingExpense, memo: `${event.sku} operating expense used`, createdAt: event.date },
-          { id: `operating-expense-${event.id}-credit`, transactionId: `operating-expense-${event.id}`, accountId: "", accountName: "Prepaid Operating Expense", entryType: "credit", amount: event.operatingExpense, memo: "Prepaid operating expense released by sale", createdAt: event.date },
+          { id: `operating-expense-${event.id}-credit`, transactionId: `operating-expense-${event.id}`, accountId: "", accountName: prepaidOperatingCostAccountName, entryType: "credit", amount: event.operatingExpense, memo: "Pre-paid operating cost released by sale", createdAt: event.date },
         ],
       });
       return;
@@ -4078,8 +4111,8 @@ function FormalAccountingWorkspacePage({
   const transactionById = new Map(transactions.map((transaction) => [transaction.id, transaction]));
   const formalLedgerEntries = ledgerEntries.map((entry) => {
     const transaction = transactionById.get(entry.transactionId);
-    if (transaction?.businessEvent === "operating_cost" && entry.entryType === "debit" && entry.accountName === "Operating Costs") {
-      return { ...entry, accountId: "", accountName: "Prepaid Operating Expense", memo: entry.memo || "Prepaid operating cost recorded" };
+    if (isPrepaidOperatingCostAccountName(entry.accountName) && (transaction?.businessEvent === "operating_cost" || entry.entryType === "credit")) {
+      return { ...entry, accountId: entry.accountId, accountName: prepaidOperatingCostAccountName, memo: entry.memo || "Pre-paid operating cost recorded" };
     }
     return entry;
   });
@@ -4104,7 +4137,7 @@ function FormalAccountingWorkspacePage({
     { title: "Sales", reportSections: ["Revenue"], names: [] },
   ];
   const cashAccountNames = new Set(["Bank Account", "Payment Processors", "Stripe", "Xendit", "TikTok Shop", "Owner Capital", "Owner Drawings"]);
-  const automaticTAccountNames = new Set(["Bank Account", "Stripe", "Xendit", "Owner's Equity", "Drawings", "Sales", "Payment Processing Fees", "Operating Costs", "Prepaid Operating Expense", "Operating Expense", "Accounts Payable", ...cogsAccounts]);
+  const automaticTAccountNames = new Set(["Bank Account", "Stripe", "Xendit", "Owner's Equity", "Drawings", "Sales", "Payment Processing Fees", prepaidOperatingCostAccountName, "Operating Expense", "Accounts Payable", ...cogsAccounts]);
   const categoryBelongsToSection = (category: AccountingCategory, section: typeof tAccountSections[number]) => {
     if (!category.active) return false;
     const parentName = category.parentId ? categoryName(category.parentId) : "";
@@ -4134,8 +4167,8 @@ function FormalAccountingWorkspacePage({
       if (automaticTAccountNames.has(entry.accountName)) {
         if (section.title === "Cash" && ["Bank Account", "Stripe", "Xendit", "Owner's Equity", "Drawings"].includes(entry.accountName)) allNames.add(entry.accountName);
         if (section.title === "Sales" && entry.accountName === "Sales") allNames.add(entry.accountName);
-        if (section.title === "Expense" && (entry.accountName === "Payment Processing Fees" || entry.accountName === "Operating Costs" || entry.accountName === "Operating Expense" || cogsAccounts.includes(entry.accountName as (typeof cogsAccounts)[number]))) allNames.add(entry.accountName);
-        if (section.title === "Assets" && entry.accountName === "Prepaid Operating Expense") allNames.add(entry.accountName);
+        if (section.title === "Expense" && (entry.accountName === "Payment Processing Fees" || entry.accountName === "Operating Expense" || cogsAccounts.includes(entry.accountName as (typeof cogsAccounts)[number]))) allNames.add(entry.accountName);
+        if (section.title === "Assets" && entry.accountName === prepaidOperatingCostAccountName) allNames.add(entry.accountName);
       }
     });
     return [...allNames].filter(Boolean).sort((a, b) => a.localeCompare(b));
