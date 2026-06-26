@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { importShopifyData, normalizePaymentProcessor } from "./importer.ts";
+import { importShopifyData, importTikTokShopData, normalizePaymentProcessor, tikTokCertificateJson } from "./importer.ts";
 import { summarizeSales } from "./sales.ts";
 
 const headers = [
@@ -79,4 +79,47 @@ test("auto-detects swapped order and metafield CSV inputs", () => {
   assert.equal(result.imported, 4);
   assert.equal(bankTransfer?.plushName, "Baba");
   assert.equal(bankTransfer?.certificateCode, "abc123");
+});
+
+test("imports TikTok Shop orders with certificate JSON", () => {
+  const tiktok = [
+    "Order ID,Order Status,Order Substatus,SKU ID,Seller SKU,Product Name,Variation,Quantity,SKU Unit Original Price,SKU Subtotal Before Discount,SKU Platform Discount,SKU Seller Discount,SKU Subtotal After Discount,Shipping Fee After Discount,Original Shipping Fee,Payment platform discount,Order Amount,Order Refund Amount,Created Time,Paid Time,Tracking ID,Delivery Option,Shipping Provider Name,Buyer Message,Buyer Username,Recipient,Phone #,Country,State,Post Town,Detail Address,Additional address information,Payment Method",
+    "584697260225955022\tTo ship\tAwaiting collection\t1735474415948891540\t\tMeaningful Plushies | Personalised Custom Plushie with Voice Message & NFC Birth Certificate | Perfect Gift\t\"Hunnie, Included, 20 seconds\"\t1\t130\t130\t11.7\t0\t118.3\t5\t5\t0\t123.3\t\t25/06/2026 13:03:57\t25/06/2026 13:04:31\t680076017503113\tStandard shipping\tJ&T Express\t\ti***mikayla200\tS******* s********\t(+60)172****54\tMalaysia\tSelangor\tCheras\tAddress\t\tInternet Banking",
+  ].join("\n");
+  const details = [
+    "Order ID: 584697260225955022",
+    "Username: i***mikayla200",
+    "Plushie's Name- Baby",
+    "Plushie's Gender- girl",
+    "Plushie's Birth Date- 18/07",
+    "Plushie's Birth Place- hosp ampang",
+    "Plushie's Favourite Person- kakak kayla",
+    "Plushie Belongs to- Mikayla",
+    "Meaningful Note- happy birthday sayang mama..moge yang baik2 tok kakak",
+  ].join("\n");
+  const { orders, importedOrders } = importTikTokShopData(tiktok, details, []);
+  const order = importedOrders[0];
+
+  assert.equal(order.orderNumber, "TT1027 584697260225955022");
+  assert.equal(order.salesChannel, "tiktok");
+  assert.equal(order.certificateCode, "10275022106");
+  assert.equal(order.idWebsiteLink, "https://meaningfulplushies.com/pages/certificate/10275022106");
+  assert.equal(order.character, "Hunnie");
+  assert.equal(order.voiceLength, 20);
+  assert.equal(order.paymentProcessor, "Bank Transfer");
+  assert.equal(order.totalAmount, 123.3);
+  assert.deepEqual(tikTokCertificateJson(order), {
+    Code: "10275022106",
+    "Order Number": "TT1027 584697260225955022",
+    "Plush Details": "Hunnie 20S",
+    "Id Picture": "Hunnie",
+    Name: "BABY",
+    Gender: "Girl",
+    "Birth Date": "18/07",
+    "Birth Place": "hosp ampang",
+    "Favourite Person": "Kakak Kayla",
+    "Belongs To": "Mikayla",
+    "Meaningful Note": "happy birthday sayang mama..moge yang baik2 tok kakak",
+  });
+  assert.equal(summarizeSales(orders).bankTransfer, 123.3);
 });

@@ -178,6 +178,7 @@ export type StatusEvent = {
 export type Order = {
   id: string;
   orderNumber: string;
+  salesChannel?: "shopify" | "tiktok";
   orderDate: string;
   customerName: string;
   phone: string;

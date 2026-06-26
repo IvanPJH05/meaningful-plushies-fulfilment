@@ -4,7 +4,7 @@ import "./settings.css";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, DragEvent, FormEvent, SVGProps } from "react";
-import { detectCsvKind, fulfilledOrdersCsv, importShopifyData, normalizePaymentProcessor } from "../lib/importer";
+import { detectCsvKind, fulfilledOrdersCsv, importShopifyData, importTikTokShopData, normalizePaymentProcessor, tikTokCertificateJson } from "../lib/importer";
 import { buildSalesReportRows, summarizeSales, type SalesReportRow, type SalesSummary } from "../lib/sales";
 import { stockCharacters, summarizeStock } from "../lib/stock";
 import {
@@ -72,6 +72,7 @@ type FeeMetric = "processingFees" | "shopifyFees" | "totalFees";
 type FinancialReportType = "income_statement" | "balance_sheet" | "cash_summary";
 type AccountingPeriodMode = "this_month" | "lifetime" | "custom";
 type CashFlowActivity = "operating" | "investing" | "financing";
+type TikTokCertificatePayload = ReturnType<typeof tikTokCertificateJson>;
 type StoredUiPreferences = {
   view?: View;
   query?: string;
@@ -716,13 +717,20 @@ function compareSplitShipmentOrder(a: Pick<Order, "orderNumber" | "setIndicator"
   return aSplit.part - bSplit.part || aSplit.total - bSplit.total;
 }
 
+function orderSortNumber(value: string) {
+  const tikTokMatch = value.match(/\bTT(\d+)\b/i);
+  if (tikTokMatch) return Number(tikTokMatch[1]);
+  const digits = value.match(/\d+/)?.[0] ?? "";
+  return digits ? Number(digits) : 0;
+}
+
 function sortOrderRecords<T extends Pick<Order, "orderNumber" | "importedAt" | "updatedAt" | "setIndicator">>(
   records: T[], key: SortKey, direction: SortDirection,
 ) {
   const multiplier = direction === "asc" ? 1 : -1;
   return [...records].sort((a, b) => {
     if (key === "orderNumber") {
-      const orderComparison = multiplier * (Number(a.orderNumber) - Number(b.orderNumber));
+      const orderComparison = multiplier * (orderSortNumber(a.orderNumber) - orderSortNumber(b.orderNumber));
       return orderComparison || compareSplitShipmentOrder(a, b);
     }
     const dateComparison = multiplier * (new Date(a[key]).getTime() - new Date(b[key]).getTime());
@@ -942,6 +950,9 @@ export default function Home() {
   const [envelopeSettingsLoaded, setEnvelopeSettingsLoaded] = useState(false);
   const [orderCsv, setOrderCsv] = useState("");
   const [metafieldCsv, setMetafieldCsv] = useState("");
+  const [tikTokCsv, setTikTokCsv] = useState("");
+  const [tikTokDetails, setTikTokDetails] = useState("");
+  const [selectedTikTokJsonOrders, setSelectedTikTokJsonOrders] = useState<string[]>([]);
   const [notice, setNotice] = useState("");
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [databaseError, setDatabaseError] = useState("");
@@ -976,6 +987,7 @@ export default function Home() {
       const status = legacyStatus[order.status] ?? order.status;
       return {
         ...order,
+        salesChannel: order.salesChannel ?? "shopify",
         status,
         currency: order.currency ?? "MYR",
         subtotalAmount: order.subtotalAmount ?? 0,
@@ -1161,6 +1173,14 @@ export default function Home() {
   }, [orders, salesRange]);
   const sales = useMemo(() => summarizeSales(reportingOrders, processorSettings, salesFeeSettings.shopifyPercentage), [reportingOrders, processorSettings, salesFeeSettings]);
   const allSalesReportRows = useMemo(() => buildSalesReportRows(orders, processorSettings, salesFeeSettings.shopifyPercentage), [orders, processorSettings, salesFeeSettings]);
+  const tikTokOrders = useMemo(() => sortOrderRecords(
+    orders.filter((order) => order.salesChannel === "tiktok"),
+    "orderNumber",
+    "asc",
+  ), [orders]);
+  const selectedTikTokCertificatePayload = useMemo<TikTokCertificatePayload[]>(() => tikTokOrders
+    .filter((order) => selectedTikTokJsonOrders.includes(order.id))
+    .map(tikTokCertificateJson), [tikTokOrders, selectedTikTokJsonOrders]);
   const processorAccountingTotals = useMemo(() => allSalesReportRows.reduce((totals, row) => {
     if (row.paymentProcessor === "Stripe") {
       totals.stripeCollected += row.salePrice;
@@ -1331,6 +1351,22 @@ export default function Home() {
     setNotice(`${result.imported} new orders imported, ${result.updated} updated, ${result.skipped} skipped.`);
     await logActivity("CSV import", `${result.imported} imported, ${result.updated} updated, ${result.skipped} skipped.`);
     setView("orders");
+    await loadSharedData();
+  }
+
+  async function runTikTokImport() {
+    const { orders: imported, result, importedOrders } = importTikTokShopData(tikTokCsv, tikTokDetails, orders, session ? `${session.displayName} (${session.username})` : "Admin");
+    try {
+      await upsertSharedOrders(imported);
+      await ensurePaymentProcessors(importedOrders.map((order) => order.paymentProcessor));
+    }
+    catch (error) { setNotice(error instanceof Error ? error.message : "TikTok Shop import could not be saved to Supabase."); return; }
+    setOrders(imported);
+    setTikTokCsv("");
+    setTikTokDetails("");
+    setSelectedTikTokJsonOrders(importedOrders.map((order) => order.id));
+    setNotice(`TikTok Shop: ${result.imported} new orders imported, ${result.updated} updated, ${result.skipped} skipped.${result.warnings.length ? ` ${result.warnings[0]}` : ""}`);
+    await logActivity("TikTok Shop import", `${result.imported} imported, ${result.updated} updated, ${result.skipped} skipped.`);
     await loadSharedData();
   }
 
@@ -1639,9 +1675,14 @@ export default function Home() {
     setNotice(`${deleting.length} order${deleting.length === 1 ? "" : "s"} deleted.`);
   }
 
-  async function readFile(file: File | undefined, target: "orders" | "metafields") {
+  async function readFile(file: File | undefined, target: "orders" | "metafields" | "tiktok") {
     if (!file) return;
     const text = await file.text();
+    if (target === "tiktok") {
+      setTikTokCsv(text);
+      setNotice("TikTok Shop CSV loaded.");
+      return;
+    }
     const detected = detectCsvKind(text);
     if (detected === "orders") {
       setOrderCsv(text);
@@ -2918,13 +2959,13 @@ export default function Home() {
 
         {view !== "fulfilment" && <section className="card orders-card">
           <div className="toolbar"><div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, customer, phone or tracking..." /></div><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} />{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>Move {selectedOrders.length} to next status</button>}{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>Delete</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>Export CSV</button>}</div>
-          <div className="table-scroll"><table className="orders-table"><thead><tr><th><input type="checkbox" aria-label="Select visible orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th>Order</th><th>Date</th><th>Customer</th><th>Phone</th><th>Character</th><th>Voice</th><th>Plush name</th><th>Status</th><th>Tracking number</th><th>Last updated</th><th>View</th></tr></thead><tbody>{filtered.map((order) => <tr key={order.id} className={isExpressShipping(order) ? "express-shipping-row" : ""}><td><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={selectedOrders.includes(order.id)} onChange={() => toggleOrderSelection(order.id)} /></td><td><strong>{orderLabel(order)}</strong>{isExpressShipping(order) && <span className="shipping-badge">Express</span>}</td><td>{formatDate(order.orderDate)}</td><td><strong>{order.customerName || "-"}</strong></td><td>{order.phone || "-"}</td><td>{order.character || "-"}</td><td>{order.voiceLength ? `${order.voiceLength}s` : "-"}</td><td>{order.plushName || "-"}</td><td><StatusPill status={order.status} /></td><td><code>{order.trackingNumber || "-"}</code></td><td>{formatDate(order.updatedAt, true)}</td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No orders found</strong><p>Try another search or status filter.</p></div>}</div>
+          <div className="table-scroll"><table className="orders-table"><thead><tr><th><input type="checkbox" aria-label="Select visible orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th>Order</th><th>Date</th><th>Customer</th><th>Phone</th><th>Character</th><th>Voice</th><th>Plush name</th><th>Status</th><th>Tracking number</th><th>Last updated</th><th>View</th></tr></thead><tbody>{filtered.map((order) => <tr key={order.id} className={isExpressShipping(order) ? "express-shipping-row" : ""}><td><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={selectedOrders.includes(order.id)} onChange={() => toggleOrderSelection(order.id)} /></td><td><strong>{orderLabel(order)}</strong>{order.salesChannel === "tiktok" && <span className="tiktok-badge">TikTok Shop</span>}{isExpressShipping(order) && <span className="shipping-badge">Express</span>}</td><td>{formatDate(order.orderDate)}</td><td><strong>{order.customerName || "-"}</strong></td><td>{order.phone || "-"}</td><td>{order.character || "-"}</td><td>{order.voiceLength ? `${order.voiceLength}s` : "-"}</td><td>{order.plushName || "-"}</td><td><StatusPill status={order.status} /></td><td><code>{order.trackingNumber || "-"}</code></td><td>{formatDate(order.updatedAt, true)}</td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No orders found</strong><p>Try another search or status filter.</p></div>}</div>
           <div className="table-footer">Showing {filtered.length} of {view === "fulfilled" ? orders.filter((order) => order.status === "shipped").length : orders.length} orders</div>
         </section>}
 
         {view === "fulfilment" && <section className="card orders-card">
           <div className="toolbar"><div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, plush name, character, customer or phone..." /></div><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /><button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>Move {selectedOrders.length} to next status</button>{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>Delete</button>}</div>
-          <div className="fulfilment-scroll table-scroll"><table className="orders-table fulfilment-table"><thead><tr><th className="select-column"><input type="checkbox" aria-label="Select visible fulfilment orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th className="locked-order-column">Order ID</th>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <th key={column} className={draggedColumn === column ? "dragging" : ""} draggable onDragStart={(event) => { setDraggedColumn(column); event.dataTransfer.setData("text/plain", column); }} onDragEnd={() => setDraggedColumn(null)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => reorderFulfilmentColumn(event.dataTransfer.getData("text/plain") as FulfilmentColumn, column)}><span className="drag-handle"><Icon name="drag" /></span>{fulfilmentColumnLabels[column]}</th>)}<th>Status</th><th>View</th></tr></thead><tbody>{filtered.map((order) => { const checked = selectedOrders.includes(order.id); const rowClass = [checked ? "selected-row" : "", isExpressShipping(order) ? "express-shipping-row" : ""].filter(Boolean).join(" "); return <tr key={order.id} className={rowClass} onClick={(event) => { if ((event.target as HTMLElement).closest("button,a,input")) return; toggleOrderSelection(order.id); }}><td className="select-column"><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={checked} onChange={() => toggleOrderSelection(order.id)} /></td><td className="locked-order-column"><strong>{orderLabel(order)}</strong>{isExpressShipping(order) && <span className="shipping-badge">Express</span>}</td>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <td key={column} className={column === "idWebsiteLink" ? "certificate-cell" : ""}>{fulfilmentCell(order, column)}</td>)}<td><StatusPill status={order.status} /></td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>; })}</tbody></table>{!filtered.length && <div className="empty"><strong>No fulfilment orders found</strong><p>Try another search or status filter.</p></div>}</div>
+          <div className="fulfilment-scroll table-scroll"><table className="orders-table fulfilment-table"><thead><tr><th className="select-column"><input type="checkbox" aria-label="Select visible fulfilment orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th className="locked-order-column">Order ID</th>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <th key={column} className={draggedColumn === column ? "dragging" : ""} draggable onDragStart={(event) => { setDraggedColumn(column); event.dataTransfer.setData("text/plain", column); }} onDragEnd={() => setDraggedColumn(null)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => reorderFulfilmentColumn(event.dataTransfer.getData("text/plain") as FulfilmentColumn, column)}><span className="drag-handle"><Icon name="drag" /></span>{fulfilmentColumnLabels[column]}</th>)}<th>Status</th><th>View</th></tr></thead><tbody>{filtered.map((order) => { const checked = selectedOrders.includes(order.id); const rowClass = [checked ? "selected-row" : "", isExpressShipping(order) ? "express-shipping-row" : ""].filter(Boolean).join(" "); return <tr key={order.id} className={rowClass} onClick={(event) => { if ((event.target as HTMLElement).closest("button,a,input")) return; toggleOrderSelection(order.id); }}><td className="select-column"><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={checked} onChange={() => toggleOrderSelection(order.id)} /></td><td className="locked-order-column"><strong>{orderLabel(order)}</strong>{order.salesChannel === "tiktok" && <span className="tiktok-badge">TikTok Shop</span>}{isExpressShipping(order) && <span className="shipping-badge">Express</span>}</td>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <td key={column} className={column === "idWebsiteLink" ? "certificate-cell" : ""}>{fulfilmentCell(order, column)}</td>)}<td><StatusPill status={order.status} /></td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>; })}</tbody></table>{!filtered.length && <div className="empty"><strong>No fulfilment orders found</strong><p>Try another search or status filter.</p></div>}</div>
           <div className="table-footer">Showing {filtered.length} of {orders.length} orders</div>
         </section>}
       </>}
@@ -2993,6 +3034,26 @@ export default function Home() {
           <ImportBox number="2" title="Order metafields export" value={metafieldCsv} onChange={setMetafieldCsv} onFile={(file) => readFile(file, "metafields")} placeholder="Order GID, Order name, Metafield value..." />
         </div>
         <div className="import-action"><div><strong>Safe repeat imports</strong><p>Existing order numbers are updated without removing status, tracking, notes, or photos.</p></div><button className="button primary large" disabled={!orderCsv.trim() && detectCsvKind(metafieldCsv) !== "orders"} onClick={runImport}>Validate and import orders</button></div>
+        <section className="tiktok-import-section card">
+          <div className="settings-heading"><div><h2>TikTok Shop import</h2><p>Upload the TikTok Shop order export, then paste the plushie details. Imported TikTok orders behave like normal fulfilment orders and appear in printing.</p></div><span>{tikTokOrders.length} TikTok orders</span></div>
+          <div className="import-columns">
+            <ImportBox number="3" title="TikTok Shop order export" required value={tikTokCsv} onChange={setTikTokCsv} onFile={(file) => readFile(file, "tiktok")} placeholder="Order ID, Variation, Order Amount, Buyer Username..." />
+            <div className="import-box">
+              <div className="import-box-header"><span>4</span><div><strong>TikTok plushie details</strong><small>Paste the customer details here. Use Order ID or Username when importing multiple TikTok orders.</small></div></div>
+              <textarea value={tikTokDetails} onChange={(event) => setTikTokDetails(event.target.value)} placeholder={"Order ID: 584697260225955022\nUsername: i***mikayla200\nPlushie's Name- Baby\nPlushie's Gender- girl\nPlushie's Birth Date- 18/07\nPlushie's Birth Place- hosp ampang\nPlushie's Favourite Person- kakak kayla\nPlushie Belongs to- Mikayla\nMeaningful Note- happy birthday sayang mama..moge yang baik2 tok kakak"} />
+            </div>
+          </div>
+          <div className="import-action"><div><strong>Auto certificate code</strong><p>Example: TT1027 + order ending 5022 becomes code 10275022106, then the ID link points to the certificate page.</p></div><button className="button primary large" disabled={!tikTokCsv.trim()} onClick={runTikTokImport}>Import TikTok Shop orders</button></div>
+          <div className="tiktok-json-panel">
+            <div className="settings-heading"><div><h2>TikTok Shop</h2><p>Select the TikTok orders you want, then use the JSON below for the certificate data.</p></div><span>{selectedTikTokCertificatePayload.length} selected</span></div>
+            <div className="tiktok-json-selector">
+              <div className="packing-list-actions"><button onClick={() => setSelectedTikTokJsonOrders(tikTokOrders.map((order) => order.id))}>Select all</button><button onClick={() => setSelectedTikTokJsonOrders([])}>Clear</button></div>
+              {tikTokOrders.map((order) => <label key={order.id}><input type="checkbox" checked={selectedTikTokJsonOrders.includes(order.id)} onChange={() => setSelectedTikTokJsonOrders((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><span><strong>{order.orderNumber}</strong><small>{order.character} {order.voiceLength ? `${order.voiceLength}S` : ""} | {order.plushName || "No plush name"}</small></span></label>)}
+              {!tikTokOrders.length && <div className="empty"><strong>No TikTok orders imported yet</strong><p>Import a TikTok Shop CSV first, then the generated JSON will appear here.</p></div>}
+            </div>
+            <textarea className="tiktok-json-output" readOnly value={JSON.stringify(selectedTikTokCertificatePayload, null, 2)} />
+          </div>
+        </section>
       </section>}
     </section>
 
@@ -4442,7 +4503,7 @@ function OrderDrawer({ order, role, actor, onClose, onUpdate, onStatus }: { orde
   return <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><aside className="order-drawer"><div className="drawer-header"><div><p>ORDER DETAIL</p><h2>{orderLabel(order)}</h2></div><button onClick={onClose}>x</button></div><div className="drawer-body">
     <section className="detail-summary"><div><span>Current status</span><StatusPill status={order.status} /></div><div><span>Last updated</span><strong>{formatDate(order.updatedAt, true)}</strong></div></section>
     <section className="detail-section"><h3>Quick actions</h3><div className="status-actions">{following && <button className="button primary" onClick={() => onStatus(following)}>Move to {statusLabels[following]}</button>}{admin && <button className="button issue-button" onClick={() => onStatus("issue")}>Mark issue</button>}{admin && order.status === "issue" && <button className="button secondary" onClick={() => onStatus("sent_for_sewing")}>Resolve issue</button>}<a className="button whatsapp" href={whatsappLink(order)} target="_blank">Open WhatsApp</a></div></section>
-    <section className="detail-section"><h3>Customer and order</h3><div className="field-grid"><Field label="Order number" value={`#${order.orderNumber}`} /><Field label="Order date" value={formatDate(order.orderDate, true)} /><Field label="Payment method" value={order.paymentProcessor || "Unknown"} /><Editable label="Customer name" value={order.customerName} disabled={!admin} onChange={(value) => onUpdate({ customerName: value })} /><Editable label="Phone" value={order.phone} disabled={!admin} onChange={(value) => onUpdate({ phone: value })} /><Editable wide label="Address" value={order.address} disabled={!admin} onChange={(value) => onUpdate({ address: value })} /></div></section>
+    <section className="detail-section"><h3>Customer and order</h3><div className="field-grid"><Field label="Order number" value={`#${order.orderNumber}`} /><Field label="Source" value={order.salesChannel === "tiktok" ? "TikTok Shop" : "Shopify"} /><Field label="Order date" value={formatDate(order.orderDate, true)} /><Field label="Payment method" value={order.paymentProcessor || "Unknown"} /><Editable label="Customer name" value={order.customerName} disabled={!admin} onChange={(value) => onUpdate({ customerName: value })} /><Editable label="Phone" value={order.phone} disabled={!admin} onChange={(value) => onUpdate({ phone: value })} /><Editable wide label="Address" value={order.address} disabled={!admin} onChange={(value) => onUpdate({ address: value })} /></div></section>
     <section className="detail-section"><h3>Plushie details</h3><div className="field-grid"><Editable label="Product name" value={order.product} disabled={!admin} onChange={(value) => onUpdate({ product: value })} /><Editable label="Character" value={order.character} disabled={!admin} onChange={(value) => onUpdate({ character: value })} /><Editable label="Set indicator" value={order.setIndicator ?? ""} disabled={!admin} onChange={(value) => onUpdate({ setIndicator: value })} /><Editable label="ID website link" value={order.idWebsiteLink ?? ""} disabled={!admin} onChange={(value) => onUpdate({ idWebsiteLink: value })} /><Editable label="Voice length" value={String(order.voiceLength || "")} disabled={!admin} onChange={(value) => onUpdate({ voiceLength: Number(value) || 0 })} /><Editable label="Plush name" value={order.plushName} disabled={!admin} onChange={(value) => onUpdate({ plushName: value })} /><Editable wide label="Remark" value={order.remark ?? ""} disabled={!admin} onChange={(value) => onUpdate({ remark: value })} /><Editable wide textarea label="Meaningful note" value={order.meaningfulNote} disabled={!admin} onChange={(value) => onUpdate({ meaningfulNote: value })} /><div className="field wide"><label>Meaningful message</label>{order.meaningfulMessage ? <a href={order.meaningfulMessage} target="_blank" rel="noreferrer">Open customer message</a> : <span>Not provided</span>}</div><div className="field"><label>Voice upload</label>{admin ? <select value={order.voiceUploadStatus} onChange={(event) => onUpdate({ voiceUploadStatus: event.target.value as Order["voiceUploadStatus"] })}><option value="missing">Missing</option><option value="received">Received</option><option value="checked">Checked</option></select> : <strong>{order.voiceUploadStatus}</strong>}</div></div></section>
     <section className="detail-section"><h3>Delivery</h3><div className="field-grid"><Field label="Shipping method" value={order.shippingMethod || "Not imported"} /><Editable label="Courier" value={order.courier} disabled={!admin} placeholder="J&T Express" onChange={(value) => onUpdate({ courier: value })} /><Editable label="Tracking number" value={order.trackingNumber} disabled={!admin} placeholder="Enter tracking number" onChange={(value) => onUpdate({ trackingNumber: value })} /></div></section>
     <section className="detail-section"><h3>Tailor / packing photo</h3><div className="photo-field">{order.photoDataUrl ? <img src={order.photoDataUrl} alt="Tailor or packing evidence" /> : <div className="photo-placeholder">No photo uploaded</div>}{admin && <FileDropZone accept="image/*" title={order.photoDataUrl ? "Replace photo" : "Upload photo"} description="Click or drop an image" selectedName={order.photoName} onFile={(file) => uploadPhoto(file ?? undefined)} className="photo-file-drop" />}</div></section>

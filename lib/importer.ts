@@ -57,6 +57,25 @@ const metafieldHeaders = [
 ];
 
 export type CsvKind = "orders" | "metafields" | "unknown";
+type TikTokDetails = {
+  plushName: string;
+  gender: string;
+  birthDate: string;
+  birthPlace: string;
+  favouritePerson: string;
+  belongsTo: string;
+  meaningfulNote: string;
+};
+
+const emptyTikTokDetails: TikTokDetails = {
+  plushName: "",
+  gender: "",
+  birthDate: "",
+  birthPlace: "",
+  favouritePerson: "",
+  belongsTo: "",
+  meaningfulNote: "",
+};
 
 export function detectCsvKind(text: string): CsvKind {
   const header = parseCsv(text)[0]?.map((cell) => clean(cell).toLowerCase()) ?? [];
@@ -75,6 +94,42 @@ function records(text: string, kind: "orders" | "metafields") {
   return rows.map((row) =>
     Object.fromEntries(header.map((name, index) => [clean(name), clean(row[index])])),
   );
+}
+
+function detectDelimiter(line: string) {
+  const tabCount = (line.match(/\t/g) ?? []).length;
+  const commaCount = (line.match(/,/g) ?? []).length;
+  return tabCount > commaCount ? "\t" : ",";
+}
+
+function parseDelimitedLine(line: string, delimiter: "," | "\t") {
+  const cells: string[] = [];
+  let field = "";
+  let quoted = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const next = line[index + 1];
+    if (char === '"' && quoted && next === '"') {
+      field += '"';
+      index += 1;
+    } else if (char === '"') quoted = !quoted;
+    else if (char === delimiter && !quoted) {
+      cells.push(field);
+      field = "";
+    } else field += char;
+  }
+  cells.push(field);
+  return cells;
+}
+
+function tikTokRecords(text: string) {
+  const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/).filter((line) => line.trim());
+  if (!lines.length) return [];
+  const header = parseDelimitedLine(lines[0], detectDelimiter(lines[0])).map(clean);
+  return lines.slice(1).map((line) => {
+    const row = parseDelimitedLine(line, detectDelimiter(line));
+    return Object.fromEntries(header.map((name, index) => [name, clean(row[index])]));
+  });
 }
 
 function orderNumber(value = "") {
@@ -113,6 +168,93 @@ function productName(lineName: string, fallback: string) {
 
 function certificateLink(code: string) {
   return code ? `https://meaningfulplushies.com/pages/certificate/${code.trim()}` : "";
+}
+
+function normalizeTikTokPaymentMethod(value: string) {
+  if (/bank|internet banking|duitnow|transfer/i.test(value)) return "Bank Transfer";
+  if (/stripe/i.test(value)) return "Stripe";
+  if (/xendit/i.test(value)) return "Xendit";
+  return value || "TikTok Shop";
+}
+
+function parseTikTokDate(value: string) {
+  const match = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if (!match) return value;
+  const [, day, month, year, hour = "0", minute = "0", second = "0"] = match;
+  return new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second)).toISOString();
+}
+
+function titleCase(value: string) {
+  return value.toLowerCase().replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
+}
+
+function tikTokDetailValue(raw: string, labels: string[]) {
+  for (const label of labels) {
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const match = raw.match(new RegExp(`${escaped}\\s*[-:]\\s*([^\\r\\n]*)`, "i"));
+    if (match?.[1]) return match[1].trim();
+  }
+  return "";
+}
+
+function parseTikTokDetailsBlock(raw: string): TikTokDetails {
+  return {
+    plushName: tikTokDetailValue(raw, ["Plushie's Name", "Plushie Name", "Name"]),
+    gender: titleCase(tikTokDetailValue(raw, ["Plushie's Gender", "Plushie Gender", "Gender"])),
+    birthDate: tikTokDetailValue(raw, ["Plushie's Birth Date", "Plushie Birth Date", "Birth Date"]),
+    birthPlace: tikTokDetailValue(raw, ["Plushie's Birth Place", "Plushie Birth Place", "Birth Place"]),
+    favouritePerson: titleCase(tikTokDetailValue(raw, ["Plushie's Favourite Person", "Plushie Favourite Person", "Favourite Person", "Favorite Person"])),
+    belongsTo: titleCase(tikTokDetailValue(raw, ["Plushie Belongs to", "Belongs To", "Belongs to"])),
+    meaningfulNote: tikTokDetailValue(raw, ["Meaningful Note"]),
+  };
+}
+
+function parseTikTokDetails(text: string) {
+  const fallback = parseTikTokDetailsBlock(text);
+  const byOrder = new Map<string, TikTokDetails>();
+  const byUsername = new Map<string, TikTokDetails>();
+  const blocks = text.split(/(?=\b(?:Order\s*(?:ID|Number)|Buyer\s*Username|Username)\s*[-:])/i).map((block) => block.trim()).filter(Boolean);
+  for (const block of blocks) {
+    const details = parseTikTokDetailsBlock(block);
+    const orderId = tikTokDetailValue(block, ["Order ID", "Order Number", "Order"]);
+    const username = tikTokDetailValue(block, ["Buyer Username", "Username"]);
+    if (orderId) byOrder.set(orderId.replace(/\D/g, ""), details);
+    if (username) byUsername.set(username.toLowerCase(), details);
+  }
+  return { fallback, byOrder, byUsername };
+}
+
+function mergeTikTokDetails(...items: TikTokDetails[]) {
+  return items.reduce((merged, item) => ({
+    plushName: item.plushName || merged.plushName,
+    gender: item.gender || merged.gender,
+    birthDate: item.birthDate || merged.birthDate,
+    birthPlace: item.birthPlace || merged.birthPlace,
+    favouritePerson: item.favouritePerson || merged.favouritePerson,
+    belongsTo: item.belongsTo || merged.belongsTo,
+    meaningfulNote: item.meaningfulNote || merged.meaningfulNote,
+  }), { ...emptyTikTokDetails });
+}
+
+function nextTikTokOrderNumber(existing: Order[], offset: number) {
+  const max = existing.reduce((highest, order) => {
+    const match = order.orderNumber.match(/\bTT(\d{4,})\b/i);
+    return match ? Math.max(highest, Number(match[1])) : highest;
+  }, 1026);
+  return `TT${max + offset + 1}`;
+}
+
+function tikTokCertificateCode(ttNumber: string, orderId: string) {
+  const sequence = ttNumber.replace(/\D/g, "").slice(-4).padStart(4, "0");
+  const lastFour = orderId.replace(/\D/g, "").slice(-4).padStart(4, "0");
+  return `${sequence}${lastFour}106`;
+}
+
+function tikTokVariation(value: string) {
+  const parts = value.split(",").map((part) => part.trim()).filter(Boolean);
+  const character = parts[0] ?? "";
+  const voiceLength = Number(value.match(/(5|10|20)\s*(?:seconds?|s)\b/i)?.[1] ?? 0);
+  return { character, voiceLength };
 }
 
 export function normalizePaymentProcessor(value: string, isBankTransfer = false) {
@@ -262,6 +404,124 @@ export function importShopifyData(
   }
 
   return { orders: [...next.values()], result: { imported, updated, skipped, warnings } };
+}
+
+export function importTikTokShopData(
+  tikTokCsv: string,
+  detailsText: string,
+  existing: Order[],
+  actor = "Admin",
+): { orders: Order[]; result: ImportResult; importedOrders: Order[] } {
+  const warnings: string[] = [];
+  const rows = tikTokRecords(tikTokCsv);
+  const { fallback, byOrder, byUsername } = parseTikTokDetails(detailsText);
+  const existingById = new Map(existing.map((order) => [order.id, order]));
+  const next = new Map(existing.map((order) => [order.id, order]));
+  let imported = 0;
+  let updated = 0;
+  let skipped = 0;
+  const importedOrders: Order[] = [];
+
+  for (const row of rows) {
+    const tikTokOrderId = orderNumber(row["Order ID"]);
+    if (!tikTokOrderId) {
+      skipped += 1;
+      continue;
+    }
+    const id = `tiktok-${tikTokOrderId}`;
+    const current = existingById.get(id);
+    const username = row["Buyer Username"] || "";
+    const details = mergeTikTokDetails(
+      fallback,
+      byUsername.get(username.toLowerCase()) ?? emptyTikTokDetails,
+      byOrder.get(tikTokOrderId) ?? emptyTikTokDetails,
+      parseTikTokDetailsBlock(row["Buyer Message"] || row["Seller Note"] || ""),
+    );
+    const assignedNumber = current?.orderNumber.match(/\bTT\d{4,}\b/i)?.[0] ?? nextTikTokOrderNumber(existing, importedOrders.length);
+    const displayOrderNumber = `${assignedNumber} ${tikTokOrderId}`;
+    const code = current?.certificateCode || tikTokCertificateCode(assignedNumber, tikTokOrderId);
+    const { character, voiceLength } = tikTokVariation(row.Variation || row["Product Name"] || "");
+    const totalAmount = money(row["Order Amount"] || row["SKU Subtotal After Discount"]);
+    const originalPrice = money(row["SKU Subtotal Before Discount"] || row["SKU Unit Original Price"]);
+    const sellerDiscount = money(row["SKU Seller Discount"]);
+    const platformDiscount = money(row["SKU Platform Discount"]) + money(row["Payment platform discount"]);
+    const shippingAmount = money(row["Shipping Fee After Discount"] || row["Original Shipping Fee"]);
+    const timestamp = new Date().toISOString();
+    const initialStatus = current?.status ?? "new_order";
+    const value: Order = {
+      id,
+      orderNumber: displayOrderNumber,
+      salesChannel: "tiktok",
+      orderDate: parseTikTokDate(row["Created Time"] || row["Paid Time"] || current?.orderDate || timestamp),
+      customerName: row.Recipient || username || current?.customerName || "",
+      phone: row["Phone #"] || current?.phone || "",
+      email: current?.email || "",
+      address: [row["Detail Address"], row["Additional address information"], row["Post Town"], row.State, row.Country].filter(Boolean).join(", "),
+      currency: current?.currency || "MYR",
+      subtotalAmount: originalPrice || totalAmount,
+      shippingAmount,
+      totalAmount,
+      discountAmount: sellerDiscount + platformDiscount,
+      productDiscountAmount: sellerDiscount + platformDiscount,
+      shippingDiscountAmount: Math.max(0, money(row["Original Shipping Fee"]) - shippingAmount),
+      refundedAmount: money(row["Order Refund Amount"]),
+      outstandingBalance: current?.outstandingBalance ?? 0,
+      paymentProcessor: normalizeTikTokPaymentMethod(row["Payment Method"]),
+      shippingMethod: row["Delivery Option"] || current?.shippingMethod || "",
+      product: row["Product Name"] || current?.product || "TikTok Shop Order",
+      character: character || current?.character || "",
+      setIndicator: current?.setIndicator || "",
+      idWebsiteLink: certificateLink(code),
+      voiceLength: voiceLength || current?.voiceLength || 0,
+      plushName: details.plushName || current?.plushName || "",
+      certificateCode: code,
+      meaningfulNote: details.meaningfulNote || current?.meaningfulNote || "",
+      meaningfulMessage: [
+        details.gender ? `Gender: ${details.gender}` : "",
+        details.birthDate ? `Birth Date: ${details.birthDate}` : "",
+        details.birthPlace ? `Birth Place: ${details.birthPlace}` : "",
+        details.favouritePerson ? `Favourite Person: ${details.favouritePerson}` : "",
+        details.belongsTo ? `Belongs To: ${details.belongsTo}` : "",
+      ].filter(Boolean).join("\n"),
+      remark: username ? `TikTok Shop username: ${username}` : current?.remark || "",
+      voiceUploadStatus: current?.voiceUploadStatus ?? "missing",
+      courier: row["Shipping Provider Name"] || current?.courier || "",
+      trackingNumber: row["Tracking ID"] || current?.trackingNumber || "",
+      status: initialStatus,
+      internalNotes: current?.internalNotes || "",
+      photoDataUrl: current?.photoDataUrl,
+      photoName: current?.photoName,
+      statusHistory: current?.statusHistory ?? [
+        { id: `${id}-${timestamp}`, status: initialStatus, changedAt: timestamp, changedBy: actor, note: "Imported from TikTok Shop CSV" },
+      ],
+      importedAt: current?.importedAt ?? timestamp,
+      updatedAt: timestamp,
+    };
+    next.set(id, value);
+    importedOrders.push(value);
+    if (current) updated += 1;
+    else imported += 1;
+    if (!details.plushName) warnings.push(`${displayOrderNumber}: no plushie name was found in the TikTok details.`);
+  }
+
+  return { orders: [...next.values()], result: { imported, updated, skipped, warnings }, importedOrders };
+}
+
+export function tikTokCertificateJson(order: Order) {
+  const details = parseTikTokDetailsBlock(order.meaningfulMessage);
+  return {
+    Code: order.certificateCode,
+    "Order Number": order.orderNumber,
+    "Plush Details": `${order.character}${order.voiceLength ? ` ${order.voiceLength}S` : ""}`.trim(),
+    "Id Picture": order.character,
+    Name: order.plushName.toUpperCase(),
+    Gender: details.gender,
+    "Birth Date": details.birthDate,
+    "Birth Place": details.birthPlace,
+    "Favourite Person": details.favouritePerson,
+    "Belongs To": details.belongsTo,
+    "Meaningful Note": order.meaningfulNote,
+  };
 }
 
 function csvCell(value: string | number) {
