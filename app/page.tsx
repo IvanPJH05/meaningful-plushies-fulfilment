@@ -290,7 +290,7 @@ const businessEvents = [
   { group: "Money out", value: "asset_purchase", label: "Assets", transactionLabel: "Asset Purchase", accountingMapping: "Assets", accounts: ["New asset"] },
   { group: "Money out", value: "marketing_expense", label: "Marketing", transactionLabel: "Marketing Expense", accountingMapping: "Marketing", accounts: ["Meta ads", "TikTok ads"] },
   { group: "Money in", value: "payment_processor_paid", label: "Cash", transactionLabel: "Cash", accountingMapping: "Cash", accounts: ["Bank Transfer", "Stripe", "Xendit", "Payment Processing Fees", "Owner's Equity", "Drawings"] },
-  { group: "Money out", value: "operating_cost", label: "Operating Cost", transactionLabel: "Operating Cost", accountingMapping: "Operating Costs", accounts: ["Operating Costs"] },
+  { group: "Money out", value: "operating_cost", label: "Operating Cost", transactionLabel: "Operating Cost", accountingMapping: "Prepaid Operating Expense", accounts: ["Prepaid Operating Expense"] },
 ] as const;
 const rejectedInventoryOption = "Rejected Inventory";
 const bookkeepingEventByView: Partial<Record<View, (typeof businessEvents)[number]["value"]>> = {
@@ -1924,7 +1924,7 @@ export default function Home() {
       "Other Equipment": "Equipment",
       "Bank Transfer": "Bank Account",
       "Prepaid Operating Expense": "Prepaid Operating Expense",
-      "Operating Costs": "Operating Costs",
+      "Operating Costs": "Prepaid Operating Expense",
       "Xendit Payout": "Xendit",
       "Stripe Payout": "Stripe",
       "TikTok Payout": "TikTok Shop",
@@ -1941,8 +1941,7 @@ export default function Home() {
   function selectedAccountingAccount() {
     const event = selectedBusinessEvent();
     if (event.value === "operating_cost") {
-      return accountingCategories.find((category) => category.name.toLowerCase() === "operating costs")
-        ?? accountingCategories.find((category) => category.name.toLowerCase() === "operating expense");
+      return accountingCategories.find((category) => category.name.toLowerCase() === "prepaid operating expense");
     }
     const selectedCategory = selectedCategoryRecord();
     if (selectedCategory) return selectedCategory;
@@ -1953,7 +1952,7 @@ export default function Home() {
   }
 
   function bookkeepingAccountNameForSave(event: ReturnType<typeof selectedBusinessEvent>) {
-    if (event.value === "operating_cost") return "Operating Costs";
+    if (event.value === "operating_cost") return "Prepaid Operating Expense";
     const selectedCategory = selectedCategoryRecord();
     if (selectedCategory) return selectedCategory.name;
     if (transactionForm.categoryId === newAssetOptionValue) return transactionForm.accountName.trim();
@@ -2006,10 +2005,10 @@ export default function Home() {
     }
     if (event.value === "operating_cost") {
       const entries: AccountingLedgerEntry[] = [
-        { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: "Operating Costs", entryType: "debit", amount, memo: "Operating cost recorded", createdAt: now },
+        { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: "Prepaid Operating Expense", entryType: "debit", amount, memo: "Prepaid operating cost recorded", createdAt: now },
       ];
-      if (paidAmount > 0) entries.push({ id: crypto.randomUUID(), transactionId, accountId: "", accountName: transactionForm.paymentMethod || "Bank Account", entryType: "credit", amount: paidAmount, memo: "Operating cost paid", createdAt: now });
-      if (outstandingAmount > 0) entries.push({ id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Accounts Payable", entryType: "credit", amount: outstandingAmount, memo: "Outstanding operating cost", createdAt: now });
+      if (paidAmount > 0) entries.push({ id: crypto.randomUUID(), transactionId, accountId: "", accountName: transactionForm.paymentMethod || "Bank Account", entryType: "credit", amount: paidAmount, memo: "Prepaid operating cost paid", createdAt: now });
+      if (outstandingAmount > 0) entries.push({ id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Accounts Payable", entryType: "credit", amount: outstandingAmount, memo: "Outstanding prepaid operating cost", createdAt: now });
       return entries;
     }
     if (rejectedInventoryItem) {
@@ -3312,6 +3311,7 @@ function AccountingWorkspacePage({
     const mappings = salesConsumptionMappings.filter((mapping) => mapping.active && normalizeAccountingItem(mapping.sku) === sku);
     return total + mappings.reduce((sum, mapping) => sum + Math.max(0, mapping.operatingExpensePerSale), 0);
   }, 0);
+  const operatingCostRemaining = Math.max(0, operatingCostAdded - operatingCostUsed);
   const transactionEditPanel = editingTransactionForm ? <section className="accounting-form card">
     <div className="accounting-form-heading"><div><h3>Edit transaction</h3><p>Update the transaction details or attach a replacement source document.</p></div><button className="view-button" onClick={onCancelEditTransaction}>Cancel</button></div>
     <div className="accounting-two-cols"><label>Date<input type="date" value={editingTransactionForm.transactionDate} onChange={(input) => onEditingTransactionFormChange({ transactionDate: input.target.value })} /></label><label>Amount<input type="number" min="0" step="0.01" value={editingTransactionForm.amount} onChange={(input) => onEditingTransactionFormChange({ amount: input.target.value })} /></label></div>
@@ -3345,17 +3345,18 @@ function AccountingWorkspacePage({
   </section>;
 
   if (view === "accounting_operating_costs") return <section className="accounting-workspace">
-    <div className="accounting-hero card"><div><p>OPERATING COST</p><h2>Operating costs</h2><span>Record operating costs as expenses. Sales consumption mapping can still calculate per-sale operating expense separately.</span></div><div className="accounting-status-pill">{formatMoney(operatingCostAdded)} recorded</div></div>
+    <div className="accounting-hero card"><div><p>OPERATING COST</p><h2>Prepaid operating costs</h2><span>New operating-cost transactions are stored as prepaid operating cost first. Each sale releases the per-sale amount into operating expense.</span></div><div className="accounting-status-pill">{formatMoney(operatingCostRemaining)} prepaid left</div></div>
     <section className="accounting-summary-grid">
-      <MoneyStat label="Operating costs recorded" value={operatingCostAdded} tone="fees" />
-      <MoneyStat label="Paid" value={operatingCostPaid} tone="collected" />
-      <MoneyStat label="Per-sale operating expense" value={operatingCostUsed} tone="fees" />
+      <MoneyStat label="Prepaid operating cost added" value={operatingCostAdded} tone="sales" />
+      <MoneyStat label="Paid into prepaid" value={operatingCostPaid} tone="collected" />
+      <MoneyStat label="Released by sales" value={operatingCostUsed} tone="fees" />
+      <MoneyStat label="Prepaid remaining" value={operatingCostRemaining} tone="transfer" />
     </section>
     <section className="accounting-form-grid">
       <div className="accounting-form card">
-        <h3>Add operating cost</h3>
+        <h3>Add prepaid operating cost</h3>
         <label>Date<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label>
-        <label>Amount paid / added<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onTransactionFormChange({ amount: input.target.value })} /></label>
+        <label>Amount added to prepaid<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onTransactionFormChange({ amount: input.target.value })} /></label>
         <label>Supplier / source<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder="Supplier or source" /></label>
         <label>Description<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder="Example: Carton handling cost, fulfilment materials..." /></label>
         <h3>Payment</h3>
@@ -3367,7 +3368,7 @@ function AccountingWorkspacePage({
           <h3>Posting preview</h3>
           {postingPreview.length ? postingPreview.map((entry) => <div key={entry.id}><span>{entry.entryType === "debit" ? "Debit" : "Credit"} {entry.accountName}</span><strong>{formatMoney(entry.amount)}</strong></div>) : <div><span>Enter an amount to preview posting</span><strong>{formatMoney(0)}</strong></div>}
         </section>
-        <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? "Saving..." : "Save operating cost"}</button>
+        <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? "Saving..." : "Save prepaid cost"}</button>
       </div>
       <div>
         {transactionEditPanel}
@@ -4077,8 +4078,8 @@ function FormalAccountingWorkspacePage({
   const transactionById = new Map(transactions.map((transaction) => [transaction.id, transaction]));
   const formalLedgerEntries = ledgerEntries.map((entry) => {
     const transaction = transactionById.get(entry.transactionId);
-    if (transaction?.businessEvent === "operating_cost" && entry.entryType === "debit" && entry.accountName === "Prepaid Operating Expense") {
-      return { ...entry, accountId: "", accountName: "Operating Costs", memo: entry.memo || "Operating cost recorded" };
+    if (transaction?.businessEvent === "operating_cost" && entry.entryType === "debit" && entry.accountName === "Operating Costs") {
+      return { ...entry, accountId: "", accountName: "Prepaid Operating Expense", memo: entry.memo || "Prepaid operating cost recorded" };
     }
     return entry;
   });
@@ -4096,7 +4097,7 @@ function FormalAccountingWorkspacePage({
   }, {});
   const tAccountSections: { title: string; reportSections: string[]; names: string[]; eventValues?: AccountingTransaction["businessEvent"][] }[] = [
     { title: "Inventory", reportSections: [bookkeepingSectionConfigs.inventory.reportSection], names: [], eventValues: ["inventory_purchase"] },
-    { title: "Expense", reportSections: [bookkeepingSectionConfigs.expense.reportSection, "COGS", "Admin Fees"], names: [], eventValues: ["expense", "inventory_rejected", "operating_cost"] },
+    { title: "Expense", reportSections: [bookkeepingSectionConfigs.expense.reportSection, "COGS", "Admin Fees"], names: [], eventValues: ["expense", "inventory_rejected"] },
     { title: "Assets", reportSections: [bookkeepingSectionConfigs.asset.reportSection], names: [], eventValues: ["asset_purchase"] },
     { title: "Marketing", reportSections: [bookkeepingSectionConfigs.marketing.reportSection], names: [], eventValues: ["marketing_expense"] },
     { title: "Cash", reportSections: [], names: [], eventValues: ["payment_processor_paid"] },
