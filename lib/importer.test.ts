@@ -107,6 +107,7 @@ test("imports TikTok Shop orders with certificate JSON", () => {
   assert.equal(order.idWebsiteLink, "https://meaningfulplushies.com/pages/certificate/10275022106");
   assert.equal(order.character, "Hunnie");
   assert.equal(order.voiceLength, 20);
+  assert.equal(order.customerName, "i***mikayla200");
   assert.equal(order.paymentProcessor, "Bank Transfer");
   assert.equal(order.totalAmount, 123.3);
   assert.deepEqual(tikTokCertificateJson(order), {

@@ -466,7 +466,7 @@ export function importTikTokShopData(
       orderNumber: displayOrderNumber,
       salesChannel: "tiktok",
       orderDate: parseTikTokDate(row["Created Time"] || row["Paid Time"] || current?.orderDate || timestamp),
-      customerName: row.Recipient || username || current?.customerName || "",
+      customerName: username || row.Recipient || current?.customerName || "",
       phone: row["Phone #"] || current?.phone || "",
       email: current?.email || "",
       address: [row["Detail Address"], row["Additional address information"], row["Post Town"], row.State, row.Country].filter(Boolean).join(", "),
