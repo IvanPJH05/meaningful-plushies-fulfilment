@@ -3067,12 +3067,12 @@ export default function Home() {
           <div className="import-columns">
             <ImportBox number="3" title="TikTok Shop order export" required value={tikTokCsv} onChange={setTikTokCsv} onFile={(file) => readFile(file, "tiktok")} placeholder="Order ID, Variation, Order Amount, Buyer Username..." />
             <div className="import-box">
-              <div className="import-box-header"><span>4</span><div><strong>TikTok plushie details</strong><small>Enter either the Order ID or username as the identifier, then paste that order's plushie details below.</small></div></div>
+              <div className="import-box-header"><span>4</span><div><strong>TikTok plushie details</strong><small>Use the Order ID as the identifier. If you have the full username, paste it in the detail box as Username.</small></div></div>
               <div className="tiktok-detail-entry-list">
                 {tikTokDetailEntries.map((entry, index) => <article className="tiktok-detail-entry" key={entry.id}>
                   <div className="tiktok-detail-entry-header"><strong>Entry {index + 1}</strong>{tikTokDetailEntries.length > 1 && <button className="view-button" type="button" onClick={() => removeTikTokDetailEntry(entry.id)}>Remove</button>}</div>
-                  <label>Identifier<input value={entry.identifier} onChange={(event) => updateTikTokDetailEntry(entry.id, { identifier: event.target.value })} placeholder="Order ID or username" /></label>
-                  <textarea value={entry.details} onChange={(event) => updateTikTokDetailEntry(entry.id, { details: event.target.value })} placeholder={"Plushie's Name- Baby\nPlushie's Gender- girl\nPlushie's Birth Date- 18/07\nPlushie's Birth Place- hosp ampang\nPlushie's Favourite Person- kakak kayla\nPlushie Belongs to- Mikayla\nMeaningful Note- happy birthday sayang mama..moge yang baik2 tok kakak"} />
+                  <label>Identifier<input value={entry.identifier} onChange={(event) => updateTikTokDetailEntry(entry.id, { identifier: event.target.value })} placeholder="Order ID, for example 584697260225955022" /></label>
+                  <textarea value={entry.details} onChange={(event) => updateTikTokDetailEntry(entry.id, { details: event.target.value })} placeholder={"Username- mikayla200\nPlushie's Name- Baby\nPlushie's Gender- girl\nPlushie's Birth Date- 18/07\nPlushie's Birth Place- hosp ampang\nPlushie's Favourite Person- kakak kayla\nPlushie Belongs to- Mikayla\nMeaningful Note- happy birthday sayang mama..moge yang baik2 tok kakak"} />
                 </article>)}
               </div>
               <button className="button secondary tiktok-add-entry" type="button" onClick={addTikTokDetailEntry}>Add Entry</button>

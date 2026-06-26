@@ -58,6 +58,7 @@ const metafieldHeaders = [
 
 export type CsvKind = "orders" | "metafields" | "unknown";
 type TikTokDetails = {
+  username: string;
   plushName: string;
   gender: string;
   birthDate: string;
@@ -72,6 +73,7 @@ export type TikTokDetailEntry = {
 };
 
 const emptyTikTokDetails: TikTokDetails = {
+  username: "",
   plushName: "",
   gender: "",
   birthDate: "",
@@ -203,6 +205,7 @@ function tikTokDetailValue(raw: string, labels: string[]) {
 
 function parseTikTokDetailsBlock(raw: string): TikTokDetails {
   return {
+    username: tikTokDetailValue(raw, ["Buyer Username", "Username", "TikTok Username", "Customer Username"]),
     plushName: tikTokDetailValue(raw, ["Plushie's Name", "Plushie Name", "Name"]),
     gender: titleCase(tikTokDetailValue(raw, ["Plushie's Gender", "Plushie Gender", "Gender"])),
     birthDate: tikTokDetailValue(raw, ["Plushie's Birth Date", "Plushie Birth Date", "Birth Date"]),
@@ -239,6 +242,7 @@ function parseTikTokDetails(input: string | TikTokDetailEntry[]) {
 
 function mergeTikTokDetails(...items: TikTokDetails[]) {
   return items.reduce((merged, item) => ({
+    username: item.username || merged.username,
     plushName: item.plushName || merged.plushName,
     gender: item.gender || merged.gender,
     birthDate: item.birthDate || merged.birthDate,
@@ -466,7 +470,7 @@ export function importTikTokShopData(
       orderNumber: displayOrderNumber,
       salesChannel: "tiktok",
       orderDate: parseTikTokDate(row["Created Time"] || row["Paid Time"] || current?.orderDate || timestamp),
-      customerName: username || row.Recipient || current?.customerName || "",
+      customerName: details.username || username || row.Recipient || current?.customerName || "",
       phone: row["Phone #"] || current?.phone || "",
       email: current?.email || "",
       address: [row["Detail Address"], row["Additional address information"], row["Post Town"], row.State, row.Country].filter(Boolean).join(", "),

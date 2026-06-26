@@ -87,8 +87,9 @@ test("imports TikTok Shop orders with certificate JSON", () => {
     "584697260225955022\tTo ship\tAwaiting collection\t1735474415948891540\t\tMeaningful Plushies | Personalised Custom Plushie with Voice Message & NFC Birth Certificate | Perfect Gift\t\"Hunnie, Included, 20 seconds\"\t1\t130\t130\t11.7\t0\t118.3\t5\t5\t0\t123.3\t\t25/06/2026 13:03:57\t25/06/2026 13:04:31\t680076017503113\tStandard shipping\tJ&T Express\t\ti***mikayla200\tS******* s********\t(+60)172****54\tMalaysia\tSelangor\tCheras\tAddress\t\tInternet Banking",
   ].join("\n");
   const details = [{
-    identifier: "i***mikayla200",
+    identifier: "584697260225955022",
     details: [
+      "Username- mikayla200",
       "Plushie's Name- Baby",
       "Plushie's Gender- girl",
       "Plushie's Birth Date- 18/07",
@@ -107,7 +108,7 @@ test("imports TikTok Shop orders with certificate JSON", () => {
   assert.equal(order.idWebsiteLink, "https://meaningfulplushies.com/pages/certificate/10275022106");
   assert.equal(order.character, "Hunnie");
   assert.equal(order.voiceLength, 20);
-  assert.equal(order.customerName, "i***mikayla200");
+  assert.equal(order.customerName, "mikayla200");
   assert.equal(order.paymentProcessor, "Bank Transfer");
   assert.equal(order.totalAmount, 123.3);
   assert.deepEqual(tikTokCertificateJson(order), {
