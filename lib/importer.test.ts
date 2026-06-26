@@ -88,6 +88,9 @@ test("imports TikTok Shop orders with certificate JSON", () => {
   ].join("\n");
   const details = [{
     identifier: "584697260225955022",
+    fileDataUrl: "data:application/pdf;base64,abc123",
+    fileName: "tiktok-order.pdf",
+    fileType: "application/pdf",
     details: [
       "Username- mikayla200",
       "Plushie's Name- Baby",
@@ -109,6 +112,8 @@ test("imports TikTok Shop orders with certificate JSON", () => {
   assert.equal(order.character, "Hunnie");
   assert.equal(order.voiceLength, 20);
   assert.equal(order.customerName, "mikayla200");
+  assert.equal(order.tikTokFileName, "tiktok-order.pdf");
+  assert.equal(order.tikTokFileDataUrl, "data:application/pdf;base64,abc123");
   assert.equal(order.paymentProcessor, "Bank Transfer");
   assert.equal(order.totalAmount, 123.3);
   assert.deepEqual(tikTokCertificateJson(order), {

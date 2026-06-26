@@ -212,6 +212,9 @@ export type Order = {
   internalNotes: string;
   photoDataUrl?: string;
   photoName?: string;
+  tikTokFileDataUrl?: string;
+  tikTokFileName?: string;
+  tikTokFileType?: string;
   statusHistory: StatusEvent[];
   importedAt: string;
   updatedAt: string;

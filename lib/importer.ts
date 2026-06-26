@@ -59,6 +59,9 @@ const metafieldHeaders = [
 export type CsvKind = "orders" | "metafields" | "unknown";
 type TikTokDetails = {
   username: string;
+  fileDataUrl: string;
+  fileName: string;
+  fileType: string;
   plushName: string;
   gender: string;
   birthDate: string;
@@ -70,10 +73,16 @@ type TikTokDetails = {
 export type TikTokDetailEntry = {
   identifier: string;
   details: string;
+  fileDataUrl?: string;
+  fileName?: string;
+  fileType?: string;
 };
 
 const emptyTikTokDetails: TikTokDetails = {
   username: "",
+  fileDataUrl: "",
+  fileName: "",
+  fileType: "",
   plushName: "",
   gender: "",
   birthDate: "",
@@ -206,6 +215,9 @@ function tikTokDetailValue(raw: string, labels: string[]) {
 function parseTikTokDetailsBlock(raw: string): TikTokDetails {
   return {
     username: tikTokDetailValue(raw, ["Buyer Username", "Username", "TikTok Username", "Customer Username"]),
+    fileDataUrl: "",
+    fileName: "",
+    fileType: "",
     plushName: tikTokDetailValue(raw, ["Plushie's Name", "Plushie Name", "Name"]),
     gender: titleCase(tikTokDetailValue(raw, ["Plushie's Gender", "Plushie Gender", "Gender"])),
     birthDate: tikTokDetailValue(raw, ["Plushie's Birth Date", "Plushie Birth Date", "Birth Date"]),
@@ -224,7 +236,12 @@ function parseTikTokDetails(input: string | TikTokDetailEntry[]) {
   const byUsername = new Map<string, TikTokDetails>();
   for (const entry of entries) {
     const identifier = entry.identifier.trim();
-    const details = parseTikTokDetailsBlock(entry.details);
+    const details = {
+      ...parseTikTokDetailsBlock(entry.details),
+      fileDataUrl: entry.fileDataUrl ?? "",
+      fileName: entry.fileName ?? "",
+      fileType: entry.fileType ?? "",
+    };
     if (!identifier) continue;
     if (/^\d+$/.test(identifier.replace(/\s+/g, ""))) byOrder.set(identifier.replace(/\D/g, ""), details);
     else byUsername.set(identifier.toLowerCase(), details);
@@ -243,6 +260,9 @@ function parseTikTokDetails(input: string | TikTokDetailEntry[]) {
 function mergeTikTokDetails(...items: TikTokDetails[]) {
   return items.reduce((merged, item) => ({
     username: item.username || merged.username,
+    fileDataUrl: item.fileDataUrl || merged.fileDataUrl,
+    fileName: item.fileName || merged.fileName,
+    fileType: item.fileType || merged.fileType,
     plushName: item.plushName || merged.plushName,
     gender: item.gender || merged.gender,
     birthDate: item.birthDate || merged.birthDate,
@@ -508,6 +528,9 @@ export function importTikTokShopData(
       internalNotes: current?.internalNotes || "",
       photoDataUrl: current?.photoDataUrl,
       photoName: current?.photoName,
+      tikTokFileDataUrl: details.fileDataUrl || current?.tikTokFileDataUrl,
+      tikTokFileName: details.fileName || current?.tikTokFileName,
+      tikTokFileType: details.fileType || current?.tikTokFileType,
       statusHistory: current?.statusHistory ?? [
         { id: `${id}-${timestamp}`, status: initialStatus, changedAt: timestamp, changedBy: actor, note: "Imported from TikTok Shop CSV" },
       ],
