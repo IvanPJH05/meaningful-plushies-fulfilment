@@ -146,6 +146,13 @@
 .import-box-header > span { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: #111827; color: white; font-size: 12px; font-weight: 800; }
 .import-box-header strong,.import-box-header small { display: block; }
 .import-box-header small { margin-top: 3px; color: #8995a5; font-size: 10px; }
+.tiktok-detail-entry-list { display: grid; gap: 12px; }
+.tiktok-detail-entry { display: grid; gap: 9px; padding: 12px; border: 1px solid #dfe7f1; border-radius: 10px; background: #f8fbff; }
+.tiktok-detail-entry-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.tiktok-detail-entry label { display: grid; gap: 5px; color: #607089; font-size: 10px; font-weight: 850; letter-spacing: .04em; text-transform: uppercase; }
+.tiktok-detail-entry input { height: 38px; border: 1px solid #cfdced; border-radius: 8px; background: #fff; padding: 0 10px; color: var(--text); font-size: 12px; font-weight: 700; text-transform: none; letter-spacing: 0; }
+.tiktok-detail-entry textarea { margin-top: 0; min-height: 170px; background: #fff; }
+.tiktok-add-entry { width: 100%; margin-top: 12px; }
 .tiktok-json-panel { border-top: 1px solid var(--line); padding-top: 15px; }
 .tiktok-json-selector { display: grid; gap: 7px; margin: 12px 0; }
 .tiktok-json-selector label { display: grid; grid-template-columns: auto 1fr; gap: 9px; align-items: center; padding: 9px 10px; border: 1px solid #e1e8f2; border-radius: 8px; background: #f8fbff; }

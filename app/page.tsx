@@ -73,6 +73,11 @@ type FinancialReportType = "income_statement" | "balance_sheet" | "cash_summary"
 type AccountingPeriodMode = "this_month" | "lifetime" | "custom";
 type CashFlowActivity = "operating" | "investing" | "financing";
 type TikTokCertificatePayload = ReturnType<typeof tikTokCertificateJson>;
+type TikTokDetailFormEntry = {
+  id: string;
+  identifier: string;
+  details: string;
+};
 type StoredUiPreferences = {
   view?: View;
   query?: string;
@@ -436,6 +441,14 @@ const defaultEnvelopePrintSettings: EnvelopePrintSettings = {
   bottomX: 301.8,
   bottomY: 135.6,
 };
+
+function emptyTikTokDetailEntry(): TikTokDetailFormEntry {
+  return {
+    id: crypto.randomUUID(),
+    identifier: "",
+    details: "",
+  };
+}
 
 const collectedMetricLabels: Record<CollectedMetric, string> = {
   bankTransfer: "Bank transfer collected",
@@ -951,7 +964,7 @@ export default function Home() {
   const [orderCsv, setOrderCsv] = useState("");
   const [metafieldCsv, setMetafieldCsv] = useState("");
   const [tikTokCsv, setTikTokCsv] = useState("");
-  const [tikTokDetails, setTikTokDetails] = useState("");
+  const [tikTokDetailEntries, setTikTokDetailEntries] = useState<TikTokDetailFormEntry[]>(() => [emptyTikTokDetailEntry()]);
   const [selectedTikTokJsonOrders, setSelectedTikTokJsonOrders] = useState<string[]>([]);
   const [notice, setNotice] = useState("");
   const [loadingOrders, setLoadingOrders] = useState(true);
@@ -1355,7 +1368,10 @@ export default function Home() {
   }
 
   async function runTikTokImport() {
-    const { orders: imported, result, importedOrders } = importTikTokShopData(tikTokCsv, tikTokDetails, orders, session ? `${session.displayName} (${session.username})` : "Admin");
+    const details = tikTokDetailEntries
+      .map((entry) => ({ identifier: entry.identifier.trim(), details: entry.details.trim() }))
+      .filter((entry) => entry.identifier || entry.details);
+    const { orders: imported, result, importedOrders } = importTikTokShopData(tikTokCsv, details, orders, session ? `${session.displayName} (${session.username})` : "Admin");
     try {
       await upsertSharedOrders(imported);
       await ensurePaymentProcessors(importedOrders.map((order) => order.paymentProcessor));
@@ -1363,11 +1379,23 @@ export default function Home() {
     catch (error) { setNotice(error instanceof Error ? error.message : "TikTok Shop import could not be saved to Supabase."); return; }
     setOrders(imported);
     setTikTokCsv("");
-    setTikTokDetails("");
+    setTikTokDetailEntries([emptyTikTokDetailEntry()]);
     setSelectedTikTokJsonOrders(importedOrders.map((order) => order.id));
     setNotice(`TikTok Shop: ${result.imported} new orders imported, ${result.updated} updated, ${result.skipped} skipped.${result.warnings.length ? ` ${result.warnings[0]}` : ""}`);
     await logActivity("TikTok Shop import", `${result.imported} imported, ${result.updated} updated, ${result.skipped} skipped.`);
     await loadSharedData();
+  }
+
+  function updateTikTokDetailEntry(id: string, patch: Partial<Omit<TikTokDetailFormEntry, "id">>) {
+    setTikTokDetailEntries((current) => current.map((entry) => entry.id === id ? { ...entry, ...patch } : entry));
+  }
+
+  function addTikTokDetailEntry() {
+    setTikTokDetailEntries((current) => [...current, emptyTikTokDetailEntry()]);
+  }
+
+  function removeTikTokDetailEntry(id: string) {
+    setTikTokDetailEntries((current) => current.length > 1 ? current.filter((entry) => entry.id !== id) : [emptyTikTokDetailEntry()]);
   }
 
   async function saveProcessor(setting: PaymentProcessorSetting) {
@@ -3039,8 +3067,15 @@ export default function Home() {
           <div className="import-columns">
             <ImportBox number="3" title="TikTok Shop order export" required value={tikTokCsv} onChange={setTikTokCsv} onFile={(file) => readFile(file, "tiktok")} placeholder="Order ID, Variation, Order Amount, Buyer Username..." />
             <div className="import-box">
-              <div className="import-box-header"><span>4</span><div><strong>TikTok plushie details</strong><small>Paste the customer details here. Use Order ID or Username when importing multiple TikTok orders.</small></div></div>
-              <textarea value={tikTokDetails} onChange={(event) => setTikTokDetails(event.target.value)} placeholder={"Order ID: 584697260225955022\nUsername: i***mikayla200\nPlushie's Name- Baby\nPlushie's Gender- girl\nPlushie's Birth Date- 18/07\nPlushie's Birth Place- hosp ampang\nPlushie's Favourite Person- kakak kayla\nPlushie Belongs to- Mikayla\nMeaningful Note- happy birthday sayang mama..moge yang baik2 tok kakak"} />
+              <div className="import-box-header"><span>4</span><div><strong>TikTok plushie details</strong><small>Enter either the Order ID or username as the identifier, then paste that order's plushie details below.</small></div></div>
+              <div className="tiktok-detail-entry-list">
+                {tikTokDetailEntries.map((entry, index) => <article className="tiktok-detail-entry" key={entry.id}>
+                  <div className="tiktok-detail-entry-header"><strong>Entry {index + 1}</strong>{tikTokDetailEntries.length > 1 && <button className="view-button" type="button" onClick={() => removeTikTokDetailEntry(entry.id)}>Remove</button>}</div>
+                  <label>Identifier<input value={entry.identifier} onChange={(event) => updateTikTokDetailEntry(entry.id, { identifier: event.target.value })} placeholder="Order ID or username" /></label>
+                  <textarea value={entry.details} onChange={(event) => updateTikTokDetailEntry(entry.id, { details: event.target.value })} placeholder={"Plushie's Name- Baby\nPlushie's Gender- girl\nPlushie's Birth Date- 18/07\nPlushie's Birth Place- hosp ampang\nPlushie's Favourite Person- kakak kayla\nPlushie Belongs to- Mikayla\nMeaningful Note- happy birthday sayang mama..moge yang baik2 tok kakak"} />
+                </article>)}
+              </div>
+              <button className="button secondary tiktok-add-entry" type="button" onClick={addTikTokDetailEntry}>Add Entry</button>
             </div>
           </div>
           <div className="import-action"><div><strong>Auto certificate code</strong><p>Example: TT1027 + order ending 5022 becomes code 10275022106, then the ID link points to the certificate page.</p></div><button className="button primary large" disabled={!tikTokCsv.trim()} onClick={runTikTokImport}>Import TikTok Shop orders</button></div>

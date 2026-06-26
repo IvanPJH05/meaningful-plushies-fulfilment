@@ -66,6 +66,10 @@ type TikTokDetails = {
   belongsTo: string;
   meaningfulNote: string;
 };
+export type TikTokDetailEntry = {
+  identifier: string;
+  details: string;
+};
 
 const emptyTikTokDetails: TikTokDetails = {
   plushName: "",
@@ -209,10 +213,19 @@ function parseTikTokDetailsBlock(raw: string): TikTokDetails {
   };
 }
 
-function parseTikTokDetails(text: string) {
+function parseTikTokDetails(input: string | TikTokDetailEntry[]) {
+  const text = typeof input === "string" ? input : "";
+  const entries = Array.isArray(input) ? input : [];
   const fallback = parseTikTokDetailsBlock(text);
   const byOrder = new Map<string, TikTokDetails>();
   const byUsername = new Map<string, TikTokDetails>();
+  for (const entry of entries) {
+    const identifier = entry.identifier.trim();
+    const details = parseTikTokDetailsBlock(entry.details);
+    if (!identifier) continue;
+    if (/^\d+$/.test(identifier.replace(/\s+/g, ""))) byOrder.set(identifier.replace(/\D/g, ""), details);
+    else byUsername.set(identifier.toLowerCase(), details);
+  }
   const blocks = text.split(/(?=\b(?:Order\s*(?:ID|Number)|Buyer\s*Username|Username)\s*[-:])/i).map((block) => block.trim()).filter(Boolean);
   for (const block of blocks) {
     const details = parseTikTokDetailsBlock(block);
@@ -408,7 +421,7 @@ export function importShopifyData(
 
 export function importTikTokShopData(
   tikTokCsv: string,
-  detailsText: string,
+  detailsText: string | TikTokDetailEntry[],
   existing: Order[],
   actor = "Admin",
 ): { orders: Order[]; result: ImportResult; importedOrders: Order[] } {
