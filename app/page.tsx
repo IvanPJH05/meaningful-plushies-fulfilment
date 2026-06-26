@@ -1357,7 +1357,7 @@ export default function Home() {
       await upsertSharedOrders(imported);
       await ensurePaymentProcessors(imported.map((order) => order.paymentProcessor));
     }
-    catch (error) { setNotice(error instanceof Error ? error.message : "Import could not be saved to Supabase."); return; }
+    catch (error) { setNotice(readableError(error, "Import could not be saved to Supabase.")); return; }
     setOrders(imported);
     setOrderCsv("");
     setMetafieldCsv("");
@@ -1376,7 +1376,7 @@ export default function Home() {
       await upsertSharedOrders(imported);
       await ensurePaymentProcessors(importedOrders.map((order) => order.paymentProcessor));
     }
-    catch (error) { setNotice(error instanceof Error ? error.message : "TikTok Shop import could not be saved to Supabase."); return; }
+    catch (error) { setNotice(readableError(error, "TikTok Shop import could not be saved to Supabase.")); return; }
     setOrders(imported);
     setTikTokCsv("");
     setTikTokDetailEntries([emptyTikTokDetailEntry()]);

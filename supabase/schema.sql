@@ -10,7 +10,7 @@ create table if not exists public.fulfilment_orders (
 );
 
 create index if not exists fulfilment_orders_number_idx
-  on public.fulfilment_orders ((order_number::bigint), id);
+  on public.fulfilment_orders (order_number, id);
 create index if not exists fulfilment_orders_status_idx
   on public.fulfilment_orders (status);
 create index if not exists fulfilment_orders_updated_idx
