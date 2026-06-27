@@ -258,7 +258,7 @@ const bookkeepingSectionConfigs: Record<BookkeepingSectionKey, {
     accountType: "asset",
     parentAccount: "Inventory",
     sourceEntity: "Inventory item",
-    defaults: ["Plush toy", "Packaging", "Carton Box", "Bubble wrap", "Carriage Inward", "Wax seal"],
+    defaults: ["BILLY", "TOOTSIE", "HUNNIE", "DRAGON WARRIOR", "Packaging", "Carton Box", "Bubble wrap", "Carriage Inward", "Wax seal"],
   },
   expense: {
     label: "Expense categories",
@@ -297,7 +297,7 @@ function displayAccountingAccountName(name: string) {
   return isPrepaidOperatingCostAccountName(name) ? prepaidOperatingCostAccountName : name;
 }
 const businessEvents = [
-  { group: "Money out", value: "inventory_purchase", label: "Inventory", transactionLabel: "Inventory Purchase", accountingMapping: "Inventory", accounts: ["Plush toy", "Packaging", "Carton Box", "Bubble wrap", "Carriage Inward", "Wax seal"] },
+  { group: "Money out", value: "inventory_purchase", label: "Inventory", transactionLabel: "Inventory Purchase", accountingMapping: "Inventory", accounts: ["BILLY", "TOOTSIE", "HUNNIE", "DRAGON WARRIOR", "Packaging", "Carton Box", "Bubble wrap", "Carriage Inward", "Wax seal"] },
   { group: "Money out", value: "expense", label: "Expenses", transactionLabel: "Expense", accountingMapping: "Expenses", accounts: ["Labour", "Samples", "JnT (Carriage Outwards)"] },
   { group: "Money out", value: "asset_purchase", label: "Assets", transactionLabel: "Asset Purchase", accountingMapping: "Assets", accounts: ["New asset"] },
   { group: "Money out", value: "marketing_expense", label: "Marketing", transactionLabel: "Marketing Expense", accountingMapping: "Marketing", accounts: ["Meta ads", "TikTok ads"] },
@@ -376,6 +376,7 @@ function normalizeAccountingItem(value: string) {
 
 function inventoryAccountKey(value: string) {
   const normalized = normalizeAccountingItem(value);
+  if (normalized === "PLUSH TOY") return "";
   const character = stockCharacters.find((item) => normalized === item || normalized.includes(item));
   const isPlushSkinName = /\bPLUSH(?:IE)?\b/.test(normalized) || /\bSKIN\b/.test(normalized);
   if (character && (normalized === character || isPlushSkinName)) return character;
@@ -1912,6 +1913,7 @@ export default function Home() {
     const config = bookkeepingSectionConfigs[section];
     return accountingCategories
       .filter((category) => category.active && category.reportSection === config.reportSection)
+      .filter((category) => section !== "inventory" || Boolean(inventoryAccountKey(category.name)))
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
@@ -1926,19 +1928,31 @@ export default function Home() {
     const saved = accountingCategories
       .filter((category) => category.active && category.reportSection === config.reportSection)
       .sort((a, b) => a.name.localeCompare(b.name));
+    if (event.value === "inventory_purchase") {
+      const canonicalSaved = [...new Set(saved.map((category) => inventoryAccountKey(category.name)).filter((name) => name && name !== "INVENTORY"))];
+      const canonicalNames = new Set(canonicalSaved.map((name) => name.toLowerCase()));
+      const defaultOptions = config.defaults
+        .map((name) => inventoryAccountKey(name) || normalizeAccountingItem(name))
+        .filter((name) => name && name !== "PLUSH TOY" && !canonicalNames.has(name.toLowerCase()))
+        .map((name) => ({ value: name, label: name }));
+      const savedOptions = canonicalSaved.map((name) => ({ value: name, label: name }));
+      return [{ value: rejectedInventoryOption, label: rejectedInventoryOption }, { value: newAssetOptionValue, label: "+ New account" }, ...savedOptions, ...defaultOptions]
+        .filter((option, index, options) => options.findIndex((item) => item.value.toLowerCase() === option.value.toLowerCase()) === index);
+    }
     const savedNames = new Set(saved.map((category) => category.name.toLowerCase()));
     const defaultOptions = config.defaults
       .filter((name) => !savedNames.has(name.toLowerCase()))
       .map((name) => ({ value: name, label: name }));
     const savedOptions = saved.map((category) => ({ value: category.id, label: category.name }));
     const newLabel = event.value === "asset_purchase" ? "+ New asset" : "+ New account";
-    if (event.value === "inventory_purchase") return [{ value: rejectedInventoryOption, label: rejectedInventoryOption }, { value: newAssetOptionValue, label: newLabel }, ...savedOptions, ...defaultOptions];
     return [{ value: newAssetOptionValue, label: newLabel }, ...savedOptions, ...defaultOptions];
   }
 
   function mappedAccountName(event: ReturnType<typeof selectedBusinessEvent>, selection: string) {
+    if (event.value === "inventory_purchase" && selection && selection !== rejectedInventoryOption && selection !== newAssetOptionValue) {
+      return inventoryAccountKey(selection) || event.accountingMapping;
+    }
     const directMap: Record<string, string> = {
-      "Plush toy": "Inventory",
       Plushie: "Inventory",
       "NFC Card": "NFC Chips",
       Packaging: "Inventory",
@@ -2003,7 +2017,7 @@ export default function Home() {
     if (selectedCategory) return selectedCategory.name;
     if (transactionForm.categoryId === newAssetOptionValue) return transactionForm.accountName.trim();
     if (transactionForm.categoryId === rejectedInventoryOption) return transactionForm.accountName.trim() || rejectedInventoryOption;
-    if (transactionForm.categoryId === "Plush toy" && transactionForm.accountName.trim()) return transactionForm.accountName.trim();
+    if (event.value === "inventory_purchase") return inventoryAccountKey(transactionForm.categoryId || transactionForm.accountName.trim()) || event.accountingMapping;
     return transactionForm.categoryId || transactionForm.accountName.trim() || event.accountingMapping;
   }
 
@@ -3580,7 +3594,6 @@ function AccountingWorkspacePage({
     const isInventory = categoryEvent.value === "inventory_purchase";
     const isAsset = categoryEvent.value === "asset_purchase";
     const isMoneyIn = categoryEvent.value === "payment_processor_paid";
-    const selectedAccountLabel = accountOptions.find((option) => option.value === transactionForm.categoryId)?.label ?? transactionForm.categoryId;
     const newAccountLabel = isAsset ? "New asset name" : isInventory ? "New inventory account name" : categoryEvent.value === "marketing_expense" ? "New marketing account name" : "New expense account name";
     const calculatedAmount = Number(transactionForm.amount) || ((Number(transactionForm.quantity) || 0) * (Number(transactionForm.unitCost) || 0));
     const processorPayouts = transactions.filter((transaction) => transaction.businessEvent === "payment_processor_paid");
@@ -3650,7 +3663,6 @@ function AccountingWorkspacePage({
           <h3>New {categoryEvent.label} record</h3>
           <label>Date<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label>
           <label>{isInventory ? "Inventory item" : isMoneyIn ? "Money in type" : isAsset ? "Asset" : "Category"}<select value={transactionForm.categoryId} onChange={(input) => onTransactionFormChange({ categoryId: input.target.value, accountName: "" })}><option value="">Choose</option>{accountOptions.map((account) => <option key={account.value} value={account.value}>{account.label}</option>)}</select></label>
-          {isInventory && selectedAccountLabel === "Plush toy" && <label>Plush character<select value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })}><option value="">Choose character</option><option value="BILLY">BILLY</option><option value="TOOTSIE">TOOTSIE</option><option value="HUNNIE">HUNNIE</option><option value="DRAGON WARRIOR">DRAGON WARRIOR</option></select></label>}
           {isInventory && transactionForm.categoryId === rejectedInventoryOption && <label>Rejected item<select value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })}><option value="">Choose rejected item</option><option value="BILLY">BILLY</option><option value="TOOTSIE">TOOTSIE</option><option value="HUNNIE">HUNNIE</option><option value="DRAGON WARRIOR">DRAGON WARRIOR</option><option value="PACKAGING">PACKAGING</option><option value="BOXES">BOXES</option><option value="BUBBLE WRAP">BUBBLE WRAP</option><option value="WAX SEAL">WAX SEAL</option></select></label>}
           {transactionForm.categoryId === newAssetOptionValue && <label>{newAccountLabel}<input value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })} placeholder={isAsset ? "Example: Printer, heat press machine..." : isInventory ? "Example: Speaker, wax seal, bubble wrap..." : categoryEvent.value === "marketing_expense" ? "Example: Meta ads, TikTok ads..." : "Example: Labour, samples, JnT..."} /></label>}
           <div className="accounting-two-cols"><label>{isInventory ? "Unit price" : "Amount"}<input type="number" min="0" step="0.01" value={isInventory ? transactionForm.unitCost : transactionForm.amount} onChange={(input) => isInventory ? onInventoryCostFieldChange("unitCost", input.target.value) : onTransactionFormChange({ amount: input.target.value })} /></label>{isInventory ? <label>{transactionForm.categoryId === rejectedInventoryOption ? "Quantity rejected" : "Quantity bought"}<input type="number" min="0" step="1" value={transactionForm.quantity} onChange={(input) => onInventoryCostFieldChange("quantity", input.target.value)} /></label> : <label>Supplier / source<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder={isMoneyIn ? "Stripe, Xendit, TikTok Shop..." : "Supplier name"} /></label>}</div>
@@ -3737,8 +3749,11 @@ function AccountingWorkspacePage({
           <button className="button primary" disabled={saving} onClick={onSaveAccount}>{saving ? "Saving..." : accountForm.id ? "Save account changes" : "Add account"}</button>
         </section>
         <section className="card accounting-table-card"><h3>Saved category accounts</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>Section</th><th>Account item</th><th>Type</th><th>Parent</th><th /></tr></thead><tbody>{sectionEntries.flatMap(([key, config]) => {
-          const rows = categories.filter((category) => category.reportSection === config.reportSection).sort((a, b) => a.name.localeCompare(b.name));
-          return rows.map((account) => <tr key={account.id}><td>{config.label}</td><td><strong>{account.name}</strong><br /><small>Used by {config.sourceEntity}</small></td><td>{account.accountType}</td><td>{account.parentId ? categoryName(account.parentId) : config.parentAccount}</td><td><button className="view-button" onClick={() => onEditAccount(account)}>Edit</button></td></tr>);
+          const sectionRows = categories.filter((category) => category.reportSection === config.reportSection).filter((category) => key !== "inventory" || Boolean(inventoryAccountKey(category.name))).sort((a, b) => a.name.localeCompare(b.name));
+          const rows = key === "inventory"
+            ? sectionRows.filter((account, index, accounts) => accounts.findIndex((item) => inventoryAccountKey(item.name) === inventoryAccountKey(account.name)) === index)
+            : sectionRows;
+          return rows.map((account) => <tr key={account.id}><td>{config.label}</td><td><strong>{key === "inventory" ? inventoryAccountKey(account.name) : account.name}</strong><br /><small>Used by {config.sourceEntity}</small></td><td>{account.accountType}</td><td>{account.parentId ? categoryName(account.parentId) : config.parentAccount}</td><td><button className="view-button" onClick={() => onEditAccount(account)}>Edit</button></td></tr>);
         })}</tbody></table>{!categories.some((category) => Object.values(bookkeepingSectionConfigs).some((config) => config.reportSection === category.reportSection)) && <div className="empty"><strong>No saved category accounts yet</strong><p>Create one from a bookkeeping entry form using + New account.</p></div>}</div></section>
       </section>
     </section>;
