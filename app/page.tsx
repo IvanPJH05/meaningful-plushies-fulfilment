@@ -374,8 +374,14 @@ function normalizeAccountingItem(value: string) {
   return value.trim().toUpperCase().replace(/\s+/g, " ");
 }
 
+function inventoryAccountKey(value: string) {
+  const normalized = normalizeAccountingItem(value).replace(/\bPLUSH(?:IE)?\b/g, "").replace(/\bSKIN\b/g, "").replace(/\s+/g, " ").trim();
+  const character = stockCharacters.find((item) => normalized === item || normalized.includes(item));
+  return character ?? normalized;
+}
+
 function cogsAccountForInventoryItem(itemName: string) {
-  const normalized = normalizeAccountingItem(itemName);
+  const normalized = inventoryAccountKey(itemName);
   if (normalized.includes("SPEAKER") || normalized.includes("VOICE")) return "Speaker Cost";
   if (normalized.includes("NFC")) return "NFC Cost";
   if (normalized.includes("PACK") || normalized.includes("BOX") || normalized.includes("BUBBLE") || normalized.includes("WAX")) return "Packaging Cost";
@@ -3434,11 +3440,14 @@ function AccountingWorkspacePage({
   const categoryOptions = categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>);
   const groupedEvents = Array.from(new Set(businessEvents.map((item) => item.group)));
   const parentOptions = categories.filter((category) => category.allowSubAccounts && !category.parentId);
-  const inventoryMappingOptions = [...new Set(categories
-    .filter((category) => category.active)
-    .filter((category) => category.reportSection === bookkeepingSectionConfigs.inventory.reportSection || (category.parentId && categoryName(category.parentId) === "Inventory"))
-    .map((category) => normalizeAccountingItem(category.name))
-    .filter((name) => name && name !== "INVENTORY"))]
+  const inventoryMappingOptions = [...new Set([
+    ...stockCharacters,
+    ...categories
+      .filter((category) => category.active)
+      .filter((category) => category.reportSection === bookkeepingSectionConfigs.inventory.reportSection || (category.parentId && categoryName(category.parentId) === "Inventory"))
+      .map((category) => inventoryAccountKey(category.name))
+      .filter((name) => name && name !== "INVENTORY"),
+  ])]
     .sort((a, b) => a.localeCompare(b));
   const categoryEventValue = bookkeepingEventByView[view];
   const categoryEvent = businessEvents.find((item) => item.value === categoryEventValue);
@@ -4087,7 +4096,7 @@ function FormalAccountingWorkspacePage({
   const [accountingPeriodMode, setAccountingPeriodMode] = useState<AccountingPeriodMode>("this_month");
   const [accountingStartDate, setAccountingStartDate] = useState(monthStartKey());
   const [accountingEndDate, setAccountingEndDate] = useState(monthEndKey());
-  const inventoryItemName = (value: string) => value.trim().toUpperCase().replace(/\s+/g, " ");
+  const inventoryItemName = inventoryAccountKey;
   const sortedTransactions = [...transactions].sort((a, b) => {
     const dateCompare = new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime();
     return dateCompare || a.createdAt.localeCompare(b.createdAt);
@@ -4373,14 +4382,17 @@ function FormalAccountingWorkspacePage({
   }, {})).sort((a, b) => a.itemName.localeCompare(b.itemName));
   const visibleUnitCostRows = (selectedUnitCostItem === "all" ? unitCostRows : unitCostRows.filter((row) => row.itemName === selectedUnitCostItem))
     .sort((a, b) => a.itemName.localeCompare(b.itemName) || a.date.localeCompare(b.date) || a.batchNumber - b.batchNumber);
-  const inventoryMappingOptions = [...new Set(categories
-    .filter((category) => category.active)
-    .filter((category) => category.reportSection === bookkeepingSectionConfigs.inventory.reportSection || (category.parentId && categoryName(category.parentId) === "Inventory"))
-    .map((category) => normalizeAccountingItem(category.name))
-    .filter((name) => name && name !== "INVENTORY"))]
+  const inventoryMappingOptions = [...new Set([
+    ...stockCharacters,
+    ...categories
+      .filter((category) => category.active)
+      .filter((category) => category.reportSection === bookkeepingSectionConfigs.inventory.reportSection || (category.parentId && categoryName(category.parentId) === "Inventory"))
+      .map((category) => inventoryAccountKey(category.name))
+      .filter((name) => name && name !== "INVENTORY"),
+  ])]
     .sort((a, b) => a.localeCompare(b));
   const nextFifoBatchForItem = (itemName: string) => purchaseBatchStates
-    .filter((batch) => batch.itemName === normalizeAccountingItem(itemName) && batch.quantityLeft > 0)
+    .filter((batch) => inventoryAccountKey(batch.itemName) === inventoryAccountKey(itemName) && batch.quantityLeft > 0)
     .sort((a, b) => a.date.localeCompare(b.date) || a.batchNumber - b.batchNumber)[0];
   const selectedCogsSku = normalizeAccountingItem(salesConsumptionMappingForm.sku || stockCharacters[0]);
   const selectedSalesConsumptionMappings = salesConsumptionMappings.filter((mapping) => normalizeAccountingItem(mapping.sku) === selectedCogsSku);
