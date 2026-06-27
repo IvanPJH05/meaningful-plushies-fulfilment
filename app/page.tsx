@@ -377,10 +377,19 @@ function normalizeAccountingItem(value: string) {
 function inventoryAccountKey(value: string) {
   const normalized = normalizeAccountingItem(value);
   if (normalized === "PLUSH TOY") return "";
+  const aliases: Record<string, string> = {
+    "PLUSHIE SPEAKER": "SPEAKER",
+    SPEAKERS: "SPEAKER",
+    "NFC CARDS": "NFC CARD",
+    "NFC CHIPS": "NFC CARD",
+    BOXES: "CARTON BOX",
+  };
+  if (aliases[normalized]) return aliases[normalized];
   const character = stockCharacters.find((item) => normalized === item || normalized.includes(item));
   const isPlushSkinName = /\bPLUSH(?:IE)?\b/.test(normalized) || /\bSKIN\b/.test(normalized);
   if (character && (normalized === character || isPlushSkinName)) return character;
   const withoutPlushSkinWords = normalized.replace(/\bPLUSH(?:IE)?\b/g, "").replace(/\bSKIN\b/g, "").replace(/\s+/g, " ").trim();
+  if (aliases[withoutPlushSkinWords]) return aliases[withoutPlushSkinWords];
   const exactCharacter = stockCharacters.find((item) => withoutPlushSkinWords === item);
   return exactCharacter ?? withoutPlushSkinWords;
 }
