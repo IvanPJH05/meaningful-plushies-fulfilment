@@ -375,9 +375,13 @@ function normalizeAccountingItem(value: string) {
 }
 
 function inventoryAccountKey(value: string) {
-  const normalized = normalizeAccountingItem(value).replace(/\bPLUSH(?:IE)?\b/g, "").replace(/\bSKIN\b/g, "").replace(/\s+/g, " ").trim();
+  const normalized = normalizeAccountingItem(value);
   const character = stockCharacters.find((item) => normalized === item || normalized.includes(item));
-  return character ?? normalized;
+  const isPlushSkinName = /\bPLUSH(?:IE)?\b/.test(normalized) || /\bSKIN\b/.test(normalized);
+  if (character && (normalized === character || isPlushSkinName)) return character;
+  const withoutPlushSkinWords = normalized.replace(/\bPLUSH(?:IE)?\b/g, "").replace(/\bSKIN\b/g, "").replace(/\s+/g, " ").trim();
+  const exactCharacter = stockCharacters.find((item) => withoutPlushSkinWords === item);
+  return exactCharacter ?? withoutPlushSkinWords;
 }
 
 function cogsAccountForInventoryItem(itemName: string) {
@@ -1090,7 +1094,10 @@ export default function Home() {
       setAccountingDocuments(sharedAccountingDocuments);
       setAccountingTransactions(sharedAccountingTransactions);
       setAccountingLedgerEntries(sharedAccountingLedgerEntries);
-      setSalesConsumptionMappings(sharedSalesConsumptionMappings);
+      setSalesConsumptionMappings(sharedSalesConsumptionMappings.map((mapping) => ({
+        ...mapping,
+        inventoryItem: inventoryAccountKey(mapping.inventoryItem),
+      })));
       setContentPlanItems(sharedContentPlanItems);
       setContentIdeas(sharedContentIdeas);
       setEnvelopePrintSettings({ ...defaultEnvelopePrintSettings, ...readStoredEnvelopeSettings(), ...sharedEnvelopePrintSettings });
@@ -4505,8 +4512,9 @@ function FormalAccountingWorkspacePage({
       {!inventoryMappingOptions.length && <p className="accounting-file-name">No inventory accounts found yet. Add inventory items in Book Keeping first.</p>}
       <button className="button primary" disabled={saving} onClick={onSaveSalesConsumptionRule}>{saving ? "Saving..." : `Add item for ${selectedCogsSku}`}</button>
       <div className="table-scroll"><table className="orders-table unit-cost-table"><thead><tr><th>Inventory used</th><th>Units per sale</th><th>COGS account</th><th>Next FIFO batch</th><th /></tr></thead><tbody>{selectedSalesConsumptionMappings.map((mapping) => {
-        const nextBatch = mapping.inventoryItem ? nextFifoBatchForItem(mapping.inventoryItem) : undefined;
-        return <tr key={mapping.id}><td>{mapping.inventoryItem || "-"}</td><td>{mapping.quantityPerSale.toLocaleString("en-MY")}</td><td>{mapping.inventoryItem ? cogsAccountForInventoryItem(mapping.inventoryItem) : "-"}</td><td>{nextBatch ? `Batch ${nextBatch.batchNumber} - ${formatMoney(nextBatch.unitCost)} (${nextBatch.quantityLeft.toLocaleString("en-MY")} left)` : mapping.inventoryItem ? "No stock batch left" : "-"}</td><td><button className="view-button danger-text" onClick={() => onRemoveSalesConsumptionRule(mapping)}>Delete</button></td></tr>;
+        const inventoryUsed = inventoryAccountKey(mapping.inventoryItem);
+        const nextBatch = inventoryUsed ? nextFifoBatchForItem(inventoryUsed) : undefined;
+        return <tr key={mapping.id}><td>{inventoryUsed || "-"}</td><td>{mapping.quantityPerSale.toLocaleString("en-MY")}</td><td>{inventoryUsed ? cogsAccountForInventoryItem(inventoryUsed) : "-"}</td><td>{nextBatch ? `Batch ${nextBatch.batchNumber} - ${formatMoney(nextBatch.unitCost)} (${nextBatch.quantityLeft.toLocaleString("en-MY")} left)` : inventoryUsed ? "No stock batch left" : "-"}</td><td><button className="view-button danger-text" onClick={() => onRemoveSalesConsumptionRule(mapping)}>Delete</button></td></tr>;
       })}</tbody></table>{!selectedSalesConsumptionMappings.length && <div className="empty"><strong>No COGS mappings for {selectedCogsSku} yet</strong><p>Add inventory items above. Example: Billy uses 1 NFC Card, then FIFO pulls from the oldest NFC Card batch first.</p></div>}</div>
     </section>
     <section className="card accounting-table-card">
