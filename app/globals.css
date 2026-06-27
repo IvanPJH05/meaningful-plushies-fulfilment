@@ -42,3 +42,10 @@
 .tiktok-shop-page .json-copy-actions{display:flex;align-items:center;gap:10px;justify-content:flex-end;flex-wrap:wrap}
 .tiktok-shop-page .json-copy-actions .button{min-height:34px;padding:8px 14px}
 @media(max-width:900px){.tiktok-shop-page{grid-template-columns:1fr}.tiktok-shop-page .packing-list-header{grid-template-columns:1fr}.tiktok-shop-page .packing-manual .packing-list-actions{gap:18px}}
+
+.cogs-rule-form{display:grid;grid-template-columns:minmax(260px,420px) minmax(180px,240px);gap:16px;align-items:end;margin:16px 0 14px}
+.cogs-rule-field{display:grid;gap:7px;color:#56657a;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
+.cogs-rule-field select,.cogs-rule-field input{height:42px;border:1px solid #cbd8e8;border-radius:9px;background:#fff;color:#172033;padding:0 13px;font-weight:750;text-transform:none;letter-spacing:0;box-shadow:0 1px 0 rgba(16,34,59,.04)}
+.cogs-rule-field select:focus,.cogs-rule-field input:focus{outline:2px solid #cfe1ff;border-color:#2f76ca}
+.operating-release-card{margin-bottom:16px}
+@media(max-width:760px){.cogs-rule-form{grid-template-columns:1fr}}

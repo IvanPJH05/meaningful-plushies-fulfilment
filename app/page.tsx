@@ -163,7 +163,11 @@ type SalesConsumptionMappingForm = {
   sku: string;
   inventoryItem: string;
   quantityPerSale: string;
-  operatingExpensePerSale: string;
+};
+type OperatingCostReleaseForm = {
+  transactionDate: string;
+  amount: string;
+  description: string;
 };
 type BookkeepingCsvImportRow = {
   id: string;
@@ -362,9 +366,8 @@ const cogsAccounts = ["Plushie Cost", "Speaker Cost", "Packaging Cost", "Shippin
 
 const salesConsumptionMappingFormDefaults: SalesConsumptionMappingForm = {
   sku: "BILLY",
-  inventoryItem: "PACKAGING",
+  inventoryItem: "",
   quantityPerSale: "1",
-  operatingExpensePerSale: "0",
 };
 
 function normalizeAccountingItem(value: string) {
@@ -600,6 +603,12 @@ function monthStartKey(date = new Date()) {
 
 function monthEndKey(date = new Date()) {
   return localDateKey(new Date(date.getFullYear(), date.getMonth() + 1, 0));
+}
+
+function formatMonthLabel(value: string) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return value || "this month";
+  return new Intl.DateTimeFormat("en-MY", { month: "long", year: "numeric" }).format(date);
 }
 
 function formatMoney(value: number, currency = "MYR") {
@@ -979,6 +988,7 @@ export default function Home() {
     name: "",
   });
   const [salesConsumptionMappingForm, setSalesConsumptionMappingForm] = useState<SalesConsumptionMappingForm>(salesConsumptionMappingFormDefaults);
+  const [operatingCostReleaseForm, setOperatingCostReleaseForm] = useState<OperatingCostReleaseForm>(() => ({ transactionDate: dateKey(new Date().toISOString()), amount: "", description: "" }));
   const [contentPlanForm, setContentPlanForm] = useState<ContentPlanForm>({
     title: "",
     plannedDate: localDateKey(new Date()),
@@ -2732,10 +2742,9 @@ export default function Home() {
     const sku = normalizeAccountingItem(salesConsumptionMappingForm.sku);
     const inventoryItem = normalizeAccountingItem(salesConsumptionMappingForm.inventoryItem);
     const quantityPerSale = Number(salesConsumptionMappingForm.quantityPerSale || 0);
-    const operatingExpensePerSale = Number(salesConsumptionMappingForm.operatingExpensePerSale || 0);
     if (!sku) return setNotice("Choose the sold SKU or character.");
-    if (!inventoryItem && operatingExpensePerSale <= 0) return setNotice("Choose an inventory item or enter operating expense per sale.");
-    if (inventoryItem && quantityPerSale <= 0) return setNotice("Enter how many inventory units are used per sale.");
+    if (!inventoryItem) return setNotice("Choose an inventory account used for this character.");
+    if (quantityPerSale <= 0) return setNotice("Enter how many inventory units are used per sale.");
     setSavingAccounting(true);
     try {
       const now = new Date().toISOString();
@@ -2743,14 +2752,14 @@ export default function Home() {
         id: crypto.randomUUID(),
         sku,
         inventoryItem,
-        quantityPerSale: inventoryItem ? quantityPerSale : 0,
-        operatingExpensePerSale,
+        quantityPerSale,
+        operatingExpensePerSale: 0,
         active: true,
         createdAt: now,
         updatedAt: now,
       };
       await saveSalesConsumptionMapping(mapping);
-      await insertSharedActivity({ id: crypto.randomUUID(), action: "Sales consumption mapping added", detail: `${sku} uses ${inventoryItem || "no inventory"}${operatingExpensePerSale ? ` plus ${formatMoney(operatingExpensePerSale)} operating expense` : ""}.`, actor: session?.displayName ?? "Admin", createdAt: now });
+      await insertSharedActivity({ id: crypto.randomUUID(), action: "Sales consumption mapping added", detail: `${sku} uses ${inventoryItem}.`, actor: session?.displayName ?? "Admin", createdAt: now });
       setSalesConsumptionMappingForm({ ...salesConsumptionMappingFormDefaults, sku });
       await loadSharedData();
       setNotice("Sales consumption mapping saved.");
@@ -2765,11 +2774,85 @@ export default function Home() {
     setSavingAccounting(true);
     try {
       await deleteSalesConsumptionMapping(mapping.id);
-      await insertSharedActivity({ id: crypto.randomUUID(), action: "Sales consumption mapping removed", detail: `${mapping.sku} to ${mapping.inventoryItem || "operating expense"} removed.`, actor: session?.displayName ?? "Admin", createdAt: new Date().toISOString() });
+      await insertSharedActivity({ id: crypto.randomUUID(), action: "Sales consumption mapping removed", detail: `${mapping.sku} to ${mapping.inventoryItem || "inventory"} removed.`, actor: session?.displayName ?? "Admin", createdAt: new Date().toISOString() });
       await loadSharedData();
       setNotice("Sales consumption mapping removed.");
     } catch (error) {
       setNotice(readableError(error, "Could not remove sales consumption mapping."));
+    } finally {
+      setSavingAccounting(false);
+    }
+  }
+
+  async function releaseOperatingCost() {
+    const amount = Number(operatingCostReleaseForm.amount);
+    const transactionDate = operatingCostReleaseForm.transactionDate || dateKey(new Date().toISOString());
+    const description = operatingCostReleaseForm.description.trim() || `Operating cost used for ${formatMonthLabel(transactionDate)}`;
+    if (!Number.isFinite(amount) || amount <= 0) return setNotice("Enter the operating cost amount used for the month.");
+    setSavingAccounting(true);
+    try {
+      const actor = session?.displayName ?? "Admin";
+      const now = new Date().toISOString();
+      let operatingExpenseAccount = accountingCategories.find((category) => category.active && category.name.toLowerCase() === "operating expense");
+      if (!operatingExpenseAccount) {
+        operatingExpenseAccount = {
+          id: crypto.randomUUID(),
+          name: "Operating Expense",
+          accountType: "expense",
+          reportSection: bookkeepingSectionConfigs.expense.reportSection,
+          parentId: bookkeepingParentId(bookkeepingSectionConfigs.expense),
+          dataSourceType: "manual",
+          sourceModule: "Book Keeping",
+          sourceEntity: "Operating cost release",
+          postingTrigger: "Monthly Release",
+          allowSubAccounts: false,
+          allowedTransactionTypes: [],
+          active: true,
+        };
+        await saveAccountingCategory(operatingExpenseAccount);
+      }
+      const id = crypto.randomUUID();
+      const entries: AccountingLedgerEntry[] = [
+        { id: crypto.randomUUID(), transactionId: id, accountId: operatingExpenseAccount.id, accountName: "Operating Expense", entryType: "debit", amount, memo: description, createdAt: now },
+        { id: crypto.randomUUID(), transactionId: id, accountId: "", accountName: prepaidOperatingCostAccountName, entryType: "credit", amount, memo: "Pre-paid operating cost released", createdAt: now },
+      ];
+      await saveAccountingTransaction({
+        id,
+        source: "manual",
+        sourceId: "",
+        documentId: "",
+        businessEvent: "operating_cost_release",
+        transactionDate,
+        description,
+        accountName: "Operating Expense",
+        categoryId: operatingExpenseAccount.id,
+        transactionType: "expense",
+        paymentStatus: "paid_in_full",
+        paymentMethod: prepaidOperatingCostAccountName,
+        supplier: "",
+        quantity: 0,
+        unitCost: 0,
+        depositAmount: amount,
+        invoiceNumber: "",
+        dueDate: "",
+        supplierTerms: "",
+        debit: amount,
+        credit: amount,
+        amount,
+        currency: "MYR",
+        taxTreatment: "none",
+        notes: "Released from prepaid operating cost.",
+        createdBy: actor,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await saveAccountingLedgerEntries(id, entries);
+      await insertSharedActivity({ id: crypto.randomUUID(), action: "Operating cost released", detail: `${formatMoney(amount)} moved from ${prepaidOperatingCostAccountName} to Operating Expense.`, actor, createdAt: now });
+      setOperatingCostReleaseForm({ transactionDate, amount: "", description: "" });
+      await loadSharedData();
+      setNotice("Operating cost released into expenses.");
+    } catch (error) {
+      setNotice(readableError(error, "Could not release operating cost."));
     } finally {
       setSavingAccounting(false);
     }
@@ -2989,6 +3072,8 @@ export default function Home() {
         bookkeepingCategoryForm={bookkeepingCategoryForm}
         salesConsumptionMappingForm={salesConsumptionMappingForm}
         salesConsumptionMappings={salesConsumptionMappings}
+        operatingCostReleaseForm={operatingCostReleaseForm}
+        onOperatingCostReleaseFormChange={(patch) => setOperatingCostReleaseForm((current) => ({ ...current, ...patch }))}
         selectedFile={accountingDocumentFile}
         transactionFile={transactionDocumentFile}
         saving={savingAccounting}
@@ -3011,6 +3096,7 @@ export default function Home() {
         onSaveBookkeepingCategory={saveBookkeepingCategory}
         onSaveSalesConsumptionRule={saveSalesConsumptionRule}
         onRemoveSalesConsumptionRule={removeSalesConsumptionRule}
+        onReleaseOperatingCost={releaseOperatingCost}
         onSetupChart={setupAccountingChart}
         onEditAccount={(account) => setAccountForm({ id: account.id, name: account.name, accountType: account.accountType === "income" ? "revenue" : account.accountType, reportSection: account.reportSection, parentId: account.parentId, dataSourceType: account.dataSourceType, sourceModule: account.sourceModule || "Manual Transactions", sourceEntity: account.sourceEntity, postingTrigger: account.postingTrigger || "Manual Entry", allowSubAccounts: account.allowSubAccounts, active: account.active })}
         postingPreview={ledgerPreview()}
@@ -3221,6 +3307,7 @@ function AccountingWorkspacePage({
   bookkeepingCategoryForm,
   salesConsumptionMappingForm,
   salesConsumptionMappings,
+  operatingCostReleaseForm,
   selectedFile,
   transactionFile,
   saving,
@@ -3230,6 +3317,7 @@ function AccountingWorkspacePage({
   onAccountFormChange,
   onBookkeepingCategoryFormChange,
   onSalesConsumptionMappingFormChange,
+  onOperatingCostReleaseFormChange,
   onFileChange,
   onTransactionFileChange,
   onUploadDocument,
@@ -3243,6 +3331,7 @@ function AccountingWorkspacePage({
   onSaveBookkeepingCategory,
   onSaveSalesConsumptionRule,
   onRemoveSalesConsumptionRule,
+  onReleaseOperatingCost,
   onSetupChart,
   onEditAccount,
   postingPreview,
@@ -3278,6 +3367,7 @@ function AccountingWorkspacePage({
   bookkeepingCategoryForm: BookkeepingCategoryForm;
   salesConsumptionMappingForm: SalesConsumptionMappingForm;
   salesConsumptionMappings: SalesConsumptionMapping[];
+  operatingCostReleaseForm: OperatingCostReleaseForm;
   selectedFile: File | null;
   transactionFile: File | null;
   saving: boolean;
@@ -3287,6 +3377,7 @@ function AccountingWorkspacePage({
   onAccountFormChange: (patch: Partial<AccountingAccountForm>) => void;
   onBookkeepingCategoryFormChange: (patch: Partial<BookkeepingCategoryForm>) => void;
   onSalesConsumptionMappingFormChange: (patch: Partial<SalesConsumptionMappingForm>) => void;
+  onOperatingCostReleaseFormChange: (patch: Partial<OperatingCostReleaseForm>) => void;
   onFileChange: (file: File | null) => void;
   onTransactionFileChange: (file: File | null) => void;
   onUploadDocument: () => void;
@@ -3300,6 +3391,7 @@ function AccountingWorkspacePage({
   onSaveBookkeepingCategory: () => void;
   onSaveSalesConsumptionRule: () => void;
   onRemoveSalesConsumptionRule: (mapping: SalesConsumptionMapping) => void;
+  onReleaseOperatingCost: () => void;
   onSetupChart: () => void;
   onEditAccount: (account: AccountingCategory) => void;
   postingPreview: AccountingLedgerEntry[];
@@ -3342,24 +3434,24 @@ function AccountingWorkspacePage({
   const categoryOptions = categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>);
   const groupedEvents = Array.from(new Set(businessEvents.map((item) => item.group)));
   const parentOptions = categories.filter((category) => category.allowSubAccounts && !category.parentId);
-  const inventoryMappingOptions = [...new Set([
-    ...bookkeepingInventoryStockKeys,
-    ...categories.filter((category) => category.reportSection === bookkeepingSectionConfigs.inventory.reportSection || category.name === "Inventory" || (category.parentId && categoryName(category.parentId) === "Inventory")).map((category) => normalizeAccountingItem(category.name)),
-  ])].sort((a, b) => a.localeCompare(b));
+  const inventoryMappingOptions = [...new Set(categories
+    .filter((category) => category.active)
+    .filter((category) => category.reportSection === bookkeepingSectionConfigs.inventory.reportSection || (category.parentId && categoryName(category.parentId) === "Inventory"))
+    .map((category) => normalizeAccountingItem(category.name))
+    .filter((name) => name && name !== "INVENTORY"))]
+    .sort((a, b) => a.localeCompare(b));
   const categoryEventValue = bookkeepingEventByView[view];
   const categoryEvent = businessEvents.find((item) => item.value === categoryEventValue);
   const unsettledTransactions = transactions.filter((transaction) => ["deposit_paid", "on_credit", "pay_later"].includes(transaction.paymentStatus));
   const operatingCostTransactions = transactions.filter((transaction) => transaction.businessEvent === "operating_cost");
+  const operatingCostReleaseTransactions = transactions.filter((transaction) => transaction.businessEvent === "operating_cost_release");
+  const operatingCostPageTransactions = [...operatingCostTransactions, ...operatingCostReleaseTransactions].sort((a, b) => dateKey(a.transactionDate).localeCompare(dateKey(b.transactionDate)) || a.createdAt.localeCompare(b.createdAt));
   const operatingCostTransactionIds = new Set(operatingCostTransactions.map((transaction) => transaction.id));
   const operatingCostAdded = operatingCostTransactions.reduce((total, transaction) => total + transaction.amount, 0);
   const operatingCostPaid = ledgerEntries
     .filter((entry) => operatingCostTransactionIds.has(entry.transactionId) && entry.entryType === "credit" && normalizeAccountingItem(entry.accountName) === "BANK ACCOUNT")
     .reduce((total, entry) => total + entry.amount, 0);
-  const operatingCostUsed = orders.reduce((total, order) => {
-    const sku = normalizeAccountingItem(order.character);
-    const mappings = salesConsumptionMappings.filter((mapping) => mapping.active && normalizeAccountingItem(mapping.sku) === sku);
-    return total + mappings.reduce((sum, mapping) => sum + Math.max(0, mapping.operatingExpensePerSale), 0);
-  }, 0);
+  const operatingCostUsed = operatingCostReleaseTransactions.reduce((total, transaction) => total + transaction.amount, 0);
   const operatingCostRemaining = Math.max(0, operatingCostAdded - operatingCostUsed);
   const transactionEditPanel = editingTransactionForm ? <section className="accounting-form card">
     <div className="accounting-form-heading"><div><h3>Edit transaction</h3><p>Update the transaction details or attach a replacement source document.</p></div><button className="view-button" onClick={onCancelEditTransaction}>Cancel</button></div>
@@ -3394,11 +3486,11 @@ function AccountingWorkspacePage({
   </section>;
 
   if (view === "accounting_operating_costs") return <section className="accounting-workspace">
-    <div className="accounting-hero card"><div><p>OPERATING COST</p><h2>Prepaid operating costs</h2><span>New operating-cost transactions are stored as prepaid operating cost first. Each sale releases the per-sale amount into operating expense.</span></div><div className="accounting-status-pill">{formatMoney(operatingCostRemaining)} prepaid left</div></div>
+    <div className="accounting-hero card"><div><p>OPERATING COST</p><h2>Pre-paid operating costs</h2><span>Record operating-cost purchases as prepaid first. At month end, enter the amount used to move it into Operating Expense.</span></div><div className="accounting-status-pill">{formatMoney(operatingCostRemaining)} prepaid left</div></div>
     <section className="accounting-summary-grid">
       <MoneyStat label="Prepaid operating cost added" value={operatingCostAdded} tone="sales" />
       <MoneyStat label="Paid into prepaid" value={operatingCostPaid} tone="collected" />
-      <MoneyStat label="Released by sales" value={operatingCostUsed} tone="fees" />
+      <MoneyStat label="Released to expense" value={operatingCostUsed} tone="fees" />
       <MoneyStat label="Prepaid remaining" value={operatingCostRemaining} tone="transfer" />
     </section>
     <section className="accounting-form-grid">
@@ -3420,8 +3512,21 @@ function AccountingWorkspacePage({
         <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? "Saving..." : "Save prepaid cost"}</button>
       </div>
       <div>
+        <section className="accounting-form card operating-release-card">
+          <h3>Release monthly operating cost</h3>
+          <p className="accounting-file-name">This reduces {prepaidOperatingCostAccountName} and records the amount as Operating Expense.</p>
+          <label>Month / date used<input type="date" value={operatingCostReleaseForm.transactionDate} onChange={(input) => onOperatingCostReleaseFormChange({ transactionDate: input.target.value })} /></label>
+          <label>Amount used this month<input type="number" min="0" step="0.01" value={operatingCostReleaseForm.amount} onChange={(input) => onOperatingCostReleaseFormChange({ amount: input.target.value })} placeholder="RM 0.00" /></label>
+          <label>Description<input value={operatingCostReleaseForm.description} onChange={(input) => onOperatingCostReleaseFormChange({ description: input.target.value })} placeholder={`Operating cost used for ${formatMonthLabel(operatingCostReleaseForm.transactionDate)}`} /></label>
+          <section className="posting-preview">
+            <h3>Posting preview</h3>
+            <div><span>Debit Operating Expense</span><strong>{formatMoney(Number(operatingCostReleaseForm.amount) || 0)}</strong></div>
+            <div><span>Credit {prepaidOperatingCostAccountName}</span><strong>{formatMoney(Number(operatingCostReleaseForm.amount) || 0)}</strong></div>
+          </section>
+          <button className="button primary" disabled={saving} onClick={onReleaseOperatingCost}>{saving ? "Saving..." : "Release to expense"}</button>
+        </section>
         {transactionEditPanel}
-        <AccountingTransactionsTable transactions={operatingCostTransactions} ledgerEntries={ledgerEntries} documents={transactionDocuments} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} />
+        <AccountingTransactionsTable transactions={operatingCostPageTransactions} ledgerEntries={ledgerEntries} documents={transactionDocuments} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} />
       </div>
     </section>
   </section>;
@@ -4046,7 +4151,6 @@ function FormalAccountingWorkspacePage({
     return { ...batch, batchNumber };
   });
   const cogsGroups: { id: string; date: string; description: string; entries: AccountingLedgerEntry[] }[] = [];
-  const operatingExpenseGroups: { id: string; date: string; description: string; entries: AccountingLedgerEntry[] }[] = [];
   const activeSalesMappingsBySku = salesConsumptionMappings
     .filter((mapping) => mapping.active)
     .reduce<Record<string, SalesConsumptionMapping[]>>((groups, mapping) => {
@@ -4073,34 +4177,19 @@ function FormalAccountingWorkspacePage({
         }];
         const inPeriod = (!accountingStartDate || date >= accountingStartDate) && (!accountingEndDate || date <= accountingEndDate);
         return consumptionMappings.flatMap((mapping) => {
-          const events: { id: string; date: string; itemName: string; quantity: number; type: "sale"; inPeriod: boolean; sku: string; operatingExpense: number }[] = [];
+          const events: { id: string; date: string; itemName: string; quantity: number; type: "sale"; inPeriod: boolean; sku: string }[] = [];
           const itemName = inventoryItemName(mapping.inventoryItem);
           if (itemName && mapping.quantityPerSale > 0) {
-            events.push({ id: `sale-${order.id}-${mapping.id}-inventory`, date, itemName, quantity: mapping.quantityPerSale, type: "sale", inPeriod, sku, operatingExpense: 0 });
-          }
-          if (mapping.operatingExpensePerSale > 0) {
-            events.push({ id: `sale-${order.id}-${mapping.id}-opex`, date, itemName: "PREPAID OPERATING EXPENSE", quantity: 0, type: "sale", inPeriod, sku, operatingExpense: mapping.operatingExpensePerSale });
+            events.push({ id: `sale-${order.id}-${mapping.id}-inventory`, date, itemName, quantity: mapping.quantityPerSale, type: "sale", inPeriod, sku });
           }
           return events;
         });
       }),
     ...sortedTransactions
       .filter((transaction) => transaction.businessEvent === "inventory_rejected" && (!accountingEndDate || dateKey(transaction.transactionDate) <= accountingEndDate))
-      .map((transaction) => ({ id: `reject-${transaction.id}`, date: dateKey(transaction.transactionDate), itemName: inventoryItemName(transaction.accountName), quantity: Number(transaction.quantity) || (transaction.unitCost > 0 ? transaction.amount / transaction.unitCost : 0), type: "reject" as const, inPeriod: false, sku: "", operatingExpense: 0 })),
-  ].filter((event) => event.itemName && (event.quantity > 0 || event.operatingExpense > 0)).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+      .map((transaction) => ({ id: `reject-${transaction.id}`, date: dateKey(transaction.transactionDate), itemName: inventoryItemName(transaction.accountName), quantity: Number(transaction.quantity) || (transaction.unitCost > 0 ? transaction.amount / transaction.unitCost : 0), type: "reject" as const, inPeriod: false, sku: "" })),
+  ].filter((event) => event.itemName && event.quantity > 0).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   consumptionEvents.forEach((event) => {
-    if (event.operatingExpense > 0 && event.inPeriod) {
-      operatingExpenseGroups.push({
-        id: `operating-expense-${event.id}`,
-        date: event.date,
-        description: `${event.sku} operating expense used`,
-        entries: [
-          { id: `operating-expense-${event.id}-debit`, transactionId: `operating-expense-${event.id}`, accountId: "", accountName: "Operating Expense", entryType: "debit", amount: event.operatingExpense, memo: `${event.sku} operating expense used`, createdAt: event.date },
-          { id: `operating-expense-${event.id}-credit`, transactionId: `operating-expense-${event.id}`, accountId: "", accountName: prepaidOperatingCostAccountName, entryType: "credit", amount: event.operatingExpense, memo: "Pre-paid operating cost released by sale", createdAt: event.date },
-        ],
-      });
-      return;
-    }
     let remaining = event.quantity;
     for (const batch of purchaseBatchStates) {
       if (remaining <= 0) break;
@@ -4135,8 +4224,8 @@ function FormalAccountingWorkspacePage({
     }
     return entry;
   });
-  const allLedgerEntries = [...formalLedgerEntries, ...generatedSalesGroups.flatMap((group) => group.entries), ...cogsGroups.flatMap((group) => group.entries), ...operatingExpenseGroups.flatMap((group) => group.entries)];
-  const generatedTransactionDescriptions = new Map([...generatedSalesGroups.map((group) => [group.id, group.description] as const), ...cogsGroups.map((group) => [group.id, group.description] as const), ...operatingExpenseGroups.map((group) => [group.id, group.description] as const)]);
+  const allLedgerEntries = [...formalLedgerEntries, ...generatedSalesGroups.flatMap((group) => group.entries), ...cogsGroups.flatMap((group) => group.entries)];
+  const generatedTransactionDescriptions = new Map([...generatedSalesGroups.map((group) => [group.id, group.description] as const), ...cogsGroups.map((group) => [group.id, group.description] as const)]);
   const entryDate = (entry: AccountingLedgerEntry) => dateKey(transactionById.get(entry.transactionId)?.transactionDate || entry.createdAt);
   const isInAccountingRange = (date: string) => Boolean(date) && (!accountingStartDate || date >= accountingStartDate) && (!accountingEndDate || date <= accountingEndDate);
   const isBeforeAccountingRange = (date: string) => Boolean(date) && Boolean(accountingStartDate) && date < accountingStartDate;
@@ -4247,20 +4336,7 @@ function FormalAccountingWorkspacePage({
       credit: entry.entryType === "credit" ? entry.amount : 0,
       lineIndex: index,
     })));
-  const generatedOperatingExpenseJournalRows = operatingExpenseGroups
-    .filter((group) => (!accountingStartDate || group.date >= accountingStartDate) && (!accountingEndDate || group.date <= accountingEndDate))
-    .flatMap((group) => group.entries.map((entry, index) => ({
-      id: entry.id,
-      date: group.date,
-      reference: group.id.replace("operating-expense-", "").slice(0, 14),
-      account: entry.accountName,
-      accountNote: entry.accountName === "Operating Expense" ? "Automatic Expense" : "Automatic Prepaid Expense",
-      description: index === 0 ? group.description : entry.memo,
-      debit: entry.entryType === "debit" ? entry.amount : 0,
-      credit: entry.entryType === "credit" ? entry.amount : 0,
-      lineIndex: index,
-    })));
-  const journalRows = [...manualJournalRows, ...generatedJournalRows, ...generatedCogsJournalRows, ...generatedOperatingExpenseJournalRows].sort((a, b) => a.date.localeCompare(b.date) || a.reference.localeCompare(b.reference) || a.lineIndex - b.lineIndex || a.id.localeCompare(b.id));
+  const journalRows = [...manualJournalRows, ...generatedJournalRows, ...generatedCogsJournalRows].sort((a, b) => a.date.localeCompare(b.date) || a.reference.localeCompare(b.reference) || a.lineIndex - b.lineIndex || a.id.localeCompare(b.id));
   function useThisMonthPeriod() {
     setAccountingPeriodMode("this_month");
     setAccountingStartDate(monthStartKey());
@@ -4297,11 +4373,12 @@ function FormalAccountingWorkspacePage({
   }, {})).sort((a, b) => a.itemName.localeCompare(b.itemName));
   const visibleUnitCostRows = (selectedUnitCostItem === "all" ? unitCostRows : unitCostRows.filter((row) => row.itemName === selectedUnitCostItem))
     .sort((a, b) => a.itemName.localeCompare(b.itemName) || a.date.localeCompare(b.date) || a.batchNumber - b.batchNumber);
-  const inventoryMappingOptions = [...new Set([
-    ...bookkeepingInventoryStockKeys,
-    ...unitCostSummaries.map((summary) => summary.itemName),
-    ...categories.filter((category) => category.reportSection === bookkeepingSectionConfigs.inventory.reportSection || category.name === "Inventory" || (category.parentId && categoryName(category.parentId) === "Inventory")).map((category) => normalizeAccountingItem(category.name)),
-  ])].sort((a, b) => a.localeCompare(b));
+  const inventoryMappingOptions = [...new Set(categories
+    .filter((category) => category.active)
+    .filter((category) => category.reportSection === bookkeepingSectionConfigs.inventory.reportSection || (category.parentId && categoryName(category.parentId) === "Inventory"))
+    .map((category) => normalizeAccountingItem(category.name))
+    .filter((name) => name && name !== "INVENTORY"))]
+    .sort((a, b) => a.localeCompare(b));
   const nextFifoBatchForItem = (itemName: string) => purchaseBatchStates
     .filter((batch) => batch.itemName === normalizeAccountingItem(itemName) && batch.quantityLeft > 0)
     .sort((a, b) => a.date.localeCompare(b.date) || a.batchNumber - b.batchNumber)[0];
@@ -4409,16 +4486,16 @@ function FormalAccountingWorkspacePage({
       <div className="range-tabs t-account-tabs">
         {stockCharacters.map((character) => <button key={character} className={selectedCogsSku === character ? "active" : ""} onClick={() => onSalesConsumptionMappingFormChange({ sku: character })}>{character}</button>)}
       </div>
-      <div className="accounting-form-grid compact">
-        <label>Inventory item used<select value={salesConsumptionMappingForm.inventoryItem} onChange={(input) => onSalesConsumptionMappingFormChange({ inventoryItem: input.target.value })}><option value="">No inventory item</option>{inventoryMappingOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-        <label>Units used per sale<input type="number" min="0" step="0.0001" value={salesConsumptionMappingForm.quantityPerSale} onChange={(input) => onSalesConsumptionMappingFormChange({ quantityPerSale: input.target.value })} /></label>
-        <label>Operating expense per sale<input type="number" min="0" step="0.01" value={salesConsumptionMappingForm.operatingExpensePerSale} onChange={(input) => onSalesConsumptionMappingFormChange({ operatingExpensePerSale: input.target.value })} placeholder="RM 0.00" /></label>
+      <div className="cogs-rule-form">
+        <label className="cogs-rule-field">Inventory account used<select value={salesConsumptionMappingForm.inventoryItem} onChange={(input) => onSalesConsumptionMappingFormChange({ inventoryItem: input.target.value })}><option value="">Choose inventory account</option>{inventoryMappingOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+        <label className="cogs-rule-field">Units used per sale<input type="number" min="0" step="0.0001" value={salesConsumptionMappingForm.quantityPerSale} onChange={(input) => onSalesConsumptionMappingFormChange({ quantityPerSale: input.target.value })} /></label>
       </div>
-      <button className="button primary" disabled={saving} onClick={onSaveSalesConsumptionRule}>{saving ? "Saving..." : `Add item / expense for ${selectedCogsSku}`}</button>
-      <div className="table-scroll"><table className="orders-table unit-cost-table"><thead><tr><th>Inventory used</th><th>Units per sale</th><th>COGS account</th><th>Next FIFO batch</th><th>Operating expense</th><th /></tr></thead><tbody>{selectedSalesConsumptionMappings.map((mapping) => {
+      {!inventoryMappingOptions.length && <p className="accounting-file-name">No inventory accounts found yet. Add inventory items in Book Keeping first.</p>}
+      <button className="button primary" disabled={saving} onClick={onSaveSalesConsumptionRule}>{saving ? "Saving..." : `Add item for ${selectedCogsSku}`}</button>
+      <div className="table-scroll"><table className="orders-table unit-cost-table"><thead><tr><th>Inventory used</th><th>Units per sale</th><th>COGS account</th><th>Next FIFO batch</th><th /></tr></thead><tbody>{selectedSalesConsumptionMappings.map((mapping) => {
         const nextBatch = mapping.inventoryItem ? nextFifoBatchForItem(mapping.inventoryItem) : undefined;
-        return <tr key={mapping.id}><td>{mapping.inventoryItem || "-"}</td><td>{mapping.quantityPerSale.toLocaleString("en-MY")}</td><td>{mapping.inventoryItem ? cogsAccountForInventoryItem(mapping.inventoryItem) : "-"}</td><td>{nextBatch ? `Batch ${nextBatch.batchNumber} - ${formatMoney(nextBatch.unitCost)} (${nextBatch.quantityLeft.toLocaleString("en-MY")} left)` : mapping.inventoryItem ? "No stock batch left" : "-"}</td><td>{formatMoney(mapping.operatingExpensePerSale)}</td><td><button className="view-button danger-text" onClick={() => onRemoveSalesConsumptionRule(mapping)}>Delete</button></td></tr>;
-      })}</tbody></table>{!selectedSalesConsumptionMappings.length && <div className="empty"><strong>No COGS mappings for {selectedCogsSku} yet</strong><p>Add inventory items or an operating expense above. Example: Billy uses 1 NFC Card, then FIFO pulls from the oldest NFC Card batch first.</p></div>}</div>
+        return <tr key={mapping.id}><td>{mapping.inventoryItem || "-"}</td><td>{mapping.quantityPerSale.toLocaleString("en-MY")}</td><td>{mapping.inventoryItem ? cogsAccountForInventoryItem(mapping.inventoryItem) : "-"}</td><td>{nextBatch ? `Batch ${nextBatch.batchNumber} - ${formatMoney(nextBatch.unitCost)} (${nextBatch.quantityLeft.toLocaleString("en-MY")} left)` : mapping.inventoryItem ? "No stock batch left" : "-"}</td><td><button className="view-button danger-text" onClick={() => onRemoveSalesConsumptionRule(mapping)}>Delete</button></td></tr>;
+      })}</tbody></table>{!selectedSalesConsumptionMappings.length && <div className="empty"><strong>No COGS mappings for {selectedCogsSku} yet</strong><p>Add inventory items above. Example: Billy uses 1 NFC Card, then FIFO pulls from the oldest NFC Card batch first.</p></div>}</div>
     </section>
     <section className="card accounting-table-card">
       <div className="accounting-form-heading"><div><h3>Inventory item overview</h3><p>Quantity left is calculated after FIFO sales and rejected inventory removals.</p></div><label className="unit-cost-filter">Item<select value={selectedUnitCostItem} onChange={(event) => setSelectedUnitCostItem(event.target.value)}><option value="all">View all</option>{unitCostSummaries.map((summary) => <option key={summary.itemName} value={summary.itemName}>{summary.itemName}</option>)}</select></label></div>
