@@ -58,6 +58,7 @@ type View =
   | "orders" | "fulfilment" | "packing_slips" | "print_envelope" | "import" | "tiktok_shop" | "fulfilled" | "history" | "settings" | "stock" | "sales_report"
   | "accounting_dashboard" | "accounting_documents" | "accounting_transactions" | "accounting_csv_import" | "accounting_profit_loss" | "accounting_balance_sheet"
   | "accounting_cash_flow" | "accounting_operating_costs" | "accounting_general_ledger" | "accounting_trial_balance" | "accounting_payable" | "accounting_receivable"
+  | "accounting_other_income"
   | "accounting_bank_reconciliation" | "accounting_product_profitability" | "accounting_marketing_profitability" | "accounting_cash_position"
   | "accounting_tax_reports" | "accounting_settings" | "accounting_files" | "accounting_general_journal" | "accounting_t_accounts" | "accounting_unit_costs" | "accounting_financial_reports"
   | "content_dashboard" | "content_plan" | "content_ideas";
@@ -141,6 +142,11 @@ type AccountingTransactionForm = {
   taxTreatment: string;
   notes: string;
 };
+type OtherIncomeSaleLine = {
+  character: string;
+  quantity: string;
+  unitPrice: string;
+};
 type AccountingAccountForm = {
   id: string;
   name: string;
@@ -154,7 +160,7 @@ type AccountingAccountForm = {
   allowSubAccounts: boolean;
   active: boolean;
 };
-type BookkeepingSectionKey = "inventory" | "expense" | "asset" | "marketing";
+type BookkeepingSectionKey = "inventory" | "expense" | "asset" | "marketing" | "otherIncome";
 type BookkeepingCategoryForm = {
   section: BookkeepingSectionKey;
   name: string;
@@ -287,6 +293,15 @@ const bookkeepingSectionConfigs: Record<BookkeepingSectionKey, {
     sourceEntity: "Marketing category",
     defaults: ["Meta ads", "TikTok ads"],
   },
+  otherIncome: {
+    label: "Other income accounts",
+    singularLabel: "Other income account",
+    reportSection: "Revenue",
+    accountType: "revenue",
+    parentAccount: "Revenue",
+    sourceEntity: "Other income sale",
+    defaults: ["Offline sales"],
+  },
 };
 const prepaidOperatingCostAccountName = "Pre-paid Operating Cost";
 const legacyPrepaidOperatingCostAccountNames = ["Prepaid Operating Expense", "Operating Costs"];
@@ -302,6 +317,7 @@ const businessEvents = [
   { group: "Money out", value: "asset_purchase", label: "Assets", transactionLabel: "Asset Purchase", accountingMapping: "Assets", accounts: ["New asset"] },
   { group: "Money out", value: "marketing_expense", label: "Marketing", transactionLabel: "Marketing Expense", accountingMapping: "Marketing", accounts: ["Meta ads", "TikTok ads"] },
   { group: "Money in", value: "payment_processor_paid", label: "Cash", transactionLabel: "Cash", accountingMapping: "Cash", accounts: ["Bank Transfer", "Stripe", "Xendit", "Payment Processing Fees", "Owner's Equity", "Drawings"] },
+  { group: "Money in", value: "other_income", label: "Other Income", transactionLabel: "Other Income", accountingMapping: "Other Income", accounts: ["Offline sales"] },
   { group: "Money out", value: "operating_cost", label: "Operating Cost", transactionLabel: "Operating Cost", accountingMapping: prepaidOperatingCostAccountName, accounts: [prepaidOperatingCostAccountName] },
 ] as const;
 const rejectedInventoryOption = "Rejected Inventory";
@@ -311,6 +327,7 @@ const bookkeepingEventByView: Partial<Record<View, (typeof businessEvents)[numbe
   accounting_balance_sheet: "asset_purchase",
   accounting_profit_loss: "marketing_expense",
   accounting_cash_flow: "payment_processor_paid",
+  accounting_other_income: "other_income",
   accounting_operating_costs: "operating_cost",
 };
 
@@ -369,6 +386,7 @@ const salesConsumptionMappingFormDefaults: SalesConsumptionMappingForm = {
   inventoryItem: "",
   quantityPerSale: "1",
 };
+const defaultOtherIncomeSaleLines = (): OtherIncomeSaleLine[] => stockCharacters.map((character) => ({ character, quantity: "", unitPrice: "" }));
 
 function normalizeAccountingItem(value: string) {
   return value.trim().toUpperCase().replace(/\s+/g, " ");
@@ -417,6 +435,7 @@ const accountingViews: readonly View[] = [
   "accounting_balance_sheet",
   "accounting_profit_loss",
   "accounting_cash_flow",
+  "accounting_other_income",
   "accounting_operating_costs",
   "accounting_settings",
 ];
@@ -569,6 +588,7 @@ const accountingNavItems: NavItem[] = [
   { view: "accounting_balance_sheet", label: "Assets", icon: "accounting" },
   { view: "accounting_profit_loss", label: "Marketing", icon: "report" },
   { view: "accounting_cash_flow", label: "Cash", icon: "cash" },
+  { view: "accounting_other_income", label: "Other Income", icon: "cash" },
   { view: "accounting_operating_costs", label: "Operating Cost", icon: "ledger" },
   { view: "accounting_settings", label: "Book Keeping Settings", icon: "settings" },
 ];
@@ -1007,6 +1027,7 @@ export default function Home() {
     section: "inventory",
     name: "",
   });
+  const [otherIncomeSaleLines, setOtherIncomeSaleLines] = useState<OtherIncomeSaleLine[]>(defaultOtherIncomeSaleLines);
   const [salesConsumptionMappingForm, setSalesConsumptionMappingForm] = useState<SalesConsumptionMappingForm>(salesConsumptionMappingFormDefaults);
   const [operatingCostReleaseForm, setOperatingCostReleaseForm] = useState<OperatingCostReleaseForm>(() => ({ transactionDate: dateKey(new Date().toISOString()), amount: "", description: "" }));
   const [contentPlanForm, setContentPlanForm] = useState<ContentPlanForm>({
@@ -1309,7 +1330,14 @@ export default function Home() {
     fees: total.fees + row.totalFees,
     cash: total.cash + row.cashAfterFees,
   }), { sales: 0, discounts: 0, processingFees: 0, shopifyFees: 0, fees: 0, cash: 0 }), [visibleReportRows]);
-  const stock = useMemo(() => summarizeStock(orders, stockSettings), [orders, stockSettings]);
+  const otherIncomeCharacterSales = useMemo(() => accountingTransactions
+    .filter((transaction) => transaction.businessEvent === "other_income")
+    .reduce<Partial<Record<(typeof stockCharacters)[number], number>>>((totals, transaction) => {
+      const character = inventoryAccountKey(transaction.supplier) as (typeof stockCharacters)[number];
+      if (stockCharacters.includes(character)) totals[character] = (totals[character] ?? 0) + (Number(transaction.quantity) || 0);
+      return totals;
+    }, {}), [accountingTransactions]);
+  const stock = useMemo(() => summarizeStock(orders, stockSettings, otherIncomeCharacterSales), [orders, stockSettings, otherIncomeCharacterSales]);
   const historyEvents = useMemo<ActivityEvent[]>(() => [
     ...activity,
     ...orders.flatMap((order) => order.statusHistory.map((event) => ({
@@ -1905,6 +1933,10 @@ export default function Home() {
     });
   }
 
+  function updateOtherIncomeSaleLine(character: string, patch: Partial<OtherIncomeSaleLine>) {
+    setOtherIncomeSaleLines((current) => current.map((line) => line.character === character ? { ...line, ...patch } : line));
+  }
+
   function selectedBusinessEvent() {
     const pageBusinessEvent = bookkeepingEventByView[view];
     return businessEvents.find((event) => event.value === (pageBusinessEvent ?? transactionForm.businessEvent)) ?? businessEvents[0];
@@ -1915,6 +1947,7 @@ export default function Home() {
     if (eventValue === "expense") return bookkeepingSectionConfigs.expense;
     if (eventValue === "asset_purchase") return bookkeepingSectionConfigs.asset;
     if (eventValue === "marketing_expense") return bookkeepingSectionConfigs.marketing;
+    if (eventValue === "other_income") return bookkeepingSectionConfigs.otherIncome;
     return null;
   }
 
@@ -2070,6 +2103,12 @@ export default function Home() {
       return [
         { id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Bank Account", entryType: "debit", amount, memo: transactionForm.categoryId === "Owner's Equity" ? "Owner capital received" : "Payment received", createdAt: now },
         { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: transactionForm.categoryId || "Payment Processor", entryType: "credit", amount, memo: transactionForm.categoryId === "Owner's Equity" ? "Owner capital" : "Processor balance reduced", createdAt: now },
+      ];
+    }
+    if (event.value === "other_income") {
+      return [
+        { id: crypto.randomUUID(), transactionId, accountId: "", accountName: transactionForm.paymentMethod || "Bank Account", entryType: "debit", amount, memo: "Other income received", createdAt: now },
+        { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName, entryType: "credit", amount, memo: event.label, createdAt: now },
       ];
     }
     if (event.value === "operating_cost") {
@@ -2365,12 +2404,18 @@ export default function Home() {
     const unitCost = Number(transactionForm.unitCost) || 0;
     let amount = Number(transactionForm.amount);
     if ((!Number.isFinite(amount) || amount <= 0) && quantity > 0 && unitCost > 0) amount = quantity * unitCost;
+    const otherIncomeLinesToSave = otherIncomeSaleLines
+      .map((line) => ({ character: inventoryAccountKey(line.character), quantity: Number(line.quantity) || 0, unitPrice: Number(line.unitPrice) || 0 }))
+      .filter((line) => line.character && line.quantity > 0 && line.unitPrice > 0);
+    const otherIncomeTotal = otherIncomeLinesToSave.reduce((total, line) => total + line.quantity * line.unitPrice, 0);
     const depositAmount = Number(transactionForm.depositAmount) || 0;
     const event = selectedBusinessEvent();
-    const description = transactionForm.description.trim() || (event.value === "payment_processor_paid" && transactionForm.categoryId ? `${transactionForm.categoryId} payout to bank` : "");
+    if (event.value === "other_income") amount = otherIncomeTotal;
+    const description = transactionForm.description.trim() || (event.value === "payment_processor_paid" && transactionForm.categoryId ? `${transactionForm.categoryId} payout to bank` : event.value === "other_income" ? "Other income sale" : "");
     if (!description) return setNotice("Add a transaction description.");
     if (!Number.isFinite(amount) || amount < 0) return setNotice("Enter a valid transaction amount.");
     if (event.value !== "operating_cost" && !transactionForm.categoryId && !transactionForm.accountName.trim()) return setNotice("Choose an account or type the item name.");
+    if (event.value === "other_income" && !otherIncomeLinesToSave.length) return setNotice("Enter at least one character quantity and price.");
     if (transactionForm.categoryId === rejectedInventoryOption && !transactionForm.accountName.trim()) return setNotice("Choose which inventory item was rejected.");
     if (transactionForm.paymentStatus === "deposit_paid" && (depositAmount <= 0 || depositAmount >= amount)) return setNotice("Enter a deposit amount that is more than 0 and less than the total.");
     setSavingAccounting(true);
@@ -2382,6 +2427,79 @@ export default function Home() {
       const isRejectedInventory = transactionForm.categoryId === rejectedInventoryOption;
       const accountName = bookkeepingAccountNameForSave(event).trim();
       let account = isRejectedInventory ? null : await ensureBookkeepingTransactionAccount(event, accountName, actor);
+      if (event.value === "other_income") {
+        if (!account) return setNotice("Choose or create an other income account.");
+        if (transactionDocumentFile) {
+          documentId = crypto.randomUUID();
+          const filePath = await uploadAccountingDocumentFile(transactionDocumentFile, documentId);
+          await saveAccountingDocument({
+            id: documentId,
+            filePath,
+            fileName: transactionDocumentFile.name,
+            fileType: transactionDocumentFile.type || "application/octet-stream",
+            fileSize: transactionDocumentFile.size,
+            name: transactionForm.invoiceNumber.trim() ? `Invoice ${transactionForm.invoiceNumber.trim()}` : description,
+            supplier: transactionForm.supplier.trim(),
+            description: `${event.label}: ${description}`,
+            documentDate: transactionForm.transactionDate,
+            amount,
+            categoryId: account.id,
+            transactionType: "income",
+            taxTreatment: transactionForm.taxTreatment,
+            notes: transactionForm.notes.trim(),
+            uploadedBy: actor,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+        for (const line of otherIncomeLinesToSave) {
+          const lineAmount = line.quantity * line.unitPrice;
+          const lineId = crypto.randomUUID();
+          const lineDescription = `${description} - ${line.character}`;
+          const entries: AccountingLedgerEntry[] = [
+            { id: crypto.randomUUID(), transactionId: lineId, accountId: "", accountName: transactionForm.paymentMethod || "Bank Account", entryType: "debit", amount: lineAmount, memo: "Other income received", createdAt: now },
+            { id: crypto.randomUUID(), transactionId: lineId, accountId: account.id, accountName: account.name, entryType: "credit", amount: lineAmount, memo: line.character, createdAt: now },
+          ];
+          await saveAccountingTransaction({
+            id: lineId,
+            source: documentId ? "document" : "manual",
+            sourceId: documentId,
+            documentId,
+            businessEvent: event.value,
+            transactionDate: transactionForm.transactionDate,
+            description: lineDescription,
+            accountName: account.name,
+            categoryId: account.id,
+            transactionType: "income",
+            paymentStatus: "paid_in_full",
+            paymentMethod: transactionForm.paymentMethod || "Bank Account",
+            supplier: line.character,
+            quantity: line.quantity,
+            unitCost: line.unitPrice,
+            depositAmount: lineAmount,
+            invoiceNumber: transactionForm.invoiceNumber.trim(),
+            dueDate: "",
+            supplierTerms: "",
+            debit: lineAmount,
+            credit: lineAmount,
+            amount: lineAmount,
+            currency: "MYR",
+            taxTreatment: transactionForm.taxTreatment,
+            notes: transactionForm.notes.trim(),
+            createdBy: actor,
+            createdAt: now,
+            updatedAt: now,
+          });
+          await saveAccountingLedgerEntries(lineId, entries);
+        }
+        await insertSharedActivity({ id: crypto.randomUUID(), action: "Other income recorded", detail: `${account.name}: ${formatMoney(amount)} from ${otherIncomeLinesToSave.length} character line${otherIncomeLinesToSave.length === 1 ? "" : "s"}.`, actor, createdAt: now });
+        setTransactionForm({ ...emptyTransactionForm(), businessEvent: event.value, accountName: "" });
+        setOtherIncomeSaleLines(defaultOtherIncomeSaleLines());
+        setTransactionDocumentFile(null);
+        await loadSharedData();
+        setNotice("Other income added.");
+        return;
+      }
       if (isRejectedInventory) {
         await ensureBookkeepingTransactionAccount(event, accountName, actor);
         const existingRejectedAccount = accountingCategories.find((category) => category.name.toLowerCase() === rejectedInventoryOption.toLowerCase());
@@ -3106,6 +3224,7 @@ export default function Home() {
         transactionForm={transactionForm}
         accountForm={accountForm}
         bookkeepingCategoryForm={bookkeepingCategoryForm}
+        otherIncomeSaleLines={otherIncomeSaleLines}
         salesConsumptionMappingForm={salesConsumptionMappingForm}
         salesConsumptionMappings={salesConsumptionMappings}
         operatingCostReleaseForm={operatingCostReleaseForm}
@@ -3118,6 +3237,7 @@ export default function Home() {
         onInventoryCostFieldChange={onInventoryCostFieldChange}
         onAccountFormChange={(patch) => setAccountForm((current) => ({ ...current, ...patch }))}
         onBookkeepingCategoryFormChange={(patch) => setBookkeepingCategoryForm((current) => ({ ...current, ...patch }))}
+        onOtherIncomeSaleLineChange={updateOtherIncomeSaleLine}
         onSalesConsumptionMappingFormChange={(patch) => setSalesConsumptionMappingForm((current) => ({ ...current, ...patch }))}
         onFileChange={setAccountingDocumentFile}
         onTransactionFileChange={setTransactionDocumentFile}
@@ -3341,6 +3461,7 @@ function AccountingWorkspacePage({
   transactionForm,
   accountForm,
   bookkeepingCategoryForm,
+  otherIncomeSaleLines,
   salesConsumptionMappingForm,
   salesConsumptionMappings,
   operatingCostReleaseForm,
@@ -3352,6 +3473,7 @@ function AccountingWorkspacePage({
   onInventoryCostFieldChange,
   onAccountFormChange,
   onBookkeepingCategoryFormChange,
+  onOtherIncomeSaleLineChange,
   onSalesConsumptionMappingFormChange,
   onOperatingCostReleaseFormChange,
   onFileChange,
@@ -3401,6 +3523,7 @@ function AccountingWorkspacePage({
   transactionForm: AccountingTransactionForm;
   accountForm: AccountingAccountForm;
   bookkeepingCategoryForm: BookkeepingCategoryForm;
+  otherIncomeSaleLines: OtherIncomeSaleLine[];
   salesConsumptionMappingForm: SalesConsumptionMappingForm;
   salesConsumptionMappings: SalesConsumptionMapping[];
   operatingCostReleaseForm: OperatingCostReleaseForm;
@@ -3412,6 +3535,7 @@ function AccountingWorkspacePage({
   onInventoryCostFieldChange: (field: InventoryCostField, value: string) => void;
   onAccountFormChange: (patch: Partial<AccountingAccountForm>) => void;
   onBookkeepingCategoryFormChange: (patch: Partial<BookkeepingCategoryForm>) => void;
+  onOtherIncomeSaleLineChange: (character: string, patch: Partial<OtherIncomeSaleLine>) => void;
   onSalesConsumptionMappingFormChange: (patch: Partial<SalesConsumptionMappingForm>) => void;
   onOperatingCostReleaseFormChange: (patch: Partial<OperatingCostReleaseForm>) => void;
   onFileChange: (file: File | null) => void;
@@ -3603,8 +3727,11 @@ function AccountingWorkspacePage({
     const isInventory = categoryEvent.value === "inventory_purchase";
     const isAsset = categoryEvent.value === "asset_purchase";
     const isMoneyIn = categoryEvent.value === "payment_processor_paid";
-    const newAccountLabel = isAsset ? "New asset name" : isInventory ? "New inventory account name" : categoryEvent.value === "marketing_expense" ? "New marketing account name" : "New expense account name";
-    const calculatedAmount = Number(transactionForm.amount) || ((Number(transactionForm.quantity) || 0) * (Number(transactionForm.unitCost) || 0));
+    const isOtherIncome = categoryEvent.value === "other_income";
+    const newAccountLabel = isAsset ? "New asset name" : isInventory ? "New inventory account name" : isOtherIncome ? "New income account name" : categoryEvent.value === "marketing_expense" ? "New marketing account name" : "New expense account name";
+    const otherIncomeTotal = otherIncomeSaleLines.reduce((total, line) => total + (Number(line.quantity) || 0) * (Number(line.unitPrice) || 0), 0);
+    const otherIncomeUnits = otherIncomeSaleLines.reduce((total, line) => total + (Number(line.quantity) || 0), 0);
+    const calculatedAmount = isOtherIncome ? otherIncomeTotal : Number(transactionForm.amount) || ((Number(transactionForm.quantity) || 0) * (Number(transactionForm.unitCost) || 0));
     const processorPayouts = transactions.filter((transaction) => transaction.businessEvent === "payment_processor_paid");
     const processorPayoutIds = new Set(processorPayouts.map((transaction) => transaction.id));
     const stripePaid = processorPayouts.filter((transaction) => transaction.accountName === "Stripe").reduce((total, transaction) => total + transaction.amount, 0);
@@ -3627,6 +3754,39 @@ function AccountingWorkspacePage({
           : transactionForm.categoryId === "Owner's Equity" || transactionForm.categoryId === "Drawings"
             ? 0
           : 0;
+    if (isOtherIncome) return <section className="accounting-workspace">
+      <div className="accounting-hero card"><div><p>MONEY IN</p><h2>Other Income</h2><span>Record sales that were not keyed into Shopify. These entries post as income and consume inventory through FIFO like normal sales.</span></div><div className="accounting-status-pill">{formatMoney(otherIncomeTotal)}</div></div>
+      <section className="accounting-form-grid">
+        <div className="accounting-form card">
+          <h3>New other income sale</h3>
+          <label>Date<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label>
+          <label>Income account<select value={transactionForm.categoryId} onChange={(input) => onTransactionFormChange({ categoryId: input.target.value, accountName: "" })}><option value="">Choose</option>{accountOptions.map((account) => <option key={account.value} value={account.value}>{account.label}</option>)}</select></label>
+          {transactionForm.categoryId === newAssetOptionValue && <label>{newAccountLabel}<input value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })} placeholder="Example: Pop-up booth sales, manual sales..." /></label>}
+          <label>Description<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder="Example: Weekend booth sales" /></label>
+          <label>Money received into<select value={transactionForm.paymentMethod} onChange={(input) => onTransactionFormChange({ paymentMethod: input.target.value })}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>
+          <section className="card accounting-table-card">
+            <h3>Characters sold</h3>
+            <div className="table-scroll"><table className="orders-table"><thead><tr><th>Character</th><th>Quantity sold</th><th>Price each</th><th>Total</th></tr></thead><tbody>{otherIncomeSaleLines.map((line) => {
+              const lineTotal = (Number(line.quantity) || 0) * (Number(line.unitPrice) || 0);
+              return <tr key={line.character}><td><strong>{line.character}</strong></td><td><input type="number" min="0" step="1" value={line.quantity} onChange={(input) => onOtherIncomeSaleLineChange(line.character, { quantity: input.target.value })} /></td><td><input type="number" min="0" step="0.01" value={line.unitPrice} onChange={(input) => onOtherIncomeSaleLineChange(line.character, { unitPrice: input.target.value })} /></td><td><strong>{formatMoney(lineTotal)}</strong></td></tr>;
+            })}</tbody></table></div>
+          </section>
+          <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title="Source document" description="Choose or drop receipt, proof, CSV, or image" selectedName={transactionFile?.name} onFile={onTransactionFileChange} />
+          <label>Notes<textarea value={transactionForm.notes} onChange={(event) => onTransactionFormChange({ notes: event.target.value })} /></label>
+          <section className="posting-preview">
+            <h3>Posting preview</h3>
+            <div><span>Debit {transactionForm.paymentMethod || "Bank Account"}</span><strong>{formatMoney(otherIncomeTotal)}</strong></div>
+            <div><span>Credit {(accountOptions.find((account) => account.value === transactionForm.categoryId)?.label ?? transactionForm.accountName) || "Other income account"}</span><strong>{formatMoney(otherIncomeTotal)}</strong></div>
+            <p>{otherIncomeUnits.toLocaleString("en-MY")} unit{otherIncomeUnits === 1 ? "" : "s"} will be counted as sold for FIFO inventory.</p>
+          </section>
+          <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? "Saving..." : "Save other income"}</button>
+        </div>
+        <div>
+          {transactionEditPanel}
+          <AccountingTransactionsTable transactions={transactions.filter((transaction) => transaction.businessEvent === "other_income")} ledgerEntries={ledgerEntries} documents={transactionDocuments} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} />
+        </div>
+      </section>
+    </section>;
     if (isMoneyIn) return <section className="accounting-workspace">
       <div className="accounting-hero card"><div><p>CASH</p><h2>Payment processor payouts</h2><span>Collection totals come from the fulfilment sales report. When Stripe or Xendit pays out, record the payout here: debit Bank, credit the payment processor.</span></div><div className="accounting-status-pill">{formatMoney(sales.totalCollected)}</div></div>
       <section className="sales-stats">
@@ -4228,6 +4388,27 @@ function FormalAccountingWorkspacePage({
     ...sortedTransactions
       .filter((transaction) => transaction.businessEvent === "inventory_rejected" && (!accountingEndDate || dateKey(transaction.transactionDate) <= accountingEndDate))
       .map((transaction) => ({ id: `reject-${transaction.id}`, date: dateKey(transaction.transactionDate), itemName: inventoryItemName(transaction.accountName), quantity: Number(transaction.quantity) || (transaction.unitCost > 0 ? transaction.amount / transaction.unitCost : 0), type: "reject" as const, inPeriod: false, sku: "" })),
+    ...sortedTransactions
+      .filter((transaction) => transaction.businessEvent === "other_income" && (!accountingEndDate || dateKey(transaction.transactionDate) <= accountingEndDate))
+      .flatMap((transaction) => {
+        const date = dateKey(transaction.transactionDate);
+        const sku = inventoryItemName(transaction.supplier || transaction.description);
+        const quantitySold = Number(transaction.quantity) || 0;
+        if (!sku || quantitySold <= 0) return [];
+        const mappings = activeSalesMappingsBySku[sku] ?? [];
+        const consumptionMappings: SalesConsumptionMapping[] = mappings.length ? mappings : [{
+          id: `fallback-other-income-${sku}`,
+          sku,
+          inventoryItem: sku,
+          quantityPerSale: 1,
+          operatingExpensePerSale: 0,
+          active: true,
+          createdAt: "",
+          updatedAt: "",
+        }];
+        const inPeriod = (!accountingStartDate || date >= accountingStartDate) && (!accountingEndDate || date <= accountingEndDate);
+        return consumptionMappings.map((mapping) => ({ id: `other-income-${transaction.id}-${mapping.id}`, date, itemName: inventoryItemName(mapping.inventoryItem), quantity: quantitySold * mapping.quantityPerSale, type: "sale" as const, inPeriod, sku }));
+      }),
   ].filter((event) => event.itemName && event.quantity > 0).sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
   consumptionEvents.forEach((event) => {
     let remaining = event.quantity;
@@ -4489,7 +4670,8 @@ function FormalAccountingWorkspacePage({
   const assetBalances = balancesForNames(sectionAccountNames(tAccountSections[2]));
   const marketingBalances = balancesForNames(sectionAccountNames(tAccountSections[3]));
   const cashBalances = balancesForNames(sectionAccountNames(tAccountSections[4]));
-  const salesRevenue = Math.abs(balanceForAccount("Sales"));
+  const salesRevenueRows = balancesForNames(sectionAccountNames(tAccountSections[5]));
+  const salesRevenue = salesRevenueRows.reduce((total, item) => total + Math.abs(item.balance), 0);
   const cogsAccountNames = [...new Set([
     ...cogsAccounts,
     ...categories.filter((category) => category.accountType === "cost_of_sales" || category.reportSection === "COGS").map((category) => category.name),
@@ -4566,7 +4748,8 @@ function FormalAccountingWorkspacePage({
       <header className="financial-statement-title"><p>Meaningful Plushies</p><h2>{financialReportLabels[selectedFinancialReport]}</h2><span>{selectedFinancialReport === "balance_sheet" ? `As at ${accountingEndDate ? formatDate(accountingEndDate) : formatDate(dateKey(new Date().toISOString()))}` : `For the period ${periodLabel}`}</span></header>
       {selectedFinancialReport === "income_statement" && <div className="statement-table">
         <div className="statement-section-title">Revenue</div>
-        <div className="statement-row"><span>Sales revenue</span><strong>{formatMoney(salesRevenue)}</strong></div>
+        {salesRevenueRows.map((item) => <div className="statement-row" key={item.name}><span>{item.name}</span><strong>{formatMoney(Math.abs(item.balance))}</strong></div>)}
+        {!salesRevenueRows.length && <div className="statement-row muted"><span>No revenue recorded</span><strong>{formatMoney(0)}</strong></div>}
         <div className="statement-total"><span>Total revenue</span><strong>{formatMoney(salesRevenue)}</strong></div>
         <div className="statement-section-title">Less: Cost of Goods Sold</div>
         {costOfGoodsSoldRows.map((item) => <div className="statement-row" key={item.name}><span>{item.name}</span><strong>{formatMoney(Math.abs(item.balance))}</strong></div>)}
