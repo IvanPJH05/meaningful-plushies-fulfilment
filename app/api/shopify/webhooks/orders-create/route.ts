@@ -7,6 +7,7 @@ import { fetchSharedOrders, insertSharedActivity, upsertSharedOrders } from "../
 export const runtime = "nodejs";
 
 const UPLOAD_LIFT_KEY = process.env.SHOPIFY_UPLOAD_LIFT_METAFIELD_KEY ?? "upload_lift_form_data";
+const UPLOAD_LIFT_NAMESPACE = process.env.SHOPIFY_UPLOAD_LIFT_METAFIELD_NAMESPACE ?? "custom";
 
 let cachedShopifyToken: { token: string; expiresAt: number } | null = null;
 
@@ -89,6 +90,10 @@ async function getShopifyAccessToken(domain: string) {
 }
 
 function metafieldValue(payload: Record<string, unknown>) {
+  const direct = objectValue(payload.uploadLiftFormData);
+  const directValue = textValue(direct.value);
+  if (directValue) return directValue;
+
   const metafields = payload.metafields;
   const nodes = objectValue(metafields).nodes;
   const values = Array.isArray(nodes) ? nodes : Array.isArray(metafields) ? metafields : [];
@@ -109,6 +114,10 @@ function normalizeGraphqlOrder(order: Record<string, unknown>): Record<string, u
   };
 }
 
+function wait(milliseconds: number) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 async function fetchShopifyOrder(payload: Record<string, unknown>, request: Request): Promise<Record<string, unknown>> {
   const domain = shopDomain(request, payload);
   const orderId = adminGraphqlOrderId(payload);
@@ -124,7 +133,7 @@ async function fetchShopifyOrder(payload: Record<string, unknown>, request: Requ
     },
     body: JSON.stringify({
       query: `
-        query OrderForFulfilment($id: ID!) {
+        query OrderForFulfilment($id: ID!, $uploadLiftKey: String!, $uploadLiftNamespace: String!) {
           order(id: $id) {
             id
             name
@@ -144,6 +153,7 @@ async function fetchShopifyOrder(payload: Record<string, unknown>, request: Requ
             shippingAddress { name address1 address2 city province zip country phone }
             billingAddress { name address1 address2 city province zip country phone }
             shippingLine { title }
+            uploadLiftFormData: metafield(namespace: $uploadLiftNamespace, key: $uploadLiftKey) { value }
             lineItems(first: 50) {
               nodes {
                 name
@@ -159,13 +169,26 @@ async function fetchShopifyOrder(payload: Record<string, unknown>, request: Requ
           }
         }
       `,
-      variables: { id: orderId },
+      variables: { id: orderId, uploadLiftKey: UPLOAD_LIFT_KEY, uploadLiftNamespace: UPLOAD_LIFT_NAMESPACE },
     }),
   });
 
   if (!response.ok) return payload;
   const result = await response.json() as { data?: { order?: Record<string, unknown> } };
   return result.data?.order ? normalizeGraphqlOrder(result.data.order) : payload;
+}
+
+async function fetchShopifyOrderWithMetafieldRetry(payload: Record<string, unknown>, request: Request) {
+  let fullOrder = await fetchShopifyOrder(payload, request);
+  if (metafieldValue(fullOrder) || metafieldValue(payload)) return fullOrder;
+
+  // Upload Lift can write order metafields moments after Shopify fires orders/create.
+  for (const delay of [1500, 3000, 5000]) {
+    await wait(delay);
+    fullOrder = await fetchShopifyOrder(payload, request);
+    if (metafieldValue(fullOrder)) return fullOrder;
+  }
+  return fullOrder;
 }
 
 export async function POST(request: Request) {
@@ -182,7 +205,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const fullOrder = await fetchShopifyOrder(payload, request);
+    const fullOrder = await fetchShopifyOrderWithMetafieldRetry(payload, request);
     const uploadLiftFormData = metafieldValue(fullOrder) || metafieldValue(payload);
     const existing = await fetchSharedOrders();
     const importedOrders = shopifyOrderToFulfilmentOrders(fullOrder, uploadLiftFormData, existing, "Shopify");
