@@ -50,7 +50,7 @@ Apply them to Production, Preview, and Development, then redeploy. Do not prefix
 
 ## Shopify direct order sync
 
-The app can receive Shopify order-created webhooks and save the order directly into Supabase, using the order metafield `upload_lift_form_data` for the plushie details.
+The app can receive Shopify order-created and order-updated webhooks and save the order directly into Supabase, using the order metafield `upload_lift_form_data` for the plushie details. If the Shopify order has a tag like `J&T: 632101879476`, the courier and tracking number are updated in fulfilment.
 
 Add these server-only variables in **Vercel > Settings > Environment Variables**:
 
@@ -72,11 +72,17 @@ Use this webhook URL in Shopify:
 https://YOUR_DOMAIN.vercel.app/api/shopify/webhooks/orders-create
 ```
 
+Use this webhook URL for order updates, so tracking tags sync automatically after they are added:
+
+```text
+https://YOUR_DOMAIN.vercel.app/api/shopify/webhooks/orders-updated
+```
+
 For new Shopify Dev Dashboard apps, Shopify does not show a permanent Admin API token. Add the app **Client ID** and **Client Secret** from the Shopify Dev Dashboard app settings; the server exchanges them for a short-lived Admin API token automatically. If you have an older permanent Admin API access token, you can still provide `SHOPIFY_ADMIN_ACCESS_TOKEN` as a fallback.
 
 In the Shopify app, enable order read access. The Admin GraphQL query used by this app validates against Shopify's current schema for `Order.metafields`; Shopify may also ask for related order scopes such as marketplace or quick-sale order access depending on the app configuration. After changing scopes or webhook settings, release the new Shopify app version and redeploy Vercel.
 
-When an order is created, Shopify calls the webhook, the server verifies the Shopify signature, fetches the full order and `upload_lift_form_data`, then creates or updates the matching fulfilment order. Existing status, tracking, notes, uploaded files, and fulfilment work are kept when the same order is received again.
+When an order is created or updated, Shopify calls the webhook, the server verifies the Shopify signature, fetches the full order and `upload_lift_form_data`, then creates or updates the matching fulfilment order. Existing status, notes, uploaded files, and fulfilment work are kept when the same order is received again. Tracking from Shopify tags replaces the fulfilment tracking number when a valid courier tag is present.
 
 ## Existing browser data
 

@@ -92,6 +92,7 @@ test("converts Shopify API orders with Upload Lift metafield into fulfilment ord
     currentTotalDiscountsSet: { shopMoney: { amount: "8.00", currencyCode: "MYR" } },
     totalShippingPriceSet: { shopMoney: { amount: "8.00", currencyCode: "MYR" } },
     paymentGatewayNames: ["Stripe Card Payments"],
+    tags: ["J&T: 632101879476"],
     shippingAddress: { name: "Aqil Rashya", phone: "0123456789", address1: "123 Road", city: "KL" },
     shippingLine: { title: "Standard" },
     lineItems: {
@@ -114,6 +115,8 @@ test("converts Shopify API orders with Upload Lift metafield into fulfilment ord
   assert.equal(orders[0]?.plushName, "Lumpy");
   assert.equal(orders[0]?.certificateCode, "14553997287");
   assert.equal(orders[0]?.paymentProcessor, "Stripe");
+  assert.equal(orders[0]?.courier, "J&T");
+  assert.equal(orders[0]?.trackingNumber, "632101879476");
   assert.equal(orders[0]?.meaningfulMessage, "https://upload.cloudlift.app/s/n1rdwf-40/WeFbWLC6XL.m4a");
   assert.equal(orders[0]?.idWebsiteLink, "https://meaningfulplushies.com/pages/certificate/14553997287");
 });

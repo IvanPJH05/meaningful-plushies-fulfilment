@@ -130,6 +130,11 @@
 .money-stat strong { display: block; margin-top: auto; padding-top: 9px; font-size: 21px; white-space: nowrap; }
 .selectable-money-stat select { width: 100%; min-height: 28px; margin-top: 5px; border: 0; background: transparent; color: #33445c; font-size: 11px; font-weight: 750; outline: 0; }
 .sort-controls { display: flex; gap: 7px; }
+.toolbar-row { display: flex; gap: 9px; align-items: center; min-width: 0; }
+.toolbar-filter-row { flex: 1; }
+.toolbar-action-row { justify-content: flex-end; flex-wrap: wrap; }
+.orders-toolbar { flex-direction: column; align-items: stretch; gap: 10px; }
+.orders-toolbar .search { max-width: none; }
 .toolbar .sort-controls select,.packing-list-header .sort-controls select { width: 135px; height: 38px; border: 1px solid #d7dfe9; border-radius: 7px; background: #fff; padding: 0 9px; color: var(--text); font-size: 11px; }
 .source-filter-select { width: 128px; height: 38px; border: 1px solid #d7dfe9; border-radius: 8px; background: #fff; padding: 0 10px; color: var(--text); font-size: 11px; font-weight: 800; }
 .combined-sort-select { min-width: 190px; height: 38px; border: 1px solid #d7dfe9; border-radius: 7px; background: #fff; padding: 0 10px; color: var(--text); font-size: 11px; }

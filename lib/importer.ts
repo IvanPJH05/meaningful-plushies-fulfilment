@@ -278,6 +278,24 @@ function shopifyPaymentProcessor(order: Record<string, unknown>, isZeroCashOrder
   return normalizePaymentProcessor(gateway, isZeroCashOrder);
 }
 
+function shopifyTags(order: Record<string, unknown>) {
+  const tags = order.tags;
+  if (Array.isArray(tags)) return tags.map((tag) => textValue(tag)).filter(Boolean);
+  return textValue(tags).split(",").map((tag) => tag.trim()).filter(Boolean);
+}
+
+function shopifyTrackingFromTags(order: Record<string, unknown>) {
+  for (const tag of shopifyTags(order)) {
+    const match = tag.match(/^\s*([^:]+?)\s*:\s*([A-Z0-9][A-Z0-9 -]{5,})\s*$/i);
+    if (!match) continue;
+    return {
+      courier: match[1].trim(),
+      trackingNumber: match[2].replace(/\s+/g, "").trim(),
+    };
+  }
+  return { courier: "", trackingNumber: "" };
+}
+
 function firstMetafieldValue(order: Record<string, unknown>, key: string) {
   const metafields = order.metafields;
   if (!Array.isArray(metafields)) return "";
@@ -332,6 +350,7 @@ export function shopifyOrderToFulfilmentOrders(
   const address = shopifyAddressText(shippingAddress) || shopifyAddressText(billingAddress);
   const createdAt = String(shopifyOrder.created_at ?? shopifyOrder.createdAt ?? timestamp);
   const paidAt = String(shopifyOrder.processed_at ?? shopifyOrder.processedAt ?? createdAt);
+  const tagTracking = shopifyTrackingFromTags(shopifyOrder);
   const existingById = new Map(existing.map((order) => [order.id, order]));
   const orders: Order[] = [];
 
@@ -378,8 +397,8 @@ export function shopifyOrderToFulfilmentOrders(
       meaningfulMessage: personalization.meaningfulMessage || current?.meaningfulMessage || "",
       remark: String(shopifyOrder.note ?? current?.remark ?? ""),
       voiceUploadStatus: current?.voiceUploadStatus ?? (personalization.meaningfulMessage ? "received" : "missing"),
-      courier: current?.courier || "",
-      trackingNumber: current?.trackingNumber || "",
+      courier: tagTracking.courier || current?.courier || "",
+      trackingNumber: tagTracking.trackingNumber || current?.trackingNumber || "",
       status: initialStatus,
       internalNotes: current?.internalNotes || "",
       photoDataUrl: current?.photoDataUrl,

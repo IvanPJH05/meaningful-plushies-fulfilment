@@ -19,6 +19,7 @@ const ORDER_SELECTION = `
   totalRefundedSet { shopMoney { amount currencyCode } }
   totalOutstandingSet { shopMoney { amount currencyCode } }
   paymentGatewayNames
+  tags
   shippingAddress { name address1 address2 city province zip country phone }
   billingAddress { name address1 address2 city province zip country phone }
   shippingLine { title }
