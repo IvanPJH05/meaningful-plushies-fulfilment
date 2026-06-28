@@ -8,6 +8,8 @@ export const runtime = "nodejs";
 
 const UPLOAD_LIFT_KEY = process.env.SHOPIFY_UPLOAD_LIFT_METAFIELD_KEY ?? "upload_lift_form_data";
 
+let cachedShopifyToken: { token: string; expiresAt: number } | null = null;
+
 function json(status: number, body: Record<string, unknown>) {
   return NextResponse.json(body, { status });
 }
@@ -50,6 +52,42 @@ function shopDomain(request: Request, payload: Record<string, unknown>) {
   return (fromHeader || fromEnv || fromPayload || "").replace(/^https?:\/\//, "").replace(/\/$/, "");
 }
 
+async function getShopifyAccessToken(domain: string) {
+  const fixedToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
+  if (fixedToken) return fixedToken;
+
+  const clientId = process.env.SHOPIFY_CLIENT_ID;
+  const clientSecret = process.env.SHOPIFY_CLIENT_SECRET;
+  if (!clientId || !clientSecret || !domain) return "";
+
+  const now = Date.now();
+  if (cachedShopifyToken && cachedShopifyToken.expiresAt > now + 60_000) {
+    return cachedShopifyToken.token;
+  }
+
+  const response = await fetch(`https://${domain}/admin/oauth/access_token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      client_id: clientId,
+      client_secret: clientSecret,
+      grant_type: "client_credentials",
+    }),
+  });
+
+  if (!response.ok) return "";
+
+  const result = await response.json() as { access_token?: string; expires_in?: number };
+  const token = textValue(result.access_token);
+  if (!token) return "";
+
+  cachedShopifyToken = {
+    token,
+    expiresAt: now + Math.max(1, Number(result.expires_in ?? 86_400)) * 1000,
+  };
+  return token;
+}
+
 function metafieldValue(payload: Record<string, unknown>) {
   const metafields = payload.metafields;
   const nodes = objectValue(metafields).nodes;
@@ -72,9 +110,9 @@ function normalizeGraphqlOrder(order: Record<string, unknown>): Record<string, u
 }
 
 async function fetchShopifyOrder(payload: Record<string, unknown>, request: Request): Promise<Record<string, unknown>> {
-  const token = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
   const domain = shopDomain(request, payload);
   const orderId = adminGraphqlOrderId(payload);
+  const token = await getShopifyAccessToken(domain);
   if (!token || !domain || !orderId) return payload;
 
   const apiVersion = process.env.SHOPIFY_API_VERSION ?? "2026-04";

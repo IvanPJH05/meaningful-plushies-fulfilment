@@ -56,7 +56,10 @@ Add these server-only variables in **Vercel > Settings > Environment Variables**
 
 ```env
 SHOPIFY_WEBHOOK_SECRET=YOUR_SHOPIFY_APP_CLIENT_SECRET
-SHOPIFY_ADMIN_ACCESS_TOKEN=shpat_YOUR_ADMIN_API_ACCESS_TOKEN
+SHOPIFY_CLIENT_ID=YOUR_SHOPIFY_APP_CLIENT_ID
+SHOPIFY_CLIENT_SECRET=YOUR_SHOPIFY_APP_CLIENT_SECRET
+# Optional legacy/custom-app fallback. New Dev Dashboard apps can leave this blank.
+SHOPIFY_ADMIN_ACCESS_TOKEN=
 SHOPIFY_SHOP_DOMAIN=your-store.myshopify.com
 SHOPIFY_API_VERSION=2026-04
 SHOPIFY_UPLOAD_LIFT_METAFIELD_KEY=upload_lift_form_data
@@ -67,6 +70,8 @@ Use this webhook URL in Shopify:
 ```text
 https://YOUR_DOMAIN.vercel.app/api/shopify/webhooks/orders-create
 ```
+
+For new Shopify Dev Dashboard apps, Shopify does not show a permanent Admin API token. Add the app **Client ID** and **Client Secret** from the Shopify Dev Dashboard app settings; the server exchanges them for a short-lived Admin API token automatically. If you have an older permanent Admin API access token, you can still provide `SHOPIFY_ADMIN_ACCESS_TOKEN` as a fallback.
 
 In the Shopify app, enable order read access. The Admin GraphQL query used by this app validates against Shopify's current schema for `Order.metafields`; Shopify may also ask for related order scopes such as marketplace or quick-sale order access depending on the app configuration. After changing scopes or webhook settings, release the new Shopify app version and redeploy Vercel.
 
