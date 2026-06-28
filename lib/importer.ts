@@ -185,6 +185,215 @@ function certificateLink(code: string) {
   return code ? `https://meaningfulplushies.com/pages/certificate/${code.trim()}` : "";
 }
 
+function shopifyMoney(value: unknown) {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") return money(value);
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    if (record.amount !== undefined) return shopifyMoney(record.amount);
+    if (record.shop_money !== undefined) return shopifyMoney(record.shop_money);
+    if (record.shopMoney !== undefined) return shopifyMoney(record.shopMoney);
+  }
+  return 0;
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function arrayValue(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.map(objectValue) : [];
+}
+
+function textValue(value: unknown) {
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return String(value);
+  return "";
+}
+
+function shopifyAddressText(address: unknown) {
+  if (!address || typeof address !== "object") return "";
+  const record = address as Record<string, unknown>;
+  return [
+    record.address1,
+    record.address2,
+    record.city,
+    record.province,
+    record.zip,
+    record.country,
+  ].map((item) => String(item ?? "").trim()).filter(Boolean).join(", ");
+}
+
+function shopifyAddressName(address: unknown) {
+  if (!address || typeof address !== "object") return "";
+  const record = address as Record<string, unknown>;
+  return String(record.name ?? [record.first_name, record.last_name].filter(Boolean).join(" ") ?? "").trim();
+}
+
+function shopifyLineName(lineItem: unknown) {
+  if (!lineItem || typeof lineItem !== "object") return "";
+  const record = lineItem as Record<string, unknown>;
+  return String(record.name ?? record.title ?? "").trim();
+}
+
+function shopifyLineQuantity(lineItem: unknown) {
+  if (!lineItem || typeof lineItem !== "object") return 1;
+  const record = lineItem as Record<string, unknown>;
+  const quantity = Number(record.quantity);
+  return Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+}
+
+function shopifyLineDiscount(lineItem: unknown) {
+  if (!lineItem || typeof lineItem !== "object") return 0;
+  const record = lineItem as Record<string, unknown>;
+  if (record.total_discount !== undefined) return shopifyMoney(record.total_discount);
+  if (record.totalDiscountSet !== undefined) return shopifyMoney(record.totalDiscountSet);
+  return 0;
+}
+
+function shopifyLinePrice(lineItem: unknown) {
+  if (!lineItem || typeof lineItem !== "object") return 0;
+  const record = lineItem as Record<string, unknown>;
+  return shopifyMoney(record.price ?? record.originalUnitPriceSet ?? record.discountedUnitPriceSet);
+}
+
+function shopifyLineCharacter(lineName: string) {
+  return lineName.match(/-\s*([^/]+?)(?:\s*\(RM\d+(?:\.\d+)?\))?\s*\//i)?.[1]?.trim()
+    ?? lineName.match(/\b(BILLY|TOOTSIE|HUNNIE|DRAGON WARRIOR)\b/i)?.[1]?.trim()
+    ?? "";
+}
+
+function shopifyLineVoice(lineName: string) {
+  return Number(lineName.match(/(5|10|20)\s*(?:seconds?|S)\b/i)?.[1] ?? 0);
+}
+
+function shopifyPaymentProcessor(order: Record<string, unknown>, isZeroCashOrder: boolean) {
+  const gateways = Array.isArray(order.payment_gateway_names)
+    ? order.payment_gateway_names
+    : Array.isArray(order.paymentGatewayNames)
+      ? order.paymentGatewayNames
+      : [];
+  const gateway = gateways.map((item) => String(item ?? "")).find(Boolean)
+    ?? String(order.gateway ?? "").trim();
+  return normalizePaymentProcessor(gateway, isZeroCashOrder);
+}
+
+function firstMetafieldValue(order: Record<string, unknown>, key: string) {
+  const metafields = order.metafields;
+  if (!Array.isArray(metafields)) return "";
+  const match = metafields.find((item) => {
+    if (!item || typeof item !== "object") return false;
+    const record = item as Record<string, unknown>;
+    return String(record.key ?? "").toLowerCase() === key.toLowerCase();
+  }) as Record<string, unknown> | undefined;
+  return String(match?.value ?? "").trim();
+}
+
+export function shopifyOrderToFulfilmentOrders(
+  shopifyOrder: Record<string, unknown>,
+  uploadLiftFormData = "",
+  existing: Order[] = [],
+  actor = "Shopify webhook",
+) {
+  const number = orderNumber(String(shopifyOrder.name ?? shopifyOrder.order_number ?? shopifyOrder.orderNumber ?? ""));
+  if (!number) return [];
+  const timestamp = new Date().toISOString();
+  const rawPersonalization = uploadLiftFormData || firstMetafieldValue(shopifyOrder, "upload_lift_form_data");
+  const personalizations = personalizationBlocks(rawPersonalization);
+  const lineItemNodes = objectValue(shopifyOrder.lineItems).nodes;
+  const rawLineItems = Array.isArray(shopifyOrder.line_items)
+    ? shopifyOrder.line_items
+    : Array.isArray(shopifyOrder.lineItems)
+      ? shopifyOrder.lineItems
+      : Array.isArray(lineItemNodes)
+        ? lineItemNodes
+        : [];
+  const lineItems = rawLineItems.length ? rawLineItems : [{}];
+  const total = Math.max(lineItems.length, personalizations.length, 1);
+  const shippingAddress = shopifyOrder.shipping_address ?? shopifyOrder.shippingAddress ?? {};
+  const billingAddress = shopifyOrder.billing_address ?? shopifyOrder.billingAddress ?? {};
+  const shippingLine = objectValue(shopifyOrder.shippingLine);
+  const shippingLines = arrayValue(shopifyOrder.shipping_lines);
+  const customer = objectValue(shopifyOrder.customer);
+  const subtotalAmount = shopifyMoney(shopifyOrder.subtotal_price ?? shopifyOrder.current_subtotal_price ?? shopifyOrder.currentSubtotalPriceSet);
+  const shippingAmount = shopifyMoney(shopifyOrder.total_shipping_price_set ?? shopifyOrder.totalShippingPriceSet ?? shippingLine.price ?? shippingLines[0]?.price);
+  const totalAmount = shopifyMoney(shopifyOrder.total_price ?? shopifyOrder.current_total_price ?? shopifyOrder.currentTotalPriceSet);
+  const discountAmount = shopifyMoney(shopifyOrder.total_discounts ?? shopifyOrder.current_total_discounts ?? shopifyOrder.currentTotalDiscountsSet);
+  const refundedAmount = shopifyMoney(shopifyOrder.total_refunded ?? shopifyOrder.totalRefundedSet);
+  const outstandingBalance = shopifyMoney(shopifyOrder.total_outstanding ?? shopifyOrder.totalOutstandingSet);
+  const isZeroCashOrder = totalAmount === 0;
+  const productDiscountAmount = isZeroCashOrder ? 0 : lineItems.reduce((sum, lineItem) => sum + shopifyLineDiscount(lineItem), 0);
+  const shippingDiscountAmount = isZeroCashOrder ? shippingAmount : Math.max(0, discountAmount - productDiscountAmount);
+  const customerName = shopifyAddressName(shippingAddress)
+    || shopifyAddressName(billingAddress)
+    || [customer.firstName ?? customer.first_name, customer.lastName ?? customer.last_name].map(textValue).filter(Boolean).join(" ");
+  const phone = String((shippingAddress as Record<string, unknown>).phone ?? shopifyOrder.phone ?? "").trim();
+  const email = String(shopifyOrder.email ?? "").trim();
+  const address = shopifyAddressText(shippingAddress) || shopifyAddressText(billingAddress);
+  const createdAt = String(shopifyOrder.created_at ?? shopifyOrder.createdAt ?? timestamp);
+  const paidAt = String(shopifyOrder.processed_at ?? shopifyOrder.processedAt ?? createdAt);
+  const existingById = new Map(existing.map((order) => [order.id, order]));
+  const orders: Order[] = [];
+
+  for (let index = 0; index < total; index += 1) {
+    const lineItem = lineItems[index] ?? lineItems[0] ?? {};
+    const personalization = personalizations[index] ?? personalizations[0] ?? {
+      product: "", certificateCode: "", plushName: "", meaningfulNote: "", meaningfulMessage: "",
+    };
+    const lineName = shopifyLineName(lineItem);
+    const id = total === 1 ? number : `${number}-${index + 1}`;
+    const current = existingById.get(id) ?? (index === 0 ? existing.find((order) => order.orderNumber === number && !order.setIndicator) : undefined);
+    const initialStatus = current?.status ?? "new_order";
+    const certificateCode = personalization.certificateCode || current?.certificateCode || "";
+    orders.push({
+      id,
+      orderNumber: number,
+      salesChannel: "shopify",
+      orderDate: createdAt || paidAt || current?.orderDate || timestamp,
+      customerName: customerName || current?.customerName || "",
+      phone: phone || current?.phone || "",
+      email: email || current?.email || "",
+      address: address || current?.address || "",
+      currency: String(shopifyOrder.currency ?? shopifyOrder.currencyCode ?? current?.currency ?? "MYR"),
+      subtotalAmount: isZeroCashOrder && subtotalAmount <= 0
+        ? lineItems.reduce((sum, item) => sum + shopifyLinePrice(item) * shopifyLineQuantity(item), 0)
+        : subtotalAmount || current?.subtotalAmount || 0,
+      shippingAmount: shippingAmount || current?.shippingAmount || 0,
+      totalAmount: totalAmount || current?.totalAmount || 0,
+      discountAmount: isZeroCashOrder ? shippingDiscountAmount : discountAmount || current?.discountAmount || 0,
+      productDiscountAmount,
+      shippingDiscountAmount,
+      refundedAmount: refundedAmount || current?.refundedAmount || 0,
+      outstandingBalance: outstandingBalance || current?.outstandingBalance || 0,
+      paymentProcessor: shopifyPaymentProcessor(shopifyOrder, isZeroCashOrder) || current?.paymentProcessor || "",
+      shippingMethod: String(shippingLines[0]?.title ?? shippingLine.title ?? current?.shippingMethod ?? ""),
+      product: productName(lineName, personalization.product || current?.product || ""),
+      character: shopifyLineCharacter(lineName) || current?.character || "",
+      setIndicator: total > 1 ? `(${index + 1},${total})` : "",
+      idWebsiteLink: certificateLink(certificateCode) || current?.idWebsiteLink || "",
+      voiceLength: shopifyLineVoice(lineName) || current?.voiceLength || 0,
+      plushName: personalization.plushName || current?.plushName || "",
+      certificateCode,
+      meaningfulNote: personalization.meaningfulNote || current?.meaningfulNote || "",
+      meaningfulMessage: personalization.meaningfulMessage || current?.meaningfulMessage || "",
+      remark: String(shopifyOrder.note ?? current?.remark ?? ""),
+      voiceUploadStatus: current?.voiceUploadStatus ?? (personalization.meaningfulMessage ? "received" : "missing"),
+      courier: current?.courier || "",
+      trackingNumber: current?.trackingNumber || "",
+      status: initialStatus,
+      internalNotes: current?.internalNotes || "",
+      photoDataUrl: current?.photoDataUrl,
+      photoName: current?.photoName,
+      statusHistory: current?.statusHistory ?? [
+        { id: `${id}-${timestamp}`, status: initialStatus, changedAt: timestamp, changedBy: actor, note: "Imported from Shopify webhook" },
+      ],
+      importedAt: current?.importedAt ?? timestamp,
+      updatedAt: timestamp,
+    });
+  }
+  return orders;
+}
+
 function normalizeTikTokPaymentMethod(value: string) {
   if (/bank|internet banking|duitnow|transfer/i.test(value)) return "Bank Transfer";
   if (/stripe/i.test(value)) return "Stripe";

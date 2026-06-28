@@ -48,6 +48,30 @@ CANVA_ENVELOPE_TEMPLATE_ID=EAHMnYdOAJk
 
 Apply them to Production, Preview, and Development, then redeploy. Do not prefix these values with `NEXT_PUBLIC_`. Open Print Envelope and select **Connect Canva** once; the server uses PKCE OAuth and automatically rotates Canva refresh tokens in an encrypted, HTTP-only cookie.
 
+## Shopify direct order sync
+
+The app can receive Shopify order-created webhooks and save the order directly into Supabase, using the order metafield `upload_lift_form_data` for the plushie details.
+
+Add these server-only variables in **Vercel > Settings > Environment Variables**:
+
+```env
+SHOPIFY_WEBHOOK_SECRET=YOUR_SHOPIFY_APP_CLIENT_SECRET
+SHOPIFY_ADMIN_ACCESS_TOKEN=shpat_YOUR_ADMIN_API_ACCESS_TOKEN
+SHOPIFY_SHOP_DOMAIN=your-store.myshopify.com
+SHOPIFY_API_VERSION=2026-04
+SHOPIFY_UPLOAD_LIFT_METAFIELD_KEY=upload_lift_form_data
+```
+
+Use this webhook URL in Shopify:
+
+```text
+https://YOUR_DOMAIN.vercel.app/api/shopify/webhooks/orders-create
+```
+
+In the Shopify app, enable order read access. The Admin GraphQL query used by this app validates against Shopify's current schema for `Order.metafields`; Shopify may also ask for related order scopes such as marketplace or quick-sale order access depending on the app configuration. After changing scopes or webhook settings, release the new Shopify app version and redeploy Vercel.
+
+When an order is created, Shopify calls the webhook, the server verifies the Shopify signature, fetches the full order and `upload_lift_form_data`, then creates or updates the matching fulfilment order. Existing status, tracking, notes, uploaded files, and fulfilment work are kept when the same order is received again.
+
 ## Existing browser data
 
 Old data saved in a browser's `localStorage` is intentionally no longer loaded. After configuring Supabase, import the Shopify CSV once from the dashboard. From then on, all devices use the shared database copy.

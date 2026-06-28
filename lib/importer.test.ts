@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { importShopifyData, importTikTokShopData, normalizePaymentProcessor, tikTokCertificateJson } from "./importer.ts";
+import { importShopifyData, importTikTokShopData, normalizePaymentProcessor, shopifyOrderToFulfilmentOrders, tikTokCertificateJson } from "./importer.ts";
 import { summarizeSales } from "./sales.ts";
 
 const headers = [
@@ -66,6 +66,56 @@ test("normalizes Shopify gateway labels to actual processors", () => {
   assert.equal(normalizePaymentProcessor("Xendit Payment Gateway (New)"), "Xendit");
   assert.equal(normalizePaymentProcessor("Stripe Card Payments + Xendit Payment Gateway (New)"), "Xendit");
   assert.equal(normalizePaymentProcessor("", true), "Bank Transfer");
+});
+
+test("converts Shopify API orders with Upload Lift metafield into fulfilment orders", () => {
+  const uploadLift = [
+    "Order Id: #1455",
+    "Product: (T,20S) BUILD YOUR MEANINGFUL PLUSHIE",
+    "Certificate Code: 14553997287",
+    "Name: Lumpy",
+    "Gender: Male",
+    "Born On: 11 March 2006",
+    "Birthplace: Whispering Forest",
+    "Favourite Person: My Best Friend",
+    "Belongs To: Aqil Rashya",
+    "Meaningful Note: Dear my son Aqil, whenever you feel happy.",
+    "Meaningful Message: https://upload.cloudlift.app/s/n1rdwf-40/WeFbWLC6XL.m4a",
+  ].join("\n");
+  const orders = shopifyOrderToFulfilmentOrders({
+    name: "#1455",
+    createdAt: "2026-06-28T10:00:00Z",
+    email: "customer@example.com",
+    currencyCode: "MYR",
+    currentSubtotalPriceSet: { shopMoney: { amount: "135.00", currencyCode: "MYR" } },
+    currentTotalPriceSet: { shopMoney: { amount: "135.00", currencyCode: "MYR" } },
+    currentTotalDiscountsSet: { shopMoney: { amount: "8.00", currencyCode: "MYR" } },
+    totalShippingPriceSet: { shopMoney: { amount: "8.00", currencyCode: "MYR" } },
+    paymentGatewayNames: ["Stripe Card Payments"],
+    shippingAddress: { name: "Aqil Rashya", phone: "0123456789", address1: "123 Road", city: "KL" },
+    shippingLine: { title: "Standard" },
+    lineItems: {
+      nodes: [
+        {
+          name: "(T,20S) BUILD YOUR MEANINGFUL PLUSHIE - TOOTSIE / INCLUDED",
+          title: "(T,20S) BUILD YOUR MEANINGFUL PLUSHIE",
+          quantity: 1,
+          originalUnitPriceSet: { shopMoney: { amount: "135.00", currencyCode: "MYR" } },
+        },
+      ],
+    },
+  }, uploadLift, []);
+
+  assert.equal(orders.length, 1);
+  assert.equal(orders[0]?.orderNumber, "1455");
+  assert.equal(orders[0]?.salesChannel, "shopify");
+  assert.equal(orders[0]?.character, "TOOTSIE");
+  assert.equal(orders[0]?.voiceLength, 20);
+  assert.equal(orders[0]?.plushName, "Lumpy");
+  assert.equal(orders[0]?.certificateCode, "14553997287");
+  assert.equal(orders[0]?.paymentProcessor, "Stripe");
+  assert.equal(orders[0]?.meaningfulMessage, "https://upload.cloudlift.app/s/n1rdwf-40/WeFbWLC6XL.m4a");
+  assert.equal(orders[0]?.idWebsiteLink, "https://meaningfulplushies.com/pages/certificate/14553997287");
 });
 
 test("auto-detects swapped order and metafield CSV inputs", () => {
