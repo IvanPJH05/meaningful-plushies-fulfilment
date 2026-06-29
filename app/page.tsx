@@ -5092,6 +5092,7 @@ function CreatorProgramWorkspacePage({
   const admin = session.role === "admin";
   const [message, setMessage] = useState("");
   const [form, setForm] = useState(creatorFormDefaults);
+  const [showCreatorPassword, setShowCreatorPassword] = useState(false);
   const visibleProfiles = admin ? creatorProfiles : creatorProfiles.filter((profile) => profile.userId === session.id);
   const currentProfile = visibleProfiles[0];
   const visibleCommissions = admin
@@ -5134,13 +5135,14 @@ function CreatorProgramWorkspacePage({
     try {
       let userId = form.userId;
       if (!userId) {
-        if (!form.username.trim() || form.password.length < 8) return setMessage("New creator accounts need a username and password of at least 8 characters.");
+        const loginEmail = form.email.trim().toLowerCase();
+        if (!loginEmail || !loginEmail.includes("@") || form.password.length < 8) return setMessage("New creator accounts need an email login and password of at least 8 characters.");
         const refreshedAccounts = await onCreateAccount({
-          username: form.username.trim().toLowerCase(),
+          username: loginEmail,
           displayName: form.displayName.trim(),
           role: "creator",
         }, form.password);
-        const createdAccount = refreshedAccounts.find((account) => account.username === form.username.trim().toLowerCase());
+        const createdAccount = refreshedAccounts.find((account) => account.username === loginEmail);
         userId = createdAccount?.id ?? "";
         if (!userId) return setMessage("Creator login was created. Reload once, then save the creator profile.");
       }
@@ -5194,10 +5196,9 @@ function CreatorProgramWorkspacePage({
         <div className="accounting-form-heading"><div><h3>{form.userId ? "Edit creator" : "New creator"}</h3><p>Discount codes are saved uppercase and must be unique.</p></div><button className="button primary" type="submit">Save creator</button></div>
         <div className="accounting-form-grid">
           <label>Existing creator account<select value={form.userId} onChange={(event) => updateForm({ userId: event.target.value })}><option value="">Create new login</option>{creatorAccounts.map((account) => <option key={account.id} value={account.id}>@{account.username}</option>)}</select></label>
-          {!form.userId && <label>Username<input value={form.username} onChange={(event) => updateForm({ username: event.target.value.toLowerCase() })} placeholder="creatorname" /></label>}
-          {!form.userId && <label>Password<input type="password" value={form.password} onChange={(event) => updateForm({ password: event.target.value })} placeholder="8+ characters" /></label>}
           <label>Creator display name<input value={form.displayName} onChange={(event) => updateForm({ displayName: event.target.value })} placeholder="Creator name" /></label>
-          <label>Email<input value={form.email} onChange={(event) => updateForm({ email: event.target.value })} placeholder="creator@email.com" /></label>
+          <label>Email / login<input value={form.email} onChange={(event) => updateForm({ email: event.target.value.toLowerCase() })} placeholder="creator@email.com" /></label>
+          {!form.userId && <label>Password<div className="password-reveal-field"><input type={showCreatorPassword ? "text" : "password"} value={form.password} onChange={(event) => updateForm({ password: event.target.value })} placeholder="8+ characters" /><button type="button" onClick={() => setShowCreatorPassword((current) => !current)}>{showCreatorPassword ? "Hide" : "Show"}</button></div></label>}
           <label>Phone<input value={form.phone} onChange={(event) => updateForm({ phone: event.target.value })} placeholder="+60..." /></label>
           <label>Discount code<input value={form.discountCode} onChange={(event) => updateForm({ discountCode: event.target.value.toUpperCase() })} placeholder="CREATOR10" /></label>
           <label>Tier<select value={form.currentTier} onChange={(event) => updateForm({ currentTier: event.target.value as CreatorTier, commissionRate: String(creatorTierDefaults[event.target.value as CreatorTier].rate) })}>{Object.entries(creatorTierDefaults).map(([tier, detail]) => <option key={tier} value={tier}>{detail.label} - {detail.rate}%</option>)}</select></label>

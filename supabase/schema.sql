@@ -57,7 +57,7 @@ on conflict (id) do nothing;
 
 create table if not exists public.dashboard_accounts (
   id uuid primary key default gen_random_uuid(),
-  username text not null unique check (username = lower(username) and username ~ '^[a-z0-9._-]{3,40}$'),
+  username text not null unique check (username = lower(username) and username ~ '^[^[:space:]]{3,254}$'),
   display_name text not null,
   role text not null check (role in ('admin', 'staff', 'creator')),
   password_hash text not null,
@@ -65,6 +65,24 @@ create table if not exists public.dashboard_accounts (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+do $$
+declare constraint_name text;
+begin
+  select conname into constraint_name
+  from pg_constraint
+  where conrelid = 'public.dashboard_accounts'::regclass
+    and contype = 'c'
+    and pg_get_constraintdef(oid) like '%username%'
+  limit 1;
+  if constraint_name is not null then
+    execute format('alter table public.dashboard_accounts drop constraint %I', constraint_name);
+  end if;
+  alter table public.dashboard_accounts
+    add constraint dashboard_accounts_username_check check (username = lower(username) and username ~ '^[^[:space:]]{3,254}$');
+exception
+  when duplicate_object then null;
+end $$;
 
 do $$
 declare constraint_name text;

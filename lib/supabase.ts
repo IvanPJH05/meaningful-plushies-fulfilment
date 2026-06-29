@@ -222,7 +222,7 @@ export async function updateDashboardAccount(token: string, account: DashboardAc
 
 function isMissingCreatorSchema(error: unknown) {
   return isMissingTableError(error)
-    || Boolean(error && typeof error === "object" && "code" in error && (error.code === "42883"));
+    || Boolean(error && typeof error === "object" && "code" in error && (error.code === "42883" || error.code === "PGRST202"));
 }
 
 function creatorProfileFromRow(row: Record<string, unknown>): CreatorProfile {
