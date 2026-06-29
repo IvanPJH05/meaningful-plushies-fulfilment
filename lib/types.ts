@@ -59,6 +59,10 @@ export type CreatorProfile = {
   commissionRate: number;
   currentTier: CreatorTier;
   status: CreatorStatus;
+  payoutMethod: string;
+  payoutAccountName: string;
+  payoutAccountNumber: string;
+  payoutNotes: string;
   internalNotes: string;
   createdAt: string;
   updatedAt: string;
@@ -92,6 +96,9 @@ export type CreatorPayout = {
   totalPayoutAmount: number;
   status: CommissionStatus;
   paymentReference: string;
+  proofFileName: string;
+  proofFileType: string;
+  proofFileDataUrl: string;
   paidAt: string;
   createdAt: string;
 };

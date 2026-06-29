@@ -141,10 +141,19 @@ create table if not exists public.creator_profiles (
   commission_rate numeric(8,4) not null default 10 check (commission_rate >= 0),
   current_tier text not null default 'tier_1' check (current_tier in ('tier_1', 'tier_2', 'tier_3', 'tier_4')),
   status text not null default 'pending' check (status in ('active', 'suspended', 'pending')),
+  payout_method text not null default '',
+  payout_account_name text not null default '',
+  payout_account_number text not null default '',
+  payout_notes text not null default '',
   internal_notes text not null default '',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.creator_profiles add column if not exists payout_method text not null default '';
+alter table public.creator_profiles add column if not exists payout_account_name text not null default '';
+alter table public.creator_profiles add column if not exists payout_account_number text not null default '';
+alter table public.creator_profiles add column if not exists payout_notes text not null default '';
 
 create unique index if not exists creator_profiles_discount_code_lower_idx
   on public.creator_profiles (lower(discount_code));
@@ -183,9 +192,16 @@ create table if not exists public.creator_payouts (
   total_payout_amount numeric(12,2) not null default 0 check (total_payout_amount >= 0),
   status text not null default 'pending' check (status in ('pending', 'approved', 'paid', 'cancelled')),
   payment_reference text not null default '',
+  proof_file_name text not null default '',
+  proof_file_type text not null default '',
+  proof_file_data_url text not null default '',
   paid_at timestamptz,
   created_at timestamptz not null default now()
 );
+
+alter table public.creator_payouts add column if not exists proof_file_name text not null default '';
+alter table public.creator_payouts add column if not exists proof_file_type text not null default '';
+alter table public.creator_payouts add column if not exists proof_file_data_url text not null default '';
 
 insert into public.stock_settings(item_key)
 values ('BILLY'), ('TOOTSIE'), ('HUNNIE'), ('DRAGON WARRIOR'), ('VOICE')
@@ -275,11 +291,13 @@ language sql security definer set search_path = public as $$
   limit 1
 $$;
 
+drop function if exists public.creator_list_profiles(uuid);
 create or replace function public.creator_list_profiles(p_session_token uuid)
 returns table(
   id uuid, user_id uuid, display_name text, email text, phone text, tiktok_url text,
   instagram_url text, discount_code text, commission_rate numeric, current_tier text,
-  status text, internal_notes text, created_at timestamptz, updated_at timestamptz
+  status text, payout_method text, payout_account_name text, payout_account_number text,
+  payout_notes text, internal_notes text, created_at timestamptz, updated_at timestamptz
 ) language plpgsql security definer set search_path = public as $$
 declare session_account uuid; session_role text;
 begin
@@ -289,12 +307,14 @@ begin
   if session_role = 'admin' then
     return query select p.id, p.user_id, p.display_name, p.email, p.phone, p.tiktok_url,
       p.instagram_url, p.discount_code, p.commission_rate, p.current_tier, p.status,
+      p.payout_method, p.payout_account_name, p.payout_account_number, p.payout_notes,
       p.internal_notes, p.created_at, p.updated_at
     from public.creator_profiles p
     order by p.display_name;
   elsif session_role = 'creator' then
     return query select p.id, p.user_id, p.display_name, p.email, p.phone, p.tiktok_url,
       p.instagram_url, p.discount_code, p.commission_rate, p.current_tier, p.status,
+      p.payout_method, p.payout_account_name, p.payout_account_number, p.payout_notes,
       ''::text as internal_notes, p.created_at, p.updated_at
     from public.creator_profiles p
     where p.user_id = session_account
@@ -387,11 +407,32 @@ begin
   where id = p_commission_id;
 end $$;
 
+create or replace function public.creator_save_payout_info(
+  p_session_token uuid, p_payout_method text, p_payout_account_name text,
+  p_payout_account_number text, p_payout_notes text
+) returns void language plpgsql security definer set search_path = public as $$
+declare session_account uuid; session_role text;
+begin
+  select dashboard_session_role.account_id, dashboard_session_role.role into session_account, session_role
+  from public.dashboard_session_role(p_session_token);
+  if session_account is null then raise exception 'LOGIN_REQUIRED'; end if;
+  if session_role <> 'creator' then raise exception 'CREATOR_ACCESS_REQUIRED'; end if;
+  update public.creator_profiles set
+    payout_method = trim(coalesce(p_payout_method, '')),
+    payout_account_name = trim(coalesce(p_payout_account_name, '')),
+    payout_account_number = trim(coalesce(p_payout_account_number, '')),
+    payout_notes = trim(coalesce(p_payout_notes, '')),
+    updated_at = now()
+  where user_id = session_account;
+end $$;
+
+drop function if exists public.creator_list_payouts(uuid);
 create or replace function public.creator_list_payouts(p_session_token uuid)
 returns table(
   id uuid, creator_id uuid, payout_month date, approved_commission_amount numeric,
   bonus_amount numeric, retainer_amount numeric, total_payout_amount numeric, status text,
-  payment_reference text, paid_at timestamptz, created_at timestamptz
+  payment_reference text, proof_file_name text, proof_file_type text, proof_file_data_url text,
+  paid_at timestamptz, created_at timestamptz
 ) language plpgsql security definer set search_path = public as $$
 declare session_account uuid; session_role text; session_creator_id uuid;
 begin
@@ -401,14 +442,16 @@ begin
   if session_role = 'admin' then
     return query select p.id, p.creator_id, p.payout_month, p.approved_commission_amount,
       p.bonus_amount, p.retainer_amount, p.total_payout_amount, p.status,
-      p.payment_reference, p.paid_at, p.created_at
+      p.payment_reference, p.proof_file_name, p.proof_file_type, p.proof_file_data_url,
+      p.paid_at, p.created_at
     from public.creator_payouts p
     order by p.payout_month desc;
   elsif session_role = 'creator' then
     select p.id into session_creator_id from public.creator_profiles p where p.user_id = session_account;
     return query select p.id, p.creator_id, p.payout_month, p.approved_commission_amount,
       p.bonus_amount, p.retainer_amount, p.total_payout_amount, p.status,
-      p.payment_reference, p.paid_at, p.created_at
+      p.payment_reference, ''::text as proof_file_name, ''::text as proof_file_type, ''::text as proof_file_data_url,
+      p.paid_at, p.created_at
     from public.creator_payouts p
     where p.creator_id = session_creator_id
     order by p.payout_month desc;
@@ -417,10 +460,113 @@ begin
   end if;
 end $$;
 
+create or replace function public.creator_save_payout(
+  p_session_token uuid, p_id uuid, p_creator_id uuid, p_payout_month date,
+  p_approved_commission_amount numeric, p_bonus_amount numeric, p_retainer_amount numeric,
+  p_status text, p_payment_reference text, p_proof_file_name text, p_proof_file_type text,
+  p_proof_file_data_url text, p_paid_at timestamptz default null
+) returns uuid language plpgsql security definer set search_path = public as $$
+declare saved_id uuid; total_amount numeric;
+begin
+  if not public.dashboard_is_admin(p_session_token) then raise exception 'ADMIN_REQUIRED'; end if;
+  if not exists(select 1 from public.creator_profiles where id = p_creator_id) then
+    raise exception 'CREATOR_REQUIRED';
+  end if;
+  total_amount := greatest(0, coalesce(p_approved_commission_amount, 0))
+    + greatest(0, coalesce(p_bonus_amount, 0))
+    + greatest(0, coalesce(p_retainer_amount, 0));
+  insert into public.creator_payouts(
+    id, creator_id, payout_month, approved_commission_amount, bonus_amount, retainer_amount,
+    total_payout_amount, status, payment_reference, proof_file_name, proof_file_type,
+    proof_file_data_url, paid_at
+  )
+  values(
+    coalesce(p_id, gen_random_uuid()), p_creator_id, coalesce(p_payout_month, date_trunc('month', now())::date),
+    greatest(0, coalesce(p_approved_commission_amount, 0)), greatest(0, coalesce(p_bonus_amount, 0)),
+    greatest(0, coalesce(p_retainer_amount, 0)), total_amount, p_status,
+    trim(coalesce(p_payment_reference, '')), trim(coalesce(p_proof_file_name, '')),
+    trim(coalesce(p_proof_file_type, '')), coalesce(p_proof_file_data_url, ''),
+    case when p_status = 'paid' then coalesce(p_paid_at, now()) else p_paid_at end
+  )
+  on conflict (id) do update set
+    creator_id = excluded.creator_id,
+    payout_month = excluded.payout_month,
+    approved_commission_amount = excluded.approved_commission_amount,
+    bonus_amount = excluded.bonus_amount,
+    retainer_amount = excluded.retainer_amount,
+    total_payout_amount = excluded.total_payout_amount,
+    status = excluded.status,
+    payment_reference = excluded.payment_reference,
+    proof_file_name = excluded.proof_file_name,
+    proof_file_type = excluded.proof_file_type,
+    proof_file_data_url = excluded.proof_file_data_url,
+    paid_at = excluded.paid_at
+  returning id into saved_id;
+  if p_status = 'paid' then
+    update public.creator_commissions set
+      status = 'paid',
+      payout_reference = trim(coalesce(p_payment_reference, '')),
+      paid_at = coalesce(p_paid_at, now()),
+      updated_at = now()
+    where creator_id = p_creator_id and status in ('pending', 'approved');
+  end if;
+  return saved_id;
+end $$;
+
+create or replace function public.creator_tier_for_counts(p_lifetime_sales integer, p_month_sales integer)
+returns table(tier text, rate numeric) language sql immutable as $$
+  select case
+    when coalesce(p_month_sales, 0) >= 500 then 'tier_4'
+    when coalesce(p_month_sales, 0) >= 100 then 'tier_3'
+    when coalesce(p_lifetime_sales, 0) >= 50 then 'tier_2'
+    else 'tier_1'
+  end,
+  case
+    when coalesce(p_month_sales, 0) >= 500 then 25::numeric
+    when coalesce(p_month_sales, 0) >= 100 then 20::numeric
+    when coalesce(p_lifetime_sales, 0) >= 50 then 15::numeric
+    else 10::numeric
+  end
+$$;
+
+create or replace function public.creator_recalculate_tiers()
+returns integer language plpgsql security definer set search_path = public as $$
+declare updated_count integer := 0;
+begin
+  with counts as (
+    select
+      p.id,
+      count(c.id)::integer as lifetime_sales,
+      count(c.id) filter (
+        where date_trunc('month', coalesce(c.order_date, c.created_at)) = date_trunc('month', now())
+      )::integer as month_sales
+    from public.creator_profiles p
+    left join public.creator_commissions c
+      on c.creator_id = p.id
+     and c.status <> 'cancelled'
+    group by p.id
+  ),
+  tiers as (
+    select counts.id, next_tier.tier, next_tier.rate
+    from counts
+    cross join lateral public.creator_tier_for_counts(counts.lifetime_sales, counts.month_sales) next_tier
+  )
+  update public.creator_profiles p set
+    current_tier = tiers.tier,
+    commission_rate = tiers.rate,
+    updated_at = now()
+  from tiers
+  where p.id = tiers.id
+    and (p.current_tier is distinct from tiers.tier or p.commission_rate is distinct from tiers.rate);
+  get diagnostics updated_count = row_count;
+  return updated_count;
+end $$;
+
 create or replace function public.creator_sync_commissions()
 returns integer language plpgsql security definer set search_path = public as $$
 declare inserted_count integer := 0;
 begin
+  perform public.creator_recalculate_tiers();
   insert into public.creator_commissions(
     creator_id, shopify_order_id, order_number, order_date, eligible_subtotal,
     discount_code_used, commission_rate_at_sale, tier_at_sale, commission_amount, status, updated_at
@@ -465,6 +611,7 @@ begin
     updated_at = now()
   where public.creator_commissions.status = 'pending';
   get diagnostics inserted_count = row_count;
+  perform public.creator_recalculate_tiers();
   return inserted_count;
 end $$;
 
@@ -547,7 +694,10 @@ grant execute on function public.creator_list_profiles(uuid) to anon, authentica
 grant execute on function public.creator_save_profile(uuid, uuid, uuid, text, text, text, text, text, text, numeric, text, text, text) to anon, authenticated;
 grant execute on function public.creator_list_commissions(uuid) to anon, authenticated;
 grant execute on function public.creator_update_commission_status(uuid, uuid, text, text, timestamptz) to anon, authenticated;
+grant execute on function public.creator_save_payout_info(uuid, text, text, text, text) to anon, authenticated;
 grant execute on function public.creator_list_payouts(uuid) to anon, authenticated;
+grant execute on function public.creator_save_payout(uuid, uuid, uuid, date, numeric, numeric, numeric, text, text, text, text, text, timestamptz) to anon, authenticated;
+grant execute on function public.creator_recalculate_tiers() to anon, authenticated;
 grant execute on function public.creator_sync_commissions() to anon, authenticated;
 revoke all on public.dashboard_accounts from anon, authenticated;
 revoke all on public.dashboard_sessions from anon, authenticated;

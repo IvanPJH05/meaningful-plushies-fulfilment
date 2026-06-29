@@ -259,6 +259,10 @@ function creatorProfileFromRow(row: Record<string, unknown>): CreatorProfile {
     commissionRate: Number(row.commission_rate ?? 0),
     currentTier: String(row.current_tier ?? "tier_1") as CreatorTier,
     status: String(row.status ?? "pending") as CreatorStatus,
+    payoutMethod: String(row.payout_method ?? ""),
+    payoutAccountName: String(row.payout_account_name ?? ""),
+    payoutAccountNumber: String(row.payout_account_number ?? ""),
+    payoutNotes: String(row.payout_notes ?? ""),
     internalNotes: String(row.internal_notes ?? ""),
     createdAt: String(row.created_at ?? ""),
     updatedAt: String(row.updated_at ?? ""),
@@ -296,6 +300,9 @@ function creatorPayoutFromRow(row: Record<string, unknown>): CreatorPayout {
     totalPayoutAmount: Number(row.total_payout_amount ?? 0),
     status: String(row.status ?? "pending") as CommissionStatus,
     paymentReference: String(row.payment_reference ?? ""),
+    proofFileName: String(row.proof_file_name ?? ""),
+    proofFileType: String(row.proof_file_type ?? ""),
+    proofFileDataUrl: String(row.proof_file_data_url ?? ""),
     paidAt: String(row.paid_at ?? ""),
     createdAt: String(row.created_at ?? ""),
   };
@@ -341,6 +348,17 @@ export async function fetchCreatorCommissions(token: string): Promise<CreatorCom
   return (data ?? []).map((row: Record<string, unknown>) => creatorCommissionFromRow(row));
 }
 
+export async function saveCreatorPayoutInfo(token: string, profile: CreatorProfile) {
+  const { error } = await requireSupabase().rpc("creator_save_payout_info", {
+    p_session_token: token,
+    p_payout_method: profile.payoutMethod,
+    p_payout_account_name: profile.payoutAccountName,
+    p_payout_account_number: profile.payoutAccountNumber,
+    p_payout_notes: profile.payoutNotes,
+  });
+  if (error) throw new Error(supabaseErrorMessage(error, "Creator payout info could not be saved."));
+}
+
 export async function updateCreatorCommissionStatus(token: string, commission: CreatorCommission) {
   const { error } = await requireSupabase().rpc("creator_update_commission_status", {
     p_session_token: token,
@@ -367,6 +385,25 @@ export async function fetchCreatorPayouts(token: string): Promise<CreatorPayout[
     throw error;
   }
   return (data ?? []).map((row: Record<string, unknown>) => creatorPayoutFromRow(row));
+}
+
+export async function saveCreatorPayout(token: string, payout: CreatorPayout) {
+  const { error } = await requireSupabase().rpc("creator_save_payout", {
+    p_session_token: token,
+    p_id: payout.id || null,
+    p_creator_id: payout.creatorId,
+    p_payout_month: payout.payoutMonth,
+    p_approved_commission_amount: payout.approvedCommissionAmount,
+    p_bonus_amount: payout.bonusAmount,
+    p_retainer_amount: payout.retainerAmount,
+    p_status: payout.status,
+    p_payment_reference: payout.paymentReference,
+    p_proof_file_name: payout.proofFileName,
+    p_proof_file_type: payout.proofFileType,
+    p_proof_file_data_url: payout.proofFileDataUrl,
+    p_paid_at: payout.paidAt || null,
+  });
+  if (error) throw new Error(supabaseErrorMessage(error, "Creator payout could not be saved."));
 }
 
 export async function syncCreatorCommissions() {

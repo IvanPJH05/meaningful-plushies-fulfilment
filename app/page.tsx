@@ -43,6 +43,8 @@ import {
   saveAccountingTransaction,
   saveContentIdea,
   saveContentPlanItem,
+  saveCreatorPayout,
+  saveCreatorPayoutInfo,
   saveCreatorProfile,
   saveEnvelopePrintSettings,
   saveSalesConsumptionMapping,
@@ -69,7 +71,7 @@ type View =
   | "accounting_bank_reconciliation" | "accounting_product_profitability" | "accounting_marketing_profitability" | "accounting_cash_position"
   | "accounting_tax_reports" | "accounting_settings" | "accounting_files" | "accounting_general_journal" | "accounting_t_accounts" | "accounting_unit_costs" | "accounting_financial_reports"
   | "content_dashboard" | "content_plan" | "content_ideas"
-  | "creator_dashboard" | "creator_accounts" | "creator_sales" | "creator_commissions" | "creator_analytics";
+  | "creator_dashboard" | "creator_accounts" | "creator_sales" | "creator_commissions" | "creator_payouts" | "creator_analytics";
 type Workspace = "fulfilment" | "accounting" | "formal_accounting" | "creator" | "inventory" | "reports" | "content" | "settings";
 type SalesRange = "active" | "today" | "7d" | "30d" | "lifetime";
 type SortKey = "orderNumber" | "importedAt" | "updatedAt";
@@ -459,8 +461,8 @@ const accountingViews: readonly View[] = [
 ];
 const formalAccountingViews: readonly View[] = ["accounting_general_journal", "accounting_t_accounts", "accounting_unit_costs", "accounting_financial_reports"];
 const contentViews: readonly View[] = ["content_dashboard", "content_plan", "content_ideas"];
-const creatorViews: readonly View[] = ["creator_dashboard", "creator_accounts", "creator_sales", "creator_commissions", "creator_analytics"];
-const creatorAdminViews: readonly View[] = ["creator_accounts", "creator_sales", "creator_commissions", "creator_analytics"];
+const creatorViews: readonly View[] = ["creator_dashboard", "creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics"];
+const creatorAdminViews: readonly View[] = ["creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics"];
 const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "stock", "sales_report", ...accountingViews, ...formalAccountingViews, ...contentViews, ...creatorViews];
 const adminOnlyViews = new Set<View>(["history", "settings", "stock", "sales_report", ...accountingViews, ...formalAccountingViews, ...contentViews, ...creatorAdminViews]);
 const workspaceDefaultViews: Record<Workspace, View> = {
@@ -630,6 +632,7 @@ const creatorAdminNavItems: NavItem[] = [
   { view: "creator_accounts", label: "Creator Accounts", icon: "creator" },
   { view: "creator_sales", label: "Creator Sales", icon: "report" },
   { view: "creator_commissions", label: "Commissions", icon: "cash" },
+  { view: "creator_payouts", label: "Payouts", icon: "cash" },
   { view: "creator_analytics", label: "Analytics", icon: "ledger" },
 ];
 
@@ -3448,6 +3451,14 @@ export default function Home() {
           await updateCreatorCommissionStatus(session.token, commission);
           await loadCreatorData();
         }}
+        onSavePayoutInfo={async (profile) => {
+          await saveCreatorPayoutInfo(session.token, profile);
+          await loadCreatorData();
+        }}
+        onSavePayout={async (payout) => {
+          await saveCreatorPayout(session.token, payout);
+          await loadCreatorData();
+        }}
       />}
 
       {workspace === "content" && session.role === "admin" && <ContentPlanWorkspacePage
@@ -5092,6 +5103,8 @@ function CreatorProgramWorkspacePage({
   onDeleteAccount,
   onSaveProfile,
   onUpdateCommission,
+  onSavePayoutInfo,
+  onSavePayout,
 }: {
   view: View;
   session: Session;
@@ -5105,6 +5118,8 @@ function CreatorProgramWorkspacePage({
   onDeleteAccount: (accountId: string) => Promise<void>;
   onSaveProfile: (profile: CreatorProfile) => Promise<void>;
   onUpdateCommission: (commission: CreatorCommission) => Promise<void>;
+  onSavePayoutInfo: (profile: CreatorProfile) => Promise<void>;
+  onSavePayout: (payout: CreatorPayout) => Promise<void>;
 }) {
   const admin = session.role === "admin";
   const [message, setMessage] = useState("");
@@ -5112,6 +5127,18 @@ function CreatorProgramWorkspacePage({
   const [showCreatorPassword, setShowCreatorPassword] = useState(false);
   const [creatorPasswordEdits, setCreatorPasswordEdits] = useState<Record<string, string>>({});
   const [creatorPasswordVisible, setCreatorPasswordVisible] = useState<Record<string, boolean>>({});
+  const [payoutInfoForm, setPayoutInfoForm] = useState({ payoutMethod: "", payoutAccountName: "", payoutAccountNumber: "", payoutNotes: "" });
+  const [payoutForm, setPayoutForm] = useState({
+    creatorId: "",
+    payoutMonth: new Date().toISOString().slice(0, 7),
+    approvedCommissionAmount: "",
+    bonusAmount: "0",
+    retainerAmount: "0",
+    paymentReference: "",
+    proofFileName: "",
+    proofFileType: "",
+    proofFileDataUrl: "",
+  });
   const visibleProfiles = admin ? creatorProfiles : creatorProfiles.filter((profile) => profile.userId === session.id);
   const currentProfile = visibleProfiles[0];
   const visibleCommissions = admin
@@ -5120,6 +5147,15 @@ function CreatorProgramWorkspacePage({
   const summary = creatorCommissionSummary(visibleCommissions);
   const creatorAccounts = accounts.filter((account) => account.role === "creator");
   const attributedOrderCount = orders.filter((order) => order.discountCodes?.some((code) => creatorProfiles.some((profile) => profile.discountCode.toLowerCase() === code.toLowerCase()))).length;
+  useEffect(() => {
+    if (!currentProfile) return;
+    setPayoutInfoForm({
+      payoutMethod: currentProfile.payoutMethod,
+      payoutAccountName: currentProfile.payoutAccountName,
+      payoutAccountNumber: currentProfile.payoutAccountNumber,
+      payoutNotes: currentProfile.payoutNotes,
+    });
+  }, [currentProfile?.id, currentProfile?.payoutMethod, currentProfile?.payoutAccountName, currentProfile?.payoutAccountNumber, currentProfile?.payoutNotes]);
 
   function updateForm(patch: Partial<typeof creatorFormDefaults>) {
     setForm((current) => {
@@ -5179,6 +5215,10 @@ function CreatorProgramWorkspacePage({
         commissionRate: Math.max(0, Number(form.commissionRate || 0)),
         currentTier: form.currentTier,
         status: form.status,
+        payoutMethod: existing?.payoutMethod ?? "",
+        payoutAccountName: existing?.payoutAccountName ?? "",
+        payoutAccountNumber: existing?.payoutAccountNumber ?? "",
+        payoutNotes: existing?.payoutNotes ?? "",
         internalNotes: form.internalNotes.trim(),
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
@@ -5225,6 +5265,69 @@ function CreatorProgramWorkspacePage({
       setMessage("Creator account deleted.");
     } catch (error) {
       setMessage(readableError(error, "Creator account could not be deleted."));
+    }
+  }
+
+  async function saveOwnPayoutInfo(event: FormEvent) {
+    event.preventDefault();
+    if (!currentProfile) return;
+    try {
+      await onSavePayoutInfo({ ...currentProfile, ...payoutInfoForm });
+      setMessage("Payout info saved.");
+    } catch (error) {
+      setMessage(readableError(error, "Payout info could not be saved."));
+    }
+  }
+
+  function uploadPayoutProof(file: File | null) {
+    if (!file) return setPayoutForm((current) => ({ ...current, proofFileName: "", proofFileType: "", proofFileDataUrl: "" }));
+    if (file.size > 5_000_000) return setMessage("Please choose a payout proof file smaller than 5 MB.");
+    const reader = new FileReader();
+    reader.onload = () => setPayoutForm((current) => ({
+      ...current,
+      proofFileName: file.name,
+      proofFileType: file.type || "application/octet-stream",
+      proofFileDataUrl: String(reader.result),
+    }));
+    reader.onerror = () => setMessage("Could not load that payout proof file.");
+    reader.readAsDataURL(file);
+  }
+
+  async function savePayoutRecord(event: FormEvent) {
+    event.preventDefault();
+    if (!payoutForm.creatorId) return setMessage("Choose a creator first.");
+    const month = payoutForm.payoutMonth.length === 7 ? `${payoutForm.payoutMonth}-01` : payoutForm.payoutMonth;
+    const now = new Date().toISOString();
+    try {
+      await onSavePayout({
+        id: "",
+        creatorId: payoutForm.creatorId,
+        payoutMonth: month,
+        approvedCommissionAmount: Math.max(0, Number(payoutForm.approvedCommissionAmount || 0)),
+        bonusAmount: Math.max(0, Number(payoutForm.bonusAmount || 0)),
+        retainerAmount: Math.max(0, Number(payoutForm.retainerAmount || 0)),
+        totalPayoutAmount: Math.max(0, Number(payoutForm.approvedCommissionAmount || 0)) + Math.max(0, Number(payoutForm.bonusAmount || 0)) + Math.max(0, Number(payoutForm.retainerAmount || 0)),
+        status: "paid",
+        paymentReference: payoutForm.paymentReference.trim(),
+        proofFileName: payoutForm.proofFileName,
+        proofFileType: payoutForm.proofFileType,
+        proofFileDataUrl: payoutForm.proofFileDataUrl,
+        paidAt: now,
+        createdAt: now,
+      });
+      setPayoutForm((current) => ({
+        ...current,
+        approvedCommissionAmount: "",
+        bonusAmount: "0",
+        retainerAmount: "0",
+        paymentReference: "",
+        proofFileName: "",
+        proofFileType: "",
+        proofFileDataUrl: "",
+      }));
+      setMessage("Creator payout saved.");
+    } catch (error) {
+      setMessage(readableError(error, "Creator payout could not be saved."));
     }
   }
 
@@ -5303,6 +5406,51 @@ function CreatorProgramWorkspacePage({
     </section>;
   }
 
+  if (view === "creator_payouts" && admin) {
+    const rows = creatorProfiles.map((profile) => {
+      const commissions = creatorCommissions.filter((commission) => commission.creatorId === profile.id);
+      const payouts = creatorPayouts.filter((payout) => payout.creatorId === profile.id);
+      const made = commissions.filter((commission) => commission.status !== "cancelled").reduce((total, commission) => total + commission.commissionAmount, 0);
+      const owed = commissions.filter((commission) => commission.status === "pending" || commission.status === "approved").reduce((total, commission) => total + commission.commissionAmount, 0);
+      const paid = payouts.filter((payout) => payout.status === "paid").reduce((total, payout) => total + payout.totalPayoutAmount, 0);
+      return { profile, made, owed, paid, payouts };
+    }).sort((left, right) => right.owed - left.owed);
+    const selectedCreator = rows.find((row) => row.profile.id === payoutForm.creatorId);
+    const suggestedAmount = selectedCreator?.owed ?? 0;
+    return <section className="creator-workspace">
+      <div className="creator-hero card"><div><p>CREATOR PROGRAM</p><h2>Payouts</h2><span>See how much each creator made, how much is owed, and record paid payouts with proof.</span></div><div className="accounting-status-pill">{formatMoney(rows.reduce((total, row) => total + row.owed, 0))} owed</div></div>
+      {message && <div className="notice"><span>{message}</span><button onClick={() => setMessage("")}>x</button></div>}
+      <form className="creator-form card" onSubmit={savePayoutRecord}>
+        <div className="accounting-form-heading"><div><h3>Record creator payout</h3><p>Saving as paid will mark the creator's pending and approved commissions as paid.</p></div><button className="button primary" type="submit">Save payout</button></div>
+        <div className="accounting-form-grid">
+          <label>Creator<select value={payoutForm.creatorId} onChange={(event) => {
+            const row = rows.find((item) => item.profile.id === event.target.value);
+            setPayoutForm((current) => ({ ...current, creatorId: event.target.value, approvedCommissionAmount: row ? String(row.owed.toFixed(2)) : "" }));
+          }}><option value="">Choose creator</option>{rows.map((row) => <option key={row.profile.id} value={row.profile.id}>{row.profile.displayName} - owed {formatMoney(row.owed)}</option>)}</select></label>
+          <label>Payout month<input type="month" value={payoutForm.payoutMonth} onChange={(event) => setPayoutForm((current) => ({ ...current, payoutMonth: event.target.value }))} /></label>
+          <label>Commission to pay<input type="number" min="0" step="0.01" value={payoutForm.approvedCommissionAmount} onChange={(event) => setPayoutForm((current) => ({ ...current, approvedCommissionAmount: event.target.value }))} placeholder={formatMoney(suggestedAmount)} /></label>
+          <label>Bonus<input type="number" min="0" step="0.01" value={payoutForm.bonusAmount} onChange={(event) => setPayoutForm((current) => ({ ...current, bonusAmount: event.target.value }))} /></label>
+          <label>Retainer<input type="number" min="0" step="0.01" value={payoutForm.retainerAmount} onChange={(event) => setPayoutForm((current) => ({ ...current, retainerAmount: event.target.value }))} /></label>
+          <label>Payment reference<input value={payoutForm.paymentReference} onChange={(event) => setPayoutForm((current) => ({ ...current, paymentReference: event.target.value }))} placeholder="Bank transfer ref / note" /></label>
+          <div className="wide"><FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.txt,.doc,.docx" title="Upload payment proof" description="Drop receipt or screenshot here" selectedName={payoutForm.proofFileName} onFile={uploadPayoutProof} /></div>
+        </div>
+      </form>
+      <section className="creator-account-grid">
+        {rows.map((row) => <article className="creator-account-card card" key={row.profile.id}>
+          <div className="creator-account-main"><div><span className="creator-status-dot active">{row.profile.currentTier}</span><h3>{row.profile.displayName}</h3><p>{row.profile.payoutMethod || "No payout method"} {row.profile.payoutAccountNumber ? `| ${row.profile.payoutAccountNumber}` : ""}</p></div><button className="button secondary small" type="button" onClick={() => setPayoutForm((current) => ({ ...current, creatorId: row.profile.id, approvedCommissionAmount: row.owed.toFixed(2) }))}>Pay this creator</button></div>
+          <div className="creator-account-stats">
+            <div><span>Total made</span><strong>{formatMoney(row.made)}</strong></div>
+            <div><span>Owed now</span><strong>{formatMoney(row.owed)}</strong></div>
+            <div><span>Paid before</span><strong>{formatMoney(row.paid)}</strong></div>
+            <div><span>Account name</span><strong>{row.profile.payoutAccountName || "-"}</strong></div>
+            <div><span>Payment ref</span><strong>{row.payouts[0]?.paymentReference || "-"}</strong></div>
+          </div>
+          <div className="creator-payout-history">{row.payouts.slice(0, 3).map((payout) => <div key={payout.id}><span>{payout.payoutMonth}</span><strong>{formatMoney(payout.totalPayoutAmount)}</strong>{payout.proofFileDataUrl ? <a href={payout.proofFileDataUrl} download={payout.proofFileName || "creator-payout-proof"}>Proof</a> : <em>No proof</em>}</div>)}{!row.payouts.length && <p>No payouts recorded yet.</p>}</div>
+        </article>)}
+      </section>
+    </section>;
+  }
+
   if (view === "creator_analytics" && admin) {
     const topCreators = creatorProfiles.map((profile) => {
       const rows = creatorCommissions.filter((commission) => commission.creatorId === profile.id);
@@ -5329,6 +5477,15 @@ function CreatorProgramWorkspacePage({
       <article className="money-stat blue"><span>Current tier</span><strong>{profile ? creatorTierDefaults[profile.currentTier].label : "-"}</strong></article>
     </section>
     {profile && <section className="card creator-profile-card"><div><span>Creator code</span><strong>{profile.discountCode}</strong></div><div><span>Commission rate</span><strong>{profile.commissionRate}%</strong></div><div><span>This month's sales</span><strong>{profileSummary.monthSales}</strong></div><div><span>Lifetime sales</span><strong>{profileSummary.lifetimeSales}</strong></div><div><span>Next tier progress</span><strong>{Math.min(profileSummary.lifetimeSales, nextTierTarget)} / {nextTierTarget}</strong></div></section>}
+    {!admin && profile && <form className="creator-form card" onSubmit={saveOwnPayoutInfo}>
+      <div className="accounting-form-heading"><div><h3>Payout info</h3><p>Add the account you want payouts sent to. Only admins can see this for payment processing.</p></div><button className="button primary" type="submit">Save payout info</button></div>
+      <div className="accounting-form-grid">
+        <label>Payout method<input value={payoutInfoForm.payoutMethod} onChange={(event) => setPayoutInfoForm((current) => ({ ...current, payoutMethod: event.target.value }))} placeholder="Bank / TNG / DuitNow" /></label>
+        <label>Account name<input value={payoutInfoForm.payoutAccountName} onChange={(event) => setPayoutInfoForm((current) => ({ ...current, payoutAccountName: event.target.value }))} placeholder="Name on account" /></label>
+        <label>Account number / phone<input value={payoutInfoForm.payoutAccountNumber} onChange={(event) => setPayoutInfoForm((current) => ({ ...current, payoutAccountNumber: event.target.value }))} placeholder="Account number or DuitNow phone" /></label>
+        <label className="wide">Notes<textarea value={payoutInfoForm.payoutNotes} onChange={(event) => setPayoutInfoForm((current) => ({ ...current, payoutNotes: event.target.value }))} placeholder="Any extra payment instructions" /></label>
+      </div>
+    </form>}
     <section className="card accounting-table-card creator-table"><div className="accounting-form-heading"><div><h3>Recent attributed orders</h3><p>Creator view hides customer private details.</p></div></div><table><thead><tr><th>Date</th><th>Order</th><th>Order amount</th><th>Commission</th><th>Status</th></tr></thead><tbody>{visibleCommissions.slice(0, 12).map((commission) => <tr key={commission.id}><td>{formatDate(commission.orderDate)}</td><td>#{commission.orderNumber}</td><td>{formatMoney(commission.eligibleSubtotal)}</td><td>{formatMoney(commission.commissionAmount)}</td><td>{commission.status}</td></tr>)}{!visibleCommissions.length && <tr><td colSpan={5}>No attributed creator orders yet.</td></tr>}</tbody></table></section>
     <section className="card accounting-table-card creator-table"><div className="accounting-form-heading"><div><h3>Payout history</h3><p>Approved and paid creator payout records.</p></div></div><table><thead><tr><th>Month</th><th>Commission</th><th>Bonus</th><th>Retainer</th><th>Total</th><th>Status</th></tr></thead><tbody>{payoutsForProfile.map((payout) => <tr key={payout.id}><td>{payout.payoutMonth}</td><td>{formatMoney(payout.approvedCommissionAmount)}</td><td>{formatMoney(payout.bonusAmount)}</td><td>{formatMoney(payout.retainerAmount)}</td><td><strong>{formatMoney(payout.totalPayoutAmount)}</strong></td><td>{payout.status}</td></tr>)}{!payoutsForProfile.length && <tr><td colSpan={6}>No payout history yet.</td></tr>}</tbody></table></section>
   </section>;
