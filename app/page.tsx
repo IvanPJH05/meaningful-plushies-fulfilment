@@ -13,6 +13,7 @@ import {
   deleteSalesConsumptionMapping,
   deleteContentIdea,
   deleteContentPlanItem,
+  deleteDashboardAccount,
   deleteSharedOrders,
   deleteAccountingDocument,
   deleteAccountingTransaction,
@@ -3426,6 +3427,18 @@ export default function Home() {
           setAccounts(refreshedAccounts);
           return refreshedAccounts;
         }}
+        onUpdateAccount={async (account, password) => {
+          await updateDashboardAccount(session.token, account, password);
+          const refreshedAccounts = await fetchDashboardAccounts(session.token);
+          setAccounts(refreshedAccounts);
+          await loadCreatorData();
+        }}
+        onDeleteAccount={async (accountId) => {
+          await deleteDashboardAccount(session.token, accountId);
+          const refreshedAccounts = await fetchDashboardAccounts(session.token);
+          setAccounts(refreshedAccounts);
+          await loadCreatorData();
+        }}
         onSaveProfile={async (profile) => {
           await saveCreatorProfile(session.token, profile);
           await syncCreatorCommissions();
@@ -5075,6 +5088,8 @@ function CreatorProgramWorkspacePage({
   creatorPayouts,
   orders,
   onCreateAccount,
+  onUpdateAccount,
+  onDeleteAccount,
   onSaveProfile,
   onUpdateCommission,
 }: {
@@ -5086,6 +5101,8 @@ function CreatorProgramWorkspacePage({
   creatorPayouts: CreatorPayout[];
   orders: Order[];
   onCreateAccount: (account: Omit<DashboardAccount, "id" | "active">, password: string) => Promise<DashboardAccount[]>;
+  onUpdateAccount: (account: DashboardAccount, password?: string) => Promise<void>;
+  onDeleteAccount: (accountId: string) => Promise<void>;
   onSaveProfile: (profile: CreatorProfile) => Promise<void>;
   onUpdateCommission: (commission: CreatorCommission) => Promise<void>;
 }) {
@@ -5093,6 +5110,8 @@ function CreatorProgramWorkspacePage({
   const [message, setMessage] = useState("");
   const [form, setForm] = useState(creatorFormDefaults);
   const [showCreatorPassword, setShowCreatorPassword] = useState(false);
+  const [creatorPasswordEdits, setCreatorPasswordEdits] = useState<Record<string, string>>({});
+  const [creatorPasswordVisible, setCreatorPasswordVisible] = useState<Record<string, boolean>>({});
   const visibleProfiles = admin ? creatorProfiles : creatorProfiles.filter((profile) => profile.userId === session.id);
   const currentProfile = visibleProfiles[0];
   const visibleCommissions = admin
@@ -5184,6 +5203,31 @@ function CreatorProgramWorkspacePage({
     }
   }
 
+  async function updateCreatorAccount(profile: CreatorProfile, patch: Partial<DashboardAccount>, password = "") {
+    const account = accounts.find((item) => item.id === profile.userId);
+    if (!account) return setMessage("Creator login account was not found.");
+    try {
+      await onUpdateAccount({ ...account, ...patch }, password);
+      if (password) setCreatorPasswordEdits((current) => ({ ...current, [account.id]: "" }));
+      setMessage("Creator account updated.");
+    } catch (error) {
+      setMessage(readableError(error, "Creator account could not be updated."));
+    }
+  }
+
+  async function deleteCreatorAccount(profile: CreatorProfile) {
+    const account = accounts.find((item) => item.id === profile.userId);
+    if (!account) return setMessage("Creator login account was not found.");
+    if (!confirm(`Delete creator account for ${profile.displayName}? This removes their login and creator profile.`)) return;
+    try {
+      await onDeleteAccount(account.id);
+      if (form.userId === account.id) setForm(creatorFormDefaults);
+      setMessage("Creator account deleted.");
+    } catch (error) {
+      setMessage(readableError(error, "Creator account could not be deleted."));
+    }
+  }
+
   if (!admin && !currentProfile) {
     return <section className="creator-workspace"><div className="creator-hero card"><div><p>CREATOR PROGRAM</p><h2>Creator profile not ready yet</h2><span>Ask an admin to finish assigning your creator profile and discount code.</span></div></div></section>;
   }
@@ -5209,14 +5253,39 @@ function CreatorProgramWorkspacePage({
           <label className="wide">Internal notes<textarea value={form.internalNotes} onChange={(event) => updateForm({ internalNotes: event.target.value })} /></label>
         </div>
       </form>
-      <section className="card accounting-table-card creator-table"><table><thead><tr><th>Creator</th><th>Code</th><th>Tier</th><th>Rate</th><th>Status</th><th>Sales</th><th>Commission</th><th /></tr></thead><tbody>
+      <section className="creator-account-grid">
         {creatorProfiles.map((profile) => {
           const creatorRows = creatorCommissions.filter((commission) => commission.creatorId === profile.id);
           const creatorSummary = creatorCommissionSummary(creatorRows);
-          return <tr key={profile.id}><td><strong>{profile.displayName}</strong><br /><small>{profile.email || "No email"}</small></td><td>{profile.discountCode}</td><td>{creatorTierDefaults[profile.currentTier]?.label ?? profile.currentTier}</td><td>{profile.commissionRate}%</td><td>{profile.status}</td><td>{creatorSummary.lifetimeSales}</td><td>{formatMoney(creatorSummary.lifetimeCommission)}</td><td><button className="button secondary small" type="button" onClick={() => editProfile(profile)}>Edit</button></td></tr>;
+          const account = accounts.find((item) => item.id === profile.userId);
+          const passwordValue = account ? creatorPasswordEdits[account.id] ?? "" : "";
+          const passwordVisible = account ? creatorPasswordVisible[account.id] : false;
+          return <article className="creator-account-card card" key={profile.id}>
+            <div className="creator-account-main">
+              <div>
+                <span className={`creator-status-dot ${account?.active === false ? "inactive" : profile.status}`}>{account?.active === false ? "Inactive" : profile.status}</span>
+                <h3>{profile.displayName}</h3>
+                <p>{profile.email || account?.username || "No email login"}</p>
+              </div>
+              <button className="button secondary small" type="button" onClick={() => editProfile(profile)}>Edit profile</button>
+            </div>
+            <div className="creator-account-stats">
+              <div><span>Code</span><strong>{profile.discountCode}</strong></div>
+              <div><span>Tier</span><strong>{creatorTierDefaults[profile.currentTier]?.label ?? profile.currentTier}</strong></div>
+              <div><span>Rate</span><strong>{profile.commissionRate}%</strong></div>
+              <div><span>Sales</span><strong>{creatorSummary.lifetimeSales}</strong></div>
+              <div><span>Commission</span><strong>{formatMoney(creatorSummary.lifetimeCommission)}</strong></div>
+            </div>
+            {account && <div className="creator-account-tools">
+              <label>New password<div className="password-reveal-field"><input type={passwordVisible ? "text" : "password"} value={passwordValue} onChange={(event) => setCreatorPasswordEdits((current) => ({ ...current, [account.id]: event.target.value }))} placeholder="8+ characters" /><button type="button" onClick={() => setCreatorPasswordVisible((current) => ({ ...current, [account.id]: !current[account.id] }))}>{passwordVisible ? "Hide" : "Show"}</button></div></label>
+              <button className="button primary" type="button" disabled={passwordValue.length < 8} onClick={() => updateCreatorAccount(profile, {}, passwordValue)}>Change password</button>
+              <button className="button secondary" type="button" onClick={() => updateCreatorAccount(profile, { active: !account.active })}>{account.active ? "Deactivate" : "Activate"}</button>
+              <button className="button danger" type="button" onClick={() => deleteCreatorAccount(profile)}>Delete</button>
+            </div>}
+          </article>;
         })}
-        {!creatorProfiles.length && <tr><td colSpan={8}>No creator profiles yet.</td></tr>}
-      </tbody></table></section>
+        {!creatorProfiles.length && <div className="empty card"><strong>No creator profiles yet.</strong><p>Create your first creator above.</p></div>}
+      </section>
     </section>;
   }
 

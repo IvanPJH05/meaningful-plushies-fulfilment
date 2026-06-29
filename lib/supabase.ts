@@ -352,6 +352,14 @@ export async function updateCreatorCommissionStatus(token: string, commission: C
   if (error) throw error;
 }
 
+export async function deleteDashboardAccount(token: string, accountId: string) {
+  const { error } = await requireSupabase().rpc("dashboard_delete_account", {
+    p_session_token: token,
+    p_account_id: accountId,
+  });
+  if (error) throw new Error(supabaseErrorMessage(error, "Account could not be deleted."));
+}
+
 export async function fetchCreatorPayouts(token: string): Promise<CreatorPayout[]> {
   const { data, error } = await requireSupabase().rpc("creator_list_payouts", { p_session_token: token });
   if (error) {

@@ -249,6 +249,22 @@ begin
   if not p_active then delete from public.dashboard_sessions where account_id = p_account_id; end if;
 end $$;
 
+create or replace function public.dashboard_delete_account(
+  p_session_token uuid, p_account_id uuid
+) returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.dashboard_is_admin(p_session_token) then raise exception 'ADMIN_REQUIRED'; end if;
+  if p_account_id = (
+    select s.account_id
+    from public.dashboard_sessions s
+    where s.token = p_session_token and s.expires_at > now()
+    limit 1
+  ) then
+    raise exception 'CANNOT_DELETE_SELF';
+  end if;
+  delete from public.dashboard_accounts where id = p_account_id;
+end $$;
+
 create or replace function public.dashboard_session_role(p_token uuid)
 returns table(account_id uuid, role text)
 language sql security definer set search_path = public as $$
@@ -526,6 +542,7 @@ grant execute on function public.dashboard_login(text, text) to anon, authentica
 grant execute on function public.dashboard_list_accounts(uuid) to anon, authenticated;
 grant execute on function public.dashboard_create_account(uuid, text, text, text, text) to anon, authenticated;
 grant execute on function public.dashboard_update_account(uuid, uuid, text, text, boolean, text) to anon, authenticated;
+grant execute on function public.dashboard_delete_account(uuid, uuid) to anon, authenticated;
 grant execute on function public.creator_list_profiles(uuid) to anon, authenticated;
 grant execute on function public.creator_save_profile(uuid, uuid, uuid, text, text, text, text, text, text, numeric, text, text, text) to anon, authenticated;
 grant execute on function public.creator_list_commissions(uuid) to anon, authenticated;

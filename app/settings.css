@@ -233,10 +233,33 @@
 .creator-profile-card div { padding: 16px; background: #fff; }
 .creator-profile-card span { display: block; color: var(--muted); font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
 .creator-profile-card strong { display: block; margin-top: 7px; color: var(--text); font-size: 17px; }
+.creator-account-grid { display: grid; gap: 14px; }
+.creator-account-card { padding: 18px; display: grid; gap: 15px; }
+.creator-account-main { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; }
+.creator-account-main h3 { margin: 7px 0 3px; font-size: 20px; }
+.creator-account-main p { margin: 0; color: var(--muted); font-size: 12px; }
+.creator-status-dot { display: inline-flex; width: fit-content; padding: 5px 9px; border-radius: 999px; background: #e9f8f0; color: #126646; font-size: 9px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }
+.creator-status-dot.pending { background: #fff0d8; color: #a15b0f; }
+.creator-status-dot.suspended,
+.creator-status-dot.inactive { background: #ffe6e8; color: #ae2934; }
+.creator-account-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1px; overflow: hidden; border: 1px solid #e6edf5; border-radius: 10px; background: #e6edf5; }
+.creator-account-stats div { padding: 12px; background: #f9fbfe; }
+.creator-account-stats span { display: block; color: var(--muted); font-size: 9px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }
+.creator-account-stats strong { display: block; margin-top: 5px; color: var(--text); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.creator-account-tools { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto auto; gap: 9px; align-items: end; }
+.creator-account-tools label { display: grid; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 850; letter-spacing: .04em; text-transform: uppercase; }
 .password-reveal-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; align-items: center; }
 .password-reveal-field input { width: 100%; }
 .password-reveal-field button { height: 38px; border: 1px solid #cbd8e8; border-radius: 7px; background: #fff; color: #205da7; padding: 0 11px; font-size: 11px; font-weight: 850; cursor: pointer; }
 .password-reveal-field button:hover { background: var(--blue-soft); }
+.button.danger { border: 1px solid #f0c6ca; background: #fff0f1; color: #ad313a; }
+.button.danger:hover { background: #ffe6e8; }
+
+@media (max-width: 980px) {
+  .creator-account-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .creator-account-tools { grid-template-columns: 1fr; }
+  .creator-account-main { flex-direction: column; }
+}
 
 .selectable-stat select {
   width: 100%;
