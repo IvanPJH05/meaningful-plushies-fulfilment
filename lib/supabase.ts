@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { AccountingCategory, AccountingDocument, AccountingLedgerEntry, AccountingTransaction, ContentIdeaItem, ContentIdeaReference, ContentPlanItem, DashboardAccount, EnvelopePrintSettings, Order, PaymentProcessorSetting, SalesConsumptionMapping, SalesFeeSetting, StockSetting, UserRole } from "./types";
+import type { AccountingCategory, AccountingDocument, AccountingLedgerEntry, AccountingTransaction, CommissionStatus, ContentIdeaItem, ContentIdeaReference, ContentPlanItem, CreatorCommission, CreatorPayout, CreatorProfile, CreatorStatus, CreatorTier, DashboardAccount, EnvelopePrintSettings, Order, PaymentProcessorSetting, SalesConsumptionMapping, SalesFeeSetting, StockSetting, UserRole } from "./types";
 
 export type DashboardSession = DashboardAccount & { token: string };
 
@@ -218,6 +218,131 @@ export async function updateDashboardAccount(token: string, account: DashboardAc
     p_new_password: password || null,
   });
   if (error) throw error;
+}
+
+function isMissingCreatorSchema(error: unknown) {
+  return isMissingTableError(error)
+    || Boolean(error && typeof error === "object" && "code" in error && (error.code === "42883"));
+}
+
+function creatorProfileFromRow(row: Record<string, unknown>): CreatorProfile {
+  return {
+    id: String(row.id ?? ""),
+    userId: String(row.user_id ?? ""),
+    displayName: String(row.display_name ?? ""),
+    email: String(row.email ?? ""),
+    phone: String(row.phone ?? ""),
+    tiktokUrl: String(row.tiktok_url ?? ""),
+    instagramUrl: String(row.instagram_url ?? ""),
+    discountCode: String(row.discount_code ?? ""),
+    commissionRate: Number(row.commission_rate ?? 0),
+    currentTier: String(row.current_tier ?? "tier_1") as CreatorTier,
+    status: String(row.status ?? "pending") as CreatorStatus,
+    internalNotes: String(row.internal_notes ?? ""),
+    createdAt: String(row.created_at ?? ""),
+    updatedAt: String(row.updated_at ?? ""),
+  };
+}
+
+function creatorCommissionFromRow(row: Record<string, unknown>): CreatorCommission {
+  return {
+    id: String(row.id ?? ""),
+    creatorId: String(row.creator_id ?? ""),
+    shopifyOrderId: String(row.shopify_order_id ?? ""),
+    orderNumber: String(row.order_number ?? ""),
+    orderDate: String(row.order_date ?? ""),
+    eligibleSubtotal: Number(row.eligible_subtotal ?? 0),
+    discountCodeUsed: String(row.discount_code_used ?? ""),
+    commissionRateAtSale: Number(row.commission_rate_at_sale ?? 0),
+    tierAtSale: String(row.tier_at_sale ?? "tier_1") as CreatorTier,
+    commissionAmount: Number(row.commission_amount ?? 0),
+    status: String(row.status ?? "pending") as CommissionStatus,
+    payoutReference: String(row.payout_reference ?? ""),
+    paidAt: String(row.paid_at ?? ""),
+    createdAt: String(row.created_at ?? ""),
+    updatedAt: String(row.updated_at ?? ""),
+  };
+}
+
+function creatorPayoutFromRow(row: Record<string, unknown>): CreatorPayout {
+  return {
+    id: String(row.id ?? ""),
+    creatorId: String(row.creator_id ?? ""),
+    payoutMonth: String(row.payout_month ?? ""),
+    approvedCommissionAmount: Number(row.approved_commission_amount ?? 0),
+    bonusAmount: Number(row.bonus_amount ?? 0),
+    retainerAmount: Number(row.retainer_amount ?? 0),
+    totalPayoutAmount: Number(row.total_payout_amount ?? 0),
+    status: String(row.status ?? "pending") as CommissionStatus,
+    paymentReference: String(row.payment_reference ?? ""),
+    paidAt: String(row.paid_at ?? ""),
+    createdAt: String(row.created_at ?? ""),
+  };
+}
+
+export async function fetchCreatorProfiles(token: string): Promise<CreatorProfile[]> {
+  const { data, error } = await requireSupabase().rpc("creator_list_profiles", { p_session_token: token });
+  if (error) {
+    if (isMissingCreatorSchema(error)) return [];
+    throw error;
+  }
+  return (data ?? []).map((row: Record<string, unknown>) => creatorProfileFromRow(row));
+}
+
+export async function saveCreatorProfile(token: string, profile: CreatorProfile) {
+  const { error } = await requireSupabase().rpc("creator_save_profile", {
+    p_session_token: token,
+    p_id: profile.id || null,
+    p_user_id: profile.userId,
+    p_display_name: profile.displayName,
+    p_email: profile.email,
+    p_phone: profile.phone,
+    p_tiktok_url: profile.tiktokUrl,
+    p_instagram_url: profile.instagramUrl,
+    p_discount_code: profile.discountCode,
+    p_commission_rate: profile.commissionRate,
+    p_current_tier: profile.currentTier,
+    p_status: profile.status,
+    p_internal_notes: profile.internalNotes,
+  });
+  if (error) throw error;
+}
+
+export async function fetchCreatorCommissions(token: string): Promise<CreatorCommission[]> {
+  const { data, error } = await requireSupabase().rpc("creator_list_commissions", { p_session_token: token });
+  if (error) {
+    if (isMissingCreatorSchema(error)) return [];
+    throw error;
+  }
+  return (data ?? []).map((row: Record<string, unknown>) => creatorCommissionFromRow(row));
+}
+
+export async function updateCreatorCommissionStatus(token: string, commission: CreatorCommission) {
+  const { error } = await requireSupabase().rpc("creator_update_commission_status", {
+    p_session_token: token,
+    p_commission_id: commission.id,
+    p_status: commission.status,
+    p_payout_reference: commission.payoutReference || null,
+    p_paid_at: commission.paidAt || null,
+  });
+  if (error) throw error;
+}
+
+export async function fetchCreatorPayouts(token: string): Promise<CreatorPayout[]> {
+  const { data, error } = await requireSupabase().rpc("creator_list_payouts", { p_session_token: token });
+  if (error) {
+    if (isMissingCreatorSchema(error)) return [];
+    throw error;
+  }
+  return (data ?? []).map((row: Record<string, unknown>) => creatorPayoutFromRow(row));
+}
+
+export async function syncCreatorCommissions() {
+  const { error } = await requireSupabase().rpc("creator_sync_commissions");
+  if (error) {
+    if (isMissingCreatorSchema(error)) return;
+    throw error;
+  }
 }
 
 export async function fetchStockSettings(): Promise<StockSetting[]> {
@@ -660,6 +785,9 @@ export function subscribeToSharedData(onChange: () => void) {
     .on("postgres_changes", { event: "*", schema: "public", table: "accounting_categories" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "content_plan_items" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "content_idea_items" }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "creator_profiles" }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "creator_commissions" }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "creator_payouts" }, onChange)
     .subscribe();
   return () => { void client.removeChannel(channel); };
 }

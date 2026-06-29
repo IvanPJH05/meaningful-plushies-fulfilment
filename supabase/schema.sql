@@ -59,12 +59,30 @@ create table if not exists public.dashboard_accounts (
   id uuid primary key default gen_random_uuid(),
   username text not null unique check (username = lower(username) and username ~ '^[a-z0-9._-]{3,40}$'),
   display_name text not null,
-  role text not null check (role in ('admin', 'staff')),
+  role text not null check (role in ('admin', 'staff', 'creator')),
   password_hash text not null,
   active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+do $$
+declare constraint_name text;
+begin
+  select conname into constraint_name
+  from pg_constraint
+  where conrelid = 'public.dashboard_accounts'::regclass
+    and contype = 'c'
+    and pg_get_constraintdef(oid) like '%role%'
+    and pg_get_constraintdef(oid) like '%staff%';
+  if constraint_name is not null then
+    execute format('alter table public.dashboard_accounts drop constraint %I', constraint_name);
+  end if;
+  alter table public.dashboard_accounts
+    add constraint dashboard_accounts_role_check check (role in ('admin', 'staff', 'creator'));
+exception
+  when duplicate_object then null;
+end $$;
 
 create table if not exists public.dashboard_sessions (
   token uuid primary key default gen_random_uuid(),
@@ -92,6 +110,64 @@ create table if not exists public.sales_consumption_mappings (
 
 create index if not exists sales_consumption_mappings_sku_idx
   on public.sales_consumption_mappings (sku, active);
+
+create table if not exists public.creator_profiles (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null unique references public.dashboard_accounts(id) on delete cascade,
+  display_name text not null,
+  email text not null default '',
+  phone text not null default '',
+  tiktok_url text not null default '',
+  instagram_url text not null default '',
+  discount_code text not null,
+  commission_rate numeric(8,4) not null default 10 check (commission_rate >= 0),
+  current_tier text not null default 'tier_1' check (current_tier in ('tier_1', 'tier_2', 'tier_3', 'tier_4')),
+  status text not null default 'pending' check (status in ('active', 'suspended', 'pending')),
+  internal_notes text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists creator_profiles_discount_code_lower_idx
+  on public.creator_profiles (lower(discount_code));
+
+create table if not exists public.creator_commissions (
+  id uuid primary key default gen_random_uuid(),
+  creator_id uuid not null references public.creator_profiles(id) on delete cascade,
+  shopify_order_id text not null,
+  order_number text not null,
+  order_date timestamptz,
+  eligible_subtotal numeric(12,2) not null default 0 check (eligible_subtotal >= 0),
+  discount_code_used text not null default '',
+  commission_rate_at_sale numeric(8,4) not null default 0 check (commission_rate_at_sale >= 0),
+  tier_at_sale text not null default 'tier_1' check (tier_at_sale in ('tier_1', 'tier_2', 'tier_3', 'tier_4')),
+  commission_amount numeric(12,2) not null default 0 check (commission_amount >= 0),
+  status text not null default 'pending' check (status in ('pending', 'approved', 'paid', 'cancelled')),
+  payout_reference text not null default '',
+  paid_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists creator_commissions_order_creator_idx
+  on public.creator_commissions (shopify_order_id, creator_id);
+
+create index if not exists creator_commissions_creator_status_idx
+  on public.creator_commissions (creator_id, status, order_date desc);
+
+create table if not exists public.creator_payouts (
+  id uuid primary key default gen_random_uuid(),
+  creator_id uuid not null references public.creator_profiles(id) on delete cascade,
+  payout_month date not null,
+  approved_commission_amount numeric(12,2) not null default 0 check (approved_commission_amount >= 0),
+  bonus_amount numeric(12,2) not null default 0 check (bonus_amount >= 0),
+  retainer_amount numeric(12,2) not null default 0 check (retainer_amount >= 0),
+  total_payout_amount numeric(12,2) not null default 0 check (total_payout_amount >= 0),
+  status text not null default 'pending' check (status in ('pending', 'approved', 'paid', 'cancelled')),
+  payment_reference text not null default '',
+  paid_at timestamptz,
+  created_at timestamptz not null default now()
+);
 
 insert into public.stock_settings(item_key)
 values ('BILLY'), ('TOOTSIE'), ('HUNNIE'), ('DRAGON WARRIOR'), ('VOICE')
@@ -155,6 +231,209 @@ begin
   if not p_active then delete from public.dashboard_sessions where account_id = p_account_id; end if;
 end $$;
 
+create or replace function public.dashboard_session_role(p_token uuid)
+returns table(account_id uuid, role text)
+language sql security definer set search_path = public as $$
+  select a.id, a.role
+  from public.dashboard_sessions s
+  join public.dashboard_accounts a on a.id = s.account_id
+  where s.token = p_token and s.expires_at > now() and a.active
+  limit 1
+$$;
+
+create or replace function public.creator_list_profiles(p_session_token uuid)
+returns table(
+  id uuid, user_id uuid, display_name text, email text, phone text, tiktok_url text,
+  instagram_url text, discount_code text, commission_rate numeric, current_tier text,
+  status text, internal_notes text, created_at timestamptz, updated_at timestamptz
+) language plpgsql security definer set search_path = public as $$
+declare session_account uuid; session_role text;
+begin
+  select dashboard_session_role.account_id, dashboard_session_role.role into session_account, session_role
+  from public.dashboard_session_role(p_session_token);
+  if session_account is null then raise exception 'LOGIN_REQUIRED'; end if;
+  if session_role = 'admin' then
+    return query select p.id, p.user_id, p.display_name, p.email, p.phone, p.tiktok_url,
+      p.instagram_url, p.discount_code, p.commission_rate, p.current_tier, p.status,
+      p.internal_notes, p.created_at, p.updated_at
+    from public.creator_profiles p
+    order by p.display_name;
+  elsif session_role = 'creator' then
+    return query select p.id, p.user_id, p.display_name, p.email, p.phone, p.tiktok_url,
+      p.instagram_url, p.discount_code, p.commission_rate, p.current_tier, p.status,
+      ''::text as internal_notes, p.created_at, p.updated_at
+    from public.creator_profiles p
+    where p.user_id = session_account
+    order by p.display_name;
+  else
+    raise exception 'CREATOR_ACCESS_REQUIRED';
+  end if;
+end $$;
+
+create or replace function public.creator_save_profile(
+  p_session_token uuid, p_id uuid, p_user_id uuid, p_display_name text, p_email text,
+  p_phone text, p_tiktok_url text, p_instagram_url text, p_discount_code text,
+  p_commission_rate numeric, p_current_tier text, p_status text, p_internal_notes text
+) returns uuid language plpgsql security definer set search_path = public as $$
+declare saved_id uuid;
+begin
+  if not public.dashboard_is_admin(p_session_token) then raise exception 'ADMIN_REQUIRED'; end if;
+  if not exists(select 1 from public.dashboard_accounts where id = p_user_id and role = 'creator') then
+    raise exception 'CREATOR_ACCOUNT_REQUIRED';
+  end if;
+  if trim(coalesce(p_discount_code, '')) = '' then raise exception 'DISCOUNT_CODE_REQUIRED'; end if;
+  insert into public.creator_profiles(
+    id, user_id, display_name, email, phone, tiktok_url, instagram_url,
+    discount_code, commission_rate, current_tier, status, internal_notes, updated_at
+  )
+  values(
+    coalesce(p_id, gen_random_uuid()), p_user_id, trim(p_display_name), trim(coalesce(p_email, '')),
+    trim(coalesce(p_phone, '')), trim(coalesce(p_tiktok_url, '')), trim(coalesce(p_instagram_url, '')),
+    upper(trim(p_discount_code)), greatest(0, coalesce(p_commission_rate, 0)),
+    p_current_tier, p_status, trim(coalesce(p_internal_notes, '')), now()
+  )
+  on conflict (id) do update set
+    user_id = excluded.user_id,
+    display_name = excluded.display_name,
+    email = excluded.email,
+    phone = excluded.phone,
+    tiktok_url = excluded.tiktok_url,
+    instagram_url = excluded.instagram_url,
+    discount_code = excluded.discount_code,
+    commission_rate = excluded.commission_rate,
+    current_tier = excluded.current_tier,
+    status = excluded.status,
+    internal_notes = excluded.internal_notes,
+    updated_at = now()
+  returning id into saved_id;
+  return saved_id;
+end $$;
+
+create or replace function public.creator_list_commissions(p_session_token uuid)
+returns table(
+  id uuid, creator_id uuid, shopify_order_id text, order_number text, order_date timestamptz,
+  eligible_subtotal numeric, discount_code_used text, commission_rate_at_sale numeric,
+  tier_at_sale text, commission_amount numeric, status text, payout_reference text,
+  paid_at timestamptz, created_at timestamptz, updated_at timestamptz
+) language plpgsql security definer set search_path = public as $$
+declare session_account uuid; session_role text; session_creator_id uuid;
+begin
+  select dashboard_session_role.account_id, dashboard_session_role.role into session_account, session_role
+  from public.dashboard_session_role(p_session_token);
+  if session_account is null then raise exception 'LOGIN_REQUIRED'; end if;
+  if session_role = 'admin' then
+    return query select c.id, c.creator_id, c.shopify_order_id, c.order_number, c.order_date,
+      c.eligible_subtotal, c.discount_code_used, c.commission_rate_at_sale, c.tier_at_sale,
+      c.commission_amount, c.status, c.payout_reference, c.paid_at, c.created_at, c.updated_at
+    from public.creator_commissions c
+    order by c.order_date desc nulls last, c.created_at desc;
+  elsif session_role = 'creator' then
+    select p.id into session_creator_id from public.creator_profiles p where p.user_id = session_account;
+    return query select c.id, c.creator_id, c.shopify_order_id, c.order_number, c.order_date,
+      c.eligible_subtotal, c.discount_code_used, c.commission_rate_at_sale, c.tier_at_sale,
+      c.commission_amount, c.status, ''::text as payout_reference, c.paid_at, c.created_at, c.updated_at
+    from public.creator_commissions c
+    where c.creator_id = session_creator_id
+    order by c.order_date desc nulls last, c.created_at desc;
+  else
+    raise exception 'CREATOR_ACCESS_REQUIRED';
+  end if;
+end $$;
+
+create or replace function public.creator_update_commission_status(
+  p_session_token uuid, p_commission_id uuid, p_status text, p_payout_reference text default null, p_paid_at timestamptz default null
+) returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.dashboard_is_admin(p_session_token) then raise exception 'ADMIN_REQUIRED'; end if;
+  update public.creator_commissions set
+    status = p_status,
+    payout_reference = coalesce(p_payout_reference, payout_reference),
+    paid_at = case when p_status = 'paid' then coalesce(p_paid_at, now()) else paid_at end,
+    updated_at = now()
+  where id = p_commission_id;
+end $$;
+
+create or replace function public.creator_list_payouts(p_session_token uuid)
+returns table(
+  id uuid, creator_id uuid, payout_month date, approved_commission_amount numeric,
+  bonus_amount numeric, retainer_amount numeric, total_payout_amount numeric, status text,
+  payment_reference text, paid_at timestamptz, created_at timestamptz
+) language plpgsql security definer set search_path = public as $$
+declare session_account uuid; session_role text; session_creator_id uuid;
+begin
+  select dashboard_session_role.account_id, dashboard_session_role.role into session_account, session_role
+  from public.dashboard_session_role(p_session_token);
+  if session_account is null then raise exception 'LOGIN_REQUIRED'; end if;
+  if session_role = 'admin' then
+    return query select p.id, p.creator_id, p.payout_month, p.approved_commission_amount,
+      p.bonus_amount, p.retainer_amount, p.total_payout_amount, p.status,
+      p.payment_reference, p.paid_at, p.created_at
+    from public.creator_payouts p
+    order by p.payout_month desc;
+  elsif session_role = 'creator' then
+    select p.id into session_creator_id from public.creator_profiles p where p.user_id = session_account;
+    return query select p.id, p.creator_id, p.payout_month, p.approved_commission_amount,
+      p.bonus_amount, p.retainer_amount, p.total_payout_amount, p.status,
+      p.payment_reference, p.paid_at, p.created_at
+    from public.creator_payouts p
+    where p.creator_id = session_creator_id
+    order by p.payout_month desc;
+  else
+    raise exception 'CREATOR_ACCESS_REQUIRED';
+  end if;
+end $$;
+
+create or replace function public.creator_sync_commissions()
+returns integer language plpgsql security definer set search_path = public as $$
+declare inserted_count integer := 0;
+begin
+  insert into public.creator_commissions(
+    creator_id, shopify_order_id, order_number, order_date, eligible_subtotal,
+    discount_code_used, commission_rate_at_sale, tier_at_sale, commission_amount, status, updated_at
+  )
+  select
+    p.id,
+    o.id,
+    o.order_number,
+    o.order_date,
+    round(greatest(0, (
+      coalesce((o.data->>'subtotalAmount')::numeric, 0)
+      - coalesce((o.data->>'productDiscountAmount')::numeric, 0)
+    ) / greatest(1, count(*) over (partition by o.order_number))), 2) as eligible_subtotal,
+    matched.code,
+    p.commission_rate,
+    p.current_tier,
+    round(greatest(0, (
+      coalesce((o.data->>'subtotalAmount')::numeric, 0)
+      - coalesce((o.data->>'productDiscountAmount')::numeric, 0)
+    ) / greatest(1, count(*) over (partition by o.order_number))) * p.commission_rate / 100, 2) as commission_amount,
+    'pending',
+    now()
+  from public.fulfilment_orders o
+  cross join lateral (
+    select code
+    from (
+      select jsonb_array_elements_text(case when jsonb_typeof(o.data->'discountCodes') = 'array' then o.data->'discountCodes' else '[]'::jsonb end) as code
+      union all
+      select o.data->>'discountCodeUsed'
+    ) raw_codes
+    where trim(coalesce(code, '')) <> ''
+    limit 1
+  ) matched
+  join public.creator_profiles p
+    on lower(p.discount_code) = lower(matched.code)
+   and p.status = 'active'
+  on conflict (shopify_order_id, creator_id) do update set
+    order_number = excluded.order_number,
+    order_date = excluded.order_date,
+    eligible_subtotal = excluded.eligible_subtotal,
+    discount_code_used = excluded.discount_code_used,
+    updated_at = now()
+  where public.creator_commissions.status = 'pending';
+  get diagnostics inserted_count = row_count;
+  return inserted_count;
+end $$;
+
 alter table public.fulfilment_orders enable row level security;
 alter table public.activity_events enable row level security;
 alter table public.payment_processor_settings enable row level security;
@@ -164,6 +443,9 @@ alter table public.dashboard_accounts enable row level security;
 alter table public.dashboard_sessions enable row level security;
 alter table public.stock_settings enable row level security;
 alter table public.sales_consumption_mappings enable row level security;
+alter table public.creator_profiles enable row level security;
+alter table public.creator_commissions enable row level security;
+alter table public.creator_payouts enable row level security;
 
 drop policy if exists "shared dashboard reads orders" on public.fulfilment_orders;
 drop policy if exists "shared dashboard inserts orders" on public.fulfilment_orders;
@@ -226,9 +508,19 @@ grant execute on function public.dashboard_login(text, text) to anon, authentica
 grant execute on function public.dashboard_list_accounts(uuid) to anon, authenticated;
 grant execute on function public.dashboard_create_account(uuid, text, text, text, text) to anon, authenticated;
 grant execute on function public.dashboard_update_account(uuid, uuid, text, text, boolean, text) to anon, authenticated;
+grant execute on function public.creator_list_profiles(uuid) to anon, authenticated;
+grant execute on function public.creator_save_profile(uuid, uuid, uuid, text, text, text, text, text, text, numeric, text, text, text) to anon, authenticated;
+grant execute on function public.creator_list_commissions(uuid) to anon, authenticated;
+grant execute on function public.creator_update_commission_status(uuid, uuid, text, text, timestamptz) to anon, authenticated;
+grant execute on function public.creator_list_payouts(uuid) to anon, authenticated;
+grant execute on function public.creator_sync_commissions() to anon, authenticated;
 revoke all on public.dashboard_accounts from anon, authenticated;
 revoke all on public.dashboard_sessions from anon, authenticated;
+revoke all on public.creator_profiles from anon, authenticated;
+revoke all on public.creator_commissions from anon, authenticated;
+revoke all on public.creator_payouts from anon, authenticated;
 revoke execute on function public.dashboard_is_admin(uuid) from anon, authenticated;
+revoke execute on function public.dashboard_session_role(uuid) from anon, authenticated;
 
 insert into storage.buckets(id, name, public, file_size_limit, allowed_mime_types)
 values ('accounting-documents', 'accounting-documents', false, 10485760, array['application/pdf', 'image/jpeg', 'image/png', 'image/webp'])
@@ -514,5 +806,23 @@ begin
     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'content_idea_items'
   ) then
     alter publication supabase_realtime add table public.content_idea_items;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'creator_profiles'
+  ) then
+    alter publication supabase_realtime add table public.creator_profiles;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'creator_commissions'
+  ) then
+    alter publication supabase_realtime add table public.creator_commissions;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'creator_payouts'
+  ) then
+    alter publication supabase_realtime add table public.creator_payouts;
   end if;
 end $$;

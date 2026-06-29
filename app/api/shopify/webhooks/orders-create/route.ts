@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
 import { cleanShopifyOrderNumber, fetchShopifyOrderWithMetafieldRetry, shopifyMetafieldValue, textValue } from "../../../../../lib/shopify-orders";
-import { fetchSharedOrders, insertSharedActivity, upsertSharedOrders } from "../../../../../lib/supabase";
+import { fetchSharedOrders, insertSharedActivity, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
 
 export const runtime = "nodejs";
 
@@ -49,6 +49,7 @@ export async function POST(request: Request) {
     const ordersToSave = importedOrders.filter((order) => order.orderNumber === syncedNumber);
 
     await upsertSharedOrders(ordersToSave);
+    await syncCreatorCommissions();
     await insertSharedActivity({
       id: `shopify-order-${Date.now()}`,
       orderNumber: ordersToSave[0]?.orderNumber,

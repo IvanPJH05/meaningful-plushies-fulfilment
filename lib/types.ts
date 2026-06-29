@@ -8,7 +8,10 @@ export const orderStatuses = [
 ] as const;
 
 export type OrderStatus = (typeof orderStatuses)[number];
-export type UserRole = "admin" | "staff";
+export type UserRole = "admin" | "staff" | "creator";
+export type CreatorTier = "tier_1" | "tier_2" | "tier_3" | "tier_4";
+export type CreatorStatus = "active" | "suspended" | "pending";
+export type CommissionStatus = "pending" | "approved" | "paid" | "cancelled";
 
 export type PaymentProcessorSetting = {
   processor: string;
@@ -42,6 +45,55 @@ export type DashboardAccount = {
   displayName: string;
   role: UserRole;
   active: boolean;
+};
+
+export type CreatorProfile = {
+  id: string;
+  userId: string;
+  displayName: string;
+  email: string;
+  phone: string;
+  tiktokUrl: string;
+  instagramUrl: string;
+  discountCode: string;
+  commissionRate: number;
+  currentTier: CreatorTier;
+  status: CreatorStatus;
+  internalNotes: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreatorCommission = {
+  id: string;
+  creatorId: string;
+  shopifyOrderId: string;
+  orderNumber: string;
+  orderDate: string;
+  eligibleSubtotal: number;
+  discountCodeUsed: string;
+  commissionRateAtSale: number;
+  tierAtSale: CreatorTier;
+  commissionAmount: number;
+  status: CommissionStatus;
+  payoutReference: string;
+  paidAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreatorPayout = {
+  id: string;
+  creatorId: string;
+  payoutMonth: string;
+  approvedCommissionAmount: number;
+  bonusAmount: number;
+  retainerAmount: number;
+  totalPayoutAmount: number;
+  status: CommissionStatus;
+  paymentReference: string;
+  paidAt: string;
+  createdAt: string;
 };
 
 export type StockSetting = {
@@ -194,6 +246,9 @@ export type Order = {
   refundedAmount: number;
   outstandingBalance: number;
   paymentProcessor: string;
+  discountCodes?: string[];
+  discountCodeUsed?: string;
+  creatorId?: string;
   shippingMethod?: string;
   product: string;
   character: string;

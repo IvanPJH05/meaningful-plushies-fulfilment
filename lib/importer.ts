@@ -278,6 +278,26 @@ function shopifyPaymentProcessor(order: Record<string, unknown>, isZeroCashOrder
   return normalizePaymentProcessor(gateway, isZeroCashOrder);
 }
 
+function cleanDiscountCodes(codes: string[]) {
+  return [...new Set(codes.map((code) => code.trim()).filter(Boolean))];
+}
+
+function shopifyDiscountCodes(order: Record<string, unknown>) {
+  const directCodes = arrayValue(order.discount_codes).map((item) => String(item.code ?? "").trim());
+  const applications = order.discountApplications ?? order.discount_applications;
+  const nodes = objectValue(applications).nodes;
+  const edges = objectValue(applications).edges;
+  const rows = Array.isArray(nodes)
+    ? nodes
+    : Array.isArray(edges)
+      ? edges.map((edge) => objectValue(edge).node)
+      : arrayValue(applications);
+  return cleanDiscountCodes([
+    ...directCodes,
+    ...rows.map((item) => String(objectValue(item).code ?? objectValue(item).title ?? "").trim()),
+  ]);
+}
+
 function shopifyTags(order: Record<string, unknown>) {
   const tags = order.tags;
   if (Array.isArray(tags)) return tags.map((tag) => textValue(tag)).filter(Boolean);
@@ -351,6 +371,7 @@ export function shopifyOrderToFulfilmentOrders(
   const createdAt = String(shopifyOrder.created_at ?? shopifyOrder.createdAt ?? timestamp);
   const paidAt = String(shopifyOrder.processed_at ?? shopifyOrder.processedAt ?? createdAt);
   const tagTracking = shopifyTrackingFromTags(shopifyOrder);
+  const discountCodes = shopifyDiscountCodes(shopifyOrder);
   const existingById = new Map(existing.map((order) => [order.id, order]));
   const orders: Order[] = [];
 
@@ -385,6 +406,8 @@ export function shopifyOrderToFulfilmentOrders(
       refundedAmount: refundedAmount || current?.refundedAmount || 0,
       outstandingBalance: outstandingBalance || current?.outstandingBalance || 0,
       paymentProcessor: shopifyPaymentProcessor(shopifyOrder, isZeroCashOrder) || current?.paymentProcessor || "",
+      discountCodes,
+      discountCodeUsed: discountCodes[0] ?? current?.discountCodeUsed ?? "",
       shippingMethod: String(shippingLines[0]?.title ?? shippingLine.title ?? current?.shippingMethod ?? ""),
       product: productName(lineName, personalization.product || current?.product || ""),
       character: shopifyLineCharacter(lineName) || current?.character || "",
@@ -597,6 +620,7 @@ export function importShopifyData(
       ? importedShippingAmount
       : Math.max(0, importedDiscountAmount - importedProductDiscountAmount);
     const discountAmount = isZeroCashOrder ? shippingDiscountAmount : importedDiscountAmount;
+    const discountCodes = cleanDiscountCodes((shared["Discount Code"] || "").split(/[,\s]+/));
 
     for (let index = 0; index < total; index += 1) {
       const row = rows[index] ?? rows[0] ?? {};
@@ -636,6 +660,8 @@ export function importShopifyData(
           shared["Payment Method"] || current?.paymentProcessor || "",
           isZeroCashOrder,
         ),
+        discountCodes,
+        discountCodeUsed: discountCodes[0] ?? current?.discountCodeUsed ?? "",
         shippingMethod: shared["Shipping Method"] || current?.shippingMethod || "",
         product: productName(lineName, personalization.product || current?.product || ""),
         character: character || current?.character || "",

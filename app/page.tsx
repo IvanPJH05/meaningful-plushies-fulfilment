@@ -23,6 +23,9 @@ import {
   fetchAccountingTransactions,
   fetchContentIdeas,
   fetchContentPlanItems,
+  fetchCreatorCommissions,
+  fetchCreatorPayouts,
+  fetchCreatorProfiles,
   fetchEnvelopePrintSettings,
   fetchSalesConsumptionMappings,
   fetchSharedActivity,
@@ -39,19 +42,22 @@ import {
   saveAccountingTransaction,
   saveContentIdea,
   saveContentPlanItem,
+  saveCreatorProfile,
   saveEnvelopePrintSettings,
   saveSalesConsumptionMapping,
   saveStockSetting,
   savePaymentProcessorSetting,
   saveSalesFeeSettings,
   subscribeToSharedData,
+  syncCreatorCommissions,
   supabaseConfigured,
   updateDashboardAccount,
+  updateCreatorCommissionStatus,
   uploadAccountingDocumentFile,
   upsertSharedOrders,
   type DashboardSession,
 } from "../lib/supabase";
-import { orderStatuses, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type ContentIdeaItem, type ContentIdeaReference, type ContentPlanItem, type DashboardAccount, type EnvelopePrintSettings, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesConsumptionMapping, type SalesFeeSetting, type StockSetting, type UserRole } from "../lib/types";
+import { orderStatuses, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type CommissionStatus, type ContentIdeaItem, type ContentIdeaReference, type ContentPlanItem, type CreatorCommission, type CreatorPayout, type CreatorProfile, type CreatorStatus, type CreatorTier, type DashboardAccount, type EnvelopePrintSettings, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesConsumptionMapping, type SalesFeeSetting, type StockSetting, type UserRole } from "../lib/types";
 
 type Session = DashboardSession;
 type View =
@@ -61,8 +67,9 @@ type View =
   | "accounting_other_income"
   | "accounting_bank_reconciliation" | "accounting_product_profitability" | "accounting_marketing_profitability" | "accounting_cash_position"
   | "accounting_tax_reports" | "accounting_settings" | "accounting_files" | "accounting_general_journal" | "accounting_t_accounts" | "accounting_unit_costs" | "accounting_financial_reports"
-  | "content_dashboard" | "content_plan" | "content_ideas";
-type Workspace = "fulfilment" | "accounting" | "formal_accounting" | "inventory" | "reports" | "content" | "settings";
+  | "content_dashboard" | "content_plan" | "content_ideas"
+  | "creator_dashboard" | "creator_accounts" | "creator_sales" | "creator_commissions" | "creator_analytics";
+type Workspace = "fulfilment" | "accounting" | "formal_accounting" | "creator" | "inventory" | "reports" | "content" | "settings";
 type SalesRange = "active" | "today" | "7d" | "30d" | "lifetime";
 type SortKey = "orderNumber" | "importedAt" | "updatedAt";
 type SortDirection = "asc" | "desc";
@@ -451,12 +458,15 @@ const accountingViews: readonly View[] = [
 ];
 const formalAccountingViews: readonly View[] = ["accounting_general_journal", "accounting_t_accounts", "accounting_unit_costs", "accounting_financial_reports"];
 const contentViews: readonly View[] = ["content_dashboard", "content_plan", "content_ideas"];
-const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "stock", "sales_report", ...accountingViews, ...formalAccountingViews, ...contentViews];
-const adminOnlyViews = new Set<View>(["history", "settings", "stock", "sales_report", ...accountingViews, ...formalAccountingViews, ...contentViews]);
+const creatorViews: readonly View[] = ["creator_dashboard", "creator_accounts", "creator_sales", "creator_commissions", "creator_analytics"];
+const creatorAdminViews: readonly View[] = ["creator_accounts", "creator_sales", "creator_commissions", "creator_analytics"];
+const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "stock", "sales_report", ...accountingViews, ...formalAccountingViews, ...contentViews, ...creatorViews];
+const adminOnlyViews = new Set<View>(["history", "settings", "stock", "sales_report", ...accountingViews, ...formalAccountingViews, ...contentViews, ...creatorAdminViews]);
 const workspaceDefaultViews: Record<Workspace, View> = {
   fulfilment: "orders",
   accounting: "accounting_dashboard",
   formal_accounting: "accounting_general_journal",
+  creator: "creator_dashboard",
   inventory: "stock",
   reports: "sales_report",
   content: "content_dashboard",
@@ -466,6 +476,7 @@ const workspaceLabels: Record<Workspace, string> = {
   fulfilment: "Fulfilment",
   accounting: "Book Keeping",
   formal_accounting: "Accounting",
+  creator: "Creator Program",
   inventory: "Inventory",
   reports: "Reports",
   content: "Content Plan",
@@ -607,6 +618,18 @@ const formalAccountingNavItems: NavItem[] = [
   { view: "accounting_t_accounts", label: "T Accounts", icon: "accounting" },
   { view: "accounting_unit_costs", label: "Unit Costs", icon: "stock" },
   { view: "accounting_financial_reports", label: "Financial Reports", icon: "report" },
+];
+
+const creatorNavItems: NavItem[] = [
+  { view: "creator_dashboard", label: "Creator Dashboard", icon: "creator" },
+];
+
+const creatorAdminNavItems: NavItem[] = [
+  { view: "creator_dashboard", label: "Overview", icon: "creator" },
+  { view: "creator_accounts", label: "Creator Accounts", icon: "creator" },
+  { view: "creator_sales", label: "Creator Sales", icon: "report" },
+  { view: "creator_commissions", label: "Commissions", icon: "cash" },
+  { view: "creator_analytics", label: "Analytics", icon: "ledger" },
 ];
 
 const inventoryNavItems: NavItem[] = [{ view: "stock", label: "Stock Count", icon: "stock" }];
@@ -874,7 +897,7 @@ function removeStored(key: string) {
 
 function readStoredSession() {
   const session = readJson<Session>(sessionStorageKey);
-  if (!session?.token || !session.username || !session.displayName || !["admin", "staff"].includes(session.role)) return null;
+  if (!session?.token || !session.username || !session.displayName || !["admin", "staff", "creator"].includes(session.role)) return null;
   return session;
 }
 
@@ -898,10 +921,12 @@ function cleanFulfilmentColumns(value: unknown) {
 
 function permittedView(value: unknown, role?: UserRole) {
   const view = choice(value, "orders" as View, dashboardViews);
+  if (role === "creator") return creatorViews.includes(view) ? view : "creator_dashboard";
   return role === "staff" && adminOnlyViews.has(view) ? "orders" : view;
 }
 
 function workspaceForView(view: View): Workspace {
+  if (creatorViews.includes(view)) return "creator";
   if (contentViews.includes(view)) return "content";
   if (formalAccountingViews.includes(view)) return "formal_accounting";
   if (accountingViews.includes(view)) return "accounting";
@@ -912,9 +937,11 @@ function workspaceForView(view: View): Workspace {
 }
 
 function navItemsForWorkspace(workspace: Workspace, role: UserRole): NavItem[] {
+  if (role === "creator") return creatorNavItems;
   if (role !== "admin") return fulfilmentNavItems;
   if (workspace === "accounting") return accountingNavItems;
   if (workspace === "formal_accounting") return formalAccountingNavItems;
+  if (workspace === "creator") return creatorAdminNavItems;
   if (workspace === "inventory") return inventoryNavItems;
   if (workspace === "reports") return reportsNavItems;
   if (workspace === "content") return contentNavItems;
@@ -934,7 +961,7 @@ function viewTitle(view: View) {
     content_ideas: "Idea Brainstorming",
   };
   if (titleOverrides[view]) return titleOverrides[view]!;
-  const item = [...fulfilmentNavItems, ...fulfilmentAdminNavItems, ...accountingNavItems, ...formalAccountingNavItems, ...inventoryNavItems, ...reportsNavItems, ...contentNavItems, ...settingsNavItems]
+  const item = [...fulfilmentNavItems, ...fulfilmentAdminNavItems, ...accountingNavItems, ...formalAccountingNavItems, ...creatorAdminNavItems, ...inventoryNavItems, ...reportsNavItems, ...contentNavItems, ...settingsNavItems]
     .find((navItem) => navItem.view === view);
   if (item) return item.label;
   return "Orders Dashboard";
@@ -1059,6 +1086,9 @@ export default function Home() {
   const [inventoryCostManualFields, setInventoryCostManualFields] = useState<InventoryCostField[]>([]);
   const [accountPasswords, setAccountPasswords] = useState<Record<string, string>>({});
   const [newAccount, setNewAccount] = useState({ username: "", displayName: "", role: "staff" as UserRole, password: "" });
+  const [creatorProfiles, setCreatorProfiles] = useState<CreatorProfile[]>([]);
+  const [creatorCommissions, setCreatorCommissions] = useState<CreatorCommission[]>([]);
+  const [creatorPayouts, setCreatorPayouts] = useState<CreatorPayout[]>([]);
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
   const [draggedColumn, setDraggedColumn] = useState<FulfilmentColumn | null>(null);
   const [fulfilmentColumns, setFulfilmentColumns] = useState<FulfilmentColumn[]>(() => cleanFulfilmentColumns(storedUi.fulfilmentColumns));
@@ -1119,6 +1149,8 @@ export default function Home() {
         refundedAmount: order.refundedAmount ?? 0,
         outstandingBalance: order.outstandingBalance ?? 0,
         paymentProcessor: normalizePaymentProcessor(order.paymentProcessor ?? "", order.totalAmount === 0),
+        discountCodes: order.discountCodes ?? (order.discountCodeUsed ? [order.discountCodeUsed] : []),
+        discountCodeUsed: order.discountCodeUsed ?? "",
         shippingMethod: order.shippingMethod ?? "",
         setIndicator: order.setIndicator ?? "",
         idWebsiteLink: order.idWebsiteLink ?? "",
@@ -1224,7 +1256,24 @@ export default function Home() {
 
   useEffect(() => {
     if (session?.role === "staff" && adminOnlyViews.has(view)) setView("orders");
+    if (session?.role === "creator" && !creatorViews.includes(view)) setView("creator_dashboard");
   }, [session, view]);
+
+  const loadCreatorData = useCallback(async () => {
+    if (!session || !supabaseConfigured || (session.role !== "admin" && session.role !== "creator")) return;
+    const [profiles, commissions, payouts] = await Promise.all([
+      fetchCreatorProfiles(session.token),
+      fetchCreatorCommissions(session.token),
+      fetchCreatorPayouts(session.token),
+    ]);
+    setCreatorProfiles(profiles);
+    setCreatorCommissions(commissions);
+    setCreatorPayouts(payouts);
+  }, [session]);
+
+  useEffect(() => {
+    void loadCreatorData().catch((error) => setNotice(error instanceof Error ? error.message : "Creator Program could not be loaded."));
+  }, [loadCreatorData]);
 
   useEffect(() => {
     const businessEvent = bookkeepingEventByView[view];
@@ -1535,6 +1584,7 @@ export default function Home() {
     try {
       await upsertSharedOrders(imported);
       await ensurePaymentProcessors(imported.map((order) => order.paymentProcessor));
+      await syncCreatorCommissions();
     }
     catch (error) { setNotice(readableError(error, "Import could not be saved to Supabase.")); return; }
     setOrders(imported);
@@ -3253,7 +3303,9 @@ export default function Home() {
   }
 
   const workspace = workspaceForView(view);
-  const availableWorkspaces: Workspace[] = session.role === "admin" ? ["fulfilment", "accounting", "formal_accounting", "inventory", "reports", "content", "settings"] : ["fulfilment"];
+  const availableWorkspaces: Workspace[] = session.role === "admin"
+    ? ["fulfilment", "accounting", "formal_accounting", "creator", "inventory", "reports", "content", "settings"]
+    : session.role === "creator" ? ["creator"] : ["fulfilment"];
   const sidebarNavItems = navItemsForWorkspace(workspace, session.role);
   const workspaceTitle = workspaceLabels[workspace];
 
@@ -3271,7 +3323,7 @@ export default function Home() {
       <nav>
         {sidebarNavItems.map((item) => <button key={item.view} className={view === item.view ? "active" : ""} onClick={() => setView(item.view)}><Icon name={item.icon} /> {item.label}</button>)}
       </nav>
-      <div className="user-card"><div className="avatar">{session.displayName.slice(0, 1)}</div><div><strong>{session.displayName}</strong><span>@{session.username} | {session.role === "admin" ? "Administrator" : "Fulfilment staff"}</span></div><button title="Sign out" onClick={signOut}><Icon name="logout" /></button></div>
+      <div className="user-card"><div className="avatar">{session.displayName.slice(0, 1)}</div><div><strong>{session.displayName}</strong><span>@{session.username} | {session.role === "admin" ? "Administrator" : session.role === "creator" ? "Creator" : "Fulfilment staff"}</span></div><button title="Sign out" onClick={signOut}><Icon name="logout" /></button></div>
     </aside>
 
     <section className="main-area">
@@ -3358,6 +3410,31 @@ export default function Home() {
         onSaveSalesConsumptionRule={saveSalesConsumptionRule}
         onRemoveSalesConsumptionRule={removeSalesConsumptionRule}
         categoryName={categoryName}
+      />}
+
+      {workspace === "creator" && (session.role === "admin" || session.role === "creator") && <CreatorProgramWorkspacePage
+        view={view}
+        session={session}
+        accounts={accounts}
+        creatorProfiles={creatorProfiles}
+        creatorCommissions={creatorCommissions}
+        creatorPayouts={creatorPayouts}
+        orders={orders}
+        onCreateAccount={async (account, password) => {
+          await createDashboardAccount(session.token, account, password);
+          const refreshedAccounts = await fetchDashboardAccounts(session.token);
+          setAccounts(refreshedAccounts);
+          return refreshedAccounts;
+        }}
+        onSaveProfile={async (profile) => {
+          await saveCreatorProfile(session.token, profile);
+          await syncCreatorCommissions();
+          await loadCreatorData();
+        }}
+        onUpdateCommission={async (commission) => {
+          await updateCreatorCommissionStatus(session.token, commission);
+          await loadCreatorData();
+        }}
       />}
 
       {workspace === "content" && session.role === "admin" && <ContentPlanWorkspacePage
@@ -3458,8 +3535,8 @@ export default function Home() {
 
       {view === "settings" && session.role === "admin" && <section className="settings-page card">
         <div className="settings-heading"><div><h2>Accounts and permissions</h2><p>Admins can edit everything. Staff can use workflow pages and only advance order stages.</p></div><span>{accounts.length} accounts</span></div>
-        <div className="account-create"><input placeholder="Username" value={newAccount.username} onChange={(event) => setNewAccount({ ...newAccount, username: event.target.value.toLowerCase() })} /><input placeholder="Display name" value={newAccount.displayName} onChange={(event) => setNewAccount({ ...newAccount, displayName: event.target.value })} /><select value={newAccount.role} onChange={(event) => setNewAccount({ ...newAccount, role: event.target.value as UserRole })}><option value="staff">Staff</option><option value="admin">Admin</option></select><input type="password" placeholder="Password (8+ characters)" value={newAccount.password} onChange={(event) => setNewAccount({ ...newAccount, password: event.target.value })} /><button className="button primary" onClick={createAccount}>Create account</button></div>
-        <div className="account-list">{accounts.map((account) => <div className="account-row" key={account.id}><strong>@{account.username}</strong><input value={account.displayName} onChange={(event) => setAccounts((current) => current.map((item) => item.id === account.id ? { ...item, displayName: event.target.value } : item))} /><select value={account.role} onChange={(event) => setAccounts((current) => current.map((item) => item.id === account.id ? { ...item, role: event.target.value as UserRole } : item))}><option value="staff">Staff</option><option value="admin">Admin</option></select><input type="password" placeholder="New password (optional)" value={accountPasswords[account.id] ?? ""} onChange={(event) => setAccountPasswords((current) => ({ ...current, [account.id]: event.target.value }))} /><label><input type="checkbox" checked={account.active} onChange={(event) => setAccounts((current) => current.map((item) => item.id === account.id ? { ...item, active: event.target.checked } : item))} /> Active</label><button className="button primary" onClick={() => saveAccount(account, accountPasswords[account.id])}>Save</button></div>)}</div>
+        <div className="account-create"><input placeholder="Username" value={newAccount.username} onChange={(event) => setNewAccount({ ...newAccount, username: event.target.value.toLowerCase() })} /><input placeholder="Display name" value={newAccount.displayName} onChange={(event) => setNewAccount({ ...newAccount, displayName: event.target.value })} /><select value={newAccount.role} onChange={(event) => setNewAccount({ ...newAccount, role: event.target.value as UserRole })}><option value="staff">Staff</option><option value="creator">Creator</option><option value="admin">Admin</option></select><input type="password" placeholder="Password (8+ characters)" value={newAccount.password} onChange={(event) => setNewAccount({ ...newAccount, password: event.target.value })} /><button className="button primary" onClick={createAccount}>Create account</button></div>
+        <div className="account-list">{accounts.map((account) => <div className="account-row" key={account.id}><strong>@{account.username}</strong><input value={account.displayName} onChange={(event) => setAccounts((current) => current.map((item) => item.id === account.id ? { ...item, displayName: event.target.value } : item))} /><select value={account.role} onChange={(event) => setAccounts((current) => current.map((item) => item.id === account.id ? { ...item, role: event.target.value as UserRole } : item))}><option value="staff">Staff</option><option value="creator">Creator</option><option value="admin">Admin</option></select><input type="password" placeholder="New password (optional)" value={accountPasswords[account.id] ?? ""} onChange={(event) => setAccountPasswords((current) => ({ ...current, [account.id]: event.target.value }))} /><label><input type="checkbox" checked={account.active} onChange={(event) => setAccounts((current) => current.map((item) => item.id === account.id ? { ...item, active: event.target.checked } : item))} /> Active</label><button className="button primary" onClick={() => saveAccount(account, accountPasswords[account.id])}>Save</button></div>)}</div>
 
         <div className="settings-heading"><div><h2>Initial stock</h2><p>Character stock is separate. Voice stock is one shared pool, so any 5s, 10s, or 20s sale deducts one unit.</p></div></div>
         <div className="stock-settings">{[...bookkeepingInventoryStockKeys, "VOICE"].map((itemKey) => { const setting = stockSettings.find((item) => item.itemKey === itemKey) ?? { itemKey, initialStock: 0 }; return <div key={itemKey}><strong>{itemKey === "VOICE" ? "SHARED VOICE UNITS" : itemKey}</strong><input type="number" min="0" step="1" value={setting.initialStock} onChange={(event) => setStockSettings((current) => [...current.filter((item) => item.itemKey !== itemKey), { itemKey, initialStock: Number(event.target.value) }])} /><button className="button primary" onClick={() => saveStock(setting)}>Save</button></div>; })}</div>
@@ -4941,6 +5018,252 @@ function UnsettledPaymentsTable({ transactions, files, saving, onFileChange, onS
   return <section className="card accounting-table-card"><h3>To be paid</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>Date</th><th>Description</th><th>Supplier</th><th>Total</th><th>Paid</th><th>Remaining</th><th>Payment proof</th><th /></tr></thead><tbody>{transactions.map((transaction) => <tr key={transaction.id}><td>{formatDate(transaction.transactionDate)}</td><td><strong>{transaction.description}</strong><br /><small>{transaction.invoiceNumber ? `Invoice ${transaction.invoiceNumber}` : transaction.businessEvent}</small></td><td>{transaction.supplier || "-"}</td><td>{formatMoney(transaction.amount)}</td><td>{transaction.paymentStatus === "deposit_paid" ? formatMoney(transaction.depositAmount) : "-"}</td><td><strong>{formatMoney(remaining(transaction))}</strong></td><td><FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title="Upload proof" description="Drop file here" selectedName={files[transaction.id]?.name} onFile={(file) => onFileChange(transaction.id, file)} className="inline-file-drop-zone" /></td><td><button className="view-button" disabled={saving} onClick={() => onSettle(transaction)}>Mark paid</button></td></tr>)}</tbody></table>{!transactions.length && <div className="empty"><strong>No unsettled payments</strong><p>Deposit-paid and on-credit transactions will appear here until they are marked paid.</p></div>}</div></section>;
 }
 
+const creatorTierDefaults: Record<CreatorTier, { label: string; rate: number; requirement: string }> = {
+  tier_1: { label: "Tier 1", rate: 10, requirement: "Default creator tier" },
+  tier_2: { label: "Tier 2", rate: 15, requirement: "50 lifetime sales and 20 monthly sales" },
+  tier_3: { label: "Tier 3", rate: 20, requirement: "100 monthly sales and RM500 upgrade bonus" },
+  tier_4: { label: "Tier 4", rate: 25, requirement: "500 monthly sales and RM2,000 monthly retainer" },
+};
+
+const creatorFormDefaults = {
+  username: "",
+  password: "",
+  userId: "",
+  displayName: "",
+  email: "",
+  phone: "",
+  tiktokUrl: "",
+  instagramUrl: "",
+  discountCode: "",
+  commissionRate: "10",
+  currentTier: "tier_1" as CreatorTier,
+  status: "active" as CreatorStatus,
+  internalNotes: "",
+};
+
+function creatorCommissionSummary(commissions: CreatorCommission[]) {
+  const monthKey = new Date().toISOString().slice(0, 7);
+  return commissions.reduce((summary, commission) => {
+    const sameMonth = (commission.orderDate || commission.createdAt).slice(0, 7) === monthKey;
+    summary.lifetimeSales += 1;
+    summary.lifetimeRevenue += commission.eligibleSubtotal;
+    summary.lifetimeCommission += commission.commissionAmount;
+    if (sameMonth) {
+      summary.monthSales += 1;
+      summary.monthRevenue += commission.eligibleSubtotal;
+      summary.monthCommission += commission.commissionAmount;
+    }
+    summary.byStatus[commission.status] = (summary.byStatus[commission.status] ?? 0) + commission.commissionAmount;
+    return summary;
+  }, {
+    lifetimeSales: 0,
+    lifetimeRevenue: 0,
+    lifetimeCommission: 0,
+    monthSales: 0,
+    monthRevenue: 0,
+    monthCommission: 0,
+    byStatus: {} as Record<CommissionStatus, number>,
+  });
+}
+
+function CreatorProgramWorkspacePage({
+  view,
+  session,
+  accounts,
+  creatorProfiles,
+  creatorCommissions,
+  creatorPayouts,
+  orders,
+  onCreateAccount,
+  onSaveProfile,
+  onUpdateCommission,
+}: {
+  view: View;
+  session: Session;
+  accounts: DashboardAccount[];
+  creatorProfiles: CreatorProfile[];
+  creatorCommissions: CreatorCommission[];
+  creatorPayouts: CreatorPayout[];
+  orders: Order[];
+  onCreateAccount: (account: Omit<DashboardAccount, "id" | "active">, password: string) => Promise<DashboardAccount[]>;
+  onSaveProfile: (profile: CreatorProfile) => Promise<void>;
+  onUpdateCommission: (commission: CreatorCommission) => Promise<void>;
+}) {
+  const admin = session.role === "admin";
+  const [message, setMessage] = useState("");
+  const [form, setForm] = useState(creatorFormDefaults);
+  const visibleProfiles = admin ? creatorProfiles : creatorProfiles.filter((profile) => profile.userId === session.id);
+  const currentProfile = visibleProfiles[0];
+  const visibleCommissions = admin
+    ? creatorCommissions
+    : currentProfile ? creatorCommissions.filter((commission) => commission.creatorId === currentProfile.id) : [];
+  const summary = creatorCommissionSummary(visibleCommissions);
+  const creatorAccounts = accounts.filter((account) => account.role === "creator");
+  const attributedOrderCount = orders.filter((order) => order.discountCodes?.some((code) => creatorProfiles.some((profile) => profile.discountCode.toLowerCase() === code.toLowerCase()))).length;
+
+  function updateForm(patch: Partial<typeof creatorFormDefaults>) {
+    setForm((current) => {
+      const next = { ...current, ...patch };
+      if (patch.currentTier && !patch.commissionRate) next.commissionRate = String(creatorTierDefaults[patch.currentTier].rate);
+      return next;
+    });
+  }
+
+  function editProfile(profile: CreatorProfile) {
+    setForm({
+      username: accounts.find((account) => account.id === profile.userId)?.username ?? "",
+      password: "",
+      userId: profile.userId,
+      displayName: profile.displayName,
+      email: profile.email,
+      phone: profile.phone,
+      tiktokUrl: profile.tiktokUrl,
+      instagramUrl: profile.instagramUrl,
+      discountCode: profile.discountCode,
+      commissionRate: String(profile.commissionRate),
+      currentTier: profile.currentTier,
+      status: profile.status,
+      internalNotes: profile.internalNotes,
+    });
+  }
+
+  async function saveCreator(event: FormEvent) {
+    event.preventDefault();
+    if (!admin) return;
+    if (!form.displayName.trim() || !form.discountCode.trim()) return setMessage("Add a creator name and discount code first.");
+    try {
+      let userId = form.userId;
+      if (!userId) {
+        if (!form.username.trim() || form.password.length < 8) return setMessage("New creator accounts need a username and password of at least 8 characters.");
+        const refreshedAccounts = await onCreateAccount({
+          username: form.username.trim().toLowerCase(),
+          displayName: form.displayName.trim(),
+          role: "creator",
+        }, form.password);
+        const createdAccount = refreshedAccounts.find((account) => account.username === form.username.trim().toLowerCase());
+        userId = createdAccount?.id ?? "";
+        if (!userId) return setMessage("Creator login was created. Reload once, then save the creator profile.");
+      }
+      const now = new Date().toISOString();
+      const existing = creatorProfiles.find((profile) => profile.userId === userId);
+      await onSaveProfile({
+        id: existing?.id ?? "",
+        userId,
+        displayName: form.displayName.trim(),
+        email: form.email.trim(),
+        phone: form.phone.trim(),
+        tiktokUrl: form.tiktokUrl.trim(),
+        instagramUrl: form.instagramUrl.trim(),
+        discountCode: form.discountCode.trim().toUpperCase(),
+        commissionRate: Math.max(0, Number(form.commissionRate || 0)),
+        currentTier: form.currentTier,
+        status: form.status,
+        internalNotes: form.internalNotes.trim(),
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      });
+      setForm(creatorFormDefaults);
+      setMessage("Creator profile saved.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Creator profile could not be saved.");
+    }
+  }
+
+  async function changeCommissionStatus(commission: CreatorCommission, status: CommissionStatus) {
+    try {
+      await onUpdateCommission({
+        ...commission,
+        status,
+        paidAt: status === "paid" ? new Date().toISOString() : commission.paidAt,
+      });
+      setMessage("Commission status updated.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Commission could not be updated.");
+    }
+  }
+
+  if (!admin && !currentProfile) {
+    return <section className="creator-workspace"><div className="creator-hero card"><div><p>CREATOR PROGRAM</p><h2>Creator profile not ready yet</h2><span>Ask an admin to finish assigning your creator profile and discount code.</span></div></div></section>;
+  }
+
+  if (view === "creator_accounts" && admin) {
+    return <section className="creator-workspace">
+      <div className="creator-hero card"><div><p>CREATOR PROGRAM</p><h2>Creator accounts</h2><span>Create creator logins, assign unique discount codes, and control commission rates.</span></div><div className="accounting-status-pill">{creatorProfiles.length} creators</div></div>
+      {message && <div className="notice"><span>{message}</span><button onClick={() => setMessage("")}>x</button></div>}
+      <form className="creator-form card" onSubmit={saveCreator}>
+        <div className="accounting-form-heading"><div><h3>{form.userId ? "Edit creator" : "New creator"}</h3><p>Discount codes are saved uppercase and must be unique.</p></div><button className="button primary" type="submit">Save creator</button></div>
+        <div className="accounting-form-grid">
+          <label>Existing creator account<select value={form.userId} onChange={(event) => updateForm({ userId: event.target.value })}><option value="">Create new login</option>{creatorAccounts.map((account) => <option key={account.id} value={account.id}>@{account.username}</option>)}</select></label>
+          {!form.userId && <label>Username<input value={form.username} onChange={(event) => updateForm({ username: event.target.value.toLowerCase() })} placeholder="creatorname" /></label>}
+          {!form.userId && <label>Password<input type="password" value={form.password} onChange={(event) => updateForm({ password: event.target.value })} placeholder="8+ characters" /></label>}
+          <label>Creator display name<input value={form.displayName} onChange={(event) => updateForm({ displayName: event.target.value })} placeholder="Creator name" /></label>
+          <label>Email<input value={form.email} onChange={(event) => updateForm({ email: event.target.value })} placeholder="creator@email.com" /></label>
+          <label>Phone<input value={form.phone} onChange={(event) => updateForm({ phone: event.target.value })} placeholder="+60..." /></label>
+          <label>Discount code<input value={form.discountCode} onChange={(event) => updateForm({ discountCode: event.target.value.toUpperCase() })} placeholder="CREATOR10" /></label>
+          <label>Tier<select value={form.currentTier} onChange={(event) => updateForm({ currentTier: event.target.value as CreatorTier, commissionRate: String(creatorTierDefaults[event.target.value as CreatorTier].rate) })}>{Object.entries(creatorTierDefaults).map(([tier, detail]) => <option key={tier} value={tier}>{detail.label} - {detail.rate}%</option>)}</select></label>
+          <label>Commission rate %<input type="number" min="0" step="0.01" value={form.commissionRate} onChange={(event) => updateForm({ commissionRate: event.target.value })} /></label>
+          <label>Status<select value={form.status} onChange={(event) => updateForm({ status: event.target.value as CreatorStatus })}><option value="active">Active</option><option value="pending">Pending</option><option value="suspended">Suspended</option></select></label>
+          <label className="wide">TikTok URL<input value={form.tiktokUrl} onChange={(event) => updateForm({ tiktokUrl: event.target.value })} /></label>
+          <label className="wide">Instagram URL<input value={form.instagramUrl} onChange={(event) => updateForm({ instagramUrl: event.target.value })} /></label>
+          <label className="wide">Internal notes<textarea value={form.internalNotes} onChange={(event) => updateForm({ internalNotes: event.target.value })} /></label>
+        </div>
+      </form>
+      <section className="card accounting-table-card creator-table"><table><thead><tr><th>Creator</th><th>Code</th><th>Tier</th><th>Rate</th><th>Status</th><th>Sales</th><th>Commission</th><th /></tr></thead><tbody>
+        {creatorProfiles.map((profile) => {
+          const creatorRows = creatorCommissions.filter((commission) => commission.creatorId === profile.id);
+          const creatorSummary = creatorCommissionSummary(creatorRows);
+          return <tr key={profile.id}><td><strong>{profile.displayName}</strong><br /><small>{profile.email || "No email"}</small></td><td>{profile.discountCode}</td><td>{creatorTierDefaults[profile.currentTier]?.label ?? profile.currentTier}</td><td>{profile.commissionRate}%</td><td>{profile.status}</td><td>{creatorSummary.lifetimeSales}</td><td>{formatMoney(creatorSummary.lifetimeCommission)}</td><td><button className="button secondary small" type="button" onClick={() => editProfile(profile)}>Edit</button></td></tr>;
+        })}
+        {!creatorProfiles.length && <tr><td colSpan={8}>No creator profiles yet.</td></tr>}
+      </tbody></table></section>
+    </section>;
+  }
+
+  if (view === "creator_sales" || view === "creator_commissions") {
+    return <section className="creator-workspace">
+      <div className="creator-hero card"><div><p>CREATOR PROGRAM</p><h2>{view === "creator_sales" ? "Creator sales" : "Commission management"}</h2><span>Orders attributed to creator discount codes. Creators only see their own rows.</span></div><div className="accounting-status-pill">{visibleCommissions.length} rows</div></div>
+      {message && <div className="notice"><span>{message}</span><button onClick={() => setMessage("")}>x</button></div>}
+      <section className="card accounting-table-card creator-table"><table><thead><tr><th>Date</th><th>Creator</th><th>Order</th><th>Code</th><th>Eligible subtotal</th><th>Rate</th><th>Commission</th><th>Status</th><th /></tr></thead><tbody>
+        {visibleCommissions.map((commission) => {
+          const profile = creatorProfiles.find((item) => item.id === commission.creatorId);
+          return <tr key={commission.id}><td>{formatDate(commission.orderDate)}</td><td>{profile?.displayName ?? "Creator"}</td><td>#{commission.orderNumber}</td><td>{commission.discountCodeUsed}</td><td>{formatMoney(commission.eligibleSubtotal)}</td><td>{commission.commissionRateAtSale}%</td><td><strong>{formatMoney(commission.commissionAmount)}</strong></td><td>{commission.status}</td><td>{admin && <select value={commission.status} onChange={(event) => changeCommissionStatus(commission, event.target.value as CommissionStatus)}><option value="pending">Pending</option><option value="approved">Approved</option><option value="paid">Paid</option><option value="cancelled">Cancelled</option></select>}</td></tr>;
+        })}
+        {!visibleCommissions.length && <tr><td colSpan={9}>No attributed creator sales yet. Shopify orders need a matching discount code.</td></tr>}
+      </tbody></table></section>
+    </section>;
+  }
+
+  if (view === "creator_analytics" && admin) {
+    const topCreators = creatorProfiles.map((profile) => {
+      const rows = creatorCommissions.filter((commission) => commission.creatorId === profile.id);
+      return { profile, summary: creatorCommissionSummary(rows) };
+    }).sort((left, right) => right.summary.lifetimeRevenue - left.summary.lifetimeRevenue);
+    return <section className="creator-workspace">
+      <div className="creator-hero card"><div><p>CREATOR PROGRAM</p><h2>Creator analytics</h2><span>A simple ranking of creator sales, revenue, and commission.</span></div><div className="accounting-status-pill">{attributedOrderCount} matched order records</div></div>
+      <section className="stats unit-cost-stats"><MoneyStat label="Creator revenue" value={summary.lifetimeRevenue} tone="blue" /><MoneyStat label="Pending commission" value={summary.byStatus.pending ?? 0} tone="fees" /><MoneyStat label="Paid commission" value={summary.byStatus.paid ?? 0} tone="collected" /><Stat label="Creator sales" value={summary.lifetimeSales} color="navy" /></section>
+      <section className="card accounting-table-card creator-table"><table><thead><tr><th>Creator</th><th>Sales</th><th>Revenue</th><th>Commission</th><th>Code</th></tr></thead><tbody>{topCreators.map(({ profile, summary: creatorSummary }) => <tr key={profile.id}><td><strong>{profile.displayName}</strong></td><td>{creatorSummary.lifetimeSales}</td><td>{formatMoney(creatorSummary.lifetimeRevenue)}</td><td>{formatMoney(creatorSummary.lifetimeCommission)}</td><td>{profile.discountCode}</td></tr>)}</tbody></table></section>
+    </section>;
+  }
+
+  const profile = currentProfile;
+  const profileSummary = creatorCommissionSummary(visibleCommissions);
+  const nextTierTarget = profile?.currentTier === "tier_1" ? 50 : profile?.currentTier === "tier_2" ? 100 : profile?.currentTier === "tier_3" ? 500 : profileSummary.lifetimeSales;
+  const payoutsForProfile = admin || !profile ? creatorPayouts : creatorPayouts.filter((payout) => payout.creatorId === profile.id);
+  return <section className="creator-workspace">
+    <div className="creator-hero card"><div><p>CREATOR PROGRAM</p><h2>{admin ? "Creator overview" : `Welcome, ${profile?.displayName}`}</h2><span>{admin ? "Use the left menu to manage creator accounts, sales, commissions, and analytics." : "Track your creator code, sales, commission, and payout history."}</span></div><div className="creator-code">{profile?.discountCode ?? "NO CODE"}</div></div>
+    <section className="sales-stats">
+      <MoneyStat label="This month's commission" value={profileSummary.monthCommission} tone="sales" />
+      <MoneyStat label="Pending commission" value={profileSummary.byStatus.pending ?? 0} tone="fees" />
+      <MoneyStat label="Approved commission" value={profileSummary.byStatus.approved ?? 0} tone="transfer" />
+      <MoneyStat label="Paid commission" value={profileSummary.byStatus.paid ?? 0} tone="collected" />
+      <article className="money-stat blue"><span>Current tier</span><strong>{profile ? creatorTierDefaults[profile.currentTier].label : "-"}</strong></article>
+    </section>
+    {profile && <section className="card creator-profile-card"><div><span>Creator code</span><strong>{profile.discountCode}</strong></div><div><span>Commission rate</span><strong>{profile.commissionRate}%</strong></div><div><span>This month's sales</span><strong>{profileSummary.monthSales}</strong></div><div><span>Lifetime sales</span><strong>{profileSummary.lifetimeSales}</strong></div><div><span>Next tier progress</span><strong>{Math.min(profileSummary.lifetimeSales, nextTierTarget)} / {nextTierTarget}</strong></div></section>}
+    <section className="card accounting-table-card creator-table"><div className="accounting-form-heading"><div><h3>Recent attributed orders</h3><p>Creator view hides customer private details.</p></div></div><table><thead><tr><th>Date</th><th>Order</th><th>Order amount</th><th>Commission</th><th>Status</th></tr></thead><tbody>{visibleCommissions.slice(0, 12).map((commission) => <tr key={commission.id}><td>{formatDate(commission.orderDate)}</td><td>#{commission.orderNumber}</td><td>{formatMoney(commission.eligibleSubtotal)}</td><td>{formatMoney(commission.commissionAmount)}</td><td>{commission.status}</td></tr>)}{!visibleCommissions.length && <tr><td colSpan={5}>No attributed creator orders yet.</td></tr>}</tbody></table></section>
+    <section className="card accounting-table-card creator-table"><div className="accounting-form-heading"><div><h3>Payout history</h3><p>Approved and paid creator payout records.</p></div></div><table><thead><tr><th>Month</th><th>Commission</th><th>Bonus</th><th>Retainer</th><th>Total</th><th>Status</th></tr></thead><tbody>{payoutsForProfile.map((payout) => <tr key={payout.id}><td>{payout.payoutMonth}</td><td>{formatMoney(payout.approvedCommissionAmount)}</td><td>{formatMoney(payout.bonusAmount)}</td><td>{formatMoney(payout.retainerAmount)}</td><td><strong>{formatMoney(payout.totalPayoutAmount)}</strong></td><td>{payout.status}</td></tr>)}{!payoutsForProfile.length && <tr><td colSpan={6}>No payout history yet.</td></tr>}</tbody></table></section>
+  </section>;
+}
+
 function Login({ onLogin }: { onLogin: (session: Session) => void }) {
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("demo1234");
@@ -5123,7 +5446,7 @@ function EnvelopeSheet({
   })}</article>;
 }
 
-type IconName = "orders" | "fulfilment" | "packing" | "envelope" | "import" | "shipped" | "logout" | "search" | "history" | "drag" | "settings" | "stock" | "report" | "accounting" | "cash" | "documents" | "ledger" | "tax" | "calendar" | "idea";
+type IconName = "orders" | "fulfilment" | "packing" | "envelope" | "import" | "shipped" | "logout" | "search" | "history" | "drag" | "settings" | "stock" | "report" | "accounting" | "cash" | "documents" | "ledger" | "tax" | "calendar" | "idea" | "creator";
 
 function Icon({ name }: { name: IconName }) {
   const common: SVGProps<SVGSVGElement> = { width: 18, height: 18, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true };
@@ -5145,6 +5468,7 @@ function Icon({ name }: { name: IconName }) {
   if (name === "tax") return <svg {...common}><path d="M7 17 17 7"/><circle cx="7" cy="7" r="2"/><circle cx="17" cy="17" r="2"/></svg>;
   if (name === "calendar") return <svg {...common}><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg>;
   if (name === "idea") return <svg {...common}><path d="M9 18h6M10 22h4M8.5 14.5A6 6 0 1 1 15.5 14.5c-.9.7-1.5 1.7-1.5 2.8v.7h-4v-.7c0-1.1-.6-2.1-1.5-2.8Z"/></svg>;
+  if (name === "creator") return <svg {...common}><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/><path d="m17 4 1 2 2 1-2 1-1 2-1-2-2-1 2-1Z"/></svg>;
   if (name === "drag") return <svg {...common}><circle cx="8" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="17" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="17" r="1" fill="currentColor" stroke="none"/></svg>;
   return <svg {...common}><path d="M12 8v5l3 2"/><circle cx="12" cy="12" r="9"/></svg>;
 }
