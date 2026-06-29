@@ -379,6 +379,16 @@ const manualExpenseAccounts = [
   ["Salary Expense", "Salary", false],
   ["Tax Penalties", "Tax", false],
 ] as const;
+const softwareExpenseAccountNames = manualExpenseAccounts
+  .filter(([, section]) => section === "Software Expenses")
+  .map(([name]) => name);
+const expenseOptionReportSections = [
+  bookkeepingSectionConfigs.expense.reportSection,
+  "Software Expenses",
+  "Admin Fees",
+  "Salary",
+  "Tax",
+];
 const cogsAccounts = ["Plushie Cost", "Speaker Cost", "Packaging Cost", "Shipping Cost", "Labour Cost", "NFC Cost", "Other Direct Costs"] as const;
 
 const salesConsumptionMappingFormDefaults: SalesConsumptionMappingForm = {
@@ -2015,7 +2025,10 @@ export default function Home() {
     const config = bookkeepingConfigForEvent(event.value);
     if (!config) return event.accounts.map((account) => ({ value: account, label: account }));
     const saved = accountingCategories
-      .filter((category) => category.active && category.reportSection === config.reportSection)
+      .filter((category) => category.active)
+      .filter((category) => event.value === "expense"
+        ? category.accountType === "expense" && expenseOptionReportSections.includes(category.reportSection)
+        : category.reportSection === config.reportSection)
       .sort((a, b) => a.name.localeCompare(b.name));
     if (event.value === "inventory_purchase") {
       const canonicalSaved = [...new Set(saved.map((category) => inventoryAccountKey(category.name)).filter((name) => name && name !== "INVENTORY"))];
@@ -2029,7 +2042,10 @@ export default function Home() {
         .filter((option, index, options) => options.findIndex((item) => item.value.toLowerCase() === option.value.toLowerCase()) === index);
     }
     const savedNames = new Set(saved.map((category) => category.name.toLowerCase()));
-    const defaultOptions = config.defaults
+    const defaults = event.value === "expense"
+      ? [...config.defaults, ...softwareExpenseAccountNames]
+      : [...config.defaults];
+    const defaultOptions = defaults
       .filter((name) => !savedNames.has(name.toLowerCase()))
       .map((name) => ({ value: name, label: name }));
     const savedOptions = saved.map((category) => ({ value: category.id, label: category.name }));
@@ -2207,18 +2223,22 @@ export default function Home() {
     }
     const config = bookkeepingConfigForEvent(event.value);
     if (!config || !accountName) return selectedAccountingAccount();
-    const existing = accountingCategories.find((category) => category.active && category.reportSection === config.reportSection && category.name.toLowerCase() === accountName.toLowerCase())
+    const isSoftwareExpense = event.value === "expense" && softwareExpenseAccountNames.some((name) => name.toLowerCase() === accountName.toLowerCase());
+    const targetConfig = isSoftwareExpense
+      ? { ...config, reportSection: "Software Expenses", parentAccount: "Software Expenses", sourceEntity: "Software expense" }
+      : config;
+    const existing = accountingCategories.find((category) => category.active && category.reportSection === targetConfig.reportSection && category.name.toLowerCase() === accountName.toLowerCase())
       ?? accountingCategories.find((category) => category.active && category.name.toLowerCase() === accountName.toLowerCase());
     if (existing) return existing;
     const account: AccountingCategory = {
       id: crypto.randomUUID(),
       name: accountName,
-      accountType: config.accountType,
-      reportSection: config.reportSection,
-      parentId: bookkeepingParentId(config),
+      accountType: targetConfig.accountType,
+      reportSection: targetConfig.reportSection,
+      parentId: bookkeepingParentId(targetConfig),
       dataSourceType: "manual",
       sourceModule: "Book Keeping",
-      sourceEntity: config.sourceEntity,
+      sourceEntity: targetConfig.sourceEntity,
       postingTrigger: "Manual Entry",
       allowSubAccounts: false,
       allowedTransactionTypes: [],
@@ -2226,7 +2246,7 @@ export default function Home() {
     };
     await saveAccountingCategory(account);
     setAccountingCategories((current) => [...current, account].sort((a, b) => `${a.reportSection}-${a.name}`.localeCompare(`${b.reportSection}-${b.name}`)));
-    await insertSharedActivity({ id: crypto.randomUUID(), action: "Bookkeeping account added", detail: `${accountName} added to ${config.label} from a transaction.`, actor, createdAt: new Date().toISOString() });
+    await insertSharedActivity({ id: crypto.randomUUID(), action: "Bookkeeping account added", detail: `${accountName} added to ${targetConfig.label} from a transaction.`, actor, createdAt: new Date().toISOString() });
     return account;
   }
 
@@ -3955,25 +3975,25 @@ function AccountingWorkspacePage({
   if (view === "accounting_settings") {
     const sectionEntries = Object.entries(bookkeepingSectionConfigs) as [BookkeepingSectionKey, typeof bookkeepingSectionConfigs[BookkeepingSectionKey]][];
     return <section className="accounting-workspace">
-      <div className="accounting-hero card"><div><p>BOOK KEEPING SETTINGS</p><h2>Saved accounts</h2><span>Create new accounts directly from Inventory, Expenses, Assets, or Marketing by choosing + New account in the entry form.</span></div><div className="accounting-status-pill">{categories.filter((category) => Object.values(bookkeepingSectionConfigs).some((config) => config.reportSection === category.reportSection)).length} items</div></div>
+      <div className="accounting-hero card"><div><p>BOOK KEEPING SETTINGS</p><h2>Saved accounts</h2><span>Create new accounts directly from Inventory, Expenses, Assets, or Marketing by choosing + New account in the entry form.</span></div><div className="accounting-status-pill">{categories.filter((category) => Object.values(bookkeepingSectionConfigs).some((config) => config.reportSection === category.reportSection) || expenseOptionReportSections.includes(category.reportSection)).length} items</div></div>
       <section>
         <section className="accounting-form card">
           <div className="accounting-form-heading"><div><h3>{accountForm.id ? "Edit account" : "Account details"}</h3><p>Change the account name or section used in the Choose account dropdowns.</p></div>{accountForm.id && <button className="view-button" onClick={() => onAccountFormChange({ id: "", name: "", accountType: "expense", reportSection: "Expenses", parentId: "", dataSourceType: "manual", sourceModule: "Manual Transactions", sourceEntity: "", postingTrigger: "Manual Entry", allowSubAccounts: false, active: true })}>Cancel edit</button>}</div>
           <div className="accounting-form-grid compact">
             <label>Name<input value={accountForm.name} onChange={(input) => onAccountFormChange({ name: input.target.value })} placeholder="Example: NFC Cards, Labour, Meta Ads" /></label>
             <label>Type<select value={accountForm.accountType} onChange={(input) => onAccountFormChange({ accountType: input.target.value as AccountingCategory["accountType"] })}><option value="asset">Asset</option><option value="expense">Expense</option><option value="revenue">Revenue</option><option value="cost_of_sales">Cost of sales</option><option value="liability">Liability</option><option value="equity">Equity</option></select></label>
-            <label>Section<select value={accountForm.reportSection} onChange={(input) => onAccountFormChange({ reportSection: input.target.value })}>{Object.entries(bookkeepingSectionConfigs).map(([key, config]) => <option key={key} value={config.reportSection}>{config.label}</option>)}<option value="COGS">COGS</option><option value="Current Assets">Current Assets</option><option value="Revenue">Revenue</option></select></label>
+            <label>Section<select value={accountForm.reportSection} onChange={(input) => onAccountFormChange({ reportSection: input.target.value })}>{Object.entries(bookkeepingSectionConfigs).map(([key, config]) => <option key={key} value={config.reportSection}>{config.label}</option>)}<option value="Software Expenses">Software Expenses</option><option value="Admin Fees">Admin Fees</option><option value="Salary">Salary</option><option value="Tax">Tax</option><option value="COGS">COGS</option><option value="Current Assets">Current Assets</option><option value="Revenue">Revenue</option></select></label>
             <label>Active<select value={accountForm.active ? "yes" : "no"} onChange={(input) => onAccountFormChange({ active: input.target.value === "yes" })}><option value="yes">Active</option><option value="no">Inactive</option></select></label>
           </div>
           <button className="button primary" disabled={saving} onClick={onSaveAccount}>{saving ? "Saving..." : accountForm.id ? "Save account changes" : "Add account"}</button>
         </section>
         <section className="card accounting-table-card"><h3>Saved category accounts</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>Section</th><th>Account item</th><th>Type</th><th>Parent</th><th /></tr></thead><tbody>{sectionEntries.flatMap(([key, config]) => {
-          const sectionRows = categories.filter((category) => category.reportSection === config.reportSection).filter((category) => key !== "inventory" || Boolean(inventoryAccountKey(category.name))).sort((a, b) => a.name.localeCompare(b.name));
+          const sectionRows = categories.filter((category) => key === "expense" ? category.accountType === "expense" && expenseOptionReportSections.includes(category.reportSection) : category.reportSection === config.reportSection).filter((category) => key !== "inventory" || Boolean(inventoryAccountKey(category.name))).sort((a, b) => a.name.localeCompare(b.name));
           const rows = key === "inventory"
             ? sectionRows.filter((account, index, accounts) => accounts.findIndex((item) => inventoryAccountKey(item.name) === inventoryAccountKey(account.name)) === index)
             : sectionRows;
           return rows.map((account) => <tr key={account.id}><td>{config.label}</td><td><strong>{key === "inventory" ? inventoryAccountKey(account.name) : account.name}</strong><br /><small>Used by {config.sourceEntity}</small></td><td>{account.accountType}</td><td>{account.parentId ? categoryName(account.parentId) : config.parentAccount}</td><td><button className="view-button" onClick={() => onEditAccount(account)}>Edit</button></td></tr>);
-        })}</tbody></table>{!categories.some((category) => Object.values(bookkeepingSectionConfigs).some((config) => config.reportSection === category.reportSection)) && <div className="empty"><strong>No saved category accounts yet</strong><p>Create one from a bookkeeping entry form using + New account.</p></div>}</div></section>
+        })}</tbody></table>{!categories.some((category) => Object.values(bookkeepingSectionConfigs).some((config) => config.reportSection === category.reportSection) || expenseOptionReportSections.includes(category.reportSection)) && <div className="empty"><strong>No saved category accounts yet</strong><p>Create one from a bookkeeping entry form using + New account.</p></div>}</div></section>
       </section>
     </section>;
   }
