@@ -31,6 +31,22 @@ function requireSupabase() {
   return supabase;
 }
 
+function supabaseErrorMessage(error: unknown, fallback: string) {
+  if (!error || typeof error !== "object") return fallback;
+  const item = error as { code?: string; message?: string; details?: string; hint?: string };
+  const message = item.message || fallback;
+  const detail = [item.details, item.hint].filter(Boolean).join(" ");
+  return detail ? `${message} ${detail}` : message;
+}
+
+function creatorSchemaSetupError() {
+  return new Error("Creator Program database setup is not installed yet. Run the updated supabase/schema.sql in Supabase SQL Editor, then refresh the app.");
+}
+
+function creatorEmailLoginSetupError() {
+  return new Error("Supabase still has the old username rule, so email logins are being rejected. Run the updated supabase/schema.sql in Supabase SQL Editor to allow creator email usernames.");
+}
+
 export async function fetchSharedOrders(): Promise<Order[]> {
   const { data, error } = await requireSupabase()
     .from("fulfilment_orders")
@@ -205,7 +221,12 @@ export async function createDashboardAccount(token: string, account: Omit<Dashbo
     p_role: account.role,
     p_password: password,
   });
-  if (error) throw error;
+  if (error) {
+    const message = supabaseErrorMessage(error, "Account could not be created.");
+    if (message.includes("dashboard_accounts_username_check") || message.includes("violates check constraint")) throw creatorEmailLoginSetupError();
+    if (isMissingCreatorSchema(error)) throw creatorSchemaSetupError();
+    throw new Error(message);
+  }
 }
 
 export async function updateDashboardAccount(token: string, account: DashboardAccount, password = "") {
@@ -305,7 +326,10 @@ export async function saveCreatorProfile(token: string, profile: CreatorProfile)
     p_status: profile.status,
     p_internal_notes: profile.internalNotes,
   });
-  if (error) throw error;
+  if (error) {
+    if (isMissingCreatorSchema(error)) throw creatorSchemaSetupError();
+    throw new Error(supabaseErrorMessage(error, "Creator profile could not be saved."));
+  }
 }
 
 export async function fetchCreatorCommissions(token: string): Promise<CreatorCommission[]> {

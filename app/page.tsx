@@ -5167,7 +5167,7 @@ function CreatorProgramWorkspacePage({
       setForm(creatorFormDefaults);
       setMessage("Creator profile saved.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Creator profile could not be saved.");
+      setMessage(readableError(error, "Creator profile could not be saved."));
     }
   }
 
