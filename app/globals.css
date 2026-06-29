@@ -49,3 +49,4 @@
 .cogs-rule-field select:focus,.cogs-rule-field input:focus{outline:2px solid #cfe1ff;border-color:#2f76ca}
 .operating-release-card{margin-bottom:16px}
 @media(max-width:760px){.cogs-rule-form{grid-template-columns:1fr}}
+.hidden-login-field{position:absolute!important;left:-9999px!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important}

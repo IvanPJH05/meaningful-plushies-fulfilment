@@ -5335,10 +5335,15 @@ function CreatorProgramWorkspacePage({
 }
 
 function Login({ onLogin }: { onLogin: (session: Session) => void }) {
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("demo1234");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [signingIn, setSigningIn] = useState(false);
+  const [loginInputsReady, setLoginInputsReady] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setLoginInputsReady(true), 250);
+    return () => window.clearTimeout(timer);
+  }, []);
   async function submit(event: FormEvent) {
     event.preventDefault();
     setSigningIn(true);
@@ -5347,7 +5352,7 @@ function Login({ onLogin }: { onLogin: (session: Session) => void }) {
     catch (loginError) { setError(loginError instanceof Error ? loginError.message : "Sign in failed."); }
     finally { setSigningIn(false); }
   }
-  return <main className="login-page"><section className="login-brand"><div className="login-logo">MP</div><p>MEANINGFUL PLUSHIES</p><h1>A calmer way to manage every plushie.</h1><span>Track voice, production, packing and delivery from one simple workspace.</span></section><section className="login-panel"><form onSubmit={submit}><p className="eyebrow">STAFF PORTAL</p><h2>Welcome back</h2><span>Sign in with the account created by your administrator.</span>{error && <p className="login-error">{error}</p>}<label>Username<input value={username} onChange={(event) => setUsername(event.target.value)} required autoComplete="username" /></label><label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required autoComplete="current-password" /></label><button className="button primary large" type="submit" disabled={signingIn}>{signingIn ? "Signing in..." : "Sign in"}</button></form></section></main>;
+  return <main className="login-page"><section className="login-brand"><div className="login-logo">MP</div><p>MEANINGFUL PLUSHIES</p><h1>A calmer way to manage every plushie.</h1><span>Track voice, production, packing and delivery from one simple workspace.</span></section><section className="login-panel"><form onSubmit={submit} autoComplete="off"><input className="hidden-login-field" type="text" name="fake-username" autoComplete="username" tabIndex={-1} aria-hidden="true" /><input className="hidden-login-field" type="password" name="fake-password" autoComplete="current-password" tabIndex={-1} aria-hidden="true" /><p className="eyebrow">STAFF PORTAL</p><h2>Welcome back</h2><span>Sign in with the account created by your administrator.</span>{error && <p className="login-error">{error}</p>}<label>Username<input name="mp-login-identifier" value={username} onChange={(event) => setUsername(event.target.value)} required autoComplete="off" readOnly={!loginInputsReady} /></label><label>Password<input name="mp-login-secret" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required autoComplete="new-password" readOnly={!loginInputsReady} /></label><button className="button primary large" type="submit" disabled={signingIn}>{signingIn ? "Signing in..." : "Sign in"}</button></form></section></main>;
 }
 
 function Stat({ label, value, color }: { label: string; value: number; color: string }) {
