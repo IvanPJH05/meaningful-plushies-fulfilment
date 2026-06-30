@@ -64,6 +64,9 @@ SHOPIFY_SHOP_DOMAIN=your-store.myshopify.com
 SHOPIFY_API_VERSION=2026-04
 SHOPIFY_UPLOAD_LIFT_METAFIELD_KEY=upload_lift_form_data
 SHOPIFY_UPLOAD_LIFT_METAFIELD_NAMESPACE=custom
+SHOPIFY_TIKTOK_CERT_METAOBJECT_TYPE=$app:tik_tok_shop_cert_input
+SHOPIFY_TIKTOK_CERT_UPLOAD_DATE_FIELD=upload_date
+SHOPIFY_TIKTOK_CERT_INPUT_FIELD=input
 ```
 
 Use this webhook URL in Shopify:
@@ -83,6 +86,8 @@ For new Shopify Dev Dashboard apps, Shopify does not show a permanent Admin API 
 In the Shopify app, enable order read access. The Admin GraphQL query used by this app validates against Shopify's current schema for `Order.metafields`; Shopify may also ask for related order scopes such as marketplace or quick-sale order access depending on the app configuration. After changing scopes or webhook settings, release the new Shopify app version and redeploy Vercel.
 
 When an order is created or updated, Shopify calls the webhook, the server verifies the Shopify signature, fetches the full order and `upload_lift_form_data`, then creates or updates the matching fulfilment order. Existing status, notes, uploaded files, and fulfilment work are kept when the same order is received again. Tracking from Shopify tags replaces the fulfilment tracking number when a valid courier tag is present.
+
+For the TikTok Shop JSON export button, the Shopify app must also have metaobject read/write access. The export creates a new `Tik Tok Shop Cert Input` metaobject entry each time, sets the upload date to today's Malaysia date, and writes the selected certificate JSON into the `input` field. If your Shopify field handles are different, change the three `SHOPIFY_TIKTOK_CERT_*` variables in Vercel to match the metaobject type and field keys.
 
 ## Existing browser data
 

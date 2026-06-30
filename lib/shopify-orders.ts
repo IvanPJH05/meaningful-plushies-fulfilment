@@ -66,7 +66,7 @@ export function adminGraphqlOrderId(payload: Record<string, unknown>) {
   return direct.startsWith("gid://") ? direct : `gid://shopify/Order/${direct}`;
 }
 
-function shopDomain(request?: Request, payload: Record<string, unknown> = {}) {
+export function shopDomain(request?: Request, payload: Record<string, unknown> = {}) {
   const fromHeader = request?.headers.get("x-shopify-shop-domain");
   const fromEnv = process.env.SHOPIFY_SHOP_DOMAIN;
   const fromPayload = textValue(payload.shop_domain);
@@ -138,7 +138,7 @@ function wait(milliseconds: number) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function shopifyGraphql<T>(domain: string, query: string, variables: Record<string, unknown>) {
+export async function shopifyGraphql<T>(domain: string, query: string, variables: Record<string, unknown>) {
   const token = await getShopifyAccessToken(domain);
   if (!token || !domain) return null;
 

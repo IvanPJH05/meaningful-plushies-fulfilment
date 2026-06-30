@@ -1106,6 +1106,7 @@ export default function Home() {
   const [tikTokCsv, setTikTokCsv] = useState("");
   const [tikTokDetailEntries, setTikTokDetailEntries] = useState<TikTokDetailFormEntry[]>(() => [emptyTikTokDetailEntry()]);
   const [selectedTikTokJsonOrders, setSelectedTikTokJsonOrders] = useState<string[]>([]);
+  const [exportingTikTokShopify, setExportingTikTokShopify] = useState(false);
   const [notice, setNotice] = useState("");
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [databaseError, setDatabaseError] = useState("");
@@ -1581,6 +1582,29 @@ export default function Home() {
   async function copyTikTokCertificateJson() {
     await navigator.clipboard.writeText(selectedTikTokCertificateJson);
     setNotice(`${selectedTikTokCertificatePayload.length} TikTok JSON ${selectedTikTokCertificatePayload.length === 1 ? "entry" : "entries"} copied.`);
+  }
+
+  async function exportTikTokCertificateJsonToShopify() {
+    if (!selectedTikTokCertificatePayload.length) {
+      setNotice("Select at least one TikTok order before exporting to Shopify.");
+      return;
+    }
+    setExportingTikTokShopify(true);
+    try {
+      const response = await fetch("/api/shopify/tiktok-certificates/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ payload: selectedTikTokCertificatePayload }),
+      });
+      const result = await response.json() as { ok?: boolean; error?: string; uploadDate?: string; count?: number };
+      if (!response.ok || !result.ok) throw new Error(result.error || "TikTok JSON could not be exported to Shopify.");
+      const count = result.count ?? selectedTikTokCertificatePayload.length;
+      setNotice(`${count} TikTok JSON ${count === 1 ? "entry" : "entries"} exported to Shopify for ${result.uploadDate || "today"}.`);
+    } catch (error) {
+      setNotice(readableError(error, "TikTok JSON could not be exported to Shopify."));
+    } finally {
+      setExportingTikTokShopify(false);
+    }
   }
 
   async function runImport() {
@@ -3612,7 +3636,7 @@ export default function Home() {
           <div className="packing-order-list">{tikTokAvailableOrders.map((order) => <label key={order.id}><input type="checkbox" checked={selectedTikTokJsonOrders.includes(order.id)} onChange={() => setSelectedTikTokJsonOrders((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><div><strong>{tikTokShortOrderLabel(order)} | {order.plushName || "Unnamed plushie"}</strong><span>{order.customerName || "No username"} | {order.character || "No character"} {order.voiceLength ? `${order.voiceLength}S` : ""}</span></div><StatusPill status={order.status} /></label>)}</div>
           {!tikTokAvailableOrders.length && <div className="empty"><strong>No TikTok orders in this stage</strong><p>Import TikTok Shop orders first, or choose another stage.</p></div>}
         </div>
-        <div className="packing-preview tiktok-json-panel"><div className="preview-heading"><div><h2>TikTok Shop JSON</h2><p>Selected orders are converted into certificate JSON.</p></div><div className="json-copy-actions"><span>{selectedTikTokCertificatePayload.length} selected</span><button className="button primary" type="button" onClick={copyTikTokCertificateJson}>Copy JSON</button></div></div><textarea className="tiktok-json-output" readOnly value={selectedTikTokCertificateJson} /></div>
+        <div className="packing-preview tiktok-json-panel"><div className="preview-heading"><div><h2>TikTok Shop JSON</h2><p>Selected orders are converted into certificate JSON.</p></div><div className="json-copy-actions"><span>{selectedTikTokCertificatePayload.length} selected</span><button className="button secondary" type="button" disabled={!selectedTikTokCertificatePayload.length || exportingTikTokShopify} onClick={exportTikTokCertificateJsonToShopify}>{exportingTikTokShopify ? "Exporting..." : "Export to Shopify"}</button><button className="button primary" type="button" onClick={copyTikTokCertificateJson}>Copy JSON</button></div></div><textarea className="tiktok-json-output" readOnly value={selectedTikTokCertificateJson} /></div>
       </section>}
     </section>
 
