@@ -459,8 +459,8 @@ function tikTokDetailValue(raw: string, labels: string[]) {
   const normalizedRaw = raw.replace(/\u2026/g, "...").replace(/[：]/g, ":").replace(/[–—]/g, "-");
   for (const label of labels) {
     const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const match = normalizedRaw.match(new RegExp(`(?:^|[\\r\\n])\\s*${escaped}\\s*(?:[-:]|\\.\\.\\.)\\s*([^\\r\\n]*)`, "i"));
-    if (match?.[1]) return match[1].trim();
+    const match = normalizedRaw.match(new RegExp(`(?:^|[\\r\\n])[^\\S\\r\\n]*${escaped}[^\\S\\r\\n]*(?:[-:]|\\.\\.\\.)[^\\S\\r\\n]*([^\\r\\n]*)`, "i"));
+    if (match) return match[1]?.trim() ?? "";
   }
   return "";
 }

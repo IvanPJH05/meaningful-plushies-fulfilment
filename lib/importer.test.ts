@@ -165,6 +165,36 @@ test("parses loose Malay TikTok plushie details into editable fields", () => {
   });
 });
 
+test("keeps blank TikTok detail rows blank instead of reading the next row", () => {
+  const parsed = parseTikTokDetailsBlock([
+    "Plushie's Name- danish",
+    "Plushie's Gender- female",
+    "Plushie's Birth Date- 22/11/02",
+    "Plushie's Birth Place- ",
+    "Plushie's Favourite Person- azleiyna",
+    "Plushie Belongs to- ",
+    "Meaningful Note- i love you baby",
+  ].join("\n"));
+
+  assert.deepEqual({
+    plushName: parsed.plushName,
+    gender: parsed.gender,
+    birthDate: parsed.birthDate,
+    birthPlace: parsed.birthPlace,
+    favouritePerson: parsed.favouritePerson,
+    belongsTo: parsed.belongsTo,
+    meaningfulNote: parsed.meaningfulNote,
+  }, {
+    plushName: "danish",
+    gender: "Female",
+    birthDate: "22/11/02",
+    birthPlace: "",
+    favouritePerson: "Azleiyna",
+    belongsTo: "",
+    meaningfulNote: "i love you baby",
+  });
+});
+
 test("updates existing TikTok orders from detail entries without a CSV", () => {
   const existing: Order = {
     id: "tiktok-584697260225955022",

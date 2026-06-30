@@ -3730,15 +3730,14 @@ export default function Home() {
                   <label>Paste customer details<textarea value={entry.details} onChange={(event) => updateTikTokDetailText(entry.id, event.target.value)} placeholder={"Nama Plushie - Mochi\nJantina Plushie- Female\nTarikh Lahir Plushie - 28/6/2025\nTempat Lahir Plushie - Perak\nOrang Kegemaran Plushie - Panda shomel\nMainan lembut itu milik... Ayangku\nNota bermakna - Ayangku mochi ni adik pda oreo otey."} /></label>
                   <div className="tiktok-detail-preview">
                     <strong>Editable preview</strong>
-                    <p>Auto-filled from the pasted text. If the customer used a different format, edit the boxes directly before importing.</p>
-                    <label>Username <span>(<input value={entry.username} onChange={(event) => updateTikTokDetailEntry(entry.id, { username: event.target.value })} placeholder="username" />)</span></label>
-                    <label>Plushie's Name <span>(<input value={entry.plushName} onChange={(event) => updateTikTokDetailEntry(entry.id, { plushName: event.target.value })} placeholder="Mochi" />)</span></label>
-                    <label>Plushie's Gender <span>(<input value={entry.gender} onChange={(event) => updateTikTokDetailEntry(entry.id, { gender: event.target.value })} placeholder="Female" />)</span></label>
-                    <label>Plushie's Birth Date <span>(<input value={entry.birthDate} onChange={(event) => updateTikTokDetailEntry(entry.id, { birthDate: event.target.value })} placeholder="28/6/2025" />)</span></label>
-                    <label>Plushie's Birth Place <span>(<input value={entry.birthPlace} onChange={(event) => updateTikTokDetailEntry(entry.id, { birthPlace: event.target.value })} placeholder="Perak" />)</span></label>
-                    <label>Plushie's Favourite Person <span>(<input value={entry.favouritePerson} onChange={(event) => updateTikTokDetailEntry(entry.id, { favouritePerson: event.target.value })} placeholder="Panda shomel" />)</span></label>
-                    <label>Plushie Belongs to <span>(<input value={entry.belongsTo} onChange={(event) => updateTikTokDetailEntry(entry.id, { belongsTo: event.target.value })} placeholder="Ayangku" />)</span></label>
-                    <label className="wide">Meaningful Note <span>(<textarea value={entry.meaningfulNote} onChange={(event) => updateTikTokDetailEntry(entry.id, { meaningfulNote: event.target.value })} placeholder="Nota bermakna..." />)</span></label>
+                    <label>Username<input value={entry.username} onChange={(event) => updateTikTokDetailEntry(entry.id, { username: event.target.value })} placeholder="username" /></label>
+                    <label>Plushie's Name<input value={entry.plushName} onChange={(event) => updateTikTokDetailEntry(entry.id, { plushName: event.target.value })} placeholder="Mochi" /></label>
+                    <label>Plushie's Gender<input value={entry.gender} onChange={(event) => updateTikTokDetailEntry(entry.id, { gender: event.target.value })} placeholder="Female" /></label>
+                    <label>Plushie's Birth Date<input value={entry.birthDate} onChange={(event) => updateTikTokDetailEntry(entry.id, { birthDate: event.target.value })} placeholder="28/6/2025" /></label>
+                    <label>Plushie's Birth Place<input value={entry.birthPlace} onChange={(event) => updateTikTokDetailEntry(entry.id, { birthPlace: event.target.value })} placeholder="Perak" /></label>
+                    <label>Plushie's Favourite Person<input value={entry.favouritePerson} onChange={(event) => updateTikTokDetailEntry(entry.id, { favouritePerson: event.target.value })} placeholder="Panda shomel" /></label>
+                    <label>Plushie Belongs to<input value={entry.belongsTo} onChange={(event) => updateTikTokDetailEntry(entry.id, { belongsTo: event.target.value })} placeholder="Ayangku" /></label>
+                    <label className="wide">Meaningful Note<textarea value={entry.meaningfulNote} onChange={(event) => updateTikTokDetailEntry(entry.id, { meaningfulNote: event.target.value })} placeholder="Nota bermakna..." /></label>
                   </div>
                   <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.txt,.doc,.docx" title="TikTok order file" description="Choose or drop the file for this order" selectedName={entry.fileName} onFile={(file) => uploadTikTokDetailFile(entry.id, file)} className="compact-file-drop" />
                 </article>)}
