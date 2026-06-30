@@ -43,6 +43,12 @@ function metaobjectType() {
   return process.env.SHOPIFY_TIKTOK_CERT_METAOBJECT_TYPE || "$app:tik_tok_shop_cert_input";
 }
 
+function metaobjectTypesToTry() {
+  const configured = process.env.SHOPIFY_TIKTOK_CERT_METAOBJECT_TYPE?.trim();
+  if (configured) return [configured];
+  return ["$app:tik_tok_shop_cert_input", "tik_tok_shop_cert_input"];
+}
+
 function uploadDateFieldKey() {
   return process.env.SHOPIFY_TIKTOK_CERT_UPLOAD_DATE_FIELD || "upload_date";
 }
@@ -69,51 +75,62 @@ export async function POST(request: Request) {
   const handle = todayHandle();
   const inputJson = JSON.stringify(payload, null, 2);
 
-  const result = await shopifyGraphql<{
-    data?: {
-      metaobjectCreate?: {
-        metaobject?: { id?: string; handle?: string };
-        userErrors?: Array<{ field?: string[]; message?: string; code?: string }>;
+  const errors: string[] = [];
+  for (const type of metaobjectTypesToTry()) {
+    const result = await shopifyGraphql<{
+      data?: {
+        metaobjectCreate?: {
+          metaobject?: { id?: string; handle?: string };
+          userErrors?: Array<{ field?: string[]; message?: string; code?: string }>;
+        };
       };
-    };
-    errors?: Array<{ message?: string }>;
-  }>(domain, `
-    mutation CreateTikTokCertificateInput($metaobject: MetaobjectCreateInput!) {
-      metaobjectCreate(metaobject: $metaobject) {
-        metaobject { id handle }
-        userErrors { field message code }
+      errors?: Array<{ message?: string }>;
+    }>(domain, `
+      mutation CreateTikTokCertificateInput($metaobject: MetaobjectCreateInput!) {
+        metaobjectCreate(metaobject: $metaobject) {
+          metaobject { id handle }
+          userErrors { field message code }
+        }
       }
+    `, {
+      metaobject: {
+        type,
+        handle,
+        fields: [
+          { key: uploadDateFieldKey(), value: uploadDate },
+          { key: inputFieldKey(), value: inputJson },
+        ],
+      },
+    });
+
+    if (!result) return json(500, { ok: false, error: "Shopify credentials are not configured or the Admin API token could not be created." });
+
+    const graphqlError = result.errors?.map((error) => textValue(error.message)).filter(Boolean).join(" ");
+    if (graphqlError) {
+      errors.push(`${type}: ${graphqlError}`);
+      continue;
     }
-  `, {
-    metaobject: {
-      type: metaobjectType(),
-      handle,
-      fields: [
-        { key: uploadDateFieldKey(), value: uploadDate },
-        { key: inputFieldKey(), value: inputJson },
-      ],
-    },
-  });
 
-  const graphqlError = result?.errors?.map((error) => textValue(error.message)).filter(Boolean).join(" ");
-  if (graphqlError) return json(500, { ok: false, error: graphqlError });
+    const userErrors = result.data?.metaobjectCreate?.userErrors ?? [];
+    if (userErrors.length) {
+      errors.push(`${type}: ${userErrors.map((error) => error.message || error.code || "Shopify rejected the export.").join(" ")}`);
+      continue;
+    }
 
-  const userErrors = result?.data?.metaobjectCreate?.userErrors ?? [];
-  if (userErrors.length) {
-    return json(500, {
-      ok: false,
-      error: userErrors.map((error) => error.message || error.code || "Shopify rejected the export.").join(" "),
+    const metaobject = result.data?.metaobjectCreate?.metaobject;
+    if (!metaobject?.id) {
+      errors.push(`${type}: Shopify did not return the exported entry.`);
+      continue;
+    }
+
+    return json(200, {
+      ok: true,
+      id: metaobject.id,
+      handle: metaobject.handle || handle,
+      uploadDate,
+      count: payload.length,
     });
   }
 
-  const metaobject = result?.data?.metaobjectCreate?.metaobject;
-  if (!metaobject?.id) return json(500, { ok: false, error: "Shopify did not return the exported entry." });
-
-  return json(200, {
-    ok: true,
-    id: metaobject.id,
-    handle: metaobject.handle || handle,
-    uploadDate,
-    count: payload.length,
-  });
+  return json(500, { ok: false, error: errors.join(" ") || `Shopify could not create a ${metaobjectType()} entry.` });
 }
