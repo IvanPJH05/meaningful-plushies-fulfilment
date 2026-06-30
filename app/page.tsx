@@ -4,7 +4,7 @@ import "./settings.css";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, DragEvent, FormEvent, SVGProps } from "react";
-import { detectCsvKind, fulfilledOrdersCsv, importShopifyData, importTikTokShopData, normalizePaymentProcessor, tikTokCertificateJson } from "../lib/importer";
+import { applyTikTokDetailEntries, detectCsvKind, fulfilledOrdersCsv, importShopifyData, importTikTokShopData, normalizePaymentProcessor, parseTikTokDetailsBlock, tikTokCertificateJson, tikTokDetailsToText } from "../lib/importer";
 import { buildSalesReportRows, summarizeSales, type SalesReportRow, type SalesSummary } from "../lib/sales";
 import { stockCharacters, summarizeStock } from "../lib/stock";
 import {
@@ -89,6 +89,14 @@ type TikTokDetailFormEntry = {
   id: string;
   identifier: string;
   details: string;
+  username: string;
+  plushName: string;
+  gender: string;
+  birthDate: string;
+  birthPlace: string;
+  favouritePerson: string;
+  belongsTo: string;
+  meaningfulNote: string;
   fileDataUrl: string;
   fileName: string;
   fileType: string;
@@ -527,6 +535,14 @@ function emptyTikTokDetailEntry(): TikTokDetailFormEntry {
     id: crypto.randomUUID(),
     identifier: "",
     details: "",
+    username: "",
+    plushName: "",
+    gender: "",
+    birthDate: "",
+    birthPlace: "",
+    favouritePerson: "",
+    belongsTo: "",
+    meaningfulNote: "",
     fileDataUrl: "",
     fileName: "",
     fileType: "",
@@ -1675,17 +1691,42 @@ export default function Home() {
     await loadSharedData();
   }
 
+  function tikTokEntryParsedFields(entry: TikTokDetailFormEntry) {
+    return {
+      username: entry.username.trim(),
+      plushName: entry.plushName.trim(),
+      gender: entry.gender.trim(),
+      birthDate: entry.birthDate.trim(),
+      birthPlace: entry.birthPlace.trim(),
+      favouritePerson: entry.favouritePerson.trim(),
+      belongsTo: entry.belongsTo.trim(),
+      meaningfulNote: entry.meaningfulNote.trim(),
+    };
+  }
+
+  function tikTokEntryCanonicalDetails(entry: TikTokDetailFormEntry) {
+    return tikTokDetailsToText(tikTokEntryParsedFields(entry));
+  }
+
+  function detailEntryPayload(entry: TikTokDetailFormEntry) {
+    return {
+      identifier: entry.identifier.trim(),
+      details: tikTokEntryCanonicalDetails(entry) || entry.details.trim(),
+      parsed: tikTokEntryParsedFields(entry),
+      fileDataUrl: entry.fileDataUrl,
+      fileName: entry.fileName,
+      fileType: entry.fileType,
+    };
+  }
+
   async function runTikTokImport() {
     const details = tikTokDetailEntries
-      .map((entry) => ({
-        identifier: entry.identifier.trim(),
-        details: entry.details.trim(),
-        fileDataUrl: entry.fileDataUrl,
-        fileName: entry.fileName,
-        fileType: entry.fileType,
-      }))
+      .map(detailEntryPayload)
       .filter((entry) => entry.identifier || entry.details || entry.fileDataUrl);
-    const { orders: imported, result, importedOrders } = importTikTokShopData(tikTokCsv, details, orders, session ? `${session.displayName} (${session.username})` : "Admin");
+    const actor = session ? `${session.displayName} (${session.username})` : "Admin";
+    const { orders: imported, result, importedOrders } = tikTokCsv.trim()
+      ? importTikTokShopData(tikTokCsv, details, orders, actor)
+      : applyTikTokDetailEntries(details, orders, actor);
     try {
       await upsertSharedOrders(imported);
       await ensurePaymentProcessors(importedOrders.map((order) => order.paymentProcessor));
@@ -1695,13 +1736,30 @@ export default function Home() {
     setTikTokCsv("");
     setTikTokDetailEntries([emptyTikTokDetailEntry()]);
     setSelectedTikTokJsonOrders(importedOrders.map((order) => order.id));
-    setNotice(`TikTok Shop: ${result.imported} new orders imported, ${result.updated} updated, ${result.skipped} skipped.${result.warnings.length ? ` ${result.warnings[0]}` : ""}`);
+    setNotice(tikTokCsv.trim()
+      ? `TikTok Shop: ${result.imported} new orders imported, ${result.updated} updated, ${result.skipped} skipped.${result.warnings.length ? ` ${result.warnings[0]}` : ""}`
+      : `TikTok details: ${result.updated} existing order${result.updated === 1 ? "" : "s"} updated, ${result.skipped} skipped.${result.warnings.length ? ` ${result.warnings[0]}` : ""}`);
     await logActivity("TikTok Shop import", `${result.imported} imported, ${result.updated} updated, ${result.skipped} skipped.`);
     await loadSharedData();
   }
 
   function updateTikTokDetailEntry(id: string, patch: Partial<Omit<TikTokDetailFormEntry, "id">>) {
     setTikTokDetailEntries((current) => current.map((entry) => entry.id === id ? { ...entry, ...patch } : entry));
+  }
+
+  function updateTikTokDetailText(id: string, details: string) {
+    const parsed = parseTikTokDetailsBlock(details);
+    updateTikTokDetailEntry(id, {
+      details,
+      username: parsed.username,
+      plushName: parsed.plushName,
+      gender: parsed.gender,
+      birthDate: parsed.birthDate,
+      birthPlace: parsed.birthPlace,
+      favouritePerson: parsed.favouritePerson,
+      belongsTo: parsed.belongsTo,
+      meaningfulNote: parsed.meaningfulNote,
+    });
   }
 
   function uploadTikTokDetailFile(id: string, file: File | null) {
@@ -3660,23 +3718,35 @@ export default function Home() {
         </div>
         <div className="import-action"><div><strong>Safe repeat imports</strong><p>Existing order numbers are updated without removing status, tracking, notes, or photos.</p></div><button className="button primary large" disabled={!orderCsv.trim() && detectCsvKind(metafieldCsv) !== "orders"} onClick={runImport}>Validate and import orders</button></div>
         <section className="tiktok-import-section card">
-          <div className="settings-heading"><div><h2>TikTok Shop import</h2><p>Upload the TikTok Shop order export, then paste the plushie details. Imported TikTok orders behave like normal fulfilment orders and appear in printing.</p></div><span>{tikTokOrders.length} TikTok orders</span></div>
+          <div className="settings-heading"><div><h2>TikTok Shop import</h2><p>Upload the TikTok Shop order export to create new orders, or paste plushie details with an Order ID to update existing TikTok orders. The editable preview is what gets saved.</p></div><span>{tikTokOrders.length} TikTok orders</span></div>
           <div className="import-columns">
-            <ImportBox number="3" title="TikTok Shop order export" required value={tikTokCsv} onChange={setTikTokCsv} onFile={(file) => readFile(file, "tiktok")} placeholder="Order ID, Variation, Order Amount, Buyer Username..." />
+            <ImportBox number="3" title="TikTok Shop order export" value={tikTokCsv} onChange={setTikTokCsv} onFile={(file) => readFile(file, "tiktok")} placeholder="Optional if the TikTok order already exists. Order ID, Variation, Order Amount, Buyer Username..." />
             <div className="import-box">
               <div className="import-box-header"><span>4</span><div><strong>TikTok plushie details</strong><small>Use the Order ID as the identifier. If you have the full username, paste it in the detail box as Username.</small></div></div>
               <div className="tiktok-detail-entry-list">
                 {tikTokDetailEntries.map((entry, index) => <article className="tiktok-detail-entry" key={entry.id}>
                   <div className="tiktok-detail-entry-header"><strong>Entry {index + 1}</strong>{tikTokDetailEntries.length > 1 && <button className="view-button" type="button" onClick={() => removeTikTokDetailEntry(entry.id)}>Remove</button>}</div>
                   <label>Identifier<input value={entry.identifier} onChange={(event) => updateTikTokDetailEntry(entry.id, { identifier: event.target.value })} placeholder="Order ID, for example 584697260225955022" /></label>
-                  <textarea value={entry.details} onChange={(event) => updateTikTokDetailEntry(entry.id, { details: event.target.value })} placeholder={"Username- mikayla200\nPlushie's Name- Baby\nPlushie's Gender- girl\nPlushie's Birth Date- 18/07\nPlushie's Birth Place- hosp ampang\nPlushie's Favourite Person- kakak kayla\nPlushie Belongs to- Mikayla\nMeaningful Note- happy birthday sayang mama..moge yang baik2 tok kakak"} />
+                  <label>Paste customer details<textarea value={entry.details} onChange={(event) => updateTikTokDetailText(entry.id, event.target.value)} placeholder={"Nama Plushie - Mochi\nJantina Plushie- Female\nTarikh Lahir Plushie - 28/6/2025\nTempat Lahir Plushie - Perak\nOrang Kegemaran Plushie - Panda shomel\nMainan lembut itu milik... Ayangku\nNota bermakna - Ayangku mochi ni adik pda oreo otey."} /></label>
+                  <div className="tiktok-detail-preview">
+                    <strong>Editable preview</strong>
+                    <p>Auto-filled from the pasted text. If the customer used a different format, edit the boxes directly before importing.</p>
+                    <label>Username <span>(<input value={entry.username} onChange={(event) => updateTikTokDetailEntry(entry.id, { username: event.target.value })} placeholder="username" />)</span></label>
+                    <label>Plushie's Name <span>(<input value={entry.plushName} onChange={(event) => updateTikTokDetailEntry(entry.id, { plushName: event.target.value })} placeholder="Mochi" />)</span></label>
+                    <label>Plushie's Gender <span>(<input value={entry.gender} onChange={(event) => updateTikTokDetailEntry(entry.id, { gender: event.target.value })} placeholder="Female" />)</span></label>
+                    <label>Plushie's Birth Date <span>(<input value={entry.birthDate} onChange={(event) => updateTikTokDetailEntry(entry.id, { birthDate: event.target.value })} placeholder="28/6/2025" />)</span></label>
+                    <label>Plushie's Birth Place <span>(<input value={entry.birthPlace} onChange={(event) => updateTikTokDetailEntry(entry.id, { birthPlace: event.target.value })} placeholder="Perak" />)</span></label>
+                    <label>Plushie's Favourite Person <span>(<input value={entry.favouritePerson} onChange={(event) => updateTikTokDetailEntry(entry.id, { favouritePerson: event.target.value })} placeholder="Panda shomel" />)</span></label>
+                    <label>Plushie Belongs to <span>(<input value={entry.belongsTo} onChange={(event) => updateTikTokDetailEntry(entry.id, { belongsTo: event.target.value })} placeholder="Ayangku" />)</span></label>
+                    <label className="wide">Meaningful Note <span>(<textarea value={entry.meaningfulNote} onChange={(event) => updateTikTokDetailEntry(entry.id, { meaningfulNote: event.target.value })} placeholder="Nota bermakna..." />)</span></label>
+                  </div>
                   <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.txt,.doc,.docx" title="TikTok order file" description="Choose or drop the file for this order" selectedName={entry.fileName} onFile={(file) => uploadTikTokDetailFile(entry.id, file)} className="compact-file-drop" />
                 </article>)}
               </div>
               <button className="button secondary tiktok-add-entry" type="button" onClick={addTikTokDetailEntry}>Add Entry</button>
             </div>
           </div>
-          <div className="import-action"><div><strong>Auto certificate code</strong><p>Example: TT1027 + order ending 5022 becomes code 10275022106, then the ID link points to the certificate page.</p></div><button className="button primary large" disabled={!tikTokCsv.trim()} onClick={runTikTokImport}>Import TikTok Shop orders</button></div>
+          <div className="import-action"><div><strong>Auto certificate code</strong><p>With CSV, new TikTok orders are created. Without CSV, existing TikTok orders are updated from the editable preview using the Order ID.</p></div><button className="button primary large" disabled={!tikTokCsv.trim() && !tikTokDetailEntries.some((entry) => entry.identifier.trim() && (tikTokEntryCanonicalDetails(entry) || entry.fileDataUrl))} onClick={runTikTokImport}>{tikTokCsv.trim() ? "Import TikTok Shop orders" : "Update TikTok details"}</button></div>
         </section>
       </section>}
 

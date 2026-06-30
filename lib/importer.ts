@@ -57,7 +57,7 @@ const metafieldHeaders = [
 ];
 
 export type CsvKind = "orders" | "metafields" | "unknown";
-type TikTokDetails = {
+export type TikTokDetails = {
   username: string;
   fileDataUrl: string;
   fileName: string;
@@ -73,6 +73,7 @@ type TikTokDetails = {
 export type TikTokDetailEntry = {
   identifier: string;
   details: string;
+  parsed?: Partial<TikTokDetails>;
   fileDataUrl?: string;
   fileName?: string;
   fileType?: string;
@@ -455,28 +456,63 @@ function titleCase(value: string) {
 }
 
 function tikTokDetailValue(raw: string, labels: string[]) {
+  const normalizedRaw = raw.replace(/\u2026/g, "...").replace(/[：]/g, ":").replace(/[–—]/g, "-");
   for (const label of labels) {
     const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const match = raw.match(new RegExp(`${escaped}\\s*[-:]\\s*([^\\r\\n]*)`, "i"));
+    const match = normalizedRaw.match(new RegExp(`(?:^|[\\r\\n])\\s*${escaped}\\s*(?:[-:]|\\.\\.\\.)\\s*([^\\r\\n]*)`, "i"));
     if (match?.[1]) return match[1].trim();
   }
   return "";
 }
 
-function parseTikTokDetailsBlock(raw: string): TikTokDetails {
+export function parseTikTokDetailsBlock(raw: string): TikTokDetails {
   return {
-    username: tikTokDetailValue(raw, ["Buyer Username", "Username", "TikTok Username", "Customer Username"]),
+    username: tikTokDetailValue(raw, ["Buyer Username", "Username", "TikTok Username", "Customer Username", "Nama Pengguna", "Nama Akaun"]),
     fileDataUrl: "",
     fileName: "",
     fileType: "",
-    plushName: tikTokDetailValue(raw, ["Plushie's Name", "Plushie Name", "Name"]),
-    gender: titleCase(tikTokDetailValue(raw, ["Plushie's Gender", "Plushie Gender", "Gender"])),
-    birthDate: tikTokDetailValue(raw, ["Plushie's Birth Date", "Plushie Birth Date", "Birth Date"]),
-    birthPlace: tikTokDetailValue(raw, ["Plushie's Birth Place", "Plushie Birth Place", "Birth Place"]),
-    favouritePerson: titleCase(tikTokDetailValue(raw, ["Plushie's Favourite Person", "Plushie Favourite Person", "Favourite Person", "Favorite Person"])),
-    belongsTo: titleCase(tikTokDetailValue(raw, ["Plushie Belongs to", "Belongs To", "Belongs to"])),
-    meaningfulNote: tikTokDetailValue(raw, ["Meaningful Note"]),
+    plushName: tikTokDetailValue(raw, ["Plushie's Name", "Plushie Name", "Name", "Nama Plushie", "Nama Mainan", "Nama"]),
+    gender: titleCase(tikTokDetailValue(raw, ["Plushie's Gender", "Plushie Gender", "Gender", "Jantina Plushie", "Jantina"])),
+    birthDate: tikTokDetailValue(raw, ["Plushie's Birth Date", "Plushie Birth Date", "Birth Date", "Tarikh Lahir Plushie", "Tarikh Lahir"]),
+    birthPlace: tikTokDetailValue(raw, ["Plushie's Birth Place", "Plushie Birth Place", "Birth Place", "Tempat Lahir Plushie", "Tempat Lahir"]),
+    favouritePerson: titleCase(tikTokDetailValue(raw, ["Plushie's Favourite Person", "Plushie Favourite Person", "Favourite Person", "Favorite Person", "Orang Kegemaran Plushie", "Orang Kegemaran"])),
+    belongsTo: titleCase(tikTokDetailValue(raw, ["Plushie Belongs to", "Belongs To", "Belongs to", "Mainan lembut itu milik", "Milik", "Kepunyaan"])),
+    meaningfulNote: tikTokDetailValue(raw, ["Meaningful Note", "Nota bermakna", "Nota Bermakna", "Nota"]),
   };
+}
+
+export function tikTokDetailsToText(details: Partial<TikTokDetails>) {
+  return [
+    details.username ? `Username- ${details.username}` : "",
+    details.plushName ? `Plushie's Name- ${details.plushName}` : "",
+    details.gender ? `Plushie's Gender- ${details.gender}` : "",
+    details.birthDate ? `Plushie's Birth Date- ${details.birthDate}` : "",
+    details.birthPlace ? `Plushie's Birth Place- ${details.birthPlace}` : "",
+    details.favouritePerson ? `Plushie's Favourite Person- ${details.favouritePerson}` : "",
+    details.belongsTo ? `Plushie Belongs to- ${details.belongsTo}` : "",
+    details.meaningfulNote ? `Meaningful Note- ${details.meaningfulNote}` : "",
+  ].filter(Boolean).join("\n");
+}
+
+function mergeTikTokDetailObject(parsed: Partial<TikTokDetails> | undefined, raw: string) {
+  return mergeTikTokDetails(
+    parseTikTokDetailsBlock(raw),
+    {
+      ...emptyTikTokDetails,
+      ...parsed,
+      username: parsed?.username ?? "",
+      fileDataUrl: parsed?.fileDataUrl ?? "",
+      fileName: parsed?.fileName ?? "",
+      fileType: parsed?.fileType ?? "",
+      plushName: parsed?.plushName ?? "",
+      gender: parsed?.gender ?? "",
+      birthDate: parsed?.birthDate ?? "",
+      birthPlace: parsed?.birthPlace ?? "",
+      favouritePerson: parsed?.favouritePerson ?? "",
+      belongsTo: parsed?.belongsTo ?? "",
+      meaningfulNote: parsed?.meaningfulNote ?? "",
+    },
+  );
 }
 
 function parseTikTokDetails(input: string | TikTokDetailEntry[]) {
@@ -488,7 +524,7 @@ function parseTikTokDetails(input: string | TikTokDetailEntry[]) {
   for (const entry of entries) {
     const identifier = entry.identifier.trim();
     const details = {
-      ...parseTikTokDetailsBlock(entry.details),
+      ...mergeTikTokDetailObject(entry.parsed, entry.details),
       fileDataUrl: entry.fileDataUrl ?? "",
       fileName: entry.fileName ?? "",
       fileType: entry.fileType ?? "",
@@ -799,6 +835,58 @@ export function importTikTokShopData(
   }
 
   return { orders: [...next.values()], result: { imported, updated, skipped, warnings }, importedOrders };
+}
+
+export function applyTikTokDetailEntries(
+  detailEntries: TikTokDetailEntry[],
+  existing: Order[],
+  actor = "Admin",
+): { orders: Order[]; result: ImportResult; importedOrders: Order[] } {
+  const next = new Map(existing.map((order) => [order.id, order]));
+  const importedOrders: Order[] = [];
+  const warnings: string[] = [];
+  let updated = 0;
+  let skipped = 0;
+  for (const entry of detailEntries) {
+    const identifier = entry.identifier.trim();
+    const rawOrderId = identifier.replace(/\D/g, "");
+    const current = rawOrderId
+      ? existing.find((order) => order.id === `tiktok-${rawOrderId}` || order.orderNumber.includes(rawOrderId))
+      : undefined;
+    if (!current) {
+      skipped += 1;
+      warnings.push(identifier ? `${identifier}: no existing TikTok order found. Sync/import the order first.` : "Entry skipped: no TikTok order ID.");
+      continue;
+    }
+    const details = mergeTikTokDetailObject(entry.parsed, entry.details);
+    const timestamp = new Date().toISOString();
+    const meaningfulMessage = [
+      details.gender ? `Gender: ${details.gender}` : "",
+      details.birthDate ? `Birth Date: ${details.birthDate}` : "",
+      details.birthPlace ? `Birth Place: ${details.birthPlace}` : "",
+      details.favouritePerson ? `Favourite Person: ${details.favouritePerson}` : "",
+      details.belongsTo ? `Belongs To: ${details.belongsTo}` : "",
+    ].filter(Boolean).join("\n");
+    const updatedOrder: Order = {
+      ...current,
+      customerName: details.username || current.customerName,
+      plushName: details.plushName || current.plushName,
+      meaningfulNote: details.meaningfulNote || current.meaningfulNote,
+      meaningfulMessage: meaningfulMessage || current.meaningfulMessage,
+      tikTokFileDataUrl: entry.fileDataUrl || current.tikTokFileDataUrl,
+      tikTokFileName: entry.fileName || current.tikTokFileName,
+      tikTokFileType: entry.fileType || current.tikTokFileType,
+      voiceUploadStatus: current.voiceUploadStatus === "checked" ? current.voiceUploadStatus : (entry.fileDataUrl || current.tikTokFileDataUrl ? "received" : current.voiceUploadStatus),
+      updatedAt: timestamp,
+      statusHistory: current.statusHistory.length ? current.statusHistory : [
+        { id: `${current.id}-${timestamp}`, status: current.status, changedAt: timestamp, changedBy: actor, note: "TikTok plushie details added manually" },
+      ],
+    };
+    next.set(current.id, updatedOrder);
+    importedOrders.push(updatedOrder);
+    updated += 1;
+  }
+  return { orders: [...next.values()], result: { imported: 0, updated, skipped, warnings }, importedOrders };
 }
 
 export function tikTokCertificateJson(order: Order) {

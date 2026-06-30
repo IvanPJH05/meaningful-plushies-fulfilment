@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { importShopifyData, importTikTokShopData, normalizePaymentProcessor, shopifyOrderToFulfilmentOrders, tikTokCertificateJson } from "./importer.ts";
+import { applyTikTokDetailEntries, importShopifyData, importTikTokShopData, normalizePaymentProcessor, parseTikTokDetailsBlock, shopifyOrderToFulfilmentOrders, tikTokCertificateJson } from "./importer.ts";
 import { summarizeSales } from "./sales.ts";
+import type { Order } from "./types.ts";
 
 const headers = [
   "Name", "Currency", "Subtotal", "Shipping", "Total", "Discount Amount", "Created at",
@@ -132,6 +133,104 @@ test("auto-detects swapped order and metafield CSV inputs", () => {
   assert.equal(result.imported, 4);
   assert.equal(bankTransfer?.plushName, "Baba");
   assert.equal(bankTransfer?.certificateCode, "abc123");
+});
+
+test("parses loose Malay TikTok plushie details into editable fields", () => {
+  const parsed = parseTikTokDetailsBlock([
+    "Nama Plushie - Mochi",
+    " Jantina Plushie- Female",
+    " Tarikh Lahir Plushie - 28/6/2025",
+    " Tempat Lahir Plushie - Perak",
+    " Orang Kegemaran Plushie - Panda shomel",
+    " Mainan lembut itu milik… Ayangku",
+    " Nota bermakna - Ayangku mochi ni adik pda oreo otey.Hope ayng suka ngn mochi ni lebiu mwah.",
+  ].join("\n"));
+
+  assert.deepEqual({
+    plushName: parsed.plushName,
+    gender: parsed.gender,
+    birthDate: parsed.birthDate,
+    birthPlace: parsed.birthPlace,
+    favouritePerson: parsed.favouritePerson,
+    belongsTo: parsed.belongsTo,
+    meaningfulNote: parsed.meaningfulNote,
+  }, {
+    plushName: "Mochi",
+    gender: "Female",
+    birthDate: "28/6/2025",
+    birthPlace: "Perak",
+    favouritePerson: "Panda Shomel",
+    belongsTo: "Ayangku",
+    meaningfulNote: "Ayangku mochi ni adik pda oreo otey.Hope ayng suka ngn mochi ni lebiu mwah.",
+  });
+});
+
+test("updates existing TikTok orders from detail entries without a CSV", () => {
+  const existing: Order = {
+    id: "tiktok-584697260225955022",
+    orderNumber: "TT1027 584697260225955022",
+    salesChannel: "tiktok",
+    orderDate: "2026-06-25",
+    customerName: "old_username",
+    phone: "",
+    email: "",
+    address: "",
+    currency: "MYR",
+    subtotalAmount: 123.3,
+    shippingAmount: 5,
+    totalAmount: 123.3,
+    discountAmount: 0,
+    productDiscountAmount: 0,
+    shippingDiscountAmount: 0,
+    refundedAmount: 0,
+    outstandingBalance: 0,
+    paymentProcessor: "Bank Transfer",
+    product: "TikTok Shop",
+    character: "Hunnie",
+    setIndicator: "",
+    idWebsiteLink: "https://meaningfulplushies.com/pages/certificate/10275022106",
+    voiceLength: 20,
+    plushName: "",
+    certificateCode: "10275022106",
+    meaningfulNote: "",
+    meaningfulMessage: "",
+    remark: "",
+    voiceUploadStatus: "missing",
+    courier: "",
+    trackingNumber: "",
+    status: "new_order",
+    internalNotes: "",
+    statusHistory: [],
+    importedAt: "2026-06-25T00:00:00.000Z",
+    updatedAt: "2026-06-25T00:00:00.000Z",
+  };
+
+  const { orders, result } = applyTikTokDetailEntries([{
+    identifier: "584697260225955022",
+    details: "",
+    parsed: {
+      username: "mikayla200",
+      plushName: "Baby",
+      gender: "Girl",
+      birthDate: "18/07",
+      birthPlace: "hosp ampang",
+      favouritePerson: "Kakak Kayla",
+      belongsTo: "Mikayla",
+      meaningfulNote: "happy birthday sayang mama",
+    },
+    fileDataUrl: "data:video/mp4;base64,abc123",
+    fileName: "message.mp4",
+    fileType: "video/mp4",
+  }], [existing]);
+
+  const updated = orders[0];
+  assert.equal(result.updated, 1);
+  assert.equal(updated.customerName, "mikayla200");
+  assert.equal(updated.plushName, "Baby");
+  assert.equal(updated.meaningfulNote, "happy birthday sayang mama");
+  assert.equal(updated.voiceUploadStatus, "received");
+  assert.equal(updated.tikTokFileName, "message.mp4");
+  assert.equal(tikTokCertificateJson(updated).Name, "BABY");
 });
 
 test("imports TikTok Shop orders with certificate JSON", () => {
