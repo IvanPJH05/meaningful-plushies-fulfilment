@@ -89,6 +89,30 @@ When an order is created or updated, Shopify calls the webhook, the server verif
 
 For the TikTok Shop JSON export button, the Shopify app must also have metaobject read/write access. The export creates a new `Tik Tok Shop Cert Input` metaobject entry each time, sets the upload date to today's Malaysia date, and writes the selected certificate JSON into the `input` field. If your Shopify field handles are different, change the three `SHOPIFY_TIKTOK_CERT_*` variables in Vercel to match the metaobject type and field keys.
 
+## TikTok Shop order sync
+
+TikTok Shop sync only imports the order shell: order ID, buyer/recipient details if TikTok exposes them, product/SKU, price, shipping, tracking, and status. TikTok does not provide the plushie personalization data like Shopify Upload Lift metafields, so plushie name, meaningful note/message, and the customer file still need to be added manually in the fulfilment order drawer or TikTok Shop page.
+
+Add these server-only variables in **Vercel > Settings > Environment Variables**:
+
+```env
+TIKTOK_SHOP_APP_KEY=YOUR_TIKTOK_SHOP_APP_KEY
+TIKTOK_SHOP_APP_SECRET=YOUR_TIKTOK_SHOP_APP_SECRET
+TIKTOK_SHOP_ACCESS_TOKEN=YOUR_TIKTOK_SHOP_ACCESS_TOKEN
+TIKTOK_SHOP_ID=YOUR_TIKTOK_SHOP_ID
+TIKTOK_SHOP_BASE_URL=https://open-api.tiktokglobalshop.com
+TIKTOK_SHOP_ORDER_DETAIL_PATH=/api/orders/detail/query
+TIKTOK_WEBHOOK_SECRET=
+```
+
+Use this webhook URL in TikTok Shop Open Platform:
+
+```text
+https://YOUR_DOMAIN.vercel.app/api/tiktok/webhooks/orders
+```
+
+When TikTok sends an order webhook, the app extracts the TikTok order ID, fetches the order from TikTok Shop, saves it as a TikTok fulfilment order, and leaves the plushie data blank for manual entry. Existing TikTok orders can also be selected on the Orders page and refreshed with **Sync TikTok**.
+
 ## Existing browser data
 
 Old data saved in a browser's `localStorage` is intentionally no longer loaded. After configuring Supabase, import the Shopify CSV once from the dashboard. From then on, all devices use the shared database copy.

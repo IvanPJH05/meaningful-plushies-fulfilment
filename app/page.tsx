@@ -1336,6 +1336,9 @@ export default function Home() {
   const selectedShopifyOrderCount = useMemo(() => new Set(orders
     .filter((order) => selectedOrders.includes(order.id) && (order.salesChannel ?? "shopify") === "shopify")
     .map((order) => order.orderNumber)).size, [orders, selectedOrders]);
+  const selectedTikTokOrderCount = useMemo(() => new Set(orders
+    .filter((order) => selectedOrders.includes(order.id) && order.salesChannel === "tiktok")
+    .map((order) => tiktokOrderIdFromOrder(order))).size, [orders, selectedOrders]);
 
   const counts = useMemo(() => ({
     total: orders.filter((order) => order.status !== "shipped").length,
@@ -1577,6 +1580,54 @@ export default function Home() {
       .filter((order) => selectedOrders.includes(order.id) && (order.salesChannel ?? "shopify") === "shopify")
       .map((order) => order.orderNumber);
     await refreshShopifyOrderNumbers(selectedShopifyOrderNumbers);
+  }
+
+  function tiktokOrderIdFromOrder(order: Order) {
+    if (order.id.startsWith("tiktok-")) return order.id.replace(/^tiktok-/, "");
+    return order.orderNumber.match(/\bTT\d+\s+(\d{8,})\b/i)?.[1] ?? "";
+  }
+
+  async function refreshTikTokOrderIds(orderIds: string[]) {
+    const uniqueOrderIds = [...new Set(orderIds.filter(Boolean))];
+    if (!uniqueOrderIds.length) {
+      setNotice("Select at least one TikTok order to refresh.");
+      return;
+    }
+    setRefreshingOrderNumber(uniqueOrderIds.length === 1 ? uniqueOrderIds[0] : "tiktok-bulk");
+    try {
+      const response = await fetch("/api/tiktok/orders/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderIds: uniqueOrderIds }),
+      });
+      const result = await response.json() as { ok?: boolean; changed?: boolean; updated?: number; checked?: number; failed?: number; error?: string };
+      if (!response.ok || !result.ok) throw new Error(result.error || "TikTok sync failed.");
+      await loadSharedData(false);
+      const prefix = uniqueOrderIds.length === 1 ? `TikTok order ${uniqueOrderIds[0]}` : `${uniqueOrderIds.length} TikTok orders`;
+      const failureText = result.failed ? ` ${result.failed} could not be synced.` : "";
+      setNotice(result.changed
+        ? `${prefix} synced. ${result.updated ?? 0} fulfilment row${result.updated === 1 ? "" : "s"} updated. Plushie details still need manual input.${failureText}`
+        : `${prefix} checked. No differences found.${failureText}`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "TikTok order could not be synced.");
+    } finally {
+      setRefreshingOrderNumber("");
+    }
+  }
+
+  async function refreshTikTokOrder(order: Order) {
+    if (order.salesChannel !== "tiktok") {
+      setNotice("Only TikTok Shop orders can be refreshed from TikTok.");
+      return;
+    }
+    await refreshTikTokOrderIds([tiktokOrderIdFromOrder(order)]);
+  }
+
+  async function bulkRefreshTikTokOrders() {
+    const selectedTikTokOrderIds = orders
+      .filter((order) => selectedOrders.includes(order.id) && order.salesChannel === "tiktok")
+      .map(tiktokOrderIdFromOrder);
+    await refreshTikTokOrderIds(selectedTikTokOrderIds);
   }
 
   async function copyTikTokCertificateJson() {
@@ -3531,9 +3582,9 @@ export default function Home() {
         {view !== "fulfilment" && <section className="card orders-card">
           <div className={`toolbar ${view === "orders" ? "orders-toolbar" : ""}`}>
             <div className="toolbar-row toolbar-filter-row"><div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, customer, phone or tracking..." /></div><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /></div>
-            <div className="toolbar-row toolbar-action-row">{view === "orders" && <button className="button secondary" disabled={!selectedShopifyOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshShopifyOrders}>{refreshingOrderNumber === "bulk" ? "Refreshing..." : `Refresh ${selectedShopifyOrderCount} Shopify`}</button>}{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>Move {selectedOrders.length} to next status</button>}{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>Delete</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>Export CSV</button>}</div>
+            <div className="toolbar-row toolbar-action-row">{view === "orders" && <button className="button secondary" disabled={!selectedShopifyOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshShopifyOrders}>{refreshingOrderNumber === "bulk" ? "Refreshing..." : `Refresh ${selectedShopifyOrderCount} Shopify`}</button>}{view === "orders" && <button className="button secondary" disabled={!selectedTikTokOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshTikTokOrders}>{refreshingOrderNumber === "tiktok-bulk" ? "Syncing..." : `Sync ${selectedTikTokOrderCount} TikTok`}</button>}{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>Move {selectedOrders.length} to next status</button>}{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>Delete</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>Export CSV</button>}</div>
           </div>
-          <div className="table-scroll"><table className="orders-table"><thead><tr><th><input type="checkbox" aria-label="Select visible orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th>Order</th><th>Date</th><th>Customer</th><th>Phone</th><th>Character</th><th>Voice</th><th>Plush name</th><th>Status</th><th>Tracking number</th><th>Last updated</th><th>{view === "orders" ? "Actions" : "View"}</th></tr></thead><tbody>{filtered.map((order) => <tr key={order.id} className={isExpressShipping(order) ? "express-shipping-row" : ""}><td><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={selectedOrders.includes(order.id)} onChange={() => toggleOrderSelection(order.id)} /></td><td><strong>{orderLabel(order)}</strong>{order.salesChannel === "tiktok" && <span className="tiktok-badge">TikTok Shop</span>}{isExpressShipping(order) && <span className="shipping-badge">Express</span>}</td><td>{formatDate(order.orderDate)}</td><td><strong>{order.customerName || "-"}</strong></td><td>{order.phone || "-"}</td><td>{order.character || "-"}</td><td>{order.voiceLength ? `${order.voiceLength}s` : "-"}</td><td>{order.plushName || "-"}</td><td><StatusPill status={order.status} /></td><td><code>{order.trackingNumber || "-"}</code></td><td>{formatDate(order.updatedAt, true)}</td><td><div className="row-actions"><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button>{view === "orders" && (order.salesChannel ?? "shopify") === "shopify" && <button className="view-button refresh-order-button" disabled={refreshingOrderNumber === order.orderNumber} onClick={() => refreshShopifyOrder(order)}>{refreshingOrderNumber === order.orderNumber ? "Refreshing..." : "Refresh"}</button>}</div></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No orders found</strong><p>Try another search or status filter.</p></div>}</div>
+          <div className="table-scroll"><table className="orders-table"><thead><tr><th><input type="checkbox" aria-label="Select visible orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th>Order</th><th>Date</th><th>Customer</th><th>Phone</th><th>Character</th><th>Voice</th><th>Plush name</th><th>Status</th><th>Tracking number</th><th>Last updated</th><th>{view === "orders" ? "Actions" : "View"}</th></tr></thead><tbody>{filtered.map((order) => <tr key={order.id} className={isExpressShipping(order) ? "express-shipping-row" : ""}><td><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={selectedOrders.includes(order.id)} onChange={() => toggleOrderSelection(order.id)} /></td><td><strong>{orderLabel(order)}</strong>{order.salesChannel === "tiktok" && <span className="tiktok-badge">TikTok Shop</span>}{isExpressShipping(order) && <span className="shipping-badge">Express</span>}</td><td>{formatDate(order.orderDate)}</td><td><strong>{order.customerName || "-"}</strong></td><td>{order.phone || "-"}</td><td>{order.character || "-"}</td><td>{order.voiceLength ? `${order.voiceLength}s` : "-"}</td><td>{order.plushName || "-"}</td><td><StatusPill status={order.status} /></td><td><code>{order.trackingNumber || "-"}</code></td><td>{formatDate(order.updatedAt, true)}</td><td><div className="row-actions"><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button>{view === "orders" && (order.salesChannel ?? "shopify") === "shopify" && <button className="view-button refresh-order-button" disabled={refreshingOrderNumber === order.orderNumber} onClick={() => refreshShopifyOrder(order)}>{refreshingOrderNumber === order.orderNumber ? "Refreshing..." : "Refresh"}</button>}{view === "orders" && order.salesChannel === "tiktok" && <button className="view-button refresh-order-button" disabled={refreshingOrderNumber === tiktokOrderIdFromOrder(order)} onClick={() => refreshTikTokOrder(order)}>{refreshingOrderNumber === tiktokOrderIdFromOrder(order) ? "Syncing..." : "Sync"}</button>}</div></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No orders found</strong><p>Try another search or status filter.</p></div>}</div>
           <div className="table-footer">Showing {filtered.length} of {view === "fulfilled" ? orders.filter((order) => order.status === "shipped").length : orders.length} orders</div>
         </section>}
 
