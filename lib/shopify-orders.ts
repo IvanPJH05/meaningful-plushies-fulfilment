@@ -39,6 +39,7 @@ const ORDER_SELECTION = `
       quantity
       originalUnitPriceSet { shopMoney { amount currencyCode } }
       totalDiscountSet { shopMoney { amount currencyCode } }
+      customAttributes { key value }
     }
   }
   metafields(first: 50) {

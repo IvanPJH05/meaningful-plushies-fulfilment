@@ -122,6 +122,51 @@ test("converts Shopify API orders with Upload Lift metafield into fulfilment ord
   assert.equal(orders[0]?.idWebsiteLink, "https://meaningfulplushies.com/pages/certificate/14553997287");
 });
 
+test("converts Shopify line item custom attributes into fulfilment plushie details", () => {
+  const orders = shopifyOrderToFulfilmentOrders({
+    name: "#1462",
+    createdAt: "2026-06-30T09:04:00Z",
+    email: "customer@example.com",
+    currencyCode: "MYR",
+    currentSubtotalPriceSet: { shopMoney: { amount: "135.00", currencyCode: "MYR" } },
+    currentTotalPriceSet: { shopMoney: { amount: "135.00", currencyCode: "MYR" } },
+    currentTotalDiscountsSet: { shopMoney: { amount: "0.00", currencyCode: "MYR" } },
+    totalShippingPriceSet: { shopMoney: { amount: "0.00", currencyCode: "MYR" } },
+    paymentGatewayNames: ["Stripe Card Payments"],
+    shippingAddress: { name: "Derek Jeow", phone: "60122277118", address1: "123 Road", city: "KL" },
+    shippingLine: { title: "Standard" },
+    lineItems: {
+      nodes: [
+        {
+          name: "(B,20S) BUILD YOUR MEANINGFUL PLUSHIE - BILLY / INCLUDED / 20 seconds",
+          title: "(B,20S) BUILD YOUR MEANINGFUL PLUSHIE",
+          quantity: 1,
+          originalUnitPriceSet: { shopMoney: { amount: "135.00", currencyCode: "MYR" } },
+          customAttributes: [
+            { key: "Name", value: "Bubu" },
+            { key: "Gender", value: "Male" },
+            { key: "Born On", value: "22/02/1994" },
+            { key: "Birthplace", value: "Motherland" },
+            { key: "Favourite Person", value: "Esther Fong" },
+            { key: "Belongs To", value: "Esther Fong" },
+            { key: "Meaningful Note", value: "Hi baozi, my name is Bubu." },
+            { key: "Meaningful Message", value: "https://upload.cloudlift.app/s/message.m4a" },
+          ],
+        },
+      ],
+    },
+  }, "", []);
+
+  assert.equal(orders.length, 1);
+  assert.equal(orders[0]?.orderNumber, "1462");
+  assert.equal(orders[0]?.character, "BILLY");
+  assert.equal(orders[0]?.voiceLength, 20);
+  assert.equal(orders[0]?.plushName, "Bubu");
+  assert.equal(orders[0]?.meaningfulNote, "Hi baozi, my name is Bubu.");
+  assert.equal(orders[0]?.meaningfulMessage, "https://upload.cloudlift.app/s/message.m4a");
+  assert.equal(orders[0]?.voiceUploadStatus, "received");
+});
+
 test("auto-detects swapped order and metafield CSV inputs", () => {
   const metafields = [
     "Order GID,Order name,Order email,Metafield namespace,Metafield key,Metafield type,Metafield value",

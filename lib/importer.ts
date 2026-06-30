@@ -166,15 +166,67 @@ function metafield(raw: string, label: string) {
   return raw.match(new RegExp(`${escaped}:\\s*([^\\r\\n]*)`, "i"))?.[1]?.trim() ?? "";
 }
 
+type ShopifyPersonalization = {
+  product: string;
+  certificateCode: string;
+  plushName: string;
+  meaningfulNote: string;
+  meaningfulMessage: string;
+};
+
 function personalizationBlocks(raw: string) {
   const blocks = raw.split(/(?=\bProduct:\s*)/i).filter((block) => /^Product:\s*/i.test(block.trim()));
-  return blocks.map((block) => ({
+  return blocks.map((block): ShopifyPersonalization => ({
     product: metafield(block, "Product"),
     certificateCode: metafield(block, "Certificate Code"),
     plushName: metafield(block, "Name"),
     meaningfulNote: metafield(block, "Meaningful Note"),
     meaningfulMessage: metafield(block, "Meaningful Message"),
   }));
+}
+
+function shopifyLineAttributeEntries(lineItem: unknown) {
+  const record = objectValue(lineItem);
+  const sources = [
+    record.customAttributes,
+    record.custom_attributes,
+    record.properties,
+  ];
+  const entries: { key: string; value: string }[] = [];
+  for (const source of sources) {
+    if (!Array.isArray(source)) continue;
+    for (const item of source) {
+      const attribute = objectValue(item);
+      const key = textValue(attribute.key) || textValue(attribute.name);
+      const value = textValue(attribute.value);
+      if (key) entries.push({ key, value });
+    }
+  }
+  return entries;
+}
+
+function shopifyLineAttributeValue(lineItem: unknown, labels: string[]) {
+  const entries = shopifyLineAttributeEntries(lineItem);
+  const normalizedLabels = labels.map((label) => label.toLowerCase());
+  for (const entry of entries) {
+    const key = entry.key.trim().toLowerCase();
+    if (normalizedLabels.includes(key)) return entry.value.trim();
+  }
+  return "";
+}
+
+function shopifyLinePersonalization(lineItem: unknown): ShopifyPersonalization {
+  return {
+    product: shopifyLineAttributeValue(lineItem, ["Product"]),
+    certificateCode: shopifyLineAttributeValue(lineItem, ["Certificate Code", "Certificate"]),
+    plushName: shopifyLineAttributeValue(lineItem, ["Name", "Plushie's Name", "Plushie Name"]),
+    meaningfulNote: shopifyLineAttributeValue(lineItem, ["Meaningful Note", "Note"]),
+    meaningfulMessage: shopifyLineAttributeValue(lineItem, ["Meaningful Message", "Message", "Voice Message"]),
+  };
+}
+
+function hasShopifyPersonalization(personalization: ShopifyPersonalization) {
+  return Boolean(personalization.product || personalization.certificateCode || personalization.plushName || personalization.meaningfulNote || personalization.meaningfulMessage);
 }
 
 function productName(lineName: string, fallback: string) {
@@ -338,7 +390,6 @@ export function shopifyOrderToFulfilmentOrders(
   if (!number) return [];
   const timestamp = new Date().toISOString();
   const rawPersonalization = uploadLiftFormData || firstMetafieldValue(shopifyOrder, "upload_lift_form_data");
-  const personalizations = personalizationBlocks(rawPersonalization);
   const lineItemNodes = objectValue(shopifyOrder.lineItems).nodes;
   const rawLineItems = Array.isArray(shopifyOrder.line_items)
     ? shopifyOrder.line_items
@@ -348,6 +399,13 @@ export function shopifyOrderToFulfilmentOrders(
         ? lineItemNodes
         : [];
   const lineItems = rawLineItems.length ? rawLineItems : [{}];
+  const metafieldPersonalizations = personalizationBlocks(rawPersonalization);
+  const lineItemPersonalizations = lineItems.map(shopifyLinePersonalization);
+  const personalizations = metafieldPersonalizations.length
+    ? metafieldPersonalizations
+    : lineItemPersonalizations.some(hasShopifyPersonalization)
+      ? lineItemPersonalizations
+      : [];
   const total = Math.max(lineItems.length, personalizations.length, 1);
   const shippingAddress = shopifyOrder.shipping_address ?? shopifyOrder.shippingAddress ?? {};
   const billingAddress = shopifyOrder.billing_address ?? shopifyOrder.billingAddress ?? {};
