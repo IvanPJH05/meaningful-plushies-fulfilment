@@ -157,6 +157,37 @@ export async function shopifyGraphql<T>(domain: string, query: string, variables
   return response.json() as Promise<T>;
 }
 
+async function shopifyRest<T>(domain: string, path: string) {
+  const token = await getShopifyAccessToken(domain);
+  if (!token || !domain) return null;
+
+  const apiVersion = process.env.SHOPIFY_API_VERSION ?? "2026-04";
+  const response = await fetch(`https://${domain}/admin/api/${apiVersion}${path}`, {
+    headers: {
+      "Content-Type": "application/json",
+      "X-Shopify-Access-Token": token,
+    },
+  });
+
+  if (!response.ok) return null;
+  return response.json() as Promise<T>;
+}
+
+async function fetchShopifyOrderByNumberRest(cleanNumber: string, domain: string) {
+  for (const name of [`#${cleanNumber}`, cleanNumber]) {
+    const query = new URLSearchParams({
+      name,
+      status: "any",
+      limit: "5",
+    });
+    const result = await shopifyRest<{ orders?: Record<string, unknown>[] }>(domain, `/orders.json?${query}`);
+    const order = result?.orders?.find((item) => cleanShopifyOrderNumber(textValue(item.name) || textValue(item.order_number)) === cleanNumber)
+      ?? result?.orders?.[0];
+    if (order) return order;
+  }
+  return null;
+}
+
 export async function fetchShopifyOrder(payload: Record<string, unknown>, request?: Request): Promise<Record<string, unknown>> {
   const domain = shopDomain(request, payload);
   const orderId = adminGraphqlOrderId(payload);
@@ -195,7 +226,7 @@ export async function fetchShopifyOrderByNumber(orderNumber: string, request?: R
     if (order) return normalizeGraphqlOrder(order);
   }
 
-  return null;
+  return fetchShopifyOrderByNumberRest(cleanNumber, domain);
 }
 
 export async function fetchShopifyOrderWithMetafieldRetry(payload: Record<string, unknown>, request?: Request) {
