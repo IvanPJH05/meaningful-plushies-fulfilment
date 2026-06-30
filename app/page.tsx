@@ -1568,14 +1568,17 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orderNumbers: uniqueOrderNumbers }),
       });
-      const result = await response.json() as { ok?: boolean; changed?: boolean; updated?: number; checked?: number; failed?: number; error?: string };
+      const result = await response.json() as { ok?: boolean; changed?: boolean; updated?: number; checked?: number; failed?: number; error?: string; results?: { ok?: boolean; error?: string }[] };
       if (!response.ok || !result.ok) throw new Error(result.error || "Shopify refresh failed.");
       await loadSharedData(false);
       const prefix = uniqueOrderNumbers.length === 1 ? `#${uniqueOrderNumbers[0]}` : `${uniqueOrderNumbers.length} Shopify orders`;
-      const failureText = result.failed ? ` ${result.failed} could not be refreshed.` : "";
+      const failureReason = result.results?.find((item) => !item.ok)?.error;
+      const failureText = result.failed ? ` ${result.failed} could not be refreshed${failureReason ? `: ${failureReason}` : "."}` : "";
       setNotice(result.changed
         ? `${prefix} refreshed from Shopify. ${result.updated ?? 0} fulfilment row${result.updated === 1 ? "" : "s"} updated.${failureText}`
-        : `${prefix} checked against Shopify. No differences found.${failureText}`);
+        : result.failed
+          ? `${prefix} checked against Shopify.${failureText}`
+          : `${prefix} checked against Shopify. No differences found.`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Shopify order could not be refreshed.");
     } finally {

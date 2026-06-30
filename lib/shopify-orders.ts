@@ -178,18 +178,24 @@ export async function fetchShopifyOrderByNumber(orderNumber: string, request?: R
   const domain = shopDomain(request);
   if (!domain || !cleanNumber) return null;
 
-  const result = await shopifyGraphql<{ data?: { orders?: { nodes?: Record<string, unknown>[] } } }>(domain, `
-    query OrderForFulfilmentRefresh($query: String!, $uploadLiftKey: String!, $uploadLiftNamespace: String!) {
-      orders(first: 1, query: $query, sortKey: CREATED_AT, reverse: true) {
-        nodes {
-          ${ORDER_SELECTION}
+  const queries = [`name:${cleanNumber}`, `name:#${cleanNumber}`, `#${cleanNumber}`, cleanNumber];
+  for (const query of queries) {
+    const result = await shopifyGraphql<{ data?: { orders?: { nodes?: Record<string, unknown>[] } } }>(domain, `
+      query OrderForFulfilmentRefresh($query: String!, $uploadLiftKey: String!, $uploadLiftNamespace: String!) {
+        orders(first: 5, query: $query, sortKey: CREATED_AT, reverse: true) {
+          nodes {
+            ${ORDER_SELECTION}
+          }
         }
       }
-    }
-  `, { query: `name:#${cleanNumber}`, uploadLiftKey: UPLOAD_LIFT_KEY, uploadLiftNamespace: UPLOAD_LIFT_NAMESPACE });
+    `, { query, uploadLiftKey: UPLOAD_LIFT_KEY, uploadLiftNamespace: UPLOAD_LIFT_NAMESPACE });
 
-  const order = result?.data?.orders?.nodes?.[0];
-  return order ? normalizeGraphqlOrder(order) : null;
+    const order = result?.data?.orders?.nodes?.find((item) => cleanShopifyOrderNumber(textValue(item.name)) === cleanNumber)
+      ?? result?.data?.orders?.nodes?.[0];
+    if (order) return normalizeGraphqlOrder(order);
+  }
+
+  return null;
 }
 
 export async function fetchShopifyOrderWithMetafieldRetry(payload: Record<string, unknown>, request?: Request) {
