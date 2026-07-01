@@ -57,6 +57,68 @@ function inputFieldKey() {
   return process.env.SHOPIFY_TIKTOK_CERT_INPUT_FIELD || "input";
 }
 
+function definitionInput(type: string) {
+  return {
+    type,
+    name: "Tik Tok Shop Cert Input",
+    access: {
+      admin: "MERCHANT_READ_WRITE",
+    },
+    fieldDefinitions: [
+      {
+        key: uploadDateFieldKey(),
+        name: "Upload Date",
+        type: "single_line_text_field",
+        required: true,
+      },
+      {
+        key: inputFieldKey(),
+        name: "Input",
+        type: "multi_line_text_field",
+        required: true,
+      },
+    ],
+  };
+}
+
+function definitionAlreadyExists(message: string) {
+  return /already exists|taken|has already been taken/i.test(message);
+}
+
+async function ensureMetaobjectDefinition(domain: string, type: string) {
+  const result = await shopifyGraphql<{
+    data?: {
+      metaobjectDefinitionCreate?: {
+        metaobjectDefinition?: { id?: string; type?: string };
+        userErrors?: Array<{ field?: string[]; message?: string; code?: string }>;
+      };
+    };
+    errors?: Array<{ message?: string }>;
+  }>(domain, `
+    mutation EnsureTikTokCertificateDefinition($definition: MetaobjectDefinitionCreateInput!) {
+      metaobjectDefinitionCreate(definition: $definition) {
+        metaobjectDefinition { id type }
+        userErrors { field message code }
+      }
+    }
+  `, {
+    definition: definitionInput(type),
+  });
+
+  if (!result) return { ok: false, error: "Shopify credentials are not configured or the Admin API token could not be created." };
+
+  const graphqlError = result.errors?.map((error) => textValue(error.message)).filter(Boolean).join(" ");
+  if (graphqlError) return { ok: false, error: graphqlError };
+
+  const userErrors = result.data?.metaobjectDefinitionCreate?.userErrors ?? [];
+  const blockingErrors = userErrors.filter((error) => !definitionAlreadyExists(error.message || error.code || ""));
+  if (blockingErrors.length) {
+    return { ok: false, error: blockingErrors.map((error) => error.message || error.code || "Shopify rejected the metaobject definition.").join(" ") };
+  }
+
+  return { ok: true, error: "" };
+}
+
 export async function POST(request: Request) {
   let body: { payload?: CertificatePayload };
   try {
@@ -77,25 +139,33 @@ export async function POST(request: Request) {
 
   const errors: string[] = [];
   for (const type of metaobjectTypesToTry()) {
+    const definition = await ensureMetaobjectDefinition(domain, type);
+    if (!definition.ok) {
+      errors.push(`${type}: ${definition.error}`);
+      continue;
+    }
+
     const result = await shopifyGraphql<{
       data?: {
-        metaobjectCreate?: {
+        metaobjectUpsert?: {
           metaobject?: { id?: string; handle?: string };
           userErrors?: Array<{ field?: string[]; message?: string; code?: string }>;
         };
       };
       errors?: Array<{ message?: string }>;
     }>(domain, `
-      mutation CreateTikTokCertificateInput($metaobject: MetaobjectCreateInput!) {
-        metaobjectCreate(metaobject: $metaobject) {
+      mutation UpsertTikTokCertificateInput($handle: MetaobjectHandleInput!, $metaobject: MetaobjectUpsertInput!) {
+        metaobjectUpsert(handle: $handle, metaobject: $metaobject) {
           metaobject { id handle }
           userErrors { field message code }
         }
       }
     `, {
-      metaobject: {
+      handle: {
         type,
         handle,
+      },
+      metaobject: {
         fields: [
           { key: uploadDateFieldKey(), value: uploadDate },
           { key: inputFieldKey(), value: inputJson },
@@ -111,13 +181,13 @@ export async function POST(request: Request) {
       continue;
     }
 
-    const userErrors = result.data?.metaobjectCreate?.userErrors ?? [];
+    const userErrors = result.data?.metaobjectUpsert?.userErrors ?? [];
     if (userErrors.length) {
       errors.push(`${type}: ${userErrors.map((error) => error.message || error.code || "Shopify rejected the export.").join(" ")}`);
       continue;
     }
 
-    const metaobject = result.data?.metaobjectCreate?.metaobject;
+    const metaobject = result.data?.metaobjectUpsert?.metaobject;
     if (!metaobject?.id) {
       errors.push(`${type}: Shopify did not return the exported entry.`);
       continue;
