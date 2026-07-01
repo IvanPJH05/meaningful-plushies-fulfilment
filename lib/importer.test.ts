@@ -143,6 +143,7 @@ test("converts Shopify line item custom attributes into fulfilment plushie detai
           quantity: 1,
           originalUnitPriceSet: { shopMoney: { amount: "135.00", currencyCode: "MYR" } },
           customAttributes: [
+            { key: "_Certificate Code", value: "14623997287" },
             { key: "Name", value: "Bubu" },
             { key: "Gender", value: "Male" },
             { key: "Born On", value: "22/02/1994" },
@@ -162,6 +163,8 @@ test("converts Shopify line item custom attributes into fulfilment plushie detai
   assert.equal(orders[0]?.character, "BILLY");
   assert.equal(orders[0]?.voiceLength, 20);
   assert.equal(orders[0]?.plushName, "Bubu");
+  assert.equal(orders[0]?.certificateCode, "14623997287");
+  assert.equal(orders[0]?.idWebsiteLink, "https://meaningfulplushies.com/pages/certificate/14623997287");
   assert.equal(orders[0]?.meaningfulNote, "Hi baozi, my name is Bubu.");
   assert.equal(orders[0]?.meaningfulMessage, "https://upload.cloudlift.app/s/message.m4a");
   assert.equal(orders[0]?.voiceUploadStatus, "received");

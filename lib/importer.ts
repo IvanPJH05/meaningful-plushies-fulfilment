@@ -207,9 +207,16 @@ function shopifyLineAttributeEntries(lineItem: unknown) {
 
 function shopifyLineAttributeValue(lineItem: unknown, labels: string[]) {
   const entries = shopifyLineAttributeEntries(lineItem);
-  const normalizedLabels = labels.map((label) => label.toLowerCase());
+  const normalizeLabel = (label: string) => label
+    .trim()
+    .replace(/^_+/, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/[^a-z0-9 ]/gi, "")
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+  const normalizedLabels = labels.map(normalizeLabel);
   for (const entry of entries) {
-    const key = entry.key.trim().toLowerCase();
+    const key = normalizeLabel(entry.key);
     if (normalizedLabels.includes(key)) return entry.value.trim();
   }
   return "";
@@ -218,7 +225,7 @@ function shopifyLineAttributeValue(lineItem: unknown, labels: string[]) {
 function shopifyLinePersonalization(lineItem: unknown): ShopifyPersonalization {
   return {
     product: shopifyLineAttributeValue(lineItem, ["Product"]),
-    certificateCode: shopifyLineAttributeValue(lineItem, ["Certificate Code", "Certificate"]),
+    certificateCode: shopifyLineAttributeValue(lineItem, ["Certificate Code", "Certificate", "certificate_code"]),
     plushName: shopifyLineAttributeValue(lineItem, ["Name", "Plushie's Name", "Plushie Name"]),
     meaningfulNote: shopifyLineAttributeValue(lineItem, ["Meaningful Note", "Note"]),
     meaningfulMessage: shopifyLineAttributeValue(lineItem, ["Meaningful Message", "Message", "Voice Message"]),
