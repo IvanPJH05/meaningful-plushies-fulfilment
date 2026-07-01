@@ -245,6 +245,13 @@ function certificateLink(code: string) {
   return code ? `https://meaningfulplushies.com/pages/certificate/${code.trim()}` : "";
 }
 
+function fallbackShopifyCertificateCode(orderNumber: string, phone: string) {
+  const orderDigits = orderNumber.replace(/\D/g, "");
+  const phoneDigits = phone.replace(/\D/g, "");
+  if (!orderDigits || phoneDigits.length < 7) return "";
+  return `${orderDigits}${phoneDigits.slice(-7)}`;
+}
+
 function shopifyMoney(value: unknown) {
   if (typeof value === "number") return value;
   if (typeof value === "string") return money(value);
@@ -450,7 +457,7 @@ export function shopifyOrderToFulfilmentOrders(
     const id = total === 1 ? number : `${number}-${index + 1}`;
     const current = existingById.get(id) ?? (index === 0 ? existing.find((order) => order.orderNumber === number && !order.setIndicator) : undefined);
     const initialStatus = current?.status ?? "new_order";
-    const certificateCode = personalization.certificateCode || current?.certificateCode || "";
+    const certificateCode = personalization.certificateCode || current?.certificateCode || fallbackShopifyCertificateCode(number, phone);
     orders.push({
       id,
       orderNumber: number,

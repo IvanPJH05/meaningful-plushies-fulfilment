@@ -183,7 +183,19 @@ async function fetchShopifyOrderByNumberRest(cleanNumber: string, domain: string
     const result = await shopifyRest<{ orders?: Record<string, unknown>[] }>(domain, `/orders.json?${query}`);
     const order = result?.orders?.find((item) => cleanShopifyOrderNumber(textValue(item.name) || textValue(item.order_number)) === cleanNumber)
       ?? result?.orders?.[0];
-    if (order) return order;
+    if (order) {
+      const fullOrder = await fetchShopifyOrder(order);
+      if (shopifyMetafieldValue(fullOrder)) return fullOrder;
+
+      const orderId = textValue(order.id);
+      const metafields = orderId
+        ? await shopifyRest<{ metafields?: Record<string, unknown>[] }>(domain, `/orders/${orderId}/metafields.json?limit=50`)
+        : null;
+      return {
+        ...order,
+        metafields: metafields?.metafields ?? [],
+      };
+    }
   }
   return null;
 }

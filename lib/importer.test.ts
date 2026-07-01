@@ -170,6 +170,34 @@ test("converts Shopify line item custom attributes into fulfilment plushie detai
   assert.equal(orders[0]?.voiceUploadStatus, "received");
 });
 
+test("creates a Shopify certificate link from order and phone when Upload Lift omits the code", () => {
+  const orders = shopifyOrderToFulfilmentOrders({
+    name: "#1462",
+    createdAt: "2026-06-30T09:04:00Z",
+    currencyCode: "MYR",
+    currentSubtotalPriceSet: { shopMoney: { amount: "135.00", currencyCode: "MYR" } },
+    currentTotalPriceSet: { shopMoney: { amount: "135.00", currencyCode: "MYR" } },
+    totalShippingPriceSet: { shopMoney: { amount: "8.00", currencyCode: "MYR" } },
+    paymentGatewayNames: ["Stripe Card Payments"],
+    shippingAddress: { name: "Derek Jeow", phone: "60122277118", address1: "123 Road", city: "KL" },
+    shippingLine: { title: "Standard" },
+    lineItems: [
+      {
+        name: "(B,20S) BUILD YOUR MEANINGFUL PLUSHIE - BILLY / INCLUDED / 20 seconds",
+        quantity: 1,
+        price: "135.00",
+        properties: [
+          { name: "Name", value: "Bubu" },
+          { name: "Meaningful Message", value: "https://upload.cloudlift.app/s/message.m4a" },
+        ],
+      },
+    ],
+  }, "", []);
+
+  assert.equal(orders[0]?.certificateCode, "14622277118");
+  assert.equal(orders[0]?.idWebsiteLink, "https://meaningfulplushies.com/pages/certificate/14622277118");
+});
+
 test("auto-detects swapped order and metafield CSV inputs", () => {
   const metafields = [
     "Order GID,Order name,Order email,Metafield namespace,Metafield key,Metafield type,Metafield value",
