@@ -1128,6 +1128,39 @@ export default function Home() {
   const [databaseError, setDatabaseError] = useState("");
   const [refreshingOrderNumber, setRefreshingOrderNumber] = useState("");
 
+  const normalizeSharedOrders = useCallback((sharedOrders: Order[]) => sharedOrders.map((order) => {
+    const status = legacyStatus[order.status] ?? order.status;
+    return {
+      ...order,
+      salesChannel: order.salesChannel ?? "shopify",
+      status,
+      currency: order.currency ?? "MYR",
+      subtotalAmount: order.subtotalAmount ?? 0,
+      shippingAmount: order.shippingAmount ?? 0,
+      totalAmount: order.totalAmount ?? 0,
+      discountAmount: order.discountAmount ?? 0,
+      productDiscountAmount: order.productDiscountAmount ?? 0,
+      shippingDiscountAmount: order.shippingDiscountAmount ?? 0,
+      refundedAmount: order.refundedAmount ?? 0,
+      outstandingBalance: order.outstandingBalance ?? 0,
+      paymentProcessor: normalizePaymentProcessor(order.paymentProcessor ?? "", order.totalAmount === 0),
+      discountCodes: order.discountCodes ?? (order.discountCodeUsed ? [order.discountCodeUsed] : []),
+      discountCodeUsed: order.discountCodeUsed ?? "",
+      shippingMethod: order.shippingMethod ?? "",
+      setIndicator: order.setIndicator ?? "",
+      idWebsiteLink: order.idWebsiteLink ?? "",
+      statusHistory: (order.statusHistory ?? []).map((event) => ({
+        ...event,
+        status: legacyStatus[event.status] ?? event.status,
+      })),
+    };
+  }), []);
+
+  const normalizeSalesConsumptionMappings = useCallback((mappings: SalesConsumptionMapping[]) => mappings.map((mapping) => ({
+    ...mapping,
+    inventoryItem: inventoryAccountKey(mapping.inventoryItem),
+  })), []);
+
   const loadSharedData = useCallback(async (showLoading = false) => {
     if (!supabaseConfigured) {
       setDatabaseError("Supabase is not configured. Add the public Supabase URL and anon key in Vercel.");
@@ -1154,33 +1187,7 @@ export default function Home() {
         fetchSharedOrders(), fetchSharedActivity(), fetchPaymentProcessorSettings(), fetchStockSettings(), fetchSalesFeeSettings(),
         fetchAccountingCategories(), fetchAccountingDocuments(), fetchAccountingTransactions(), fetchAccountingLedgerEntries(), fetchSalesConsumptionMappings(), fetchContentPlanItems(), fetchContentIdeas(), fetchEnvelopePrintSettings(),
       ]);
-      setOrders(sharedOrders.map((order) => {
-      const status = legacyStatus[order.status] ?? order.status;
-      return {
-        ...order,
-        salesChannel: order.salesChannel ?? "shopify",
-        status,
-        currency: order.currency ?? "MYR",
-        subtotalAmount: order.subtotalAmount ?? 0,
-        shippingAmount: order.shippingAmount ?? 0,
-        totalAmount: order.totalAmount ?? 0,
-        discountAmount: order.discountAmount ?? 0,
-        productDiscountAmount: order.productDiscountAmount ?? 0,
-        shippingDiscountAmount: order.shippingDiscountAmount ?? 0,
-        refundedAmount: order.refundedAmount ?? 0,
-        outstandingBalance: order.outstandingBalance ?? 0,
-        paymentProcessor: normalizePaymentProcessor(order.paymentProcessor ?? "", order.totalAmount === 0),
-        discountCodes: order.discountCodes ?? (order.discountCodeUsed ? [order.discountCodeUsed] : []),
-        discountCodeUsed: order.discountCodeUsed ?? "",
-        shippingMethod: order.shippingMethod ?? "",
-        setIndicator: order.setIndicator ?? "",
-        idWebsiteLink: order.idWebsiteLink ?? "",
-        statusHistory: (order.statusHistory ?? []).map((event) => ({
-          ...event,
-          status: legacyStatus[event.status] ?? event.status,
-        })),
-      };
-      }));
+      setOrders(normalizeSharedOrders(sharedOrders));
       setActivity(sharedActivity);
       setProcessorSettings(sharedProcessorSettings);
       setStockSettings(sharedStockSettings);
@@ -1189,10 +1196,7 @@ export default function Home() {
       setAccountingDocuments(sharedAccountingDocuments);
       setAccountingTransactions(sharedAccountingTransactions);
       setAccountingLedgerEntries(sharedAccountingLedgerEntries);
-      setSalesConsumptionMappings(sharedSalesConsumptionMappings.map((mapping) => ({
-        ...mapping,
-        inventoryItem: inventoryAccountKey(mapping.inventoryItem),
-      })));
+      setSalesConsumptionMappings(normalizeSalesConsumptionMappings(sharedSalesConsumptionMappings));
       setContentPlanItems(sharedContentPlanItems);
       setContentIdeas(sharedContentIdeas);
       setEnvelopePrintSettings({ ...defaultEnvelopePrintSettings, ...readStoredEnvelopeSettings(), ...sharedEnvelopePrintSettings });
@@ -1203,13 +1207,60 @@ export default function Home() {
     } finally {
       setLoadingOrders(false);
     }
-  }, []);
+  }, [normalizeSalesConsumptionMappings, normalizeSharedOrders]);
+
+  const loadChangedSharedData = useCallback(async (changedTables: string[]) => {
+    if (!supabaseConfigured || !changedTables.length) return;
+    const tables = new Set(changedTables);
+    try {
+      await Promise.all([
+        tables.has("fulfilment_orders") ? fetchSharedOrders().then((sharedOrders) => setOrders(normalizeSharedOrders(sharedOrders))) : Promise.resolve(),
+        tables.has("activity_events") ? fetchSharedActivity().then(setActivity) : Promise.resolve(),
+        tables.has("payment_processor_settings") ? fetchPaymentProcessorSettings().then(setProcessorSettings) : Promise.resolve(),
+        tables.has("sales_fee_settings") ? fetchSalesFeeSettings().then(setSalesFeeSettings) : Promise.resolve(),
+        tables.has("stock_settings") ? fetchStockSettings().then(setStockSettings) : Promise.resolve(),
+        tables.has("sales_consumption_mappings") ? fetchSalesConsumptionMappings().then((mappings) => setSalesConsumptionMappings(normalizeSalesConsumptionMappings(mappings))) : Promise.resolve(),
+        tables.has("accounting_categories") ? fetchAccountingCategories().then(setAccountingCategories) : Promise.resolve(),
+        tables.has("accounting_documents") ? fetchAccountingDocuments().then(setAccountingDocuments) : Promise.resolve(),
+        tables.has("accounting_transactions") ? fetchAccountingTransactions().then(setAccountingTransactions) : Promise.resolve(),
+        tables.has("accounting_ledger_entries") ? fetchAccountingLedgerEntries().then(setAccountingLedgerEntries) : Promise.resolve(),
+        tables.has("content_plan_items") ? fetchContentPlanItems().then(setContentPlanItems) : Promise.resolve(),
+        tables.has("content_idea_items") ? fetchContentIdeas().then(setContentIdeas) : Promise.resolve(),
+        tables.has("envelope_print_settings") ? fetchEnvelopePrintSettings().then((settings) => {
+          setEnvelopePrintSettings({ ...defaultEnvelopePrintSettings, ...readStoredEnvelopeSettings(), ...settings });
+          setEnvelopeSettingsLoaded(true);
+        }) : Promise.resolve(),
+        (tables.has("creator_profiles") && session && (session.role === "admin" || session.role === "creator")) ? fetchCreatorProfiles(session.token).then(setCreatorProfiles) : Promise.resolve(),
+        (tables.has("creator_commissions") && session && (session.role === "admin" || session.role === "creator")) ? fetchCreatorCommissions(session.token).then(setCreatorCommissions) : Promise.resolve(),
+        (tables.has("creator_payouts") && session && (session.role === "admin" || session.role === "creator")) ? fetchCreatorPayouts(session.token).then(setCreatorPayouts) : Promise.resolve(),
+      ]);
+      setDatabaseError("");
+    } catch (error) {
+      setDatabaseError(error instanceof Error ? error.message : "Could not refresh the latest Supabase changes.");
+    }
+  }, [normalizeSalesConsumptionMappings, normalizeSharedOrders, session]);
 
   useEffect(() => {
     void loadSharedData(true);
     if (!supabaseConfigured) return;
-    return subscribeToSharedData(() => { void loadSharedData(); });
-  }, [loadSharedData]);
+    const changedTables = new Set<string>();
+    let refreshTimer: number | undefined;
+    const flushChanges = () => {
+      const tables = Array.from(changedTables);
+      changedTables.clear();
+      refreshTimer = undefined;
+      void loadChangedSharedData(tables);
+    };
+    const unsubscribe = subscribeToSharedData((table) => {
+      changedTables.add(table);
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(flushChanges, 800);
+    });
+    return () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      unsubscribe();
+    };
+  }, [loadChangedSharedData, loadSharedData]);
 
   useEffect(() => {
     if (session) writeJson(sessionStorageKey, session);

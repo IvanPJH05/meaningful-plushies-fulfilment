@@ -838,25 +838,25 @@ export async function deleteContentIdea(id: string) {
   if (error) throw error;
 }
 
-export function subscribeToSharedData(onChange: () => void) {
+export function subscribeToSharedData(onChange: (table: string) => void) {
   const client = requireSupabase();
   const channel = client.channel("fulfilment-dashboard")
-    .on("postgres_changes", { event: "*", schema: "public", table: "fulfilment_orders" }, onChange)
-    .on("postgres_changes", { event: "*", schema: "public", table: "activity_events" }, onChange)
-    .on("postgres_changes", { event: "*", schema: "public", table: "payment_processor_settings" }, onChange)
-    .on("postgres_changes", { event: "*", schema: "public", table: "sales_fee_settings" }, onChange)
-    .on("postgres_changes", { event: "*", schema: "public", table: "envelope_print_settings" }, onChange)
-    .on("postgres_changes", { event: "*", schema: "public", table: "stock_settings" }, onChange)
-    .on("postgres_changes", { event: "*", schema: "public", table: "sales_consumption_mappings" }, onChange)
-    .on("postgres_changes", { event: "*", schema: "public", table: "accounting_documents" }, onChange)
-    .on("postgres_changes", { event: "*", schema: "public", table: "accounting_transactions" }, onChange)
-    .on("postgres_changes", { event: "*", schema: "public", table: "accounting_ledger_entries" }, onChange)
-    .on("postgres_changes", { event: "*", schema: "public", table: "accounting_categories" }, onChange)
-    .on("postgres_changes", { event: "*", schema: "public", table: "content_plan_items" }, onChange)
-    .on("postgres_changes", { event: "*", schema: "public", table: "content_idea_items" }, onChange)
-    .on("postgres_changes", { event: "*", schema: "public", table: "creator_profiles" }, onChange)
-    .on("postgres_changes", { event: "*", schema: "public", table: "creator_commissions" }, onChange)
-    .on("postgres_changes", { event: "*", schema: "public", table: "creator_payouts" }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "fulfilment_orders" }, () => onChange("fulfilment_orders"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "activity_events" }, () => onChange("activity_events"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "payment_processor_settings" }, () => onChange("payment_processor_settings"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "sales_fee_settings" }, () => onChange("sales_fee_settings"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "envelope_print_settings" }, () => onChange("envelope_print_settings"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "stock_settings" }, () => onChange("stock_settings"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "sales_consumption_mappings" }, () => onChange("sales_consumption_mappings"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "accounting_documents" }, () => onChange("accounting_documents"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "accounting_transactions" }, () => onChange("accounting_transactions"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "accounting_ledger_entries" }, () => onChange("accounting_ledger_entries"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "accounting_categories" }, () => onChange("accounting_categories"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "content_plan_items" }, () => onChange("content_plan_items"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "content_idea_items" }, () => onChange("content_idea_items"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "creator_profiles" }, () => onChange("creator_profiles"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "creator_commissions" }, () => onChange("creator_commissions"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "creator_payouts" }, () => onChange("creator_payouts"))
     .subscribe();
   return () => { void client.removeChannel(channel); };
 }
