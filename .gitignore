@@ -5,4 +5,6 @@ node_modules/
 *.log
 work/
 outputs/
+tmp/
+meaningful-plushies-fulfilment/
 *.tsbuildinfo
