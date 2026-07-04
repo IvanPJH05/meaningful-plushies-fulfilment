@@ -5,6 +5,7 @@ const UPLOAD_LIFT_NAMESPACE = process.env.SHOPIFY_UPLOAD_LIFT_METAFIELD_NAMESPAC
 
 const ORDER_SELECTION = `
   id
+  legacyResourceId
   name
   createdAt
   processedAt
@@ -42,7 +43,7 @@ const ORDER_SELECTION = `
       customAttributes { key value }
     }
   }
-  metafields(first: 50) {
+  metafields(first: 250) {
     nodes { namespace key value }
   }
 `;
@@ -173,6 +174,19 @@ async function shopifyRest<T>(domain: string, path: string) {
   return response.json() as Promise<T>;
 }
 
+async function fetchOrderMetafieldsByRest(domain: string, order: Record<string, unknown>) {
+  const legacyId = textValue(order.legacyResourceId) || textValue(order.legacy_resource_id) || textValue(order.id).replace(/\D/g, "");
+  if (!legacyId) return [];
+  const result = await shopifyRest<{ metafields?: Record<string, unknown>[] }>(domain, `/orders/${legacyId}/metafields.json?limit=250`);
+  return result?.metafields ?? [];
+}
+
+async function withRestMetafieldsIfMissing(domain: string, order: Record<string, unknown>) {
+  if (shopifyMetafieldValue(order)) return order;
+  const metafields = await fetchOrderMetafieldsByRest(domain, order);
+  return metafields.length ? { ...order, metafields } : order;
+}
+
 async function fetchShopifyOrderByNumberRest(cleanNumber: string, domain: string) {
   for (const name of [`#${cleanNumber}`, cleanNumber]) {
     const query = new URLSearchParams({
@@ -213,7 +227,7 @@ export async function fetchShopifyOrder(payload: Record<string, unknown>, reques
     }
   `, { id: orderId, uploadLiftKey: UPLOAD_LIFT_KEY, uploadLiftNamespace: UPLOAD_LIFT_NAMESPACE });
 
-  return result?.data?.order ? normalizeGraphqlOrder(result.data.order) : payload;
+  return result?.data?.order ? withRestMetafieldsIfMissing(domain, normalizeGraphqlOrder(result.data.order)) : payload;
 }
 
 export async function fetchShopifyOrderByNumber(orderNumber: string, request?: Request): Promise<Record<string, unknown> | null> {
@@ -235,7 +249,7 @@ export async function fetchShopifyOrderByNumber(orderNumber: string, request?: R
 
     const order = result?.data?.orders?.nodes?.find((item) => cleanShopifyOrderNumber(textValue(item.name)) === cleanNumber)
       ?? result?.data?.orders?.nodes?.[0];
-    if (order) return normalizeGraphqlOrder(order);
+    if (order) return withRestMetafieldsIfMissing(domain, normalizeGraphqlOrder(order));
   }
 
   return fetchShopifyOrderByNumberRest(cleanNumber, domain);

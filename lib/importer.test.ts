@@ -170,7 +170,7 @@ test("converts Shopify line item custom attributes into fulfilment plushie detai
   assert.equal(orders[0]?.voiceUploadStatus, "received");
 });
 
-test("creates a Shopify certificate link from order and phone when Upload Lift omits the code", () => {
+test("does not invent a Shopify certificate link from phone digits when Upload Lift omits the code", () => {
   const orders = shopifyOrderToFulfilmentOrders({
     name: "#1462",
     createdAt: "2026-06-30T09:04:00Z",
@@ -194,8 +194,8 @@ test("creates a Shopify certificate link from order and phone when Upload Lift o
     ],
   }, "", []);
 
-  assert.equal(orders[0]?.certificateCode, "14622277118");
-  assert.equal(orders[0]?.idWebsiteLink, "https://meaningfulplushies.com/pages/certificate/14622277118");
+  assert.equal(orders[0]?.certificateCode, "");
+  assert.equal(orders[0]?.idWebsiteLink, "");
 });
 
 test("auto-detects swapped order and metafield CSV inputs", () => {
