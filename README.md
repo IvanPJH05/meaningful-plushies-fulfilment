@@ -89,6 +89,24 @@ When an order is created or updated, Shopify calls the webhook, the server verif
 
 For the TikTok Shop JSON export button, the Shopify app must also have metaobject read/write access. The export creates a new `Tik Tok Shop Cert Input` metaobject entry each time, sets the upload date to today's Malaysia date, and writes the selected certificate JSON into the `input` field. If your Shopify field handles are different, change the three `SHOPIFY_TIKTOK_CERT_*` variables in Vercel to match the metaobject type and field keys.
 
+## Meta Conversions API
+
+The app can send server-side Meta Conversions API `Purchase` events after Shopify orders are saved. By default, use **Settings workspace > Meta CAPI** and keep the mode on **Only RM0/manual-payment Shopify orders**. This avoids double counting normal Shopify Pixel purchases while still reporting the corrected revenue for orders where Shopify says RM0 but fulfilment collected payment manually.
+
+Add these server-only variables in **Vercel > Settings > Environment Variables**:
+
+```env
+META_PIXEL_ID=YOUR_META_PIXEL_ID
+META_CAPI_ACCESS_TOKEN=YOUR_META_CONVERSIONS_API_ACCESS_TOKEN
+META_TEST_EVENT_CODE=
+```
+
+Apply them to Production, Preview, and Development, then redeploy. Do not prefix these values with `NEXT_PUBLIC_`.
+
+Run the latest [`supabase/schema.sql`](supabase/schema.sql) in Supabase SQL Editor. The SQL adds the Meta status fields to fulfilment orders plus `meta_capi_settings` and `meta_capi_logs`.
+
+In the dashboard, open **Settings workspace > Meta CAPI** to enable or disable sending, add a test event code, send test purchases, retry saved Shopify order numbers, and review the last 100 Meta responses.
+
 ## TikTok Shop order sync
 
 TikTok Shop sync only imports the order shell: order ID, buyer/recipient details if TikTok exposes them, product/SKU, price, shipping, tracking, and status. TikTok does not provide the plushie personalization data like Shopify Upload Lift metafields, so plushie name, meaningful note/message, and the customer file still need to be added manually in the fulfilment order drawer or TikTok Shop page.

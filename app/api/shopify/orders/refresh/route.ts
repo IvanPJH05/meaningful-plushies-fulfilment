@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 
 import { shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
+import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
 import { cleanShopifyOrderNumber, fetchShopifyOrderByNumberWithMetafieldRetry, shopifyMetafieldValue, textValue } from "../../../../../lib/shopify-orders";
-import { fetchSharedOrders, insertSharedActivity, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
+import { fetchMetaCapiSettings, fetchSharedOrders, insertSharedActivity, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
 import type { Order } from "../../../../../lib/types";
 
 export const runtime = "nodejs";
@@ -55,6 +56,7 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
     changed: changedOrders.length > 0,
     updated: changedOrders.length,
     orders: importedOrders,
+    shopifyOrder: fullOrder,
   };
 }
 
@@ -96,6 +98,23 @@ export async function POST(request: Request) {
         actor: "Shopify refresh",
         createdAt: new Date().toISOString(),
       });
+    }
+
+    try {
+      const metaSettings = await fetchMetaCapiSettings();
+      for (const result of successful) {
+        if (result.orders.length) {
+          await sendMetaPurchaseEvents({
+            orders: result.orders,
+            shopifyOrder: result.shopifyOrder,
+            settings: metaSettings,
+            source: "shopify_refresh",
+            request,
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Meta CAPI purchase event failed after Shopify refresh", error);
     }
 
     return json(200, {

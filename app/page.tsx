@@ -28,6 +28,8 @@ import {
   fetchCreatorPayouts,
   fetchCreatorProfiles,
   fetchEnvelopePrintSettings,
+  fetchMetaCapiLogs,
+  fetchMetaCapiSettings,
   fetchSalesConsumptionMappings,
   fetchSharedActivity,
   fetchSharedOrders,
@@ -47,6 +49,7 @@ import {
   saveCreatorPayoutInfo,
   saveCreatorProfile,
   saveEnvelopePrintSettings,
+  saveMetaCapiSettings,
   saveSalesConsumptionMapping,
   saveStockSetting,
   savePaymentProcessorSetting,
@@ -60,11 +63,11 @@ import {
   upsertSharedOrders,
   type DashboardSession,
 } from "../lib/supabase";
-import { orderStatuses, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type CommissionStatus, type ContentIdeaItem, type ContentIdeaReference, type ContentPlanItem, type CreatorCommission, type CreatorPayout, type CreatorProfile, type CreatorStatus, type CreatorTier, type DashboardAccount, type EnvelopePrintSettings, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesConsumptionMapping, type SalesFeeSetting, type StockSetting, type UserRole } from "../lib/types";
+import { orderStatuses, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type CommissionStatus, type ContentIdeaItem, type ContentIdeaReference, type ContentPlanItem, type CreatorCommission, type CreatorPayout, type CreatorProfile, type CreatorStatus, type CreatorTier, type DashboardAccount, type EnvelopePrintSettings, type MetaCapiLog, type MetaCapiSettings, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesConsumptionMapping, type SalesFeeSetting, type StockSetting, type UserRole } from "../lib/types";
 
 type Session = DashboardSession;
 type View =
-  | "orders" | "fulfilment" | "packing_slips" | "print_envelope" | "import" | "tiktok_shop" | "fulfilled" | "history" | "settings" | "stock" | "sales_report"
+  | "orders" | "fulfilment" | "packing_slips" | "print_envelope" | "import" | "tiktok_shop" | "fulfilled" | "history" | "settings" | "meta_capi" | "stock" | "sales_report"
   | "accounting_dashboard" | "accounting_documents" | "accounting_transactions" | "accounting_csv_import" | "accounting_profit_loss" | "accounting_balance_sheet"
   | "accounting_cash_flow" | "accounting_operating_costs" | "accounting_general_ledger" | "accounting_trial_balance" | "accounting_payable" | "accounting_receivable"
   | "accounting_other_income"
@@ -471,8 +474,8 @@ const formalAccountingViews: readonly View[] = ["accounting_general_journal", "a
 const contentViews: readonly View[] = ["content_dashboard", "content_plan", "content_ideas"];
 const creatorViews: readonly View[] = ["creator_dashboard", "creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics"];
 const creatorAdminViews: readonly View[] = ["creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics"];
-const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "stock", "sales_report", ...accountingViews, ...formalAccountingViews, ...contentViews, ...creatorViews];
-const adminOnlyViews = new Set<View>(["history", "settings", "stock", "sales_report", ...accountingViews, ...formalAccountingViews, ...contentViews, ...creatorAdminViews]);
+const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "meta_capi", "stock", "sales_report", ...accountingViews, ...formalAccountingViews, ...contentViews, ...creatorViews];
+const adminOnlyViews = new Set<View>(["history", "settings", "meta_capi", "stock", "sales_report", ...accountingViews, ...formalAccountingViews, ...contentViews, ...creatorAdminViews]);
 const workspaceDefaultViews: Record<Workspace, View> = {
   fulfilment: "orders",
   accounting: "accounting_dashboard",
@@ -514,6 +517,7 @@ const fulfilmentColumnValues: readonly FulfilmentColumn[] = ["orderNumber", "mea
 const sessionStorageKey = "meaningful-plushies-dashboard-session";
 const uiStorageKey = "meaningful-plushies-ui-preferences";
 const envelopeSettingsStorageKey = "meaningful-plushies-envelope-print-settings";
+const defaultMetaCapiSettings: MetaCapiSettings = { enabled: false, purchaseMode: "manual_only", testEventCode: "" };
 const defaultEnvelopePrintSettings: EnvelopePrintSettings = {
   fontName: "",
   fontBase64: "",
@@ -661,6 +665,7 @@ const contentNavItems: NavItem[] = [
 ];
 const settingsNavItems: NavItem[] = [
   { view: "settings", label: "Fulfilment Settings", icon: "settings" },
+  { view: "meta_capi", label: "Meta CAPI", icon: "report" },
   { view: "history", label: "History", icon: "history" },
 ];
 
@@ -952,7 +957,7 @@ function workspaceForView(view: View): Workspace {
   if (accountingViews.includes(view)) return "accounting";
   if (view === "stock") return "inventory";
   if (view === "sales_report") return "reports";
-  if (view === "history" || view === "settings") return "settings";
+  if (view === "history" || view === "settings" || view === "meta_capi") return "settings";
   return "fulfilment";
 }
 
@@ -976,6 +981,7 @@ function viewTitle(view: View) {
     tiktok_shop: "TikTok Shop",
     fulfilled: "Shipped Orders",
     history: "Activity History",
+    meta_capi: "Meta Conversions API",
     content_dashboard: "Content Dashboard",
     content_plan: "Planned Content",
     content_ideas: "Idea Brainstorming",
@@ -1017,6 +1023,11 @@ export default function Home() {
   const [reportEndDate, setReportEndDate] = useState(() => storedUi.reportEndDate ?? "");
   const [processorSettings, setProcessorSettings] = useState<PaymentProcessorSetting[]>([]);
   const [salesFeeSettings, setSalesFeeSettings] = useState<SalesFeeSetting>({ shopifyPercentage: 0 });
+  const [metaCapiSettings, setMetaCapiSettings] = useState<MetaCapiSettings>(defaultMetaCapiSettings);
+  const [metaCapiLogs, setMetaCapiLogs] = useState<MetaCapiLog[]>([]);
+  const [metaCapiEnvironment, setMetaCapiEnvironment] = useState({ pixelConfigured: false, tokenConfigured: false, tokenMasked: "", testEventCodeConfigured: false });
+  const [metaCapiRetryOrders, setMetaCapiRetryOrders] = useState("");
+  const [metaCapiBusy, setMetaCapiBusy] = useState("");
   const [stockSettings, setStockSettings] = useState<StockSetting[]>([]);
   const [accounts, setAccounts] = useState<DashboardAccount[]>([]);
   const [accountingCategories, setAccountingCategories] = useState<AccountingCategory[]>([]);
@@ -1183,9 +1194,11 @@ export default function Home() {
         sharedContentPlanItems,
         sharedContentIdeas,
         sharedEnvelopePrintSettings,
+        sharedMetaCapiSettings,
+        sharedMetaCapiLogs,
       ] = await Promise.all([
         fetchSharedOrders(), fetchSharedActivity(), fetchPaymentProcessorSettings(), fetchStockSettings(), fetchSalesFeeSettings(),
-        fetchAccountingCategories(), fetchAccountingDocuments(), fetchAccountingTransactions(), fetchAccountingLedgerEntries(), fetchSalesConsumptionMappings(), fetchContentPlanItems(), fetchContentIdeas(), fetchEnvelopePrintSettings(),
+        fetchAccountingCategories(), fetchAccountingDocuments(), fetchAccountingTransactions(), fetchAccountingLedgerEntries(), fetchSalesConsumptionMappings(), fetchContentPlanItems(), fetchContentIdeas(), fetchEnvelopePrintSettings(), fetchMetaCapiSettings(), fetchMetaCapiLogs(),
       ]);
       setOrders(normalizeSharedOrders(sharedOrders));
       setActivity(sharedActivity);
@@ -1200,6 +1213,8 @@ export default function Home() {
       setContentPlanItems(sharedContentPlanItems);
       setContentIdeas(sharedContentIdeas);
       setEnvelopePrintSettings({ ...defaultEnvelopePrintSettings, ...readStoredEnvelopeSettings(), ...sharedEnvelopePrintSettings });
+      setMetaCapiSettings(sharedMetaCapiSettings);
+      setMetaCapiLogs(sharedMetaCapiLogs);
       setEnvelopeSettingsLoaded(true);
       setDatabaseError("");
     } catch (error) {
@@ -1226,6 +1241,8 @@ export default function Home() {
         tables.has("accounting_ledger_entries") ? fetchAccountingLedgerEntries().then(setAccountingLedgerEntries) : Promise.resolve(),
         tables.has("content_plan_items") ? fetchContentPlanItems().then(setContentPlanItems) : Promise.resolve(),
         tables.has("content_idea_items") ? fetchContentIdeas().then(setContentIdeas) : Promise.resolve(),
+        tables.has("meta_capi_settings") ? fetchMetaCapiSettings().then(setMetaCapiSettings) : Promise.resolve(),
+        tables.has("meta_capi_logs") ? fetchMetaCapiLogs().then(setMetaCapiLogs) : Promise.resolve(),
         tables.has("envelope_print_settings") ? fetchEnvelopePrintSettings().then((settings) => {
           setEnvelopePrintSettings({ ...defaultEnvelopePrintSettings, ...readStoredEnvelopeSettings(), ...settings });
           setEnvelopeSettingsLoaded(true);
@@ -1324,6 +1341,7 @@ export default function Home() {
   useEffect(() => {
     if (session?.role !== "admin") return;
     void fetchDashboardAccounts(session.token).then(setAccounts).catch((error) => setNotice(error instanceof Error ? error.message : "Accounts could not be loaded."));
+    void reloadMetaCapiStatus().catch((error) => setNotice(readableError(error, "Meta CAPI status could not be loaded.")));
   }, [session]);
 
   useEffect(() => {
@@ -1857,6 +1875,65 @@ export default function Home() {
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Shopify fee could not be saved.");
       await loadSharedData();
+    }
+  }
+
+  async function reloadMetaCapiStatus() {
+    const response = await fetch("/api/meta-capi");
+    const result = await response.json() as {
+      ok?: boolean;
+      error?: string;
+      settings?: MetaCapiSettings;
+      logs?: MetaCapiLog[];
+      environment?: typeof metaCapiEnvironment;
+    };
+    if (!response.ok || !result.ok) throw new Error(result.error || "Meta CAPI status could not be loaded.");
+    setMetaCapiSettings(result.settings ?? defaultMetaCapiSettings);
+    setMetaCapiLogs(result.logs ?? []);
+    setMetaCapiEnvironment(result.environment ?? { pixelConfigured: false, tokenConfigured: false, tokenMasked: "", testEventCodeConfigured: false });
+  }
+
+  async function saveMetaCapiAdminSettings() {
+    setMetaCapiBusy("save");
+    try {
+      await saveMetaCapiSettings(metaCapiSettings);
+      await reloadMetaCapiStatus();
+      setNotice("Meta CAPI settings saved.");
+    } catch (error) {
+      setNotice(readableError(error, "Meta CAPI settings could not be saved."));
+    } finally {
+      setMetaCapiBusy("");
+    }
+  }
+
+  function parseMetaRetryOrders(value: string) {
+    return value.split(/[,\s#]+/).map((item) => item.trim()).filter(Boolean);
+  }
+
+  async function runMetaCapiAction(action: "test_purchase" | "test_whatsapp_purchase" | "retry_orders") {
+    setMetaCapiBusy(action);
+    try {
+      const response = await fetch("/api/meta-capi", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, orderNumbers: parseMetaRetryOrders(metaCapiRetryOrders) }),
+      });
+      const result = await response.json() as {
+        ok?: boolean;
+        error?: string;
+        result?: { sent: number; skipped: number; failed?: number; needsReview: number };
+      };
+      if (!response.ok || !result.ok) throw new Error(result.error || "Meta CAPI action failed.");
+      await reloadMetaCapiStatus();
+      await loadSharedData();
+      const summary = result.result
+        ? `${result.result.sent} sent, ${result.result.skipped} skipped, ${result.result.failed ?? 0} failed, ${result.result.needsReview} needs review.`
+        : "Done.";
+      setNotice(`Meta CAPI: ${summary}`);
+    } catch (error) {
+      setNotice(readableError(error, "Meta CAPI action failed."));
+    } finally {
+      setMetaCapiBusy("");
     }
   }
 
@@ -3743,6 +3820,35 @@ export default function Home() {
       </section>}
 
       {view === "history" && session.role === "admin" && <section className="history-page card"><div className="history-page-header"><div><h2>Activity history</h2><p>Every recorded import, edit, status change, print, and deletion.</p></div><span>{historyEvents.length} actions</span></div><div className="activity-list">{historyEvents.map((event) => <article key={event.id}><div className="activity-icon"><Icon name="history" /></div><div><strong>{event.action}</strong><p>{event.detail}</p><span>{event.orderNumber ? `Order #${event.orderNumber} | ` : ""}{event.actor} | {formatDate(event.createdAt, true)}</span></div></article>)}{!historyEvents.length && <div className="empty"><strong>No activity recorded yet</strong><p>New actions will appear here.</p></div>}</div></section>}
+
+      {view === "meta_capi" && session.role === "admin" && <section className="settings-page card meta-capi-page">
+        <div className="settings-heading"><div><h2>Meta Conversions API</h2><p>Server-side purchase tracking for Meta. Default mode only sends corrected Shopify RM0/manual-payment purchases, so it does not double count the normal Shopify Pixel.</p></div><span>{metaCapiLogs.length} logs</span></div>
+        <div className="meta-capi-grid">
+          <article className={`meta-capi-status ${metaCapiEnvironment.pixelConfigured ? "ready" : "missing"}`}><span>Pixel ID</span><strong>{metaCapiEnvironment.pixelConfigured ? "Configured" : "Missing"}</strong><p>Add `META_PIXEL_ID` in Vercel.</p></article>
+          <article className={`meta-capi-status ${metaCapiEnvironment.tokenConfigured ? "ready" : "missing"}`}><span>Access token</span><strong>{metaCapiEnvironment.tokenConfigured ? metaCapiEnvironment.tokenMasked : "Missing"}</strong><p>Add `META_CAPI_ACCESS_TOKEN` in Vercel.</p></article>
+          <article className={`meta-capi-status ${metaCapiEnvironment.testEventCodeConfigured || metaCapiSettings.testEventCode ? "ready" : ""}`}><span>Test events</span><strong>{metaCapiEnvironment.testEventCodeConfigured || metaCapiSettings.testEventCode ? "Ready" : "Optional"}</strong><p>Use this while checking Meta Events Manager.</p></article>
+        </div>
+        <div className="meta-capi-panels">
+          <section className="meta-capi-panel">
+            <h3>Purchase event rules</h3>
+            <label className="meta-capi-toggle"><input type="checkbox" checked={metaCapiSettings.enabled} onChange={(event) => setMetaCapiSettings((current) => ({ ...current, enabled: event.target.checked }))} /><span>Enable Meta CAPI purchase tracking</span></label>
+            <label>Send mode<select value={metaCapiSettings.purchaseMode} onChange={(event) => setMetaCapiSettings((current) => ({ ...current, purchaseMode: event.target.value as MetaCapiSettings["purchaseMode"] }))}><option value="manual_only">Only RM0/manual-payment Shopify orders</option><option value="all">All Shopify purchase orders</option><option value="disabled">Disabled</option></select></label>
+            <label>Test event code<input value={metaCapiSettings.testEventCode} onChange={(event) => setMetaCapiSettings((current) => ({ ...current, testEventCode: event.target.value }))} placeholder="Optional Meta test event code" /></label>
+            <button className="button primary" disabled={metaCapiBusy === "save"} onClick={saveMetaCapiAdminSettings}>{metaCapiBusy === "save" ? "Saving..." : "Save Meta settings"}</button>
+          </section>
+          <section className="meta-capi-panel">
+            <h3>Test and retry</h3>
+            <p>Test events use fake order data. Retry sends real saved Shopify order numbers again and updates the order-level Meta status.</p>
+            <div className="meta-capi-actions"><button className="button secondary" disabled={Boolean(metaCapiBusy)} onClick={() => runMetaCapiAction("test_purchase")}>{metaCapiBusy === "test_purchase" ? "Sending..." : "Test normal Shopify purchase"}</button><button className="button secondary" disabled={Boolean(metaCapiBusy)} onClick={() => runMetaCapiAction("test_whatsapp_purchase")}>{metaCapiBusy === "test_whatsapp_purchase" ? "Sending..." : "Test RM0/manual payment"}</button></div>
+            <label>Retry Shopify order numbers<textarea value={metaCapiRetryOrders} onChange={(event) => setMetaCapiRetryOrders(event.target.value)} placeholder="Example: 1468, 1469, 1470" /></label>
+            <button className="button primary" disabled={Boolean(metaCapiBusy) || !metaCapiRetryOrders.trim()} onClick={() => runMetaCapiAction("retry_orders")}>{metaCapiBusy === "retry_orders" ? "Retrying..." : "Retry selected orders"}</button>
+          </section>
+        </div>
+        <div className="meta-capi-log-card">
+          <div className="settings-heading compact"><div><h2>Recent Meta events</h2><p>Shows the last 100 server-side purchase attempts.</p></div><button className="button secondary" onClick={reloadMetaCapiStatus}>Refresh logs</button></div>
+          <div className="table-scroll"><table className="orders-table meta-capi-log-table"><thead><tr><th>Date</th><th>Order</th><th>Status</th><th>Value</th><th>Event ID</th><th>Response</th><th>Error</th></tr></thead><tbody>{metaCapiLogs.map((log) => <tr key={log.id}><td>{formatDate(log.createdAt, true)}</td><td>{log.orderNumber || "-"}</td><td><span className={`meta-capi-log-status ${log.status}`}>{log.status.replace("_", " ")}</span></td><td>{formatMoney(log.value)}</td><td><code>{log.eventId}</code></td><td>{log.responseId || "-"}</td><td>{log.error || "-"}</td></tr>)}</tbody></table>{!metaCapiLogs.length && <div className="empty"><strong>No Meta events yet</strong><p>Run a test event or wait for a matching Shopify order.</p></div>}</div>
+        </div>
+      </section>}
 
       {view === "settings" && session.role === "admin" && <section className="settings-page card">
         <div className="settings-heading"><div><h2>Accounts and permissions</h2><p>Admins can edit everything. Staff can use workflow pages and only advance order stages.</p></div><span>{accounts.length} accounts</span></div>

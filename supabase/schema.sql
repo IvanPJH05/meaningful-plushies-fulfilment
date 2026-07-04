@@ -45,6 +45,50 @@ insert into public.sales_fee_settings(id)
 values ('default')
 on conflict (id) do nothing;
 
+alter table public.fulfilment_orders add column if not exists meta_capi_sent_at timestamptz;
+alter table public.fulfilment_orders add column if not exists meta_capi_event_id text;
+alter table public.fulfilment_orders add column if not exists meta_capi_value_sent numeric(12,2);
+alter table public.fulfilment_orders add column if not exists meta_capi_response_id text;
+alter table public.fulfilment_orders add column if not exists meta_capi_status text;
+alter table public.fulfilment_orders add column if not exists meta_capi_error text;
+
+create index if not exists fulfilment_orders_meta_capi_status_idx
+  on public.fulfilment_orders (meta_capi_status, meta_capi_sent_at desc);
+
+create table if not exists public.meta_capi_settings (
+  id text primary key default 'default' check (id = 'default'),
+  enabled boolean not null default false,
+  purchase_mode text not null default 'manual_only' check (purchase_mode in ('manual_only', 'all', 'disabled')),
+  test_event_code text not null default '',
+  updated_at timestamptz not null default now()
+);
+
+insert into public.meta_capi_settings(id, enabled, purchase_mode)
+values ('default', false, 'manual_only')
+on conflict (id) do nothing;
+
+create table if not exists public.meta_capi_logs (
+  id text primary key,
+  order_id text,
+  order_number text not null default '',
+  event_name text not null default 'Purchase',
+  event_id text not null default '',
+  value numeric(12,2) not null default 0,
+  currency text not null default 'MYR',
+  status text not null check (status in ('success', 'failed', 'needs_review', 'skipped')),
+  response_id text not null default '',
+  error text not null default '',
+  request_summary jsonb not null default '{}'::jsonb,
+  response_body jsonb not null default '{}'::jsonb,
+  test_event_code text not null default '',
+  created_at timestamptz not null default now()
+);
+
+create index if not exists meta_capi_logs_created_idx
+  on public.meta_capi_logs (created_at desc);
+create index if not exists meta_capi_logs_order_idx
+  on public.meta_capi_logs (order_number, event_id);
+
 create table if not exists public.envelope_print_settings (
   id text primary key default 'default' check (id = 'default'),
   settings jsonb not null default '{}'::jsonb,
@@ -619,6 +663,8 @@ alter table public.fulfilment_orders enable row level security;
 alter table public.activity_events enable row level security;
 alter table public.payment_processor_settings enable row level security;
 alter table public.sales_fee_settings enable row level security;
+alter table public.meta_capi_settings enable row level security;
+alter table public.meta_capi_logs enable row level security;
 alter table public.envelope_print_settings enable row level security;
 alter table public.dashboard_accounts enable row level security;
 alter table public.dashboard_sessions enable row level security;
@@ -656,6 +702,18 @@ create policy "shared dashboard reads sales fee settings" on public.sales_fee_se
 create policy "shared dashboard inserts sales fee settings" on public.sales_fee_settings for insert to anon, authenticated with check (true);
 create policy "shared dashboard updates sales fee settings" on public.sales_fee_settings for update to anon, authenticated using (true) with check (true);
 
+drop policy if exists "shared dashboard reads meta capi settings" on public.meta_capi_settings;
+drop policy if exists "shared dashboard inserts meta capi settings" on public.meta_capi_settings;
+drop policy if exists "shared dashboard updates meta capi settings" on public.meta_capi_settings;
+create policy "shared dashboard reads meta capi settings" on public.meta_capi_settings for select to anon, authenticated using (true);
+create policy "shared dashboard inserts meta capi settings" on public.meta_capi_settings for insert to anon, authenticated with check (true);
+create policy "shared dashboard updates meta capi settings" on public.meta_capi_settings for update to anon, authenticated using (true) with check (true);
+
+drop policy if exists "shared dashboard reads meta capi logs" on public.meta_capi_logs;
+drop policy if exists "shared dashboard inserts meta capi logs" on public.meta_capi_logs;
+create policy "shared dashboard reads meta capi logs" on public.meta_capi_logs for select to anon, authenticated using (true);
+create policy "shared dashboard inserts meta capi logs" on public.meta_capi_logs for insert to anon, authenticated with check (true);
+
 drop policy if exists "shared dashboard reads envelope print settings" on public.envelope_print_settings;
 drop policy if exists "shared dashboard inserts envelope print settings" on public.envelope_print_settings;
 drop policy if exists "shared dashboard updates envelope print settings" on public.envelope_print_settings;
@@ -682,6 +740,8 @@ grant select, insert, update, delete on public.fulfilment_orders to anon, authen
 grant select, insert on public.activity_events to anon, authenticated;
 grant select, insert, update on public.payment_processor_settings to anon, authenticated;
 grant select, insert, update on public.sales_fee_settings to anon, authenticated;
+grant select, insert, update on public.meta_capi_settings to anon, authenticated;
+grant select, insert on public.meta_capi_logs to anon, authenticated;
 grant select, insert, update on public.envelope_print_settings to anon, authenticated;
 grant select, insert, update on public.stock_settings to anon, authenticated;
 grant select, insert, update, delete on public.sales_consumption_mappings to anon, authenticated;
@@ -937,6 +997,18 @@ begin
     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'sales_fee_settings'
   ) then
     alter publication supabase_realtime add table public.sales_fee_settings;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'meta_capi_settings'
+  ) then
+    alter publication supabase_realtime add table public.meta_capi_settings;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'meta_capi_logs'
+  ) then
+    alter publication supabase_realtime add table public.meta_capi_logs;
   end if;
   if not exists (
     select 1 from pg_publication_tables

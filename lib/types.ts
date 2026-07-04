@@ -23,6 +23,33 @@ export type SalesFeeSetting = {
   shopifyPercentage: number;
 };
 
+export type MetaCapiPurchaseMode = "manual_only" | "all" | "disabled";
+
+export type MetaCapiSettings = {
+  enabled: boolean;
+  purchaseMode: MetaCapiPurchaseMode;
+  testEventCode: string;
+};
+
+export type MetaCapiLogStatus = "success" | "failed" | "needs_review" | "skipped";
+
+export type MetaCapiLog = {
+  id: string;
+  orderId: string;
+  orderNumber: string;
+  eventName: string;
+  eventId: string;
+  value: number;
+  currency: string;
+  status: MetaCapiLogStatus;
+  responseId: string;
+  error: string;
+  requestSummary: Record<string, unknown>;
+  responseBody: Record<string, unknown>;
+  testEventCode: string;
+  createdAt: string;
+};
+
 export type EnvelopePrintSettings = {
   fontName: string;
   fontBase64: string;
@@ -272,6 +299,13 @@ export type Order = {
   trackingNumber: string;
   status: OrderStatus;
   internalNotes: string;
+  metaCapiSentAt?: string;
+  metaCapiEventId?: string;
+  metaCapiValueSent?: number;
+  metaCapiResponseId?: string;
+  metaCapiStatus?: MetaCapiLogStatus;
+  metaCapiError?: string;
+  metaCapiNeedsReview?: boolean;
   photoDataUrl?: string;
   photoName?: string;
   tikTokFileDataUrl?: string;

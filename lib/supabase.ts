@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { AccountingCategory, AccountingDocument, AccountingLedgerEntry, AccountingTransaction, CommissionStatus, ContentIdeaItem, ContentIdeaReference, ContentPlanItem, CreatorCommission, CreatorPayout, CreatorProfile, CreatorStatus, CreatorTier, DashboardAccount, EnvelopePrintSettings, Order, PaymentProcessorSetting, SalesConsumptionMapping, SalesFeeSetting, StockSetting, UserRole } from "./types";
+import type { AccountingCategory, AccountingDocument, AccountingLedgerEntry, AccountingTransaction, CommissionStatus, ContentIdeaItem, ContentIdeaReference, ContentPlanItem, CreatorCommission, CreatorPayout, CreatorProfile, CreatorStatus, CreatorTier, DashboardAccount, EnvelopePrintSettings, MetaCapiLog, MetaCapiSettings, Order, PaymentProcessorSetting, SalesConsumptionMapping, SalesFeeSetting, StockSetting, UserRole } from "./types";
 
 export type DashboardSession = DashboardAccount & { token: string };
 
@@ -64,6 +64,12 @@ export async function upsertSharedOrders(orders: Order[]) {
     status: order.status,
     order_date: order.orderDate || null,
     updated_at: order.updatedAt,
+    meta_capi_sent_at: order.metaCapiSentAt || null,
+    meta_capi_event_id: order.metaCapiEventId || null,
+    meta_capi_value_sent: order.metaCapiValueSent ?? null,
+    meta_capi_response_id: order.metaCapiResponseId || null,
+    meta_capi_status: order.metaCapiStatus || null,
+    meta_capi_error: order.metaCapiError || null,
     data: order,
   }));
   const { error } = await requireSupabase().from("fulfilment_orders").upsert(rows, { onConflict: "id" });
@@ -119,6 +125,86 @@ export async function fetchSalesFeeSettings(): Promise<SalesFeeSetting> {
     .maybeSingle();
   if (error) throw error;
   return { shopifyPercentage: Number(data?.shopify_percentage ?? 0) };
+}
+
+export async function fetchMetaCapiSettings(): Promise<MetaCapiSettings> {
+  const { data, error } = await requireSupabase()
+    .from("meta_capi_settings")
+    .select("enabled, purchase_mode, test_event_code")
+    .eq("id", "default")
+    .maybeSingle();
+  if (error) {
+    if (isMissingTableError(error)) return { enabled: false, purchaseMode: "manual_only", testEventCode: "" };
+    throw error;
+  }
+  return {
+    enabled: data?.enabled === true,
+    purchaseMode: (data?.purchase_mode === "all" || data?.purchase_mode === "disabled") ? data.purchase_mode : "manual_only",
+    testEventCode: data?.test_event_code ?? "",
+  };
+}
+
+export async function saveMetaCapiSettings(settings: MetaCapiSettings) {
+  const { error } = await requireSupabase().from("meta_capi_settings").upsert({
+    id: "default",
+    enabled: settings.enabled,
+    purchase_mode: settings.purchaseMode,
+    test_event_code: settings.testEventCode.trim(),
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "id" });
+  if (error) throw error;
+}
+
+function metaCapiLogFromRow(row: Record<string, unknown>): MetaCapiLog {
+  return {
+    id: String(row.id ?? ""),
+    orderId: String(row.order_id ?? ""),
+    orderNumber: String(row.order_number ?? ""),
+    eventName: String(row.event_name ?? ""),
+    eventId: String(row.event_id ?? ""),
+    value: Number(row.value ?? 0),
+    currency: String(row.currency ?? "MYR"),
+    status: String(row.status ?? "failed") as MetaCapiLog["status"],
+    responseId: String(row.response_id ?? ""),
+    error: String(row.error ?? ""),
+    requestSummary: row.request_summary && typeof row.request_summary === "object" ? row.request_summary as Record<string, unknown> : {},
+    responseBody: row.response_body && typeof row.response_body === "object" ? row.response_body as Record<string, unknown> : {},
+    testEventCode: String(row.test_event_code ?? ""),
+    createdAt: String(row.created_at ?? ""),
+  };
+}
+
+export async function fetchMetaCapiLogs(): Promise<MetaCapiLog[]> {
+  const { data, error } = await requireSupabase()
+    .from("meta_capi_logs")
+    .select("id, order_id, order_number, event_name, event_id, value, currency, status, response_id, error, request_summary, response_body, test_event_code, created_at")
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (error) {
+    if (isMissingTableError(error)) return [];
+    throw error;
+  }
+  return (data ?? []).map((row) => metaCapiLogFromRow(row as Record<string, unknown>));
+}
+
+export async function insertMetaCapiLog(log: MetaCapiLog) {
+  const { error } = await requireSupabase().from("meta_capi_logs").insert({
+    id: log.id,
+    order_id: log.orderId || null,
+    order_number: log.orderNumber,
+    event_name: log.eventName,
+    event_id: log.eventId,
+    value: Math.max(0, log.value),
+    currency: log.currency || "MYR",
+    status: log.status,
+    response_id: log.responseId,
+    error: log.error,
+    request_summary: log.requestSummary,
+    response_body: log.responseBody,
+    test_event_code: log.testEventCode,
+    created_at: log.createdAt,
+  });
+  if (error) throw error;
 }
 
 export async function saveSalesFeeSettings(setting: SalesFeeSetting) {
@@ -857,6 +943,8 @@ export function subscribeToSharedData(onChange: (table: string) => void) {
     .on("postgres_changes", { event: "*", schema: "public", table: "creator_profiles" }, () => onChange("creator_profiles"))
     .on("postgres_changes", { event: "*", schema: "public", table: "creator_commissions" }, () => onChange("creator_commissions"))
     .on("postgres_changes", { event: "*", schema: "public", table: "creator_payouts" }, () => onChange("creator_payouts"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "meta_capi_settings" }, () => onChange("meta_capi_settings"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "meta_capi_logs" }, () => onChange("meta_capi_logs"))
     .subscribe();
   return () => { void client.removeChannel(channel); };
 }

@@ -2,8 +2,9 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
+import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
 import { cleanShopifyOrderNumber, fetchShopifyOrderWithMetafieldRetry, shopifyMetafieldValue, textValue } from "../../../../../lib/shopify-orders";
-import { fetchSharedOrders, insertSharedActivity, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
+import { fetchMetaCapiSettings, fetchSharedOrders, insertSharedActivity, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
 
 export const runtime = "nodejs";
 
@@ -50,6 +51,20 @@ export async function POST(request: Request) {
 
     await upsertSharedOrders(ordersToSave);
     await syncCreatorCommissions();
+    try {
+      const metaSettings = await fetchMetaCapiSettings();
+      if (ordersToSave.length) {
+        await sendMetaPurchaseEvents({
+          orders: ordersToSave,
+          shopifyOrder: fullOrder,
+          settings: metaSettings,
+          source: "shopify_webhook",
+          request,
+        });
+      }
+    } catch (error) {
+      console.error("Meta CAPI purchase event failed after Shopify webhook import", error);
+    }
     await insertSharedActivity({
       id: `shopify-order-${Date.now()}`,
       orderNumber: ordersToSave[0]?.orderNumber,
