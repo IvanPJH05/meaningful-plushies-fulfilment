@@ -107,6 +107,20 @@ Run the latest [`supabase/schema.sql`](supabase/schema.sql) in Supabase SQL Edit
 
 In the dashboard, open **Settings workspace > Meta CAPI** to enable or disable sending, add a test event code, send test purchases, retry saved Shopify order numbers, and review the last 100 Meta responses.
 
+## Ads workspace
+
+The **Ads** workspace reads Meta Ads Insights and shows spend, revenue, ROAS, CPA, purchases, and tracking health. Tracking health comes from the Meta CAPI logs saved by the fulfilment app, so you can see whether server-side purchase events are working.
+
+Add these server-only variables in **Vercel > Settings > Environment Variables**:
+
+```env
+META_AD_ACCOUNT_ID=act_YOUR_META_AD_ACCOUNT_ID
+META_MARKETING_ACCESS_TOKEN=YOUR_META_MARKETING_API_ACCESS_TOKEN
+META_GRAPH_API_VERSION=v20.0
+```
+
+`META_MARKETING_ACCESS_TOKEN` needs permission to read Meta ads insights for the ad account. If the variables are missing, the Ads workspace still opens and shows exactly what setup is missing.
+
 ## TikTok Shop order sync
 
 TikTok Shop sync only imports the order shell: order ID, buyer/recipient details if TikTok exposes them, product/SKU, price, shipping, tracking, and status. TikTok does not provide the plushie personalization data like Shopify Upload Lift metafields, so plushie name, meaningful note/message, and the customer file still need to be added manually in the fulfilment order drawer or TikTok Shop page.

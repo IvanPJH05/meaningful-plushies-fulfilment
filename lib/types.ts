@@ -50,6 +50,44 @@ export type MetaCapiLog = {
   createdAt: string;
 };
 
+export type MetaAdsInsight = {
+  adId: string;
+  adName: string;
+  adsetName: string;
+  campaignName: string;
+  spend: number;
+  impressions: number;
+  reach: number;
+  clicks: number;
+  linkClicks: number;
+  purchases: number;
+  revenue: number;
+  roas: number;
+  cpa: number;
+  ctr: number;
+  cpc: number;
+  dateStart: string;
+  dateStop: string;
+};
+
+export type MetaAdsSummary = {
+  spend: number;
+  purchases: number;
+  revenue: number;
+  roas: number;
+  cpa: number;
+  impressions: number;
+  clicks: number;
+  linkClicks: number;
+};
+
+export type MetaAdsEnvironment = {
+  adAccountConfigured: boolean;
+  tokenConfigured: boolean;
+  tokenMasked: string;
+  graphVersion: string;
+};
+
 export type EnvelopePrintSettings = {
   fontName: string;
   fontBase64: string;
