@@ -96,16 +96,15 @@ The app can send server-side Meta Conversions API `Purchase` events after Shopif
 Add these server-only variables in **Vercel > Settings > Environment Variables**:
 
 ```env
-META_PIXEL_ID=YOUR_META_PIXEL_ID
 META_CAPI_ACCESS_TOKEN=YOUR_META_CONVERSIONS_API_ACCESS_TOKEN
 META_TEST_EVENT_CODE=
 ```
 
-Apply them to Production, Preview, and Development, then redeploy. Do not prefix these values with `NEXT_PUBLIC_`.
+Apply them to Production, Preview, and Development, then redeploy. Do not prefix these values with `NEXT_PUBLIC_`. The Pixel ID itself can be saved inside **Settings workspace > Meta CAPI**, so it is easier to change without editing Vercel.
 
-Run the latest [`supabase/schema.sql`](supabase/schema.sql) in Supabase SQL Editor. The SQL adds the Meta status fields to fulfilment orders plus `meta_capi_settings` and `meta_capi_logs`.
+Run the latest [`supabase/schema.sql`](supabase/schema.sql) in Supabase SQL Editor. The SQL adds the Meta status fields to fulfilment orders plus `meta_capi_settings` and `meta_capi_logs`. The settings table stores your Pixel ID, whether the Shopify browser Pixel is installed, the server event mode, test event code, and tracking notes.
 
-In the dashboard, open **Settings workspace > Meta CAPI** to enable or disable sending, add a test event code, send test purchases, retry saved Shopify order numbers, and review the last 100 Meta responses.
+In the dashboard, open **Settings workspace > Meta CAPI** to save your Pixel ID, mark whether the Shopify browser Pixel is installed, enable or disable server events, add a test event code, send test purchases, retry saved Shopify order numbers, and review the last 100 Meta responses.
 
 ## Ads workspace
 

@@ -521,7 +521,7 @@ const fulfilmentColumnValues: readonly FulfilmentColumn[] = ["orderNumber", "mea
 const sessionStorageKey = "meaningful-plushies-dashboard-session";
 const uiStorageKey = "meaningful-plushies-ui-preferences";
 const envelopeSettingsStorageKey = "meaningful-plushies-envelope-print-settings";
-const defaultMetaCapiSettings: MetaCapiSettings = { enabled: false, purchaseMode: "manual_only", testEventCode: "" };
+const defaultMetaCapiSettings: MetaCapiSettings = { enabled: false, purchaseMode: "manual_only", testEventCode: "", pixelId: "", browserPixelEnabled: false, trackingNotes: "" };
 const defaultMetaAdsEnvironment: MetaAdsEnvironment = { adAccountConfigured: false, tokenConfigured: false, tokenMasked: "", graphVersion: "v20.0" };
 const defaultMetaAdsSummary: MetaAdsSummary = { spend: 0, purchases: 0, revenue: 0, roas: 0, cpa: 0, impressions: 0, clicks: 0, linkClicks: 0 };
 const defaultEnvelopePrintSettings: EnvelopePrintSettings = {
@@ -3798,6 +3798,8 @@ export default function Home() {
         startDate={metaAdsStartDate}
         endDate={metaAdsEndDate}
         environment={metaAdsEnvironment}
+        trackingSettings={metaCapiSettings}
+        capiEnvironment={metaCapiEnvironment}
         summary={metaAdsSummary}
         insights={metaAdsInsights}
         configured={metaAdsConfigured}
@@ -3888,15 +3890,22 @@ export default function Home() {
       {view === "history" && session.role === "admin" && <section className="history-page card"><div className="history-page-header"><div><h2>Activity history</h2><p>Every recorded import, edit, status change, print, and deletion.</p></div><span>{historyEvents.length} actions</span></div><div className="activity-list">{historyEvents.map((event) => <article key={event.id}><div className="activity-icon"><Icon name="history" /></div><div><strong>{event.action}</strong><p>{event.detail}</p><span>{event.orderNumber ? `Order #${event.orderNumber} | ` : ""}{event.actor} | {formatDate(event.createdAt, true)}</span></div></article>)}{!historyEvents.length && <div className="empty"><strong>No activity recorded yet</strong><p>New actions will appear here.</p></div>}</div></section>}
 
       {view === "meta_capi" && session.role === "admin" && <section className="settings-page card meta-capi-page">
-        <div className="settings-heading"><div><h2>Meta Conversions API</h2><p>Server-side purchase tracking for Meta. Default mode only sends corrected Shopify RM0/manual-payment purchases, so it does not double count the normal Shopify Pixel.</p></div><span>{metaCapiLogs.length} logs</span></div>
+        <div className="settings-heading"><div><h2>Ads tracking settings</h2><p>Save the Meta Pixel ID here, then use server-side Meta CAPI to check whether purchase tracking is working. Other tracking notes can live here too.</p></div><span>{metaCapiLogs.length} logs</span></div>
         <div className="meta-capi-grid">
-          <article className={`meta-capi-status ${metaCapiEnvironment.pixelConfigured ? "ready" : "missing"}`}><span>Pixel ID</span><strong>{metaCapiEnvironment.pixelConfigured ? "Configured" : "Missing"}</strong><p>Add `META_PIXEL_ID` in Vercel.</p></article>
+          <article className={`meta-capi-status ${metaCapiEnvironment.pixelConfigured ? "ready" : "missing"}`}><span>Pixel ID</span><strong>{metaCapiEnvironment.pixelConfigured ? metaCapiSettings.pixelId || "Configured in Vercel" : "Missing"}</strong><p>Pixel ID can be saved here. Vercel env is still supported.</p></article>
           <article className={`meta-capi-status ${metaCapiEnvironment.tokenConfigured ? "ready" : "missing"}`}><span>Access token</span><strong>{metaCapiEnvironment.tokenConfigured ? metaCapiEnvironment.tokenMasked : "Missing"}</strong><p>Add `META_CAPI_ACCESS_TOKEN` in Vercel.</p></article>
           <article className={`meta-capi-status ${metaCapiEnvironment.testEventCodeConfigured || metaCapiSettings.testEventCode ? "ready" : ""}`}><span>Test events</span><strong>{metaCapiEnvironment.testEventCodeConfigured || metaCapiSettings.testEventCode ? "Ready" : "Optional"}</strong><p>Use this while checking Meta Events Manager.</p></article>
         </div>
         <div className="meta-capi-panels">
           <section className="meta-capi-panel">
-            <h3>Purchase event rules</h3>
+            <h3>Tracking setup</h3>
+            <label>Meta Pixel ID<input value={metaCapiSettings.pixelId} onChange={(event) => setMetaCapiSettings((current) => ({ ...current, pixelId: event.target.value.replace(/[^\d]/g, "") }))} placeholder="Example: 123456789012345" /></label>
+            <label className="meta-capi-toggle"><input type="checkbox" checked={metaCapiSettings.browserPixelEnabled} onChange={(event) => setMetaCapiSettings((current) => ({ ...current, browserPixelEnabled: event.target.checked }))} /><span>Browser Pixel is installed on Shopify</span></label>
+            <label>Tracking notes<textarea value={metaCapiSettings.trackingNotes} onChange={(event) => setMetaCapiSettings((current) => ({ ...current, trackingNotes: event.target.value }))} placeholder="Example: Pixel installed through Shopify customer events. TikTok tracking not connected yet." /></label>
+            <p className="meta-capi-help">The Pixel ID is safe to save here. Access tokens stay in Vercel because they are private keys.</p>
+          </section>
+          <section className="meta-capi-panel">
+            <h3>Server purchase event rules</h3>
             <label className="meta-capi-toggle"><input type="checkbox" checked={metaCapiSettings.enabled} onChange={(event) => setMetaCapiSettings((current) => ({ ...current, enabled: event.target.checked }))} /><span>Enable Meta CAPI purchase tracking</span></label>
             <label>Send mode<select value={metaCapiSettings.purchaseMode} onChange={(event) => setMetaCapiSettings((current) => ({ ...current, purchaseMode: event.target.value as MetaCapiSettings["purchaseMode"] }))}><option value="manual_only">Only RM0/manual-payment Shopify orders</option><option value="all">All Shopify purchase orders</option><option value="disabled">Disabled</option></select></label>
             <label>Test event code<input value={metaCapiSettings.testEventCode} onChange={(event) => setMetaCapiSettings((current) => ({ ...current, testEventCode: event.target.value }))} placeholder="Optional Meta test event code" /></label>
@@ -4582,6 +4591,8 @@ function AdsWorkspacePage({
   startDate,
   endDate,
   environment,
+  trackingSettings,
+  capiEnvironment,
   summary,
   insights,
   configured,
@@ -4595,6 +4606,8 @@ function AdsWorkspacePage({
   startDate: string;
   endDate: string;
   environment: MetaAdsEnvironment;
+  trackingSettings: MetaCapiSettings;
+  capiEnvironment: { pixelConfigured: boolean; tokenConfigured: boolean; tokenMasked: string; testEventCodeConfigured: boolean };
   summary: MetaAdsSummary;
   insights: MetaAdsInsight[];
   configured: boolean;
@@ -4617,6 +4630,7 @@ function AdsWorkspacePage({
   const trackingScore = logsInPeriod.length ? successfulEvents / logsInPeriod.length : 0;
   const bestAds = insights.filter((ad) => ad.spend > 0).sort((a, b) => b.roas - a.roas);
   const watchAds = insights.filter((ad) => ad.spend > 0 && ad.purchases <= 0).sort((a, b) => b.spend - a.spend);
+  const pixelReady = Boolean(trackingSettings.pixelId.trim()) || capiEnvironment.pixelConfigured;
 
   return <section className="ads-workspace">
     <div className="accounting-hero card ads-hero"><div><p>META ADS</p><h2>Ads performance and tracking health</h2><span>Pulls ad spend and purchase results from Meta, then compares it with your server-side tracking events so you can see whether the numbers are trustworthy.</span></div><div className={`accounting-status-pill ${configured ? "" : "loss"}`}>{configured ? "Meta connected" : "Setup needed"}</div></div>
@@ -4632,6 +4646,17 @@ function AdsWorkspacePage({
       <p>Add `META_AD_ACCOUNT_ID` and `META_MARKETING_ACCESS_TOKEN` in Vercel. The token needs Meta Marketing API access with permission to read ads insights.</p>
       <div className="ads-setup-grid"><span>Ad account: <strong>{environment.adAccountConfigured ? "Configured" : "Missing"}</strong></span><span>Token: <strong>{environment.tokenConfigured ? environment.tokenMasked : "Missing"}</strong></span><span>Graph API: <strong>{environment.graphVersion}</strong></span></div>
     </section>}
+
+    <section className="card ads-setup-card">
+      <h3>Tracking setup</h3>
+      <p>Use Settings workspace &gt; Meta CAPI to save your Pixel ID and tracking notes. The access token stays in Vercel because it is private.</p>
+      <div className="ads-setup-grid">
+        <span>Meta Pixel ID: <strong>{pixelReady ? trackingSettings.pixelId || "Configured in Vercel" : "Missing"}</strong></span>
+        <span>Browser Pixel: <strong>{trackingSettings.browserPixelEnabled ? "Marked installed" : "Not marked yet"}</strong></span>
+        <span>Server events: <strong>{trackingSettings.enabled && capiEnvironment.tokenConfigured ? "Ready" : "Not ready"}</strong></span>
+      </div>
+      {trackingSettings.trackingNotes && <p className="ads-tracking-notes">{trackingSettings.trackingNotes}</p>}
+    </section>
 
     <section className="ads-summary-grid">
       <MoneyStat label="Ad spend" value={summary.spend} tone="fees" />

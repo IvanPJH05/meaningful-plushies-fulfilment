@@ -60,8 +60,15 @@ create table if not exists public.meta_capi_settings (
   enabled boolean not null default false,
   purchase_mode text not null default 'manual_only' check (purchase_mode in ('manual_only', 'all', 'disabled')),
   test_event_code text not null default '',
+  pixel_id text not null default '',
+  browser_pixel_enabled boolean not null default false,
+  tracking_notes text not null default '',
   updated_at timestamptz not null default now()
 );
+
+alter table public.meta_capi_settings add column if not exists pixel_id text not null default '';
+alter table public.meta_capi_settings add column if not exists browser_pixel_enabled boolean not null default false;
+alter table public.meta_capi_settings add column if not exists tracking_notes text not null default '';
 
 insert into public.meta_capi_settings(id, enabled, purchase_mode)
 values ('default', false, 'manual_only')

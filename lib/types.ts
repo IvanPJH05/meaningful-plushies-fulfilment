@@ -29,6 +29,9 @@ export type MetaCapiSettings = {
   enabled: boolean;
   purchaseMode: MetaCapiPurchaseMode;
   testEventCode: string;
+  pixelId: string;
+  browserPixelEnabled: boolean;
+  trackingNotes: string;
 };
 
 export type MetaCapiLogStatus = "success" | "failed" | "needs_review" | "skipped";

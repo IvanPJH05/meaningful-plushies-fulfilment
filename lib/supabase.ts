@@ -130,17 +130,20 @@ export async function fetchSalesFeeSettings(): Promise<SalesFeeSetting> {
 export async function fetchMetaCapiSettings(): Promise<MetaCapiSettings> {
   const { data, error } = await requireSupabase()
     .from("meta_capi_settings")
-    .select("enabled, purchase_mode, test_event_code")
+    .select("*")
     .eq("id", "default")
     .maybeSingle();
   if (error) {
-    if (isMissingTableError(error)) return { enabled: false, purchaseMode: "manual_only", testEventCode: "" };
+    if (isMissingTableError(error)) return { enabled: false, purchaseMode: "manual_only", testEventCode: "", pixelId: "", browserPixelEnabled: false, trackingNotes: "" };
     throw error;
   }
   return {
     enabled: data?.enabled === true,
     purchaseMode: (data?.purchase_mode === "all" || data?.purchase_mode === "disabled") ? data.purchase_mode : "manual_only",
     testEventCode: data?.test_event_code ?? "",
+    pixelId: data?.pixel_id ?? "",
+    browserPixelEnabled: data?.browser_pixel_enabled === true,
+    trackingNotes: data?.tracking_notes ?? "",
   };
 }
 
@@ -150,6 +153,9 @@ export async function saveMetaCapiSettings(settings: MetaCapiSettings) {
     enabled: settings.enabled,
     purchase_mode: settings.purchaseMode,
     test_event_code: settings.testEventCode.trim(),
+    pixel_id: settings.pixelId.trim(),
+    browser_pixel_enabled: settings.browserPixelEnabled,
+    tracking_notes: settings.trackingNotes.trim(),
     updated_at: new Date().toISOString(),
   }, { onConflict: "id" });
   if (error) throw error;

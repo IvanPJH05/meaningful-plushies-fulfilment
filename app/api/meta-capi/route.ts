@@ -17,7 +17,7 @@ export async function GET() {
       ok: true,
       settings,
       logs,
-      environment: metaCapiEnvironmentStatus(),
+      environment: metaCapiEnvironmentStatus(settings),
     });
   } catch (error) {
     return json(500, { ok: false, error: error instanceof Error ? error.message : "Meta CAPI could not be loaded." });

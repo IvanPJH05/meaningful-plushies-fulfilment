@@ -340,6 +340,13 @@
   color: var(--text);
 }
 
+.ads-tracking-notes {
+  padding: 12px;
+  border: 1px solid #dbe7f5;
+  border-radius: 10px;
+  background: #f8fbff;
+}
+
 .ads-summary-grid {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -567,6 +574,12 @@
   min-height: 86px;
   padding: 12px;
   resize: vertical;
+}
+
+.meta-capi-help {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #edf5ff;
 }
 
 .meta-capi-toggle {

@@ -58,15 +58,15 @@ function eventId(order: Order) {
   return `shopify_order_${order.orderNumber}_purchase`;
 }
 
-function metaCredentials() {
+function metaCredentials(settings?: MetaCapiSettings) {
   return {
-    pixelId: process.env.META_PIXEL_ID ?? "",
+    pixelId: settings?.pixelId?.trim() || process.env.META_PIXEL_ID || "",
     accessToken: process.env.META_CAPI_ACCESS_TOKEN ?? "",
   };
 }
 
-export function metaCapiEnvironmentStatus() {
-  const { pixelId, accessToken } = metaCredentials();
+export function metaCapiEnvironmentStatus(settings?: MetaCapiSettings) {
+  const { pixelId, accessToken } = metaCredentials(settings);
   return {
     pixelConfigured: Boolean(pixelId),
     tokenConfigured: Boolean(accessToken),
@@ -197,9 +197,9 @@ async function wait(milliseconds: number) {
   await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function postToMeta(payload: Record<string, unknown>) {
-  const { pixelId, accessToken } = metaCredentials();
-  if (!pixelId || !accessToken) throw new Error("META_PIXEL_ID or META_CAPI_ACCESS_TOKEN is not configured.");
+async function postToMeta(payload: Record<string, unknown>, settings: MetaCapiSettings) {
+  const { pixelId, accessToken } = metaCredentials(settings);
+  if (!pixelId || !accessToken) throw new Error("Meta Pixel ID or META_CAPI_ACCESS_TOKEN is not configured.");
   const response = await fetch(`https://graph.facebook.com/v20.0/${pixelId}/events?access_token=${encodeURIComponent(accessToken)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -210,11 +210,11 @@ async function postToMeta(payload: Record<string, unknown>) {
   return body;
 }
 
-async function postWithRetry(payload: Record<string, unknown>) {
+async function postWithRetry(payload: Record<string, unknown>, settings: MetaCapiSettings) {
   let lastError = "";
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      return await postToMeta(payload);
+      return await postToMeta(payload, settings);
     } catch (error) {
       lastError = error instanceof Error ? error.message : "Meta rejected the event.";
       if (attempt < 2) await wait(500 * 2 ** attempt);
@@ -290,7 +290,7 @@ export async function sendMetaPurchaseEvents(options: SendMetaPurchaseOptions): 
     };
 
     try {
-      const response = await postWithRetry(payload);
+      const response = await postWithRetry(payload, options.settings);
       const now = new Date().toISOString();
       const responseId = textValue(response.fbtrace_id) || textValue(response.events_received);
       updatedOrders.push(...group.map((order) => ({
