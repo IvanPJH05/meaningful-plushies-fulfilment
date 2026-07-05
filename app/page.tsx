@@ -4643,7 +4643,7 @@ function AdsWorkspacePage({
     {error && <div className="notice"><span>{error}</span></div>}
     {!configured && <section className="card ads-setup-card">
       <h3>Meta ads connection is not configured yet</h3>
-      <p>Add `META_AD_ACCOUNT_ID` and `META_MARKETING_ACCESS_TOKEN` in Vercel. The token needs Meta Marketing API access with permission to read ads insights.</p>
+      <p>Add `META_AD_ACCOUNT_ID` and `META_ADS_ACCESS_TOKEN` in Vercel. The token needs Meta Marketing API access with permission to read ads insights.</p>
       <div className="ads-setup-grid"><span>Ad account: <strong>{environment.adAccountConfigured ? "Configured" : "Missing"}</strong></span><span>Token: <strong>{environment.tokenConfigured ? environment.tokenMasked : "Missing"}</strong></span><span>Graph API: <strong>{environment.graphVersion}</strong></span></div>
     </section>}
 

@@ -54,7 +54,7 @@ function firstPurchaseMetric(actions: MetaActionStat[] | undefined) {
 
 function metaAdsCredentials() {
   const rawAdAccountId = process.env.META_AD_ACCOUNT_ID ?? "";
-  const accessToken = process.env.META_MARKETING_ACCESS_TOKEN ?? process.env.META_CAPI_ACCESS_TOKEN ?? "";
+  const accessToken = process.env.META_ADS_ACCESS_TOKEN ?? process.env.META_MARKETING_ACCESS_TOKEN ?? process.env.META_CAPI_ACCESS_TOKEN ?? "";
   const adAccountId = rawAdAccountId && rawAdAccountId.startsWith("act_") ? rawAdAccountId : rawAdAccountId ? `act_${rawAdAccountId}` : "";
   return {
     adAccountId,

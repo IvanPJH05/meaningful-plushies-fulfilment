@@ -114,11 +114,11 @@ Add these server-only variables in **Vercel > Settings > Environment Variables**
 
 ```env
 META_AD_ACCOUNT_ID=act_YOUR_META_AD_ACCOUNT_ID
-META_MARKETING_ACCESS_TOKEN=YOUR_META_MARKETING_API_ACCESS_TOKEN
+META_ADS_ACCESS_TOKEN=YOUR_META_MARKETING_API_ACCESS_TOKEN
 META_GRAPH_API_VERSION=v20.0
 ```
 
-`META_MARKETING_ACCESS_TOKEN` needs permission to read Meta ads insights for the ad account. If the variables are missing, the Ads workspace still opens and shows exactly what setup is missing.
+`META_ADS_ACCESS_TOKEN` needs permission to read Meta ads insights for the ad account. If the variables are missing, the Ads workspace still opens and shows exactly what setup is missing.
 
 ## TikTok Shop order sync
 
