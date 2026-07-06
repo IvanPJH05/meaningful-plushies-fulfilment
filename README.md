@@ -89,6 +89,19 @@ When an order is created or updated, Shopify calls the webhook, the server verif
 
 For the TikTok Shop JSON export button, the Shopify app must also have metaobject read/write access. The export creates a new `Tik Tok Shop Cert Input` metaobject entry each time, sets the upload date to today's Malaysia date, and writes the selected certificate JSON into the `input` field. If your Shopify field handles are different, change the three `SHOPIFY_TIKTOK_CERT_*` variables in Vercel to match the metaobject type and field keys.
 
+## Creator free order links
+
+The Creator Program generates a free-order code and Shopify link for every creator. For example, creator code `CREATOR10` becomes free order code `FREE-CREATOR10`, and the link opens Shopify with that discount applied.
+
+Add these optional public variables in **Vercel > Settings > Environment Variables** if you want to control the storefront and product/page that creators are sent to:
+
+```env
+NEXT_PUBLIC_SHOPIFY_STOREFRONT_URL=https://meaningfulplushies.com
+NEXT_PUBLIC_INFLUENCER_ORDER_PAGE_PATH=/products/build-your-meaningful-plushie
+```
+
+In Shopify, create a matching 100% discount code for each creator free order code, such as `FREE-CREATOR10`. Orders that use a free creator code are treated as free creator samples in sales reporting: they show the product/shipping discount but do not count as bank-transfer cash collected.
+
 ## Meta Conversions API
 
 The app can send server-side Meta Conversions API `Purchase` events after Shopify orders are saved. By default, use **Settings workspace > Meta CAPI** and keep the mode on **Only RM0/manual-payment Shopify orders**. This avoids double counting normal Shopify Pixel purchases while still reporting the corrected revenue for orders where Shopify says RM0 but fulfilment collected payment manually.

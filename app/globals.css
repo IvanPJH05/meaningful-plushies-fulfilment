@@ -58,3 +58,9 @@
 .operating-release-card{margin-bottom:16px}
 @media(max-width:760px){.cogs-rule-form{grid-template-columns:1fr}}
 .hidden-login-field{position:absolute!important;left:-9999px!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important}
+.creator-free-order-box{margin:12px 0 0;padding:12px 14px;border:1px solid #d7e5f6;background:#f4f8ff;border-radius:10px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center}
+.creator-free-order-box span{display:block;color:#5f7188;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em}
+.creator-free-order-box strong{display:block;color:#11203a;font-size:12px;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.creator-free-order-box small{display:block;color:#6f7f92;font-size:11px;margin-top:5px;line-height:1.4}
+.creator-free-order-wide{margin-bottom:14px}
+@media(max-width:760px){.creator-free-order-box{grid-template-columns:1fr}.creator-free-order-box strong{white-space:normal;overflow-wrap:anywhere}}

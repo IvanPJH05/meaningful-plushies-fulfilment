@@ -45,6 +45,19 @@ const emptySummary: SalesSummary = {
   totalFees: 0,
 };
 
+export function isCreatorFreeOrder(order: Order) {
+  if (order.creatorFreeOrder) return true;
+  const codes = [
+    order.discountCodeUsed ?? "",
+    ...(order.discountCodes ?? []),
+  ].map((code) => code.trim().toUpperCase()).filter(Boolean);
+  return codes.some((code) => (
+    code.startsWith("FREE-")
+    || code.startsWith("CREATOR-FREE")
+    || code.includes("INFLUENCER-FREE")
+  ));
+}
+
 export function summarizeSales(orders: Order[], settings: PaymentProcessorSetting[] = [], shopifyPercentage = 0): SalesSummary {
   const rows = buildSalesReportRows(orders, settings, shopifyPercentage);
   return rows.reduce((summary, row) => ({
@@ -75,9 +88,10 @@ export function buildSalesReportRows(orders: Order[], settings: PaymentProcessor
       0,
       order.totalAmount - order.refundedAmount - order.outstandingBalance,
     );
-    const isBankTransfer = cashCollected === 0;
+    const creatorFreeOrder = isCreatorFreeOrder(order);
+    const isBankTransfer = cashCollected === 0 && !creatorFreeOrder;
     const salePrice = isBankTransfer ? order.subtotalAmount : cashCollected;
-    const paymentProcessor = isBankTransfer ? "Bank Transfer" : order.paymentProcessor || "Unassigned";
+    const paymentProcessor = creatorFreeOrder ? "Creator Free Order" : isBankTransfer ? "Bank Transfer" : order.paymentProcessor || "Unassigned";
     const processor = feesByProcessor.get(paymentProcessor.toLowerCase());
     const processingFee = !isBankTransfer && processor
       ? Math.min(salePrice, salePrice * Math.max(0, processor.percentage) / 100 + Math.max(0, processor.fixedAmount))
@@ -95,9 +109,9 @@ export function buildSalesReportRows(orders: Order[], settings: PaymentProcessor
       voiceLengths: [...new Set(group.map((item) => item.voiceLength).filter(Boolean))].sort((a, b) => a - b),
       paymentProcessor,
       salePrice,
-      productDiscount: isBankTransfer ? 0 : order.productDiscountAmount,
-      shippingDiscount: isBankTransfer ? order.shippingAmount : order.shippingDiscountAmount,
-      totalDiscount: isBankTransfer ? order.shippingAmount : order.discountAmount,
+      productDiscount: creatorFreeOrder ? Math.max(order.productDiscountAmount, order.subtotalAmount) : isBankTransfer ? 0 : order.productDiscountAmount,
+      shippingDiscount: creatorFreeOrder ? Math.max(order.shippingDiscountAmount, order.shippingAmount) : isBankTransfer ? order.shippingAmount : order.shippingDiscountAmount,
+      totalDiscount: creatorFreeOrder ? Math.max(order.productDiscountAmount, order.subtotalAmount) + Math.max(order.shippingDiscountAmount, order.shippingAmount) : isBankTransfer ? order.shippingAmount : order.discountAmount,
       processingFee,
       shopifyFee,
       totalFees,

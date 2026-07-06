@@ -376,6 +376,15 @@ function shopifyTrackingFromTags(order: Record<string, unknown>) {
   return { courier: "", trackingNumber: "" };
 }
 
+function isCreatorFreeDiscountCode(codes: string[]) {
+  return codes.some((code) => {
+    const normalized = code.trim().toUpperCase();
+    return normalized.startsWith("FREE-")
+      || normalized.startsWith("CREATOR-FREE")
+      || normalized.includes("INFLUENCER-FREE");
+  });
+}
+
 function firstMetafieldValue(order: Record<string, unknown>, key: string) {
   const metafields = order.metafields;
   if (!Array.isArray(metafields)) return "";
@@ -420,8 +429,12 @@ export function shopifyOrderToFulfilmentOrders(
   const discountAmount = shopifyMoney(shopifyOrder.total_discounts ?? shopifyOrder.current_total_discounts ?? shopifyOrder.currentTotalDiscountsSet);
   const refundedAmount = shopifyMoney(shopifyOrder.total_refunded ?? shopifyOrder.totalRefundedSet);
   const outstandingBalance = shopifyMoney(shopifyOrder.total_outstanding ?? shopifyOrder.totalOutstandingSet);
+  const discountCodes = shopifyDiscountCodes(shopifyOrder);
+  const creatorFreeOrder = isCreatorFreeDiscountCode(discountCodes);
   const isZeroCashOrder = totalAmount === 0;
-  const productDiscountAmount = isZeroCashOrder ? 0 : lineItems.reduce((sum, lineItem) => sum + shopifyLineDiscount(lineItem), 0);
+  const productDiscountAmount = creatorFreeOrder
+    ? subtotalAmount
+    : isZeroCashOrder ? 0 : lineItems.reduce((sum, lineItem) => sum + shopifyLineDiscount(lineItem), 0);
   const shippingDiscountAmount = isZeroCashOrder ? shippingAmount : Math.max(0, discountAmount - productDiscountAmount);
   const customerName = shopifyAddressName(shippingAddress)
     || shopifyAddressName(billingAddress)
@@ -432,7 +445,6 @@ export function shopifyOrderToFulfilmentOrders(
   const createdAt = String(shopifyOrder.created_at ?? shopifyOrder.createdAt ?? timestamp);
   const paidAt = String(shopifyOrder.processed_at ?? shopifyOrder.processedAt ?? createdAt);
   const tagTracking = shopifyTrackingFromTags(shopifyOrder);
-  const discountCodes = shopifyDiscountCodes(shopifyOrder);
   const existingById = new Map(existing.map((order) => [order.id, order]));
   const orders: Order[] = [];
 
@@ -469,6 +481,7 @@ export function shopifyOrderToFulfilmentOrders(
       paymentProcessor: shopifyPaymentProcessor(shopifyOrder, isZeroCashOrder) || current?.paymentProcessor || "",
       discountCodes,
       discountCodeUsed: discountCodes[0] ?? current?.discountCodeUsed ?? "",
+      creatorFreeOrder,
       shippingMethod: String(shippingLines[0]?.title ?? shippingLine.title ?? current?.shippingMethod ?? ""),
       product: productName(lineName, personalization.product || current?.product || ""),
       character: shopifyLineCharacter(lineName) || current?.character || "",
@@ -717,6 +730,7 @@ export function importShopifyData(
       : Math.max(0, importedDiscountAmount - importedProductDiscountAmount);
     const discountAmount = isZeroCashOrder ? shippingDiscountAmount : importedDiscountAmount;
     const discountCodes = cleanDiscountCodes((shared["Discount Code"] || "").split(/[,\s]+/));
+    const creatorFreeOrder = isCreatorFreeDiscountCode(discountCodes);
 
     for (let index = 0; index < total; index += 1) {
       const row = rows[index] ?? rows[0] ?? {};
@@ -758,6 +772,7 @@ export function importShopifyData(
         ),
         discountCodes,
         discountCodeUsed: discountCodes[0] ?? current?.discountCodeUsed ?? "",
+        creatorFreeOrder,
         shippingMethod: shared["Shipping Method"] || current?.shippingMethod || "",
         product: productName(lineName, personalization.product || current?.product || ""),
         character: character || current?.character || "",

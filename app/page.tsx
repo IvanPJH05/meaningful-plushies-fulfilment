@@ -524,6 +524,8 @@ const envelopeSettingsStorageKey = "meaningful-plushies-envelope-print-settings"
 const defaultMetaCapiSettings: MetaCapiSettings = { enabled: false, purchaseMode: "manual_only", testEventCode: "", pixelId: "", browserPixelEnabled: false, trackingNotes: "" };
 const defaultMetaAdsEnvironment: MetaAdsEnvironment = { adAccountConfigured: false, tokenConfigured: false, tokenMasked: "", graphVersion: "v20.0" };
 const defaultMetaAdsSummary: MetaAdsSummary = { spend: 0, purchases: 0, revenue: 0, roas: 0, cpa: 0, impressions: 0, clicks: 0, linkClicks: 0 };
+const shopifyStorefrontUrl = process.env.NEXT_PUBLIC_SHOPIFY_STOREFRONT_URL || "https://meaningfulplushies.com";
+const influencerOrderPagePath = process.env.NEXT_PUBLIC_INFLUENCER_ORDER_PAGE_PATH || "/products/build-your-meaningful-plushie";
 const defaultEnvelopePrintSettings: EnvelopePrintSettings = {
   fontName: "",
   fontBase64: "",
@@ -539,6 +541,23 @@ const defaultEnvelopePrintSettings: EnvelopePrintSettings = {
   bottomX: 301.8,
   bottomY: 135.6,
 };
+
+function creatorFreeOrderCode(profile: CreatorProfile) {
+  const base = (profile.discountCode || profile.email || profile.displayName || "CREATOR")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return base.startsWith("FREE-") ? base : `FREE-${base || "CREATOR"}`;
+}
+
+function creatorFreeOrderLink(profile: CreatorProfile) {
+  const store = shopifyStorefrontUrl.replace(/\/+$/, "") || "https://meaningfulplushies.com";
+  const path = influencerOrderPagePath.startsWith("/") ? influencerOrderPagePath : `/${influencerOrderPagePath}`;
+  const redirect = `${path}${path.includes("?") ? "&" : "?"}creator=${encodeURIComponent(profile.discountCode || profile.email || profile.displayName)}`;
+  const url = new URL(`/discount/${encodeURIComponent(creatorFreeOrderCode(profile))}`, store);
+  url.searchParams.set("redirect", redirect);
+  return url.toString();
+}
 
 function emptyTikTokDetailEntry(): TikTokDetailFormEntry {
   return {
@@ -1177,6 +1196,7 @@ export default function Home() {
       paymentProcessor: normalizePaymentProcessor(order.paymentProcessor ?? "", order.totalAmount === 0),
       discountCodes: order.discountCodes ?? (order.discountCodeUsed ? [order.discountCodeUsed] : []),
       discountCodeUsed: order.discountCodeUsed ?? "",
+      creatorFreeOrder: order.creatorFreeOrder ?? false,
       shippingMethod: order.shippingMethod ?? "",
       setIndicator: order.setIndicator ?? "",
       idWebsiteLink: order.idWebsiteLink ?? "",
@@ -5831,6 +5851,11 @@ function CreatorProgramWorkspacePage({
     }
   }
 
+  async function copyCreatorFreeOrder(profile: CreatorProfile) {
+    await navigator.clipboard.writeText(creatorFreeOrderLink(profile));
+    setMessage(`Free order link copied for ${profile.displayName}. Make sure Shopify has discount code ${creatorFreeOrderCode(profile)} set to 100% off.`);
+  }
+
   if (!admin && !currentProfile) {
     return <section className="creator-workspace"><div className="creator-hero card"><div><p>CREATOR PROGRAM</p><h2>Creator profile not ready yet</h2><span>Ask an admin to finish assigning your creator profile and discount code.</span></div></div></section>;
   }
@@ -5874,10 +5899,15 @@ function CreatorProgramWorkspacePage({
             </div>
             <div className="creator-account-stats">
               <div><span>Code</span><strong>{profile.discountCode}</strong></div>
+              <div><span>Free code</span><strong>{creatorFreeOrderCode(profile)}</strong></div>
               <div><span>Tier</span><strong>{creatorTierDefaults[profile.currentTier]?.label ?? profile.currentTier}</strong></div>
               <div><span>Rate</span><strong>{profile.commissionRate}%</strong></div>
               <div><span>Sales</span><strong>{creatorSummary.lifetimeSales}</strong></div>
               <div><span>Commission</span><strong>{formatMoney(creatorSummary.lifetimeCommission)}</strong></div>
+            </div>
+            <div className="creator-free-order-box">
+              <div><span>Influencer free order link</span><strong>{creatorFreeOrderLink(profile)}</strong><small>Use this after creating the matching 100% Shopify discount code.</small></div>
+              <button className="button primary small" type="button" onClick={() => copyCreatorFreeOrder(profile)}>Copy link</button>
             </div>
             {account && <div className="creator-account-tools">
               <label>New password<div className="password-reveal-field"><input type={passwordVisible ? "text" : "password"} value={passwordValue} onChange={(event) => setCreatorPasswordEdits((current) => ({ ...current, [account.id]: event.target.value }))} placeholder="8+ characters" /><button type="button" onClick={() => setCreatorPasswordVisible((current) => ({ ...current, [account.id]: !current[account.id] }))}>{passwordVisible ? "Hide" : "Show"}</button></div></label>
@@ -5976,7 +6006,11 @@ function CreatorProgramWorkspacePage({
       <MoneyStat label="Paid commission" value={profileSummary.byStatus.paid ?? 0} tone="collected" />
       <article className="money-stat blue"><span>Current tier</span><strong>{profile ? creatorTierDefaults[profile.currentTier].label : "-"}</strong></article>
     </section>
-    {profile && <section className="card creator-profile-card"><div><span>Creator code</span><strong>{profile.discountCode}</strong></div><div><span>Commission rate</span><strong>{profile.commissionRate}%</strong></div><div><span>This month's sales</span><strong>{profileSummary.monthSales}</strong></div><div><span>Lifetime sales</span><strong>{profileSummary.lifetimeSales}</strong></div><div><span>Next tier progress</span><strong>{Math.min(profileSummary.lifetimeSales, nextTierTarget)} / {nextTierTarget}</strong></div></section>}
+    {profile && <section className="card creator-profile-card"><div><span>Creator code</span><strong>{profile.discountCode}</strong></div><div><span>Free order code</span><strong>{creatorFreeOrderCode(profile)}</strong></div><div><span>Commission rate</span><strong>{profile.commissionRate}%</strong></div><div><span>This month's sales</span><strong>{profileSummary.monthSales}</strong></div><div><span>Lifetime sales</span><strong>{profileSummary.lifetimeSales}</strong></div><div><span>Next tier progress</span><strong>{Math.min(profileSummary.lifetimeSales, nextTierTarget)} / {nextTierTarget}</strong></div></section>}
+    {profile && <section className="card creator-free-order-box creator-free-order-wide">
+      <div><span>Your free plushie order link</span><strong>{creatorFreeOrderLink(profile)}</strong><small>Use this link after your free creator discount has been activated by the admin.</small></div>
+      <button className="button primary" type="button" onClick={() => copyCreatorFreeOrder(profile)}>Copy free order link</button>
+    </section>}
     {!admin && profile && <form className="creator-form card" onSubmit={saveOwnPayoutInfo}>
       <div className="accounting-form-heading"><div><h3>Payout info</h3><p>Add the account you want payouts sent to. Only admins can see this for payment processing.</p></div><button className="button primary" type="submit">Save payout info</button></div>
       <div className="accounting-form-grid">

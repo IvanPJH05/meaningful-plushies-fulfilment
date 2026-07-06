@@ -324,6 +324,7 @@ export type Order = {
   discountCodes?: string[];
   discountCodeUsed?: string;
   creatorId?: string;
+  creatorFreeOrder?: boolean;
   shippingMethod?: string;
   product: string;
   character: string;

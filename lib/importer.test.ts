@@ -122,6 +122,33 @@ test("converts Shopify API orders with Upload Lift metafield into fulfilment ord
   assert.equal(orders[0]?.idWebsiteLink, "https://meaningfulplushies.com/pages/certificate/14553997287");
 });
 
+test("marks Shopify API orders with free creator codes as creator free orders", () => {
+  const orders = shopifyOrderToFulfilmentOrders({
+    name: "#1501",
+    createdAt: "2026-07-01T10:00:00Z",
+    currencyCode: "MYR",
+    currentSubtotalPriceSet: { shopMoney: { amount: "135.00", currencyCode: "MYR" } },
+    currentTotalPriceSet: { shopMoney: { amount: "0.00", currencyCode: "MYR" } },
+    currentTotalDiscountsSet: { shopMoney: { amount: "143.00", currencyCode: "MYR" } },
+    totalShippingPriceSet: { shopMoney: { amount: "8.00", currencyCode: "MYR" } },
+    discountApplications: { nodes: [{ code: "FREE-CREATOR10" }] },
+    paymentGatewayNames: ["Stripe Card Payments"],
+    shippingAddress: { name: "Creator", phone: "0123456789" },
+    lineItems: {
+      nodes: [
+        {
+          name: "(B,20S) BUILD YOUR MEANINGFUL PLUSHIE - BILLY / INCLUDED",
+          quantity: 1,
+          originalUnitPriceSet: { shopMoney: { amount: "135.00", currencyCode: "MYR" } },
+        },
+      ],
+    },
+  }, "", []);
+
+  assert.equal(orders[0]?.creatorFreeOrder, true);
+  assert.equal(orders[0]?.discountCodeUsed, "FREE-CREATOR10");
+});
+
 test("does not use Shopify line item custom attributes as the source of truth for certificate details", () => {
   const orders = shopifyOrderToFulfilmentOrders({
     name: "#1462",

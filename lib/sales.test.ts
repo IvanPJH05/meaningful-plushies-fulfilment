@@ -60,6 +60,26 @@ test("reclassifies a zero-cash order as a bank transfer", () => {
   });
 });
 
+test("keeps creator free orders out of collected cash", () => {
+  assert.deepEqual(summarizeSales([order({
+    discountCodes: ["FREE-CREATOR10"],
+    discountCodeUsed: "FREE-CREATOR10",
+    creatorFreeOrder: true,
+  })]), {
+    gross: 123,
+    productDiscounted: 115,
+    shippingDiscounted: 8,
+    bankTransfer: 0,
+    stripeCollected: 0,
+    xenditCollected: 0,
+    totalCollected: 0,
+    collected: 0,
+    processingFees: 0,
+    shopifyFees: 0,
+    totalFees: 0,
+  });
+});
+
 test("keeps discounts when customer revenue is greater than zero", () => {
   const result = summarizeSales([order({
     totalAmount: 100,
