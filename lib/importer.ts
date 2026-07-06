@@ -407,12 +407,7 @@ export function shopifyOrderToFulfilmentOrders(
         : [];
   const lineItems = rawLineItems.length ? rawLineItems : [{}];
   const metafieldPersonalizations = personalizationBlocks(rawPersonalization);
-  const lineItemPersonalizations = lineItems.map(shopifyLinePersonalization);
-  const personalizations = metafieldPersonalizations.length
-    ? metafieldPersonalizations
-    : lineItemPersonalizations.some(hasShopifyPersonalization)
-      ? lineItemPersonalizations
-      : [];
+  const personalizations = metafieldPersonalizations;
   const total = Math.max(lineItems.length, personalizations.length, 1);
   const shippingAddress = shopifyOrder.shipping_address ?? shopifyOrder.shippingAddress ?? {};
   const billingAddress = shopifyOrder.billing_address ?? shopifyOrder.billingAddress ?? {};

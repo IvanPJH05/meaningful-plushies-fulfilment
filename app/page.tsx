@@ -1200,12 +1200,20 @@ export default function Home() {
     }
     if (showLoading) setLoadingOrders(true);
     try {
+      const [sharedOrders, sharedProcessorSettings, sharedSalesFeeSettings] = await Promise.all([
+        fetchSharedOrders(),
+        fetchPaymentProcessorSettings(),
+        fetchSalesFeeSettings(),
+      ]);
+      setOrders(normalizeSharedOrders(sharedOrders));
+      setProcessorSettings(sharedProcessorSettings);
+      setSalesFeeSettings(sharedSalesFeeSettings);
+      setDatabaseError("");
+      setLoadingOrders(false);
+
       const [
-        sharedOrders,
         sharedActivity,
-        sharedProcessorSettings,
         sharedStockSettings,
-        sharedSalesFeeSettings,
         sharedAccountingCategories,
         sharedAccountingDocuments,
         sharedAccountingTransactions,
@@ -1217,14 +1225,11 @@ export default function Home() {
         sharedMetaCapiSettings,
         sharedMetaCapiLogs,
       ] = await Promise.all([
-        fetchSharedOrders(), fetchSharedActivity(), fetchPaymentProcessorSettings(), fetchStockSettings(), fetchSalesFeeSettings(),
+        fetchSharedActivity(), fetchStockSettings(),
         fetchAccountingCategories(), fetchAccountingDocuments(), fetchAccountingTransactions(), fetchAccountingLedgerEntries(), fetchSalesConsumptionMappings(), fetchContentPlanItems(), fetchContentIdeas(), fetchEnvelopePrintSettings(), fetchMetaCapiSettings(), fetchMetaCapiLogs(),
       ]);
-      setOrders(normalizeSharedOrders(sharedOrders));
       setActivity(sharedActivity);
-      setProcessorSettings(sharedProcessorSettings);
       setStockSettings(sharedStockSettings);
-      setSalesFeeSettings(sharedSalesFeeSettings);
       setAccountingCategories(sharedAccountingCategories);
       setAccountingDocuments(sharedAccountingDocuments);
       setAccountingTransactions(sharedAccountingTransactions);
@@ -1238,7 +1243,7 @@ export default function Home() {
       setEnvelopeSettingsLoaded(true);
       setDatabaseError("");
     } catch (error) {
-      setDatabaseError(error instanceof Error ? error.message : "Could not load orders from Supabase.");
+      setDatabaseError(error instanceof Error ? error.message : "Could not load shared data from Supabase.");
     } finally {
       setLoadingOrders(false);
     }

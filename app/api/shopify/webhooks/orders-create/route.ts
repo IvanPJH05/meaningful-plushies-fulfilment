@@ -23,6 +23,11 @@ function verifyShopifyHmac(rawBody: string, hmacHeader: string | null) {
   return expected.length === received.length && timingSafeEqual(expected, received);
 }
 
+function looksLikePersonalizedPlushie(order: Record<string, unknown>) {
+  const lineItems = order.lineItems ?? order.line_items ?? "";
+  return /meaningful plushie|build your meaningful plushie|plushie/i.test(JSON.stringify(lineItems));
+}
+
 export async function POST(request: Request) {
   const rawBody = await request.text();
   if (!verifyShopifyHmac(rawBody, request.headers.get("x-shopify-hmac-sha256"))) {
@@ -39,6 +44,9 @@ export async function POST(request: Request) {
   try {
     const fullOrder = await fetchShopifyOrderWithMetafieldRetry(payload, request);
     const uploadLiftFormData = shopifyMetafieldValue(fullOrder) || shopifyMetafieldValue(payload);
+    if (!uploadLiftFormData && looksLikePersonalizedPlushie(fullOrder)) {
+      return json(503, { ok: false, retry: true, error: "Upload Lift metafield is not ready yet. Shopify should retry this webhook." });
+    }
     const existing = await fetchSharedOrders();
     const importedOrders = shopifyOrderToFulfilmentOrders(fullOrder, uploadLiftFormData, existing, "Shopify");
     const syncedNumber = cleanShopifyOrderNumber(

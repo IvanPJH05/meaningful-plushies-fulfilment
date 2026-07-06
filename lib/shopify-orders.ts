@@ -260,10 +260,15 @@ export async function fetchShopifyOrderWithMetafieldRetry(payload: Record<string
   if (shopifyMetafieldValue(fullOrder) || shopifyMetafieldValue(payload)) return fullOrder;
 
   // Upload Lift can write order metafields moments after Shopify fires orders/create.
-  for (const delay of [1500, 3000, 5000]) {
+  const orderNumber = cleanShopifyOrderNumber(textValue(fullOrder.name) || textValue(payload.name) || textValue(payload.order_number));
+  for (const delay of [2000, 5000, 10000, 15000]) {
     await wait(delay);
     fullOrder = await fetchShopifyOrder(payload, request);
     if (shopifyMetafieldValue(fullOrder)) return fullOrder;
+    if (orderNumber) {
+      const refreshedByNumber = await fetchShopifyOrderByNumber(orderNumber, request);
+      if (refreshedByNumber && shopifyMetafieldValue(refreshedByNumber)) return refreshedByNumber;
+    }
   }
   return fullOrder;
 }
@@ -272,7 +277,7 @@ export async function fetchShopifyOrderByNumberWithMetafieldRetry(orderNumber: s
   let fullOrder = await fetchShopifyOrderByNumber(orderNumber, request);
   if (!fullOrder || shopifyMetafieldValue(fullOrder)) return fullOrder;
 
-  for (const delay of [1500, 3000, 5000]) {
+  for (const delay of [2000, 5000, 10000, 15000]) {
     await wait(delay);
     fullOrder = await fetchShopifyOrderByNumber(orderNumber, request);
     if (!fullOrder || shopifyMetafieldValue(fullOrder)) return fullOrder;

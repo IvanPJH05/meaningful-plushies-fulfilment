@@ -122,7 +122,7 @@ test("converts Shopify API orders with Upload Lift metafield into fulfilment ord
   assert.equal(orders[0]?.idWebsiteLink, "https://meaningfulplushies.com/pages/certificate/14553997287");
 });
 
-test("converts Shopify line item custom attributes into fulfilment plushie details", () => {
+test("does not use Shopify line item custom attributes as the source of truth for certificate details", () => {
   const orders = shopifyOrderToFulfilmentOrders({
     name: "#1462",
     createdAt: "2026-06-30T09:04:00Z",
@@ -162,12 +162,12 @@ test("converts Shopify line item custom attributes into fulfilment plushie detai
   assert.equal(orders[0]?.orderNumber, "1462");
   assert.equal(orders[0]?.character, "BILLY");
   assert.equal(orders[0]?.voiceLength, 20);
-  assert.equal(orders[0]?.plushName, "Bubu");
-  assert.equal(orders[0]?.certificateCode, "14623997287");
-  assert.equal(orders[0]?.idWebsiteLink, "https://meaningfulplushies.com/pages/certificate/14623997287");
-  assert.equal(orders[0]?.meaningfulNote, "Hi baozi, my name is Bubu.");
-  assert.equal(orders[0]?.meaningfulMessage, "https://upload.cloudlift.app/s/message.m4a");
-  assert.equal(orders[0]?.voiceUploadStatus, "received");
+  assert.equal(orders[0]?.plushName, "");
+  assert.equal(orders[0]?.certificateCode, "");
+  assert.equal(orders[0]?.idWebsiteLink, "");
+  assert.equal(orders[0]?.meaningfulNote, "");
+  assert.equal(orders[0]?.meaningfulMessage, "");
+  assert.equal(orders[0]?.voiceUploadStatus, "missing");
 });
 
 test("does not invent a Shopify certificate link from phone digits when Upload Lift omits the code", () => {
