@@ -75,7 +75,7 @@ type View =
   | "accounting_tax_reports" | "accounting_settings" | "accounting_files" | "accounting_general_journal" | "accounting_t_accounts" | "accounting_unit_costs" | "accounting_financial_reports"
   | "content_dashboard" | "content_plan" | "content_ideas"
   | "ads_dashboard"
-  | "creator_dashboard" | "creator_accounts" | "creator_sales" | "creator_commissions" | "creator_payouts" | "creator_analytics";
+  | "creator_dashboard" | "creator_accounts" | "creator_sales" | "creator_commissions" | "creator_payouts" | "creator_analytics" | "creator_free_samples";
 type Workspace = "fulfilment" | "accounting" | "formal_accounting" | "creator" | "inventory" | "reports" | "content" | "ads" | "settings";
 type SalesRange = "active" | "today" | "7d" | "30d" | "lifetime";
 type SortKey = "orderNumber" | "importedAt" | "updatedAt";
@@ -104,6 +104,15 @@ type TikTokDetailFormEntry = {
   fileDataUrl: string;
   fileName: string;
   fileType: string;
+};
+type FreeCreatorSample = {
+  id: string;
+  creatorName: string;
+  creatorUrl: string;
+  sampleCode: string;
+  orderNumber?: string;
+  givenAt: string;
+  notes: string;
 };
 type StoredUiPreferences = {
   view?: View;
@@ -474,8 +483,8 @@ const accountingViews: readonly View[] = [
 const formalAccountingViews: readonly View[] = ["accounting_general_journal", "accounting_t_accounts", "accounting_unit_costs", "accounting_financial_reports"];
 const contentViews: readonly View[] = ["content_dashboard", "content_plan", "content_ideas"];
 const adsViews: readonly View[] = ["ads_dashboard"];
-const creatorViews: readonly View[] = ["creator_dashboard", "creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics"];
-const creatorAdminViews: readonly View[] = ["creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics"];
+const creatorViews: readonly View[] = ["creator_dashboard", "creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
+const creatorAdminViews: readonly View[] = ["creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
 const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "meta_capi", "stock", "sales_report", ...accountingViews, ...formalAccountingViews, ...contentViews, ...adsViews, ...creatorViews];
 const adminOnlyViews = new Set<View>(["history", "settings", "meta_capi", "stock", "sales_report", ...accountingViews, ...formalAccountingViews, ...contentViews, ...adsViews, ...creatorAdminViews]);
 const workspaceDefaultViews: Record<Workspace, View> = {
@@ -521,6 +530,8 @@ const fulfilmentColumnValues: readonly FulfilmentColumn[] = ["orderNumber", "mea
 const sessionStorageKey = "meaningful-plushies-dashboard-session";
 const uiStorageKey = "meaningful-plushies-ui-preferences";
 const envelopeSettingsStorageKey = "meaningful-plushies-envelope-print-settings";
+const freeCreatorSamplesStorageKey = "meaningful-plushies-free-creator-samples";
+const freeCreatorSampleProductLink = "https://meaningfulplushies.com/products/meanngful-plushie";
 const defaultMetaCapiSettings: MetaCapiSettings = { enabled: false, purchaseMode: "manual_only", testEventCode: "", pixelId: "", browserPixelEnabled: false, trackingNotes: "" };
 const defaultMetaAdsEnvironment: MetaAdsEnvironment = { adAccountConfigured: false, tokenConfigured: false, tokenMasked: "", graphVersion: "v20.0" };
 const defaultMetaAdsSummary: MetaAdsSummary = { spend: 0, purchases: 0, revenue: 0, roas: 0, cpa: 0, impressions: 0, clicks: 0, linkClicks: 0 };
@@ -678,6 +689,7 @@ const creatorAdminNavItems: NavItem[] = [
   { view: "creator_sales", label: "Creator Sales", icon: "report" },
   { view: "creator_commissions", label: "Commissions", icon: "cash" },
   { view: "creator_payouts", label: "Payouts", icon: "cash" },
+  { view: "creator_free_samples", label: "Free Creator Sample", icon: "report" },
   { view: "creator_analytics", label: "Analytics", icon: "ledger" },
 ];
 
@@ -974,7 +986,7 @@ function cleanFulfilmentColumns(value: unknown) {
 
 function permittedView(value: unknown, role?: UserRole) {
   const view = choice(value, "orders" as View, dashboardViews);
-  if (role === "creator") return creatorViews.includes(view) ? view : "creator_dashboard";
+  if (role === "creator") return creatorNavItems.some((item) => item.view === view) ? view : "creator_dashboard";
   return role === "staff" && adminOnlyViews.has(view) ? "orders" : view;
 }
 
@@ -5659,6 +5671,8 @@ function CreatorProgramWorkspacePage({
     proofFileType: "",
     proofFileDataUrl: "",
   });
+  const [freeCreatorSamples, setFreeCreatorSamples] = useState<FreeCreatorSample[]>(() => readJson<FreeCreatorSample[]>(freeCreatorSamplesStorageKey) ?? []);
+  const [freeCreatorSampleForm, setFreeCreatorSampleForm] = useState({ creatorName: "", creatorUrl: "", sampleCode: "", notes: "" });
   const visibleProfiles = admin ? creatorProfiles : creatorProfiles.filter((profile) => profile.userId === session.id);
   const currentProfile = visibleProfiles[0];
   const visibleCommissions = admin
@@ -5676,6 +5690,9 @@ function CreatorProgramWorkspacePage({
       payoutNotes: currentProfile.payoutNotes,
     });
   }, [currentProfile?.id, currentProfile?.payoutMethod, currentProfile?.payoutAccountName, currentProfile?.payoutAccountNumber, currentProfile?.payoutNotes]);
+  useEffect(() => {
+    writeJson(freeCreatorSamplesStorageKey, freeCreatorSamples);
+  }, [freeCreatorSamples]);
 
   function updateForm(patch: Partial<typeof creatorFormDefaults>) {
     setForm((current) => {
@@ -5788,6 +5805,82 @@ function CreatorProgramWorkspacePage({
     }
   }
 
+  function saveFreeCreatorSample(event: FormEvent) {
+    event.preventDefault();
+    if (!admin) return;
+    if (!freeCreatorSampleForm.creatorName.trim() || !freeCreatorSampleForm.sampleCode.trim()) {
+      return setMessage("Add the creator name and the code you gave them.");
+    }
+    const now = new Date().toISOString();
+    setFreeCreatorSamples((current) => [{
+      id: crypto.randomUUID(),
+      creatorName: freeCreatorSampleForm.creatorName.trim(),
+      creatorUrl: freeCreatorSampleForm.creatorUrl.trim(),
+      sampleCode: freeCreatorSampleForm.sampleCode.trim().toUpperCase(),
+      orderNumber: "",
+      givenAt: now,
+      notes: freeCreatorSampleForm.notes.trim(),
+    }, ...current]);
+    setFreeCreatorSampleForm({ creatorName: "", creatorUrl: "", sampleCode: "", notes: "" });
+    setMessage("Free creator sample logged.");
+  }
+
+  function deleteFreeCreatorSample(sampleId: string) {
+    setFreeCreatorSamples((current) => current.filter((sample) => sample.id !== sampleId));
+    setMessage("Free creator sample removed.");
+  }
+
+  function updateFreeCreatorSample(sampleId: string, patch: Partial<FreeCreatorSample>) {
+    setFreeCreatorSamples((current) => current.map((sample) => sample.id === sampleId ? { ...sample, ...patch } : sample));
+  }
+
+  function freeCreatorSampleClaims(codeValue: string) {
+    const code = codeValue.trim().toUpperCase();
+    if (!code) return [];
+    return orders.filter((order) => {
+      const orderCodes = [...(order.discountCodes ?? []), order.discountCodeUsed ?? ""]
+        .map((item) => item.trim().toUpperCase())
+        .filter(Boolean);
+      return orderCodes.includes(code);
+    }).sort((left, right) => {
+      const leftTime = new Date(left.orderDate || left.updatedAt || left.importedAt).getTime();
+      const rightTime = new Date(right.orderDate || right.updatedAt || right.importedAt).getTime();
+      return rightTime - leftTime;
+    });
+  }
+
+  function freeCreatorSampleOrder(sample: FreeCreatorSample) {
+    const number = (sample.orderNumber ?? "").trim().replace(/^#/, "").toLowerCase();
+    if (!number) return undefined;
+    return orders.find((order) => order.orderNumber.toLowerCase() === number || orderLabel(order).replace(/^#/, "").toLowerCase() === number);
+  }
+
+  function freeCreatorSampleMessage(sample: FreeCreatorSample) {
+    return `${freeCreatorSampleProductLink}\n\nUse this code at checkout: ${sample.sampleCode.trim().toUpperCase()}`;
+  }
+
+  async function copyFreeCreatorSampleMessage(sample: FreeCreatorSample) {
+    try {
+      await navigator.clipboard.writeText(freeCreatorSampleMessage(sample));
+      setMessage(`Message copied for ${sample.creatorName}.`);
+    } catch {
+      setMessage("Could not copy the message. You can still select and copy it from the message box.");
+    }
+  }
+
+  const freeCreatorSampleCodeRows = useMemo(() => {
+    const rows = new Map<string, { code: string; creatorsGiven: number; pairedCreators: number; ordersUsingCode: number }>();
+    for (const sample of freeCreatorSamples) {
+      const code = sample.sampleCode.trim().toUpperCase();
+      if (!code) continue;
+      const row = rows.get(code) ?? { code, creatorsGiven: 0, pairedCreators: 0, ordersUsingCode: freeCreatorSampleClaims(code).length };
+      row.creatorsGiven += 1;
+      if (freeCreatorSampleOrder(sample)) row.pairedCreators += 1;
+      rows.set(code, row);
+    }
+    return [...rows.values()].sort((left, right) => right.ordersUsingCode - left.ordersUsingCode || left.code.localeCompare(right.code));
+  }, [freeCreatorSamples, orders]);
+
   async function saveOwnPayoutInfo(event: FormEvent) {
     event.preventDefault();
     if (!currentProfile) return;
@@ -5858,6 +5951,43 @@ function CreatorProgramWorkspacePage({
 
   if (!admin && !currentProfile) {
     return <section className="creator-workspace"><div className="creator-hero card"><div><p>CREATOR PROGRAM</p><h2>Creator profile not ready yet</h2><span>Ask an admin to finish assigning your creator profile and discount code.</span></div></div></section>;
+  }
+
+  if (view === "creator_free_samples" && admin) {
+    return <section className="creator-workspace">
+      <div className="creator-hero card"><div><p>CREATOR PROGRAM</p><h2>Free Creator Sample</h2><span>Track every creator who received a free sample code, then pair the row to the order once they claim it.</span></div><div className="accounting-status-pill">{freeCreatorSamples.length} creators</div></div>
+      {message && <div className="notice"><span>{message}</span><button onClick={() => setMessage("")}>x</button></div>}
+      <section className="creator-sample-ledger-layout">
+        <form className="creator-form card creator-sample-entry-form" onSubmit={saveFreeCreatorSample}>
+          <div className="accounting-form-heading"><div><h3>New sample record</h3><p>Enter the creator and code you gave them.</p></div></div>
+          <div className="creator-sample-form-fields">
+            <label>Creator<input value={freeCreatorSampleForm.creatorName} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, creatorName: event.target.value }))} placeholder="Creator name or handle" /></label>
+            <label>Discount code<input value={freeCreatorSampleForm.sampleCode} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, sampleCode: event.target.value.toUpperCase() }))} placeholder="FREE-IVAN10" /></label>
+            <label>Creator link<input value={freeCreatorSampleForm.creatorUrl} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, creatorUrl: event.target.value }))} placeholder="https://www.tiktok.com/@creator" /></label>
+            <label>Notes<textarea value={freeCreatorSampleForm.notes} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Sent link, waiting for order, etc." /></label>
+            <button className="button primary" type="submit">Add creator</button>
+          </div>
+        </form>
+        <section className="card accounting-table-card creator-sample-ledger-card">
+          <div className="accounting-form-heading"><div><h3>Sample code ledger</h3><p>Enter the order number into a row to pull in the customer name, phone number, and address.</p></div></div>
+          <div className="creator-code-summary-strip">
+            {freeCreatorSampleCodeRows.map((row) => <article key={row.code}><span>{row.code}</span><strong>{row.ordersUsingCode}</strong><small>{row.pairedCreators} paired of {row.creatorsGiven}</small></article>)}
+            {!freeCreatorSampleCodeRows.length && <div className="empty compact"><strong>No discount codes yet.</strong><p>Add the first creator sample on the left.</p></div>}
+          </div>
+          <div className="creator-free-sample-table">
+            <table><thead><tr><th>Creator</th><th>Code</th><th>Used</th><th>Message</th><th>Order number</th><th>Paired customer info</th><th>Notes</th><th /></tr></thead><tbody>
+              {freeCreatorSamples.map((sample) => {
+                const claims = freeCreatorSampleClaims(sample.sampleCode);
+                const pairedOrder = freeCreatorSampleOrder(sample);
+                const sampleMessage = freeCreatorSampleMessage(sample);
+                return <tr key={sample.id}><td>{sample.creatorUrl ? <a href={sample.creatorUrl} target="_blank" rel="noreferrer"><strong>{sample.creatorName}</strong></a> : <strong>{sample.creatorName}</strong>}<small>Added {formatDate(sample.givenAt)}</small></td><td><code>{sample.sampleCode}</code></td><td><div className="creator-sample-claim-cell"><span className={`creator-sample-claim ${claims.length ? "claimed" : "pending"}`}>{claims.length}</span><small>{claims.length === 1 ? "order" : "orders"}</small></div></td><td><div className="creator-sample-message-cell"><textarea readOnly value={sampleMessage} /><button className="button secondary small" type="button" onClick={() => copyFreeCreatorSampleMessage(sample)}>Copy message</button></div></td><td><input className="creator-sample-order-input" value={sample.orderNumber ?? ""} onChange={(event) => updateFreeCreatorSample(sample.id, { orderNumber: event.target.value })} placeholder="Order #" /></td><td>{pairedOrder ? <div className="creator-sample-order-details"><strong>{pairedOrder.customerName || "-"}</strong><span>{pairedOrder.phone || "-"}</span><small>{pairedOrder.address || "-"}</small></div> : <span className="creator-sample-unmatched">{sample.orderNumber ? "No matching order found" : "Enter order number"}</span>}</td><td><input className="creator-sample-notes-input" value={sample.notes} onChange={(event) => updateFreeCreatorSample(sample.id, { notes: event.target.value })} placeholder="Notes" /></td><td><button className="button secondary small" type="button" onClick={() => deleteFreeCreatorSample(sample.id)}>Remove</button></td></tr>;
+              })}
+              {!freeCreatorSamples.length && <tr><td colSpan={8}>No free creator samples logged yet.</td></tr>}
+            </tbody></table>
+          </div>
+        </section>
+      </section>
+    </section>;
   }
 
   if (view === "creator_accounts" && admin) {
