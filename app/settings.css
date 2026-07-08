@@ -128,8 +128,8 @@
 .bank-statement-table td:nth-child(4) small { white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
 .bank-statement-table tr.clickable-bank-line { cursor: pointer; }
 .bank-statement-table tr.clickable-bank-line:hover td { background: #ecfdf3; }
-.bank-line-note { display: grid; grid-template-columns: minmax(190px, 1fr) auto; gap: 8px; align-items: start; margin-top: 8px; }
-.bank-line-note textarea { width: 100%; min-height: 42px; max-height: 90px; resize: vertical; border: 1px solid #d7e1ed; border-radius: 8px; padding: 8px 9px; background: #fbfdff; color: var(--text); font-size: 11px; line-height: 1.35; }
+.bank-line-note { display: grid; grid-template-columns: minmax(170px, 1fr) auto; gap: 8px; align-items: stretch; width: min(360px, 100%); margin-top: 8px; }
+.bank-line-note textarea { width: 100%; min-height: 38px; max-height: 82px; resize: vertical; border: 1px solid #d7e1ed; border-radius: 8px; padding: 8px 9px; background: #fbfdff; color: var(--text); font-size: 11px; line-height: 1.35; }
 .bank-line-note .view-button { align-self: stretch; white-space: nowrap; }
 .linked-transaction-hint { display: inline-flex !important; margin-top: 5px; color: #047857 !important; font-weight: 800; }
 .bank-statement-card.lock-status .bank-statement-table th:nth-child(1),
