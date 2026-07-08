@@ -290,8 +290,11 @@
 .orders-table tr.has-source-document { cursor: pointer; }
 .orders-table tr.has-source-document td { background: #f6faff; }
 .orders-table tr.has-source-document:hover td { background: #edf6ff; }
+.orders-table tr.bank-linked-transaction td { background: #f0fdf4; }
+.orders-table tr.bank-linked-transaction:hover td { background: #dcfce7; }
 .source-document-text { color: #1f67b5; }
 .source-document-pill { display: inline-flex; margin-left: 8px; padding: 3px 7px; border-radius: 999px; background: #e8f2ff; color: #1f67b5; font-size: 9px; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; vertical-align: middle; }
+.bank-linked-pill { background: #dcfce7; color: #047857; }
 .document-link { color: #1f67b5 !important; font-weight: 850; }
 .file-library-card .ledger-line { min-width: 220px; }
 .document-preview-backdrop { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 24px; background: rgba(10, 24, 42, .58); backdrop-filter: blur(2px); }

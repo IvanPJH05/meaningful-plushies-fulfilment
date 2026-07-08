@@ -5259,7 +5259,7 @@ function AccountingWorkspacePage({
     </section>
     <div className="ledger-export-actions no-print"><button className="button secondary" disabled={!transactions.length} onClick={downloadBookkeepingLedgerCsv}>Download CSV</button><button className="button primary" disabled={!transactions.length} onClick={() => printView("print-bookkeeping-ledger")}>Print / Save PDF</button></div>
     {transactionEditPanel}
-    <AccountingTransactionsTable transactions={transactions} ledgerEntries={ledgerEntries} documents={transactionDocuments} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} />
+    <AccountingTransactionsTable transactions={transactions} ledgerEntries={ledgerEntries} documents={transactionDocuments} bankStatementLines={bankStatementLines} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} />
     <section className="bookkeeping-ledger-print card">
       <header className="financial-statement-title"><p>Meaningful Plushies</p><h2>Book Keeping Transaction Ledger</h2><span>Generated on {formatDate(new Date().toISOString(), true)}</span></header>
       <table className="bookkeeping-ledger-print-table">
@@ -5324,7 +5324,7 @@ function AccountingWorkspacePage({
           <button className="button primary" disabled={saving} onClick={onReleaseOperatingCost}>{saving ? "Saving..." : "Release to expense"}</button>
         </section>
         {transactionEditPanel}
-        <AccountingTransactionsTable transactions={operatingCostPageTransactions} ledgerEntries={ledgerEntries} documents={transactionDocuments} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} />
+        <AccountingTransactionsTable transactions={operatingCostPageTransactions} ledgerEntries={ledgerEntries} documents={transactionDocuments} bankStatementLines={bankStatementLines} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} />
       </div>
     </section>
   </section>;
@@ -5516,7 +5516,7 @@ function AccountingWorkspacePage({
         </div>
         <div>
           {transactionEditPanel}
-          <AccountingTransactionsTable transactions={transactions.filter((transaction) => transaction.businessEvent === "other_income")} ledgerEntries={ledgerEntries} documents={transactionDocuments} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} />
+          <AccountingTransactionsTable transactions={transactions.filter((transaction) => transaction.businessEvent === "other_income")} ledgerEntries={ledgerEntries} documents={transactionDocuments} bankStatementLines={bankStatementLines} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} />
         </div>
       </section>
     </section>;
@@ -5554,7 +5554,7 @@ function AccountingWorkspacePage({
         </div>
         <div>
           {transactionEditPanel}
-          <AccountingTransactionsTable transactions={processorPayouts} ledgerEntries={ledgerEntries} documents={transactionDocuments} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} />
+          <AccountingTransactionsTable transactions={processorPayouts} ledgerEntries={ledgerEntries} documents={transactionDocuments} bankStatementLines={bankStatementLines} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} />
         </div>
       </section>
     </section>;
@@ -5578,7 +5578,7 @@ function AccountingWorkspacePage({
           <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? "Saving..." : "Save to book"}</button>
         </div>
         {transactionEditPanel}
-        <AccountingTransactionsTable transactions={transactions.filter((transaction) => transaction.businessEvent === categoryEvent.value || (categoryEvent.value === "inventory_purchase" && transaction.businessEvent === "inventory_rejected"))} ledgerEntries={ledgerEntries} documents={transactionDocuments} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} />
+        <AccountingTransactionsTable transactions={transactions.filter((transaction) => transaction.businessEvent === categoryEvent.value || (categoryEvent.value === "inventory_purchase" && transaction.businessEvent === "inventory_rejected"))} ledgerEntries={ledgerEntries} documents={transactionDocuments} bankStatementLines={bankStatementLines} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} />
       </section>
     </section>;
   }
@@ -5631,7 +5631,7 @@ function AccountingWorkspacePage({
         <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? "Saving..." : "Save transaction"}</button>
       </div>
       {transactionEditPanel}
-      <AccountingTransactionsTable transactions={transactions} ledgerEntries={ledgerEntries} documents={transactionDocuments} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} />
+      <AccountingTransactionsTable transactions={transactions} ledgerEntries={ledgerEntries} documents={transactionDocuments} bankStatementLines={bankStatementLines} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} />
     </section>
   </section>;
 
@@ -5714,22 +5714,25 @@ function AccountingFilesTable({ documents, transactions, ledgerEntries, category
   </section>;
 }
 
-function AccountingTransactionsTable({ transactions, ledgerEntries, documents, categoryName, onOpenDocument, onEdit, onDelete }: { transactions: AccountingTransaction[]; ledgerEntries: AccountingLedgerEntry[]; documents: AccountingDocument[]; categoryName: (categoryId: string) => string; onOpenDocument: (document: AccountingDocument) => void; onEdit: (transaction: AccountingTransaction) => void; onDelete: (transaction: AccountingTransaction) => void }) {
+function AccountingTransactionsTable({ transactions, ledgerEntries, documents, bankStatementLines = [], categoryName, onOpenDocument, onEdit, onDelete }: { transactions: AccountingTransaction[]; ledgerEntries: AccountingLedgerEntry[]; documents: AccountingDocument[]; bankStatementLines?: AccountingBankStatementLine[]; categoryName: (categoryId: string) => string; onOpenDocument: (document: AccountingDocument) => void; onEdit: (transaction: AccountingTransaction) => void; onDelete: (transaction: AccountingTransaction) => void }) {
   const sortedTransactions = [...transactions].sort((a, b) => {
     const dateCompare = dateKey(a.transactionDate).localeCompare(dateKey(b.transactionDate));
     return dateCompare || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id);
   });
+  const linkedBankRows = new Map(bankStatementLines.filter((line) => line.matchStatus === "matched" && line.matchedTransactionId).map((line) => [line.matchedTransactionId, line]));
   return <section className="card accounting-table-card"><h3>Transaction ledger</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>Date</th><th>Description</th><th>Business event</th><th>Account</th><th>Payment</th><th>Ledger posting</th><th>Document</th><th /></tr></thead><tbody>{sortedTransactions.map((transaction) => {
     const entries = ledgerEntries.filter((entry) => entry.transactionId === transaction.id);
     const document = documents.find((item) => item.id === transaction.documentId);
+    const linkedBankRow = linkedBankRows.get(transaction.id);
+    const bankLinked = Boolean(linkedBankRow || transaction.source === "bank_statement");
     const paymentLabel = transaction.paymentStatus === "deposit_paid" ? `Deposit ${formatMoney(transaction.depositAmount)}` : transaction.paymentStatus === "on_credit" ? "On Credit" : "Paid In Full";
     const ledgerLines = entries.length ? entries.map((entry, index) => {
       const accountName = displayAccountingAccountName(entry.accountName);
       return <div key={entry.id} className="ledger-line"><span>{index === 0 ? `Record ${accountName}` : accountName.includes("Payable") || accountName.includes("Receivable") ? `Outstanding ${accountName}` : `Payment from ${accountName}`}</span><strong>{formatMoney(entry.amount)}</strong></div>;
     }) : <small>{formatMoney(transaction.amount)}</small>;
-    return <tr key={transaction.id} className={document ? "has-source-document" : ""} onClick={(event) => { if (!document || (event.target as HTMLElement).closest("button,a,input")) return; onOpenDocument(document); }}>
+    return <tr key={transaction.id} className={`${document ? "has-source-document" : ""} ${bankLinked ? "bank-linked-transaction" : ""}`} onClick={(event) => { if (!document || (event.target as HTMLElement).closest("button,a,input")) return; onOpenDocument(document); }}>
       <td>{formatDate(transaction.transactionDate)}</td>
-      <td><strong className={document ? "source-document-text" : ""}>{transaction.description}</strong>{document && <span className="source-document-pill">Source document</span>}<br /><small>{transaction.supplier || transaction.source}{transaction.invoiceNumber ? ` - Invoice ${transaction.invoiceNumber}` : ""}</small></td>
+      <td><strong className={document ? "source-document-text" : ""}>{transaction.description}</strong>{document && <span className="source-document-pill">Source document</span>}{bankLinked && <span className="source-document-pill bank-linked-pill">Bank linked</span>}<br /><small>{transaction.supplier || transaction.source}{transaction.invoiceNumber ? ` - Invoice ${transaction.invoiceNumber}` : ""}{linkedBankRow ? ` | ${linkedBankRow.description}` : ""}</small></td>
       <td>{businessEvents.find((event) => event.value === transaction.businessEvent)?.label ?? (transaction.businessEvent || "-")}</td>
       <td>{displayAccountingAccountName(transaction.accountName || categoryName(transaction.categoryId))}</td>
       <td>{paymentLabel}<br /><small>{transaction.paymentStatus === "on_credit" ? transaction.dueDate || transaction.supplierTerms || "Outstanding" : transaction.paymentMethod || "Bank Account"}</small></td>
