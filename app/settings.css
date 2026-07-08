@@ -112,6 +112,9 @@
 .bank-statement-fullscreen { position: fixed; inset: 12px; z-index: 50; display: flex; flex-direction: column; max-width: none; overflow: hidden; box-shadow: 0 24px 80px rgba(10, 24, 42, .28); }
 .bank-statement-fullscreen .bank-statement-lines-scroll { flex: 1; max-height: none; }
 .bank-statement-lines-scroll { max-height: min(70vh, 780px); border: 1px solid #e5edf6; border-radius: 10px; background: #fff; }
+.bank-statement-reference.bank-reference-fullscreen { position: static !important; inset: auto !important; display: block !important; overflow: visible !important; box-shadow: none !important; }
+.bank-statement-reference .bank-reference-actions label:nth-of-type(2),
+.bank-statement-reference .bank-reference-actions .button.secondary { display: none !important; }
 .bank-statement-table { table-layout: fixed; min-width: 940px; }
 .bank-statement-table th { position: sticky; top: 0; z-index: 3; }
 .bank-statement-table th:nth-child(1) { width: 120px; }
