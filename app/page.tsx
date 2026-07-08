@@ -5224,6 +5224,7 @@ function AccountingWorkspacePage({
   const [bankLineActions, setBankLineActions] = useState<Record<string, "match" | "new" | "pair" | "">>({});
   const [bankLineSelectedTransactions, setBankLineSelectedTransactions] = useState<Record<string, string>>({});
   const [bankLineSelectedPairs, setBankLineSelectedPairs] = useState<Record<string, string>>({});
+  const [selectedBankStatementSection, setSelectedBankStatementSection] = useState<"accounts" | "sales" | "transfers">("accounts");
   const [selectedBankStatementMonth, setSelectedBankStatementMonth] = useState("all");
   const [bankStatementFocusMode, setBankStatementFocusMode] = useState(false);
   const [lockedBankStatementColumn, setLockedBankStatementColumn] = useState<"none" | "status" | "date" | "description">("date");
@@ -5240,6 +5241,11 @@ function AccountingWorkspacePage({
   const shownBankStatementGroups = selectedBankStatementMonth === "all"
     ? bankStatementReferenceGroups
     : bankStatementReferenceGroups.filter((group) => group.month === selectedBankStatementMonth);
+  const bankStatementSalesLines = bankStatementLines.filter((line) => line.suggestedEvent === "bank_transfer_sales_recorded");
+  const bankStatementTransferLines = bankStatementLines.filter((line) => line.suggestedEvent === "internal_transfer");
+  const bankStatementAccountLines = bankStatementLines.filter((line) => line.suggestedEvent !== "bank_transfer_sales_recorded" && line.suggestedEvent !== "internal_transfer");
+  const shownBankStatementLines = selectedBankStatementSection === "sales" ? bankStatementSalesLines : selectedBankStatementSection === "transfers" ? bankStatementTransferLines : bankStatementAccountLines;
+  const selectedBankStatementSectionLabel = selectedBankStatementSection === "sales" ? "Sales" : selectedBankStatementSection === "transfers" ? "Transfer within accounts" : "Accounts";
   const aiGroupLabels: Record<AiImportGroup, string> = {
     ready: "Ready to create",
     matched: "Matched",
@@ -5465,9 +5471,9 @@ function AccountingWorkspacePage({
   if (view === "accounting_bank_reconciliation") return <section className="accounting-workspace">
     <div className="accounting-hero card"><div><p>BANK STATEMENT MATCHING</p><h2>Import bank rows, then decide row by row</h2><span>Each row can be matched to an existing transaction, used to create a new entry, marked as sales already recorded, ignored, or removed.</span></div><div className="accounting-status-pill">{bankStatementUnmatched.length} unmatched</div></div>
     <section className="accounting-summary-grid">
-      <article className="money-stat transfer"><span>Unmatched lines</span><strong>{bankStatementUnmatched.length}</strong></article>
-      <article className="money-stat collected"><span>Matched lines</span><strong>{bankStatementMatched.length}</strong></article>
-      <article className="money-stat fees"><span>Ignored lines</span><strong>{bankStatementIgnored.length}</strong></article>
+      <article className="money-stat transfer"><span>Accounts</span><strong>{bankStatementAccountLines.length}</strong></article>
+      <article className="money-stat collected"><span>Sales</span><strong>{bankStatementSalesLines.length}</strong></article>
+      <article className="money-stat fees"><span>Transfer within accounts</span><strong>{bankStatementTransferLines.length}</strong></article>
     </section>
     <section className="csv-import-layout bank-statement-layout">
       <div className="accounting-form card">
@@ -5484,13 +5490,14 @@ function AccountingWorkspacePage({
       </div>
       <section className={`card accounting-table-card bank-statement-card ${bankStatementFocusMode ? "bank-statement-fullscreen" : ""} lock-${lockedBankStatementColumn}`}>
         <div className="bank-lines-heading">
-          <div><h3>Statement lines</h3><span>{bankStatementLines.length} imported row{bankStatementLines.length === 1 ? "" : "s"}</span></div>
+          <div><h3>{selectedBankStatementSectionLabel}</h3><span>{shownBankStatementLines.length} shown from {bankStatementLines.length} imported row{bankStatementLines.length === 1 ? "" : "s"}</span></div>
           <div className="bank-reference-actions no-print">
+            <div className="bank-section-pills" aria-label="Bank statement sections"><button className={selectedBankStatementSection === "accounts" ? "active" : ""} onClick={() => setSelectedBankStatementSection("accounts")}>Accounts</button><button className={selectedBankStatementSection === "sales" ? "active" : ""} onClick={() => setSelectedBankStatementSection("sales")}>Sales</button><button className={selectedBankStatementSection === "transfers" ? "active" : ""} onClick={() => setSelectedBankStatementSection("transfers")}>Transfer within accounts</button></div>
             <label>Lock column<select value={lockedBankStatementColumn} onChange={(event) => setLockedBankStatementColumn(event.target.value as "none" | "status" | "date" | "description")}><option value="none">No locked column</option><option value="status">Status</option><option value="date">Date</option><option value="description">Description</option></select></label>
             <button className="button secondary" disabled={!bankStatementLines.length} onClick={() => setBankStatementFocusMode((current) => !current)}>{bankStatementFocusMode ? "Exit full screen" : "Full screen"}</button>
           </div>
         </div>
-        <div className="table-scroll bank-statement-lines-scroll"><table className="orders-table bank-statement-table"><thead><tr><th>Status</th><th>Date</th><th>Bank</th><th>Description</th><th>Amount</th><th>Action</th></tr></thead><tbody>{bankStatementLines.map((line) => {
+        <div className="table-scroll bank-statement-lines-scroll"><table className="orders-table bank-statement-table"><thead><tr><th>Status</th><th>Date</th><th>Bank</th><th>Description</th><th>Amount</th><th>Action</th></tr></thead><tbody>{shownBankStatementLines.map((line) => {
           const form = bankStatementMatchForms[line.id] ?? { businessEvent: line.suggestedEvent || (line.moneyIn > 0 ? "other_income" : "expense"), accountName: line.suggestedAccount || "", notes: "" };
           const options = bankStatementAccountOptions(form.businessEvent);
           const action = bankLineActions[line.id] || "";
@@ -5521,7 +5528,7 @@ function AccountingWorkspacePage({
           {action === "pair" && line.matchStatus === "unmatched" && <tr className="bank-line-detail-row"><td colSpan={6}><section className="posting-preview bank-line-action-panel"><h3>Pair internal bank transfer</h3><p>Choose the matching money-in or money-out row from another bank account. Both rows will be marked as internal transfer and excluded from income/expenses.</p><div className="bank-match-summary"><span>This row {formatMoney(getBankLineAmount(line))}</span><span>{line.moneyIn > 0 ? "Money in" : "Money out"}</span><strong>Same day or 1 day apart</strong></div><label>Matching bank row<select value={bankLineSelectedPairs[line.id] || ""} onChange={(event) => setBankLineSelectedPairs((current) => ({ ...current, [line.id]: event.target.value }))}><option value="">Choose matching bank row</option>{pairCandidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{formatDate(candidate.transactionDate)} | {bankLineBankName(candidate)} | {candidate.moneyIn > 0 ? "Money in" : "Money out"} | {formatMoney(getBankLineAmount(candidate))} | Row {candidate.rowNumber}</option>)}</select></label>{pairCandidates.length > 0 && <div className="bank-linked-list">{pairCandidates.map((candidate) => <div key={candidate.id}><span>{formatDate(candidate.transactionDate)}</span><strong>{bankLineBankName(candidate)} | {candidate.description}</strong><em>{formatMoney(getBankLineAmount(candidate))}</em></div>)}</div>}<div className="csv-import-actions"><button className="button primary" disabled={!selectedPair || saving} onClick={() => selectedPair && onPairInternalTransferLine(line, selectedPair)}>Pair selected rows</button>{!pairCandidates.length && <span>No exact opposite row found within 1 day. Import the other bank statement first, or ignore manually.</span>}</div></section></td></tr>}
           {action === "new" && line.matchStatus === "unmatched" && <tr className="bank-line-detail-row"><td colSpan={6}><section className="posting-preview bank-line-action-panel"><h3>Create new transaction</h3><div className="accounting-two-cols"><label>Business event<select value={form.businessEvent} onChange={(event) => onBankStatementMatchFormChange(line.id, { businessEvent: event.target.value, accountName: "" })}><option value="expense">Expense</option><option value="inventory_purchase">Inventory</option><option value="asset_purchase">Asset</option><option value="marketing_expense">Marketing</option><option value="operating_cost">Pre-paid operating cost</option><option value="other_income">Other income</option><option value="payment_processor_paid">Cash / transfer</option><option value="internal_transfer">Internal transfer / pair</option><option value="ignore">Ignore</option></select></label><label>Account<select value={form.accountName || options[0] || ""} disabled={form.businessEvent === "ignore"} onChange={(event) => onBankStatementMatchFormChange(line.id, { accountName: event.target.value })}>{options.map((option) => <option key={option} value={option}>{option}</option>)}</select></label></div><label>Notes<input value={form.notes} onChange={(event) => onBankStatementMatchFormChange(line.id, { notes: event.target.value })} placeholder="Optional note" /></label><button className="button primary" disabled={saving} onClick={() => onMatchBankStatementLine(line)}>{form.businessEvent === "internal_transfer" ? "Pair internal transfer" : "Create new transaction"}</button></section></td></tr>}
           </Fragment>;
-        })}</tbody></table>{!bankStatementLines.length && <div className="empty"><strong>No bank statement imported yet</strong><p>Drop a PDF or CSV statement to start matching transactions from your bank.</p></div>}</div>
+        })}</tbody></table>{!shownBankStatementLines.length && <div className="empty"><strong>No {selectedBankStatementSectionLabel.toLowerCase()} rows yet</strong><p>{bankStatementLines.length ? "Rows will move here when you mark or pair them." : "Drop a PDF or CSV statement to start matching transactions from your bank."}</p></div>}</div>
       </section>
     </section>
     <section className="card bank-statement-reference bank-statement-reference-print">

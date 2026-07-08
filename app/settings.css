@@ -109,6 +109,9 @@
 .bank-lines-heading { display: flex; justify-content: space-between; gap: 14px; align-items: flex-end; margin-bottom: 14px; }
 .bank-lines-heading h3 { margin: 0 0 4px; }
 .bank-lines-heading span { color: var(--muted); font-size: 12px; }
+.bank-section-pills { display: inline-flex; gap: 4px; padding: 5px; border-radius: 14px; background: #eaf1fb; }
+.bank-section-pills button { border: 0; border-radius: 10px; padding: 8px 12px; background: transparent; color: #40516a; font-weight: 900; cursor: pointer; white-space: nowrap; }
+.bank-section-pills button.active { background: #fff; color: #064899; box-shadow: 0 2px 8px rgba(15, 45, 79, .12); }
 .bank-statement-fullscreen { position: fixed; inset: 12px; z-index: 50; display: flex; flex-direction: column; max-width: none; overflow: hidden; box-shadow: 0 24px 80px rgba(10, 24, 42, .28); }
 .bank-statement-fullscreen .bank-statement-lines-scroll { flex: 1; max-height: none; }
 .bank-statement-lines-scroll { max-height: min(70vh, 780px); border: 1px solid #e5edf6; border-radius: 10px; background: #fff; }
