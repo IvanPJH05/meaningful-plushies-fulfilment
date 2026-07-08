@@ -126,12 +126,13 @@ export function parseBankStatementCsv(text: string): ParsedBankStatementLine[] {
   const parsed = parseStatementCsv(text);
   if (parsed.length < 2) return [];
   const headers = parsed[0].map((header) => header.trim());
-  const dateIndex = findColumn(headers, ["date", "transaction date", "posting date", "value date", "txn date"]);
-  const descriptionIndex = findColumn(headers, ["description", "details", "transaction details", "narration", "particulars", "merchant"]);
-  const referenceIndex = findColumn(headers, ["reference", "ref", "transaction id", "cheque no", "id"]);
+  const dateIndex = findColumn(headers, ["date", "transaction date", "posting date", "value date", "txn date", "bank date", "bank_date"]);
+  const descriptionIndex = findColumn(headers, ["description", "details", "transaction details", "narration", "particulars", "merchant", "bank description", "bank_description"]);
+  const referenceIndex = findColumn(headers, ["reference", "ref", "transaction id", "cheque no", "id", "bank reference", "bank_reference", "bank transaction id", "bank_transaction_id"]);
   const debitIndex = findColumn(headers, ["debit", "withdrawal", "money out", "paid out", "payment"]);
   const creditIndex = findColumn(headers, ["credit", "deposit", "money in", "paid in", "receipt"]);
-  const amountIndex = findColumn(headers, ["amount", "transaction amount", "value"]);
+  const amountIndex = findColumn(headers, ["amount", "transaction amount", "value", "bank amount", "bank_amount"]);
+  const directionIndex = findColumn(headers, ["direction", "bank direction", "bank_direction", "money direction"]);
   const balanceIndex = findColumn(headers, ["balance", "running balance", "available balance"]);
 
   return parsed.slice(1).map((row, index) => {
@@ -144,8 +145,9 @@ export function parseBankStatementCsv(text: string): ParsedBankStatementLine[] {
     const debit = Math.abs(parseMoney(textAt(row, debitIndex)));
     const credit = Math.abs(parseMoney(textAt(row, creditIndex)));
     const signedAmount = parseMoney(textAt(row, amountIndex));
-    const moneyOut = debit > 0 ? debit : signedAmount < 0 ? Math.abs(signedAmount) : 0;
-    const moneyIn = credit > 0 ? credit : signedAmount > 0 && debitIndex < 0 && creditIndex < 0 ? signedAmount : 0;
+    const direction = textAt(row, directionIndex).toLowerCase().replace(/\s+/g, "_");
+    const moneyOut = direction === "money_out" ? Math.abs(signedAmount) : debit > 0 ? debit : signedAmount < 0 ? Math.abs(signedAmount) : 0;
+    const moneyIn = direction === "money_in" ? Math.abs(signedAmount) : credit > 0 ? credit : signedAmount > 0 && debitIndex < 0 && creditIndex < 0 ? signedAmount : 0;
     const warnings = [
       !date ? "No date detected" : "",
       !description ? "No description detected" : "",
