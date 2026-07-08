@@ -827,6 +827,36 @@ export async function deleteAccountingTransaction(id: string) {
   if (error) throw error;
 }
 
+function normalizeBankDirection(value: unknown): "money_in" | "money_out" | "" {
+  const normalized = String(value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  if (["money_in", "in", "credit", "cr", "deposit", "paid_in", "receipt"].includes(normalized)) return "money_in";
+  if (["money_out", "out", "debit", "dr", "withdrawal", "paid_out", "payment"].includes(normalized)) return "money_out";
+  return "";
+}
+
+function bankDirectionFromRaw(rawData: unknown): "money_in" | "money_out" | "" {
+  if (!rawData || typeof rawData !== "object") return "";
+  const entries = Object.entries(rawData as Record<string, unknown>);
+  const directionEntry = entries.find(([key]) => key.toLowerCase().replace(/[^a-z0-9]+/g, "") === "bankdirection" || key.toLowerCase().replace(/[^a-z0-9]+/g, "") === "direction");
+  return normalizeBankDirection(directionEntry?.[1]);
+}
+
+function bankDirectionFromDescription(description: string): "money_in" | "money_out" | "" {
+  if (/\b(CR|CREDIT)\b/i.test(description)) return "money_in";
+  if (/\b(DR|DEBIT)\b/i.test(description)) return "money_out";
+  return "";
+}
+
+function normalizedBankMoney(moneyIn: number, moneyOut: number, rawData: unknown, description = "") {
+  const inAmount = Math.max(0, Number(moneyIn) || 0);
+  const outAmount = Math.max(0, Number(moneyOut) || 0);
+  const direction = bankDirectionFromRaw(rawData) || (inAmount > 0 && outAmount > 0 ? bankDirectionFromDescription(description) : "");
+  const amount = Math.max(inAmount, outAmount);
+  if (direction === "money_in") return { moneyIn: amount, moneyOut: 0 };
+  if (direction === "money_out") return { moneyIn: 0, moneyOut: amount };
+  return { moneyIn: inAmount, moneyOut: outAmount };
+}
+
 export async function fetchAccountingBankStatementLines(): Promise<AccountingBankStatementLine[]> {
   const { data, error } = await requireSupabase()
     .from("accounting_bank_statement_lines")
@@ -838,47 +868,55 @@ export async function fetchAccountingBankStatementLines(): Promise<AccountingBan
     if (isMissingTableError(error)) return [];
     throw error;
   }
-  return (data ?? []).map((row) => ({
-    id: row.id,
-    importId: row.import_id ?? "",
-    rowNumber: Number(row.row_number ?? 0),
-    transactionDate: row.transaction_date,
-    description: row.description ?? "",
-    reference: row.reference ?? "",
-    moneyIn: Number(row.money_in ?? 0),
-    moneyOut: Number(row.money_out ?? 0),
-    balance: row.balance === null || row.balance === undefined ? null : Number(row.balance),
-    rawData: row.raw_data ?? {},
-    matchedTransactionId: row.matched_transaction_id ?? "",
-    matchStatus: row.match_status ?? "unmatched",
-    suggestedEvent: row.suggested_event ?? "",
-    suggestedAccount: row.suggested_account ?? "",
-    notes: row.notes ?? "",
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  }));
+  return (data ?? []).map((row) => {
+    const rawData = row.raw_data ?? {};
+    const description = row.description ?? "";
+    const money = normalizedBankMoney(Number(row.money_in ?? 0), Number(row.money_out ?? 0), rawData, description);
+    return {
+      id: row.id,
+      importId: row.import_id ?? "",
+      rowNumber: Number(row.row_number ?? 0),
+      transactionDate: row.transaction_date,
+      description,
+      reference: row.reference ?? "",
+      moneyIn: money.moneyIn,
+      moneyOut: money.moneyOut,
+      balance: row.balance === null || row.balance === undefined ? null : Number(row.balance),
+      rawData,
+      matchedTransactionId: row.matched_transaction_id ?? "",
+      matchStatus: row.match_status ?? "unmatched",
+      suggestedEvent: row.suggested_event ?? "",
+      suggestedAccount: row.suggested_account ?? "",
+      notes: row.notes ?? "",
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  });
 }
 
 export async function saveAccountingBankStatementLines(lines: AccountingBankStatementLine[]) {
   if (!lines.length) return;
-  const { error } = await requireSupabase().from("accounting_bank_statement_lines").upsert(lines.map((line) => ({
-    id: line.id,
-    import_id: line.importId,
-    row_number: line.rowNumber,
-    transaction_date: line.transactionDate,
-    description: line.description,
-    reference: line.reference,
-    money_in: Math.max(0, line.moneyIn),
-    money_out: Math.max(0, line.moneyOut),
-    balance: line.balance,
-    raw_data: line.rawData,
-    matched_transaction_id: line.matchedTransactionId || null,
-    match_status: line.matchStatus,
-    suggested_event: line.suggestedEvent || "",
-    suggested_account: line.suggestedAccount || "",
-    notes: line.notes || "",
-    updated_at: new Date().toISOString(),
-  })), { onConflict: "id" });
+  const { error } = await requireSupabase().from("accounting_bank_statement_lines").upsert(lines.map((line) => {
+    const money = normalizedBankMoney(line.moneyIn, line.moneyOut, line.rawData, line.description);
+    return {
+      id: line.id,
+      import_id: line.importId,
+      row_number: line.rowNumber,
+      transaction_date: line.transactionDate,
+      description: line.description,
+      reference: line.reference,
+      money_in: money.moneyIn,
+      money_out: money.moneyOut,
+      balance: line.balance,
+      raw_data: line.rawData,
+      matched_transaction_id: line.matchedTransactionId || null,
+      match_status: line.matchStatus,
+      suggested_event: line.suggestedEvent || "",
+      suggested_account: line.suggestedAccount || "",
+      notes: line.notes || "",
+      updated_at: new Date().toISOString(),
+    };
+  }), { onConflict: "id" });
   if (error) throw error;
 }
 

@@ -65,6 +65,13 @@ function moneyAbs(value: string) {
   return Math.abs(parseMoney(value));
 }
 
+function normalizeDirection(value: string): "money_in" | "money_out" | "" {
+  const normalized = value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  if (["money_in", "in", "credit", "cr", "deposit", "paid_in", "receipt"].includes(normalized)) return "money_in";
+  if (["money_out", "out", "debit", "dr", "withdrawal", "paid_out", "payment"].includes(normalized)) return "money_out";
+  return "";
+}
+
 function inferStatementYear(text: string) {
   const shortYear = text.match(/\b\d{1,2}\/\d{1,2}\/(\d{2})\b/)?.[1];
   if (shortYear) return `20${shortYear}`;
@@ -145,9 +152,14 @@ export function parseBankStatementCsv(text: string): ParsedBankStatementLine[] {
     const debit = Math.abs(parseMoney(textAt(row, debitIndex)));
     const credit = Math.abs(parseMoney(textAt(row, creditIndex)));
     const signedAmount = parseMoney(textAt(row, amountIndex));
-    const direction = textAt(row, directionIndex).toLowerCase().replace(/\s+/g, "_");
-    const moneyOut = direction === "money_out" ? Math.abs(signedAmount) : debit > 0 ? debit : signedAmount < 0 ? Math.abs(signedAmount) : 0;
-    const moneyIn = direction === "money_in" ? Math.abs(signedAmount) : credit > 0 ? credit : signedAmount > 0 && debitIndex < 0 && creditIndex < 0 ? signedAmount : 0;
+    const direction = normalizeDirection(textAt(row, directionIndex));
+    const directedAmount = Math.abs(signedAmount) || debit || credit;
+    const moneyOut = direction
+      ? direction === "money_out" ? directedAmount : 0
+      : debit > 0 ? debit : signedAmount < 0 ? Math.abs(signedAmount) : 0;
+    const moneyIn = direction
+      ? direction === "money_in" ? directedAmount : 0
+      : credit > 0 ? credit : signedAmount > 0 && debitIndex < 0 && creditIndex < 0 ? signedAmount : 0;
     const warnings = [
       !date ? "No date detected" : "",
       !description ? "No description detected" : "",

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseBankStatementText } from "./bank-statements.ts";
+import { parseBankStatementCsv, parseBankStatementText } from "./bank-statements.ts";
 
 test("parses Maybank plus and minus statement lines", () => {
   const rows = parseBankStatementText(`
@@ -94,4 +94,16 @@ VISA4848100097406355 FACEBK Z2FNEN9NB2 IE
   assert.equal(rows[2].moneyOut, 193.32);
   assert.equal(rows[2].suggestedEvent, "marketing_expense");
   assert.equal(rows[2].suggestedAccount, "Meta Ads");
+});
+
+test("parses CSV bank direction into only one money column", () => {
+  const rows = parseBankStatementCsv(`bank_date,bank_description,bank_amount,bank_direction,amount
+2026-07-01,DUITNOW TRSF DR | FOOD,30,money_out,30
+2026-07-02,DUITNOW TRSF CR | CUSTOMER,115,money_in,115
+`);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].moneyIn, 0);
+  assert.equal(rows[0].moneyOut, 30);
+  assert.equal(rows[1].moneyIn, 115);
+  assert.equal(rows[1].moneyOut, 0);
 });
