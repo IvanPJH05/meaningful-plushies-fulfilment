@@ -42,14 +42,14 @@
 .unit-cost-filter { display: grid; gap: 6px; min-width: 220px; color: var(--muted); font-size: 10px; font-weight: 850; text-transform: uppercase; letter-spacing: .04em; }
 .unit-cost-filter select { height: 38px; border: 1px solid #d7dfe9; border-radius: 7px; padding: 0 10px; background: #fff; color: var(--text); font-size: 12px; font-weight: 750; text-transform: none; letter-spacing: 0; }
 .unit-cost-table td strong { color: var(--text); }
-.accounting-date-filter { display: grid; grid-template-columns: minmax(220px, 1fr) auto; gap: 18px; align-items: end; margin: 16px 0; padding: 14px 16px; }
+.accounting-date-filter { display: grid; grid-template-columns: minmax(220px, 1fr) auto; gap: 18px; align-items: flex-end; margin: 16px 0; padding: 14px 16px; }
 .accounting-date-copy { margin-right: auto; }
 .accounting-date-filter strong,
 .accounting-date-filter span { display: block; }
 .accounting-date-filter span { margin-top: 3px; color: var(--muted); font-size: 10px; }
 .accounting-date-filter label { display: grid; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 800; }
 .accounting-date-filter input { height: 38px; border: 1px solid #d7dfe9; border-radius: 7px; padding: 0 10px; background: #fff; color: var(--text); }
-.accounting-period-panel { display: grid; grid-template-columns: auto 138px 138px; gap: 10px; align-items: end; }
+.accounting-period-panel { display: grid; grid-template-columns: auto 138px 138px; gap: 10px; align-items: flex-end; }
 .accounting-period-selector { display: flex; gap: 5px; padding: 5px; border: 1px solid #cfdbeb; border-radius: 999px; background: linear-gradient(135deg, #edf4ff, #f8fbff); box-shadow: inset 0 1px 0 rgba(255,255,255,.8); }
 .accounting-period-selector button { border: 0; border-radius: 999px; padding: 9px 13px; background: transparent; color: #526985; font-size: 10px; font-weight: 850; cursor: pointer; }
 .accounting-period-selector button.active { background: #174f91; color: #fff; box-shadow: 0 5px 14px rgba(23, 79, 145, .22); }
@@ -82,16 +82,54 @@
 .accounting-period-tabs { min-width: 220px; }
 .general-journal-table tr.journal-group-end td { border-bottom: 3px solid #9eb1c8; }
 .general-journal-table tr.journal-group-end td:first-child { box-shadow: inset 4px 0 0 #315f9e; }
+.bank-statement-reference { margin-top: 16px; padding: 22px; }
+.bank-reference-heading { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 18px; }
+.bank-reference-heading p,
+.bank-reference-print-title p { margin: 0 0 5px; color: #315f9e; font-size: 11px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
+.bank-reference-heading h3 { margin: 0 0 5px; font-size: 22px; }
+.bank-reference-heading span,
+.bank-reference-print-title span { color: var(--muted); font-size: 12px; }
+.bank-reference-actions { display: flex; gap: 10px; align-items: flex-end; }
+.bank-reference-actions label { display: grid; gap: 5px; min-width: 190px; color: var(--muted); font-size: 10px; font-weight: 850; text-transform: uppercase; letter-spacing: .04em; }
+.bank-reference-actions select { height: 38px; border: 1px solid #d7dfe9; border-radius: 7px; background: #fff; padding: 0 10px; color: var(--text); font-size: 12px; font-weight: 800; text-transform: none; letter-spacing: 0; }
+.bank-reference-print-title { display: none; text-align: center; margin-bottom: 16px; }
+.bank-reference-print-title h2 { margin: 0 0 6px; font-size: 24px; }
+.bank-reference-months { display: grid; gap: 24px; }
+.bank-reference-month { break-inside: avoid; }
+.bank-month-title { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; padding: 10px 0 8px; border-bottom: 2px solid #26384f; }
+.bank-month-title strong { font-size: 17px; }
+.bank-month-title span { color: var(--muted); font-size: 11px; }
+.bank-reference-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
+.bank-reference-table th { padding: 7px 8px; border-bottom: 1px solid #2d3c50; color: #111827; font-size: 10px; font-style: italic; text-align: left; text-transform: uppercase; }
+.bank-reference-table th:nth-child(1) { width: 70px; }
+.bank-reference-table th:nth-child(3),
+.bank-reference-table th:nth-child(4),
+.bank-reference-table th:nth-child(5) { width: 118px; text-align: right; }
+.bank-reference-table td { vertical-align: top; padding: 7px 8px; border-bottom: 1px solid #e5edf6; color: #172033; line-height: 1.45; }
+.bank-reference-table td:nth-child(3),
+.bank-reference-table td:nth-child(4),
+.bank-reference-table td:nth-child(5) { text-align: right; font-weight: 800; white-space: nowrap; }
+.bank-reference-table td strong { display: block; white-space: pre-wrap; overflow-wrap: anywhere; font-weight: 650; }
+.bank-reference-table td small,
+.bank-reference-table td em { display: block; margin-top: 2px; color: #64748b; font-size: 10px; font-style: normal; overflow-wrap: anywhere; }
+.bank-reference-table tfoot td { border-top: 2px solid #26384f; border-bottom: 0; font-weight: 900; }
 
 @media (max-width: 1100px) {
   .accounting-date-filter { grid-template-columns: 1fr; }
   .accounting-period-panel { grid-template-columns: 1fr 1fr; }
   .accounting-period-selector { grid-column: 1 / -1; width: fit-content; }
+  .bank-reference-heading,
+  .bank-reference-actions { flex-direction: column; align-items: stretch; }
 }
 
 @page financial-report {
   size: A4 portrait;
   margin: 12mm;
+}
+
+@page bank-statement-reference {
+  size: A4 portrait;
+  margin: 10mm;
 }
 
 @media print {
@@ -122,6 +160,41 @@
   body.print-financial-report .statement-row,
   body.print-financial-report .statement-total,
   body.print-financial-report .statement-grand-total { break-inside: avoid; }
+  body.print-bank-statement { background: #fff !important; }
+  body.print-bank-statement .side-nav,
+  body.print-bank-statement .topbar,
+  body.print-bank-statement .notice,
+  body.print-bank-statement .no-print,
+  body.print-bank-statement .accounting-hero,
+  body.print-bank-statement .accounting-summary-grid,
+  body.print-bank-statement .csv-import-layout { display: none !important; }
+  body.print-bank-statement .app-shell { display: block !important; }
+  body.print-bank-statement .main-area { padding: 0 !important; }
+  body.print-bank-statement .main-area > :not(.accounting-workspace) { display: none !important; }
+  body.print-bank-statement .accounting-workspace > :not(.bank-statement-reference-print) { display: none !important; }
+  body.print-bank-statement .bank-statement-reference-print {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    page: bank-statement-reference;
+  }
+  body.print-bank-statement .bank-reference-heading { display: none !important; }
+  body.print-bank-statement .bank-reference-print-title { display: block; }
+  body.print-bank-statement .bank-reference-months { gap: 14px; }
+  body.print-bank-statement .bank-month-title { padding-top: 8px; }
+  body.print-bank-statement .bank-reference-table { font-size: 8.8pt; }
+  body.print-bank-statement .bank-reference-table th { font-size: 7.2pt; padding: 4px 5px; }
+  body.print-bank-statement .bank-reference-table td { padding: 4px 5px; line-height: 1.28; }
+  body.print-bank-statement .bank-reference-table th:nth-child(1) { width: 13mm; }
+  body.print-bank-statement .bank-reference-table th:nth-child(3),
+  body.print-bank-statement .bank-reference-table th:nth-child(4),
+  body.print-bank-statement .bank-reference-table th:nth-child(5) { width: 22mm; }
+  body.print-bank-statement .bank-reference-table td small,
+  body.print-bank-statement .bank-reference-table td em { font-size: 7pt; }
 }
 .money-stat { position: relative; display: flex; flex-direction: column; overflow: hidden; min-width: 0; min-height: 134px; padding: 16px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }
 .money-stat::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: #3278c7; }
@@ -296,7 +369,7 @@
 .creator-account-stats div { padding: 12px; background: #f9fbfe; }
 .creator-account-stats span { display: block; color: var(--muted); font-size: 9px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }
 .creator-account-stats strong { display: block; margin-top: 5px; color: var(--text); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.creator-account-tools { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto auto; gap: 9px; align-items: end; }
+.creator-account-tools { display: grid; grid-template-columns: minmax(220px, 1fr) auto auto auto; gap: 9px; align-items: flex-end; }
 .creator-account-tools label { display: grid; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 850; letter-spacing: .04em; text-transform: uppercase; }
 .creator-payout-history { display: grid; gap: 8px; }
 .creator-payout-history div { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid #e6edf5; border-radius: 9px; background: #fbfdff; font-size: 12px; }

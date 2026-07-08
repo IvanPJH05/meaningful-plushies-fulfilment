@@ -869,7 +869,7 @@ function calculateInventoryCostFields(
   return changed;
 }
 
-function printView(className: "print-packing" | "print-sales-report" | "print-financial-report") {
+function printView(className: "print-packing" | "print-sales-report" | "print-financial-report" | "print-bank-statement") {
   document.body.classList.add(className);
   const cleanup = () => document.body.classList.remove(className);
   window.addEventListener("afterprint", cleanup, { once: true });
@@ -4523,6 +4523,29 @@ function AccountingWorkspacePage({
   const bankStatementUnmatched = bankStatementLines.filter((line) => line.matchStatus === "unmatched");
   const bankStatementMatched = bankStatementLines.filter((line) => line.matchStatus === "matched");
   const bankStatementIgnored = bankStatementLines.filter((line) => line.matchStatus === "ignored");
+  const [selectedBankStatementMonth, setSelectedBankStatementMonth] = useState("all");
+  const bankStatementReferenceGroups = useMemo(() => {
+    const sorted = [...bankStatementLines].sort((a, b) => dateKey(a.transactionDate).localeCompare(dateKey(b.transactionDate)) || a.rowNumber - b.rowNumber);
+    const grouped = new Map<string, AccountingBankStatementLine[]>();
+    for (const line of sorted) {
+      const key = dateKey(line.transactionDate).slice(0, 7) || "unknown";
+      grouped.set(key, [...(grouped.get(key) ?? []), line]);
+    }
+    return [...grouped.entries()].map(([month, lines]) => ({ month, lines }));
+  }, [bankStatementLines]);
+  const bankStatementMonthOptions = bankStatementReferenceGroups.map((group) => group.month);
+  const shownBankStatementGroups = selectedBankStatementMonth === "all"
+    ? bankStatementReferenceGroups
+    : bankStatementReferenceGroups.filter((group) => group.month === selectedBankStatementMonth);
+  function formatStatementNumber(value: number | null) {
+    if (value === null || !Number.isFinite(value)) return "";
+    return new Intl.NumberFormat("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+  }
+  function formatStatementDate(value: string) {
+    const key = dateKey(value);
+    if (!key || key.length < 10) return value || "-";
+    return `${key.slice(8, 10)}/${key.slice(5, 7)}`;
+  }
   function bankStatementUiConfigForEvent(eventValue: string) {
     if (eventValue === "inventory_purchase") return bookkeepingSectionConfigs.inventory;
     if (eventValue === "asset_purchase") return bookkeepingSectionConfigs.asset;
@@ -4662,6 +4685,43 @@ function AccountingWorkspacePage({
           </tr>;
         })}</tbody></table>{!bankStatementLines.length && <div className="empty"><strong>No bank statement imported yet</strong><p>Drop a PDF or CSV statement to start matching transactions from your bank.</p></div>}</div>
       </section>
+    </section>
+    <section className="card bank-statement-reference bank-statement-reference-print">
+      <div className="bank-reference-heading">
+        <div><p>BANK STATEMENT REFERENCE</p><h3>Monthly statement view</h3><span>Saved imported rows in the original statement format for checking and PDF reference.</span></div>
+        <div className="bank-reference-actions no-print">
+          <label>Month<select value={selectedBankStatementMonth} onChange={(event) => setSelectedBankStatementMonth(event.target.value)}><option value="all">All months</option>{bankStatementMonthOptions.map((month) => <option key={month} value={month}>{formatMonthLabel(`${month}-01`)}</option>)}</select></label>
+          <button className="button primary" disabled={!bankStatementLines.length} onClick={() => printView("print-bank-statement")}>Print / Save PDF</button>
+        </div>
+      </div>
+      <div className="bank-reference-print-title">
+        <p>Meaningful Plushies</p>
+        <h2>Bank Statement Reference</h2>
+        <span>{selectedBankStatementMonth === "all" ? "All imported months" : formatMonthLabel(`${selectedBankStatementMonth}-01`)}</span>
+      </div>
+      <div className="bank-reference-months">
+        {shownBankStatementGroups.map((group) => {
+          const debitTotal = group.lines.reduce((total, line) => total + line.moneyOut, 0);
+          const creditTotal = group.lines.reduce((total, line) => total + line.moneyIn, 0);
+          return <section className="bank-reference-month" key={group.month}>
+            <div className="bank-month-title"><strong>{formatMonthLabel(`${group.month}-01`)}</strong><span>{group.lines.length} transaction{group.lines.length === 1 ? "" : "s"}</span></div>
+            <table className="bank-reference-table">
+              <thead><tr><th>Date</th><th>Transaction</th><th>Debit</th><th>Credit</th><th>Balance</th></tr></thead>
+              <tbody>
+                {group.lines.map((line) => <tr key={line.id}>
+                  <td>{formatStatementDate(line.transactionDate)}</td>
+                  <td><strong>{line.description}</strong>{line.reference && <small>{line.reference}</small>}{line.notes && <em>{line.notes}</em>}</td>
+                  <td>{line.moneyOut > 0 ? formatStatementNumber(line.moneyOut) : ""}</td>
+                  <td>{line.moneyIn > 0 ? formatStatementNumber(line.moneyIn) : ""}</td>
+                  <td>{formatStatementNumber(line.balance)}</td>
+                </tr>)}
+              </tbody>
+              <tfoot><tr><td colSpan={2}>Monthly total</td><td>{formatStatementNumber(debitTotal)}</td><td>{formatStatementNumber(creditTotal)}</td><td /></tr></tfoot>
+            </table>
+          </section>;
+        })}
+        {!shownBankStatementGroups.length && <div className="empty"><strong>No monthly reference yet</strong><p>Import a bank statement first, then the monthly reference will appear here.</p></div>}
+      </div>
     </section>
   </section>;
 
