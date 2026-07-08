@@ -5116,7 +5116,7 @@ function AccountingWorkspacePage({
   const linkedTransactionIds = new Set(bankStatementLines.map((line) => line.matchedTransactionId).filter(Boolean));
   const [selectedBankStatementMonth, setSelectedBankStatementMonth] = useState("all");
   const [bankStatementFocusMode, setBankStatementFocusMode] = useState(false);
-  const [lockedBankStatementColumn, setLockedBankStatementColumn] = useState<"none" | "date" | "transaction">("date");
+  const [lockedBankStatementColumn, setLockedBankStatementColumn] = useState<"none" | "status" | "date" | "description">("date");
   const bankStatementReferenceGroups = useMemo(() => {
     const sorted = [...bankStatementLines].sort((a, b) => dateKey(a.transactionDate).localeCompare(dateKey(b.transactionDate)) || a.rowNumber - b.rowNumber);
     const grouped = new Map<string, AccountingBankStatementLine[]>();
@@ -5356,9 +5356,15 @@ function AccountingWorkspacePage({
           <div><span>Sales</span><strong>Mark customer bank-transfer sales as already recorded from fulfilment</strong></div>
         </section>
       </div>
-      <section className="card accounting-table-card bank-statement-card">
-        <h3>Statement lines</h3>
-        <div className="table-scroll"><table className="orders-table bank-statement-table"><thead><tr><th>Status</th><th>Date</th><th>Bank</th><th>Description</th><th>Amount</th><th>Action</th></tr></thead><tbody>{bankStatementLines.map((line) => {
+      <section className={`card accounting-table-card bank-statement-card ${bankStatementFocusMode ? "bank-statement-fullscreen" : ""} lock-${lockedBankStatementColumn}`}>
+        <div className="bank-lines-heading">
+          <div><h3>Statement lines</h3><span>{bankStatementLines.length} imported row{bankStatementLines.length === 1 ? "" : "s"}</span></div>
+          <div className="bank-reference-actions no-print">
+            <label>Lock column<select value={lockedBankStatementColumn} onChange={(event) => setLockedBankStatementColumn(event.target.value as "none" | "status" | "date" | "description")}><option value="none">No locked column</option><option value="status">Status</option><option value="date">Date</option><option value="description">Description</option></select></label>
+            <button className="button secondary" disabled={!bankStatementLines.length} onClick={() => setBankStatementFocusMode((current) => !current)}>{bankStatementFocusMode ? "Exit full screen" : "Full screen"}</button>
+          </div>
+        </div>
+        <div className="table-scroll bank-statement-lines-scroll"><table className="orders-table bank-statement-table"><thead><tr><th>Status</th><th>Date</th><th>Bank</th><th>Description</th><th>Amount</th><th>Action</th></tr></thead><tbody>{bankStatementLines.map((line) => {
           const form = bankStatementMatchForms[line.id] ?? { businessEvent: line.suggestedEvent || (line.moneyIn > 0 ? "other_income" : "expense"), accountName: line.suggestedAccount || "", notes: "" };
           const options = bankStatementAccountOptions(form.businessEvent);
           const action = bankLineActions[line.id] || "";
@@ -5379,13 +5385,11 @@ function AccountingWorkspacePage({
         })}</tbody></table>{!bankStatementLines.length && <div className="empty"><strong>No bank statement imported yet</strong><p>Drop a PDF or CSV statement to start matching transactions from your bank.</p></div>}</div>
       </section>
     </section>
-    <section className={`card bank-statement-reference bank-statement-reference-print ${bankStatementFocusMode ? "bank-reference-fullscreen" : ""} lock-${lockedBankStatementColumn}`}>
+    <section className="card bank-statement-reference bank-statement-reference-print">
       <div className="bank-reference-heading">
         <div><p>BANK STATEMENT REFERENCE</p><h3>Monthly statement view</h3><span>Saved imported rows in the original statement format for checking and PDF reference.</span></div>
         <div className="bank-reference-actions no-print">
           <label>Month<select value={selectedBankStatementMonth} onChange={(event) => setSelectedBankStatementMonth(event.target.value)}><option value="all">All months</option>{bankStatementMonthOptions.map((month) => <option key={month} value={month}>{formatMonthLabel(`${month}-01`)}</option>)}</select></label>
-          <label>Lock column<select value={lockedBankStatementColumn} onChange={(event) => setLockedBankStatementColumn(event.target.value as "none" | "date" | "transaction")}><option value="none">No locked column</option><option value="date">Date</option><option value="transaction">Transaction</option></select></label>
-          <button className="button secondary" disabled={!bankStatementLines.length} onClick={() => setBankStatementFocusMode((current) => !current)}>{bankStatementFocusMode ? "Exit full screen" : "Full screen"}</button>
           <button className="button primary" disabled={!bankStatementLines.length} onClick={() => printView("print-bank-statement")}>Print / Save PDF</button>
         </div>
       </div>

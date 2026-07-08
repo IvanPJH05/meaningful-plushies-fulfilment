@@ -106,18 +106,40 @@
 .bank-reference-actions { display: flex; gap: 10px; align-items: flex-end; }
 .bank-reference-actions label { display: grid; gap: 5px; min-width: 190px; color: var(--muted); font-size: 10px; font-weight: 850; text-transform: uppercase; letter-spacing: .04em; }
 .bank-reference-actions select { height: 38px; border: 1px solid #d7dfe9; border-radius: 7px; background: #fff; padding: 0 10px; color: var(--text); font-size: 12px; font-weight: 800; text-transform: none; letter-spacing: 0; }
+.bank-lines-heading { display: flex; justify-content: space-between; gap: 14px; align-items: flex-end; margin-bottom: 14px; }
+.bank-lines-heading h3 { margin: 0 0 4px; }
+.bank-lines-heading span { color: var(--muted); font-size: 12px; }
+.bank-statement-fullscreen { position: fixed; inset: 12px; z-index: 50; display: flex; flex-direction: column; max-width: none; overflow: hidden; box-shadow: 0 24px 80px rgba(10, 24, 42, .28); }
+.bank-statement-fullscreen .bank-statement-lines-scroll { flex: 1; max-height: none; }
+.bank-statement-lines-scroll { max-height: min(70vh, 780px); border: 1px solid #e5edf6; border-radius: 10px; background: #fff; }
+.bank-statement-table { table-layout: fixed; min-width: 940px; }
+.bank-statement-table th { position: sticky; top: 0; z-index: 3; }
+.bank-statement-table th:nth-child(1) { width: 120px; }
+.bank-statement-table th:nth-child(2) { width: 115px; }
+.bank-statement-table th:nth-child(3) { width: 100px; }
+.bank-statement-table th:nth-child(4) { width: 420px; }
+.bank-statement-table th:nth-child(5) { width: 132px; }
+.bank-statement-table th:nth-child(6) { width: 260px; }
+.bank-statement-table td:nth-child(4) { max-width: 420px; white-space: normal; }
+.bank-statement-table td:nth-child(4) strong,
+.bank-statement-table td:nth-child(4) small { white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
+.bank-statement-card.lock-status .bank-statement-table th:nth-child(1),
+.bank-statement-card.lock-status .bank-statement-table td:nth-child(1),
+.bank-statement-card.lock-date .bank-statement-table th:nth-child(2),
+.bank-statement-card.lock-date .bank-statement-table td:nth-child(2),
+.bank-statement-card.lock-description .bank-statement-table th:nth-child(4),
+.bank-statement-card.lock-description .bank-statement-table td:nth-child(4) { position: sticky; left: 0; z-index: 4; background: #fff; box-shadow: 1px 0 0 #d9e3ef; }
+.bank-statement-card.lock-status .bank-statement-table th:nth-child(1),
+.bank-statement-card.lock-date .bank-statement-table th:nth-child(2),
+.bank-statement-card.lock-description .bank-statement-table th:nth-child(4) { z-index: 5; background: #f8fafc; }
 .bank-reference-print-title { display: none; text-align: center; margin-bottom: 16px; }
 .bank-reference-print-title h2 { margin: 0 0 6px; font-size: 24px; }
 .bank-reference-months { display: grid; gap: 24px; }
-.bank-reference-fullscreen { position: fixed; inset: 12px; z-index: 50; display: flex; flex-direction: column; max-width: none; overflow: hidden; box-shadow: 0 24px 80px rgba(10, 24, 42, .28); }
-.bank-reference-fullscreen .bank-reference-heading { flex: 0 0 auto; }
-.bank-reference-fullscreen .bank-reference-months { overflow: auto; padding-right: 4px; }
 .bank-reference-month { break-inside: avoid; }
 .bank-month-title { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; padding: 10px 0 8px; border-bottom: 2px solid #26384f; }
 .bank-month-title strong { font-size: 17px; }
 .bank-month-title span { color: var(--muted); font-size: 11px; }
 .bank-reference-table-wrap { overflow: auto; max-height: min(68vh, 760px); border: 1px solid #e5edf6; border-radius: 10px; background: #fff; }
-.bank-reference-fullscreen .bank-reference-table-wrap { max-height: none; overflow: visible; border-radius: 0; }
 .bank-reference-table { width: 100%; min-width: 780px; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: 12px; }
 .bank-reference-table th { position: sticky; top: 0; z-index: 3; padding: 9px 10px; border-bottom: 1px solid #2d3c50; background: #f8fafc; color: #111827; font-size: 10px; font-style: italic; text-align: left; text-transform: uppercase; }
 .bank-reference-table th:nth-child(1) { width: 82px; }
