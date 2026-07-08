@@ -109,24 +109,39 @@
 .bank-reference-print-title { display: none; text-align: center; margin-bottom: 16px; }
 .bank-reference-print-title h2 { margin: 0 0 6px; font-size: 24px; }
 .bank-reference-months { display: grid; gap: 24px; }
+.bank-reference-fullscreen { position: fixed; inset: 12px; z-index: 50; display: flex; flex-direction: column; max-width: none; overflow: hidden; box-shadow: 0 24px 80px rgba(10, 24, 42, .28); }
+.bank-reference-fullscreen .bank-reference-heading { flex: 0 0 auto; }
+.bank-reference-fullscreen .bank-reference-months { overflow: auto; padding-right: 4px; }
 .bank-reference-month { break-inside: avoid; }
 .bank-month-title { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; padding: 10px 0 8px; border-bottom: 2px solid #26384f; }
 .bank-month-title strong { font-size: 17px; }
 .bank-month-title span { color: var(--muted); font-size: 11px; }
-.bank-reference-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
-.bank-reference-table th { padding: 7px 8px; border-bottom: 1px solid #2d3c50; color: #111827; font-size: 10px; font-style: italic; text-align: left; text-transform: uppercase; }
-.bank-reference-table th:nth-child(1) { width: 70px; }
+.bank-reference-table-wrap { overflow: auto; max-height: min(68vh, 760px); border: 1px solid #e5edf6; border-radius: 10px; background: #fff; }
+.bank-reference-fullscreen .bank-reference-table-wrap { max-height: none; overflow: visible; border-radius: 0; }
+.bank-reference-table { width: 100%; min-width: 780px; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: 12px; }
+.bank-reference-table th { position: sticky; top: 0; z-index: 3; padding: 9px 10px; border-bottom: 1px solid #2d3c50; background: #f8fafc; color: #111827; font-size: 10px; font-style: italic; text-align: left; text-transform: uppercase; }
+.bank-reference-table th:nth-child(1) { width: 82px; }
+.bank-reference-table th:nth-child(2) { width: 460px; }
 .bank-reference-table th:nth-child(3),
 .bank-reference-table th:nth-child(4),
 .bank-reference-table th:nth-child(5) { width: 118px; text-align: right; }
-.bank-reference-table td { vertical-align: top; padding: 7px 8px; border-bottom: 1px solid #e5edf6; color: #172033; line-height: 1.45; }
+.bank-reference-table td { vertical-align: top; padding: 9px 10px; border-bottom: 1px solid #e5edf6; background: #fff; color: #172033; line-height: 1.45; }
 .bank-reference-table td:nth-child(3),
 .bank-reference-table td:nth-child(4),
 .bank-reference-table td:nth-child(5) { text-align: right; font-weight: 800; white-space: nowrap; }
-.bank-reference-table td strong { display: block; white-space: pre-wrap; overflow-wrap: anywhere; font-weight: 650; }
+.bank-reference-table td:nth-child(2) { max-width: 460px; white-space: normal; }
+.bank-reference-table td strong { display: block; white-space: normal; overflow-wrap: anywhere; word-break: break-word; font-weight: 650; }
 .bank-reference-table td small,
 .bank-reference-table td em { display: block; margin-top: 2px; color: #64748b; font-size: 10px; font-style: normal; overflow-wrap: anywhere; }
-.bank-reference-table tfoot td { border-top: 2px solid #26384f; border-bottom: 0; font-weight: 900; }
+.bank-reference-table tfoot td { position: sticky; bottom: 0; z-index: 2; border-top: 2px solid #26384f; border-bottom: 0; background: #f8fafc; font-weight: 900; }
+.bank-statement-reference.lock-date .bank-reference-table th:nth-child(1),
+.bank-statement-reference.lock-date .bank-reference-table td:nth-child(1) { position: sticky; left: 0; z-index: 4; box-shadow: 1px 0 0 #d9e3ef; }
+.bank-statement-reference.lock-date .bank-reference-table td:nth-child(1) { background: #fff; z-index: 2; }
+.bank-statement-reference.lock-date .bank-reference-table tfoot td:nth-child(1) { z-index: 5; background: #f8fafc; }
+.bank-statement-reference.lock-transaction .bank-reference-table th:nth-child(2),
+.bank-statement-reference.lock-transaction .bank-reference-table td:nth-child(2) { position: sticky; left: 0; z-index: 4; box-shadow: 1px 0 0 #d9e3ef; }
+.bank-statement-reference.lock-transaction .bank-reference-table td:nth-child(2) { background: #fff; z-index: 2; }
+.bank-statement-reference.lock-transaction .bank-reference-table tfoot td:nth-child(1) { position: sticky; left: 0; z-index: 5; background: #f8fafc; box-shadow: 1px 0 0 #d9e3ef; }
 
 @media (max-width: 1100px) {
   .accounting-date-filter { grid-template-columns: 1fr; }
@@ -193,6 +208,7 @@
   body.print-bank-statement .accounting-workspace > :not(.bank-statement-reference-print) { display: none !important; }
   body.print-bank-statement .bank-statement-reference-print {
     display: block !important;
+    position: static !important;
     width: 100% !important;
     max-width: none !important;
     margin: 0 !important;
@@ -204,10 +220,12 @@
   body.print-bank-statement .bank-reference-heading { display: none !important; }
   body.print-bank-statement .bank-reference-print-title { display: block; }
   body.print-bank-statement .bank-reference-months { gap: 14px; }
+  body.print-bank-statement .bank-reference-table-wrap { overflow: visible !important; max-height: none !important; border: 0 !important; }
   body.print-bank-statement .bank-month-title { padding-top: 8px; }
   body.print-bank-statement .bank-reference-table { font-size: 8.8pt; }
-  body.print-bank-statement .bank-reference-table th { font-size: 7.2pt; padding: 4px 5px; }
-  body.print-bank-statement .bank-reference-table td { padding: 4px 5px; line-height: 1.28; }
+  body.print-bank-statement .bank-reference-table th { position: static !important; font-size: 7.2pt; padding: 4px 5px; }
+  body.print-bank-statement .bank-reference-table td { position: static !important; padding: 4px 5px; line-height: 1.28; box-shadow: none !important; }
+  body.print-bank-statement .bank-reference-table tfoot td { position: static !important; }
   body.print-bank-statement .bank-reference-table th:nth-child(1) { width: 13mm; }
   body.print-bank-statement .bank-reference-table th:nth-child(3),
   body.print-bank-statement .bank-reference-table th:nth-child(4),
