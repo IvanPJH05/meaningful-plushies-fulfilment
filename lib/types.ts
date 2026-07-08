@@ -273,6 +273,33 @@ export type AccountingBankStatementLine = {
   updatedAt: string;
 };
 
+export type AiAccountantReview = {
+  id: string;
+  importId: string;
+  rowNumber: number;
+  importAction: string;
+  status: "manual_required" | "possible_duplicate" | "error";
+  bankTransactionId: string;
+  bankStatementId: string;
+  bankDate: string;
+  bankDescription: string;
+  bankAmount: number;
+  bankDirection: "money_in" | "money_out" | "";
+  businessEvent: string;
+  account: string;
+  counterparty: string;
+  description: string;
+  amount: number;
+  duplicateCheckKey: string;
+  matchedTransactionId: string;
+  aiConfidence: number;
+  aiReason: string;
+  notes: string;
+  rawData: Record<string, string>;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type AccountingLedgerEntry = {
   id: string;
   transactionId: string;

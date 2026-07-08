@@ -25,6 +25,7 @@ import {
   fetchAccountingDocuments,
   fetchAccountingLedgerEntries,
   fetchAccountingTransactions,
+  fetchAiAccountantReviews,
   fetchContentIdeas,
   fetchContentPlanItems,
   fetchCreatorCommissions,
@@ -48,6 +49,7 @@ import {
   saveAccountingCategory,
   saveAccountingLedgerEntries,
   saveAccountingTransaction,
+  saveAiAccountantReviews,
   saveContentIdea,
   saveContentPlanItem,
   saveCreatorPayout,
@@ -68,7 +70,7 @@ import {
   upsertSharedOrders,
   type DashboardSession,
 } from "../lib/supabase";
-import { orderStatuses, type AccountingBankStatementLine, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type CommissionStatus, type ContentIdeaItem, type ContentIdeaReference, type ContentPlanItem, type CreatorCommission, type CreatorPayout, type CreatorProfile, type CreatorStatus, type CreatorTier, type DashboardAccount, type EnvelopePrintSettings, type MetaAdsEnvironment, type MetaAdsInsight, type MetaAdsSummary, type MetaCapiLog, type MetaCapiSettings, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesConsumptionMapping, type SalesFeeSetting, type StockSetting, type UserRole } from "../lib/types";
+import { orderStatuses, type AccountingBankStatementLine, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type AiAccountantReview, type CommissionStatus, type ContentIdeaItem, type ContentIdeaReference, type ContentPlanItem, type CreatorCommission, type CreatorPayout, type CreatorProfile, type CreatorStatus, type CreatorTier, type DashboardAccount, type EnvelopePrintSettings, type MetaAdsEnvironment, type MetaAdsInsight, type MetaAdsSummary, type MetaCapiLog, type MetaCapiSettings, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesConsumptionMapping, type SalesFeeSetting, type StockSetting, type UserRole } from "../lib/types";
 
 type Session = DashboardSession;
 type View =
@@ -229,6 +231,48 @@ type BookkeepingCsvImportRow = {
   notes: string;
   warnings: string[];
 };
+type AiImportAction = "create_transaction" | "match_existing" | "ignore" | "internal_transfer" | "manual_required";
+type AiImportGroup = "ready" | "matched" | "internal" | "ignored" | "manual" | "duplicate" | "error";
+type AiAccountantCsvRow = {
+  id: string;
+  rowNumber: number;
+  raw: Record<string, string>;
+  importAction: AiImportAction | "";
+  existingTransactionId: string;
+  bankStatementId: string;
+  bankTransactionId: string;
+  bankAccountName: string;
+  bankName: string;
+  statementMonth: string;
+  bankDate: string;
+  bankDescription: string;
+  bankReference: string;
+  bankAmount: number;
+  bankDirection: "money_in" | "money_out" | "";
+  businessEvent: string;
+  account: string;
+  counterparty: string;
+  description: string;
+  amount: number;
+  paymentStatus: AccountingTransactionForm["paymentStatus"];
+  paymentMethod: string;
+  sourcePlatform: string;
+  sourceReference: string;
+  quantity: number;
+  unitCost: number;
+  documentReference: string;
+  duplicateCheckKey: string;
+  matchedTransactionId: string;
+  internalTransferGroup: string;
+  aiConfidence: number;
+  aiReason: string;
+  reviewRequired: boolean;
+  notes: string;
+  group: AiImportGroup;
+  errors: string[];
+  warnings: string[];
+  duplicateCandidateId: string;
+};
 type BankStatementMatchForm = {
   businessEvent: string;
   accountName: string;
@@ -360,6 +404,56 @@ const businessEvents = [
   { group: "Money in", value: "payment_processor_paid", label: "Cash", transactionLabel: "Cash", accountingMapping: "Cash", accounts: ["Bank Transfer", "Stripe", "Xendit", "Payment Processing Fees", "Owner's Equity", "Drawings"] },
   { group: "Money in", value: "other_income", label: "Other Income", transactionLabel: "Other Income", accountingMapping: "Other Income", accounts: ["Offline sales"] },
   { group: "Money out", value: "operating_cost", label: "Operating Cost", transactionLabel: "Operating Cost", accountingMapping: prepaidOperatingCostAccountName, accounts: [prepaidOperatingCostAccountName] },
+] as const;
+const aiAccountantRequiredColumns = [
+  "import_action",
+  "existing_transaction_id",
+  "bank_statement_id",
+  "bank_transaction_id",
+  "bank_account_name",
+  "bank_name",
+  "statement_month",
+  "bank_date",
+  "bank_description",
+  "bank_reference",
+  "bank_amount",
+  "bank_direction",
+  "business_event",
+  "account",
+  "counterparty",
+  "description",
+  "amount",
+  "payment_status",
+  "payment_method",
+  "source_platform",
+  "source_reference",
+  "quantity",
+  "unit_cost",
+  "document_reference",
+  "duplicate_check_key",
+  "matched_transaction_id",
+  "internal_transfer_group",
+  "ai_confidence",
+  "ai_reason",
+  "review_required",
+  "notes",
+] as const;
+const aiImportActions: readonly AiImportAction[] = ["create_transaction", "match_existing", "ignore", "internal_transfer", "manual_required"];
+const aiBusinessEvents = [
+  "inventory_purchase",
+  "expense",
+  "asset_purchase",
+  "marketing_expense",
+  "payment_processor_paid",
+  "owner_contribution",
+  "owner_drawings",
+  "operating_cost",
+  "other_income",
+  "inventory_rejected",
+  "settle_payment",
+  "operating_cost_release",
+  "bank_statement_match",
+  "bookkeeping_csv_import",
 ] as const;
 const rejectedInventoryOption = "Rejected Inventory";
 const bookkeepingEventByView: Partial<Record<View, (typeof businessEvents)[number]["value"]>> = {
@@ -1178,6 +1272,9 @@ export default function Home() {
   });
   const [bookkeepingCsvRows, setBookkeepingCsvRows] = useState<BookkeepingCsvImportRow[]>([]);
   const [bookkeepingCsvFileName, setBookkeepingCsvFileName] = useState("");
+  const [aiAccountantCsvRows, setAiAccountantCsvRows] = useState<AiAccountantCsvRow[]>([]);
+  const [aiAccountantCsvFileName, setAiAccountantCsvFileName] = useState("");
+  const [aiAccountantReviews, setAiAccountantReviews] = useState<AiAccountantReview[]>([]);
   const [bankStatementCsv, setBankStatementCsv] = useState("");
   const [bankStatementFileName, setBankStatementFileName] = useState("");
   const [bankStatementMatchForms, setBankStatementMatchForms] = useState<Record<string, BankStatementMatchForm>>({});
@@ -1267,6 +1364,7 @@ export default function Home() {
         sharedAccountingTransactions,
         sharedAccountingLedgerEntries,
         sharedBankStatementLines,
+        sharedAiAccountantReviews,
         sharedSalesConsumptionMappings,
         sharedContentPlanItems,
         sharedContentIdeas,
@@ -1275,7 +1373,7 @@ export default function Home() {
         sharedMetaCapiLogs,
       ] = await Promise.all([
         fetchSharedActivity(), fetchStockSettings(),
-        fetchAccountingCategories(), fetchAccountingDocuments(), fetchAccountingTransactions(), fetchAccountingLedgerEntries(), fetchAccountingBankStatementLines(), fetchSalesConsumptionMappings(), fetchContentPlanItems(), fetchContentIdeas(), fetchEnvelopePrintSettings(), fetchMetaCapiSettings(), fetchMetaCapiLogs(),
+        fetchAccountingCategories(), fetchAccountingDocuments(), fetchAccountingTransactions(), fetchAccountingLedgerEntries(), fetchAccountingBankStatementLines(), fetchAiAccountantReviews(), fetchSalesConsumptionMappings(), fetchContentPlanItems(), fetchContentIdeas(), fetchEnvelopePrintSettings(), fetchMetaCapiSettings(), fetchMetaCapiLogs(),
       ]);
       setActivity(sharedActivity);
       setStockSettings(sharedStockSettings);
@@ -1284,6 +1382,7 @@ export default function Home() {
       setAccountingTransactions(sharedAccountingTransactions);
       setAccountingLedgerEntries(sharedAccountingLedgerEntries);
       setBankStatementLines(sharedBankStatementLines);
+      setAiAccountantReviews(sharedAiAccountantReviews);
       setSalesConsumptionMappings(normalizeSalesConsumptionMappings(sharedSalesConsumptionMappings));
       setContentPlanItems(sharedContentPlanItems);
       setContentIdeas(sharedContentIdeas);
@@ -1315,6 +1414,7 @@ export default function Home() {
         tables.has("accounting_transactions") ? fetchAccountingTransactions().then(setAccountingTransactions) : Promise.resolve(),
         tables.has("accounting_ledger_entries") ? fetchAccountingLedgerEntries().then(setAccountingLedgerEntries) : Promise.resolve(),
         tables.has("accounting_bank_statement_lines") ? fetchAccountingBankStatementLines().then(setBankStatementLines) : Promise.resolve(),
+        tables.has("accounting_ai_import_reviews") ? fetchAiAccountantReviews().then(setAiAccountantReviews) : Promise.resolve(),
         tables.has("content_plan_items") ? fetchContentPlanItems().then(setContentPlanItems) : Promise.resolve(),
         tables.has("content_idea_items") ? fetchContentIdeas().then(setContentIdeas) : Promise.resolve(),
         tables.has("meta_capi_settings") ? fetchMetaCapiSettings().then(setMetaCapiSettings) : Promise.resolve(),
@@ -2400,6 +2500,180 @@ export default function Home() {
     setNotice(`${rows.length} bookkeeping row${rows.length === 1 ? "" : "s"} ready to review.`);
   }
 
+  function aiAccountExists(accountName: string) {
+    const normalized = accountName.trim().toLowerCase();
+    if (!normalized) return false;
+    const fixedNames = new Set([
+      "bank account", "accounts receivable", "accounts payable", "stripe", "xendit", "payment processing fees",
+      prepaidOperatingCostAccountName.toLowerCase(), "operating expense", "sales", "owner's equity", "drawings",
+      "current year earnings", "retained earnings", "rejected inventory",
+      ...stockCharacters.map((item) => item.toLowerCase()),
+      "nfc cards", "nfc card", "speaker", "speakers", "packaging", "carton box", "bubble wrap", "carriage inward", "wax seal",
+    ]);
+    return fixedNames.has(normalized) || accountingCategories.some((category) => category.active && category.name.toLowerCase() === normalized);
+  }
+
+  function aiFindCategory(accountName: string) {
+    return accountingCategories.find((category) => category.active && category.name.toLowerCase() === accountName.trim().toLowerCase()) ?? null;
+  }
+
+  function isTruthyCsvValue(value: string) {
+    return ["true", "yes", "y", "1", "review"].includes(value.trim().toLowerCase());
+  }
+
+  function findAiDuplicateCandidate(row: Pick<AiAccountantCsvRow, "existingTransactionId" | "matchedTransactionId" | "bankTransactionId" | "sourceReference" | "documentReference" | "duplicateCheckKey" | "amount" | "bankDate" | "description" | "counterparty">) {
+    const directId = row.existingTransactionId || row.matchedTransactionId;
+    if (directId) {
+      const direct = accountingTransactions.find((transaction) => transaction.id === directId);
+      if (direct) return direct;
+    }
+    const keys = [row.bankTransactionId, row.sourceReference, row.documentReference, row.duplicateCheckKey].map((item) => item.trim()).filter(Boolean);
+    const directKey = accountingTransactions.find((transaction) => keys.some((key) => transaction.sourceId === key || transaction.invoiceNumber === key || transaction.notes.includes(key)));
+    if (directKey) return directKey;
+    const rowDate = Date.parse(row.bankDate);
+    const text = `${row.description} ${row.counterparty}`.toLowerCase();
+    return accountingTransactions.find((transaction) => {
+      if (Math.abs((Number(transaction.amount) || 0) - row.amount) > 0.01) return false;
+      const transactionDate = Date.parse(transaction.transactionDate);
+      const closeDate = !Number.isNaN(rowDate) && !Number.isNaN(transactionDate) && Math.abs(transactionDate - rowDate) <= 3 * 24 * 60 * 60 * 1000;
+      if (!closeDate) return false;
+      const transactionText = `${transaction.description} ${transaction.supplier} ${transaction.accountName}`.toLowerCase();
+      return Boolean(text && (transactionText.includes(text.slice(0, 12)) || text.includes(transactionText.slice(0, 12))));
+    }) ?? null;
+  }
+
+  function classifyAiAccountantRow(row: Omit<AiAccountantCsvRow, "group" | "errors" | "warnings" | "duplicateCandidateId">) {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+    if (!row.importAction || !aiImportActions.includes(row.importAction)) errors.push("Invalid import_action.");
+    if (row.bankDirection && row.bankDirection !== "money_in" && row.bankDirection !== "money_out") errors.push("bank_direction must be money_in or money_out.");
+    if (row.bankDate && !dateKey(row.bankDate)) errors.push("Invalid bank_date.");
+    if (row.importAction === "create_transaction") {
+      if (!row.businessEvent || !aiBusinessEvents.includes(row.businessEvent as (typeof aiBusinessEvents)[number])) errors.push("Invalid business_event.");
+      if (!row.account) errors.push("Missing account.");
+      else if (!aiAccountExists(row.account)) errors.push(`Account "${row.account}" does not exist.`);
+      if (row.amount <= 0) errors.push("Missing or invalid amount.");
+      if (!row.bankDate) errors.push("Missing bank_date.");
+      if (["inventory_purchase", "inventory_rejected"].includes(row.businessEvent) && (row.quantity <= 0 || row.unitCost <= 0)) warnings.push("Inventory row has no quantity/unit_cost, so FIFO may not update correctly.");
+    }
+    if (row.importAction === "match_existing" && !(row.existingTransactionId || row.matchedTransactionId)) errors.push("match_existing requires existing_transaction_id or matched_transaction_id.");
+    const duplicate = row.importAction === "create_transaction" ? findAiDuplicateCandidate(row) : null;
+    if (duplicate) warnings.push(`Possible duplicate: ${duplicate.description} (${formatMoney(duplicate.amount)}).`);
+    let group: AiImportGroup = "ready";
+    if (errors.length) group = "error";
+    else if (duplicate) group = "duplicate";
+    else if (row.importAction === "match_existing") group = "matched";
+    else if (row.importAction === "internal_transfer") group = "internal";
+    else if (row.importAction === "ignore") group = "ignored";
+    else if (row.importAction === "manual_required" || row.reviewRequired || row.aiConfidence < 90) group = "manual";
+    return { group, errors, warnings, duplicateCandidateId: duplicate?.id ?? "" };
+  }
+
+  async function readAiAccountantCsv(file: File | undefined) {
+    if (!file) return;
+    const text = await file.text();
+    const parsedRows = parseLooseCsv(text);
+    if (parsedRows.length < 2) {
+      setAiAccountantCsvRows([]);
+      setAiAccountantCsvFileName(file.name);
+      return setNotice("That AI Accountant CSV does not have enough rows to import.");
+    }
+    const rawHeaders = parsedRows[0].map((header) => header.trim());
+    const normalizedHeaders = rawHeaders.map(normalizeHeader);
+    const missingColumns = aiAccountantRequiredColumns.filter((column) => !normalizedHeaders.includes(normalizeHeader(column)));
+    const rows: AiAccountantCsvRow[] = parsedRows.slice(1).map((cells, index) => {
+      const raw = normalizedHeaders.reduce<Record<string, string>>((values, header, cellIndex) => {
+        values[header] = cells[cellIndex]?.trim() ?? "";
+        return values;
+      }, {});
+      const action = csvColumn(raw, ["import_action"]) as AiImportAction;
+      const bankDirection = csvColumn(raw, ["bank_direction"]).toLowerCase().replace(/\s+/g, "_") as "money_in" | "money_out" | "";
+      const amount = Math.abs(parseCsvAmount(csvColumn(raw, ["amount"])) || parseCsvAmount(csvColumn(raw, ["bank_amount"])));
+      const base = {
+        id: crypto.randomUUID(),
+        rowNumber: index + 2,
+        raw,
+        importAction: action,
+        existingTransactionId: csvColumn(raw, ["existing_transaction_id"]),
+        bankStatementId: csvColumn(raw, ["bank_statement_id"]),
+        bankTransactionId: csvColumn(raw, ["bank_transaction_id"]),
+        bankAccountName: csvColumn(raw, ["bank_account_name"]),
+        bankName: csvColumn(raw, ["bank_name"]),
+        statementMonth: csvColumn(raw, ["statement_month"]),
+        bankDate: dateKey(csvColumn(raw, ["bank_date"])),
+        bankDescription: csvColumn(raw, ["bank_description"]),
+        bankReference: csvColumn(raw, ["bank_reference"]),
+        bankAmount: Math.abs(parseCsvAmount(csvColumn(raw, ["bank_amount"]))),
+        bankDirection,
+        businessEvent: csvColumn(raw, ["business_event"]),
+        account: csvColumn(raw, ["account"]),
+        counterparty: csvColumn(raw, ["counterparty"]),
+        description: csvColumn(raw, ["description"]) || csvColumn(raw, ["bank_description"]),
+        amount,
+        paymentStatus: parseBookkeepingPaymentStatus(csvColumn(raw, ["payment_status"])),
+        paymentMethod: csvColumn(raw, ["payment_method"]) || "Bank Account",
+        sourcePlatform: csvColumn(raw, ["source_platform"]),
+        sourceReference: csvColumn(raw, ["source_reference"]),
+        quantity: Number(csvColumn(raw, ["quantity"])) || 0,
+        unitCost: Math.abs(parseCsvAmount(csvColumn(raw, ["unit_cost"]))),
+        documentReference: csvColumn(raw, ["document_reference"]),
+        duplicateCheckKey: csvColumn(raw, ["duplicate_check_key"]),
+        matchedTransactionId: csvColumn(raw, ["matched_transaction_id"]),
+        internalTransferGroup: csvColumn(raw, ["internal_transfer_group"]),
+        aiConfidence: Number(csvColumn(raw, ["ai_confidence"])) || 0,
+        aiReason: csvColumn(raw, ["ai_reason"]),
+        reviewRequired: isTruthyCsvValue(csvColumn(raw, ["review_required"])),
+        notes: csvColumn(raw, ["notes"]),
+      } satisfies Omit<AiAccountantCsvRow, "group" | "errors" | "warnings" | "duplicateCandidateId">;
+      return { ...base, ...classifyAiAccountantRow(base) };
+    });
+    if (missingColumns.length) {
+      rows.unshift({
+        id: crypto.randomUUID(),
+        rowNumber: 1,
+        raw: {},
+        importAction: "",
+        existingTransactionId: "",
+        bankStatementId: "",
+        bankTransactionId: "",
+        bankAccountName: "",
+        bankName: "",
+        statementMonth: "",
+        bankDate: "",
+        bankDescription: "",
+        bankReference: "",
+        bankAmount: 0,
+        bankDirection: "",
+        businessEvent: "",
+        account: "",
+        counterparty: "",
+        description: "CSV header validation",
+        amount: 0,
+        paymentStatus: "paid_in_full",
+        paymentMethod: "",
+        sourcePlatform: "",
+        sourceReference: "",
+        quantity: 0,
+        unitCost: 0,
+        documentReference: "",
+        duplicateCheckKey: "",
+        matchedTransactionId: "",
+        internalTransferGroup: "",
+        aiConfidence: 0,
+        aiReason: "",
+        reviewRequired: true,
+        notes: "",
+        group: "error",
+        errors: [`Missing required columns: ${missingColumns.join(", ")}`],
+        warnings: [],
+        duplicateCandidateId: "",
+      });
+    }
+    setAiAccountantCsvFileName(file.name);
+    setAiAccountantCsvRows(rows);
+    setNotice(`${rows.filter((row) => row.rowNumber !== 1).length} AI Accountant row${rows.length === 2 ? "" : "s"} ready to review.`);
+  }
+
   function categoryName(categoryId: string) {
     return accountingCategories.find((category) => category.id === categoryId)?.name ?? "Uncategorised";
   }
@@ -2818,6 +3092,165 @@ export default function Home() {
     }
   }
 
+  function aiReviewFromRow(row: AiAccountantCsvRow, importId: string, status: AiAccountantReview["status"], extraNotes = ""): AiAccountantReview {
+    const now = new Date().toISOString();
+    const referencedTransactionId = [row.matchedTransactionId, row.existingTransactionId, row.duplicateCandidateId]
+      .find((id) => id && accountingTransactions.some((transaction) => transaction.id === id)) ?? "";
+    return {
+      id: crypto.randomUUID(),
+      importId,
+      rowNumber: row.rowNumber,
+      importAction: row.importAction || "manual_required",
+      status,
+      bankTransactionId: row.bankTransactionId,
+      bankStatementId: row.bankStatementId,
+      bankDate: row.bankDate,
+      bankDescription: row.bankDescription,
+      bankAmount: row.bankAmount || row.amount,
+      bankDirection: row.bankDirection,
+      businessEvent: row.businessEvent,
+      account: row.account,
+      counterparty: row.counterparty,
+      description: row.description,
+      amount: row.amount,
+      duplicateCheckKey: row.duplicateCheckKey,
+      matchedTransactionId: referencedTransactionId,
+      aiConfidence: row.aiConfidence,
+      aiReason: row.aiReason,
+      notes: [extraNotes, row.errors.join(", "), row.warnings.join(", "), row.notes].filter(Boolean).join(" | "),
+      rawData: row.raw,
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
+
+  async function importAiAccountantCsvRows() {
+    const importable = aiAccountantCsvRows.filter((row) => row.rowNumber !== 1);
+    if (!importable.length) return setNotice("Upload the AI Accountant CSV first.");
+    if (aiAccountantCsvRows.some((row) => row.group === "error" && row.rowNumber === 1)) return setNotice("The AI Accountant CSV is missing required columns. Fix the file before importing.");
+    setSavingAccounting(true);
+    try {
+      const actor = session?.displayName ?? "Admin";
+      const importId = crypto.randomUUID();
+      const reviewRows: AiAccountantReview[] = [];
+      const bankLines: AccountingBankStatementLine[] = [];
+      let created = 0;
+      let matched = 0;
+      let ignored = 0;
+      let internal = 0;
+      let reviewed = 0;
+
+      for (const row of importable) {
+        const now = new Date().toISOString();
+        const reviewStatus: AiAccountantReview["status"] = row.group === "duplicate" ? "possible_duplicate" : row.group === "error" ? "error" : "manual_required";
+        if (["error", "duplicate", "manual"].includes(row.group)) {
+          reviewRows.push(aiReviewFromRow(row, importId, reviewStatus));
+          reviewed += 1;
+          continue;
+        }
+
+        if (row.importAction === "ignore") {
+          bankLines.push({ ...aiBankLineFromRow(row, importId, "", "ignored"), notes: [row.aiReason, row.notes, "Ignored by AI Accountant CSV"].filter(Boolean).join(" | ") });
+          ignored += 1;
+          continue;
+        }
+
+        if (row.importAction === "internal_transfer") {
+          bankLines.push({
+            ...aiBankLineFromRow(row, importId, "", "ignored"),
+            suggestedEvent: "internal_transfer",
+            suggestedAccount: "Internal Transfer",
+            notes: [row.aiReason, row.notes, row.internalTransferGroup ? `Internal transfer group: ${row.internalTransferGroup}` : ""].filter(Boolean).join(" | "),
+          });
+          internal += 1;
+          continue;
+        }
+
+        if (row.importAction === "match_existing") {
+          const targetId = row.existingTransactionId || row.matchedTransactionId;
+          const existing = accountingTransactions.find((transaction) => transaction.id === targetId);
+          if (!existing) {
+            reviewRows.push(aiReviewFromRow(row, importId, "error", `Existing transaction ${targetId || "(blank)"} was not found.`));
+            reviewed += 1;
+            continue;
+          }
+          bankLines.push(aiBankLineFromRow(row, importId, existing.id, "matched"));
+          matched += 1;
+          continue;
+        }
+
+        const amount = row.amount || row.bankAmount;
+        const account = aiFindCategory(row.account);
+        const transactionId = crypto.randomUUID();
+        const entries = aiLedgerEntries({ ...row, amount }, account, transactionId, now);
+        const debit = entries.filter((entry) => entry.entryType === "debit").reduce((total, entry) => total + entry.amount, 0);
+        const credit = entries.filter((entry) => entry.entryType === "credit").reduce((total, entry) => total + entry.amount, 0);
+        if (!entries.length || Math.abs(debit - credit) > 0.01) {
+          reviewRows.push(aiReviewFromRow(row, importId, "error", `Ledger entries do not balance. Debit ${formatMoney(debit)}, credit ${formatMoney(credit)}.`));
+          reviewed += 1;
+          continue;
+        }
+
+        await saveAccountingTransaction({
+          id: transactionId,
+          source: "bank_statement",
+          sourceId: row.bankTransactionId || row.duplicateCheckKey || row.sourceReference || row.bankStatementId || importId,
+          documentId: "",
+          businessEvent: row.businessEvent,
+          transactionDate: row.bankDate || localDateKey(new Date()),
+          description: row.description || row.bankDescription,
+          accountName: row.businessEvent === "operating_cost" ? prepaidOperatingCostAccountName : row.account,
+          categoryId: account?.id ?? "",
+          transactionType: row.businessEvent === "other_income" || row.businessEvent === "owner_contribution" ? "income" : ["payment_processor_paid", "owner_drawings", "settle_payment"].includes(row.businessEvent) ? "transfer" : "expense",
+          paymentStatus: row.paymentStatus,
+          paymentMethod: row.paymentMethod || "Bank Account",
+          supplier: row.counterparty,
+          quantity: row.quantity,
+          unitCost: row.unitCost,
+          depositAmount: row.paymentStatus === "paid_in_full" ? amount : 0,
+          invoiceNumber: row.sourceReference || row.documentReference || row.bankReference,
+          dueDate: "",
+          supplierTerms: "",
+          debit,
+          credit,
+          amount,
+          currency: "MYR",
+          taxTreatment: "none",
+          notes: [row.notes, row.aiReason, row.duplicateCheckKey ? `Duplicate key: ${row.duplicateCheckKey}` : ""].filter(Boolean).join(" | "),
+          createdBy: actor,
+          createdAt: now,
+          updatedAt: now,
+        });
+        await saveAccountingLedgerEntries(transactionId, entries);
+        if (row.businessEvent === "inventory_purchase" && row.quantity > 0) {
+          const stockKey = stockKeyFromText(`${row.account} ${row.description}`);
+          const currentStock = stockSettings.find((setting) => setting.itemKey === stockKey)?.initialStock ?? 0;
+          await saveStockSetting({ itemKey: stockKey, initialStock: Math.max(0, currentStock + Math.floor(row.quantity)) });
+        }
+        bankLines.push(aiBankLineFromRow(row, importId, transactionId, "matched"));
+        created += 1;
+      }
+
+      if (bankLines.length) await saveAccountingBankStatementLines(bankLines);
+      if (reviewRows.length) await saveAiAccountantReviews(reviewRows);
+      await insertSharedActivity({
+        id: crypto.randomUUID(),
+        action: "AI Accountant CSV import",
+        detail: `${created} created, ${matched} matched, ${ignored} ignored, ${internal} internal, ${reviewed} sent for review from ${aiAccountantCsvFileName || "CSV"}.`,
+        actor,
+        createdAt: new Date().toISOString(),
+      });
+      setAiAccountantCsvRows([]);
+      setAiAccountantCsvFileName("");
+      await loadSharedData(false);
+      setNotice(`AI import finished: ${created} created, ${matched} matched, ${ignored} ignored, ${internal} internal, ${reviewed} for review.`);
+    } catch (error) {
+      setNotice(readableError(error, "Could not import the AI Accountant CSV. Run the latest Supabase schema first."));
+    } finally {
+      setSavingAccounting(false);
+    }
+  }
+
   function bankStatementConfigForEvent(eventValue: string) {
     if (eventValue === "inventory_purchase") return bookkeepingSectionConfigs.inventory;
     if (eventValue === "asset_purchase") return bookkeepingSectionConfigs.asset;
@@ -2879,6 +3312,79 @@ export default function Home() {
       { id: crypto.randomUUID(), transactionId, accountId: account.id, accountName, entryType: "debit", amount, memo: line.description, createdAt },
       { id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Bank Account", entryType: "credit", amount, memo: "Bank statement payment", createdAt },
     ];
+  }
+
+  function aiBankLineFromRow(row: AiAccountantCsvRow, importId: string, matchedTransactionId = "", matchStatus: AccountingBankStatementLine["matchStatus"] = "unmatched"): AccountingBankStatementLine {
+    const amount = row.bankAmount || row.amount;
+    return {
+      id: row.bankTransactionId || row.bankStatementId || crypto.randomUUID(),
+      importId,
+      rowNumber: row.rowNumber,
+      transactionDate: row.bankDate || dateKey(new Date().toISOString()),
+      description: row.bankDescription || row.description,
+      reference: row.bankReference || row.sourceReference,
+      moneyIn: row.bankDirection === "money_in" ? amount : 0,
+      moneyOut: row.bankDirection === "money_out" ? amount : 0,
+      balance: null,
+      rawData: row.raw,
+      matchedTransactionId,
+      matchStatus,
+      suggestedEvent: row.businessEvent,
+      suggestedAccount: row.account,
+      notes: [row.aiReason, row.notes].filter(Boolean).join(" | "),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  function aiLedgerEntries(row: AiAccountantCsvRow, account: AccountingCategory | null, transactionId: string, createdAt: string): AccountingLedgerEntry[] {
+    const amount = row.amount;
+    const accountName = row.businessEvent === "operating_cost" ? prepaidOperatingCostAccountName : row.account;
+    if (row.businessEvent === "payment_processor_paid") {
+      const processor = accountName.toLowerCase().includes("stripe") ? "Stripe" : accountName.toLowerCase().includes("xendit") ? "Xendit" : accountName;
+      return [
+        { id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Bank Account", entryType: "debit", amount, memo: row.description || "Processor payout", createdAt },
+        { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: processor, entryType: "credit", amount, memo: row.bankDescription || row.description, createdAt },
+      ];
+    }
+    if (row.businessEvent === "owner_contribution") return [
+      { id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Bank Account", entryType: "debit", amount, memo: row.description, createdAt },
+      { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: "Owner's Equity", entryType: "credit", amount, memo: "Owner contribution", createdAt },
+    ];
+    if (row.businessEvent === "owner_drawings") return [
+      { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: "Drawings", entryType: "debit", amount, memo: row.description, createdAt },
+      { id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Bank Account", entryType: "credit", amount, memo: "Owner drawing", createdAt },
+    ];
+    if (row.businessEvent === "operating_cost_release") return [
+      { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: "Operating Expense", entryType: "debit", amount, memo: row.description, createdAt },
+      { id: crypto.randomUUID(), transactionId, accountId: "", accountName: prepaidOperatingCostAccountName, entryType: "credit", amount, memo: "Pre-paid operating cost released", createdAt },
+    ];
+    if (row.businessEvent === "settle_payment") return [
+      { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: "Accounts Payable", entryType: "debit", amount, memo: row.description, createdAt },
+      { id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Bank Account", entryType: "credit", amount, memo: "Payment from bank", createdAt },
+    ];
+    if (row.businessEvent === "inventory_rejected") return [
+      { id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Rejected Inventory", entryType: "debit", amount, memo: row.description, createdAt },
+      { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: accountName || row.account, entryType: "credit", amount, memo: "Inventory rejected and removed", createdAt },
+    ];
+    if (row.businessEvent === "other_income") return [
+      { id: crypto.randomUUID(), transactionId, accountId: "", accountName: row.paymentMethod || "Bank Account", entryType: "debit", amount, memo: "Income received", createdAt },
+      { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName, entryType: "credit", amount, memo: row.description, createdAt },
+    ];
+    if (row.businessEvent === "operating_cost") {
+      const entries: AccountingLedgerEntry[] = [
+        { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: prepaidOperatingCostAccountName, entryType: "debit", amount, memo: row.description, createdAt },
+      ];
+      if (row.paymentStatus === "paid_in_full") entries.push({ id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Bank Account", entryType: "credit", amount, memo: "Pre-paid operating cost paid", createdAt });
+      else entries.push({ id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Accounts Payable", entryType: "credit", amount, memo: "Outstanding pre-paid operating cost", createdAt });
+      return entries;
+    }
+    const entries: AccountingLedgerEntry[] = [
+      { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName, entryType: "debit", amount, memo: row.description, createdAt },
+    ];
+    if (row.paymentStatus === "paid_in_full") entries.push({ id: crypto.randomUUID(), transactionId, accountId: "", accountName: row.paymentMethod || "Bank Account", entryType: "credit", amount, memo: "Payment recorded", createdAt });
+    else entries.push({ id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Accounts Payable", entryType: "credit", amount, memo: "Outstanding balance", createdAt });
+    return entries;
   }
 
   async function readBankStatementCsv(file?: File) {
@@ -4011,6 +4517,12 @@ export default function Home() {
         csvFileName={bookkeepingCsvFileName}
         onImportBookkeepingCsv={importBookkeepingCsvRows}
         onClearBookkeepingCsv={() => { setBookkeepingCsvRows([]); setBookkeepingCsvFileName(""); }}
+        aiRows={aiAccountantCsvRows}
+        aiReviews={aiAccountantReviews}
+        aiFileName={aiAccountantCsvFileName}
+        onReadAiAccountantCsv={readAiAccountantCsv}
+        onImportAiAccountantCsv={importAiAccountantCsvRows}
+        onClearAiAccountantCsv={() => { setAiAccountantCsvRows([]); setAiAccountantCsvFileName(""); }}
         onBankStatementCsvChange={setBankStatementCsv}
         onReadBankStatement={readBankStatementCsv}
         onClearBankStatement={() => { setBankStatementCsv(""); setBankStatementFileName(""); }}
@@ -4371,6 +4883,12 @@ function AccountingWorkspacePage({
   csvFileName,
   onImportBookkeepingCsv,
   onClearBookkeepingCsv,
+  aiRows,
+  aiReviews,
+  aiFileName,
+  onReadAiAccountantCsv,
+  onImportAiAccountantCsv,
+  onClearAiAccountantCsv,
   onBankStatementCsvChange,
   onReadBankStatement,
   onClearBankStatement,
@@ -4444,6 +4962,12 @@ function AccountingWorkspacePage({
   csvFileName: string;
   onImportBookkeepingCsv: () => void;
   onClearBookkeepingCsv: () => void;
+  aiRows: AiAccountantCsvRow[];
+  aiReviews: AiAccountantReview[];
+  aiFileName: string;
+  onReadAiAccountantCsv: (file: File | undefined) => void;
+  onImportAiAccountantCsv: () => void;
+  onClearAiAccountantCsv: () => void;
   onBankStatementCsvChange: (value: string) => void;
   onReadBankStatement: (file?: File) => void;
   onClearBankStatement: () => void;
@@ -4537,6 +5061,20 @@ function AccountingWorkspacePage({
   const shownBankStatementGroups = selectedBankStatementMonth === "all"
     ? bankStatementReferenceGroups
     : bankStatementReferenceGroups.filter((group) => group.month === selectedBankStatementMonth);
+  const aiGroupLabels: Record<AiImportGroup, string> = {
+    ready: "Ready to create",
+    matched: "Matched",
+    internal: "Internal transfer",
+    ignored: "Ignored",
+    manual: "Manual review",
+    duplicate: "Possible duplicate",
+    error: "Error",
+  };
+  const aiGroupCounts = aiRows.reduce<Record<AiImportGroup, number>>((totals, row) => {
+    totals[row.group] = (totals[row.group] ?? 0) + 1;
+    return totals;
+  }, { ready: 0, matched: 0, internal: 0, ignored: 0, manual: 0, duplicate: 0, error: 0 });
+  const aiImportCanSave = aiRows.some((row) => row.rowNumber !== 1) && !aiRows.some((row) => row.group === "error" && row.rowNumber === 1);
   function formatStatementNumber(value: number | null) {
     if (value === null || !Number.isFinite(value)) return "";
     return new Intl.NumberFormat("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
@@ -4793,10 +5331,26 @@ function AccountingWorkspacePage({
   </section>;
 
   if (view === "accounting_csv_import") return <section className="accounting-workspace">
-    <div className="accounting-hero card"><div><p>BOOK KEEPING CSV IMPORT</p><h2>Import transactions automatically</h2><span>Upload a CSV and the system will map each row into bookkeeping entries. Review the preview before saving.</span></div><div className="accounting-status-pill">{csvRows.length} rows</div></div>
+    <div className="accounting-hero card"><div><p>BOOK KEEPING CSV IMPORT</p><h2>Import transactions automatically</h2><span>Upload either the simple bookkeeping CSV or the strict AI Accountant CSV. The AI import never guesses categories: uncertain rows go to review.</span></div><div className="accounting-status-pill">{csvRows.length + aiRows.length} rows</div></div>
+    <section className="card accounting-table-card">
+      <div className="accounting-form-heading">
+        <div><h3>AI Accountant CSV</h3><p>Use the accountant template with exact columns. Create, match, ignore, internal transfer, and manual review rows are handled separately.</p></div>
+        <div className="csv-import-actions"><button className="button primary" disabled={!aiImportCanSave || saving} onClick={onImportAiAccountantCsv}>{saving ? "Importing..." : "Confirm AI import"}</button><button className="button secondary" type="button" onClick={onClearAiAccountantCsv}>Clear</button></div>
+      </div>
+      <FileDropZone accept=".csv,text/csv" title="Choose or drop AI Accountant CSV" description={aiFileName || "Uses the exact AI accountant import template"} selectedName={aiFileName} onFile={(file) => onReadAiAccountantCsv(file ?? undefined)} className="compact-file-drop" />
+      <section className="sales-stats ai-import-stats">
+        {(Object.keys(aiGroupLabels) as AiImportGroup[]).map((group) => <article key={group} className={`money-stat ${group === "ready" || group === "matched" ? "sales" : group === "error" || group === "duplicate" ? "fees" : "transfer"}`}><span>{aiGroupLabels[group]}</span><strong>{(aiGroupCounts[group] ?? 0).toLocaleString("en-MY")}</strong></article>)}
+      </section>
+      <div className="table-scroll"><table className="orders-table"><thead><tr><th>Row</th><th>Status</th><th>Action</th><th>Date</th><th>Bank description</th><th>Business event</th><th>Account</th><th>Amount</th><th>Issue / AI reason</th></tr></thead><tbody>{aiRows.map((row) => <tr key={row.id} className={row.group === "error" || row.group === "duplicate" || row.group === "manual" ? "csv-warning-row" : ""}><td>{row.rowNumber}</td><td><span className={`source-document-pill ${row.group === "ready" || row.group === "matched" ? "matched" : row.group === "ignored" || row.group === "internal" ? "ignored" : ""}`}>{aiGroupLabels[row.group]}</span></td><td>{row.importAction || "-"}</td><td>{row.bankDate ? formatDate(row.bankDate) : "-"}</td><td><strong>{row.bankDescription || row.description}</strong><br /><small>{row.counterparty || row.bankReference || "-"}</small></td><td>{row.businessEvent || "-"}</td><td>{row.account || "-"}</td><td><strong>{formatMoney(row.amount || row.bankAmount)}</strong><br /><small>{row.bankDirection || "-"}</small></td><td>{[...row.errors, ...row.warnings, row.aiReason].filter(Boolean).join(" | ") || "-"}</td></tr>)}</tbody></table>{!aiRows.length && <div className="empty"><strong>No AI Accountant CSV loaded yet</strong><p>Drop the accountant CSV here to validate every row before it touches the book.</p></div>}</div>
+      {aiReviews.length > 0 && <section className="posting-preview">
+        <h3>Saved review queue</h3>
+        <p>{aiReviews.length} row{aiReviews.length === 1 ? "" : "s"} were held back because they need manual checking, looked duplicated, or had an error.</p>
+        <div className="table-scroll"><table className="orders-table"><thead><tr><th>Date</th><th>Status</th><th>Description</th><th>Account</th><th>Amount</th><th>Reason</th></tr></thead><tbody>{aiReviews.slice(0, 20).map((row) => <tr key={row.id}><td>{row.bankDate ? formatDate(row.bankDate) : "-"}</td><td><span className="source-document-pill ignored">{row.status.replace(/_/g, " ")}</span></td><td><strong>{row.bankDescription || row.description}</strong><br /><small>{row.bankTransactionId || row.duplicateCheckKey || "-"}</small></td><td>{row.account || "-"}</td><td><strong>{formatMoney(row.amount || row.bankAmount)}</strong></td><td>{row.notes || row.aiReason || "-"}</td></tr>)}</tbody></table></div>
+      </section>}
+    </section>
     <section className="csv-import-layout">
       <div className="accounting-form card">
-        <h3>Upload CSV</h3>
+        <h3>Simple bookkeeping CSV</h3>
         <FileDropZone accept=".csv,text/csv" title="Choose or drop bookkeeping CSV" description={csvFileName || "CSV columns can be in any order"} onFile={(file) => onReadBookkeepingCsv(file ?? undefined)} className="compact-file-drop" />
         <section className="posting-preview">
           <h3>Accepted columns</h3>

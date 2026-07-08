@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { AccountingBankStatementLine, AccountingCategory, AccountingDocument, AccountingLedgerEntry, AccountingTransaction, CommissionStatus, ContentIdeaItem, ContentIdeaReference, ContentPlanItem, CreatorCommission, CreatorPayout, CreatorProfile, CreatorStatus, CreatorTier, DashboardAccount, EnvelopePrintSettings, MetaCapiLog, MetaCapiSettings, Order, PaymentProcessorSetting, SalesConsumptionMapping, SalesFeeSetting, StockSetting, UserRole } from "./types";
+import type { AccountingBankStatementLine, AccountingCategory, AccountingDocument, AccountingLedgerEntry, AccountingTransaction, AiAccountantReview, CommissionStatus, ContentIdeaItem, ContentIdeaReference, ContentPlanItem, CreatorCommission, CreatorPayout, CreatorProfile, CreatorStatus, CreatorTier, DashboardAccount, EnvelopePrintSettings, MetaCapiLog, MetaCapiSettings, Order, PaymentProcessorSetting, SalesConsumptionMapping, SalesFeeSetting, StockSetting, UserRole } from "./types";
 
 export type DashboardSession = DashboardAccount & { token: string };
 
@@ -894,6 +894,74 @@ export async function deleteAccountingBankStatementLine(id: string) {
   if (error) throw error;
 }
 
+export async function fetchAiAccountantReviews(): Promise<AiAccountantReview[]> {
+  const { data, error } = await requireSupabase()
+    .from("accounting_ai_import_reviews")
+    .select("id, import_id, row_number, import_action, status, bank_transaction_id, bank_statement_id, bank_date, bank_description, bank_amount, bank_direction, business_event, account, counterparty, description, amount, duplicate_check_key, matched_transaction_id, ai_confidence, ai_reason, notes, raw_data, created_at, updated_at")
+    .order("created_at", { ascending: false })
+    .order("row_number", { ascending: true });
+  if (error) {
+    if (isMissingTableError(error)) return [];
+    throw error;
+  }
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    importId: row.import_id ?? "",
+    rowNumber: Number(row.row_number ?? 0),
+    importAction: row.import_action ?? "",
+    status: row.status ?? "manual_required",
+    bankTransactionId: row.bank_transaction_id ?? "",
+    bankStatementId: row.bank_statement_id ?? "",
+    bankDate: row.bank_date ?? "",
+    bankDescription: row.bank_description ?? "",
+    bankAmount: Number(row.bank_amount ?? 0),
+    bankDirection: row.bank_direction ?? "",
+    businessEvent: row.business_event ?? "",
+    account: row.account ?? "",
+    counterparty: row.counterparty ?? "",
+    description: row.description ?? "",
+    amount: Number(row.amount ?? 0),
+    duplicateCheckKey: row.duplicate_check_key ?? "",
+    matchedTransactionId: row.matched_transaction_id ?? "",
+    aiConfidence: Number(row.ai_confidence ?? 0),
+    aiReason: row.ai_reason ?? "",
+    notes: row.notes ?? "",
+    rawData: row.raw_data ?? {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+}
+
+export async function saveAiAccountantReviews(rows: AiAccountantReview[]) {
+  if (!rows.length) return;
+  const { error } = await requireSupabase().from("accounting_ai_import_reviews").upsert(rows.map((row) => ({
+    id: row.id,
+    import_id: row.importId,
+    row_number: row.rowNumber,
+    import_action: row.importAction,
+    status: row.status,
+    bank_transaction_id: row.bankTransactionId,
+    bank_statement_id: row.bankStatementId,
+    bank_date: row.bankDate || null,
+    bank_description: row.bankDescription,
+    bank_amount: Math.max(0, row.bankAmount),
+    bank_direction: row.bankDirection || "",
+    business_event: row.businessEvent,
+    account: row.account,
+    counterparty: row.counterparty,
+    description: row.description,
+    amount: Math.max(0, row.amount),
+    duplicate_check_key: row.duplicateCheckKey,
+    matched_transaction_id: row.matchedTransactionId || null,
+    ai_confidence: Math.max(0, row.aiConfidence),
+    ai_reason: row.aiReason,
+    notes: row.notes,
+    raw_data: row.rawData,
+    updated_at: new Date().toISOString(),
+  })), { onConflict: "id" });
+  if (error) throw error;
+}
+
 function isMissingTableError(error: unknown) {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === "42P01");
 }
@@ -1011,6 +1079,7 @@ export function subscribeToSharedData(onChange: (table: string) => void) {
     .on("postgres_changes", { event: "*", schema: "public", table: "accounting_transactions" }, () => onChange("accounting_transactions"))
     .on("postgres_changes", { event: "*", schema: "public", table: "accounting_ledger_entries" }, () => onChange("accounting_ledger_entries"))
     .on("postgres_changes", { event: "*", schema: "public", table: "accounting_bank_statement_lines" }, () => onChange("accounting_bank_statement_lines"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "accounting_ai_import_reviews" }, () => onChange("accounting_ai_import_reviews"))
     .on("postgres_changes", { event: "*", schema: "public", table: "accounting_categories" }, () => onChange("accounting_categories"))
     .on("postgres_changes", { event: "*", schema: "public", table: "content_plan_items" }, () => onChange("content_plan_items"))
     .on("postgres_changes", { event: "*", schema: "public", table: "content_idea_items" }, () => onChange("content_idea_items"))

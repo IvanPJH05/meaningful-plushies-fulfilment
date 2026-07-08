@@ -892,6 +892,38 @@ create index if not exists accounting_bank_statement_lines_date_idx
 create index if not exists accounting_bank_statement_lines_match_idx
   on public.accounting_bank_statement_lines (match_status, matched_transaction_id);
 
+create table if not exists public.accounting_ai_import_reviews (
+  id text primary key,
+  import_id text not null default '',
+  row_number integer not null default 0,
+  import_action text not null default '',
+  status text not null default 'manual_required' check (status in ('manual_required', 'possible_duplicate', 'error')),
+  bank_transaction_id text not null default '',
+  bank_statement_id text not null default '',
+  bank_date date,
+  bank_description text not null default '',
+  bank_amount numeric(12,2) not null default 0 check (bank_amount >= 0),
+  bank_direction text not null default '' check (bank_direction in ('', 'money_in', 'money_out')),
+  business_event text not null default '',
+  account text not null default '',
+  counterparty text not null default '',
+  description text not null default '',
+  amount numeric(12,2) not null default 0 check (amount >= 0),
+  duplicate_check_key text not null default '',
+  matched_transaction_id text references public.accounting_transactions(id) on delete set null,
+  ai_confidence numeric(5,2) not null default 0 check (ai_confidence >= 0),
+  ai_reason text not null default '',
+  notes text not null default '',
+  raw_data jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists accounting_ai_import_reviews_status_idx
+  on public.accounting_ai_import_reviews (status, created_at desc);
+create index if not exists accounting_ai_import_reviews_bank_transaction_idx
+  on public.accounting_ai_import_reviews (bank_transaction_id);
+
 create table if not exists public.content_plan_items (
   id text primary key,
   title text not null,
@@ -961,6 +993,7 @@ alter table public.accounting_documents enable row level security;
 alter table public.accounting_transactions enable row level security;
 alter table public.accounting_ledger_entries enable row level security;
 alter table public.accounting_bank_statement_lines enable row level security;
+alter table public.accounting_ai_import_reviews enable row level security;
 alter table public.content_plan_items enable row level security;
 alter table public.content_idea_items enable row level security;
 
@@ -989,6 +1022,11 @@ drop policy if exists "shared accounting changes bank statement lines" on public
 create policy "shared accounting reads bank statement lines" on public.accounting_bank_statement_lines for select to anon, authenticated using (true);
 create policy "shared accounting changes bank statement lines" on public.accounting_bank_statement_lines for all to anon, authenticated using (true) with check (true);
 
+drop policy if exists "shared accounting reads ai import reviews" on public.accounting_ai_import_reviews;
+drop policy if exists "shared accounting changes ai import reviews" on public.accounting_ai_import_reviews;
+create policy "shared accounting reads ai import reviews" on public.accounting_ai_import_reviews for select to anon, authenticated using (true);
+create policy "shared accounting changes ai import reviews" on public.accounting_ai_import_reviews for all to anon, authenticated using (true) with check (true);
+
 drop policy if exists "shared content plan reads items" on public.content_plan_items;
 drop policy if exists "shared content plan changes items" on public.content_plan_items;
 create policy "shared content plan reads items" on public.content_plan_items for select to anon, authenticated using (true);
@@ -1013,6 +1051,7 @@ grant select, insert, update, delete on public.accounting_documents to anon, aut
 grant select, insert, update, delete on public.accounting_transactions to anon, authenticated;
 grant select, insert, update, delete on public.accounting_ledger_entries to anon, authenticated;
 grant select, insert, update, delete on public.accounting_bank_statement_lines to anon, authenticated;
+grant select, insert, update, delete on public.accounting_ai_import_reviews to anon, authenticated;
 grant select, insert, update, delete on public.content_plan_items to anon, authenticated;
 grant select, insert, update, delete on public.content_idea_items to anon, authenticated;
 
@@ -1101,6 +1140,12 @@ begin
     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'accounting_bank_statement_lines'
   ) then
     alter publication supabase_realtime add table public.accounting_bank_statement_lines;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'accounting_ai_import_reviews'
+  ) then
+    alter publication supabase_realtime add table public.accounting_ai_import_reviews;
   end if;
   if not exists (
     select 1 from pg_publication_tables
