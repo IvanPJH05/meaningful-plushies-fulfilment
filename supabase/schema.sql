@@ -821,7 +821,7 @@ create table if not exists public.accounting_documents (
 
 create table if not exists public.accounting_transactions (
   id text primary key,
-  source text not null default 'manual' check (source in ('manual', 'document', 'order')),
+  source text not null default 'manual' check (source in ('manual', 'document', 'order', 'bank_statement')),
   source_id text,
   document_id text references public.accounting_documents(id) on delete set null,
   business_event text,
@@ -861,6 +861,36 @@ create table if not exists public.accounting_ledger_entries (
   memo text not null default '',
   created_at timestamptz not null default now()
 );
+
+alter table public.accounting_transactions drop constraint if exists accounting_transactions_source_check;
+alter table public.accounting_transactions add constraint accounting_transactions_source_check
+  check (source in ('manual', 'document', 'order', 'bank_statement'));
+
+create table if not exists public.accounting_bank_statement_lines (
+  id text primary key,
+  import_id text not null default '',
+  row_number integer not null default 0,
+  transaction_date date not null default current_date,
+  description text not null default '',
+  reference text not null default '',
+  money_in numeric(12,2) not null default 0 check (money_in >= 0),
+  money_out numeric(12,2) not null default 0 check (money_out >= 0),
+  balance numeric(12,2),
+  raw_data jsonb not null default '{}'::jsonb,
+  matched_transaction_id text references public.accounting_transactions(id) on delete set null,
+  match_status text not null default 'unmatched' check (match_status in ('unmatched', 'matched', 'ignored')),
+  suggested_event text not null default '',
+  suggested_account text not null default '',
+  notes text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+
+create index if not exists accounting_bank_statement_lines_date_idx
+  on public.accounting_bank_statement_lines (transaction_date desc, row_number desc);
+create index if not exists accounting_bank_statement_lines_match_idx
+  on public.accounting_bank_statement_lines (match_status, matched_transaction_id);
 
 create table if not exists public.content_plan_items (
   id text primary key,
@@ -930,6 +960,7 @@ alter table public.accounting_categories enable row level security;
 alter table public.accounting_documents enable row level security;
 alter table public.accounting_transactions enable row level security;
 alter table public.accounting_ledger_entries enable row level security;
+alter table public.accounting_bank_statement_lines enable row level security;
 alter table public.content_plan_items enable row level security;
 alter table public.content_idea_items enable row level security;
 
@@ -952,6 +983,11 @@ drop policy if exists "shared accounting reads ledger entries" on public.account
 drop policy if exists "shared accounting changes ledger entries" on public.accounting_ledger_entries;
 create policy "shared accounting reads ledger entries" on public.accounting_ledger_entries for select to anon, authenticated using (true);
 create policy "shared accounting changes ledger entries" on public.accounting_ledger_entries for all to anon, authenticated using (true) with check (true);
+
+drop policy if exists "shared accounting reads bank statement lines" on public.accounting_bank_statement_lines;
+drop policy if exists "shared accounting changes bank statement lines" on public.accounting_bank_statement_lines;
+create policy "shared accounting reads bank statement lines" on public.accounting_bank_statement_lines for select to anon, authenticated using (true);
+create policy "shared accounting changes bank statement lines" on public.accounting_bank_statement_lines for all to anon, authenticated using (true) with check (true);
 
 drop policy if exists "shared content plan reads items" on public.content_plan_items;
 drop policy if exists "shared content plan changes items" on public.content_plan_items;
@@ -976,6 +1012,7 @@ grant select, insert, update, delete on public.accounting_categories to anon, au
 grant select, insert, update, delete on public.accounting_documents to anon, authenticated;
 grant select, insert, update, delete on public.accounting_transactions to anon, authenticated;
 grant select, insert, update, delete on public.accounting_ledger_entries to anon, authenticated;
+grant select, insert, update, delete on public.accounting_bank_statement_lines to anon, authenticated;
 grant select, insert, update, delete on public.content_plan_items to anon, authenticated;
 grant select, insert, update, delete on public.content_idea_items to anon, authenticated;
 
@@ -1058,6 +1095,12 @@ begin
     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'accounting_ledger_entries'
   ) then
     alter publication supabase_realtime add table public.accounting_ledger_entries;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'accounting_bank_statement_lines'
+  ) then
+    alter publication supabase_realtime add table public.accounting_bank_statement_lines;
   end if;
   if not exists (
     select 1 from pg_publication_tables

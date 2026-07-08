@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { AccountingCategory, AccountingDocument, AccountingLedgerEntry, AccountingTransaction, CommissionStatus, ContentIdeaItem, ContentIdeaReference, ContentPlanItem, CreatorCommission, CreatorPayout, CreatorProfile, CreatorStatus, CreatorTier, DashboardAccount, EnvelopePrintSettings, MetaCapiLog, MetaCapiSettings, Order, PaymentProcessorSetting, SalesConsumptionMapping, SalesFeeSetting, StockSetting, UserRole } from "./types";
+import type { AccountingBankStatementLine, AccountingCategory, AccountingDocument, AccountingLedgerEntry, AccountingTransaction, CommissionStatus, ContentIdeaItem, ContentIdeaReference, ContentPlanItem, CreatorCommission, CreatorPayout, CreatorProfile, CreatorStatus, CreatorTier, DashboardAccount, EnvelopePrintSettings, MetaCapiLog, MetaCapiSettings, Order, PaymentProcessorSetting, SalesConsumptionMapping, SalesFeeSetting, StockSetting, UserRole } from "./types";
 
 export type DashboardSession = DashboardAccount & { token: string };
 
@@ -827,6 +827,73 @@ export async function deleteAccountingTransaction(id: string) {
   if (error) throw error;
 }
 
+export async function fetchAccountingBankStatementLines(): Promise<AccountingBankStatementLine[]> {
+  const { data, error } = await requireSupabase()
+    .from("accounting_bank_statement_lines")
+    .select("id, import_id, row_number, transaction_date, description, reference, money_in, money_out, balance, raw_data, matched_transaction_id, match_status, suggested_event, suggested_account, notes, created_at, updated_at")
+    .is("deleted_at", null)
+    .order("transaction_date", { ascending: false })
+    .order("row_number", { ascending: false });
+  if (error) {
+    if (isMissingTableError(error)) return [];
+    throw error;
+  }
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    importId: row.import_id ?? "",
+    rowNumber: Number(row.row_number ?? 0),
+    transactionDate: row.transaction_date,
+    description: row.description ?? "",
+    reference: row.reference ?? "",
+    moneyIn: Number(row.money_in ?? 0),
+    moneyOut: Number(row.money_out ?? 0),
+    balance: row.balance === null || row.balance === undefined ? null : Number(row.balance),
+    rawData: row.raw_data ?? {},
+    matchedTransactionId: row.matched_transaction_id ?? "",
+    matchStatus: row.match_status ?? "unmatched",
+    suggestedEvent: row.suggested_event ?? "",
+    suggestedAccount: row.suggested_account ?? "",
+    notes: row.notes ?? "",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+}
+
+export async function saveAccountingBankStatementLines(lines: AccountingBankStatementLine[]) {
+  if (!lines.length) return;
+  const { error } = await requireSupabase().from("accounting_bank_statement_lines").upsert(lines.map((line) => ({
+    id: line.id,
+    import_id: line.importId,
+    row_number: line.rowNumber,
+    transaction_date: line.transactionDate,
+    description: line.description,
+    reference: line.reference,
+    money_in: Math.max(0, line.moneyIn),
+    money_out: Math.max(0, line.moneyOut),
+    balance: line.balance,
+    raw_data: line.rawData,
+    matched_transaction_id: line.matchedTransactionId || null,
+    match_status: line.matchStatus,
+    suggested_event: line.suggestedEvent || "",
+    suggested_account: line.suggestedAccount || "",
+    notes: line.notes || "",
+    updated_at: new Date().toISOString(),
+  })), { onConflict: "id" });
+  if (error) throw error;
+}
+
+export async function saveAccountingBankStatementLine(line: AccountingBankStatementLine) {
+  await saveAccountingBankStatementLines([line]);
+}
+
+export async function deleteAccountingBankStatementLine(id: string) {
+  const { error } = await requireSupabase()
+    .from("accounting_bank_statement_lines")
+    .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw error;
+}
+
 function isMissingTableError(error: unknown) {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === "42P01");
 }
@@ -943,6 +1010,7 @@ export function subscribeToSharedData(onChange: (table: string) => void) {
     .on("postgres_changes", { event: "*", schema: "public", table: "accounting_documents" }, () => onChange("accounting_documents"))
     .on("postgres_changes", { event: "*", schema: "public", table: "accounting_transactions" }, () => onChange("accounting_transactions"))
     .on("postgres_changes", { event: "*", schema: "public", table: "accounting_ledger_entries" }, () => onChange("accounting_ledger_entries"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "accounting_bank_statement_lines" }, () => onChange("accounting_bank_statement_lines"))
     .on("postgres_changes", { event: "*", schema: "public", table: "accounting_categories" }, () => onChange("accounting_categories"))
     .on("postgres_changes", { event: "*", schema: "public", table: "content_plan_items" }, () => onChange("content_plan_items"))
     .on("postgres_changes", { event: "*", schema: "public", table: "content_idea_items" }, () => onChange("content_idea_items"))

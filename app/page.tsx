@@ -5,6 +5,7 @@ import "./settings.css";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, DragEvent, FormEvent, SVGProps } from "react";
 import { applyTikTokDetailEntries, detectCsvKind, fulfilledOrdersCsv, importShopifyData, importTikTokShopData, normalizePaymentProcessor, parseTikTokDetailsBlock, tikTokCertificateJson, tikTokDetailsToText } from "../lib/importer";
+import { parseBankStatementCsv } from "../lib/bank-statements";
 import { buildSalesReportRows, summarizeSales, type SalesReportRow, type SalesSummary } from "../lib/sales";
 import { stockCharacters, summarizeStock } from "../lib/stock";
 import {
@@ -17,8 +18,10 @@ import {
   deleteSharedOrders,
   deleteAccountingDocument,
   deleteAccountingTransaction,
+  deleteAccountingBankStatementLine,
   ensurePaymentProcessors,
   fetchAccountingCategories,
+  fetchAccountingBankStatementLines,
   fetchAccountingDocuments,
   fetchAccountingLedgerEntries,
   fetchAccountingTransactions,
@@ -40,6 +43,8 @@ import {
   insertSharedActivity,
   loginDashboardAccount,
   saveAccountingDocument,
+  saveAccountingBankStatementLine,
+  saveAccountingBankStatementLines,
   saveAccountingCategory,
   saveAccountingLedgerEntries,
   saveAccountingTransaction,
@@ -63,7 +68,7 @@ import {
   upsertSharedOrders,
   type DashboardSession,
 } from "../lib/supabase";
-import { orderStatuses, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type CommissionStatus, type ContentIdeaItem, type ContentIdeaReference, type ContentPlanItem, type CreatorCommission, type CreatorPayout, type CreatorProfile, type CreatorStatus, type CreatorTier, type DashboardAccount, type EnvelopePrintSettings, type MetaAdsEnvironment, type MetaAdsInsight, type MetaAdsSummary, type MetaCapiLog, type MetaCapiSettings, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesConsumptionMapping, type SalesFeeSetting, type StockSetting, type UserRole } from "../lib/types";
+import { orderStatuses, type AccountingBankStatementLine, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type CommissionStatus, type ContentIdeaItem, type ContentIdeaReference, type ContentPlanItem, type CreatorCommission, type CreatorPayout, type CreatorProfile, type CreatorStatus, type CreatorTier, type DashboardAccount, type EnvelopePrintSettings, type MetaAdsEnvironment, type MetaAdsInsight, type MetaAdsSummary, type MetaCapiLog, type MetaCapiSettings, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesConsumptionMapping, type SalesFeeSetting, type StockSetting, type UserRole } from "../lib/types";
 
 type Session = DashboardSession;
 type View =
@@ -223,6 +228,11 @@ type BookkeepingCsvImportRow = {
   invoiceNumber: string;
   notes: string;
   warnings: string[];
+};
+type BankStatementMatchForm = {
+  businessEvent: string;
+  accountName: string;
+  notes: string;
 };
 type EnvelopeSlot = {
   order: Order | null;
@@ -468,6 +478,7 @@ const processorAccounts = ["Xendit", "Stripe", "TikTok Shop"] as const;
 const fulfilmentViews: readonly View[] = ["orders", "fulfilment", "packing_slips", "print_envelope", "import", "tiktok_shop", "fulfilled"];
 const accountingViews: readonly View[] = [
   "accounting_dashboard",
+  "accounting_bank_reconciliation",
   "accounting_transactions",
   "accounting_csv_import",
   "accounting_payable",
@@ -662,6 +673,7 @@ const accountingNavItems: NavItem[] = [
   { view: "accounting_dashboard", label: "Book Keeping Book", icon: "ledger" },
   { view: "accounting_payable", label: "Unsettled Payments", icon: "cash" },
   { view: "accounting_files", label: "Files", icon: "documents" },
+  { view: "accounting_bank_reconciliation", label: "Bank Statement", icon: "cash" },
   { view: "accounting_csv_import", label: "CSV Import", icon: "import" },
   { view: "accounting_transactions", label: "Inventory", icon: "stock" },
   { view: "accounting_documents", label: "Expenses", icon: "documents" },
@@ -1085,6 +1097,7 @@ export default function Home() {
   const [accountingDocuments, setAccountingDocuments] = useState<AccountingDocument[]>([]);
   const [accountingTransactions, setAccountingTransactions] = useState<AccountingTransaction[]>([]);
   const [accountingLedgerEntries, setAccountingLedgerEntries] = useState<AccountingLedgerEntry[]>([]);
+  const [bankStatementLines, setBankStatementLines] = useState<AccountingBankStatementLine[]>([]);
   const [salesConsumptionMappings, setSalesConsumptionMappings] = useState<SalesConsumptionMapping[]>([]);
   const [contentPlanItems, setContentPlanItems] = useState<ContentPlanItem[]>([]);
   const [contentIdeas, setContentIdeas] = useState<ContentIdeaItem[]>([]);
@@ -1165,6 +1178,9 @@ export default function Home() {
   });
   const [bookkeepingCsvRows, setBookkeepingCsvRows] = useState<BookkeepingCsvImportRow[]>([]);
   const [bookkeepingCsvFileName, setBookkeepingCsvFileName] = useState("");
+  const [bankStatementCsv, setBankStatementCsv] = useState("");
+  const [bankStatementFileName, setBankStatementFileName] = useState("");
+  const [bankStatementMatchForms, setBankStatementMatchForms] = useState<Record<string, BankStatementMatchForm>>({});
   const [inventoryCostManualFields, setInventoryCostManualFields] = useState<InventoryCostField[]>([]);
   const [accountPasswords, setAccountPasswords] = useState<Record<string, string>>({});
   const [newAccount, setNewAccount] = useState({ username: "", displayName: "", role: "staff" as UserRole, password: "" });
@@ -1250,6 +1266,7 @@ export default function Home() {
         sharedAccountingDocuments,
         sharedAccountingTransactions,
         sharedAccountingLedgerEntries,
+        sharedBankStatementLines,
         sharedSalesConsumptionMappings,
         sharedContentPlanItems,
         sharedContentIdeas,
@@ -1258,7 +1275,7 @@ export default function Home() {
         sharedMetaCapiLogs,
       ] = await Promise.all([
         fetchSharedActivity(), fetchStockSettings(),
-        fetchAccountingCategories(), fetchAccountingDocuments(), fetchAccountingTransactions(), fetchAccountingLedgerEntries(), fetchSalesConsumptionMappings(), fetchContentPlanItems(), fetchContentIdeas(), fetchEnvelopePrintSettings(), fetchMetaCapiSettings(), fetchMetaCapiLogs(),
+        fetchAccountingCategories(), fetchAccountingDocuments(), fetchAccountingTransactions(), fetchAccountingLedgerEntries(), fetchAccountingBankStatementLines(), fetchSalesConsumptionMappings(), fetchContentPlanItems(), fetchContentIdeas(), fetchEnvelopePrintSettings(), fetchMetaCapiSettings(), fetchMetaCapiLogs(),
       ]);
       setActivity(sharedActivity);
       setStockSettings(sharedStockSettings);
@@ -1266,6 +1283,7 @@ export default function Home() {
       setAccountingDocuments(sharedAccountingDocuments);
       setAccountingTransactions(sharedAccountingTransactions);
       setAccountingLedgerEntries(sharedAccountingLedgerEntries);
+      setBankStatementLines(sharedBankStatementLines);
       setSalesConsumptionMappings(normalizeSalesConsumptionMappings(sharedSalesConsumptionMappings));
       setContentPlanItems(sharedContentPlanItems);
       setContentIdeas(sharedContentIdeas);
@@ -1296,6 +1314,7 @@ export default function Home() {
         tables.has("accounting_documents") ? fetchAccountingDocuments().then(setAccountingDocuments) : Promise.resolve(),
         tables.has("accounting_transactions") ? fetchAccountingTransactions().then(setAccountingTransactions) : Promise.resolve(),
         tables.has("accounting_ledger_entries") ? fetchAccountingLedgerEntries().then(setAccountingLedgerEntries) : Promise.resolve(),
+        tables.has("accounting_bank_statement_lines") ? fetchAccountingBankStatementLines().then(setBankStatementLines) : Promise.resolve(),
         tables.has("content_plan_items") ? fetchContentPlanItems().then(setContentPlanItems) : Promise.resolve(),
         tables.has("content_idea_items") ? fetchContentIdeas().then(setContentIdeas) : Promise.resolve(),
         tables.has("meta_capi_settings") ? fetchMetaCapiSettings().then(setMetaCapiSettings) : Promise.resolve(),
@@ -2799,6 +2818,197 @@ export default function Home() {
     }
   }
 
+  function bankStatementConfigForEvent(eventValue: string) {
+    if (eventValue === "inventory_purchase") return bookkeepingSectionConfigs.inventory;
+    if (eventValue === "asset_purchase") return bookkeepingSectionConfigs.asset;
+    if (eventValue === "marketing_expense") return bookkeepingSectionConfigs.marketing;
+    if (eventValue === "other_income") return bookkeepingSectionConfigs.otherIncome;
+    if (eventValue === "operating_cost") return { ...bookkeepingSectionConfigs.expense, reportSection: "Current Assets", parentAccount: prepaidOperatingCostAccountName, accountType: "asset" as const, sourceEntity: "Bank statement prepaid operating cost" };
+    if (eventValue === "payment_processor_paid") return { label: "Cash", parentAccount: "Bank Account", accountType: "asset" as const, reportSection: "Current Assets", sourceEntity: "Bank statement cash movement" };
+    return bookkeepingSectionConfigs.expense;
+  }
+
+  async function ensureBankStatementAccount(eventValue: string, accountName: string, actor: string) {
+    const config = bankStatementConfigForEvent(eventValue);
+    const name = eventValue === "operating_cost" ? prepaidOperatingCostAccountName : accountName.trim() || config.parentAccount;
+    const existing = accountingCategories.find((category) => category.active && category.name.toLowerCase() === name.toLowerCase())
+      ?? accountingCategories.find((category) => category.active && category.reportSection === config.reportSection && category.name.toLowerCase() === name.toLowerCase());
+    if (existing) return existing;
+    const account: AccountingCategory = {
+      id: crypto.randomUUID(),
+      name,
+      accountType: config.accountType,
+      reportSection: config.reportSection,
+      parentId: config.reportSection === "Current Assets" ? "" : bookkeepingParentId(config as (typeof bookkeepingSectionConfigs)[BookkeepingSectionKey]),
+      dataSourceType: "manual",
+      sourceModule: "Bank Statement",
+      sourceEntity: config.sourceEntity,
+      postingTrigger: "Bank Statement Match",
+      allowSubAccounts: false,
+      allowedTransactionTypes: [],
+      active: true,
+    };
+    await saveAccountingCategory(account);
+    setAccountingCategories((current) => [...current, account].sort((a, b) => `${a.reportSection}-${a.name}`.localeCompare(`${b.reportSection}-${b.name}`)));
+    await insertSharedActivity({ id: crypto.randomUUID(), action: "Bank statement account added", detail: `${name} added while matching bank statement.`, actor, createdAt: new Date().toISOString() });
+    return account;
+  }
+
+  function bankStatementLedgerEntries(line: AccountingBankStatementLine, form: BankStatementMatchForm, account: AccountingCategory, transactionId: string, createdAt: string): AccountingLedgerEntry[] {
+    const amount = line.moneyOut > 0 ? line.moneyOut : line.moneyIn;
+    const accountName = form.businessEvent === "operating_cost" ? prepaidOperatingCostAccountName : account.name;
+    if (form.businessEvent === "payment_processor_paid") {
+      if (accountName === "Drawings") return [
+        { id: crypto.randomUUID(), transactionId, accountId: account.id, accountName: "Drawings", entryType: "debit", amount, memo: line.description, createdAt },
+        { id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Bank Account", entryType: "credit", amount, memo: "Bank statement owner drawing", createdAt },
+      ];
+      if (accountName === "Stripe" || accountName === "Xendit") return [
+        { id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Bank Account", entryType: "debit", amount, memo: "Processor payout from bank statement", createdAt },
+        { id: crypto.randomUUID(), transactionId, accountId: account.id, accountName, entryType: "credit", amount, memo: line.description, createdAt },
+      ];
+      return [
+        { id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Bank Account", entryType: "debit", amount, memo: "Bank statement money in", createdAt },
+        { id: crypto.randomUUID(), transactionId, accountId: account.id, accountName, entryType: "credit", amount, memo: line.description, createdAt },
+      ];
+    }
+    if (line.moneyIn > 0) return [
+      { id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Bank Account", entryType: "debit", amount, memo: "Bank statement money in", createdAt },
+      { id: crypto.randomUUID(), transactionId, accountId: account.id, accountName, entryType: "credit", amount, memo: line.description, createdAt },
+    ];
+    return [
+      { id: crypto.randomUUID(), transactionId, accountId: account.id, accountName, entryType: "debit", amount, memo: line.description, createdAt },
+      { id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Bank Account", entryType: "credit", amount, memo: "Bank statement payment", createdAt },
+    ];
+  }
+
+  async function readBankStatementCsv(file?: File) {
+    if (!file && !bankStatementCsv.trim()) return setNotice("Choose a bank statement CSV file or paste CSV content first.");
+    const rows = file?.type === "application/pdf" || file?.name.toLowerCase().endsWith(".pdf")
+      ? await (async () => {
+        const formData = new FormData();
+        formData.append("file", file as File);
+        const response = await fetch("/api/accounting/bank-statement-pdf", { method: "POST", body: formData });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Could not read the PDF bank statement.");
+        return payload.rows as ReturnType<typeof parseBankStatementCsv>;
+      })()
+      : parseBankStatementCsv(file ? await file.text() : bankStatementCsv);
+    const validRows = rows.filter((row) => row.transactionDate && (row.moneyIn > 0 || row.moneyOut > 0));
+    if (!validRows.length) return setNotice("No bank statement rows could be detected. Check the file has date, description, and amount/debit/credit columns.");
+    setSavingAccounting(true);
+    try {
+      const now = new Date().toISOString();
+      const importId = crypto.randomUUID();
+      const lines: AccountingBankStatementLine[] = validRows.map((row) => ({
+        id: crypto.randomUUID(),
+        importId,
+        rowNumber: row.rowNumber,
+        transactionDate: row.transactionDate,
+        description: row.description,
+        reference: row.reference,
+        moneyIn: row.moneyIn,
+        moneyOut: row.moneyOut,
+        balance: row.balance,
+        rawData: row.rawData,
+        matchedTransactionId: "",
+        matchStatus: "unmatched",
+        suggestedEvent: row.suggestedEvent,
+        suggestedAccount: row.suggestedAccount,
+        notes: row.warnings.join(", "),
+        createdAt: now,
+        updatedAt: now,
+      }));
+      await saveAccountingBankStatementLines(lines);
+      setBankStatementLines((current) => [...lines, ...current]);
+      setBankStatementMatchForms((current) => ({
+        ...current,
+        ...Object.fromEntries(lines.map((line) => [line.id, { businessEvent: line.suggestedEvent || "expense", accountName: line.suggestedAccount || "", notes: "" }])),
+      }));
+      setBankStatementCsv("");
+      setBankStatementFileName(file?.name ?? bankStatementFileName);
+      await insertSharedActivity({ id: crypto.randomUUID(), action: "Bank statement imported", detail: `${lines.length} bank line${lines.length === 1 ? "" : "s"} imported for matching.`, actor: session?.displayName ?? "Admin", createdAt: now });
+      setNotice(`${lines.length} bank statement line${lines.length === 1 ? "" : "s"} imported.`);
+    } catch (error) {
+      setNotice(readableError(error, "Could not import bank statement lines. Run the latest Supabase schema first."));
+    } finally {
+      setSavingAccounting(false);
+    }
+  }
+
+  function updateBankStatementMatchForm(lineId: string, patch: Partial<BankStatementMatchForm>) {
+    const defaults: BankStatementMatchForm = { businessEvent: "expense", accountName: "", notes: "" };
+    setBankStatementMatchForms((current) => ({ ...current, [lineId]: { ...defaults, ...current[lineId], ...patch } }));
+  }
+
+  async function matchBankStatementLine(line: AccountingBankStatementLine) {
+    const form = bankStatementMatchForms[line.id] ?? { businessEvent: line.suggestedEvent || "expense", accountName: line.suggestedAccount || "", notes: "" };
+    if (!form.businessEvent || form.businessEvent === "ignore") return ignoreBankStatementLine(line);
+    const amount = line.moneyOut > 0 ? line.moneyOut : line.moneyIn;
+    if (amount <= 0) return setNotice("This bank line has no amount to match.");
+    setSavingAccounting(true);
+    try {
+      const actor = session?.displayName ?? "Admin";
+      const now = new Date().toISOString();
+      const transactionId = crypto.randomUUID();
+      const account = await ensureBankStatementAccount(form.businessEvent, form.accountName || line.suggestedAccount, actor);
+      const entries = bankStatementLedgerEntries(line, form, account, transactionId, now);
+      await saveAccountingTransaction({
+        id: transactionId,
+        source: "bank_statement",
+        sourceId: line.id,
+        documentId: "",
+        businessEvent: form.businessEvent,
+        transactionDate: line.transactionDate,
+        description: line.description,
+        accountName: account.name,
+        categoryId: account.id,
+        transactionType: line.moneyIn > 0 && form.businessEvent !== "payment_processor_paid" ? "income" : form.businessEvent === "payment_processor_paid" ? "transfer" : "expense",
+        paymentStatus: "paid_in_full",
+        paymentMethod: "Bank Account",
+        supplier: line.reference,
+        quantity: 0,
+        unitCost: 0,
+        depositAmount: amount,
+        invoiceNumber: line.reference,
+        dueDate: "",
+        supplierTerms: "",
+        debit: entries.filter((entry) => entry.entryType === "debit").reduce((total, entry) => total + entry.amount, 0),
+        credit: entries.filter((entry) => entry.entryType === "credit").reduce((total, entry) => total + entry.amount, 0),
+        amount,
+        currency: "MYR",
+        taxTreatment: "none",
+        notes: form.notes || line.notes,
+        createdBy: actor,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await saveAccountingLedgerEntries(transactionId, entries);
+      const updatedLine: AccountingBankStatementLine = { ...line, matchedTransactionId: transactionId, matchStatus: "matched", suggestedEvent: form.businessEvent, suggestedAccount: account.name, notes: form.notes || line.notes, updatedAt: now };
+      await saveAccountingBankStatementLine(updatedLine);
+      setBankStatementLines((current) => current.map((item) => item.id === line.id ? updatedLine : item));
+      await insertSharedActivity({ id: crypto.randomUUID(), action: "Bank statement line matched", detail: `${line.description} matched to ${account.name} (${formatMoney(amount)}).`, actor, createdAt: now });
+      await loadSharedData(false);
+      setNotice("Bank line matched and saved to the book.");
+    } catch (error) {
+      setNotice(readableError(error, "Could not create transaction from this bank line."));
+    } finally {
+      setSavingAccounting(false);
+    }
+  }
+
+  async function ignoreBankStatementLine(line: AccountingBankStatementLine) {
+    const updatedLine: AccountingBankStatementLine = { ...line, matchStatus: "ignored", updatedAt: new Date().toISOString() };
+    await saveAccountingBankStatementLine(updatedLine);
+    setBankStatementLines((current) => current.map((item) => item.id === line.id ? updatedLine : item));
+    setNotice("Bank line ignored.");
+  }
+
+  async function removeBankStatementLine(line: AccountingBankStatementLine) {
+    await deleteAccountingBankStatementLine(line.id);
+    setBankStatementLines((current) => current.filter((item) => item.id !== line.id));
+    setNotice("Bank statement line removed.");
+  }
+
   async function uploadAccountingDocument() {
     if (!accountingDocumentFile) return setNotice("Choose a receipt, invoice, or statement file first.");
     const amount = Number(documentForm.amount);
@@ -3695,6 +3905,10 @@ export default function Home() {
         documents={accountingDocuments}
         transactions={accountingTransactions}
         ledgerEntries={accountingLedgerEntries}
+        bankStatementLines={bankStatementLines}
+        bankStatementCsv={bankStatementCsv}
+        bankStatementFileName={bankStatementFileName}
+        bankStatementMatchForms={bankStatementMatchForms}
         documentForm={documentForm}
         transactionForm={transactionForm}
         accountForm={accountForm}
@@ -3723,6 +3937,13 @@ export default function Home() {
         csvFileName={bookkeepingCsvFileName}
         onImportBookkeepingCsv={importBookkeepingCsvRows}
         onClearBookkeepingCsv={() => { setBookkeepingCsvRows([]); setBookkeepingCsvFileName(""); }}
+        onBankStatementCsvChange={setBankStatementCsv}
+        onReadBankStatement={readBankStatementCsv}
+        onClearBankStatement={() => { setBankStatementCsv(""); setBankStatementFileName(""); }}
+        onBankStatementMatchFormChange={updateBankStatementMatchForm}
+        onMatchBankStatementLine={matchBankStatementLine}
+        onIgnoreBankStatementLine={ignoreBankStatementLine}
+        onDeleteBankStatementLine={removeBankStatementLine}
         onSaveAccount={saveAccountSettings}
         onSaveBookkeepingCategory={saveBookkeepingCategory}
         onSaveSalesConsumptionRule={saveSalesConsumptionRule}
@@ -4044,6 +4265,10 @@ function AccountingWorkspacePage({
   documents,
   transactions,
   ledgerEntries,
+  bankStatementLines,
+  bankStatementCsv,
+  bankStatementFileName,
+  bankStatementMatchForms,
   documentForm,
   transactionForm,
   accountForm,
@@ -4072,6 +4297,13 @@ function AccountingWorkspacePage({
   csvFileName,
   onImportBookkeepingCsv,
   onClearBookkeepingCsv,
+  onBankStatementCsvChange,
+  onReadBankStatement,
+  onClearBankStatement,
+  onBankStatementMatchFormChange,
+  onMatchBankStatementLine,
+  onIgnoreBankStatementLine,
+  onDeleteBankStatementLine,
   onSaveAccount,
   onSaveBookkeepingCategory,
   onSaveSalesConsumptionRule,
@@ -4106,6 +4338,10 @@ function AccountingWorkspacePage({
   documents: AccountingDocument[];
   transactions: AccountingTransaction[];
   ledgerEntries: AccountingLedgerEntry[];
+  bankStatementLines: AccountingBankStatementLine[];
+  bankStatementCsv: string;
+  bankStatementFileName: string;
+  bankStatementMatchForms: Record<string, BankStatementMatchForm>;
   documentForm: AccountingDocumentForm;
   transactionForm: AccountingTransactionForm;
   accountForm: AccountingAccountForm;
@@ -4134,6 +4370,13 @@ function AccountingWorkspacePage({
   csvFileName: string;
   onImportBookkeepingCsv: () => void;
   onClearBookkeepingCsv: () => void;
+  onBankStatementCsvChange: (value: string) => void;
+  onReadBankStatement: (file?: File) => void;
+  onClearBankStatement: () => void;
+  onBankStatementMatchFormChange: (lineId: string, patch: Partial<BankStatementMatchForm>) => void;
+  onMatchBankStatementLine: (line: AccountingBankStatementLine) => void;
+  onIgnoreBankStatementLine: (line: AccountingBankStatementLine) => void;
+  onDeleteBankStatementLine: (line: AccountingBankStatementLine) => void;
   onSaveAccount: () => void;
   onSaveBookkeepingCategory: () => void;
   onSaveSalesConsumptionRule: () => void;
@@ -4203,6 +4446,26 @@ function AccountingWorkspacePage({
     .reduce((total, entry) => total + entry.amount, 0);
   const operatingCostUsed = operatingCostReleaseTransactions.reduce((total, transaction) => total + transaction.amount, 0);
   const operatingCostRemaining = Math.max(0, operatingCostAdded - operatingCostUsed);
+  const bankStatementUnmatched = bankStatementLines.filter((line) => line.matchStatus === "unmatched");
+  const bankStatementMatched = bankStatementLines.filter((line) => line.matchStatus === "matched");
+  const bankStatementIgnored = bankStatementLines.filter((line) => line.matchStatus === "ignored");
+  function bankStatementUiConfigForEvent(eventValue: string) {
+    if (eventValue === "inventory_purchase") return bookkeepingSectionConfigs.inventory;
+    if (eventValue === "asset_purchase") return bookkeepingSectionConfigs.asset;
+    if (eventValue === "marketing_expense") return bookkeepingSectionConfigs.marketing;
+    if (eventValue === "other_income") return bookkeepingSectionConfigs.otherIncome;
+    if (eventValue === "operating_cost") return { ...bookkeepingSectionConfigs.expense, reportSection: "Current Assets", parentAccount: prepaidOperatingCostAccountName, accountType: "asset" as const, sourceEntity: "Bank statement prepaid operating cost" };
+    return bookkeepingSectionConfigs.expense;
+  }
+  function bankStatementAccountOptions(eventValue: string) {
+    if (eventValue === "payment_processor_paid") return ["Bank Transfer", "Stripe", "Xendit", "Owner's Equity", "Drawings"];
+    if (eventValue === "operating_cost") return [prepaidOperatingCostAccountName];
+    const config = bankStatementUiConfigForEvent(eventValue);
+    const saved = categories
+      .filter((category) => category.active && (category.reportSection === config.reportSection || category.accountType === config.accountType))
+      .map((category) => category.name);
+    return [...new Set([...(("defaults" in config ? config.defaults : []) ?? []), ...saved, config.parentAccount])].filter(Boolean).sort((a, b) => a.localeCompare(b));
+  }
   const transactionEditPanel = editingTransactionForm ? <section className="accounting-form card">
     <div className="accounting-form-heading"><div><h3>Edit transaction</h3><p>Update the transaction details or attach a replacement source document.</p></div><button className="view-button" onClick={onCancelEditTransaction}>Cancel</button></div>
     <div className="accounting-two-cols"><label>Date<input type="date" value={editingTransactionForm.transactionDate} onChange={(input) => onEditingTransactionFormChange({ transactionDate: input.target.value })} /></label><label>Amount<input type="number" min="0" step="0.01" value={editingTransactionForm.amount} onChange={(input) => onEditingTransactionFormChange({ amount: input.target.value })} /></label></div>
@@ -4284,6 +4547,47 @@ function AccountingWorkspacePage({
   if (view === "accounting_files") return <section className="accounting-workspace">
     <div className="accounting-hero card"><div><p>SOURCE DOCUMENTS</p><h2>Files linked to transactions</h2><span>Every receipt, invoice, payment proof, or source document attached to a bookkeeping transaction appears here.</span></div><div className="accounting-status-pill">{documents.filter((document) => transactions.some((transaction) => transaction.documentId === document.id)).length} files</div></div>
     <AccountingFilesTable documents={documents} transactions={transactions} ledgerEntries={ledgerEntries} categoryName={categoryName} onOpen={onOpenDocument} />
+  </section>;
+
+  if (view === "accounting_bank_reconciliation") return <section className="accounting-workspace">
+    <div className="accounting-hero card"><div><p>BANK STATEMENT MATCHING</p><h2>Import bank statement, then match each line</h2><span>Upload Maybank/Public Bank PDF statements or CSV exports. Each line stays here until it is matched, ignored, or removed.</span></div><div className="accounting-status-pill">{bankStatementUnmatched.length} unmatched</div></div>
+    <section className="accounting-summary-grid">
+      <article className="money-stat transfer"><span>Unmatched lines</span><strong>{bankStatementUnmatched.length}</strong></article>
+      <article className="money-stat collected"><span>Matched lines</span><strong>{bankStatementMatched.length}</strong></article>
+      <article className="money-stat fees"><span>Ignored lines</span><strong>{bankStatementIgnored.length}</strong></article>
+    </section>
+    <section className="csv-import-layout bank-statement-layout">
+      <div className="accounting-form card">
+        <h3>Import bank statement</h3>
+        <FileDropZone accept="application/pdf,.pdf,.csv,text/csv" title="Choose or drop bank statement" description={bankStatementFileName || "PDF or CSV from your bank"} onFile={(file) => onReadBankStatement(file ?? undefined)} className="compact-file-drop" />
+        <label>Or paste CSV content<textarea value={bankStatementCsv} onChange={(event) => onBankStatementCsvChange(event.target.value)} placeholder="Date, Description, Debit, Credit, Balance..." /></label>
+        <div className="csv-import-actions"><button className="button primary" disabled={saving || !bankStatementCsv.trim()} onClick={() => onReadBankStatement()}>{saving ? "Importing..." : "Import pasted CSV"}</button><button className="button secondary" type="button" onClick={onClearBankStatement}>Clear</button></div>
+        <section className="posting-preview">
+          <h3>How this works</h3>
+          <div><span>Money out</span><strong>Choose expense, inventory, asset, marketing, or operating cost</strong></div>
+          <div><span>Money in</span><strong>Choose other income, Stripe, Xendit, owner equity, or transfer</strong></div>
+          <div><span>After matching</span><strong>The book, journal, T accounts, and reports update</strong></div>
+        </section>
+      </div>
+      <section className="card accounting-table-card bank-statement-card">
+        <h3>Statement lines</h3>
+        <div className="table-scroll"><table className="orders-table bank-statement-table"><thead><tr><th>Status</th><th>Date</th><th>Description</th><th>Money in</th><th>Money out</th><th>Match as</th><th>Account</th><th>Notes</th><th /></tr></thead><tbody>{bankStatementLines.map((line) => {
+          const form = bankStatementMatchForms[line.id] ?? { businessEvent: line.suggestedEvent || (line.moneyIn > 0 ? "other_income" : "expense"), accountName: line.suggestedAccount || "", notes: "" };
+          const options = bankStatementAccountOptions(form.businessEvent);
+          return <tr key={line.id} className={`bank-line-${line.matchStatus}`}>
+            <td><span className={`source-document-pill ${line.matchStatus === "matched" ? "matched" : line.matchStatus === "ignored" ? "ignored" : ""}`}>{line.matchStatus}</span></td>
+            <td>{formatDate(line.transactionDate)}<br /><small>{line.reference || `Row ${line.rowNumber}`}</small></td>
+            <td><strong>{line.description}</strong>{line.notes && <><br /><small>{line.notes}</small></>}</td>
+            <td>{line.moneyIn > 0 ? <strong>{formatMoney(line.moneyIn)}</strong> : "-"}</td>
+            <td>{line.moneyOut > 0 ? <strong>{formatMoney(line.moneyOut)}</strong> : "-"}</td>
+            <td><select value={form.businessEvent} disabled={line.matchStatus !== "unmatched"} onChange={(event) => onBankStatementMatchFormChange(line.id, { businessEvent: event.target.value, accountName: "" })}><option value="expense">Expense</option><option value="inventory_purchase">Inventory</option><option value="asset_purchase">Asset</option><option value="marketing_expense">Marketing</option><option value="operating_cost">Pre-paid operating cost</option><option value="other_income">Other income</option><option value="payment_processor_paid">Cash / transfer</option><option value="ignore">Ignore</option></select></td>
+            <td><select value={form.accountName || options[0] || ""} disabled={line.matchStatus !== "unmatched" || form.businessEvent === "ignore"} onChange={(event) => onBankStatementMatchFormChange(line.id, { accountName: event.target.value })}>{options.map((option) => <option key={option} value={option}>{option}</option>)}</select></td>
+            <td><input value={form.notes} disabled={line.matchStatus !== "unmatched"} onChange={(event) => onBankStatementMatchFormChange(line.id, { notes: event.target.value })} placeholder="Optional note" /></td>
+            <td><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => onMatchBankStatementLine(line)}>Create entry</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => onIgnoreBankStatementLine(line)}>Ignore</button><button className="view-button danger-text" disabled={saving} onClick={() => onDeleteBankStatementLine(line)}>Remove</button></td>
+          </tr>;
+        })}</tbody></table>{!bankStatementLines.length && <div className="empty"><strong>No bank statement imported yet</strong><p>Drop a PDF or CSV statement to start matching transactions from your bank.</p></div>}</div>
+      </section>
+    </section>
   </section>;
 
   if (view === "accounting_csv_import") return <section className="accounting-workspace">

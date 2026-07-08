@@ -224,7 +224,7 @@ export type AccountingDocument = {
 
 export type AccountingTransaction = {
   id: string;
-  source: "manual" | "document" | "order";
+  source: "manual" | "document" | "order" | "bank_statement";
   sourceId: string;
   documentId: string;
   businessEvent: string;
@@ -249,6 +249,26 @@ export type AccountingTransaction = {
   taxTreatment: string;
   notes: string;
   createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AccountingBankStatementLine = {
+  id: string;
+  importId: string;
+  rowNumber: number;
+  transactionDate: string;
+  description: string;
+  reference: string;
+  moneyIn: number;
+  moneyOut: number;
+  balance: number | null;
+  rawData: Record<string, string>;
+  matchedTransactionId: string;
+  matchStatus: "unmatched" | "matched" | "ignored";
+  suggestedEvent: string;
+  suggestedAccount: string;
+  notes: string;
   createdAt: string;
   updatedAt: string;
 };
