@@ -111,6 +111,7 @@ function suggestLine(description: string, moneyIn: number, moneyOut: number) {
     if (text.includes("stripe")) return { suggestedEvent: "payment_processor_paid", suggestedAccount: "Stripe" };
     if (text.includes("xendit")) return { suggestedEvent: "payment_processor_paid", suggestedAccount: "Xendit" };
     if (text.includes("owner") || text.includes("capital")) return { suggestedEvent: "payment_processor_paid", suggestedAccount: "Owner's Equity" };
+    if (/\b(duitnow|transfer to a\/c|trsf cr|qr-)\b/i.test(description)) return { suggestedEvent: "ignore", suggestedAccount: "Bank transfer sales already recorded" };
     return { suggestedEvent: "other_income", suggestedAccount: "Other Income" };
   }
   if (text.includes("meta") || text.includes("facebook") || text.includes("facebk") || text.includes("fb.me")) return { suggestedEvent: "marketing_expense", suggestedAccount: "Meta Ads" };

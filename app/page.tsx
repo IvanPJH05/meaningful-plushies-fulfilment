@@ -2521,6 +2521,16 @@ export default function Home() {
     return ["true", "yes", "y", "1", "review"].includes(value.trim().toLowerCase());
   }
 
+  function isAlreadyRecordedBankTransferSale(row: Pick<AiAccountantCsvRow, "bankDirection" | "businessEvent" | "account" | "bankDescription" | "description" | "paymentMethod" | "sourcePlatform">) {
+    const text = `${row.bankDescription} ${row.description} ${row.paymentMethod} ${row.sourcePlatform}`.toLowerCase();
+    const account = row.account.trim().toLowerCase();
+    if (row.bankDirection !== "money_in") return false;
+    if (row.businessEvent !== "other_income") return false;
+    if (account && account !== "offline sales" && account !== "other income") return false;
+    if (text.includes("stripe") || text.includes("xendit") || text.includes("mp gift shop")) return false;
+    return text.includes("duitnow") || text.includes("transfer to a/c") || text.includes("trsf cr") || text.includes("qr-");
+  }
+
   function findAiDuplicateCandidate(row: Pick<AiAccountantCsvRow, "existingTransactionId" | "matchedTransactionId" | "bankTransactionId" | "sourceReference" | "documentReference" | "duplicateCheckKey" | "amount" | "bankDate" | "description" | "counterparty">) {
     const directId = row.existingTransactionId || row.matchedTransactionId;
     if (directId) {
@@ -2545,6 +2555,7 @@ export default function Home() {
   function classifyAiAccountantRow(row: Omit<AiAccountantCsvRow, "group" | "errors" | "warnings" | "duplicateCandidateId">) {
     const errors: string[] = [];
     const warnings: string[] = [];
+    const alreadyRecordedBankTransferSale = isAlreadyRecordedBankTransferSale(row);
     if (!row.importAction || !aiImportActions.includes(row.importAction)) errors.push("Invalid import_action.");
     if (row.bankDirection && row.bankDirection !== "money_in" && row.bankDirection !== "money_out") errors.push("bank_direction must be money_in or money_out.");
     if (row.bankDate && !dateKey(row.bankDate)) errors.push("Invalid bank_date.");
@@ -2559,8 +2570,10 @@ export default function Home() {
     if (row.importAction === "match_existing" && !(row.existingTransactionId || row.matchedTransactionId)) errors.push("match_existing requires existing_transaction_id or matched_transaction_id.");
     const duplicate = row.importAction === "create_transaction" ? findAiDuplicateCandidate(row) : null;
     if (duplicate) warnings.push(`Possible duplicate: ${duplicate.description} (${formatMoney(duplicate.amount)}).`);
+    if (alreadyRecordedBankTransferSale) warnings.push("Customer bank-transfer sale is already recorded from the fulfilment sales report, so it will not be imported again.");
     let group: AiImportGroup = "ready";
     if (errors.length) group = "error";
+    else if (alreadyRecordedBankTransferSale) group = "ignored";
     else if (duplicate) group = "duplicate";
     else if (row.importAction === "match_existing") group = "matched";
     else if (row.importAction === "internal_transfer") group = "internal";
@@ -3149,8 +3162,9 @@ export default function Home() {
           continue;
         }
 
-        if (row.importAction === "ignore") {
-          bankLines.push({ ...aiBankLineFromRow(row, importId, "", "ignored"), notes: [row.aiReason, row.notes, "Ignored by AI Accountant CSV"].filter(Boolean).join(" | ") });
+        if (row.group === "ignored" || row.importAction === "ignore") {
+          const ignoredReason = isAlreadyRecordedBankTransferSale(row) ? "Customer bank-transfer sale already recorded from fulfilment sales report." : "Ignored by AI Accountant CSV";
+          bankLines.push({ ...aiBankLineFromRow(row, importId, "", "ignored"), notes: [row.aiReason, row.notes, ignoredReason].filter(Boolean).join(" | ") });
           ignored += 1;
           continue;
         }
