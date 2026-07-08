@@ -985,7 +985,8 @@ values
   ('Office & Admin', 'expense', 'Expenses'),
   ('Bank Charges', 'expense', 'Expenses'),
   ('Cash', 'asset', 'Assets'),
-  ('Bank Account', 'asset', 'Assets')
+  ('Bank Account', 'asset', 'Assets'),
+  ('Shopee Pay', 'asset', 'Current Assets')
 on conflict (name) do nothing;
 
 alter table public.accounting_categories enable row level security;

@@ -321,7 +321,7 @@ const dashboardSelectableStatuses: { value: OrderStatus | "total"; label: string
 
 const sourceModules = ["Shopify", "TikTok Shop", "Fulfilment", "Inventory", "Payment Processor", "Tax Engine", "Depreciation Engine", "Manual Transactions", "Subscription Engine", "Payroll Engine"];
 const postingTriggers = ["Manual Entry", "Order Created", "Payment Received", "Order Fulfilled", "Order Packed", "Payout Received", "Inventory Adjusted", "Bill Created"];
-const paymentAccounts = ["Bank Account"];
+const paymentAccounts = ["Bank Account", "Shopee Pay"];
 const stockPurchaseAccounts = [
   "Billy Plush Skin",
   "Tootsie Plush Skin",
@@ -468,6 +468,7 @@ const bookkeepingEventByView: Partial<Record<View, (typeof businessEvents)[numbe
 
 const accountingPresetAccounts: Omit<AccountingCategory, "id" | "parentId" | "active">[] = [
   { name: "Bank Account", accountType: "asset", reportSection: "Current Assets", dataSourceType: "system_generated", sourceModule: "Payment Processor", sourceEntity: "Payouts", postingTrigger: "Payout Received", allowSubAccounts: false, allowedTransactionTypes: [] },
+  { name: "Shopee Pay", accountType: "asset", reportSection: "Current Assets", dataSourceType: "manual", sourceModule: "Book Keeping", sourceEntity: "Shopee Pay wallet", postingTrigger: "Manual Entry", allowSubAccounts: false, allowedTransactionTypes: [] },
   { name: "Accounts Receivable", accountType: "asset", reportSection: "Current Assets", dataSourceType: "system_generated", sourceModule: "Shopify", sourceEntity: "Orders", postingTrigger: "Order Paid", allowSubAccounts: false, allowedTransactionTypes: [] },
   { name: "Payment Processors", accountType: "asset", reportSection: "Current Assets", dataSourceType: "system_generated", sourceModule: "Payment Processor", sourceEntity: "Processor Balances", postingTrigger: "Payment Received", allowSubAccounts: true, allowedTransactionTypes: [] },
   { name: "Inventory", accountType: "asset", reportSection: "Current Assets", dataSourceType: "hybrid", sourceModule: "Inventory", sourceEntity: "Inventory Items", postingTrigger: "Inventory Purchased", allowSubAccounts: true, allowedTransactionTypes: [] },
@@ -2790,6 +2791,7 @@ export default function Home() {
       "From sales report": "Bank Account",
       Stripe: "Stripe",
       Xendit: "Xendit",
+      "Shopee Pay": "Shopee Pay",
       "Owner's Equity": "Owner Capital",
       Drawings: "Owner Drawings",
       Salary: "Salary Expense",
@@ -2865,20 +2867,21 @@ export default function Home() {
     const outstandingAmount = Math.max(0, amount - paidAmount);
     const now = new Date().toISOString();
     if (event.value === "payment_processor_paid") {
+      const cashAccount = transactionForm.paymentMethod || "Bank Account";
       if (transactionForm.categoryId === "Drawings") {
         return [
           { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: "Drawings", entryType: "debit", amount, memo: "Owner drawing", createdAt: now },
-          { id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Bank Account", entryType: "credit", amount, memo: "Cash withdrawn from bank", createdAt: now },
+          { id: crypto.randomUUID(), transactionId, accountId: "", accountName: cashAccount, entryType: "credit", amount, memo: "Cash withdrawn", createdAt: now },
         ];
       }
       if (transactionForm.categoryId === "Stripe" || transactionForm.categoryId === "Xendit") {
         return [
-          { id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Bank Account", entryType: "debit", amount, memo: "Transfer to bank", createdAt: now },
-          { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: transactionForm.categoryId, entryType: "credit", amount, memo: "Processor payout to bank", createdAt: now },
+          { id: crypto.randomUUID(), transactionId, accountId: "", accountName: cashAccount, entryType: "debit", amount, memo: "Transfer received", createdAt: now },
+          { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: transactionForm.categoryId, entryType: "credit", amount, memo: "Processor payout received", createdAt: now },
         ];
       }
       return [
-        { id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Bank Account", entryType: "debit", amount, memo: transactionForm.categoryId === "Owner's Equity" ? "Owner capital received" : "Payment received", createdAt: now },
+        { id: crypto.randomUUID(), transactionId, accountId: "", accountName: cashAccount, entryType: "debit", amount, memo: transactionForm.categoryId === "Owner's Equity" ? "Owner capital received" : "Payment received", createdAt: now },
         { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: transactionForm.categoryId || "Payment Processor", entryType: "credit", amount, memo: transactionForm.categoryId === "Owner's Equity" ? "Owner capital" : "Processor balance reduced", createdAt: now },
       ];
     }
@@ -5328,7 +5331,7 @@ function AccountingWorkspacePage({
     return bookkeepingSectionConfigs.expense;
   }
   function bankStatementAccountOptions(eventValue: string) {
-    if (eventValue === "payment_processor_paid") return ["Bank Transfer", "Stripe", "Xendit", "Owner's Equity", "Drawings"];
+    if (eventValue === "payment_processor_paid") return ["Bank Transfer", "Stripe", "Xendit", "Shopee Pay", "Owner's Equity", "Drawings"];
     if (eventValue === "internal_transfer") return ["Owner Transfer", "Personal Bank Transfer"];
     if (eventValue === "operating_cost") return [prepaidOperatingCostAccountName];
     const config = bankStatementUiConfigForEvent(eventValue);
@@ -5433,7 +5436,8 @@ function AccountingWorkspacePage({
         <label>Supplier / source<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder="Supplier or source" /></label>
         <label>Description<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder="Example: Carton handling cost, fulfilment materials..." /></label>
         <h3>Payment</h3>
-        <label>Payment method<select value={transactionForm.paymentStatus} onChange={(input) => onTransactionFormChange({ paymentStatus: input.target.value as AccountingTransactionForm["paymentStatus"] })}><option value="paid_in_full">Bank</option><option value="deposit_paid">Deposit Paid</option><option value="on_credit">On Credit</option></select></label>
+        <label>Payment type<select value={transactionForm.paymentStatus} onChange={(input) => onTransactionFormChange({ paymentStatus: input.target.value as AccountingTransactionForm["paymentStatus"] })}><option value="paid_in_full">Paid in full</option><option value="deposit_paid">Deposit Paid</option><option value="on_credit">On Credit</option></select></label>
+        {transactionForm.paymentStatus !== "on_credit" && <label>Paid from<select value={transactionForm.paymentMethod} onChange={(input) => onTransactionFormChange({ paymentMethod: input.target.value })}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>}
         {transactionForm.paymentStatus === "deposit_paid" && <div className="accounting-two-cols"><label>Deposit paid<input type="number" min="0" step="0.01" value={transactionForm.depositAmount} onChange={(input) => onTransactionFormChange({ depositAmount: input.target.value })} /></label><label>Remaining<input readOnly value={formatMoney(Math.max(0, (Number(transactionForm.amount) || 0) - (Number(transactionForm.depositAmount) || 0)))} /></label></div>}
         {transactionForm.paymentStatus === "on_credit" && <div className="accounting-two-cols"><label>Due date<input type="date" value={transactionForm.dueDate} onChange={(input) => onTransactionFormChange({ dueDate: input.target.value })} /></label><label>Supplier terms<input value={transactionForm.supplierTerms} onChange={(input) => onTransactionFormChange({ supplierTerms: input.target.value })} placeholder="30 days, monthly..." /></label></div>}
         <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title="Source document" description="Choose or drop receipt, invoice, CSV, or image" selectedName={transactionFile?.name} onFile={onTransactionFileChange} />
@@ -5630,6 +5634,9 @@ function AccountingWorkspacePage({
     const bankLedgerNet = ledgerEntries
       .filter((entry) => processorPayoutIds.has(entry.transactionId) && entry.accountName === "Bank Account")
       .reduce((total, entry) => total + (entry.entryType === "debit" ? entry.amount : -entry.amount), 0);
+    const shopeePayBalance = ledgerEntries
+      .filter((entry) => entry.accountName === "Shopee Pay")
+      .reduce((total, entry) => total + (entry.entryType === "debit" ? entry.amount : -entry.amount), 0);
     const bankBalance = sales.bankTransfer + bankLedgerNet;
     const stripeBalance = Math.max(0, processorAccountingTotals.stripeCollected - processorAccountingTotals.stripeProcessingFees - stripePaid);
     const xenditBalance = Math.max(0, processorAccountingTotals.xenditCollected - processorAccountingTotals.xenditProcessingFees - xenditPaid);
@@ -5687,6 +5694,7 @@ function AccountingWorkspacePage({
       </section>
       <section className="bookkeeping-balance-row">
         <MoneyStat label="Bank Account" value={bankBalance} tone="collected" />
+        <MoneyStat label="Shopee Pay" value={shopeePayBalance} tone="collected" />
         <MoneyStat label="Stripe" value={stripeBalance} tone="sales" />
         <MoneyStat label="Xendit" value={xenditBalance} tone="transfer" />
         <MoneyStat label="Payment Processing Fees" value={processorFeeBalance} tone="fees" />
@@ -5698,13 +5706,14 @@ function AccountingWorkspacePage({
           <h3>Record payment received</h3>
           <label>Date received<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label>
           <label>Transaction type<select value={transactionForm.categoryId} onChange={(input) => onTransactionFormChange({ categoryId: input.target.value, accountName: "", amount: input.target.value === "Stripe" ? String(stripeBalance || "") : input.target.value === "Xendit" ? String(xenditBalance || "") : "" })}><option value="">Choose transaction</option><option value="Stripe">Stripe payout</option><option value="Xendit">Xendit payout</option><option value="Bank Transfer">Bank transfer received</option><option value="Owner's Equity">Owner's Equity</option><option value="Drawings">Drawings</option></select></label>
+          <label>{transactionForm.categoryId === "Drawings" ? "Paid from" : "Money received into"}<select value={transactionForm.paymentMethod} onChange={(input) => onTransactionFormChange({ paymentMethod: input.target.value })}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>
           {transactionForm.categoryId && <p className="accounting-file-name">{transactionForm.categoryId === "Bank Transfer" ? "Bank transfer sales are already in bank. Use this only if you want to record a manual received amount." : `Unrecorded balance from sales report: ${formatMoney(processorBalance)}`}</p>}
-          <label>{transactionForm.categoryId === "Stripe" || transactionForm.categoryId === "Xendit" ? "Net amount received in bank" : "Amount received"}<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onTransactionFormChange({ amount: input.target.value })} /></label>
+          <label>{transactionForm.categoryId === "Stripe" || transactionForm.categoryId === "Xendit" ? "Net amount received" : transactionForm.categoryId === "Drawings" ? "Amount withdrawn" : "Amount received"}<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onTransactionFormChange({ amount: input.target.value })} /></label>
           <label>Description<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder="Example: Stripe payout to bank" /></label>
           <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title="Source document" description="Choose or drop receipt, invoice, CSV, or image" selectedName={transactionFile?.name} onFile={onTransactionFileChange} />
           <section className="posting-preview">
             <h3>Posting preview</h3>
-            {transactionForm.categoryId === "Drawings" ? <><div><span>Debit Drawings</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>Credit Bank Account</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></> : transactionForm.categoryId === "Stripe" || transactionForm.categoryId === "Xendit" ? <><div><span>Debit Bank Account</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>Credit {transactionForm.categoryId}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></> : <><div><span>Debit Bank Account</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>Credit {transactionForm.categoryId || "payment processor"}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></>}
+            {transactionForm.categoryId === "Drawings" ? <><div><span>Debit Drawings</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>Credit {transactionForm.paymentMethod || "Bank Account"}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></> : transactionForm.categoryId === "Stripe" || transactionForm.categoryId === "Xendit" ? <><div><span>Debit {transactionForm.paymentMethod || "Bank Account"}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>Credit {transactionForm.categoryId}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></> : <><div><span>Debit {transactionForm.paymentMethod || "Bank Account"}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>Credit {transactionForm.categoryId || "payment processor"}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></>}
           </section>
           <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? "Saving..." : "Save payout"}</button>
         </div>
@@ -5727,7 +5736,7 @@ function AccountingWorkspacePage({
           {isInventory && <label>Total batch cost<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onInventoryCostFieldChange("amount", input.target.value)} placeholder="Enter any 2 fields and the missing one calculates" /></label>}
           {isInventory && <label>Supplier<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder="Supplier name" /></label>}
           <label>Description<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder={isInventory ? "Example: June Billy plush batch" : "Short note for the book"} /></label>
-          {!isMoneyIn && <><h3>Payment</h3><label>Payment method<select value={transactionForm.paymentStatus} onChange={(input) => onTransactionFormChange({ paymentStatus: input.target.value as AccountingTransactionForm["paymentStatus"] })}><option value="paid_in_full">Bank</option><option value="deposit_paid">Deposit Paid</option><option value="on_credit">On Credit</option></select></label></>}
+          {!isMoneyIn && <><h3>Payment</h3><label>Payment type<select value={transactionForm.paymentStatus} onChange={(input) => onTransactionFormChange({ paymentStatus: input.target.value as AccountingTransactionForm["paymentStatus"] })}><option value="paid_in_full">Paid in full</option><option value="deposit_paid">Deposit Paid</option><option value="on_credit">On Credit</option></select></label>{transactionForm.paymentStatus !== "on_credit" && <label>Paid from<select value={transactionForm.paymentMethod} onChange={(input) => onTransactionFormChange({ paymentMethod: input.target.value })}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>}</>}
           {transactionForm.paymentStatus === "deposit_paid" && <div className="accounting-two-cols"><label>Deposit paid<input type="number" min="0" step="0.01" value={transactionForm.depositAmount} onChange={(input) => onTransactionFormChange({ depositAmount: input.target.value })} /></label><label>Remaining<input readOnly value={formatMoney(Math.max(0, calculatedAmount - (Number(transactionForm.depositAmount) || 0)))} /></label></div>}
           <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title="Source document" description="Choose or drop receipt, invoice, CSV, or image" selectedName={transactionFile?.name} onFile={onTransactionFileChange} />
           <label>Notes<textarea value={transactionForm.notes} onChange={(event) => onTransactionFormChange({ notes: event.target.value })} /></label>
@@ -6536,8 +6545,9 @@ function FormalAccountingWorkspacePage({
     { title: "Cash", reportSections: [], names: [], eventValues: ["payment_processor_paid"] },
     { title: "Sales", reportSections: ["Revenue"], names: [] },
   ];
-  const cashAccountNames = new Set(["Bank Account", "Payment Processors", "Stripe", "Xendit", "TikTok Shop", "Owner Capital", "Owner Drawings"]);
-  const automaticTAccountNames = new Set(["Bank Account", "Stripe", "Xendit", "Owner's Equity", "Drawings", "Sales", "Payment Processing Fees", prepaidOperatingCostAccountName, "Operating Expense", "Accounts Payable", ...cogsAccounts]);
+  const cashStatementAccountNames = ["Bank Account", "Shopee Pay"];
+  const cashAccountNames = new Set(["Bank Account", "Shopee Pay", "Payment Processors", "Stripe", "Xendit", "TikTok Shop", "Owner Capital", "Owner Drawings"]);
+  const automaticTAccountNames = new Set(["Bank Account", "Shopee Pay", "Stripe", "Xendit", "Owner's Equity", "Drawings", "Sales", "Payment Processing Fees", prepaidOperatingCostAccountName, "Operating Expense", "Accounts Payable", ...cogsAccounts]);
   const categoryBelongsToSection = (category: AccountingCategory, section: typeof tAccountSections[number]) => {
     if (!category.active) return false;
     const parentName = category.parentId ? categoryName(category.parentId) : "";
@@ -6553,7 +6563,7 @@ function FormalAccountingWorkspacePage({
     const hasLedger = (name: string) => Boolean(accountGroups[name]?.length);
     const savedNames = categories
       .filter((category) => categoryBelongsToSection(category, section))
-      .filter((category) => Object.values(bookkeepingSectionConfigs).some((config) => config.reportSection === category.reportSection) || hasLedger(category.name))
+      .filter((category) => section.title === "Cash" || Object.values(bookkeepingSectionConfigs).some((config) => config.reportSection === category.reportSection) || hasLedger(category.name))
       .map((category) => category.name);
     const allNames = new Set([...section.names, ...savedNames]);
     transactions.forEach((transaction) => {
@@ -6565,7 +6575,7 @@ function FormalAccountingWorkspacePage({
       const category = categories.find((item) => item.id === entry.accountId);
       if (category && categoryBelongsToSection(category, section)) allNames.add(entry.accountName);
       if (automaticTAccountNames.has(entry.accountName)) {
-        if (section.title === "Cash" && ["Bank Account", "Stripe", "Xendit", "Owner's Equity", "Drawings"].includes(entry.accountName)) allNames.add(entry.accountName);
+        if (section.title === "Cash" && ["Bank Account", "Shopee Pay", "Stripe", "Xendit", "Owner's Equity", "Drawings"].includes(entry.accountName)) allNames.add(entry.accountName);
         if (section.title === "Sales" && entry.accountName === "Sales") allNames.add(entry.accountName);
         if (section.title === "Expense" && (entry.accountName === "Payment Processing Fees" || entry.accountName === "Operating Expense" || cogsAccounts.includes(entry.accountName as (typeof cogsAccounts)[number]))) allNames.add(entry.accountName);
         if (section.title === "Assets" && entry.accountName === prepaidOperatingCostAccountName) allNames.add(entry.accountName);
@@ -6684,9 +6694,9 @@ function FormalAccountingWorkspacePage({
     .reduce((total, entry) => total + (entry.entryType === "debit" ? entry.amount : -entry.amount), 0);
   const cashMovementForEntry = (entry: AccountingLedgerEntry) => entry.entryType === "debit" ? entry.amount : -entry.amount;
   const openingCashBalance = allLedgerEntries
-    .filter((entry) => entry.accountName === "Bank Account" && isBeforeAccountingRange(entryDate(entry)))
+    .filter((entry) => cashStatementAccountNames.includes(entry.accountName) && isBeforeAccountingRange(entryDate(entry)))
     .reduce((total, entry) => total + cashMovementForEntry(entry), 0);
-  const bankPeriodEntries = allLedgerEntries.filter((entry) => entry.accountName === "Bank Account" && isInAccountingRange(entryDate(entry)));
+  const cashPeriodEntries = allLedgerEntries.filter((entry) => cashStatementAccountNames.includes(entry.accountName) && isInAccountingRange(entryDate(entry)));
   const cashFlowActivityForEntry = (entry: AccountingLedgerEntry): CashFlowActivity => {
     const transaction = transactionById.get(entry.transactionId);
     const event = transaction?.businessEvent ?? "";
@@ -6703,7 +6713,7 @@ function FormalAccountingWorkspacePage({
     if (transaction?.businessEvent === "payment_processor_paid" && transaction.accountName) return `${transaction.accountName} payout received`;
     return transaction?.description || entry.memo || entry.accountName;
   };
-  const rawCashFlowRows = bankPeriodEntries
+  const rawCashFlowRows = cashPeriodEntries
     .map((entry) => ({
       id: entry.id,
       date: entryDate(entry),
@@ -6733,8 +6743,8 @@ function FormalAccountingWorkspacePage({
     .reduce((total, row) => total + row.amount, 0);
   const netCashFlow = cashFlowRows.reduce((total, row) => total + row.amount, 0);
   const closingCashBalance = openingCashBalance + netCashFlow;
-  const bankAccountClosingBalance = balanceForAccount("Bank Account", allLedgerEntries.filter((entry) => !accountingEndDate || entryDate(entry) <= accountingEndDate));
-  const cashReconciles = Math.abs(closingCashBalance - bankAccountClosingBalance) < 0.01;
+  const cashAccountsClosingBalance = cashStatementAccountNames.reduce((total, name) => total + balanceForAccount(name, allLedgerEntries.filter((entry) => !accountingEndDate || entryDate(entry) <= accountingEndDate)), 0);
+  const cashReconciles = Math.abs(closingCashBalance - cashAccountsClosingBalance) < 0.01;
   const balancesForNames = (names: string[]) => names.map((name) => ({ name, balance: balanceForAccount(name) })).filter((item) => Math.abs(item.balance) > 0.005);
   const inventoryBalances = balancesForNames(sectionAccountNames(tAccountSections[0]));
   const expenseBalances = balancesForNames(sectionAccountNames(tAccountSections[1]));
@@ -6858,7 +6868,7 @@ function FormalAccountingWorkspacePage({
         })}
         <div className="statement-grand-total"><span>Net increase / (decrease) in cash</span><strong>{formatMoney(netCashFlow)}</strong></div>
         <div className="statement-total"><span>Closing cash balance</span><strong>{formatMoney(closingCashBalance)}</strong></div>
-        <div className={`statement-reconciliation ${cashReconciles ? "ok" : "error"}`}><span>Reconciliation to Bank Account</span><strong>{cashReconciles ? "Matched" : `Difference ${formatMoney(closingCashBalance - bankAccountClosingBalance)}`}</strong></div>
+        <div className={`statement-reconciliation ${cashReconciles ? "ok" : "error"}`}><span>Reconciliation to cash accounts</span><strong>{cashReconciles ? "Matched" : `Difference ${formatMoney(closingCashBalance - cashAccountsClosingBalance)}`}</strong></div>
       </div>}
     </section>
   </section>;
