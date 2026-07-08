@@ -857,6 +857,13 @@ function normalizedBankMoney(moneyIn: number, moneyOut: number, rawData: unknown
   return { moneyIn: inAmount, moneyOut: outAmount };
 }
 
+function bankMatchedTransactionIdsFromRaw(rawData: unknown, fallbackId = "") {
+  const raw = rawData && typeof rawData === "object" ? rawData as Record<string, unknown> : {};
+  const rawIds = Array.isArray(raw.matched_transaction_ids) ? raw.matched_transaction_ids : [];
+  const ids = [fallbackId, ...rawIds].filter((id): id is string => typeof id === "string" && Boolean(id.trim()));
+  return [...new Set(ids)];
+}
+
 export async function fetchAccountingBankStatementLines(): Promise<AccountingBankStatementLine[]> {
   const { data, error } = await requireSupabase()
     .from("accounting_bank_statement_lines")
@@ -884,6 +891,7 @@ export async function fetchAccountingBankStatementLines(): Promise<AccountingBan
       balance: row.balance === null || row.balance === undefined ? null : Number(row.balance),
       rawData,
       matchedTransactionId: row.matched_transaction_id ?? "",
+      matchedTransactionIds: bankMatchedTransactionIdsFromRaw(rawData, row.matched_transaction_id ?? ""),
       matchStatus: row.match_status ?? "unmatched",
       suggestedEvent: row.suggested_event ?? "",
       suggestedAccount: row.suggested_account ?? "",
@@ -898,6 +906,8 @@ export async function saveAccountingBankStatementLines(lines: AccountingBankStat
   if (!lines.length) return;
   const { error } = await requireSupabase().from("accounting_bank_statement_lines").upsert(lines.map((line) => {
     const money = normalizedBankMoney(line.moneyIn, line.moneyOut, line.rawData, line.description);
+    const matchedTransactionIds = bankMatchedTransactionIdsFromRaw(line.rawData, line.matchedTransactionId).concat(line.matchedTransactionIds ?? []);
+    const uniqueMatchedTransactionIds = [...new Set(matchedTransactionIds.filter(Boolean))];
     return {
       id: line.id,
       import_id: line.importId,
@@ -908,8 +918,8 @@ export async function saveAccountingBankStatementLines(lines: AccountingBankStat
       money_in: money.moneyIn,
       money_out: money.moneyOut,
       balance: line.balance,
-      raw_data: line.rawData,
-      matched_transaction_id: line.matchedTransactionId || null,
+      raw_data: { ...(line.rawData ?? {}), matched_transaction_ids: uniqueMatchedTransactionIds },
+      matched_transaction_id: uniqueMatchedTransactionIds[0] || null,
       match_status: line.matchStatus,
       suggested_event: line.suggestedEvent || "",
       suggested_account: line.suggestedAccount || "",

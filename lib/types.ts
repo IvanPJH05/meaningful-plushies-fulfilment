@@ -263,8 +263,9 @@ export type AccountingBankStatementLine = {
   moneyIn: number;
   moneyOut: number;
   balance: number | null;
-  rawData: Record<string, string>;
+  rawData: Record<string, unknown>;
   matchedTransactionId: string;
+  matchedTransactionIds: string[];
   matchStatus: "unmatched" | "matched" | "ignored";
   suggestedEvent: string;
   suggestedAccount: string;
