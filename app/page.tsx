@@ -5370,7 +5370,7 @@ function AccountingWorkspacePage({
             <td>{formatDate(line.transactionDate)}<br /><small>{line.reference || `Row ${line.rowNumber}`}</small></td>
             <td>{bankLineBankName(line)}</td>
             <td><strong>{line.description}</strong>{line.notes && <><br /><small>{line.notes}</small></>}</td>
-            <td><strong>{formatMoney(line.moneyIn > 0 ? line.moneyIn : line.moneyOut)}</strong><br /><small>{line.moneyIn > 0 ? "money in" : "money out"}</small></td>
+            <td><strong className={`bank-amount ${line.moneyIn > 0 ? "money-in" : "money-out"}`}>{formatMoney(line.moneyIn > 0 ? line.moneyIn : line.moneyOut)}</strong><br /><small>{line.moneyIn > 0 ? "money in" : "money out"}</small></td>
             <td><div className="bank-row-actions"><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => setBankLineActions((current) => ({ ...current, [line.id]: current[line.id] === "match" ? "" : "match" }))}>Match</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => setBankLineActions((current) => ({ ...current, [line.id]: current[line.id] === "new" ? "" : "new" }))}>New</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched" || line.moneyIn <= 0} onClick={() => onMarkBankStatementSales(line)}>Sales</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => onIgnoreBankStatementLine(line)}>Ignore</button><button className="view-button danger-text" disabled={saving} onClick={() => onDeleteBankStatementLine(line)}>Remove</button></div></td>
           </tr>
           {action === "match" && line.matchStatus === "unmatched" && <tr className="bank-line-detail-row"><td colSpan={6}><section className="posting-preview bank-line-action-panel"><h3>Match existing transaction</h3><p>Showing unlinked bookkeeping transactions within +/- 3 days of this bank row.</p><label>Existing transaction<select value={bankLineSelectedTransactions[line.id] || ""} onChange={(event) => setBankLineSelectedTransactions((current) => ({ ...current, [line.id]: event.target.value }))}><option value="">Choose transaction</option>{candidates.map((transaction) => <option key={transaction.id} value={transaction.id}>{formatDate(transaction.transactionDate)} | {transaction.description} | {displayAccountingAccountName(transaction.accountName)} | {formatMoney(transaction.amount)}</option>)}</select></label><div className="csv-import-actions"><button className="button primary" disabled={!selectedTransaction || saving} onClick={() => selectedTransaction && onLinkBankStatementLine(line, selectedTransaction)}>Link selected transaction</button>{!candidates.length && <span>No unlinked transactions found within +/- 3 days.</span>}</div></section></td></tr>}
@@ -5407,8 +5407,8 @@ function AccountingWorkspacePage({
                   {group.lines.map((line) => <tr key={line.id}>
                     <td>{formatStatementDate(line.transactionDate)}</td>
                     <td><strong>{line.description}</strong>{line.reference && <small>{line.reference}</small>}{line.notes && <em>{line.notes}</em>}</td>
-                    <td>{line.moneyOut > 0 ? formatStatementNumber(line.moneyOut) : ""}</td>
-                    <td>{line.moneyIn > 0 ? formatStatementNumber(line.moneyIn) : ""}</td>
+                    <td>{line.moneyOut > 0 ? <span className="statement-amount money-out">{formatStatementNumber(line.moneyOut)}</span> : ""}</td>
+                    <td>{line.moneyIn > 0 ? <span className="statement-amount money-in">{formatStatementNumber(line.moneyIn)}</span> : ""}</td>
                     <td>{formatStatementNumber(line.balance)}</td>
                   </tr>)}
                 </tbody>

@@ -134,6 +134,12 @@
 .bank-reference-table td small,
 .bank-reference-table td em { display: block; margin-top: 2px; color: #64748b; font-size: 10px; font-style: normal; overflow-wrap: anywhere; }
 .bank-reference-table tfoot td { position: sticky; bottom: 0; z-index: 2; border-top: 2px solid #26384f; border-bottom: 0; background: #f8fafc; font-weight: 900; }
+.bank-amount,
+.statement-amount { display: inline-flex; justify-content: flex-end; align-items: center; min-width: 86px; padding: 4px 8px; border-radius: 999px; font-weight: 900; }
+.bank-amount.money-in,
+.statement-amount.money-in { background: #dcfce7; color: #047857; }
+.bank-amount.money-out,
+.statement-amount.money-out { background: #fee2e2; color: #b91c1c; }
 .bank-statement-reference.lock-date .bank-reference-table th:nth-child(1),
 .bank-statement-reference.lock-date .bank-reference-table td:nth-child(1) { position: sticky; left: 0; z-index: 4; box-shadow: 1px 0 0 #d9e3ef; }
 .bank-statement-reference.lock-date .bank-reference-table td:nth-child(1) { background: #fff; z-index: 2; }
