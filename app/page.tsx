@@ -4130,6 +4130,37 @@ export default function Home() {
     }
   }
 
+  async function bulkUpdateAccountingPaymentMethod(transactionIds: string[], paymentMethod: string) {
+    const selectedTransactions = accountingTransactions.filter((transaction) => transactionIds.includes(transaction.id));
+    if (!selectedTransactions.length) return setNotice("Select at least one transaction first.");
+    if (!paymentAccounts.includes(paymentMethod)) return setNotice("Choose a valid payment account.");
+    setSavingAccounting(true);
+    try {
+      const actor = session?.displayName ?? "Admin";
+      const now = new Date().toISOString();
+      let updated = 0;
+      for (const transaction of selectedTransactions) {
+        const previousPaymentMethod = transaction.paymentMethod || "Bank Account";
+        const entries = accountingLedgerEntries.filter((entry) => entry.transactionId === transaction.id);
+        const updatedEntries = entries.map((entry) => entry.accountName === previousPaymentMethod ? { ...entry, accountName: paymentMethod } : entry);
+        await saveAccountingTransaction({
+          ...transaction,
+          paymentMethod,
+          updatedAt: now,
+        });
+        if (updatedEntries.length) await saveAccountingLedgerEntries(transaction.id, updatedEntries);
+        updated += 1;
+      }
+      await insertSharedActivity({ id: crypto.randomUUID(), action: "Bulk payment method update", detail: `${updated} transaction${updated === 1 ? "" : "s"} changed to ${paymentMethod}.`, actor, createdAt: now });
+      await loadSharedData();
+      setNotice(`${updated} transaction${updated === 1 ? "" : "s"} changed to ${paymentMethod}.`);
+    } catch (error) {
+      setNotice(readableError(error, "Could not update selected transactions."));
+    } finally {
+      setSavingAccounting(false);
+    }
+  }
+
   function unsettledAmount(transaction: AccountingTransaction) {
     if (transaction.paymentStatus === "deposit_paid") return Math.max(0, transaction.amount - transaction.depositAmount);
     if (transaction.paymentStatus === "on_credit" || transaction.paymentStatus === "pay_later") return transaction.amount;
@@ -4680,6 +4711,7 @@ export default function Home() {
         onDeleteDocument={removeAccountingDocument}
         onDeleteTransaction={removeAccountingTransaction}
         onEditTransaction={startEditAccountingTransaction}
+        onBulkTransactionPaymentMethodChange={bulkUpdateAccountingPaymentMethod}
         editingTransactionId={editingTransactionId}
         editingTransactionForm={editingTransactionForm}
         editingTransactionFile={editingTransactionFile}
@@ -5079,6 +5111,7 @@ function AccountingWorkspacePage({
   onDeleteDocument,
   onDeleteTransaction,
   onEditTransaction,
+  onBulkTransactionPaymentMethodChange,
   editingTransactionId,
   editingTransactionForm,
   editingTransactionFile,
@@ -5165,6 +5198,7 @@ function AccountingWorkspacePage({
   onDeleteDocument: (document: AccountingDocument) => void;
   onDeleteTransaction: (transaction: AccountingTransaction) => void;
   onEditTransaction: (transaction: AccountingTransaction) => void;
+  onBulkTransactionPaymentMethodChange: (transactionIds: string[], paymentMethod: string) => Promise<void>;
   editingTransactionId: string;
   editingTransactionForm: AccountingTransactionForm | null;
   editingTransactionFile: File | null;
@@ -5396,7 +5430,7 @@ function AccountingWorkspacePage({
     </section>
     <div className="ledger-export-actions no-print"><button className="button secondary" disabled={!transactions.length} onClick={downloadBookkeepingLedgerCsv}>Download CSV</button><button className="button primary" disabled={!transactions.length} onClick={() => printView("print-bookkeeping-ledger")}>Print / Save PDF</button></div>
     {transactionEditPanel}
-    <AccountingTransactionsTable transactions={transactions} ledgerEntries={ledgerEntries} documents={transactionDocuments} bankStatementLines={bankStatementLines} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} />
+    <AccountingTransactionsTable transactions={transactions} ledgerEntries={ledgerEntries} documents={transactionDocuments} bankStatementLines={bankStatementLines} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} onBulkPaymentMethodChange={onBulkTransactionPaymentMethodChange} />
     <section className="bookkeeping-ledger-print card">
       <header className="financial-statement-title"><p>Meaningful Plushies</p><h2>Book Keeping Transaction Ledger</h2><span>Generated on {formatDate(new Date().toISOString(), true)}</span></header>
       <table className="bookkeeping-ledger-print-table">
@@ -5462,7 +5496,7 @@ function AccountingWorkspacePage({
           <button className="button primary" disabled={saving} onClick={onReleaseOperatingCost}>{saving ? "Saving..." : "Release to expense"}</button>
         </section>
         {transactionEditPanel}
-        <AccountingTransactionsTable transactions={operatingCostPageTransactions} ledgerEntries={ledgerEntries} documents={transactionDocuments} bankStatementLines={bankStatementLines} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} />
+        <AccountingTransactionsTable transactions={operatingCostPageTransactions} ledgerEntries={ledgerEntries} documents={transactionDocuments} bankStatementLines={bankStatementLines} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} onBulkPaymentMethodChange={onBulkTransactionPaymentMethodChange} />
       </div>
     </section>
   </section>;
@@ -5679,7 +5713,7 @@ function AccountingWorkspacePage({
         </div>
         <div>
           {transactionEditPanel}
-          <AccountingTransactionsTable transactions={transactions.filter((transaction) => transaction.businessEvent === "other_income")} ledgerEntries={ledgerEntries} documents={transactionDocuments} bankStatementLines={bankStatementLines} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} />
+          <AccountingTransactionsTable transactions={transactions.filter((transaction) => transaction.businessEvent === "other_income")} ledgerEntries={ledgerEntries} documents={transactionDocuments} bankStatementLines={bankStatementLines} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} onBulkPaymentMethodChange={onBulkTransactionPaymentMethodChange} />
         </div>
       </section>
     </section>;
@@ -5719,7 +5753,7 @@ function AccountingWorkspacePage({
         </div>
         <div>
           {transactionEditPanel}
-          <AccountingTransactionsTable transactions={processorPayouts} ledgerEntries={ledgerEntries} documents={transactionDocuments} bankStatementLines={bankStatementLines} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} />
+          <AccountingTransactionsTable transactions={processorPayouts} ledgerEntries={ledgerEntries} documents={transactionDocuments} bankStatementLines={bankStatementLines} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} onBulkPaymentMethodChange={onBulkTransactionPaymentMethodChange} />
         </div>
       </section>
     </section>;
@@ -5743,7 +5777,7 @@ function AccountingWorkspacePage({
           <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? "Saving..." : "Save to book"}</button>
         </div>
         {transactionEditPanel}
-        <AccountingTransactionsTable transactions={transactions.filter((transaction) => transaction.businessEvent === categoryEvent.value || (categoryEvent.value === "inventory_purchase" && transaction.businessEvent === "inventory_rejected"))} ledgerEntries={ledgerEntries} documents={transactionDocuments} bankStatementLines={bankStatementLines} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} />
+        <AccountingTransactionsTable transactions={transactions.filter((transaction) => transaction.businessEvent === categoryEvent.value || (categoryEvent.value === "inventory_purchase" && transaction.businessEvent === "inventory_rejected"))} ledgerEntries={ledgerEntries} documents={transactionDocuments} bankStatementLines={bankStatementLines} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} onBulkPaymentMethodChange={onBulkTransactionPaymentMethodChange} />
       </section>
     </section>;
   }
@@ -5796,7 +5830,7 @@ function AccountingWorkspacePage({
         <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? "Saving..." : "Save transaction"}</button>
       </div>
       {transactionEditPanel}
-      <AccountingTransactionsTable transactions={transactions} ledgerEntries={ledgerEntries} documents={transactionDocuments} bankStatementLines={bankStatementLines} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} />
+      <AccountingTransactionsTable transactions={transactions} ledgerEntries={ledgerEntries} documents={transactionDocuments} bankStatementLines={bankStatementLines} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} onBulkPaymentMethodChange={onBulkTransactionPaymentMethodChange} />
     </section>
   </section>;
 
@@ -5879,26 +5913,46 @@ function AccountingFilesTable({ documents, transactions, ledgerEntries, category
   </section>;
 }
 
-function AccountingTransactionsTable({ transactions, ledgerEntries, documents, bankStatementLines = [], categoryName, onOpenDocument, onEdit, onDelete }: { transactions: AccountingTransaction[]; ledgerEntries: AccountingLedgerEntry[]; documents: AccountingDocument[]; bankStatementLines?: AccountingBankStatementLine[]; categoryName: (categoryId: string) => string; onOpenDocument: (document: AccountingDocument) => void; onEdit: (transaction: AccountingTransaction) => void; onDelete: (transaction: AccountingTransaction) => void }) {
+function AccountingTransactionsTable({ transactions, ledgerEntries, documents, bankStatementLines = [], categoryName, onOpenDocument, onEdit, onDelete, onBulkPaymentMethodChange }: { transactions: AccountingTransaction[]; ledgerEntries: AccountingLedgerEntry[]; documents: AccountingDocument[]; bankStatementLines?: AccountingBankStatementLine[]; categoryName: (categoryId: string) => string; onOpenDocument: (document: AccountingDocument) => void; onEdit: (transaction: AccountingTransaction) => void; onDelete: (transaction: AccountingTransaction) => void; onBulkPaymentMethodChange?: (transactionIds: string[], paymentMethod: string) => Promise<void> }) {
+  const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([]);
+  const [bulkPaymentMethod, setBulkPaymentMethod] = useState(paymentAccounts[0]);
+  const [bulkSaving, setBulkSaving] = useState(false);
   const sortedTransactions = [...transactions].sort((a, b) => {
     const dateCompare = dateKey(a.transactionDate).localeCompare(dateKey(b.transactionDate));
     return dateCompare || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id);
   });
+  const visibleTransactionIds = sortedTransactions.map((transaction) => transaction.id);
+  const selectedVisibleIds = selectedTransactionIds.filter((id) => visibleTransactionIds.includes(id));
+  const allVisibleSelected = Boolean(visibleTransactionIds.length) && visibleTransactionIds.every((id) => selectedTransactionIds.includes(id));
+  const toggleTransaction = (transactionId: string) => setSelectedTransactionIds((current) => current.includes(transactionId) ? current.filter((id) => id !== transactionId) : [...current, transactionId]);
+  const toggleAllVisible = () => setSelectedTransactionIds((current) => allVisibleSelected ? current.filter((id) => !visibleTransactionIds.includes(id)) : [...new Set([...current, ...visibleTransactionIds])]);
+  async function applyBulkPaymentMethod() {
+    if (!onBulkPaymentMethodChange || !selectedVisibleIds.length) return;
+    setBulkSaving(true);
+    try {
+      await onBulkPaymentMethodChange(selectedVisibleIds, bulkPaymentMethod);
+      setSelectedTransactionIds((current) => current.filter((id) => !selectedVisibleIds.includes(id)));
+    } finally {
+      setBulkSaving(false);
+    }
+  }
   const linkedBankRows = new Map<string, AccountingBankStatementLine>();
   for (const line of bankStatementLines) {
     for (const transactionId of getBankMatchedTransactionIds(line)) linkedBankRows.set(transactionId, line);
   }
-  return <section className="card accounting-table-card"><h3>Transaction ledger</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>Date</th><th>Description</th><th>Business event</th><th>Account</th><th>Payment</th><th>Ledger posting</th><th>Document</th><th /></tr></thead><tbody>{sortedTransactions.map((transaction) => {
+  return <section className="card accounting-table-card"><div className="ledger-table-heading"><h3>Transaction ledger</h3>{onBulkPaymentMethodChange && <div className="bulk-ledger-actions"><span>{selectedVisibleIds.length} selected</span><label>Change payment to<select value={bulkPaymentMethod} onChange={(event) => setBulkPaymentMethod(event.target.value)}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label><button className="button primary" disabled={!selectedVisibleIds.length || bulkSaving} onClick={applyBulkPaymentMethod}>{bulkSaving ? "Updating..." : "Apply"}</button><button className="button secondary" disabled={!selectedVisibleIds.length || bulkSaving} onClick={() => setSelectedTransactionIds((current) => current.filter((id) => !visibleTransactionIds.includes(id)))}>Clear</button></div>}</div><div className="table-scroll"><table className="orders-table"><thead><tr>{onBulkPaymentMethodChange && <th><input type="checkbox" aria-label="Select visible transactions" checked={allVisibleSelected} onChange={toggleAllVisible} /></th>}<th>Date</th><th>Description</th><th>Business event</th><th>Account</th><th>Payment</th><th>Ledger posting</th><th>Document</th><th /></tr></thead><tbody>{sortedTransactions.map((transaction) => {
     const entries = ledgerEntries.filter((entry) => entry.transactionId === transaction.id);
     const document = documents.find((item) => item.id === transaction.documentId);
     const linkedBankRow = linkedBankRows.get(transaction.id);
     const bankLinked = Boolean(linkedBankRow || transaction.source === "bank_statement");
+    const selected = selectedTransactionIds.includes(transaction.id);
     const paymentLabel = transaction.paymentStatus === "deposit_paid" ? `Deposit ${formatMoney(transaction.depositAmount)}` : transaction.paymentStatus === "on_credit" ? "On Credit" : "Paid In Full";
     const ledgerLines = entries.length ? entries.map((entry, index) => {
       const accountName = displayAccountingAccountName(entry.accountName);
       return <div key={entry.id} className="ledger-line"><span>{index === 0 ? `Record ${accountName}` : accountName.includes("Payable") || accountName.includes("Receivable") ? `Outstanding ${accountName}` : `Payment from ${accountName}`}</span><strong>{formatMoney(entry.amount)}</strong></div>;
     }) : <small>{formatMoney(transaction.amount)}</small>;
-    return <tr key={transaction.id} className={`${document ? "has-source-document" : ""} ${bankLinked ? "bank-linked-transaction" : ""}`} onClick={(event) => { if (!document || (event.target as HTMLElement).closest("button,a,input")) return; onOpenDocument(document); }}>
+    return <tr key={transaction.id} className={`${document ? "has-source-document" : ""} ${bankLinked ? "bank-linked-transaction" : ""} ${selected ? "selected-row" : ""}`} onClick={(event) => { if (!document || (event.target as HTMLElement).closest("button,a,input")) return; onOpenDocument(document); }}>
+      {onBulkPaymentMethodChange && <td><input type="checkbox" aria-label={`Select transaction ${transaction.description}`} checked={selected} onChange={() => toggleTransaction(transaction.id)} /></td>}
       <td>{formatDate(transaction.transactionDate)}</td>
       <td><strong className={document ? "source-document-text" : ""}>{transaction.description}</strong>{document && <span className="source-document-pill">Source document</span>}{bankLinked && <span className="source-document-pill bank-linked-pill">Bank linked</span>}<br /><small>{transaction.supplier || transaction.source}{transaction.invoiceNumber ? ` - Invoice ${transaction.invoiceNumber}` : ""}{linkedBankRow ? ` | ${linkedBankRow.description}` : ""}</small></td>
       <td>{businessEvents.find((event) => event.value === transaction.businessEvent)?.label ?? (transaction.businessEvent || "-")}</td>

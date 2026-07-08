@@ -363,10 +363,18 @@
 .orders-table tr.has-source-document:hover td { background: #edf6ff; }
 .orders-table tr.bank-linked-transaction td { background: #f0fdf4; }
 .orders-table tr.bank-linked-transaction:hover td { background: #dcfce7; }
+.orders-table tr.selected-row td { background: #e8f2ff; }
+.orders-table tr.selected-row:hover td { background: #d9eaff; }
 .source-document-text { color: #1f67b5; }
 .source-document-pill { display: inline-flex; margin-left: 8px; padding: 3px 7px; border-radius: 999px; background: #e8f2ff; color: #1f67b5; font-size: 9px; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; vertical-align: middle; }
 .bank-linked-pill { background: #dcfce7; color: #047857; }
 .document-link { color: #1f67b5 !important; font-weight: 850; }
+.ledger-table-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 14px; }
+.ledger-table-heading h3 { margin: 0; }
+.bulk-ledger-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.bulk-ledger-actions span { padding: 8px 12px; border-radius: 999px; background: #eef5ff; color: #155da8; font-size: 11px; font-weight: 900; }
+.bulk-ledger-actions label { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--muted); font-size: 10px; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; }
+.bulk-ledger-actions select { min-width: 160px; height: 38px; border: 1px solid #cdd9e8; border-radius: 10px; padding: 0 11px; background: #fff; color: var(--text); font: inherit; font-weight: 850; }
 .file-library-card .ledger-line { min-width: 220px; }
 .document-preview-backdrop { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 24px; background: rgba(10, 24, 42, .58); backdrop-filter: blur(2px); }
 .document-preview-modal { display: flex; flex-direction: column; width: min(1080px, 94vw); height: min(820px, 90vh); overflow: hidden; border: 1px solid #d8e3f0; border-radius: 16px; background: #fff; box-shadow: 0 24px 70px rgba(10, 24, 42, .28); }
