@@ -2940,9 +2940,83 @@ export default function Home() {
     setBankStatementMatchForms((current) => ({ ...current, [lineId]: { ...defaults, ...current[lineId], ...patch } }));
   }
 
+  function bankStatementLineAmount(line: AccountingBankStatementLine) {
+    return line.moneyOut > 0 ? line.moneyOut : line.moneyIn;
+  }
+
+  function looksLikeInternalTransfer(line: AccountingBankStatementLine) {
+    const description = line.description.toLowerCase();
+    return (
+      description.includes("mp gift shop") ||
+      (description.includes("ivan phang") && description.includes("transfer fr a/c")) ||
+      line.suggestedEvent === "internal_transfer"
+    );
+  }
+
+  function findInternalTransferPair(line: AccountingBankStatementLine) {
+    const amount = bankStatementLineAmount(line);
+    const lineDate = Date.parse(line.transactionDate);
+    if (!amount || Number.isNaN(lineDate)) return null;
+    return bankStatementLines.find((candidate) => {
+      if (candidate.id === line.id || candidate.matchStatus !== "unmatched") return false;
+      if (!looksLikeInternalTransfer(candidate)) return false;
+      const candidateAmount = bankStatementLineAmount(candidate);
+      const candidateDate = Date.parse(candidate.transactionDate);
+      const oppositeDirection = (line.moneyIn > 0 && candidate.moneyOut > 0) || (line.moneyOut > 0 && candidate.moneyIn > 0);
+      const sameAmount = Math.abs(candidateAmount - amount) < 0.005;
+      const closeDate = !Number.isNaN(candidateDate) && Math.abs(candidateDate - lineDate) <= 7 * 24 * 60 * 60 * 1000;
+      return oppositeDirection && sameAmount && closeDate;
+    }) ?? null;
+  }
+
+  async function pairInternalTransferLine(line: AccountingBankStatementLine) {
+    const amount = bankStatementLineAmount(line);
+    if (amount <= 0) return setNotice("This bank line has no amount to pair.");
+    setSavingAccounting(true);
+    try {
+      const actor = session?.displayName ?? "Admin";
+      const now = new Date().toISOString();
+      const pair = findInternalTransferPair(line);
+      const updatedLine: AccountingBankStatementLine = {
+        ...line,
+        matchStatus: "ignored",
+        suggestedEvent: "internal_transfer",
+        suggestedAccount: "Owner Transfer",
+        notes: pair ? `Internal transfer paired with ${formatDate(pair.transactionDate)} row ${pair.rowNumber}.` : "Internal transfer excluded from books. Matching bank line not imported yet.",
+        updatedAt: now,
+      };
+      const updates = [updatedLine];
+      if (pair) {
+        updates.push({
+          ...pair,
+          matchStatus: "ignored",
+          suggestedEvent: "internal_transfer",
+          suggestedAccount: "Owner Transfer",
+          notes: `Internal transfer paired with ${formatDate(line.transactionDate)} row ${line.rowNumber}.`,
+          updatedAt: now,
+        });
+      }
+      await saveAccountingBankStatementLines(updates);
+      setBankStatementLines((current) => current.map((item) => updates.find((updated) => updated.id === item.id) ?? item));
+      await insertSharedActivity({
+        id: crypto.randomUUID(),
+        action: pair ? "Bank statement internal transfer paired" : "Bank statement internal transfer excluded",
+        detail: pair ? `${formatMoney(amount)} paired between own bank accounts.` : `${formatMoney(amount)} excluded as an own-account transfer.`,
+        actor,
+        createdAt: now,
+      });
+      setNotice(pair ? "Internal transfer paired and excluded from income/expenses." : "Internal transfer excluded. Import the other bank statement later if you want it visibly paired.");
+    } catch (error) {
+      setNotice(readableError(error, "Could not pair this internal transfer."));
+    } finally {
+      setSavingAccounting(false);
+    }
+  }
+
   async function matchBankStatementLine(line: AccountingBankStatementLine) {
     const form = bankStatementMatchForms[line.id] ?? { businessEvent: line.suggestedEvent || "expense", accountName: line.suggestedAccount || "", notes: "" };
     if (!form.businessEvent || form.businessEvent === "ignore") return ignoreBankStatementLine(line);
+    if (form.businessEvent === "internal_transfer") return pairInternalTransferLine(line);
     const amount = line.moneyOut > 0 ? line.moneyOut : line.moneyIn;
     if (amount <= 0) return setNotice("This bank line has no amount to match.");
     setSavingAccounting(true);
@@ -4459,6 +4533,7 @@ function AccountingWorkspacePage({
   }
   function bankStatementAccountOptions(eventValue: string) {
     if (eventValue === "payment_processor_paid") return ["Bank Transfer", "Stripe", "Xendit", "Owner's Equity", "Drawings"];
+    if (eventValue === "internal_transfer") return ["Owner Transfer", "Personal Bank Transfer"];
     if (eventValue === "operating_cost") return [prepaidOperatingCostAccountName];
     const config = bankStatementUiConfigForEvent(eventValue);
     const saved = categories
@@ -4580,10 +4655,10 @@ function AccountingWorkspacePage({
             <td><strong>{line.description}</strong>{line.notes && <><br /><small>{line.notes}</small></>}</td>
             <td>{line.moneyIn > 0 ? <strong>{formatMoney(line.moneyIn)}</strong> : "-"}</td>
             <td>{line.moneyOut > 0 ? <strong>{formatMoney(line.moneyOut)}</strong> : "-"}</td>
-            <td><select value={form.businessEvent} disabled={line.matchStatus !== "unmatched"} onChange={(event) => onBankStatementMatchFormChange(line.id, { businessEvent: event.target.value, accountName: "" })}><option value="expense">Expense</option><option value="inventory_purchase">Inventory</option><option value="asset_purchase">Asset</option><option value="marketing_expense">Marketing</option><option value="operating_cost">Pre-paid operating cost</option><option value="other_income">Other income</option><option value="payment_processor_paid">Cash / transfer</option><option value="ignore">Ignore</option></select></td>
+            <td><select value={form.businessEvent} disabled={line.matchStatus !== "unmatched"} onChange={(event) => onBankStatementMatchFormChange(line.id, { businessEvent: event.target.value, accountName: "" })}><option value="expense">Expense</option><option value="inventory_purchase">Inventory</option><option value="asset_purchase">Asset</option><option value="marketing_expense">Marketing</option><option value="operating_cost">Pre-paid operating cost</option><option value="other_income">Other income</option><option value="payment_processor_paid">Cash / transfer</option><option value="internal_transfer">Internal transfer / pair</option><option value="ignore">Ignore</option></select></td>
             <td><select value={form.accountName || options[0] || ""} disabled={line.matchStatus !== "unmatched" || form.businessEvent === "ignore"} onChange={(event) => onBankStatementMatchFormChange(line.id, { accountName: event.target.value })}>{options.map((option) => <option key={option} value={option}>{option}</option>)}</select></td>
             <td><input value={form.notes} disabled={line.matchStatus !== "unmatched"} onChange={(event) => onBankStatementMatchFormChange(line.id, { notes: event.target.value })} placeholder="Optional note" /></td>
-            <td><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => onMatchBankStatementLine(line)}>Create entry</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => onIgnoreBankStatementLine(line)}>Ignore</button><button className="view-button danger-text" disabled={saving} onClick={() => onDeleteBankStatementLine(line)}>Remove</button></td>
+            <td><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => onMatchBankStatementLine(line)}>{form.businessEvent === "internal_transfer" ? "Pair" : "Create entry"}</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => onIgnoreBankStatementLine(line)}>Ignore</button><button className="view-button danger-text" disabled={saving} onClick={() => onDeleteBankStatementLine(line)}>Remove</button></td>
           </tr>;
         })}</tbody></table>{!bankStatementLines.length && <div className="empty"><strong>No bank statement imported yet</strong><p>Drop a PDF or CSV statement to start matching transactions from your bank.</p></div>}</div>
       </section>

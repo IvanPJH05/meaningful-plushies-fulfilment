@@ -66,10 +66,12 @@ function moneyAbs(value: string) {
 }
 
 function inferStatementYear(text: string) {
-  const year = text.match(/\b(20\d{2})\b/)?.[1];
-  if (year) return year;
   const shortYear = text.match(/\b\d{1,2}\/\d{1,2}\/(\d{2})\b/)?.[1];
-  return shortYear ? `20${shortYear}` : new Date().getFullYear().toString();
+  if (shortYear) return `20${shortYear}`;
+  const statementYear = text.match(/statement date\s*\d{1,2}\s+[a-z]+\s+(20\d{2})/i)?.[1];
+  if (statementYear) return statementYear;
+  const year = text.match(/\b(20\d{2})\b/)?.[1];
+  return year ?? new Date().getFullYear().toString();
 }
 
 function parseDate(value: string) {
@@ -99,13 +101,19 @@ function textAt(row: string[], index: number) {
 
 function suggestLine(description: string, moneyIn: number, moneyOut: number) {
   const text = description.toLowerCase();
+  const ownAccountTransfer = (
+    (text.includes("mp gift shop") && text.includes("duitnow trsf cr")) ||
+    (text.includes("mp gift shop") && text.includes("duitnow trsf dr")) ||
+    (text.includes("ivan phang") && text.includes("transfer fr a/c"))
+  );
+  if (ownAccountTransfer) return { suggestedEvent: "internal_transfer", suggestedAccount: "Owner Transfer" };
   if (moneyIn > 0) {
     if (text.includes("stripe")) return { suggestedEvent: "payment_processor_paid", suggestedAccount: "Stripe" };
     if (text.includes("xendit")) return { suggestedEvent: "payment_processor_paid", suggestedAccount: "Xendit" };
     if (text.includes("owner") || text.includes("capital")) return { suggestedEvent: "payment_processor_paid", suggestedAccount: "Owner's Equity" };
     return { suggestedEvent: "other_income", suggestedAccount: "Other Income" };
   }
-  if (text.includes("meta") || text.includes("facebook")) return { suggestedEvent: "marketing_expense", suggestedAccount: "Meta Ads" };
+  if (text.includes("meta") || text.includes("facebook") || text.includes("facebk") || text.includes("fb.me")) return { suggestedEvent: "marketing_expense", suggestedAccount: "Meta Ads" };
   if (text.includes("tiktok") || text.includes("tik tok")) return { suggestedEvent: "marketing_expense", suggestedAccount: "TikTok Ads" };
   if (text.includes("shopify") || text.includes("canva") || text.includes("chatgpt") || text.includes("domain") || text.includes("hosting") || text.includes("upload")) return { suggestedEvent: "expense", suggestedAccount: "Software Expenses" };
   if (text.includes("jnt") || text.includes("j&t")) return { suggestedEvent: "expense", suggestedAccount: "JnT (Carriage Outwards)" };
@@ -166,6 +174,7 @@ export function parseBankStatementText(text: string): ParsedBankStatementLine[] 
     .filter(Boolean);
   const rows: ParsedBankStatementLine[] = [];
   let current: ParsedBankStatementLine | null = null;
+  let lastPublicBankDate = "";
 
   function pushCurrent() {
     if (current && current.description && (current.moneyIn > 0 || current.moneyOut > 0)) {
@@ -180,7 +189,7 @@ export function parseBankStatementText(text: string): ParsedBankStatementLine[] 
       pushCurrent();
       continue;
     }
-    const maybank = line.match(/^(\d{1,2}\/\d{1,2})\s+(.+?)\s+([\d,]+\.\d{2})([+-])\s+([\d,]+\.\d{2})(?:\s*DR)?$/i);
+    const maybank = line.match(/^(\d{1,2}\/\d{1,2})\s*(.+?)\s*([\d,]+\.\d{2})\s*([+-])\s*([\d,]+\.\d{2})(?:\s*DR)?$/i);
     if (maybank) {
       pushCurrent();
       const amount = moneyAbs(maybank[3]);
@@ -200,18 +209,45 @@ export function parseBankStatementText(text: string): ParsedBankStatementLine[] 
       continue;
     }
     const publicBank = line.match(/^(\d{1,2}\/\d{1,2})\s+(.+?)\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})$/i);
-    if (publicBank && /\b(CR|DR)\b/i.test(publicBank[2])) {
+    const publicBankCompressed = line.match(/^(\d{1,2}\/\d{1,2})\s*([\d,]+\.\d{2})\s*([\d,]+\.\d{2})(.+)$/i);
+    if ((publicBank && /\b(CR|DR)\b/i.test(publicBank[2])) || (publicBankCompressed && /\b(CR|DR)\b/i.test(publicBankCompressed[4]))) {
       pushCurrent();
-      const isCredit = /\bCR\b/i.test(publicBank[2]) && !/\bDR\b/i.test(publicBank[2].replace(/\bCR\b/i, ""));
-      const amount = moneyAbs(publicBank[3]);
+      const date = publicBank?.[1] ?? publicBankCompressed?.[1] ?? "";
+      const description = publicBank?.[2] ?? publicBankCompressed?.[4]?.trim() ?? "";
+      const amountText = publicBank?.[3] ?? publicBankCompressed?.[2] ?? "0";
+      const balanceText = publicBank?.[4] ?? publicBankCompressed?.[3] ?? "0";
+      const isCredit = /\bCR\b/i.test(description) && !/\bDR\b/i.test(description.replace(/\bCR\b/i, ""));
+      const amount = moneyAbs(amountText);
       current = {
         rowNumber: rows.length + 1,
-        transactionDate: parseStatementDate(publicBank[1], year),
-        description: publicBank[2].trim(),
+        transactionDate: parseStatementDate(date, year),
+        description,
         reference: "",
         moneyIn: isCredit ? amount : 0,
         moneyOut: isCredit ? 0 : amount,
-        balance: moneyAbs(publicBank[4]),
+        balance: moneyAbs(balanceText),
+        rawData: { line },
+        warnings: [],
+        suggestedEvent: "",
+        suggestedAccount: "",
+      };
+      lastPublicBankDate = date;
+      continue;
+    }
+    const publicBankSameDate = line.match(/^([\d,]+\.\d{2})\s*([\d,]+\.\d{2})(.+)$/i);
+    if (lastPublicBankDate && publicBankSameDate && /\b(CR|DR)\b/i.test(publicBankSameDate[3]) && !/^balance/i.test(publicBankSameDate[3])) {
+      pushCurrent();
+      const description = publicBankSameDate[3].trim();
+      const isCredit = /\bCR\b/i.test(description) && !/\bDR\b/i.test(description.replace(/\bCR\b/i, ""));
+      const amount = moneyAbs(publicBankSameDate[1]);
+      current = {
+        rowNumber: rows.length + 1,
+        transactionDate: parseStatementDate(lastPublicBankDate, year),
+        description,
+        reference: "",
+        moneyIn: isCredit ? amount : 0,
+        moneyOut: isCredit ? 0 : amount,
+        balance: moneyAbs(publicBankSameDate[2]),
         rawData: { line },
         warnings: [],
         suggestedEvent: "",
