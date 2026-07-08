@@ -1204,6 +1204,7 @@ export default function Home() {
   const [previewDocument, setPreviewDocument] = useState<AccountingDocument | null>(null);
   const [previewDocumentUrl, setPreviewDocumentUrl] = useState("");
   const [previewDocumentError, setPreviewDocumentError] = useState("");
+  const [previewBankLineId, setPreviewBankLineId] = useState("");
   const [savingAccounting, setSavingAccounting] = useState(false);
   const [documentForm, setDocumentForm] = useState<AccountingDocumentForm>({
     name: "",
@@ -1278,6 +1279,7 @@ export default function Home() {
   const [bankStatementCsv, setBankStatementCsv] = useState("");
   const [bankStatementFileName, setBankStatementFileName] = useState("");
   const [bankStatementMatchForms, setBankStatementMatchForms] = useState<Record<string, BankStatementMatchForm>>({});
+  const [bankStatementNoteDrafts, setBankStatementNoteDrafts] = useState<Record<string, string>>({});
   const [inventoryCostManualFields, setInventoryCostManualFields] = useState<InventoryCostField[]>([]);
   const [accountPasswords, setAccountPasswords] = useState<Record<string, string>>({});
   const [newAccount, setNewAccount] = useState({ username: "", displayName: "", role: "staff" as UserRole, password: "" });
@@ -3460,6 +3462,27 @@ export default function Home() {
     setBankStatementMatchForms((current) => ({ ...current, [lineId]: { ...defaults, ...current[lineId], ...patch } }));
   }
 
+  function bankStatementNoteValue(line: AccountingBankStatementLine) {
+    return bankStatementNoteDrafts[line.id] ?? line.notes ?? "";
+  }
+
+  async function saveBankStatementLineNote(line: AccountingBankStatementLine) {
+    const note = bankStatementNoteValue(line).trim();
+    const updatedLine: AccountingBankStatementLine = { ...line, notes: note, updatedAt: new Date().toISOString() };
+    try {
+      await saveAccountingBankStatementLine(updatedLine);
+      setBankStatementLines((current) => current.map((item) => item.id === line.id ? updatedLine : item));
+      setBankStatementNoteDrafts((current) => {
+        const next = { ...current };
+        delete next[line.id];
+        return next;
+      });
+      setNotice("Bank statement note saved.");
+    } catch (error) {
+      setNotice(readableError(error, "Could not save this bank statement note."));
+    }
+  }
+
   function bankStatementLineAmount(line: AccountingBankStatementLine) {
     return line.moneyOut > 0 ? line.moneyOut : line.moneyIn;
   }
@@ -3620,13 +3643,15 @@ export default function Home() {
 
   async function linkBankStatementLineToTransaction(line: AccountingBankStatementLine, transaction: AccountingTransaction) {
     if (!transaction) return setNotice("Choose a transaction to match.");
+    const existingNote = bankStatementNoteValue(line).trim();
+    const matchNote = `Matched to existing transaction: ${transaction.description}`;
     const updatedLine: AccountingBankStatementLine = {
       ...line,
       matchedTransactionId: transaction.id,
       matchStatus: "matched",
       suggestedEvent: transaction.businessEvent,
       suggestedAccount: transaction.accountName,
-      notes: `Matched to existing transaction: ${transaction.description}`,
+      notes: existingNote ? `${existingNote} | ${matchNote}` : matchNote,
       updatedAt: new Date().toISOString(),
     };
     await saveAccountingBankStatementLine(updatedLine);
@@ -4590,6 +4615,10 @@ export default function Home() {
         onMarkBankStatementSales={markBankStatementLineAsSales}
         onIgnoreBankStatementLine={ignoreBankStatementLine}
         onDeleteBankStatementLine={removeBankStatementLine}
+        bankStatementNoteDrafts={bankStatementNoteDrafts}
+        onBankStatementNoteChange={(lineId, notes) => setBankStatementNoteDrafts((current) => ({ ...current, [lineId]: notes }))}
+        onSaveBankStatementNote={saveBankStatementLineNote}
+        onOpenLinkedBankTransaction={(line) => setPreviewBankLineId(line.id)}
         onSaveAccount={saveAccountSettings}
         onSaveBookkeepingCategory={saveBookkeepingCategory}
         onSaveSalesConsumptionRule={saveSalesConsumptionRule}
@@ -4901,6 +4930,12 @@ export default function Home() {
 
     {selected && <OrderDrawer order={selected} role={session.role} actor={session.displayName} onClose={() => setSelectedId(null)} onUpdate={(patch) => updateOrder(selected.id, patch)} onStatus={(status) => setStatus(selected, status)} />}
     {previewDocument && <DocumentPreviewModal document={previewDocument} url={previewDocumentUrl} error={previewDocumentError} onClose={() => { setPreviewDocument(null); setPreviewDocumentUrl(""); setPreviewDocumentError(""); }} />}
+    {previewBankLineId && (() => {
+      const line = bankStatementLines.find((item) => item.id === previewBankLineId);
+      const transaction = line?.matchedTransactionId ? accountingTransactions.find((item) => item.id === line.matchedTransactionId) : undefined;
+      const document = transaction?.documentId ? accountingDocuments.find((item) => item.id === transaction.documentId) : undefined;
+      return line && transaction ? <LinkedBankTransactionModal line={line} transaction={transaction} document={document} ledgerEntries={accountingLedgerEntries.filter((entry) => entry.transactionId === transaction.id)} onOpenDocument={(item) => { setPreviewBankLineId(""); openAccountingDocument(item); }} onClose={() => setPreviewBankLineId("")} /> : null;
+    })()}
   </main>;
 }
 
@@ -4958,6 +4993,10 @@ function AccountingWorkspacePage({
   onMarkBankStatementSales,
   onIgnoreBankStatementLine,
   onDeleteBankStatementLine,
+  bankStatementNoteDrafts,
+  onBankStatementNoteChange,
+  onSaveBankStatementNote,
+  onOpenLinkedBankTransaction,
   onSaveAccount,
   onSaveBookkeepingCategory,
   onSaveSalesConsumptionRule,
@@ -5039,6 +5078,10 @@ function AccountingWorkspacePage({
   onMarkBankStatementSales: (line: AccountingBankStatementLine) => void;
   onIgnoreBankStatementLine: (line: AccountingBankStatementLine) => void;
   onDeleteBankStatementLine: (line: AccountingBankStatementLine) => void;
+  bankStatementNoteDrafts: Record<string, string>;
+  onBankStatementNoteChange: (lineId: string, notes: string) => void;
+  onSaveBankStatementNote: (line: AccountingBankStatementLine) => void;
+  onOpenLinkedBankTransaction: (line: AccountingBankStatementLine) => void;
   onSaveAccount: () => void;
   onSaveBookkeepingCategory: () => void;
   onSaveSalesConsumptionRule: () => void;
@@ -5370,12 +5413,15 @@ function AccountingWorkspacePage({
           const action = bankLineActions[line.id] || "";
           const candidates = candidateTransactionsForBankLine(line);
           const selectedTransaction = transactions.find((transaction) => transaction.id === bankLineSelectedTransactions[line.id]);
+          const noteValue = bankStatementNoteDrafts[line.id] ?? line.notes ?? "";
+          const noteChanged = noteValue !== (line.notes ?? "");
+          const canOpenLinked = line.matchStatus === "matched" && Boolean(line.matchedTransactionId);
           return <Fragment key={line.id}>
-          <tr className={`bank-line-${line.matchStatus}`}>
+          <tr className={`bank-line-${line.matchStatus} ${canOpenLinked ? "clickable-bank-line" : ""}`} onClick={(event) => { if (!canOpenLinked || (event.target as HTMLElement).closest("button,a,input,textarea,select")) return; onOpenLinkedBankTransaction(line); }}>
             <td><span className={`source-document-pill ${line.matchStatus === "matched" ? "matched" : line.matchStatus === "ignored" ? "ignored" : ""}`}>{line.matchStatus}</span></td>
             <td>{formatDate(line.transactionDate)}<br /><small>{line.reference || `Row ${line.rowNumber}`}</small></td>
             <td>{bankLineBankName(line)}</td>
-            <td><strong>{line.description}</strong>{line.notes && <><br /><small>{line.notes}</small></>}</td>
+            <td><strong>{line.description}</strong><div className="bank-line-note"><textarea value={noteValue} onChange={(event) => onBankStatementNoteChange(line.id, event.target.value)} placeholder="Add note for this bank row..." /><button className="view-button" disabled={!noteChanged || saving} onClick={() => onSaveBankStatementNote(line)}>Save note</button></div>{canOpenLinked && <small className="linked-transaction-hint">Click row to view linked transaction</small>}</td>
             <td><strong className={`bank-amount ${line.moneyIn > 0 ? "money-in" : "money-out"}`}>{formatMoney(line.moneyIn > 0 ? line.moneyIn : line.moneyOut)}</strong><br /><small>{line.moneyIn > 0 ? "money in" : "money out"}</small></td>
             <td><div className="bank-row-actions"><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => setBankLineActions((current) => ({ ...current, [line.id]: current[line.id] === "match" ? "" : "match" }))}>Match</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => setBankLineActions((current) => ({ ...current, [line.id]: current[line.id] === "new" ? "" : "new" }))}>New</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched" || line.moneyIn <= 0} onClick={() => onMarkBankStatementSales(line)}>Sales</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => onIgnoreBankStatementLine(line)}>Ignore</button><button className="view-button danger-text" disabled={saving} onClick={() => onDeleteBankStatementLine(line)}>Remove</button></div></td>
           </tr>
@@ -5752,6 +5798,55 @@ function AccountingTransactionsTable({ transactions, ledgerEntries, documents, b
     </tr>;
   })}</tbody></table>{!transactions.length && <div className="empty"><strong>No transactions yet</strong><p>Record a business event to start the ledger.</p></div>}</div></section>;
 }
+
+function LinkedBankTransactionModal({
+  line,
+  transaction,
+  document,
+  ledgerEntries,
+  onOpenDocument,
+  onClose
+}: {
+  line: AccountingBankStatementLine;
+  transaction: AccountingTransaction;
+  document?: AccountingDocument;
+  ledgerEntries: AccountingLedgerEntry[];
+  onOpenDocument: (document: AccountingDocument) => void;
+  onClose: () => void;
+}) {
+  return <div className="document-preview-backdrop" role="dialog" aria-modal="true" aria-label="Linked transaction summary" onClick={onClose}>
+    <section className="linked-transaction-modal" onClick={(event) => event.stopPropagation()}>
+      <header>
+        <div><p>LINKED TRANSACTION</p><h2>{transaction.description}</h2><span>{formatDate(transaction.transactionDate)} | {formatMoney(transaction.amount)}</span></div>
+        <button className="view-button" onClick={onClose}>Close</button>
+      </header>
+      <div className="linked-transaction-body">
+        <section className="linked-summary-grid">
+          <div><span>Bank row</span><strong>{line.description}</strong></div>
+          <div><span>Bank amount</span><strong className={`bank-amount ${line.moneyIn > 0 ? "money-in" : "money-out"}`}>{formatMoney(line.moneyIn > 0 ? line.moneyIn : line.moneyOut)}</strong></div>
+          <div><span>Business event</span><strong>{transaction.businessEvent.replace(/_/g, " ")}</strong></div>
+          <div><span>Account</span><strong>{displayAccountingAccountName(transaction.accountName)}</strong></div>
+          <div><span>Payment</span><strong>{transaction.paymentStatus.replace(/_/g, " ")}</strong><small>{transaction.paymentMethod}</small></div>
+          <div><span>Reference</span><strong>{transaction.invoiceNumber || line.reference || "-"}</strong></div>
+        </section>
+        {line.notes && <section className="linked-note-panel"><span>Bank row note</span><p>{line.notes}</p></section>}
+        {transaction.notes && <section className="linked-note-panel"><span>Transaction note</span><p>{transaction.notes}</p></section>}
+        <section className="linked-ledger-panel">
+          <h3>Ledger posting</h3>
+          <div className="linked-ledger-list">
+            {ledgerEntries.map((entry) => <div key={entry.id}><span>{entry.entryType}</span><strong>{entry.accountName}</strong><em>{formatMoney(entry.amount)}</em><small>{entry.memo}</small></div>)}
+            {!ledgerEntries.length && <p>No ledger entries found for this transaction.</p>}
+          </div>
+        </section>
+        <section className="linked-document-panel">
+          <h3>Source document</h3>
+          {document ? <div className="linked-document-card"><div><strong>{document.name || document.fileName}</strong><span>{document.fileName} | {formatFileSize(document.fileSize)}</span></div><button className="button primary" onClick={() => onOpenDocument(document)}>View source document</button></div> : <p>No source document linked to this transaction.</p>}
+        </section>
+      </div>
+    </section>
+  </div>;
+}
+
 function DocumentPreviewModal({ document, url, error, onClose }: { document: AccountingDocument; url: string; error: string; onClose: () => void }) {
   const isImage = document.fileType.startsWith("image/");
   const isPdf = document.fileType === "application/pdf" || document.fileName.toLowerCase().endsWith(".pdf");

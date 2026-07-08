@@ -126,6 +126,12 @@
 .bank-statement-table td:nth-child(4) { max-width: 420px; white-space: normal; }
 .bank-statement-table td:nth-child(4) strong,
 .bank-statement-table td:nth-child(4) small { white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
+.bank-statement-table tr.clickable-bank-line { cursor: pointer; }
+.bank-statement-table tr.clickable-bank-line:hover td { background: #ecfdf3; }
+.bank-line-note { display: grid; grid-template-columns: minmax(190px, 1fr) auto; gap: 8px; align-items: start; margin-top: 8px; }
+.bank-line-note textarea { width: 100%; min-height: 42px; max-height: 90px; resize: vertical; border: 1px solid #d7e1ed; border-radius: 8px; padding: 8px 9px; background: #fbfdff; color: var(--text); font-size: 11px; line-height: 1.35; }
+.bank-line-note .view-button { align-self: stretch; white-space: nowrap; }
+.linked-transaction-hint { display: inline-flex !important; margin-top: 5px; color: #047857 !important; font-weight: 800; }
 .bank-statement-card.lock-status .bank-statement-table th:nth-child(1),
 .bank-statement-card.lock-status .bank-statement-table td:nth-child(1),
 .bank-statement-card.lock-date .bank-statement-table th:nth-child(2),
@@ -348,6 +354,34 @@
 .file-library-card .ledger-line { min-width: 220px; }
 .document-preview-backdrop { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 24px; background: rgba(10, 24, 42, .58); backdrop-filter: blur(2px); }
 .document-preview-modal { display: flex; flex-direction: column; width: min(1080px, 94vw); height: min(820px, 90vh); overflow: hidden; border: 1px solid #d8e3f0; border-radius: 16px; background: #fff; box-shadow: 0 24px 70px rgba(10, 24, 42, .28); }
+.linked-transaction-modal { display: flex; flex-direction: column; width: min(940px, 94vw); max-height: min(820px, 90vh); overflow: hidden; border: 1px solid #d8e3f0; border-radius: 16px; background: #fff; box-shadow: 0 24px 70px rgba(10, 24, 42, .28); }
+.linked-transaction-modal header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 18px 20px; border-bottom: 1px solid #e5edf6; background: linear-gradient(135deg, #f7fbff, #eef6ff); }
+.linked-transaction-modal header p { margin: 0 0 5px; color: #315f9e; font-size: 10px; font-weight: 900; letter-spacing: .14em; }
+.linked-transaction-modal header h2 { margin: 0; font-size: 20px; }
+.linked-transaction-modal header span { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; }
+.linked-transaction-body { overflow: auto; padding: 18px 20px 22px; display: grid; gap: 14px; }
+.linked-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.linked-summary-grid > div,
+.linked-note-panel,
+.linked-ledger-panel,
+.linked-document-panel { border: 1px solid #e5edf6; border-radius: 12px; padding: 12px; background: #fbfdff; }
+.linked-summary-grid span,
+.linked-note-panel span { display: block; margin-bottom: 5px; color: var(--muted); font-size: 10px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }
+.linked-summary-grid strong { display: block; color: var(--text); overflow-wrap: anywhere; }
+.linked-summary-grid small { display: block; margin-top: 3px; color: var(--muted); }
+.linked-note-panel p,
+.linked-document-panel p { margin: 0; color: #46566d; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.linked-ledger-panel h3,
+.linked-document-panel h3 { margin: 0 0 10px; font-size: 14px; }
+.linked-ledger-list { display: grid; gap: 8px; }
+.linked-ledger-list > div { display: grid; grid-template-columns: 74px 1fr auto; gap: 9px; align-items: center; padding: 9px 10px; border-radius: 9px; background: #fff; border: 1px solid #edf2f7; }
+.linked-ledger-list span { color: #315f9e; font-size: 10px; font-weight: 900; text-transform: uppercase; }
+.linked-ledger-list em { font-style: normal; font-weight: 900; }
+.linked-ledger-list small { grid-column: 2 / -1; color: var(--muted); }
+.linked-document-card { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.linked-document-card strong,
+.linked-document-card span { display: block; }
+.linked-document-card span { margin-top: 4px; color: var(--muted); font-size: 11px; }
 .document-preview-modal header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 18px 20px; border-bottom: 1px solid #e5edf6; background: linear-gradient(135deg, #f7fbff, #eef6ff); }
 .document-preview-modal header p { margin: 0 0 5px; color: #315f9e; font-size: 10px; font-weight: 900; letter-spacing: .14em; }
 .document-preview-modal header h2 { margin: 0; font-size: 20px; }
