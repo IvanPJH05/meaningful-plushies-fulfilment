@@ -82,6 +82,20 @@
 .accounting-period-tabs { min-width: 220px; }
 .general-journal-table tr.journal-group-end td { border-bottom: 3px solid #9eb1c8; }
 .general-journal-table tr.journal-group-end td:first-child { box-shadow: inset 4px 0 0 #315f9e; }
+.ledger-export-actions { display: flex; justify-content: flex-end; gap: 10px; margin: 12px 0; }
+.bookkeeping-ledger-print { display: none; }
+.bookkeeping-ledger-print-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; }
+.bookkeeping-ledger-print-table th { padding: 7px 6px; border-bottom: 2px solid #253955; color: #52627a; font-size: 9px; text-align: left; text-transform: uppercase; letter-spacing: .04em; }
+.bookkeeping-ledger-print-table td { vertical-align: top; padding: 7px 6px; border-bottom: 1px solid #dbe4ef; color: #172033; line-height: 1.35; overflow-wrap: anywhere; }
+.bookkeeping-ledger-print-table td strong,
+.bookkeeping-ledger-print-table td small { display: block; }
+.bookkeeping-ledger-print-table td small { margin-top: 2px; color: var(--muted); font-size: 9px; }
+.bookkeeping-ledger-print-table th:nth-child(1) { width: 76px; }
+.bookkeeping-ledger-print-table th:nth-child(3),
+.bookkeeping-ledger-print-table th:nth-child(4),
+.bookkeeping-ledger-print-table th:nth-child(5) { width: 112px; }
+.bookkeeping-ledger-print-table th:nth-child(7) { width: 90px; text-align: right; }
+.bookkeeping-ledger-print-table td:nth-child(7) { text-align: right; font-weight: 850; white-space: nowrap; }
 .bank-statement-reference { margin-top: 16px; padding: 22px; }
 .bank-reference-heading { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 18px; }
 .bank-reference-heading p,
@@ -129,6 +143,11 @@
 
 @page bank-statement-reference {
   size: A4 portrait;
+  margin: 10mm;
+}
+
+@page bookkeeping-ledger {
+  size: A4 landscape;
   margin: 10mm;
 }
 
@@ -195,6 +214,33 @@
   body.print-bank-statement .bank-reference-table th:nth-child(5) { width: 22mm; }
   body.print-bank-statement .bank-reference-table td small,
   body.print-bank-statement .bank-reference-table td em { font-size: 7pt; }
+  body.print-bookkeeping-ledger { background: #fff !important; }
+  body.print-bookkeeping-ledger .side-nav,
+  body.print-bookkeeping-ledger .topbar,
+  body.print-bookkeeping-ledger .notice,
+  body.print-bookkeeping-ledger .no-print,
+  body.print-bookkeeping-ledger .accounting-hero,
+  body.print-bookkeeping-ledger .accounting-summary-grid,
+  body.print-bookkeeping-ledger .accounting-table-card,
+  body.print-bookkeeping-ledger .accounting-form { display: none !important; }
+  body.print-bookkeeping-ledger .app-shell { display: block !important; }
+  body.print-bookkeeping-ledger .main-area { padding: 0 !important; }
+  body.print-bookkeeping-ledger .main-area > :not(.accounting-workspace) { display: none !important; }
+  body.print-bookkeeping-ledger .accounting-workspace > :not(.bookkeeping-ledger-print) { display: none !important; }
+  body.print-bookkeeping-ledger .bookkeeping-ledger-print {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    page: bookkeeping-ledger;
+  }
+  body.print-bookkeeping-ledger .bookkeeping-ledger-print-table { font-size: 7.3pt; }
+  body.print-bookkeeping-ledger .bookkeeping-ledger-print-table th { padding: 4px 4px; font-size: 6.5pt; }
+  body.print-bookkeeping-ledger .bookkeeping-ledger-print-table td { padding: 4px 4px; line-height: 1.22; }
+  body.print-bookkeeping-ledger .bookkeeping-ledger-print-table td small { font-size: 6.2pt; }
 }
 .money-stat { position: relative; display: flex; flex-direction: column; overflow: hidden; min-width: 0; min-height: 134px; padding: 16px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }
 .money-stat::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: #3278c7; }

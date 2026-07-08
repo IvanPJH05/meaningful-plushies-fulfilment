@@ -869,7 +869,7 @@ function calculateInventoryCostFields(
   return changed;
 }
 
-function printView(className: "print-packing" | "print-sales-report" | "print-financial-report" | "print-bank-statement") {
+function printView(className: "print-packing" | "print-sales-report" | "print-financial-report" | "print-bank-statement" | "print-bookkeeping-ledger") {
   document.body.classList.add(className);
   const cleanup = () => document.body.classList.remove(className);
   window.addEventListener("afterprint", cleanup, { once: true });
@@ -4546,6 +4546,56 @@ function AccountingWorkspacePage({
     if (!key || key.length < 10) return value || "-";
     return `${key.slice(8, 10)}/${key.slice(5, 7)}`;
   }
+  function bookkeepingLedgerRows(sourceTransactions = transactions) {
+    return [...sourceTransactions].sort((a, b) => {
+      const dateCompare = dateKey(a.transactionDate).localeCompare(dateKey(b.transactionDate));
+      return dateCompare || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id);
+    }).map((transaction) => {
+      const entries = ledgerEntries.filter((entry) => entry.transactionId === transaction.id);
+      const document = transactionDocuments.find((item) => item.id === transaction.documentId);
+      const paymentLabel = transaction.paymentStatus === "deposit_paid" ? `Deposit ${formatMoney(transaction.depositAmount)}` : transaction.paymentStatus === "on_credit" ? "On Credit" : "Paid In Full";
+      const eventLabel = businessEvents.find((event) => event.value === transaction.businessEvent)?.label ?? (transaction.businessEvent || "-");
+      const accountName = displayAccountingAccountName(transaction.accountName || categoryName(transaction.categoryId));
+      const ledgerPosting = entries.length
+        ? entries.map((entry, index) => {
+          const name = displayAccountingAccountName(entry.accountName);
+          const label = index === 0 ? `Record ${name}` : name.includes("Payable") || name.includes("Receivable") ? `Outstanding ${name}` : `Payment from ${name}`;
+          return `${label}: ${formatMoney(entry.amount)}`;
+        }).join(" | ")
+        : formatMoney(transaction.amount);
+      return { transaction, entries, document, paymentLabel, eventLabel, accountName, ledgerPosting };
+    });
+  }
+  function csvCell(value: string | number) {
+    const text = String(value ?? "");
+    return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  }
+  function downloadBookkeepingLedgerCsv() {
+    const rows = bookkeepingLedgerRows();
+    const headers = ["Date", "Description", "Supplier/Source", "Business Event", "Account", "Payment", "Payment Method", "Amount", "Debit", "Credit", "Ledger Posting", "Document"];
+    const lines = rows.map(({ transaction, document, paymentLabel, eventLabel, accountName, ledgerPosting }) => [
+      dateKey(transaction.transactionDate),
+      transaction.description,
+      transaction.supplier || transaction.source,
+      eventLabel,
+      accountName,
+      paymentLabel,
+      transaction.paymentStatus === "on_credit" ? transaction.dueDate || transaction.supplierTerms || "Outstanding" : transaction.paymentMethod || "Bank Account",
+      transaction.amount.toFixed(2),
+      transaction.debit.toFixed(2),
+      transaction.credit.toFixed(2),
+      ledgerPosting,
+      document?.fileName || "",
+    ].map(csvCell).join(","));
+    const csv = [headers.map(csvCell).join(","), ...lines].join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `meaningful-plushies-bookkeeping-ledger-${new Date().toISOString().slice(0, 10)}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
   function bankStatementUiConfigForEvent(eventValue: string) {
     if (eventValue === "inventory_purchase") return bookkeepingSectionConfigs.inventory;
     if (eventValue === "asset_purchase") return bookkeepingSectionConfigs.asset;
@@ -4587,8 +4637,25 @@ function AccountingWorkspacePage({
       <MoneyStat label="Money out" value={expenses} tone="fees" />
       <MoneyStat label="Net" value={profit} tone={profit < 0 ? "fees" : "sales"} />
     </section>
+    <div className="ledger-export-actions no-print"><button className="button secondary" disabled={!transactions.length} onClick={downloadBookkeepingLedgerCsv}>Download CSV</button><button className="button primary" disabled={!transactions.length} onClick={() => printView("print-bookkeeping-ledger")}>Print / Save PDF</button></div>
     {transactionEditPanel}
     <AccountingTransactionsTable transactions={transactions} ledgerEntries={ledgerEntries} documents={transactionDocuments} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} />
+    <section className="bookkeeping-ledger-print card">
+      <header className="financial-statement-title"><p>Meaningful Plushies</p><h2>Book Keeping Transaction Ledger</h2><span>Generated on {formatDate(new Date().toISOString(), true)}</span></header>
+      <table className="bookkeeping-ledger-print-table">
+        <thead><tr><th>Date</th><th>Description</th><th>Business Event</th><th>Account</th><th>Payment</th><th>Ledger Posting</th><th>Amount</th><th>Document</th></tr></thead>
+        <tbody>{bookkeepingLedgerRows().map(({ transaction, document, paymentLabel, eventLabel, accountName, ledgerPosting }) => <tr key={transaction.id}>
+          <td>{formatDate(transaction.transactionDate)}</td>
+          <td><strong>{transaction.description}</strong><small>{transaction.supplier || transaction.source}{transaction.invoiceNumber ? ` - Invoice ${transaction.invoiceNumber}` : ""}</small></td>
+          <td>{eventLabel}</td>
+          <td>{accountName}</td>
+          <td>{paymentLabel}<small>{transaction.paymentStatus === "on_credit" ? transaction.dueDate || transaction.supplierTerms || "Outstanding" : transaction.paymentMethod || "Bank Account"}</small></td>
+          <td>{ledgerPosting}</td>
+          <td>{formatMoney(transaction.amount)}</td>
+          <td>{document?.fileName || "-"}</td>
+        </tr>)}</tbody>
+      </table>
+    </section>
   </section>;
 
   if (view === "accounting_payable") return <section className="accounting-workspace">
