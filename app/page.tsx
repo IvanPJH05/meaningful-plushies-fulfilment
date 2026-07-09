@@ -76,7 +76,7 @@ type Session = DashboardSession;
 type View =
   | "orders" | "fulfilment" | "packing_slips" | "print_envelope" | "import" | "tiktok_shop" | "fulfilled" | "history" | "settings" | "meta_capi" | "stock" | "sales_report"
   | "accounting_dashboard" | "accounting_documents" | "accounting_transactions" | "accounting_csv_import" | "accounting_profit_loss" | "accounting_balance_sheet"
-  | "accounting_cash_flow" | "accounting_operating_costs" | "accounting_general_ledger" | "accounting_trial_balance" | "accounting_payable" | "accounting_receivable"
+  | "accounting_cash_flow" | "accounting_owner_equity" | "accounting_operating_costs" | "accounting_general_ledger" | "accounting_trial_balance" | "accounting_payable" | "accounting_receivable"
   | "accounting_other_income"
   | "accounting_bank_reconciliation" | "accounting_product_profitability" | "accounting_marketing_profitability" | "accounting_cash_position"
   | "accounting_tax_reports" | "accounting_settings" | "accounting_files" | "accounting_general_journal" | "accounting_t_accounts" | "accounting_unit_costs" | "accounting_financial_reports"
@@ -199,7 +199,7 @@ type AccountingAccountForm = {
   allowSubAccounts: boolean;
   active: boolean;
 };
-type BookkeepingSectionKey = "inventory" | "expense" | "asset" | "marketing" | "otherIncome";
+type BookkeepingSectionKey = "inventory" | "expense" | "asset" | "marketing" | "otherIncome" | "ownerEquity";
 type BookkeepingCategoryForm = {
   section: BookkeepingSectionKey;
   name: string;
@@ -388,6 +388,15 @@ const bookkeepingSectionConfigs: Record<BookkeepingSectionKey, {
     sourceEntity: "Other income sale",
     defaults: ["Offline sales"],
   },
+  ownerEquity: {
+    label: "Owner's equity accounts",
+    singularLabel: "Owner's equity account",
+    reportSection: "Equity",
+    accountType: "equity",
+    parentAccount: "Equity",
+    sourceEntity: "Owner equity movement",
+    defaults: ["Owner Capital", "Owner Drawings"],
+  },
 };
 const prepaidOperatingCostAccountName = "Pre-paid Operating Cost";
 const legacyPrepaidOperatingCostAccountNames = ["Prepaid Operating Expense", "Operating Costs"];
@@ -405,6 +414,8 @@ const businessEvents = [
   { group: "Money in", value: "payment_processor_paid", label: "Cash", transactionLabel: "Cash", accountingMapping: "Cash", accounts: ["Bank Transfer", "Stripe", "Xendit", "TikTok", "Payment Processing Fees", "Owner's Equity", "Drawings"] },
   { group: "Money in", value: "other_income", label: "Other Income", transactionLabel: "Other Income", accountingMapping: "Other Income", accounts: ["Offline sales"] },
   { group: "Money out", value: "operating_cost", label: "Operating Cost", transactionLabel: "Operating Cost", accountingMapping: prepaidOperatingCostAccountName, accounts: [prepaidOperatingCostAccountName] },
+  { group: "Equity", value: "owner_contribution", label: "Owner Capital", transactionLabel: "Owner Capital Injection", accountingMapping: "Owner's Equity", accounts: ["Owner Capital"] },
+  { group: "Equity", value: "owner_drawings", label: "Owner Drawings", transactionLabel: "Owner Drawings", accountingMapping: "Owner's Equity", accounts: ["Owner Drawings"] },
 ] as const;
 const aiAccountantRequiredColumns = [
   "import_action",
@@ -583,6 +594,7 @@ const accountingViews: readonly View[] = [
   "accounting_balance_sheet",
   "accounting_profit_loss",
   "accounting_cash_flow",
+  "accounting_owner_equity",
   "accounting_other_income",
   "accounting_operating_costs",
   "accounting_settings",
@@ -776,6 +788,7 @@ const accountingNavItems: NavItem[] = [
   { view: "accounting_balance_sheet", label: "Assets", icon: "accounting" },
   { view: "accounting_profit_loss", label: "Marketing", icon: "report" },
   { view: "accounting_cash_flow", label: "Cash", icon: "cash" },
+  { view: "accounting_owner_equity", label: "Owner's Equity", icon: "ledger" },
   { view: "accounting_other_income", label: "Other Income", icon: "cash" },
   { view: "accounting_operating_costs", label: "Operating Cost", icon: "ledger" },
   { view: "accounting_settings", label: "Book Keeping Settings", icon: "settings" },
@@ -2712,6 +2725,10 @@ export default function Home() {
   }
 
   function selectedBusinessEvent() {
+    if (view === "accounting_owner_equity") {
+      const ownerEvent = transactionForm.businessEvent === "owner_drawings" ? "owner_drawings" : "owner_contribution";
+      return businessEvents.find((event) => event.value === ownerEvent) ?? businessEvents[0];
+    }
     const pageBusinessEvent = bookkeepingEventByView[view];
     return businessEvents.find((event) => event.value === (pageBusinessEvent ?? transactionForm.businessEvent)) ?? businessEvents[0];
   }
@@ -2722,6 +2739,7 @@ export default function Home() {
     if (eventValue === "asset_purchase") return bookkeepingSectionConfigs.asset;
     if (eventValue === "marketing_expense") return bookkeepingSectionConfigs.marketing;
     if (eventValue === "other_income") return bookkeepingSectionConfigs.otherIncome;
+    if (eventValue === "owner_contribution" || eventValue === "owner_drawings") return bookkeepingSectionConfigs.ownerEquity;
     return null;
   }
 
@@ -2837,6 +2855,8 @@ export default function Home() {
 
   function bookkeepingAccountNameForSave(event: ReturnType<typeof selectedBusinessEvent>) {
     if (event.value === "operating_cost") return prepaidOperatingCostAccountName;
+    if (event.value === "owner_contribution") return "Owner Capital";
+    if (event.value === "owner_drawings") return "Owner Drawings";
     const selectedCategory = selectedCategoryRecord();
     if (selectedCategory) return selectedCategory.name;
     if (transactionForm.categoryId === newAssetOptionValue) return transactionForm.accountName.trim();
@@ -2869,6 +2889,18 @@ export default function Home() {
     const paidAmount = transactionForm.paymentStatus === "paid_in_full" ? amount : transactionForm.paymentStatus === "deposit_paid" ? depositAmount : 0;
     const outstandingAmount = Math.max(0, amount - paidAmount);
     const now = new Date().toISOString();
+    if (event.value === "owner_contribution") {
+      return [
+        { id: crypto.randomUUID(), transactionId, accountId: "", accountName: transactionForm.paymentMethod || "Bank Account", entryType: "debit", amount, memo: "Owner capital received", createdAt: now },
+        { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: "Owner Capital", entryType: "credit", amount, memo: transactionForm.description || "Owner capital injection", createdAt: now },
+      ];
+    }
+    if (event.value === "owner_drawings") {
+      return [
+        { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: "Owner Drawings", entryType: "debit", amount, memo: transactionForm.description || "Owner drawing", createdAt: now },
+        { id: crypto.randomUUID(), transactionId, accountId: "", accountName: transactionForm.paymentMethod || "Bank Account", entryType: "credit", amount, memo: "Money taken by owner", createdAt: now },
+      ];
+    }
     if (event.value === "payment_processor_paid") {
       const cashAccount = transactionForm.paymentMethod || "Bank Account";
       if (transactionForm.categoryId === "Drawings") {
@@ -2991,6 +3023,7 @@ export default function Home() {
     if (eventValue === "asset_purchase") return bookkeepingSectionConfigs.asset;
     if (eventValue === "marketing_expense") return bookkeepingSectionConfigs.marketing;
     if (eventValue === "expense") return bookkeepingSectionConfigs.expense;
+    if (eventValue === "owner_contribution" || eventValue === "owner_drawings") return bookkeepingSectionConfigs.ownerEquity;
     return null;
   }
 
@@ -3280,6 +3313,7 @@ export default function Home() {
     if (eventValue === "other_income") return bookkeepingSectionConfigs.otherIncome;
     if (eventValue === "operating_cost") return { ...bookkeepingSectionConfigs.expense, reportSection: "Current Assets", parentAccount: prepaidOperatingCostAccountName, accountType: "asset" as const, sourceEntity: "Bank statement prepaid operating cost" };
     if (eventValue === "payment_processor_paid") return { label: "Cash", parentAccount: "Bank Account", accountType: "asset" as const, reportSection: "Current Assets", sourceEntity: "Bank statement cash movement" };
+    if (eventValue === "owner_contribution" || eventValue === "owner_drawings") return bookkeepingSectionConfigs.ownerEquity;
     return bookkeepingSectionConfigs.expense;
   }
 
@@ -3312,6 +3346,14 @@ export default function Home() {
   function bankStatementLedgerEntries(line: AccountingBankStatementLine, form: BankStatementMatchForm, account: AccountingCategory, transactionId: string, createdAt: string): AccountingLedgerEntry[] {
     const amount = line.moneyOut > 0 ? line.moneyOut : line.moneyIn;
     const accountName = form.businessEvent === "operating_cost" ? prepaidOperatingCostAccountName : account.name;
+    if (form.businessEvent === "owner_contribution") return [
+      { id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Bank Account", entryType: "debit", amount, memo: "Bank statement owner capital received", createdAt },
+      { id: crypto.randomUUID(), transactionId, accountId: account.id, accountName: "Owner Capital", entryType: "credit", amount, memo: line.description, createdAt },
+    ];
+    if (form.businessEvent === "owner_drawings") return [
+      { id: crypto.randomUUID(), transactionId, accountId: account.id, accountName: "Owner Drawings", entryType: "debit", amount, memo: line.description, createdAt },
+      { id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Bank Account", entryType: "credit", amount, memo: "Bank statement owner drawing", createdAt },
+    ];
     if (form.businessEvent === "payment_processor_paid") {
       if (accountName === "Drawings") return [
         { id: crypto.randomUUID(), transactionId, accountId: account.id, accountName: "Drawings", entryType: "debit", amount, memo: line.description, createdAt },
@@ -3372,10 +3414,10 @@ export default function Home() {
     }
     if (row.businessEvent === "owner_contribution") return [
       { id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Bank Account", entryType: "debit", amount, memo: row.description, createdAt },
-      { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: "Owner's Equity", entryType: "credit", amount, memo: "Owner contribution", createdAt },
+      { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: "Owner Capital", entryType: "credit", amount, memo: "Owner contribution", createdAt },
     ];
     if (row.businessEvent === "owner_drawings") return [
-      { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: "Drawings", entryType: "debit", amount, memo: row.description, createdAt },
+      { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: "Owner Drawings", entryType: "debit", amount, memo: row.description, createdAt },
       { id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Bank Account", entryType: "credit", amount, memo: "Owner drawing", createdAt },
     ];
     if (row.businessEvent === "operating_cost_release") return [
@@ -3625,7 +3667,7 @@ export default function Home() {
         description: line.description,
         accountName: account.name,
         categoryId: account.id,
-        transactionType: line.moneyIn > 0 && form.businessEvent !== "payment_processor_paid" ? "income" : form.businessEvent === "payment_processor_paid" ? "transfer" : "expense",
+        transactionType: ["payment_processor_paid", "owner_contribution", "owner_drawings"].includes(form.businessEvent) ? "transfer" : line.moneyIn > 0 ? "income" : "expense",
         paymentStatus: "paid_in_full",
         paymentMethod: "Bank Account",
         supplier: line.reference,
@@ -3703,7 +3745,7 @@ export default function Home() {
       amount: amount ? String(amount) : "",
       categoryId: selectedAccount?.id ?? (stagedEvent === "payment_processor_paid" ? stagedAccount : ""),
       accountName: selectedAccount ? "" : stagedEvent === "payment_processor_paid" ? "" : stagedAccount,
-      transactionType: line.moneyIn > 0 ? "income" : stagedEvent === "payment_processor_paid" ? "transfer" : "expense",
+      transactionType: ["payment_processor_paid", "owner_contribution", "owner_drawings"].includes(stagedEvent) ? "transfer" : line.moneyIn > 0 ? "income" : "expense",
       paymentStatus: "paid_in_full",
       paymentMethod: stagedPaymentMethod || (line.moneyIn > 0 ? "Bank Account" : current.paymentMethod || "Bank Account"),
       supplier: line.reference || bankStatementLineBankName(line),
@@ -3885,7 +3927,7 @@ export default function Home() {
     const description = transactionForm.description.trim() || (event.value === "payment_processor_paid" && transactionForm.categoryId ? `${transactionForm.categoryId} payout to bank` : event.value === "other_income" ? "Other income sale" : "");
     if (!description) return setNotice("Add a transaction description.");
     if (!Number.isFinite(amount) || amount < 0) return setNotice("Enter a valid transaction amount.");
-    if (event.value !== "operating_cost" && !transactionForm.categoryId && !transactionForm.accountName.trim()) return setNotice("Choose an account or type the item name.");
+    if (!["operating_cost", "owner_contribution", "owner_drawings"].includes(event.value) && !transactionForm.categoryId && !transactionForm.accountName.trim()) return setNotice("Choose an account or type the item name.");
     if (event.value === "other_income" && !otherIncomeLinesToSave.length) return setNotice("Enter at least one character quantity and price.");
     if (transactionForm.categoryId === rejectedInventoryOption && !transactionForm.accountName.trim()) return setNotice("Choose which inventory item was rejected.");
     if (transactionForm.paymentStatus === "deposit_paid" && (depositAmount <= 0 || depositAmount >= amount)) return setNotice("Enter a deposit amount that is more than 0 and less than the total.");
@@ -4008,7 +4050,7 @@ export default function Home() {
           documentDate: transactionForm.transactionDate,
           amount,
           categoryId: account?.id ?? "",
-          transactionType: event.value === "payment_processor_paid" ? "income" : "expense",
+          transactionType: event.value === "owner_contribution" || event.value === "payment_processor_paid" ? "income" : "expense",
           taxTreatment: transactionForm.taxTreatment,
           notes: transactionForm.notes.trim(),
           uploadedBy: actor,
@@ -4027,7 +4069,7 @@ export default function Home() {
         description,
         accountName: event.value === "operating_cost" ? prepaidOperatingCostAccountName : event.value === "inventory_purchase" ? accountName : account?.name || accountName || "Cash",
         categoryId: account?.id ?? "",
-        transactionType: event.value === "payment_processor_paid" ? "transfer" : "expense",
+        transactionType: ["payment_processor_paid", "owner_contribution", "owner_drawings"].includes(event.value) ? "transfer" : "expense",
         paymentStatus: transactionForm.paymentStatus,
         paymentMethod: transactionForm.paymentMethod,
         supplier: transactionForm.supplier.trim(),
@@ -5501,12 +5543,15 @@ function AccountingWorkspacePage({
     if (eventValue === "marketing_expense") return bookkeepingSectionConfigs.marketing;
     if (eventValue === "other_income") return bookkeepingSectionConfigs.otherIncome;
     if (eventValue === "operating_cost") return { ...bookkeepingSectionConfigs.expense, reportSection: "Current Assets", parentAccount: prepaidOperatingCostAccountName, accountType: "asset" as const, sourceEntity: "Bank statement prepaid operating cost" };
+    if (eventValue === "owner_contribution" || eventValue === "owner_drawings") return bookkeepingSectionConfigs.ownerEquity;
     return bookkeepingSectionConfigs.expense;
   }
   function bankStatementAccountOptions(eventValue: string) {
     if (eventValue === "payment_processor_paid") return ["Stripe", "Xendit", "TikTok"];
     if (eventValue === "internal_transfer") return ["Owner Transfer", "Personal Bank Transfer"];
     if (eventValue === "operating_cost") return [prepaidOperatingCostAccountName];
+    if (eventValue === "owner_contribution") return ["Owner Capital"];
+    if (eventValue === "owner_drawings") return ["Owner Drawings"];
     const config = bankStatementUiConfigForEvent(eventValue);
     const saved = categories
       .filter((category) => category.active && (category.reportSection === config.reportSection || category.accountType === config.accountType))
@@ -5717,7 +5762,7 @@ function AccountingWorkspacePage({
           </tr>
           {action === "match" && line.matchStatus === "unmatched" && <tr className="bank-line-detail-row"><td colSpan={6}><section className="posting-preview bank-line-action-panel"><h3>Match existing transaction</h3><p>Showing unlinked bookkeeping transactions within +/- 3 days of this bank row. You can link more than one transaction until the bank amount is balanced.</p><div className="bank-match-summary"><span>Bank amount {formatMoney(getBankLineAmount(line))}</span><span>Matched {formatMoney(matchedTotal)}</span><strong>{remainingAmount > 0.01 ? `${formatMoney(remainingAmount)} left` : "Balanced"}</strong></div>{matchedTransactions.length > 0 && <div className="bank-linked-list">{matchedTransactions.map((transaction) => <div key={transaction.id}><span>{formatDate(transaction.transactionDate)}</span><strong>{transaction.description}</strong><em>{formatMoney(transaction.amount)}</em></div>)}</div>}<label>Existing transaction<select value={bankLineSelectedTransactions[line.id] || ""} onChange={(event) => setBankLineSelectedTransactions((current) => ({ ...current, [line.id]: event.target.value }))}><option value="">Choose transaction</option>{candidates.map((transaction) => <option key={transaction.id} value={transaction.id}>{formatDate(transaction.transactionDate)} | {transaction.description} | {displayAccountingAccountName(transaction.accountName)} | {formatMoney(transaction.amount)}</option>)}</select></label><div className="csv-import-actions"><button className="button primary" disabled={!selectedTransaction || saving} onClick={() => selectedTransaction && onLinkBankStatementLine(line, selectedTransaction)}>Link selected transaction</button>{!candidates.length && <span>No unlinked transactions found within +/- 3 days.</span>}</div></section></td></tr>}
           {action === "pair" && line.matchStatus === "unmatched" && <tr className="bank-line-detail-row"><td colSpan={6}><section className="posting-preview bank-line-action-panel"><h3>Pair internal bank transfer</h3><p>Choose the matching money-in or money-out row from another bank account. Both rows will be marked as internal transfer and excluded from income/expenses.</p><div className="bank-match-summary"><span>This row {formatMoney(getBankLineAmount(line))}</span><span>{line.moneyIn > 0 ? "Money in" : "Money out"}</span><strong>Same day or 1 day apart</strong></div><label>Matching bank row<select value={bankLineSelectedPairs[line.id] || ""} onChange={(event) => setBankLineSelectedPairs((current) => ({ ...current, [line.id]: event.target.value }))}><option value="">Choose matching bank row</option>{pairCandidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{formatDate(candidate.transactionDate)} | {bankLineBankName(candidate)} | {candidate.moneyIn > 0 ? "Money in" : "Money out"} | {formatMoney(getBankLineAmount(candidate))} | Row {candidate.rowNumber}</option>)}</select></label>{pairCandidates.length > 0 && <div className="bank-linked-list">{pairCandidates.map((candidate) => <div key={candidate.id}><span>{formatDate(candidate.transactionDate)}</span><strong>{bankLineBankName(candidate)} | {candidate.description}</strong><em>{formatMoney(getBankLineAmount(candidate))}</em></div>)}</div>}<div className="csv-import-actions"><button className="button primary" disabled={!selectedPair || saving} onClick={() => selectedPair && onPairInternalTransferLine(line, selectedPair)}>Pair selected rows</button>{!pairCandidates.length && <span>No exact opposite row found within 1 day. Import the other bank statement first, or ignore manually.</span>}</div></section></td></tr>}
-          {action === "new" && line.matchStatus === "unmatched" && !inProgress && <tr className="bank-line-detail-row"><td colSpan={6}><section className="posting-preview bank-line-action-panel"><h3>Send to in progress</h3><p>Choose which bookkeeping section should finish this bank row. The row will appear on that page, separate from the transaction ledger, until you save the final entry.</p><div className="accounting-two-cols"><label>Bookkeeping section<select value={form.businessEvent} onChange={(event) => onBankStatementMatchFormChange(line.id, { businessEvent: event.target.value, accountName: "" })}><option value="expense">Expenses</option><option value="inventory_purchase">Inventory</option><option value="asset_purchase">Assets</option><option value="marketing_expense">Marketing</option><option value="operating_cost">Operating cost</option><option value="other_income">Other income</option><option value="payment_processor_paid">Payment processor</option><option value="internal_transfer">Transfer within accounts</option><option value="ignore">Ignore</option></select></label><label>{form.businessEvent === "payment_processor_paid" ? "Processor" : "Suggested account"}<select value={selectedFormAccount} disabled={form.businessEvent === "ignore"} onChange={(event) => onBankStatementMatchFormChange(line.id, { accountName: event.target.value })}>{options.map((option) => <option key={option} value={option}>{option}</option>)}</select></label></div><label>Notes<input value={form.notes} onChange={(event) => onBankStatementMatchFormChange(line.id, { notes: event.target.value })} placeholder="Optional note" /></label><button className="button primary" disabled={saving} onClick={() => onStageBankStatementLine(line)}>{form.businessEvent === "internal_transfer" ? "Pair internal transfer" : "Move to in progress"}</button></section></td></tr>}
+          {action === "new" && line.matchStatus === "unmatched" && !inProgress && <tr className="bank-line-detail-row"><td colSpan={6}><section className="posting-preview bank-line-action-panel"><h3>Send to in progress</h3><p>Choose which bookkeeping section should finish this bank row. The row will appear on that page, separate from the transaction ledger, until you save the final entry.</p><div className="accounting-two-cols"><label>Bookkeeping section<select value={form.businessEvent} onChange={(event) => onBankStatementMatchFormChange(line.id, { businessEvent: event.target.value, accountName: "" })}><option value="expense">Expenses</option><option value="inventory_purchase">Inventory</option><option value="asset_purchase">Assets</option><option value="marketing_expense">Marketing</option><option value="operating_cost">Operating cost</option><option value="other_income">Other income</option><option value="owner_contribution">Owner capital</option><option value="owner_drawings">Owner drawings</option><option value="payment_processor_paid">Payment processor</option><option value="internal_transfer">Transfer within accounts</option><option value="ignore">Ignore</option></select></label><label>{form.businessEvent === "payment_processor_paid" ? "Processor" : "Suggested account"}<select value={selectedFormAccount} disabled={form.businessEvent === "ignore"} onChange={(event) => onBankStatementMatchFormChange(line.id, { accountName: event.target.value })}>{options.map((option) => <option key={option} value={option}>{option}</option>)}</select></label></div><label>Notes<input value={form.notes} onChange={(event) => onBankStatementMatchFormChange(line.id, { notes: event.target.value })} placeholder="Optional note" /></label><button className="button primary" disabled={saving} onClick={() => onStageBankStatementLine(line)}>{form.businessEvent === "internal_transfer" ? "Pair internal transfer" : "Move to in progress"}</button></section></td></tr>}
           </Fragment>;
         })}</tbody></table>{!shownBankStatementLines.length && <div className="empty"><strong>No {selectedBankStatementSectionLabel.toLowerCase()} rows yet</strong><p>{bankStatementLines.length ? "Rows will move here when you mark or pair them." : "Drop a PDF or CSV statement to start matching transactions from your bank."}</p></div>}</div>
       </section>
@@ -5803,6 +5848,59 @@ function AccountingWorkspacePage({
     </section>
   </section>;
 
+  if (view === "accounting_owner_equity") {
+    const ownerEvent = transactionForm.businessEvent === "owner_drawings" ? "owner_drawings" : "owner_contribution";
+    const ownerTransactions = transactions
+      .filter((transaction) => transaction.businessEvent === "owner_contribution" || transaction.businessEvent === "owner_drawings" || (transaction.businessEvent === "payment_processor_paid" && ["Owner's Equity", "Drawings", "Owner Capital", "Owner Drawings"].includes(transaction.accountName)))
+      .sort((a, b) => dateKey(a.transactionDate).localeCompare(dateKey(b.transactionDate)) || a.createdAt.localeCompare(b.createdAt));
+    const ownerCapitalTotal = ownerTransactions
+      .filter((transaction) => transaction.businessEvent === "owner_contribution" || ["Owner's Equity", "Owner Capital"].includes(transaction.accountName))
+      .reduce((total, transaction) => total + transaction.amount, 0);
+    const ownerDrawingsTotal = ownerTransactions
+      .filter((transaction) => transaction.businessEvent === "owner_drawings" || ["Drawings", "Owner Drawings"].includes(transaction.accountName))
+      .reduce((total, transaction) => total + transaction.amount, 0);
+    const ownerInProgressRows = bankStatementInProgressLines
+      .filter((line) => ["owner_contribution", "owner_drawings"].includes(bankLineStagedEvent(line)))
+      .sort((a, b) => dateKey(a.transactionDate).localeCompare(dateKey(b.transactionDate)) || a.rowNumber - b.rowNumber);
+    const ownerAmount = Number(transactionForm.amount) || 0;
+    return <section className="accounting-workspace">
+      <div className="accounting-hero card"><div><p>OWNER'S EQUITY</p><h2>Capital and drawings</h2><span>Record money you put into the business, and money you take out from the business. These go to equity, not sales or expenses.</span></div><div className="accounting-status-pill">{formatMoney(ownerCapitalTotal - ownerDrawingsTotal)}</div></div>
+      <section className="accounting-summary-grid">
+        <MoneyStat label="Owner capital put in" value={ownerCapitalTotal} tone="sales" />
+        <MoneyStat label="Owner drawings taken out" value={ownerDrawingsTotal} tone="fees" />
+        <MoneyStat label="Net owner equity movement" value={ownerCapitalTotal - ownerDrawingsTotal} tone={ownerCapitalTotal - ownerDrawingsTotal < 0 ? "fees" : "collected"} />
+      </section>
+      <BankStatementInProgressPanel rows={ownerInProgressRows} onUse={onUseBankStatementLine} />
+      <section className="accounting-form-grid">
+        <div className="accounting-form card">
+          <h3>New owner's equity record</h3>
+          <label>Date<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label>
+          <label>Transaction type<select value={ownerEvent} onChange={(input) => onTransactionFormChange({ businessEvent: input.target.value as AccountingTransactionForm["businessEvent"], categoryId: "", accountName: "", paymentStatus: "paid_in_full" })}><option value="owner_contribution">Capital put into business</option><option value="owner_drawings">Money taken from business</option></select></label>
+          <label>{ownerEvent === "owner_drawings" ? "Paid from" : "Money received into"}<select value={transactionForm.paymentMethod} onChange={(input) => onTransactionFormChange({ paymentMethod: input.target.value })}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>
+          <label>{ownerEvent === "owner_drawings" ? "Amount taken out" : "Capital amount"}<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onTransactionFormChange({ amount: input.target.value })} /></label>
+          <label>Description<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder={ownerEvent === "owner_drawings" ? "Example: Owner withdrawal for personal use" : "Example: Owner capital injection"} /></label>
+          <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title="Source document" description="Choose or drop transfer proof, receipt, bank slip, or image" selectedName={transactionFile?.name} onFile={onTransactionFileChange} />
+          <label>Notes<textarea value={transactionForm.notes} onChange={(event) => onTransactionFormChange({ notes: event.target.value })} /></label>
+          <section className="posting-preview">
+            <h3>Posting preview</h3>
+            {ownerEvent === "owner_drawings" ? <>
+              <div><span>Debit Owner Drawings</span><strong>{formatMoney(ownerAmount)}</strong></div>
+              <div><span>Credit {transactionForm.paymentMethod || "Bank Account"}</span><strong>{formatMoney(ownerAmount)}</strong></div>
+            </> : <>
+              <div><span>Debit {transactionForm.paymentMethod || "Bank Account"}</span><strong>{formatMoney(ownerAmount)}</strong></div>
+              <div><span>Credit Owner Capital</span><strong>{formatMoney(ownerAmount)}</strong></div>
+            </>}
+          </section>
+          <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? "Saving..." : "Save owner's equity record"}</button>
+        </div>
+        <div>
+          {transactionEditPanel}
+          <AccountingTransactionsTable transactions={ownerTransactions} ledgerEntries={ledgerEntries} documents={transactionDocuments} bankStatementLines={bankStatementLines} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} onBulkPaymentMethodChange={onBulkTransactionPaymentMethodChange} />
+        </div>
+      </section>
+    </section>;
+  }
+
   if (categoryEvent) {
     const isInventory = categoryEvent.value === "inventory_purchase";
     const isAsset = categoryEvent.value === "asset_purchase";
@@ -5816,8 +5914,8 @@ function AccountingWorkspacePage({
     const processorPayoutIds = new Set(processorPayouts.map((transaction) => transaction.id));
     const stripePaid = processorPayouts.filter((transaction) => transaction.accountName === "Stripe").reduce((total, transaction) => total + transaction.amount, 0);
     const xenditPaid = processorPayouts.filter((transaction) => transaction.accountName === "Xendit").reduce((total, transaction) => total + transaction.amount, 0);
-    const ownerEquity = processorPayouts.filter((transaction) => transaction.accountName === "Owner's Equity").reduce((total, transaction) => total + transaction.amount, 0);
-    const drawings = processorPayouts.filter((transaction) => transaction.accountName === "Drawings").reduce((total, transaction) => total + transaction.amount, 0);
+    const ownerEquity = transactions.filter((transaction) => transaction.businessEvent === "owner_contribution" || ["Owner's Equity", "Owner Capital"].includes(transaction.accountName)).reduce((total, transaction) => total + transaction.amount, 0);
+    const drawings = transactions.filter((transaction) => transaction.businessEvent === "owner_drawings" || ["Drawings", "Owner Drawings"].includes(transaction.accountName)).reduce((total, transaction) => total + transaction.amount, 0);
     const bankLedgerNet = ledgerEntries
       .filter((entry) => processorPayoutIds.has(entry.transactionId) && entry.accountName === "Bank Account")
       .reduce((total, entry) => total + (entry.entryType === "debit" ? entry.amount : -entry.amount), 0);
@@ -6773,11 +6871,12 @@ function FormalAccountingWorkspacePage({
     { title: "Assets", reportSections: [bookkeepingSectionConfigs.asset.reportSection], names: [], eventValues: ["asset_purchase"] },
     { title: "Marketing", reportSections: [bookkeepingSectionConfigs.marketing.reportSection], names: [], eventValues: ["marketing_expense"] },
     { title: "Cash", reportSections: [], names: [], eventValues: ["payment_processor_paid"] },
+    { title: "Equity", reportSections: ["Equity"], names: ["Owner Capital", "Owner Drawings"], eventValues: ["owner_contribution", "owner_drawings"] },
     { title: "Sales", reportSections: ["Revenue"], names: [] },
   ];
   const cashStatementAccountNames = ["Bank Account", "Shopee Pay"];
-  const cashAccountNames = new Set(["Bank Account", "Shopee Pay", "Payment Processors", "Stripe", "Xendit", "TikTok", "Owner Capital", "Owner Drawings"]);
-  const automaticTAccountNames = new Set(["Bank Account", "Shopee Pay", "Stripe", "Xendit", "TikTok", "Owner's Equity", "Drawings", "Sales", "Payment Processing Fees", prepaidOperatingCostAccountName, "Operating Expense", "Accounts Payable", ...cogsAccounts]);
+  const cashAccountNames = new Set(["Bank Account", "Shopee Pay", "Payment Processors", "Stripe", "Xendit", "TikTok"]);
+  const automaticTAccountNames = new Set(["Bank Account", "Shopee Pay", "Stripe", "Xendit", "TikTok", "Owner Capital", "Owner Drawings", "Owner's Equity", "Drawings", "Sales", "Payment Processing Fees", prepaidOperatingCostAccountName, "Operating Expense", "Accounts Payable", ...cogsAccounts]);
   const categoryBelongsToSection = (category: AccountingCategory, section: typeof tAccountSections[number]) => {
     if (!category.active) return false;
     const parentName = category.parentId ? categoryName(category.parentId) : "";
@@ -6786,6 +6885,7 @@ function FormalAccountingWorkspacePage({
     if (section.title === "Marketing") return category.reportSection === bookkeepingSectionConfigs.marketing.reportSection || category.reportSection === "Marketing Expenses";
     if (section.title === "Assets") return category.accountType === "asset" && !cashAccountNames.has(category.name) && !cashAccountNames.has(parentName) && category.name !== "Inventory" && parentName !== "Inventory";
     if (section.title === "Expense") return category.accountType === "expense" && category.reportSection !== "Marketing Expenses" && category.reportSection !== bookkeepingSectionConfigs.marketing.reportSection;
+    if (section.title === "Equity") return category.accountType === "equity" || category.reportSection === "Equity";
     if (section.title === "Sales") return category.accountType === "revenue" || category.reportSection === "Revenue";
     return section.reportSections.includes(category.reportSection);
   };
@@ -6805,7 +6905,8 @@ function FormalAccountingWorkspacePage({
       const category = categories.find((item) => item.id === entry.accountId);
       if (category && categoryBelongsToSection(category, section)) allNames.add(entry.accountName);
       if (automaticTAccountNames.has(entry.accountName)) {
-        if (section.title === "Cash" && ["Bank Account", "Shopee Pay", "Stripe", "Xendit", "TikTok", "Owner's Equity", "Drawings"].includes(entry.accountName)) allNames.add(entry.accountName);
+        if (section.title === "Cash" && ["Bank Account", "Shopee Pay", "Stripe", "Xendit", "TikTok"].includes(entry.accountName)) allNames.add(entry.accountName);
+        if (section.title === "Equity" && ["Owner Capital", "Owner Drawings", "Owner's Equity", "Drawings"].includes(entry.accountName)) allNames.add(displayAccountingAccountName(entry.accountName));
         if (section.title === "Sales" && entry.accountName === "Sales") allNames.add(entry.accountName);
         if (section.title === "Expense" && (entry.accountName === "Payment Processing Fees" || entry.accountName === "Operating Expense" || cogsAccounts.includes(entry.accountName as (typeof cogsAccounts)[number]))) allNames.add(entry.accountName);
         if (section.title === "Assets" && entry.accountName === prepaidOperatingCostAccountName) allNames.add(entry.accountName);
@@ -6981,7 +7082,8 @@ function FormalAccountingWorkspacePage({
   const assetBalances = balancesForNames(sectionAccountNames(tAccountSections[2]));
   const marketingBalances = balancesForNames(sectionAccountNames(tAccountSections[3]));
   const cashBalances = balancesForNames(sectionAccountNames(tAccountSections[4]));
-  const salesRevenueRows = balancesForNames(sectionAccountNames(tAccountSections[5]));
+  const ownerEquityBalances = balancesForNames(sectionAccountNames(tAccountSections[5]));
+  const salesRevenueRows = balancesForNames(sectionAccountNames(tAccountSections[6]));
   const salesRevenue = salesRevenueRows.reduce((total, item) => total + Math.abs(item.balance), 0);
   const cogsAccountNames = [...new Set([
     ...cogsAccounts,
@@ -6996,8 +7098,8 @@ function FormalAccountingWorkspacePage({
   const balanceSheetCashBalances = cashBalances.filter((item) => item.name !== "Payment Processing Fees");
   const assetReportRows = [...balanceSheetCashBalances, ...inventoryBalances, ...assetBalances];
   const totalAssets = assetReportRows.reduce((total, item) => total + item.balance, 0);
-  const equityRows = balancesForNames(["Owner's Equity", "Drawings"]);
-  const totalEquity = equityRows.reduce((total, item) => total + (item.name === "Drawings" ? -Math.abs(item.balance) : Math.abs(item.balance)), 0) + netProfit;
+  const equityRows = [...ownerEquityBalances, ...balancesForNames(["Owner's Equity", "Drawings"]).filter((item) => !ownerEquityBalances.some((row) => row.name === item.name))];
+  const totalEquity = equityRows.reduce((total, item) => total + (item.name.includes("Drawing") ? -Math.abs(item.balance) : Math.abs(item.balance)), 0) + netProfit;
   const financialReportLabels: Record<FinancialReportType, string> = {
     income_statement: "Income Statement",
     balance_sheet: "Balance Sheet",
@@ -7080,7 +7182,7 @@ function FormalAccountingWorkspacePage({
         <div className="statement-total"><span>Total assets</span><strong>{formatMoney(totalAssets)}</strong></div>
         <div className="statement-section-title">Equity</div>
         <div className="statement-row"><span>Current year earnings</span><strong>{formatMoney(netProfit)}</strong></div>
-        {equityRows.map((item) => <div className="statement-row" key={item.name}><span>{item.name}</span><strong>{formatMoney(item.name === "Drawings" ? -Math.abs(item.balance) : Math.abs(item.balance))}</strong></div>)}
+        {equityRows.map((item) => <div className="statement-row" key={item.name}><span>{item.name}</span><strong>{formatMoney(item.name.includes("Drawing") ? -Math.abs(item.balance) : Math.abs(item.balance))}</strong></div>)}
         <div className="statement-total"><span>Total equity</span><strong>{formatMoney(totalEquity)}</strong></div>
         <div className="statement-grand-total"><span>Total equity and liabilities</span><strong>{formatMoney(totalEquity)}</strong></div>
       </div>}
