@@ -93,5 +93,17 @@
 .bank-statement-card .bank-select-all{display:inline-flex;gap:7px;align-items:center;margin-right:4px;color:#243248;font-size:12px;font-weight:800}
 .bank-statement-card .bank-bulk-actions .view-button{padding:7px 11px}
 .bank-statement-card .bank-bulk-actions .view-button:disabled{opacity:.45;cursor:not-allowed}
+.bank-statement-card .bank-statement-table{table-layout:fixed;min-width:1480px;width:100%;white-space:normal}
+.bank-statement-card .bank-statement-table th,.bank-statement-card .bank-statement-table td{vertical-align:middle}
 .bank-statement-card .bank-statement-table th:first-child,.bank-statement-card .bank-statement-table td:first-child{width:42px;text-align:center}
+.bank-statement-card .bank-statement-table th:nth-child(2),.bank-statement-card .bank-statement-table td:nth-child(2){width:105px}
+.bank-statement-card .bank-statement-table th:nth-child(3),.bank-statement-card .bank-statement-table td:nth-child(3){width:105px}
+.bank-statement-card .bank-statement-table th:nth-child(4),.bank-statement-card .bank-statement-table td:nth-child(4){width:130px}
+.bank-statement-card .bank-statement-table th:nth-child(5),.bank-statement-card .bank-statement-table td:nth-child(5){width:360px;white-space:normal;overflow-wrap:anywhere;word-break:break-word;line-height:1.35}
+.bank-statement-card .bank-statement-table th:nth-child(6),.bank-statement-card .bank-statement-table td:nth-child(6){width:150px}
+.bank-statement-card .bank-statement-table th:nth-child(7),.bank-statement-card .bank-statement-table td:nth-child(7){width:560px}
+.bank-statement-card .bank-statement-table td:nth-child(5) strong{display:block;white-space:normal;overflow-wrap:anywhere}
+.bank-statement-card .bank-statement-table td:nth-child(5) small{display:block;margin-top:4px;line-height:1.35;white-space:normal;overflow-wrap:anywhere}
+.bank-statement-card .bank-amount{display:inline-flex;align-items:center;justify-content:center;min-width:92px;white-space:nowrap}
+.bank-statement-card .bank-match-counter{max-width:100%;margin-top:8px}
 .bank-statement-card .bank-statement-table input[type="checkbox"]{width:14px;height:14px;accent-color:#1769e0}
