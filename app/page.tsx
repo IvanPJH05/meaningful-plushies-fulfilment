@@ -95,7 +95,7 @@ type FeeMetric = "processingFees" | "shopifyFees" | "totalFees";
 type FinancialReportType = "income_statement" | "balance_sheet" | "cash_summary";
 type AccountingPeriodMode = "this_month" | "lifetime" | "custom";
 type CashFlowActivity = "operating" | "investing" | "financing";
-type BankStatementSection = "unmatched" | "in_progress" | "shopee" | "accounts" | "payment_processors" | "sales" | "transfers";
+type BankStatementSection = "unmatched" | "in_progress" | "shopee" | "accounts" | "payment_processors" | "sales" | "transfers" | "ignored";
 type TikTokCertificatePayload = ReturnType<typeof tikTokCertificateJson>;
 type TikTokDetailFormEntry = {
   id: string;
@@ -5193,6 +5193,7 @@ function bankLineSection(line: AccountingBankStatementLine): BankStatementSectio
   if (stagedEvent === "bank_transfer_sales_recorded") return "sales";
   if (stagedEvent === "internal_transfer") return "transfers";
   if (stagedEvent === "payment_processor_paid") return "payment_processors";
+  if (line.matchStatus === "ignored") return "ignored";
   if (line.matchStatus === "unmatched") return "unmatched";
   return "accounts";
 }
@@ -5427,7 +5428,7 @@ function AccountingWorkspacePage({
   const bankStatementUnmatched = bankStatementLines.filter((line) => bankLineSection(line) === "unmatched");
   const bankStatementInProgressLines = bankStatementLines.filter((line) => bankLineWorkflow(line) === "in_progress" && line.matchStatus === "unmatched");
   const bankStatementMatched = bankStatementLines.filter((line) => line.matchStatus === "matched");
-  const bankStatementIgnored = bankStatementLines.filter((line) => line.matchStatus === "ignored");
+  const bankStatementIgnored = bankStatementLines.filter((line) => bankLineSection(line) === "ignored");
   const [bankLineActions, setBankLineActions] = useState<Record<string, "match" | "new" | "pair" | "">>({});
   const [bankLineSelectedTransactions, setBankLineSelectedTransactions] = useState<Record<string, string>>({});
   const [bankLineSelectedPairs, setBankLineSelectedPairs] = useState<Record<string, string>>({});
@@ -5461,6 +5462,7 @@ function AccountingWorkspacePage({
     { value: "payment_processors", label: "Payment processor", lines: bankStatementPaymentProcessorLines },
     { value: "sales", label: "Sales", lines: bankStatementSalesLines },
     { value: "transfers", label: "Transfer within accounts", lines: bankStatementTransferLines },
+    { value: "ignored", label: "Ignored", lines: bankStatementIgnored },
   ];
   const shownBankStatementLines = bankStatementSections.find((section) => section.value === selectedBankStatementSection)?.lines ?? [];
   const selectedBankStatementSectionLabel = bankStatementSections.find((section) => section.value === selectedBankStatementSection)?.label ?? "Unmatched";
