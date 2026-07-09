@@ -3804,33 +3804,67 @@ export default function Home() {
     setNotice("Marked as bank-transfer sales already recorded.");
   }
 
-  async function linkBankStatementLineToTransaction(line: AccountingBankStatementLine, transaction: AccountingTransaction) {
-    if (!transaction) return setNotice("Choose a transaction to match.");
-    const existingNote = bankStatementNoteValue(line).trim();
-    const currentIds = bankStatementMatchedTransactionIds(line);
-    if (currentIds.includes(transaction.id)) return setNotice("This transaction is already linked to this bank row.");
-    const remainingBefore = bankStatementRemainingAmount(line);
-    if (transaction.amount - remainingBefore > 0.01) return setNotice(`This transaction is more than the amount left. ${formatMoney(remainingBefore)} is left to match.`);
-    const nextIds = [...currentIds, transaction.id];
-    const baseLine = bankStatementLineWithMatches(line, nextIds);
-    const remaining = bankStatementRemainingAmount(baseLine);
-    const matchNote = `Matched to existing transaction: ${transaction.description}`;
-    const updatedLine: AccountingBankStatementLine = {
-      ...baseLine,
-      suggestedEvent: transaction.businessEvent,
-      suggestedAccount: transaction.accountName,
-      notes: existingNote && !existingNote.includes(matchNote) ? `${existingNote} | ${matchNote}` : existingNote || matchNote,
+  async function updateAccountingTransactionAmountForBankMatch(transaction: AccountingTransaction, amount: number) {
+    const now = new Date().toISOString();
+    const oldEntries = accountingLedgerEntries.filter((entry) => entry.transactionId === transaction.id);
+    const scale = transaction.amount > 0 ? amount / transaction.amount : 1;
+    const updatedEntries = oldEntries.map((entry) => ({ ...entry, amount: Math.max(0, entry.amount * scale) }));
+    const debit = updatedEntries.length ? updatedEntries.filter((entry) => entry.entryType === "debit").reduce((total, entry) => total + entry.amount, 0) : amount;
+    const credit = updatedEntries.length ? updatedEntries.filter((entry) => entry.entryType === "credit").reduce((total, entry) => total + entry.amount, 0) : amount;
+    const updatedTransaction: AccountingTransaction = {
+      ...transaction,
+      amount,
+      debit,
+      credit,
+      depositAmount: transaction.paymentStatus === "paid_in_full" ? amount : Math.min(transaction.depositAmount || 0, amount),
+      updatedAt: now,
     };
-    await saveAccountingBankStatementLine(updatedLine);
-    setBankStatementLines((current) => current.map((item) => item.id === line.id ? updatedLine : item));
-    await insertSharedActivity({
-      id: crypto.randomUUID(),
-      action: "Bank statement line matched to existing transaction",
-      detail: `${line.description} matched to ${transaction.description} (${formatMoney(transaction.amount)}). ${formatMoney(remaining)} left.`,
-      actor: session?.displayName ?? "Admin",
-      createdAt: new Date().toISOString(),
-    });
-    setNotice(remaining > 0.01 ? `Transaction linked. ${formatMoney(remaining)} left to match.` : "Bank line fully matched.");
+    await saveAccountingTransaction(updatedTransaction);
+    if (updatedEntries.length) await saveAccountingLedgerEntries(transaction.id, updatedEntries);
+    setAccountingTransactions((current) => current.map((item) => item.id === transaction.id ? updatedTransaction : item));
+    if (updatedEntries.length) setAccountingLedgerEntries((current) => [...current.filter((entry) => entry.transactionId !== transaction.id), ...updatedEntries]);
+    return updatedTransaction;
+  }
+
+  async function linkBankStatementLineToTransaction(line: AccountingBankStatementLine, transaction: AccountingTransaction, correctedAmount?: number) {
+    if (!transaction) return setNotice("Choose a transaction to match.");
+    const nextAmount = correctedAmount === undefined || Number.isNaN(correctedAmount) ? transaction.amount : correctedAmount;
+    if (!Number.isFinite(nextAmount) || nextAmount <= 0) return setNotice("Enter a valid transaction amount.");
+    setSavingAccounting(true);
+    try {
+      const amountChanged = Math.abs(nextAmount - transaction.amount) >= 0.005;
+      const transactionToLink = amountChanged ? await updateAccountingTransactionAmountForBankMatch(transaction, nextAmount) : transaction;
+      const existingNote = bankStatementNoteValue(line).trim();
+      const currentIds = bankStatementMatchedTransactionIds(line);
+      if (currentIds.includes(transactionToLink.id)) return setNotice("This transaction is already linked to this bank row.");
+      const transactionList = accountingTransactions.map((item) => item.id === transactionToLink.id ? transactionToLink : item);
+      const remainingBefore = bankStatementRemainingAmount(line, transactionList);
+      if (transactionToLink.amount - remainingBefore > 0.01) return setNotice(`This transaction is more than the amount left. ${formatMoney(remainingBefore)} is left to match.`);
+      const nextIds = [...currentIds, transactionToLink.id];
+      const baseLine = bankStatementLineWithMatches(line, nextIds, transactionList);
+      const remaining = bankStatementRemainingAmount(baseLine, transactionList);
+      const matchNote = `Matched to existing transaction: ${transactionToLink.description}`;
+      const updatedLine: AccountingBankStatementLine = {
+        ...baseLine,
+        suggestedEvent: transactionToLink.businessEvent,
+        suggestedAccount: transactionToLink.accountName,
+        notes: existingNote && !existingNote.includes(matchNote) ? `${existingNote} | ${matchNote}` : existingNote || matchNote,
+      };
+      await saveAccountingBankStatementLine(updatedLine);
+      setBankStatementLines((current) => current.map((item) => item.id === line.id ? updatedLine : item));
+      await insertSharedActivity({
+        id: crypto.randomUUID(),
+        action: amountChanged ? "Bank transaction amount corrected and matched" : "Bank statement line matched to existing transaction",
+        detail: `${line.description} matched to ${transactionToLink.description} (${formatMoney(transactionToLink.amount)}). ${formatMoney(remaining)} left.`,
+        actor: session?.displayName ?? "Admin",
+        createdAt: new Date().toISOString(),
+      });
+      setNotice(remaining > 0.01 ? `Transaction linked. ${formatMoney(remaining)} left to match.` : amountChanged ? "Amount updated and bank line fully matched." : "Bank line fully matched.");
+    } catch (error) {
+      setNotice(readableError(error, "Could not update and match this transaction."));
+    } finally {
+      setSavingAccounting(false);
+    }
   }
 
   async function removeBankStatementLine(line: AccountingBankStatementLine) {
@@ -5347,7 +5381,7 @@ function AccountingWorkspacePage({
   onStageBankStatementLine: (line: AccountingBankStatementLine, paymentMethod?: string, formOverride?: Partial<BankStatementMatchForm>) => void;
   onUseBankStatementLine: (line: AccountingBankStatementLine) => void;
   onPairInternalTransferLine: (line: AccountingBankStatementLine, selectedPair?: AccountingBankStatementLine) => void;
-  onLinkBankStatementLine: (line: AccountingBankStatementLine, transaction: AccountingTransaction) => void;
+  onLinkBankStatementLine: (line: AccountingBankStatementLine, transaction: AccountingTransaction, correctedAmount?: number) => void;
   onMarkBankStatementSales: (line: AccountingBankStatementLine) => void;
   onIgnoreBankStatementLine: (line: AccountingBankStatementLine) => void;
   onDeleteBankStatementLine: (line: AccountingBankStatementLine) => void;
@@ -5431,6 +5465,7 @@ function AccountingWorkspacePage({
   const bankStatementIgnored = bankStatementLines.filter((line) => bankLineSection(line) === "ignored");
   const [bankLineActions, setBankLineActions] = useState<Record<string, "match" | "new" | "pair" | "note" | "">>({});
   const [bankLineSelectedTransactions, setBankLineSelectedTransactions] = useState<Record<string, string>>({});
+  const [bankLineMatchAmounts, setBankLineMatchAmounts] = useState<Record<string, string>>({});
   const [bankLineSelectedPairs, setBankLineSelectedPairs] = useState<Record<string, string>>({});
   const [selectedBankStatementSection, setSelectedBankStatementSection] = useState<BankStatementSection>("unmatched");
   const [selectedBankStatementMonth, setSelectedBankStatementMonth] = useState("all");
@@ -5753,6 +5788,7 @@ function AccountingWorkspacePage({
           const pairCandidates = candidateInternalTransfersForBankLine(line);
           const selectedPair = bankStatementLines.find((candidate) => candidate.id === bankLineSelectedPairs[line.id]);
           const selectedTransaction = transactions.find((transaction) => transaction.id === bankLineSelectedTransactions[line.id]);
+          const selectedMatchAmount = bankLineMatchAmounts[line.id] ?? (selectedTransaction ? String(selectedTransaction.amount) : "");
           const noteValue = bankStatementNoteDrafts[line.id] ?? line.notes ?? "";
           const noteChanged = noteValue !== (line.notes ?? "");
           const matchedTransactionIds = getBankMatchedTransactionIds(line);
@@ -5775,7 +5811,7 @@ function AccountingWorkspacePage({
             <td><div className="bank-row-actions">{inProgress ? <button className="view-button" disabled={saving} onClick={() => onUseBankStatementLine(line)}>Use row</button> : <><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => setBankLineActions((current) => ({ ...current, [line.id]: current[line.id] === "match" ? "" : "match" }))}>Match</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => setBankLineActions((current) => ({ ...current, [line.id]: current[line.id] === "new" ? "" : "new" }))}>New</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched" || line.moneyOut <= 0} onClick={() => onMatchBankStatementLine(line, { businessEvent: "marketing_expense", accountName: quickMarketingAccountForLine(line), notes: noteValue })}>Ads</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched" || line.moneyOut <= 0} onClick={() => onMatchBankStatementLine(line, { businessEvent: "owner_drawings", accountName: "Owner Drawings", notes: noteValue })}>Drawings</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => onStageBankStatementLine(line, "Shopee Pay")}>Shopee</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => setBankLineActions((current) => ({ ...current, [line.id]: current[line.id] === "pair" ? "" : "pair" }))}>Pair</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched" || line.moneyIn <= 0} onClick={() => onMarkBankStatementSales(line)}>Sales</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => onIgnoreBankStatementLine(line)}>Ignore</button></>}<button className="view-button" disabled={saving} onClick={() => setBankLineActions((current) => ({ ...current, [line.id]: current[line.id] === "note" ? "" : "note" }))}>Note</button><button className="view-button danger-text" disabled={saving} onClick={() => onDeleteBankStatementLine(line)}>Remove</button></div>{hasLinkedTransactions && <div className={`bank-match-counter ${remainingAmount > 0.01 ? "partial" : "balanced"}`}><span>{formatMoney(matchedTotal)} matched</span><strong>{remainingAmount > 0.01 ? `${formatMoney(remainingAmount)} left` : "Balanced"}</strong></div>}</td>
           </tr>
           {action === "note" && <tr className="bank-line-detail-row"><td colSpan={6}><section className="posting-preview bank-line-action-panel bank-line-note-panel"><h3>Bank row note</h3><p>Add a reminder or explanation for this statement row.</p><div className="bank-line-note"><textarea value={noteValue} onChange={(event) => onBankStatementNoteChange(line.id, event.target.value)} placeholder="Add note for this bank row..." /><button className="button primary" disabled={!noteChanged || saving} onClick={() => onSaveBankStatementNote(line)}>Save note</button></div></section></td></tr>}
-          {action === "match" && line.matchStatus === "unmatched" && <tr className="bank-line-detail-row"><td colSpan={6}><section className="posting-preview bank-line-action-panel"><h3>Match existing transaction</h3><p>Showing unlinked bookkeeping transactions within +/- 3 days of this bank row. You can link more than one transaction until the bank amount is balanced.</p><div className="bank-match-summary"><span>Bank amount {formatMoney(getBankLineAmount(line))}</span><span>Matched {formatMoney(matchedTotal)}</span><strong>{remainingAmount > 0.01 ? `${formatMoney(remainingAmount)} left` : "Balanced"}</strong></div>{matchedTransactions.length > 0 && <div className="bank-linked-list">{matchedTransactions.map((transaction) => <div key={transaction.id}><span>{formatDate(transaction.transactionDate)}</span><strong>{transaction.description}</strong><em>{formatMoney(transaction.amount)}</em></div>)}</div>}<label>Existing transaction<select value={bankLineSelectedTransactions[line.id] || ""} onChange={(event) => setBankLineSelectedTransactions((current) => ({ ...current, [line.id]: event.target.value }))}><option value="">Choose transaction</option>{candidates.map((transaction) => <option key={transaction.id} value={transaction.id}>{formatDate(transaction.transactionDate)} | {transaction.description} | {displayAccountingAccountName(transaction.accountName)} | {formatMoney(transaction.amount)}</option>)}</select></label><div className="csv-import-actions"><button className="button primary" disabled={!selectedTransaction || saving} onClick={() => selectedTransaction && onLinkBankStatementLine(line, selectedTransaction)}>Link selected transaction</button>{!candidates.length && <span>No unlinked transactions found within +/- 3 days.</span>}</div></section></td></tr>}
+          {action === "match" && line.matchStatus === "unmatched" && <tr className="bank-line-detail-row"><td colSpan={6}><section className="posting-preview bank-line-action-panel"><h3>Match existing transaction</h3><p>Showing unlinked bookkeeping transactions within +/- 3 days of this bank row. You can correct the selected transaction amount before matching.</p><div className="bank-match-summary"><span>Bank amount {formatMoney(getBankLineAmount(line))}</span><span>Matched {formatMoney(matchedTotal)}</span><strong>{remainingAmount > 0.01 ? `${formatMoney(remainingAmount)} left` : "Balanced"}</strong></div>{matchedTransactions.length > 0 && <div className="bank-linked-list">{matchedTransactions.map((transaction) => <div key={transaction.id}><span>{formatDate(transaction.transactionDate)}</span><strong>{transaction.description}</strong><em>{formatMoney(transaction.amount)}</em></div>)}</div>}<div className="bank-match-edit-grid"><label>Existing transaction<select value={bankLineSelectedTransactions[line.id] || ""} onChange={(event) => { const transactionId = event.target.value; const nextTransaction = transactions.find((item) => item.id === transactionId); setBankLineSelectedTransactions((current) => ({ ...current, [line.id]: transactionId })); setBankLineMatchAmounts((current) => ({ ...current, [line.id]: nextTransaction ? String(nextTransaction.amount) : "" })); }}><option value="">Choose transaction</option>{candidates.map((transaction) => <option key={transaction.id} value={transaction.id}>{formatDate(transaction.transactionDate)} | {transaction.description} | {displayAccountingAccountName(transaction.accountName)} | {formatMoney(transaction.amount)}</option>)}</select></label><label>Amount to match / update<input type="number" min="0" step="0.01" value={selectedMatchAmount} disabled={!selectedTransaction} onChange={(event) => setBankLineMatchAmounts((current) => ({ ...current, [line.id]: event.target.value }))} placeholder={selectedTransaction ? String(selectedTransaction.amount) : "Choose transaction first"} /></label></div>{selectedTransaction && Math.abs((Number(selectedMatchAmount) || 0) - selectedTransaction.amount) >= 0.005 && <p className="bank-match-edit-note">This will update the selected transaction from {formatMoney(selectedTransaction.amount)} to {formatMoney(Number(selectedMatchAmount) || 0)} before matching.</p>}<div className="csv-import-actions"><button className="button primary" disabled={!selectedTransaction || saving || !(Number(selectedMatchAmount) > 0)} onClick={() => selectedTransaction && onLinkBankStatementLine(line, selectedTransaction, Number(selectedMatchAmount))}>Match and update amount</button>{!candidates.length && <span>No unlinked transactions found within +/- 3 days.</span>}</div></section></td></tr>}
           {action === "pair" && line.matchStatus === "unmatched" && <tr className="bank-line-detail-row"><td colSpan={6}><section className="posting-preview bank-line-action-panel"><h3>Pair internal bank transfer</h3><p>Choose the matching money-in or money-out row from another bank account. Both rows will be marked as internal transfer and excluded from income/expenses.</p><div className="bank-match-summary"><span>This row {formatMoney(getBankLineAmount(line))}</span><span>{line.moneyIn > 0 ? "Money in" : "Money out"}</span><strong>Same day or 1 day apart</strong></div><label>Matching bank row<select value={bankLineSelectedPairs[line.id] || ""} onChange={(event) => setBankLineSelectedPairs((current) => ({ ...current, [line.id]: event.target.value }))}><option value="">Choose matching bank row</option>{pairCandidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{formatDate(candidate.transactionDate)} | {bankLineBankName(candidate)} | {candidate.moneyIn > 0 ? "Money in" : "Money out"} | {formatMoney(getBankLineAmount(candidate))} | Row {candidate.rowNumber}</option>)}</select></label>{pairCandidates.length > 0 && <div className="bank-linked-list">{pairCandidates.map((candidate) => <div key={candidate.id}><span>{formatDate(candidate.transactionDate)}</span><strong>{bankLineBankName(candidate)} | {candidate.description}</strong><em>{formatMoney(getBankLineAmount(candidate))}</em></div>)}</div>}<div className="csv-import-actions"><button className="button primary" disabled={!selectedPair || saving} onClick={() => selectedPair && onPairInternalTransferLine(line, selectedPair)}>Pair selected rows</button>{!pairCandidates.length && <span>No exact opposite row found within 1 day. Import the other bank statement first, or ignore manually.</span>}</div></section></td></tr>}
           {action === "new" && line.matchStatus === "unmatched" && !inProgress && <tr className="bank-line-detail-row"><td colSpan={6}><section className="posting-preview bank-line-action-panel"><h3>Send to in progress</h3><p>Choose which bookkeeping section should finish this bank row. The row will appear on that page, separate from the transaction ledger, until you save the final entry.</p><div className="accounting-two-cols"><label>Bookkeeping section<select value={form.businessEvent} onChange={(event) => onBankStatementMatchFormChange(line.id, { businessEvent: event.target.value, accountName: "" })}><option value="expense">Expenses</option><option value="inventory_purchase">Inventory</option><option value="asset_purchase">Assets</option><option value="marketing_expense">Marketing</option><option value="operating_cost">Operating cost</option><option value="other_income">Other income</option><option value="owner_contribution">Owner capital</option><option value="owner_drawings">Owner drawings</option><option value="payment_processor_paid">Payment processor</option><option value="internal_transfer">Transfer within accounts</option><option value="ignore">Ignore</option></select></label><label>{form.businessEvent === "payment_processor_paid" ? "Processor" : "Suggested account"}<select value={selectedFormAccount} disabled={form.businessEvent === "ignore"} onChange={(event) => onBankStatementMatchFormChange(line.id, { accountName: event.target.value })}>{options.map((option) => <option key={option} value={option}>{option}</option>)}</select></label></div><label>Notes<input value={form.notes} onChange={(event) => onBankStatementMatchFormChange(line.id, { notes: event.target.value })} placeholder="Optional note" /></label><button className="button primary" disabled={saving} onClick={() => onStageBankStatementLine(line)}>{form.businessEvent === "internal_transfer" ? "Pair internal transfer" : "Move to in progress"}</button></section></td></tr>}
           </Fragment>;

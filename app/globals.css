@@ -80,3 +80,8 @@
 .bank-statement-card .bank-line-note-panel textarea{width:100%;min-height:90px;border:1px solid #cfdbea;border-radius:8px;background:#fff;color:#172033;padding:10px 12px;resize:vertical;line-height:1.45}
 .bank-statement-card .bank-line-note-panel .button{min-height:38px;white-space:nowrap}
 @media(max-width:760px){.bank-statement-card .bank-line-note-panel .bank-line-note{grid-template-columns:1fr}.bank-statement-card .bank-row-actions{min-width:0}}
+.bank-statement-card .bank-match-edit-grid{display:grid;grid-template-columns:minmax(280px,1fr) minmax(180px,240px);gap:12px;align-items:flex-end;margin-top:10px}
+.bank-statement-card .bank-match-edit-grid label{display:grid;gap:6px;color:#56657a;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em}
+.bank-statement-card .bank-match-edit-grid select,.bank-statement-card .bank-match-edit-grid input{height:38px;border:1px solid #cbd8e8;border-radius:8px;background:#fff;color:#172033;padding:0 12px;font-weight:700;text-transform:none;letter-spacing:0}
+.bank-statement-card .bank-match-edit-note{margin:10px 0 0;color:#24558f;background:#eaf3ff;border:1px solid #c7dcfa;border-radius:8px;padding:9px 11px;font-size:12px}
+@media(max-width:760px){.bank-statement-card .bank-match-edit-grid{grid-template-columns:1fr}}
