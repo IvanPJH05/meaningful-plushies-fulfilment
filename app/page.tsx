@@ -95,6 +95,7 @@ type FeeMetric = "processingFees" | "shopifyFees" | "totalFees";
 type FinancialReportType = "income_statement" | "balance_sheet" | "cash_summary";
 type AccountingPeriodMode = "this_month" | "lifetime" | "custom";
 type CashFlowActivity = "operating" | "investing" | "financing";
+type BankStatementSection = "unmatched" | "in_progress" | "accounts" | "payment_processors" | "sales" | "transfers";
 type TikTokCertificatePayload = ReturnType<typeof tikTokCertificateJson>;
 type TikTokDetailFormEntry = {
   id: string;
@@ -401,7 +402,7 @@ const businessEvents = [
   { group: "Money out", value: "expense", label: "Expenses", transactionLabel: "Expense", accountingMapping: "Expenses", accounts: ["Labour", "Samples", "JnT (Carriage Outwards)"] },
   { group: "Money out", value: "asset_purchase", label: "Assets", transactionLabel: "Asset Purchase", accountingMapping: "Assets", accounts: ["New asset"] },
   { group: "Money out", value: "marketing_expense", label: "Marketing", transactionLabel: "Marketing Expense", accountingMapping: "Marketing", accounts: ["Meta ads", "TikTok ads"] },
-  { group: "Money in", value: "payment_processor_paid", label: "Cash", transactionLabel: "Cash", accountingMapping: "Cash", accounts: ["Bank Transfer", "Stripe", "Xendit", "Payment Processing Fees", "Owner's Equity", "Drawings"] },
+  { group: "Money in", value: "payment_processor_paid", label: "Cash", transactionLabel: "Cash", accountingMapping: "Cash", accounts: ["Bank Transfer", "Stripe", "Xendit", "TikTok", "Payment Processing Fees", "Owner's Equity", "Drawings"] },
   { group: "Money in", value: "other_income", label: "Other Income", transactionLabel: "Other Income", accountingMapping: "Other Income", accounts: ["Offline sales"] },
   { group: "Money out", value: "operating_cost", label: "Operating Cost", transactionLabel: "Operating Cost", accountingMapping: prepaidOperatingCostAccountName, accounts: [prepaidOperatingCostAccountName] },
 ] as const;
@@ -568,7 +569,7 @@ function cogsAccountForInventoryItem(itemName: string) {
   if (stockCharacters.includes(normalized as (typeof stockCharacters)[number]) || normalized.includes("PLUSH")) return "Plushie Cost";
   return "Other Direct Costs";
 }
-const processorAccounts = ["Xendit", "Stripe", "TikTok Shop"] as const;
+const processorAccounts = ["Xendit", "Stripe", "TikTok"] as const;
 
 const fulfilmentViews: readonly View[] = ["orders", "fulfilment", "packing_slips", "print_envelope", "import", "tiktok_shop", "fulfilled"];
 const accountingViews: readonly View[] = [
@@ -1206,6 +1207,7 @@ export default function Home() {
   const [previewDocumentUrl, setPreviewDocumentUrl] = useState("");
   const [previewDocumentError, setPreviewDocumentError] = useState("");
   const [previewBankLineId, setPreviewBankLineId] = useState("");
+  const [stagedBankStatementLineId, setStagedBankStatementLineId] = useState("");
   const [savingAccounting, setSavingAccounting] = useState(false);
   const [documentForm, setDocumentForm] = useState<AccountingDocumentForm>({
     name: "",
@@ -2791,6 +2793,7 @@ export default function Home() {
       "From sales report": "Bank Account",
       Stripe: "Stripe",
       Xendit: "Xendit",
+      TikTok: "TikTok",
       "Shopee Pay": "Shopee Pay",
       "Owner's Equity": "Owner Capital",
       Drawings: "Owner Drawings",
@@ -2808,7 +2811,7 @@ export default function Home() {
       [prepaidOperatingCostAccountName]: prepaidOperatingCostAccountName,
       "Xendit Payout": "Xendit",
       "Stripe Payout": "Stripe",
-      "TikTok Payout": "TikTok Shop",
+      "TikTok Payout": "TikTok",
       "Owner Capital Injection": "Owner Capital",
       "Owner Drawings": "Owner Drawings",
       "Loan Received": "Loan",
@@ -2874,7 +2877,7 @@ export default function Home() {
           { id: crypto.randomUUID(), transactionId, accountId: "", accountName: cashAccount, entryType: "credit", amount, memo: "Cash withdrawn", createdAt: now },
         ];
       }
-      if (transactionForm.categoryId === "Stripe" || transactionForm.categoryId === "Xendit") {
+      if (transactionForm.categoryId === "Stripe" || transactionForm.categoryId === "Xendit" || transactionForm.categoryId === "TikTok") {
         return [
           { id: crypto.randomUUID(), transactionId, accountId: "", accountName: cashAccount, entryType: "debit", amount, memo: "Transfer received", createdAt: now },
           { id: crypto.randomUUID(), transactionId, accountId: account?.id ?? "", accountName: transactionForm.categoryId, entryType: "credit", amount, memo: "Processor payout received", createdAt: now },
@@ -3314,7 +3317,7 @@ export default function Home() {
         { id: crypto.randomUUID(), transactionId, accountId: account.id, accountName: "Drawings", entryType: "debit", amount, memo: line.description, createdAt },
         { id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Bank Account", entryType: "credit", amount, memo: "Bank statement owner drawing", createdAt },
       ];
-      if (accountName === "Stripe" || accountName === "Xendit") return [
+      if (accountName === "Stripe" || accountName === "Xendit" || accountName === "TikTok") return [
         { id: crypto.randomUUID(), transactionId, accountId: "", accountName: "Bank Account", entryType: "debit", amount, memo: "Processor payout from bank statement", createdAt },
         { id: crypto.randomUUID(), transactionId, accountId: account.id, accountName, entryType: "credit", amount, memo: line.description, createdAt },
       ];
@@ -3513,7 +3516,7 @@ export default function Home() {
     return Math.max(0, bankStatementLineAmount(line) - bankStatementMatchedAmount(line, transactionsList));
   }
 
-  function bankStatementLineWithMatches(line: AccountingBankStatementLine, transactionIds: string[], transactionsList = accountingTransactions): AccountingBankStatementLine {
+  function bankStatementLineWithMatches(line: AccountingBankStatementLine, transactionIds: string[], transactionsList: Pick<AccountingTransaction, "id" | "amount">[] = accountingTransactions): AccountingBankStatementLine {
     const uniqueIds = [...new Set(transactionIds.filter(Boolean))];
     const matchedAmount = transactionsList.filter((transaction) => uniqueIds.includes(transaction.id)).reduce((total, transaction) => total + transaction.amount, 0);
     const balanced = Math.abs(bankStatementLineAmount(line) - matchedAmount) < 0.01;
@@ -3654,6 +3657,78 @@ export default function Home() {
     } finally {
       setSavingAccounting(false);
     }
+  }
+
+  async function stageBankStatementLine(line: AccountingBankStatementLine) {
+    const form = bankStatementMatchForms[line.id] ?? { businessEvent: line.suggestedEvent || (line.moneyIn > 0 ? "other_income" : "expense"), accountName: line.suggestedAccount || "", notes: "" };
+    if (!form.businessEvent || form.businessEvent === "ignore") return ignoreBankStatementLine(line);
+    if (form.businessEvent === "internal_transfer") return pairInternalTransferLine(line);
+    const processorOptions = ["Stripe", "Xendit", "TikTok"];
+    const accountName = form.businessEvent === "payment_processor_paid"
+      ? processorOptions.includes(form.accountName) ? form.accountName : processorOptions[0]
+      : form.businessEvent === "operating_cost"
+        ? prepaidOperatingCostAccountName
+        : form.accountName || line.suggestedAccount;
+    const updatedLine: AccountingBankStatementLine = {
+      ...line,
+      rawData: {
+        ...(line.rawData ?? {}),
+        bank_workflow: "in_progress",
+        bank_staged_event: form.businessEvent,
+        bank_staged_account: accountName,
+      },
+      suggestedEvent: form.businessEvent,
+      suggestedAccount: accountName,
+      notes: form.notes || line.notes,
+      updatedAt: new Date().toISOString(),
+    };
+    await saveAccountingBankStatementLine(updatedLine);
+    setBankStatementLines((current) => current.map((item) => item.id === line.id ? updatedLine : item));
+    setNotice(`Moved to In progress for ${businessEvents.find((event) => event.value === form.businessEvent)?.label ?? "bookkeeping"}.`);
+  }
+
+  function useBankStatementLineForTransaction(line: AccountingBankStatementLine) {
+    const stagedEvent = bankLineStagedEvent(line) || (line.moneyIn > 0 ? "other_income" : "expense");
+    const stagedAccount = bankLineStagedAccount(line);
+    const amount = getBankLineAmount(line);
+    const selectedAccount = accountingCategories.find((category) => category.name.toLowerCase() === stagedAccount.toLowerCase());
+    setStagedBankStatementLineId(line.id);
+    setTransactionForm((current) => ({
+      ...emptyTransactionForm(),
+      businessEvent: stagedEvent,
+      transactionDate: dateKey(line.transactionDate),
+      description: line.description,
+      amount: amount ? String(amount) : "",
+      categoryId: selectedAccount?.id ?? (stagedEvent === "payment_processor_paid" ? stagedAccount : ""),
+      accountName: selectedAccount ? "" : stagedEvent === "payment_processor_paid" ? "" : stagedAccount,
+      transactionType: line.moneyIn > 0 ? "income" : stagedEvent === "payment_processor_paid" ? "transfer" : "expense",
+      paymentStatus: "paid_in_full",
+      paymentMethod: line.moneyIn > 0 ? "Bank Account" : current.paymentMethod || "Bank Account",
+      supplier: line.reference || bankStatementLineBankName(line),
+      depositAmount: amount ? String(amount) : "",
+      invoiceNumber: line.reference || `Bank row ${line.rowNumber}`,
+      notes: [line.notes, "Created from bank statement in-progress row"].filter(Boolean).join(" | "),
+    }));
+    setNotice("Bank row loaded into the form. Fill the missing details, then save the transaction.");
+  }
+
+  async function markStagedBankLineMatched(transactionIds: string[], createdTransactions: Pick<AccountingTransaction, "id" | "amount">[]) {
+    if (!stagedBankStatementLineId || !transactionIds.length) return;
+    const line = bankStatementLines.find((item) => item.id === stagedBankStatementLineId);
+    if (!line) return;
+    const updatedLine: AccountingBankStatementLine = {
+      ...bankStatementLineWithMatches(line, transactionIds, createdTransactions),
+      rawData: {
+        ...(line.rawData ?? {}),
+        bank_workflow: "completed",
+        bank_staged_event: bankLineStagedEvent(line),
+        bank_staged_account: bankLineStagedAccount(line),
+      },
+      updatedAt: new Date().toISOString(),
+    };
+    await saveAccountingBankStatementLine(updatedLine);
+    setBankStatementLines((current) => current.map((item) => item.id === line.id ? updatedLine : item));
+    setStagedBankStatementLineId("");
   }
 
   async function ignoreBankStatementLine(line: AccountingBankStatementLine) {
@@ -3822,6 +3897,7 @@ export default function Home() {
       let account = isRejectedInventory ? null : await ensureBookkeepingTransactionAccount(event, accountName, actor);
       if (event.value === "other_income") {
         if (!account) return setNotice("Choose or create an other income account.");
+        const createdOtherIncomeTransactions: Pick<AccountingTransaction, "id" | "amount">[] = [];
         if (transactionDocumentFile) {
           documentId = crypto.randomUUID();
           const filePath = await uploadAccountingDocumentFile(transactionDocumentFile, documentId);
@@ -3855,8 +3931,8 @@ export default function Home() {
           ];
           await saveAccountingTransaction({
             id: lineId,
-            source: documentId ? "document" : "manual",
-            sourceId: documentId,
+            source: documentId ? "document" : stagedBankStatementLineId ? "bank_statement" : "manual",
+            sourceId: documentId || stagedBankStatementLineId,
             documentId,
             businessEvent: event.value,
             transactionDate: transactionForm.transactionDate,
@@ -3884,7 +3960,9 @@ export default function Home() {
             updatedAt: now,
           });
           await saveAccountingLedgerEntries(lineId, entries);
+          createdOtherIncomeTransactions.push({ id: lineId, amount: lineAmount });
         }
+        await markStagedBankLineMatched(createdOtherIncomeTransactions.map((transaction) => transaction.id), createdOtherIncomeTransactions);
         await insertSharedActivity({ id: crypto.randomUUID(), action: "Other income recorded", detail: `${account.name}: ${formatMoney(amount)} from ${otherIncomeLinesToSave.length} character line${otherIncomeLinesToSave.length === 1 ? "" : "s"}.`, actor, createdAt: now });
         setTransactionForm({ ...emptyTransactionForm(), businessEvent: event.value, accountName: "" });
         setOtherIncomeSaleLines(defaultOtherIncomeSaleLines());
@@ -3938,8 +4016,8 @@ export default function Home() {
       const entries = ledgerPreview(id, account);
       await saveAccountingTransaction({
         id,
-        source: documentId ? "document" : "manual",
-        sourceId: documentId,
+        source: documentId ? "document" : stagedBankStatementLineId ? "bank_statement" : "manual",
+        sourceId: documentId || stagedBankStatementLineId,
         documentId,
         businessEvent: isRejectedInventory ? "inventory_rejected" : event.value,
         transactionDate: transactionForm.transactionDate,
@@ -3967,6 +4045,7 @@ export default function Home() {
         updatedAt: now,
       });
       await saveAccountingLedgerEntries(id, entries);
+      await markStagedBankLineMatched([id], [{ id, amount }]);
       if (event.value === "inventory_purchase" && quantity > 0) {
         const stockSource = `${account?.name ?? accountName} ${transactionForm.accountName}`.toUpperCase();
         const stockKey = stockSource.includes("BILLY") ? "BILLY"
@@ -4689,6 +4768,8 @@ export default function Home() {
         onClearBankStatement={() => { setBankStatementCsv(""); setBankStatementFileName(""); }}
         onBankStatementMatchFormChange={updateBankStatementMatchForm}
         onMatchBankStatementLine={matchBankStatementLine}
+        onStageBankStatementLine={stageBankStatementLine}
+        onUseBankStatementLine={useBankStatementLineForTransaction}
         onPairInternalTransferLine={pairInternalTransferLine}
         onLinkBankStatementLine={linkBankStatementLineToTransaction}
         onMarkBankStatementSales={markBankStatementLineAsSales}
@@ -5039,6 +5120,39 @@ function getBankRemainingAmount(line: AccountingBankStatementLine, transactions:
   return Math.max(0, getBankLineAmount(line) - getBankMatchedTotal(line, transactions));
 }
 
+function bankLineRawString(line: AccountingBankStatementLine, key: string) {
+  const value = line.rawData?.[key];
+  return typeof value === "string" ? value : "";
+}
+
+function bankLineWorkflow(line: AccountingBankStatementLine) {
+  return bankLineRawString(line, "bank_workflow");
+}
+
+function bankLineStagedEvent(line: AccountingBankStatementLine) {
+  return bankLineRawString(line, "bank_staged_event") || line.suggestedEvent || "";
+}
+
+function bankLineStagedAccount(line: AccountingBankStatementLine) {
+  return bankLineRawString(line, "bank_staged_account") || line.suggestedAccount || "";
+}
+
+function bankLineSection(line: AccountingBankStatementLine): BankStatementSection {
+  const stagedEvent = bankLineStagedEvent(line);
+  if (bankLineWorkflow(line) === "in_progress" && line.matchStatus === "unmatched") return "in_progress";
+  if (stagedEvent === "bank_transfer_sales_recorded") return "sales";
+  if (stagedEvent === "internal_transfer") return "transfers";
+  if (stagedEvent === "payment_processor_paid") return "payment_processors";
+  if (line.matchStatus === "unmatched") return "unmatched";
+  return "accounts";
+}
+
+function bankLineStatusLabel(line: AccountingBankStatementLine, isPartialMatch: boolean) {
+  if (isPartialMatch) return "partial";
+  if (bankLineWorkflow(line) === "in_progress" && line.matchStatus === "unmatched") return "in progress";
+  return line.matchStatus;
+}
+
 function AccountingWorkspacePage({
   view,
   orders,
@@ -5089,6 +5203,8 @@ function AccountingWorkspacePage({
   onClearBankStatement,
   onBankStatementMatchFormChange,
   onMatchBankStatementLine,
+  onStageBankStatementLine,
+  onUseBankStatementLine,
   onPairInternalTransferLine,
   onLinkBankStatementLine,
   onMarkBankStatementSales,
@@ -5176,6 +5292,8 @@ function AccountingWorkspacePage({
   onClearBankStatement: () => void;
   onBankStatementMatchFormChange: (lineId: string, patch: Partial<BankStatementMatchForm>) => void;
   onMatchBankStatementLine: (line: AccountingBankStatementLine) => void;
+  onStageBankStatementLine: (line: AccountingBankStatementLine) => void;
+  onUseBankStatementLine: (line: AccountingBankStatementLine) => void;
   onPairInternalTransferLine: (line: AccountingBankStatementLine, selectedPair?: AccountingBankStatementLine) => void;
   onLinkBankStatementLine: (line: AccountingBankStatementLine, transaction: AccountingTransaction) => void;
   onMarkBankStatementSales: (line: AccountingBankStatementLine) => void;
@@ -5255,13 +5373,14 @@ function AccountingWorkspacePage({
     .reduce((total, entry) => total + entry.amount, 0);
   const operatingCostUsed = operatingCostReleaseTransactions.reduce((total, transaction) => total + transaction.amount, 0);
   const operatingCostRemaining = Math.max(0, operatingCostAdded - operatingCostUsed);
-  const bankStatementUnmatched = bankStatementLines.filter((line) => line.matchStatus === "unmatched");
+  const bankStatementUnmatched = bankStatementLines.filter((line) => bankLineSection(line) === "unmatched");
+  const bankStatementInProgressLines = bankStatementLines.filter((line) => bankLineSection(line) === "in_progress");
   const bankStatementMatched = bankStatementLines.filter((line) => line.matchStatus === "matched");
   const bankStatementIgnored = bankStatementLines.filter((line) => line.matchStatus === "ignored");
   const [bankLineActions, setBankLineActions] = useState<Record<string, "match" | "new" | "pair" | "">>({});
   const [bankLineSelectedTransactions, setBankLineSelectedTransactions] = useState<Record<string, string>>({});
   const [bankLineSelectedPairs, setBankLineSelectedPairs] = useState<Record<string, string>>({});
-  const [selectedBankStatementSection, setSelectedBankStatementSection] = useState<"accounts" | "sales" | "transfers">("accounts");
+  const [selectedBankStatementSection, setSelectedBankStatementSection] = useState<BankStatementSection>("unmatched");
   const [selectedBankStatementMonth, setSelectedBankStatementMonth] = useState("all");
   const [bankStatementFocusMode, setBankStatementFocusMode] = useState(false);
   const [lockedBankStatementColumn, setLockedBankStatementColumn] = useState<"none" | "status" | "date" | "description">("date");
@@ -5278,11 +5397,20 @@ function AccountingWorkspacePage({
   const shownBankStatementGroups = selectedBankStatementMonth === "all"
     ? bankStatementReferenceGroups
     : bankStatementReferenceGroups.filter((group) => group.month === selectedBankStatementMonth);
-  const bankStatementSalesLines = bankStatementLines.filter((line) => line.suggestedEvent === "bank_transfer_sales_recorded");
-  const bankStatementTransferLines = bankStatementLines.filter((line) => line.suggestedEvent === "internal_transfer");
-  const bankStatementAccountLines = bankStatementLines.filter((line) => line.suggestedEvent !== "bank_transfer_sales_recorded" && line.suggestedEvent !== "internal_transfer");
-  const shownBankStatementLines = selectedBankStatementSection === "sales" ? bankStatementSalesLines : selectedBankStatementSection === "transfers" ? bankStatementTransferLines : bankStatementAccountLines;
-  const selectedBankStatementSectionLabel = selectedBankStatementSection === "sales" ? "Sales" : selectedBankStatementSection === "transfers" ? "Transfer within accounts" : "Accounts";
+  const bankStatementSalesLines = bankStatementLines.filter((line) => bankLineSection(line) === "sales");
+  const bankStatementTransferLines = bankStatementLines.filter((line) => bankLineSection(line) === "transfers");
+  const bankStatementPaymentProcessorLines = bankStatementLines.filter((line) => bankLineSection(line) === "payment_processors");
+  const bankStatementAccountLines = bankStatementLines.filter((line) => bankLineSection(line) === "accounts");
+  const bankStatementSections: { value: BankStatementSection; label: string; lines: AccountingBankStatementLine[] }[] = [
+    { value: "unmatched", label: "Unmatched", lines: bankStatementUnmatched },
+    { value: "in_progress", label: "In progress", lines: bankStatementInProgressLines },
+    { value: "accounts", label: "Accounts", lines: bankStatementAccountLines },
+    { value: "payment_processors", label: "Payment processor", lines: bankStatementPaymentProcessorLines },
+    { value: "sales", label: "Sales", lines: bankStatementSalesLines },
+    { value: "transfers", label: "Transfer within accounts", lines: bankStatementTransferLines },
+  ];
+  const shownBankStatementLines = bankStatementSections.find((section) => section.value === selectedBankStatementSection)?.lines ?? [];
+  const selectedBankStatementSectionLabel = bankStatementSections.find((section) => section.value === selectedBankStatementSection)?.label ?? "Unmatched";
   const aiGroupLabels: Record<AiImportGroup, string> = {
     ready: "Ready to create",
     matched: "Matched",
@@ -5365,7 +5493,7 @@ function AccountingWorkspacePage({
     return bookkeepingSectionConfigs.expense;
   }
   function bankStatementAccountOptions(eventValue: string) {
-    if (eventValue === "payment_processor_paid") return ["Bank Transfer", "Stripe", "Xendit", "Shopee Pay", "Owner's Equity", "Drawings"];
+    if (eventValue === "payment_processor_paid") return ["Stripe", "Xendit", "TikTok"];
     if (eventValue === "internal_transfer") return ["Owner Transfer", "Personal Bank Transfer"];
     if (eventValue === "operating_cost") return [prepaidOperatingCostAccountName];
     const config = bankStatementUiConfigForEvent(eventValue);
@@ -5420,6 +5548,12 @@ function AccountingWorkspacePage({
     <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title="Replace or add source document" description="Choose or drop a new file if you want to update the linked document" selectedName={editingTransactionFile?.name} onFile={onEditingTransactionFileChange} />
     <button className="button primary" disabled={saving} onClick={onSaveEditedTransaction}>{saving ? "Saving..." : "Save transaction changes"}</button>
   </section> : null;
+  const bankInProgressPanelFor = (eventValue: string) => {
+    const rows = bankStatementInProgressLines
+      .filter((line) => bankLineStagedEvent(line) === eventValue)
+      .sort((a, b) => dateKey(a.transactionDate).localeCompare(dateKey(b.transactionDate)) || a.rowNumber - b.rowNumber);
+    return <BankStatementInProgressPanel rows={rows} onUse={onUseBankStatementLine} />;
+  };
 
   if (view === "accounting_dashboard") return <section className="accounting-workspace">
     <div className="accounting-hero card"><div><p>BOOK KEEPING BOOK</p><h2>All transactions</h2><span>Every money-in and money-out record saved from the bookkeeping category pages.</span></div><div className="accounting-status-pill">{transactions.length} records</div></div>
@@ -5462,6 +5596,7 @@ function AccountingWorkspacePage({
       <MoneyStat label="Released to expense" value={operatingCostUsed} tone="fees" />
       <MoneyStat label="Prepaid remaining" value={operatingCostRemaining} tone="transfer" />
     </section>
+    {bankInProgressPanelFor("operating_cost")}
     <section className="accounting-form-grid">
       <div className="accounting-form card">
         <h3>Add prepaid operating cost</h3>
@@ -5509,7 +5644,10 @@ function AccountingWorkspacePage({
   if (view === "accounting_bank_reconciliation") return <section className="accounting-workspace">
     <div className="accounting-hero card"><div><p>BANK STATEMENT MATCHING</p><h2>Import bank rows, then decide row by row</h2><span>Each row can be matched to an existing transaction, used to create a new entry, marked as sales already recorded, ignored, or removed.</span></div><div className="accounting-status-pill">{bankStatementUnmatched.length} unmatched</div></div>
     <section className="accounting-summary-grid">
+      <article className="money-stat fees"><span>Unmatched</span><strong>{bankStatementUnmatched.length}</strong></article>
+      <article className="money-stat transfer"><span>In progress</span><strong>{bankStatementInProgressLines.length}</strong></article>
       <article className="money-stat transfer"><span>Accounts</span><strong>{bankStatementAccountLines.length}</strong></article>
+      <article className="money-stat sales"><span>Payment processor</span><strong>{bankStatementPaymentProcessorLines.length}</strong></article>
       <article className="money-stat collected"><span>Sales</span><strong>{bankStatementSalesLines.length}</strong></article>
       <article className="money-stat fees"><span>Transfer within accounts</span><strong>{bankStatementTransferLines.length}</strong></article>
     </section>
@@ -5530,7 +5668,7 @@ function AccountingWorkspacePage({
         <div className="bank-lines-heading">
           <div><h3>{selectedBankStatementSectionLabel}</h3><span>{shownBankStatementLines.length} shown from {bankStatementLines.length} imported row{bankStatementLines.length === 1 ? "" : "s"}</span></div>
           <div className="bank-reference-actions no-print">
-            <div className="bank-section-pills" aria-label="Bank statement sections"><button className={selectedBankStatementSection === "accounts" ? "active" : ""} onClick={() => setSelectedBankStatementSection("accounts")}>Accounts</button><button className={selectedBankStatementSection === "sales" ? "active" : ""} onClick={() => setSelectedBankStatementSection("sales")}>Sales</button><button className={selectedBankStatementSection === "transfers" ? "active" : ""} onClick={() => setSelectedBankStatementSection("transfers")}>Transfer within accounts</button></div>
+            <div className="bank-section-pills" aria-label="Bank statement sections">{bankStatementSections.map((section) => <button key={section.value} className={selectedBankStatementSection === section.value ? "active" : ""} onClick={() => setSelectedBankStatementSection(section.value)}>{section.label}</button>)}</div>
             <label>Lock column<select value={lockedBankStatementColumn} onChange={(event) => setLockedBankStatementColumn(event.target.value as "none" | "status" | "date" | "description")}><option value="none">No locked column</option><option value="status">Status</option><option value="date">Date</option><option value="description">Description</option></select></label>
             <button className="button secondary" disabled={!bankStatementLines.length} onClick={() => setBankStatementFocusMode((current) => !current)}>{bankStatementFocusMode ? "Exit full screen" : "Full screen"}</button>
           </div>
@@ -5538,6 +5676,7 @@ function AccountingWorkspacePage({
         <div className="table-scroll bank-statement-lines-scroll"><table className="orders-table bank-statement-table"><thead><tr><th>Status</th><th>Date</th><th>Bank</th><th>Description</th><th>Amount</th><th>Action</th></tr></thead><tbody>{shownBankStatementLines.map((line) => {
           const form = bankStatementMatchForms[line.id] ?? { businessEvent: line.suggestedEvent || (line.moneyIn > 0 ? "other_income" : "expense"), accountName: line.suggestedAccount || "", notes: "" };
           const options = bankStatementAccountOptions(form.businessEvent);
+          const selectedFormAccount = options.includes(form.accountName) ? form.accountName : options[0] || "";
           const action = bankLineActions[line.id] || "";
           const candidates = candidateTransactionsForBankLine(line);
           const pairCandidates = candidateInternalTransfersForBankLine(line);
@@ -5551,20 +5690,22 @@ function AccountingWorkspacePage({
           const remainingAmount = getBankRemainingAmount(line, transactions);
           const hasLinkedTransactions = matchedTransactions.length > 0;
           const isPartialMatch = hasLinkedTransactions && remainingAmount > 0.01 && line.matchStatus !== "ignored";
-          const statusLabel = isPartialMatch ? "partial" : line.matchStatus;
+          const statusLabel = bankLineStatusLabel(line, isPartialMatch);
+          const statusClass = statusLabel.replace(/\s+/g, "-");
           const canOpenLinked = hasLinkedTransactions;
+          const inProgress = bankLineSection(line) === "in_progress";
           return <Fragment key={line.id}>
           <tr className={`bank-line-${line.matchStatus} ${canOpenLinked ? "clickable-bank-line" : ""}`} onClick={(event) => { if (!canOpenLinked || (event.target as HTMLElement).closest("button,a,input,textarea,select")) return; onOpenLinkedBankTransaction(line); }}>
-            <td><span className={`source-document-pill ${statusLabel === "matched" ? "matched" : statusLabel === "ignored" ? "ignored" : statusLabel === "partial" ? "partial" : ""}`}>{statusLabel}</span></td>
+            <td><span className={`source-document-pill ${statusClass}`}>{statusLabel}</span></td>
             <td>{formatDate(line.transactionDate)}<br /><small>{line.reference || `Row ${line.rowNumber}`}</small></td>
             <td>{bankLineBankName(line)}</td>
             <td><strong>{line.description}</strong>{line.notes && <><br /><small>{line.notes}</small></>}{canOpenLinked && <small className="linked-transaction-hint">Click row to view linked transaction</small>}</td>
             <td><strong className={`bank-amount ${line.moneyIn > 0 ? "money-in" : "money-out"}`}>{formatMoney(line.moneyIn > 0 ? line.moneyIn : line.moneyOut)}</strong><br /><small>{line.moneyIn > 0 ? "money in" : "money out"}</small></td>
-            <td><div className="bank-row-actions"><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => setBankLineActions((current) => ({ ...current, [line.id]: current[line.id] === "match" ? "" : "match" }))}>Match</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => setBankLineActions((current) => ({ ...current, [line.id]: current[line.id] === "new" ? "" : "new" }))}>New</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => setBankLineActions((current) => ({ ...current, [line.id]: current[line.id] === "pair" ? "" : "pair" }))}>Pair</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched" || line.moneyIn <= 0} onClick={() => onMarkBankStatementSales(line)}>Sales</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => onIgnoreBankStatementLine(line)}>Ignore</button><button className="view-button danger-text" disabled={saving} onClick={() => onDeleteBankStatementLine(line)}>Remove</button></div>{hasLinkedTransactions && <div className={`bank-match-counter ${remainingAmount > 0.01 ? "partial" : "balanced"}`}><span>{formatMoney(matchedTotal)} matched</span><strong>{remainingAmount > 0.01 ? `${formatMoney(remainingAmount)} left` : "Balanced"}</strong></div>}<div className="bank-line-note"><textarea value={noteValue} onChange={(event) => onBankStatementNoteChange(line.id, event.target.value)} placeholder="Add note for this bank row..." /><button className="view-button" disabled={!noteChanged || saving} onClick={() => onSaveBankStatementNote(line)}>Save note</button></div></td>
+            <td><div className="bank-row-actions">{inProgress ? <button className="view-button" disabled={saving} onClick={() => onUseBankStatementLine(line)}>Use row</button> : <><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => setBankLineActions((current) => ({ ...current, [line.id]: current[line.id] === "match" ? "" : "match" }))}>Match</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => setBankLineActions((current) => ({ ...current, [line.id]: current[line.id] === "new" ? "" : "new" }))}>New</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => setBankLineActions((current) => ({ ...current, [line.id]: current[line.id] === "pair" ? "" : "pair" }))}>Pair</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched" || line.moneyIn <= 0} onClick={() => onMarkBankStatementSales(line)}>Sales</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => onIgnoreBankStatementLine(line)}>Ignore</button></>}<button className="view-button danger-text" disabled={saving} onClick={() => onDeleteBankStatementLine(line)}>Remove</button></div>{hasLinkedTransactions && <div className={`bank-match-counter ${remainingAmount > 0.01 ? "partial" : "balanced"}`}><span>{formatMoney(matchedTotal)} matched</span><strong>{remainingAmount > 0.01 ? `${formatMoney(remainingAmount)} left` : "Balanced"}</strong></div>}<div className="bank-line-note"><textarea value={noteValue} onChange={(event) => onBankStatementNoteChange(line.id, event.target.value)} placeholder="Add note for this bank row..." /><button className="view-button" disabled={!noteChanged || saving} onClick={() => onSaveBankStatementNote(line)}>Save note</button></div></td>
           </tr>
           {action === "match" && line.matchStatus === "unmatched" && <tr className="bank-line-detail-row"><td colSpan={6}><section className="posting-preview bank-line-action-panel"><h3>Match existing transaction</h3><p>Showing unlinked bookkeeping transactions within +/- 3 days of this bank row. You can link more than one transaction until the bank amount is balanced.</p><div className="bank-match-summary"><span>Bank amount {formatMoney(getBankLineAmount(line))}</span><span>Matched {formatMoney(matchedTotal)}</span><strong>{remainingAmount > 0.01 ? `${formatMoney(remainingAmount)} left` : "Balanced"}</strong></div>{matchedTransactions.length > 0 && <div className="bank-linked-list">{matchedTransactions.map((transaction) => <div key={transaction.id}><span>{formatDate(transaction.transactionDate)}</span><strong>{transaction.description}</strong><em>{formatMoney(transaction.amount)}</em></div>)}</div>}<label>Existing transaction<select value={bankLineSelectedTransactions[line.id] || ""} onChange={(event) => setBankLineSelectedTransactions((current) => ({ ...current, [line.id]: event.target.value }))}><option value="">Choose transaction</option>{candidates.map((transaction) => <option key={transaction.id} value={transaction.id}>{formatDate(transaction.transactionDate)} | {transaction.description} | {displayAccountingAccountName(transaction.accountName)} | {formatMoney(transaction.amount)}</option>)}</select></label><div className="csv-import-actions"><button className="button primary" disabled={!selectedTransaction || saving} onClick={() => selectedTransaction && onLinkBankStatementLine(line, selectedTransaction)}>Link selected transaction</button>{!candidates.length && <span>No unlinked transactions found within +/- 3 days.</span>}</div></section></td></tr>}
           {action === "pair" && line.matchStatus === "unmatched" && <tr className="bank-line-detail-row"><td colSpan={6}><section className="posting-preview bank-line-action-panel"><h3>Pair internal bank transfer</h3><p>Choose the matching money-in or money-out row from another bank account. Both rows will be marked as internal transfer and excluded from income/expenses.</p><div className="bank-match-summary"><span>This row {formatMoney(getBankLineAmount(line))}</span><span>{line.moneyIn > 0 ? "Money in" : "Money out"}</span><strong>Same day or 1 day apart</strong></div><label>Matching bank row<select value={bankLineSelectedPairs[line.id] || ""} onChange={(event) => setBankLineSelectedPairs((current) => ({ ...current, [line.id]: event.target.value }))}><option value="">Choose matching bank row</option>{pairCandidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{formatDate(candidate.transactionDate)} | {bankLineBankName(candidate)} | {candidate.moneyIn > 0 ? "Money in" : "Money out"} | {formatMoney(getBankLineAmount(candidate))} | Row {candidate.rowNumber}</option>)}</select></label>{pairCandidates.length > 0 && <div className="bank-linked-list">{pairCandidates.map((candidate) => <div key={candidate.id}><span>{formatDate(candidate.transactionDate)}</span><strong>{bankLineBankName(candidate)} | {candidate.description}</strong><em>{formatMoney(getBankLineAmount(candidate))}</em></div>)}</div>}<div className="csv-import-actions"><button className="button primary" disabled={!selectedPair || saving} onClick={() => selectedPair && onPairInternalTransferLine(line, selectedPair)}>Pair selected rows</button>{!pairCandidates.length && <span>No exact opposite row found within 1 day. Import the other bank statement first, or ignore manually.</span>}</div></section></td></tr>}
-          {action === "new" && line.matchStatus === "unmatched" && <tr className="bank-line-detail-row"><td colSpan={6}><section className="posting-preview bank-line-action-panel"><h3>Create new transaction</h3><div className="accounting-two-cols"><label>Business event<select value={form.businessEvent} onChange={(event) => onBankStatementMatchFormChange(line.id, { businessEvent: event.target.value, accountName: "" })}><option value="expense">Expense</option><option value="inventory_purchase">Inventory</option><option value="asset_purchase">Asset</option><option value="marketing_expense">Marketing</option><option value="operating_cost">Pre-paid operating cost</option><option value="other_income">Other income</option><option value="payment_processor_paid">Cash / transfer</option><option value="internal_transfer">Internal transfer / pair</option><option value="ignore">Ignore</option></select></label><label>Account<select value={form.accountName || options[0] || ""} disabled={form.businessEvent === "ignore"} onChange={(event) => onBankStatementMatchFormChange(line.id, { accountName: event.target.value })}>{options.map((option) => <option key={option} value={option}>{option}</option>)}</select></label></div><label>Notes<input value={form.notes} onChange={(event) => onBankStatementMatchFormChange(line.id, { notes: event.target.value })} placeholder="Optional note" /></label><button className="button primary" disabled={saving} onClick={() => onMatchBankStatementLine(line)}>{form.businessEvent === "internal_transfer" ? "Pair internal transfer" : "Create new transaction"}</button></section></td></tr>}
+          {action === "new" && line.matchStatus === "unmatched" && !inProgress && <tr className="bank-line-detail-row"><td colSpan={6}><section className="posting-preview bank-line-action-panel"><h3>Send to in progress</h3><p>Choose which bookkeeping section should finish this bank row. The row will appear on that page, separate from the transaction ledger, until you save the final entry.</p><div className="accounting-two-cols"><label>Bookkeeping section<select value={form.businessEvent} onChange={(event) => onBankStatementMatchFormChange(line.id, { businessEvent: event.target.value, accountName: "" })}><option value="expense">Expenses</option><option value="inventory_purchase">Inventory</option><option value="asset_purchase">Assets</option><option value="marketing_expense">Marketing</option><option value="operating_cost">Operating cost</option><option value="other_income">Other income</option><option value="payment_processor_paid">Payment processor</option><option value="internal_transfer">Transfer within accounts</option><option value="ignore">Ignore</option></select></label><label>{form.businessEvent === "payment_processor_paid" ? "Processor" : "Suggested account"}<select value={selectedFormAccount} disabled={form.businessEvent === "ignore"} onChange={(event) => onBankStatementMatchFormChange(line.id, { accountName: event.target.value })}>{options.map((option) => <option key={option} value={option}>{option}</option>)}</select></label></div><label>Notes<input value={form.notes} onChange={(event) => onBankStatementMatchFormChange(line.id, { notes: event.target.value })} placeholder="Optional note" /></label><button className="button primary" disabled={saving} onClick={() => onStageBankStatementLine(line)}>{form.businessEvent === "internal_transfer" ? "Pair internal transfer" : "Move to in progress"}</button></section></td></tr>}
           </Fragment>;
         })}</tbody></table>{!shownBankStatementLines.length && <div className="empty"><strong>No {selectedBankStatementSectionLabel.toLowerCase()} rows yet</strong><p>{bankStatementLines.length ? "Rows will move here when you mark or pair them." : "Drop a PDF or CSV statement to start matching transactions from your bank."}</p></div>}</div>
       </section>
@@ -5679,6 +5820,8 @@ function AccountingWorkspacePage({
       ? stripeBalance
       : transactionForm.categoryId === "Xendit"
         ? xenditBalance
+        : transactionForm.categoryId === "TikTok"
+          ? 0
         : transactionForm.categoryId === "Bank Transfer"
           ? sales.bankTransfer
           : transactionForm.categoryId === "Owner's Equity" || transactionForm.categoryId === "Drawings"
@@ -5686,6 +5829,7 @@ function AccountingWorkspacePage({
           : 0;
     if (isOtherIncome) return <section className="accounting-workspace">
       <div className="accounting-hero card"><div><p>MONEY IN</p><h2>Other Income</h2><span>Record sales that were not keyed into Shopify. These entries post as income and consume inventory through FIFO like normal sales.</span></div><div className="accounting-status-pill">{formatMoney(otherIncomeTotal)}</div></div>
+      {bankInProgressPanelFor("other_income")}
       <section className="accounting-form-grid">
         <div className="accounting-form card">
           <h3>New other income sale</h3>
@@ -5718,7 +5862,7 @@ function AccountingWorkspacePage({
       </section>
     </section>;
     if (isMoneyIn) return <section className="accounting-workspace">
-      <div className="accounting-hero card"><div><p>CASH</p><h2>Payment processor payouts</h2><span>Collection totals come from the fulfilment sales report. When Stripe or Xendit pays out, record the payout here: debit Bank, credit the payment processor.</span></div><div className="accounting-status-pill">{formatMoney(sales.totalCollected)}</div></div>
+      <div className="accounting-hero card"><div><p>CASH</p><h2>Payment processor payouts</h2><span>Collection totals come from the fulfilment sales report. When Stripe, Xendit, or TikTok pays out, record the payout here: debit Bank, credit the payment processor.</span></div><div className="accounting-status-pill">{formatMoney(sales.totalCollected)}</div></div>
       <section className="sales-stats">
         <MoneyStat label="Bank transfer collected" value={sales.bankTransfer} tone="transfer" />
         <MoneyStat label="Stripe collected" value={sales.stripeCollected} tone="sales" />
@@ -5735,19 +5879,20 @@ function AccountingWorkspacePage({
         <MoneyStat label="Owner's Equity" value={ownerEquity} tone="sales" />
         <MoneyStat label="Drawings" value={drawings} tone="fees" />
       </section>
+      {bankInProgressPanelFor("payment_processor_paid")}
       <section className="accounting-form-grid">
         <div className="accounting-form card">
           <h3>Record payment received</h3>
           <label>Date received<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label>
-          <label>Transaction type<select value={transactionForm.categoryId} onChange={(input) => onTransactionFormChange({ categoryId: input.target.value, accountName: "", amount: input.target.value === "Stripe" ? String(stripeBalance || "") : input.target.value === "Xendit" ? String(xenditBalance || "") : "" })}><option value="">Choose transaction</option><option value="Stripe">Stripe payout</option><option value="Xendit">Xendit payout</option><option value="Bank Transfer">Bank transfer received</option><option value="Owner's Equity">Owner's Equity</option><option value="Drawings">Drawings</option></select></label>
+          <label>Transaction type<select value={transactionForm.categoryId} onChange={(input) => onTransactionFormChange({ categoryId: input.target.value, accountName: "", amount: input.target.value === "Stripe" ? String(stripeBalance || "") : input.target.value === "Xendit" ? String(xenditBalance || "") : "" })}><option value="">Choose transaction</option><option value="Stripe">Stripe payout</option><option value="Xendit">Xendit payout</option><option value="TikTok">TikTok payout</option><option value="Bank Transfer">Bank transfer received</option><option value="Owner's Equity">Owner's Equity</option><option value="Drawings">Drawings</option></select></label>
           <label>{transactionForm.categoryId === "Drawings" ? "Paid from" : "Money received into"}<select value={transactionForm.paymentMethod} onChange={(input) => onTransactionFormChange({ paymentMethod: input.target.value })}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>
           {transactionForm.categoryId && <p className="accounting-file-name">{transactionForm.categoryId === "Bank Transfer" ? "Bank transfer sales are already in bank. Use this only if you want to record a manual received amount." : `Unrecorded balance from sales report: ${formatMoney(processorBalance)}`}</p>}
-          <label>{transactionForm.categoryId === "Stripe" || transactionForm.categoryId === "Xendit" ? "Net amount received" : transactionForm.categoryId === "Drawings" ? "Amount withdrawn" : "Amount received"}<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onTransactionFormChange({ amount: input.target.value })} /></label>
+          <label>{transactionForm.categoryId === "Stripe" || transactionForm.categoryId === "Xendit" || transactionForm.categoryId === "TikTok" ? "Net amount received" : transactionForm.categoryId === "Drawings" ? "Amount withdrawn" : "Amount received"}<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onTransactionFormChange({ amount: input.target.value })} /></label>
           <label>Description<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder="Example: Stripe payout to bank" /></label>
           <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title="Source document" description="Choose or drop receipt, invoice, CSV, or image" selectedName={transactionFile?.name} onFile={onTransactionFileChange} />
           <section className="posting-preview">
             <h3>Posting preview</h3>
-            {transactionForm.categoryId === "Drawings" ? <><div><span>Debit Drawings</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>Credit {transactionForm.paymentMethod || "Bank Account"}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></> : transactionForm.categoryId === "Stripe" || transactionForm.categoryId === "Xendit" ? <><div><span>Debit {transactionForm.paymentMethod || "Bank Account"}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>Credit {transactionForm.categoryId}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></> : <><div><span>Debit {transactionForm.paymentMethod || "Bank Account"}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>Credit {transactionForm.categoryId || "payment processor"}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></>}
+            {transactionForm.categoryId === "Drawings" ? <><div><span>Debit Drawings</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>Credit {transactionForm.paymentMethod || "Bank Account"}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></> : transactionForm.categoryId === "Stripe" || transactionForm.categoryId === "Xendit" || transactionForm.categoryId === "TikTok" ? <><div><span>Debit {transactionForm.paymentMethod || "Bank Account"}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>Credit {transactionForm.categoryId}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></> : <><div><span>Debit {transactionForm.paymentMethod || "Bank Account"}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>Credit {transactionForm.categoryId || "payment processor"}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></>}
           </section>
           <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? "Saving..." : "Save payout"}</button>
         </div>
@@ -5759,6 +5904,7 @@ function AccountingWorkspacePage({
     </section>;
     return <section className="accounting-workspace">
       <div className="accounting-hero card"><div><p>{categoryEvent.group.toUpperCase()}</p><h2>{categoryEvent.label}</h2><span>{isInventory ? "Record stock bought by batch. Quantity updates the inventory stock settings after saving." : isMoneyIn ? "Record payout money received from payment processors or sales reports." : "Record a simple bookkeeping transaction with source document proof."}</span></div><div className="accounting-status-pill">{formatMoney(calculatedAmount || 0)}</div></div>
+      {bankInProgressPanelFor(categoryEvent.value)}
       <section className="accounting-form-grid">
         <div className="accounting-form card">
           <h3>New {categoryEvent.label} record</h3>
@@ -5880,6 +6026,24 @@ function AccountingWorkspacePage({
       <article className="accounting-module-card card"><Icon name="cash" /><strong>{transactions.length} transactions</strong><span>Manual and document-linked entries.</span></article>
       <article className="accounting-module-card card"><Icon name="report" /><strong>{formatMoney(profit)}</strong><span>Current net profit from saved transactions.</span></article>
       <article className="accounting-module-card card"><Icon name="ledger" /><strong>{categories.length} categories</strong><span>Accounting categories available for coding.</span></article>
+    </div>
+  </section>;
+}
+
+function BankStatementInProgressPanel({ rows, onUse }: { rows: AccountingBankStatementLine[]; onUse: (line: AccountingBankStatementLine) => void }) {
+  if (!rows.length) return null;
+  return <section className="card bank-in-progress-panel">
+    <div className="ledger-table-heading">
+      <div><h3>In progress bank rows</h3><p>Click a row to load its date, description, amount, and bank details into the form below.</p></div>
+      <span className="accounting-status-pill">{rows.length} pending</span>
+    </div>
+    <div className="bank-in-progress-list">
+      {rows.map((line) => <button key={line.id} type="button" className="bank-in-progress-item" onClick={() => onUse(line)}>
+        <span>{formatDate(line.transactionDate)}<small>{bankLineRawString(line, "bank") || bankLineRawString(line, "bank_account") || "Bank"}</small></span>
+        <strong>{line.description}</strong>
+        <em className={line.moneyIn > 0 ? "money-in" : "money-out"}>{formatMoney(getBankLineAmount(line))}</em>
+        <span className="source-document-pill in-progress">Use row</span>
+      </button>)}
     </div>
   </section>;
 }
@@ -6600,8 +6764,8 @@ function FormalAccountingWorkspacePage({
     { title: "Sales", reportSections: ["Revenue"], names: [] },
   ];
   const cashStatementAccountNames = ["Bank Account", "Shopee Pay"];
-  const cashAccountNames = new Set(["Bank Account", "Shopee Pay", "Payment Processors", "Stripe", "Xendit", "TikTok Shop", "Owner Capital", "Owner Drawings"]);
-  const automaticTAccountNames = new Set(["Bank Account", "Shopee Pay", "Stripe", "Xendit", "Owner's Equity", "Drawings", "Sales", "Payment Processing Fees", prepaidOperatingCostAccountName, "Operating Expense", "Accounts Payable", ...cogsAccounts]);
+  const cashAccountNames = new Set(["Bank Account", "Shopee Pay", "Payment Processors", "Stripe", "Xendit", "TikTok", "Owner Capital", "Owner Drawings"]);
+  const automaticTAccountNames = new Set(["Bank Account", "Shopee Pay", "Stripe", "Xendit", "TikTok", "Owner's Equity", "Drawings", "Sales", "Payment Processing Fees", prepaidOperatingCostAccountName, "Operating Expense", "Accounts Payable", ...cogsAccounts]);
   const categoryBelongsToSection = (category: AccountingCategory, section: typeof tAccountSections[number]) => {
     if (!category.active) return false;
     const parentName = category.parentId ? categoryName(category.parentId) : "";
@@ -6629,7 +6793,7 @@ function FormalAccountingWorkspacePage({
       const category = categories.find((item) => item.id === entry.accountId);
       if (category && categoryBelongsToSection(category, section)) allNames.add(entry.accountName);
       if (automaticTAccountNames.has(entry.accountName)) {
-        if (section.title === "Cash" && ["Bank Account", "Shopee Pay", "Stripe", "Xendit", "Owner's Equity", "Drawings"].includes(entry.accountName)) allNames.add(entry.accountName);
+        if (section.title === "Cash" && ["Bank Account", "Shopee Pay", "Stripe", "Xendit", "TikTok", "Owner's Equity", "Drawings"].includes(entry.accountName)) allNames.add(entry.accountName);
         if (section.title === "Sales" && entry.accountName === "Sales") allNames.add(entry.accountName);
         if (section.title === "Expense" && (entry.accountName === "Payment Processing Fees" || entry.accountName === "Operating Expense" || cogsAccounts.includes(entry.accountName as (typeof cogsAccounts)[number]))) allNames.add(entry.accountName);
         if (section.title === "Assets" && entry.accountName === prepaidOperatingCostAccountName) allNames.add(entry.accountName);
