@@ -874,6 +874,22 @@ function formatMoney(value: number, currency = "MYR") {
   return new Intl.NumberFormat("en-MY", { style: "currency", currency }).format(value);
 }
 
+function marketingAdAccountName(value: string) {
+  const text = value.toLowerCase();
+  if (text.includes("tiktok") || text.includes("tik tok")) return "TikTok Ads";
+  if (text.includes("meta") || text.includes("facebook") || text.includes("facebk")) return "Meta Ads";
+  return value.trim();
+}
+
+function isMonthlyMarketingAdAccount(value: string) {
+  return ["Meta Ads", "TikTok Ads"].includes(marketingAdAccountName(value));
+}
+
+function monthKey(value: string) {
+  const key = dateKey(value);
+  return key ? key.slice(0, 7) : "";
+}
+
 function formatFileSize(size: number) {
   if (!Number.isFinite(size) || size <= 0) return "-";
   if (size < 1024) return `${size} B`;
@@ -1212,6 +1228,7 @@ export default function Home() {
   const [contentIdeas, setContentIdeas] = useState<ContentIdeaItem[]>([]);
   const [accountingDocumentFile, setAccountingDocumentFile] = useState<File | null>(null);
   const [transactionDocumentFile, setTransactionDocumentFile] = useState<File | null>(null);
+  const [monthlyMarketingDocumentFiles, setMonthlyMarketingDocumentFiles] = useState<Record<string, File | null>>({});
   const [editingTransactionId, setEditingTransactionId] = useState("");
   const [editingTransactionForm, setEditingTransactionForm] = useState<AccountingTransactionForm | null>(null);
   const [editingTransactionFile, setEditingTransactionFile] = useState<File | null>(null);
@@ -4319,6 +4336,64 @@ export default function Home() {
     }
   }
 
+  async function attachMonthlyMarketingDocument(payload: { groupKey: string; month: string; accountName: string; transactionIds: string[]; amount: number }) {
+    const selectedTransactions = accountingTransactions.filter((transaction) => payload.transactionIds.includes(transaction.id));
+    const file = monthlyMarketingDocumentFiles[payload.groupKey];
+    if (!selectedTransactions.length) return setNotice("No ad transactions found for this month.");
+    if (!file) return setNotice("Drop the monthly source document first.");
+    setSavingAccounting(true);
+    try {
+      const actor = session?.displayName ?? "Admin";
+      const now = new Date().toISOString();
+      const documentId = crypto.randomUUID();
+      const filePath = await uploadAccountingDocumentFile(file, documentId);
+      const firstTransaction = selectedTransactions[0];
+      const monthDate = `${payload.month}-01`;
+      await saveAccountingDocument({
+        id: documentId,
+        filePath,
+        fileName: file.name,
+        fileType: file.type || "application/octet-stream",
+        fileSize: file.size,
+        name: `${payload.accountName} ${formatMonthLabel(monthDate)} source document`,
+        supplier: payload.accountName,
+        description: `${payload.accountName} monthly ad spend proof for ${formatMonthLabel(monthDate)}`,
+        documentDate: monthDate,
+        amount: payload.amount,
+        categoryId: firstTransaction.categoryId,
+        transactionType: "expense",
+        taxTreatment: firstTransaction.taxTreatment || "none",
+        notes: `Attached to ${selectedTransactions.length} ${payload.accountName} transaction${selectedTransactions.length === 1 ? "" : "s"} for ${formatMonthLabel(monthDate)}.`,
+        uploadedBy: actor,
+        createdAt: now,
+        updatedAt: now,
+      });
+      for (const transaction of selectedTransactions) {
+        await saveAccountingTransaction({
+          ...transaction,
+          source: transaction.source === "manual" ? "document" : transaction.source,
+          sourceId: transaction.sourceId || documentId,
+          documentId,
+          updatedAt: now,
+        });
+      }
+      await insertSharedActivity({
+        id: crypto.randomUUID(),
+        action: "Monthly ad source document attached",
+        detail: `${payload.accountName} ${formatMonthLabel(monthDate)} (${formatMoney(payload.amount)}) attached to ${selectedTransactions.length} transaction${selectedTransactions.length === 1 ? "" : "s"}.`,
+        actor,
+        createdAt: now,
+      });
+      setMonthlyMarketingDocumentFiles((current) => ({ ...current, [payload.groupKey]: null }));
+      await loadSharedData();
+      setNotice(`${payload.accountName} ${formatMonthLabel(monthDate)} source document attached.`);
+    } catch (error) {
+      setNotice(readableError(error, "Could not attach the monthly ad source document."));
+    } finally {
+      setSavingAccounting(false);
+    }
+  }
+
   function unsettledAmount(transaction: AccountingTransaction) {
     if (transaction.paymentStatus === "deposit_paid") return Math.max(0, transaction.amount - transaction.depositAmount);
     if (transaction.paymentStatus === "on_credit" || transaction.paymentStatus === "pay_later") return transaction.amount;
@@ -4819,6 +4894,7 @@ export default function Home() {
         onOperatingCostReleaseFormChange={(patch) => setOperatingCostReleaseForm((current) => ({ ...current, ...patch }))}
         selectedFile={accountingDocumentFile}
         transactionFile={transactionDocumentFile}
+        monthlyMarketingDocumentFiles={monthlyMarketingDocumentFiles}
         saving={savingAccounting}
         onDocumentFormChange={(patch) => setDocumentForm((current) => ({ ...current, ...patch }))}
         onTransactionFormChange={(patch) => setTransactionForm((current) => ({ ...current, ...patch }))}
@@ -4829,6 +4905,8 @@ export default function Home() {
         onSalesConsumptionMappingFormChange={(patch) => setSalesConsumptionMappingForm((current) => ({ ...current, ...patch }))}
         onFileChange={setAccountingDocumentFile}
         onTransactionFileChange={setTransactionDocumentFile}
+        onMonthlyMarketingDocumentFileChange={(groupKey, file) => setMonthlyMarketingDocumentFiles((current) => ({ ...current, [groupKey]: file }))}
+        onAttachMonthlyMarketingDocument={attachMonthlyMarketingDocument}
         onUploadDocument={uploadAccountingDocument}
         onCreateTransaction={createManualAccountingTransaction}
         onReadBookkeepingCsv={readBookkeepingCsv}
@@ -5260,6 +5338,7 @@ function AccountingWorkspacePage({
   operatingCostReleaseForm,
   selectedFile,
   transactionFile,
+  monthlyMarketingDocumentFiles,
   saving,
   onDocumentFormChange,
   onTransactionFormChange,
@@ -5271,6 +5350,8 @@ function AccountingWorkspacePage({
   onOperatingCostReleaseFormChange,
   onFileChange,
   onTransactionFileChange,
+  onMonthlyMarketingDocumentFileChange,
+  onAttachMonthlyMarketingDocument,
   onUploadDocument,
   onCreateTransaction,
   onReadBookkeepingCsv,
@@ -5349,6 +5430,7 @@ function AccountingWorkspacePage({
   operatingCostReleaseForm: OperatingCostReleaseForm;
   selectedFile: File | null;
   transactionFile: File | null;
+  monthlyMarketingDocumentFiles: Record<string, File | null>;
   saving: boolean;
   onDocumentFormChange: (patch: Partial<AccountingDocumentForm>) => void;
   onTransactionFormChange: (patch: Partial<AccountingTransactionForm>) => void;
@@ -5360,6 +5442,8 @@ function AccountingWorkspacePage({
   onOperatingCostReleaseFormChange: (patch: Partial<OperatingCostReleaseForm>) => void;
   onFileChange: (file: File | null) => void;
   onTransactionFileChange: (file: File | null) => void;
+  onMonthlyMarketingDocumentFileChange: (groupKey: string, file: File | null) => void;
+  onAttachMonthlyMarketingDocument: (payload: { groupKey: string; month: string; accountName: string; transactionIds: string[]; amount: number }) => void;
   onUploadDocument: () => void;
   onCreateTransaction: () => void;
   onReadBookkeepingCsv: (file: File | undefined) => void;
@@ -6025,6 +6109,87 @@ function AccountingWorkspacePage({
           : transactionForm.categoryId === "Owner's Equity" || transactionForm.categoryId === "Drawings"
             ? 0
           : 0;
+    const marketingTransactions = transactions.filter((transaction) => transaction.businessEvent === "marketing_expense");
+    const monthlyMarketingGroups = Array.from(marketingTransactions.reduce((groups, transaction) => {
+      const accountText = `${transaction.accountName} ${categoryName(transaction.categoryId)} ${transaction.description}`;
+      const accountName = marketingAdAccountName(accountText);
+      const month = monthKey(transaction.transactionDate);
+      if (!month || !isMonthlyMarketingAdAccount(accountName)) return groups;
+      const groupKey = `${month}|${accountName}`;
+      const existing = groups.get(groupKey) ?? { key: groupKey, month, accountName, transactions: [] as AccountingTransaction[], total: 0, documentIds: new Set<string>() };
+      existing.transactions.push(transaction);
+      existing.total += transaction.amount;
+      if (transaction.documentId) existing.documentIds.add(transaction.documentId);
+      groups.set(groupKey, existing);
+      return groups;
+    }, new Map<string, { key: string; month: string; accountName: string; transactions: AccountingTransaction[]; total: number; documentIds: Set<string> }>()).values())
+      .sort((a, b) => b.month.localeCompare(a.month) || a.accountName.localeCompare(b.accountName));
+    const marketingAdAccountOptions = accountOptions.filter((account) => account.value === newAssetOptionValue || isMonthlyMarketingAdAccount(`${account.label} ${account.value}`));
+    const visibleMarketingAccountOptions = marketingAdAccountOptions.length > 1 ? marketingAdAccountOptions : accountOptions;
+    const selectedMarketingAccount = accountOptions.find((account) => account.value === transactionForm.categoryId);
+    const selectedMarketingAccountName = marketingAdAccountName(selectedMarketingAccount?.label || transactionForm.accountName || "Meta Ads");
+    const selectedMarketingMonth = monthKey(transactionForm.transactionDate) || monthKey(localDateKey(new Date()));
+    if (categoryEvent.value === "marketing_expense") return <section className="accounting-workspace">
+      <div className="accounting-hero card"><div><p>MONTHLY ADS</p><h2>Marketing</h2><span>Meta Ads and TikTok Ads are handled by month. Existing ad charges are grouped below, and one source document can be attached to the whole month.</span></div><div className="accounting-status-pill">{formatMoney(marketingTransactions.reduce((total, transaction) => total + transaction.amount, 0))}</div></div>
+      {bankInProgressPanelFor("marketing_expense")}
+      <section className="accounting-form-grid">
+        <div className="accounting-form card">
+          <h3>New monthly ad record</h3>
+          <label>Month<input type="month" value={selectedMarketingMonth} onChange={(input) => {
+            const nextMonth = input.target.value || selectedMarketingMonth;
+            onTransactionFormChange({
+              transactionDate: `${nextMonth}-01`,
+              description: transactionForm.description.trim() ? transactionForm.description : `${selectedMarketingAccountName} - ${formatMonthLabel(`${nextMonth}-01`)}`,
+            });
+          }} /></label>
+          <label>Ad account<select value={transactionForm.categoryId} onChange={(input) => {
+            const selected = accountOptions.find((account) => account.value === input.target.value);
+            const accountName = marketingAdAccountName(selected?.label || "");
+            const patch: Partial<AccountingTransactionForm> = { categoryId: input.target.value, accountName: "", supplier: accountName };
+            if (!transactionForm.description.trim() && selectedMarketingMonth) patch.description = `${accountName || "Marketing Ads"} - ${formatMonthLabel(`${selectedMarketingMonth}-01`)}`;
+            onTransactionFormChange(patch);
+          }}><option value="">Choose ad account</option>{visibleMarketingAccountOptions.map((account) => <option key={account.value} value={account.value}>{account.label}</option>)}</select></label>
+          {transactionForm.categoryId === newAssetOptionValue && <label>{newAccountLabel}<input value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })} placeholder="Example: Meta Ads, TikTok Ads..." /></label>}
+          <label>Total monthly spend<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onTransactionFormChange({ amount: input.target.value })} /></label>
+          <label>Supplier / source<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder="Meta, TikTok, agency..." /></label>
+          <label>Description<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder="Example: Meta Ads - July 2026" /></label>
+          <h3>Payment</h3>
+          <label>Payment type<select value={transactionForm.paymentStatus} onChange={(input) => onTransactionFormChange({ paymentStatus: input.target.value as AccountingTransactionForm["paymentStatus"] })}><option value="paid_in_full">Paid in full</option><option value="deposit_paid">Deposit Paid</option><option value="on_credit">On Credit</option></select></label>
+          {transactionForm.paymentStatus !== "on_credit" && <label>Paid from<select value={transactionForm.paymentMethod} onChange={(input) => onTransactionFormChange({ paymentMethod: input.target.value })}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>}
+          <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title="Monthly source document" description="Choose or drop the monthly Meta/TikTok invoice or report" selectedName={transactionFile?.name} onFile={onTransactionFileChange} />
+          <label>Notes<textarea value={transactionForm.notes} onChange={(event) => onTransactionFormChange({ notes: event.target.value })} /></label>
+          <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? "Saving..." : "Save monthly ad record"}</button>
+        </div>
+        <div className="marketing-monthly-panel">
+          {transactionEditPanel}
+          <section className="card accounting-table-card">
+            <div className="ledger-table-heading"><div><h3>Monthly Meta/TikTok totals</h3><p>These totals are added up from the existing ad transactions. Attach one invoice/report to the whole month without creating a duplicate expense.</p></div></div>
+            <div className="monthly-marketing-list">
+              {monthlyMarketingGroups.map((group) => {
+                const groupDocuments = [...group.documentIds]
+                  .map((documentId) => transactionDocuments.find((document) => document.id === documentId))
+                  .filter((document): document is AccountingDocument => Boolean(document));
+                const selectedFile = monthlyMarketingDocumentFiles[group.key];
+                return <article className="monthly-marketing-row" key={group.key}>
+                  <div className="monthly-marketing-summary">
+                    <strong>{formatMonthLabel(`${group.month}-01`)} · {group.accountName}</strong>
+                    <span>{group.transactions.length} transaction{group.transactions.length === 1 ? "" : "s"} added up</span>
+                  </div>
+                  <strong className="monthly-marketing-total">{formatMoney(group.total)}</strong>
+                  <div className="monthly-marketing-documents">
+                    {groupDocuments.length ? groupDocuments.map((document) => <button key={document.id} className="view-button document-link" onClick={() => onOpenDocument(document)}>{document.fileName}</button>) : <span>No source document yet</span>}
+                  </div>
+                  <FileDropZone className="compact-file-drop monthly-marketing-drop" accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title="Attach source document" description="Drop the monthly proof here" selectedName={selectedFile?.name} onFile={(file) => onMonthlyMarketingDocumentFileChange(group.key, file)} />
+                  <button className="button primary" disabled={saving || !selectedFile} onClick={() => onAttachMonthlyMarketingDocument({ groupKey: group.key, month: group.month, accountName: group.accountName, transactionIds: group.transactions.map((transaction) => transaction.id), amount: group.total })}>{saving ? "Saving..." : "Attach to month"}</button>
+                </article>;
+              })}
+              {!monthlyMarketingGroups.length && <div className="empty"><strong>No monthly ad totals yet</strong><p>When Meta Ads or TikTok Ads transactions are recorded, they will appear here grouped by month.</p></div>}
+            </div>
+          </section>
+          <AccountingTransactionsTable transactions={marketingTransactions} ledgerEntries={ledgerEntries} documents={transactionDocuments} bankStatementLines={bankStatementLines} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} onBulkPaymentMethodChange={onBulkTransactionPaymentMethodChange} />
+        </div>
+      </section>
+    </section>;
     if (isOtherIncome) return <section className="accounting-workspace">
       <div className="accounting-hero card"><div><p>MONEY IN</p><h2>Other Income</h2><span>Record sales that were not keyed into Shopify. These entries post as income and consume inventory through FIFO like normal sales.</span></div><div className="accounting-status-pill">{formatMoney(otherIncomeTotal)}</div></div>
       {bankInProgressPanelFor("other_income")}
@@ -6109,7 +6274,7 @@ function AccountingWorkspacePage({
           <label>Date<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label>
           <label>{isInventory ? "Inventory item" : isMoneyIn ? "Money in type" : isAsset ? "Asset" : "Category"}<select value={transactionForm.categoryId} onChange={(input) => onTransactionFormChange({ categoryId: input.target.value, accountName: "" })}><option value="">Choose</option>{accountOptions.map((account) => <option key={account.value} value={account.value}>{account.label}</option>)}</select></label>
           {isInventory && transactionForm.categoryId === rejectedInventoryOption && <label>Rejected item<select value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })}><option value="">Choose rejected item</option><option value="BILLY">BILLY</option><option value="TOOTSIE">TOOTSIE</option><option value="HUNNIE">HUNNIE</option><option value="DRAGON WARRIOR">DRAGON WARRIOR</option><option value="PACKAGING">PACKAGING</option><option value="BOXES">BOXES</option><option value="BUBBLE WRAP">BUBBLE WRAP</option><option value="WAX SEAL">WAX SEAL</option></select></label>}
-          {transactionForm.categoryId === newAssetOptionValue && <label>{newAccountLabel}<input value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })} placeholder={isAsset ? "Example: Printer, heat press machine..." : isInventory ? "Example: Speaker, wax seal, bubble wrap..." : categoryEvent.value === "marketing_expense" ? "Example: Meta ads, TikTok ads..." : "Example: Labour, samples, JnT..."} /></label>}
+          {transactionForm.categoryId === newAssetOptionValue && <label>{newAccountLabel}<input value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })} placeholder={isAsset ? "Example: Printer, heat press machine..." : isInventory ? "Example: Speaker, wax seal, bubble wrap..." : "Example: Labour, samples, JnT..."} /></label>}
           <div className="accounting-two-cols"><label>{isInventory ? "Unit price" : "Amount"}<input type="number" min="0" step="0.01" value={isInventory ? transactionForm.unitCost : transactionForm.amount} onChange={(input) => isInventory ? onInventoryCostFieldChange("unitCost", input.target.value) : onTransactionFormChange({ amount: input.target.value })} /></label>{isInventory ? <label>{transactionForm.categoryId === rejectedInventoryOption ? "Quantity rejected" : "Quantity bought"}<input type="number" min="0" step="1" value={transactionForm.quantity} onChange={(input) => onInventoryCostFieldChange("quantity", input.target.value)} /></label> : <label>Supplier / source<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder={isMoneyIn ? "Stripe, Xendit, TikTok Shop..." : "Supplier name"} /></label>}</div>
           {isInventory && <label>Total batch cost<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onInventoryCostFieldChange("amount", input.target.value)} placeholder="Enter any 2 fields and the missing one calculates" /></label>}
           {isInventory && <label>Supplier<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder="Supplier name" /></label>}
