@@ -133,6 +133,7 @@
 .bank-statement-table tr.clickable-bank-line:hover td { background: #ecfdf3; }
 .source-document-pill.partial { background: #fff7d6; color: #9a5b00; }
 .source-document-pill.in-progress { background: #fff7d6; color: #9a5b00; }
+.source-document-pill.shopee { background: #fff4e6; color: #c2410c; }
 .bank-in-progress-panel { margin: 0 0 16px; padding: 18px; }
 .bank-in-progress-panel .ledger-table-heading { margin-bottom: 12px; }
 .bank-in-progress-panel .ledger-table-heading h3 { margin: 0 0 4px; }
