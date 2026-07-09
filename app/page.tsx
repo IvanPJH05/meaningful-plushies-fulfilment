@@ -5724,10 +5724,12 @@ function AccountingWorkspacePage({
       <section className={`card accounting-table-card bank-statement-card ${bankStatementFocusMode ? "bank-statement-fullscreen" : ""} lock-${lockedBankStatementColumn}`}>
         <div className="bank-lines-heading">
           <div><h3>{selectedBankStatementSectionLabel}</h3><span>{shownBankStatementLines.length} shown from {bankStatementLines.length} imported row{bankStatementLines.length === 1 ? "" : "s"}</span></div>
-          <div className="bank-reference-actions no-print">
+          <div className="bank-lines-controls no-print">
             <div className="bank-section-pills" aria-label="Bank statement sections">{bankStatementSections.map((section) => <button key={section.value} className={selectedBankStatementSection === section.value ? "active" : ""} onClick={() => setSelectedBankStatementSection(section.value)}>{section.label}</button>)}</div>
-            <label>Lock column<select value={lockedBankStatementColumn} onChange={(event) => setLockedBankStatementColumn(event.target.value as "none" | "status" | "date" | "description")}><option value="none">No locked column</option><option value="status">Status</option><option value="date">Date</option><option value="description">Description</option></select></label>
-            <button className="button secondary" disabled={!bankStatementLines.length} onClick={() => setBankStatementFocusMode((current) => !current)}>{bankStatementFocusMode ? "Exit full screen" : "Full screen"}</button>
+            <div className="bank-lines-tool-row">
+              <label>Lock column<select value={lockedBankStatementColumn} onChange={(event) => setLockedBankStatementColumn(event.target.value as "none" | "status" | "date" | "description")}><option value="none">No locked column</option><option value="status">Status</option><option value="date">Date</option><option value="description">Description</option></select></label>
+              <button className="button secondary" disabled={!bankStatementLines.length} onClick={() => setBankStatementFocusMode((current) => !current)}>{bankStatementFocusMode ? "Exit full screen" : "Full screen"}</button>
+            </div>
           </div>
         </div>
         <div className="table-scroll bank-statement-lines-scroll"><table className="orders-table bank-statement-table"><thead><tr><th>Status</th><th>Date</th><th>Bank</th><th>Description</th><th>Amount</th><th>Action</th></tr></thead><tbody>{shownBankStatementLines.map((line) => {
