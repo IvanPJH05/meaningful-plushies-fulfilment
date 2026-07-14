@@ -10,17 +10,17 @@ const fallbackProducts: ManualOrderProductConfig[] = [
   {
     key: "plushie_5s",
     displayName: "Meaningful Plushie - 5 seconds",
-    productPath: "products/build-your-meaningful-plushie-wa-p-5s",
+    productPath: "products/meanngful-plushie",
   },
   {
     key: "plushie_10s",
     displayName: "Meaningful Plushie - 10 seconds",
-    productPath: "products/build-your-meaningful-plushie-wa-p-10s",
+    productPath: "products/meanngful-plushie",
   },
   {
     key: "plushie_20s",
     displayName: "Meaningful Plushie - 20 seconds",
-    productPath: "products/build-your-meaningful-plushie-wa-p-20s",
+    productPath: "products/meanngful-plushie",
   },
 ];
 
