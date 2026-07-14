@@ -1137,6 +1137,51 @@ body.print-sales-report .report-table th,
   font: inherit;
 }
 
+.manual-order-choice {
+  display: grid;
+  gap: 9px;
+}
+
+.manual-order-choice > span {
+  color: #435677;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.manual-order-pill-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid #d8e4f3;
+  border-radius: 14px;
+  background: #edf4ff;
+}
+
+.manual-order-pill-group button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #465b78;
+  padding: 0 14px;
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.manual-order-pill-group button.active {
+  background: #fff;
+  color: #075bd8;
+  box-shadow: 0 3px 12px rgba(15, 45, 79, .13);
+}
+
+.manual-order-pill-group button:hover {
+  background: #fff;
+}
+
 .manual-order-note {
   margin: 0;
   font-size: 13px;

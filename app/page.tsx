@@ -606,6 +606,7 @@ const formalAccountingViews: readonly View[] = ["accounting_general_journal", "a
 const contentViews: readonly View[] = ["content_dashboard", "content_plan", "content_ideas"];
 const adsViews: readonly View[] = ["ads_dashboard"];
 const manualOrderViews: readonly View[] = ["manual_orders_dashboard"];
+const manualOrderCharacters = ["Billy", "Tootsie", "Hunnie", "Dragon Warrior"] as const;
 const creatorViews: readonly View[] = ["creator_dashboard", "creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
 const creatorAdminViews: readonly View[] = ["creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
 const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "meta_capi", "stock", "sales_report", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...contentViews, ...adsViews, ...creatorViews];
@@ -1229,9 +1230,16 @@ export default function Home() {
   const [metaAdsConfigured, setMetaAdsConfigured] = useState(false);
   const [metaAdsLoading, setMetaAdsLoading] = useState(false);
   const [metaAdsError, setMetaAdsError] = useState("");
-  const [manualOrderForm, setManualOrderForm] = useState({
+  const [manualOrderForm, setManualOrderForm] = useState<{
+    customerName: string;
+    phone: string;
+    character: string;
+    productKey: string;
+    shippingRegion: "WEST" | "EAST";
+  }>({
     customerName: "",
     phone: "",
+    character: manualOrderCharacters[0],
     productKey: manualOrderProducts[0]?.key ?? "",
     shippingRegion: "WEST" as "WEST" | "EAST",
   });
@@ -7051,11 +7059,11 @@ function ManualOrdersWorkspacePage({
   whatsAppLink,
 }: {
   manualOrders: ManualOrder[];
-  form: { customerName: string; phone: string; productKey: string; shippingRegion: "WEST" | "EAST" };
+  form: { customerName: string; phone: string; character: string; productKey: string; shippingRegion: "WEST" | "EAST" };
   query: string;
   busy: string;
   lastManualOrderId: string;
-  onFormChange: (patch: Partial<{ customerName: string; phone: string; productKey: string; shippingRegion: "WEST" | "EAST" }>) => void;
+  onFormChange: (patch: Partial<{ customerName: string; phone: string; character: string; productKey: string; shippingRegion: "WEST" | "EAST" }>) => void;
   onQueryChange: (value: string) => void;
   onCreate: (event: FormEvent) => Promise<void>;
   onCopy: (value: string, label: string) => Promise<void>;
@@ -7077,6 +7085,11 @@ function ManualOrdersWorkspacePage({
     ].some((value) => value.toLowerCase().includes(normalizedQuery));
   });
   const lastOrder = manualOrders.find((order) => order.id === lastManualOrderId);
+  const selectedProduct = manualOrderProducts.find((product) => product.key === form.productKey) ?? manualOrderProducts[0];
+  const speakerLabel = (productName: string) => {
+    const match = productName.match(/(\d+)\s*seconds?/i);
+    return match ? `${match[1]}s` : productName;
+  };
 
   return <section className="manual-orders-workspace">
     <div className="manual-order-hero card">
@@ -7093,7 +7106,18 @@ function ManualOrdersWorkspacePage({
         <h3>Create manual order</h3>
         <label>Customer name<input value={form.customerName} onChange={(event) => onFormChange({ customerName: event.target.value })} placeholder="Sarah Lim" required /></label>
         <label>Phone<input value={form.phone} onChange={(event) => onFormChange({ phone: event.target.value })} placeholder="0123456789" required /></label>
-        <label>What they bought<select value={form.productKey} onChange={(event) => onFormChange({ productKey: event.target.value })} required>{manualOrderProducts.map((product) => <option key={product.key} value={product.key}>{product.displayName}</option>)}</select></label>
+        <div className="manual-order-choice">
+          <span>Character</span>
+          <div className="manual-order-pill-group" aria-label="Manual order character">
+            {manualOrderCharacters.map((character) => <button type="button" key={character} className={form.character === character ? "active" : ""} onClick={() => onFormChange({ character })}>{character}</button>)}
+          </div>
+        </div>
+        <div className="manual-order-choice">
+          <span>Speaker</span>
+          <div className="manual-order-pill-group" aria-label="Manual order speaker length">
+            {manualOrderProducts.map((product) => <button type="button" key={product.key} className={selectedProduct?.key === product.key ? "active" : ""} onClick={() => onFormChange({ productKey: product.key })}>{speakerLabel(product.displayName)}</button>)}
+          </div>
+        </div>
         <label>Shipping region<select value={form.shippingRegion} onChange={(event) => onFormChange({ shippingRegion: event.target.value === "EAST" ? "EAST" : "WEST" })}><option value="WEST">West Malaysia</option><option value="EAST">East Malaysia</option></select></label>
         <button className="button primary large" disabled={busy === "create"} type="submit">{busy === "create" ? "Creating..." : "Generate Shopify link"}</button>
         <p className="manual-order-note">The app creates one 100% product discount and one free-shipping discount. Both expire after 14 days and can only be used once.</p>

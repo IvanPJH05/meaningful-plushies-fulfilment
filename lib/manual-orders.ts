@@ -9,6 +9,7 @@ export type ManualOrderCreateInput = {
   customerName: string;
   phone: string;
   productKey: string;
+  character?: string;
   shippingRegion: "WEST" | "EAST";
 };
 
@@ -23,6 +24,51 @@ function asShopifyGid(value: string, type: "Product" | "ProductVariant") {
 function userErrorMessage(errors: DiscountUserError[] | undefined, fallback: string) {
   const messages = (errors ?? []).map((error) => error.message).filter(Boolean);
   return messages.length ? messages.join(" ") : fallback;
+}
+
+const manualOrderCharacters = ["Billy", "Tootsie", "Hunnie", "Dragon Warrior"] as const;
+
+function normalizeManualOrderCharacter(value?: string) {
+  const normalized = (value ?? "").trim().toLowerCase();
+  return manualOrderCharacters.find((character) => character.toLowerCase() === normalized) ?? "";
+}
+
+function productHandleFromPath(productPath: string) {
+  const clean = productPath.replace(/^https?:\/\/[^/]+\//, "").replace(/^\/+|\/+$/g, "");
+  const parts = clean.split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? "";
+}
+
+async function resolveManualOrderProduct(domain: string, product: ManualOrderProductConfig) {
+  const configuredProductId = asShopifyGid(product.shopifyProductId ?? "", "Product");
+  const configuredVariantId = asShopifyGid(product.shopifyVariantId ?? "", "ProductVariant");
+  if (configuredProductId || configuredVariantId) {
+    return { productId: configuredProductId, variantId: configuredVariantId };
+  }
+
+  const handle = productHandleFromPath(product.productPath);
+  if (!handle) return { productId: "", variantId: "" };
+
+  const result = await shopifyGraphql<{
+    data?: { product?: { id?: string; variants?: { nodes?: { id?: string }[] } } };
+    errors?: { message?: string }[];
+  }>(domain, `
+    query ManualOrderProductByHandle($identifier: ProductIdentifierInput!) {
+      product: productByIdentifier(identifier: $identifier) {
+        id
+        variants(first: 1) {
+          nodes { id }
+        }
+      }
+    }
+  `, { identifier: { handle } });
+
+  if (result?.errors?.length) throw new Error(result.errors.map((error) => error.message).filter(Boolean).join(" "));
+  const resolved = result?.data?.product;
+  return {
+    productId: textValue(resolved?.id),
+    variantId: textValue(resolved?.variants?.nodes?.[0]?.id),
+  };
 }
 
 export function normalizeManualOrderPhone(phone: string) {
@@ -59,11 +105,17 @@ export function buildManualOrderCustomerLink(productCode: string, shippingCode: 
   return `${store}/discount/${encodeURIComponent(productCode)},${encodeURIComponent(shippingCode)}?redirect=/${cleanPath}`;
 }
 
-async function createProductDiscount(domain: string, input: ManualOrderCreateInput, product: ManualOrderProductConfig, code: string, expiresAt: string) {
-  const productId = asShopifyGid(product.shopifyProductId ?? "", "Product");
-  const variantId = asShopifyGid(product.shopifyVariantId ?? "", "ProductVariant");
+async function createProductDiscount(
+  domain: string,
+  input: ManualOrderCreateInput,
+  product: ManualOrderProductConfig,
+  code: string,
+  expiresAt: string,
+  resolvedProduct: { productId: string; variantId: string },
+) {
+  const { productId, variantId } = resolvedProduct;
   if (!productId && !variantId) {
-    throw new Error(`Manual order product "${product.displayName}" is missing a Shopify product ID or variant ID. Add MANUAL_ORDER_PRODUCTS_JSON in Vercel.`);
+    throw new Error(`Manual order product "${product.displayName}" could not be found in Shopify from product path "${product.productPath}". Add its Shopify product ID or variant ID in MANUAL_ORDER_PRODUCTS_JSON.`);
   }
 
   const result = await shopifyGraphql<{
@@ -145,12 +197,16 @@ export async function createManualOrderDiscounts(input: ManualOrderCreateInput):
   if (!domain) throw new Error("SHOPIFY_SHOP_DOMAIN is missing in Vercel.");
 
   const phone = normalizeManualOrderPhone(input.phone);
+  const character = normalizeManualOrderCharacter(input.character);
+  if (input.character && !character) throw new Error("Choose a valid character.");
   const productCode = await generateManualOrderCode(phone.lastFour);
   const shippingCode = `SHIP${productCode}`;
   const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
-  const productDiscountShopifyId = await createProductDiscount(domain, input, product, productCode, expiresAt);
+  const resolvedProduct = await resolveManualOrderProduct(domain, product);
+  const productDiscountShopifyId = await createProductDiscount(domain, input, product, productCode, expiresAt, resolvedProduct);
   const shippingDiscountShopifyId = await createShippingDiscount(domain, input, shippingCode, expiresAt);
   const now = new Date().toISOString();
+  const productDisplayName = character ? `${character} - ${product.displayName}` : product.displayName;
 
   return {
     id: randomUUID(),
@@ -159,9 +215,9 @@ export async function createManualOrderDiscounts(input: ManualOrderCreateInput):
     phoneNormalized: phone.normalized,
     phoneLastFour: phone.lastFour,
     productKey: product.key,
-    productDisplayName: product.displayName,
-    shopifyProductId: product.shopifyProductId ?? "",
-    shopifyVariantId: product.shopifyVariantId ?? "",
+    productDisplayName,
+    shopifyProductId: resolvedProduct.productId || product.shopifyProductId || "",
+    shopifyVariantId: resolvedProduct.variantId || product.shopifyVariantId || "",
     productPath: product.productPath,
     shippingRegion: input.shippingRegion,
     productDiscountCode: productCode,

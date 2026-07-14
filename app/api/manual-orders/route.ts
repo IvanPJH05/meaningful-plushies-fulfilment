@@ -24,12 +24,14 @@ export async function POST(request: Request) {
       customerName?: string;
       phone?: string;
       productKey?: string;
+      character?: string;
       shippingRegion?: string;
     };
     const manualOrder = await createManualOrderDiscounts({
       customerName: body.customerName ?? "",
       phone: body.phone ?? "",
       productKey: body.productKey ?? "",
+      character: body.character ?? "",
       shippingRegion: body.shippingRegion === "EAST" ? "EAST" : "WEST",
     });
     await saveManualOrder(manualOrder);
