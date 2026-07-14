@@ -7126,9 +7126,23 @@ function ManualOrdersWorkspacePage({
       <section className="card manual-order-result">
         <div className="accounting-form-heading"><div><h3>Latest generated link</h3><p>Copy this to send the customer back to Shopify.</p></div></div>
         {lastOrder ? <div className="manual-order-created-card">
-          <strong>{lastOrder.customerName}</strong>
-          <span>{lastOrder.productDisplayName}</span>
-          <code>{lastOrder.customerLink}</code>
+          <div className="manual-order-created-header">
+            <div>
+              <span>Ready to send</span>
+              <strong>{lastOrder.customerName}</strong>
+            </div>
+            <em>{lastOrder.status}</em>
+          </div>
+          <div className="manual-order-summary-grid">
+            <div><span>Product</span><strong>{lastOrder.productDisplayName}</strong></div>
+            <div><span>Region</span><strong>{lastOrder.shippingRegion === "EAST" ? "East Malaysia" : "West Malaysia"}</strong></div>
+            <div><span>Product code</span><strong>{lastOrder.productDiscountCode}</strong></div>
+            <div><span>Shipping code</span><strong>{lastOrder.shippingDiscountCode}</strong></div>
+          </div>
+          <div className="manual-order-link-box">
+            <span>Checkout link</span>
+            <code>{lastOrder.customerLink}</code>
+          </div>
           <div className="manual-order-actions">
             <button className="button primary small" type="button" onClick={() => onCopy(lastOrder.customerLink, "Customer link")}>Copy Link</button>
             <button className="button secondary small" type="button" onClick={() => onCopy(lastOrder.productDiscountCode, "Product discount")}>Copy Product Code</button>
