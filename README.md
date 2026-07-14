@@ -118,8 +118,6 @@ The Shopify app needs these scopes:
 read_discounts,write_discounts,read_orders,write_orders,read_metaobjects,write_metaobjects
 ```
 
-`read_products` is only needed if the app cannot resolve the product from the public Shopify product path and you do not provide product or variant IDs in `MANUAL_ORDER_PRODUCTS_JSON`.
-
 Add or verify these Vercel variables:
 
 ```env
@@ -133,7 +131,7 @@ NEXT_PUBLIC_MANUAL_ORDER_PRODUCTS_JSON=[{"key":"plushie_20s","displayName":"Mean
 NEXT_PUBLIC_SHOPIFY_ADMIN_STORE_HANDLE=your-store-handle
 ```
 
-`MANUAL_ORDER_PRODUCTS_JSON` is server-side. Product or variant IDs are optional when `productPath` points to a live Shopify product handle, because the app will resolve the IDs from the storefront product page first. Add product or variant IDs only if automatic lookup fails. `NEXT_PUBLIC_MANUAL_ORDER_PRODUCTS_JSON` is optional and only controls what labels appear in the browser form.
+`MANUAL_ORDER_PRODUCTS_JSON` is server-side. Product or variant IDs are optional when `productPath` points to a live Shopify product handle, because the app resolves the IDs from the storefront product page. Add product or variant IDs only if automatic lookup fails. `NEXT_PUBLIC_MANUAL_ORDER_PRODUCTS_JSON` is optional and only controls what labels appear in the browser form.
 
 ## Meta Conversions API
 

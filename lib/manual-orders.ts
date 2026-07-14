@@ -41,7 +41,7 @@ function productHandleFromPath(productPath: string) {
 
 async function resolveManualOrderProductFromStorefront(product: ManualOrderProductConfig) {
   const handle = productHandleFromPath(product.productPath);
-  const storefront = (process.env.SHOPIFY_STOREFRONT_URL || process.env.NEXT_PUBLIC_SHOPIFY_STOREFRONT_URL || "").replace(/\/+$/, "");
+  const storefront = (process.env.SHOPIFY_STOREFRONT_URL || process.env.NEXT_PUBLIC_SHOPIFY_STOREFRONT_URL || "https://meaningfulplushies.com").replace(/\/+$/, "");
   if (!handle || !storefront) return { productId: "", variantId: "" };
 
   const response = await fetch(`${storefront}/products/${encodeURIComponent(handle)}.js`, {
@@ -62,7 +62,7 @@ async function resolveManualOrderProductFromStorefront(product: ManualOrderProdu
   };
 }
 
-async function resolveManualOrderProduct(domain: string, product: ManualOrderProductConfig) {
+async function resolveManualOrderProduct(product: ManualOrderProductConfig) {
   const configuredProductId = asShopifyGid(product.shopifyProductId ?? "", "Product");
   const configuredVariantId = asShopifyGid(product.shopifyVariantId ?? "", "ProductVariant");
   if (configuredProductId || configuredVariantId) {
@@ -72,29 +72,7 @@ async function resolveManualOrderProduct(domain: string, product: ManualOrderPro
   const storefrontProduct = await resolveManualOrderProductFromStorefront(product);
   if (storefrontProduct.productId || storefrontProduct.variantId) return storefrontProduct;
 
-  const handle = productHandleFromPath(product.productPath);
-  if (!handle) return { productId: "", variantId: "" };
-
-  const result = await shopifyGraphql<{
-    data?: { product?: { id?: string; variants?: { nodes?: { id?: string }[] } } };
-    errors?: { message?: string }[];
-  }>(domain, `
-    query ManualOrderProductByHandle($identifier: ProductIdentifierInput!) {
-      product: productByIdentifier(identifier: $identifier) {
-        id
-        variants(first: 1) {
-          nodes { id }
-        }
-      }
-    }
-  `, { identifier: { handle } });
-
-  if (result?.errors?.length) throw new Error(result.errors.map((error) => error.message).filter(Boolean).join(" "));
-  const resolved = result?.data?.product;
-  return {
-    productId: textValue(resolved?.id),
-    variantId: textValue(resolved?.variants?.nodes?.[0]?.id),
-  };
+  return { productId: "", variantId: "" };
 }
 
 export function normalizeManualOrderPhone(phone: string) {
@@ -228,7 +206,7 @@ export async function createManualOrderDiscounts(input: ManualOrderCreateInput):
   const productCode = await generateManualOrderCode(phone.lastFour);
   const shippingCode = `SHIP${productCode}`;
   const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
-  const resolvedProduct = await resolveManualOrderProduct(domain, product);
+  const resolvedProduct = await resolveManualOrderProduct(product);
   const productDiscountShopifyId = await createProductDiscount(domain, input, product, productCode, expiresAt, resolvedProduct);
   const shippingDiscountShopifyId = await createShippingDiscount(domain, input, shippingCode, expiresAt);
   const now = new Date().toISOString();
