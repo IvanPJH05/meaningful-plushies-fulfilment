@@ -406,6 +406,33 @@ export type Order = {
   updatedAt: string;
 };
 
+export type ManualOrderStatus = "active" | "used" | "expired" | "cancelled";
+
+export type ManualOrder = {
+  id: string;
+  customerName: string;
+  phoneOriginal: string;
+  phoneNormalized: string;
+  phoneLastFour: string;
+  productKey: string;
+  productDisplayName: string;
+  shopifyProductId: string;
+  shopifyVariantId: string;
+  productPath: string;
+  shippingRegion: "WEST" | "EAST";
+  productDiscountCode: string;
+  productDiscountShopifyId: string;
+  shippingDiscountCode: string;
+  shippingDiscountShopifyId: string;
+  customerLink: string;
+  status: ManualOrderStatus;
+  shopifyOrderId: string;
+  shopifyOrderName: string;
+  createdAt: string;
+  updatedAt: string;
+  usedAt: string;
+};
+
 export type ImportResult = {
   imported: number;
   updated: number;

@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
 import { cleanShopifyOrderNumber, fetchShopifyOrderWithMetafieldRetry, shopifyMetafieldValue, textValue } from "../../../../../lib/shopify-orders";
-import { fetchMetaCapiSettings, fetchSharedOrders, insertSharedActivity, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
+import { fetchMetaCapiSettings, fetchSharedOrders, insertSharedActivity, markManualOrderUsedByDiscountCode, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
 
 export const runtime = "nodejs";
 
@@ -26,6 +26,16 @@ function verifyShopifyHmac(rawBody: string, hmacHeader: string | null) {
 function looksLikePersonalizedPlushie(order: Record<string, unknown>) {
   const lineItems = order.lineItems ?? order.line_items ?? "";
   return /meaningful plushie|build your meaningful plushie|plushie/i.test(JSON.stringify(lineItems));
+}
+
+function appliedDiscountCodes(order: Record<string, unknown>) {
+  const discountApplications = order.discountApplications;
+  const nodes = discountApplications && typeof discountApplications === "object" && "nodes" in discountApplications
+    ? (discountApplications as { nodes?: unknown[] }).nodes
+    : [];
+  return (Array.isArray(nodes) ? nodes : [])
+    .map((node) => node && typeof node === "object" && "code" in node ? textValue((node as { code?: unknown }).code) : "")
+    .filter(Boolean);
 }
 
 export async function POST(request: Request) {
@@ -58,6 +68,13 @@ export async function POST(request: Request) {
     const ordersToSave = importedOrders.filter((order) => order.orderNumber === syncedNumber);
 
     await upsertSharedOrders(ordersToSave);
+    for (const code of appliedDiscountCodes(fullOrder)) {
+      await markManualOrderUsedByDiscountCode(
+        code,
+        textValue(fullOrder.id) || textValue(payload.admin_graphql_api_id),
+        textValue(fullOrder.name) || textValue(payload.name),
+      );
+    }
     await syncCreatorCommissions();
     try {
       const metaSettings = await fetchMetaCapiSettings();

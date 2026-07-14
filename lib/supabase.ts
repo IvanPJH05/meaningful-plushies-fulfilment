@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { AccountingBankStatementLine, AccountingCategory, AccountingDocument, AccountingLedgerEntry, AccountingTransaction, AiAccountantReview, CommissionStatus, ContentIdeaItem, ContentIdeaReference, ContentPlanItem, CreatorCommission, CreatorPayout, CreatorProfile, CreatorStatus, CreatorTier, DashboardAccount, EnvelopePrintSettings, MetaCapiLog, MetaCapiSettings, Order, PaymentProcessorSetting, SalesConsumptionMapping, SalesFeeSetting, StockSetting, UserRole } from "./types";
+import type { AccountingBankStatementLine, AccountingCategory, AccountingDocument, AccountingLedgerEntry, AccountingTransaction, AiAccountantReview, CommissionStatus, ContentIdeaItem, ContentIdeaReference, ContentPlanItem, CreatorCommission, CreatorPayout, CreatorProfile, CreatorStatus, CreatorTier, DashboardAccount, EnvelopePrintSettings, ManualOrder, MetaCapiLog, MetaCapiSettings, Order, PaymentProcessorSetting, SalesConsumptionMapping, SalesFeeSetting, StockSetting, UserRole } from "./types";
 
 export type DashboardSession = DashboardAccount & { token: string };
 
@@ -80,6 +80,130 @@ export async function deleteSharedOrders(ids: string[]) {
   if (!ids.length) return;
   const { error } = await requireSupabase().from("fulfilment_orders").delete().in("id", ids);
   if (error) throw error;
+}
+
+function manualOrderFromRow(row: Record<string, unknown>): ManualOrder {
+  return {
+    id: String(row.id ?? ""),
+    customerName: String(row.customer_name ?? ""),
+    phoneOriginal: String(row.phone_original ?? ""),
+    phoneNormalized: String(row.phone_normalized ?? ""),
+    phoneLastFour: String(row.phone_last_four ?? ""),
+    productKey: String(row.product_key ?? ""),
+    productDisplayName: String(row.product_display_name ?? ""),
+    shopifyProductId: String(row.shopify_product_id ?? ""),
+    shopifyVariantId: String(row.shopify_variant_id ?? ""),
+    productPath: String(row.product_path ?? ""),
+    shippingRegion: row.shipping_region === "EAST" ? "EAST" : "WEST",
+    productDiscountCode: String(row.product_discount_code ?? ""),
+    productDiscountShopifyId: String(row.product_discount_shopify_id ?? ""),
+    shippingDiscountCode: String(row.shipping_discount_code ?? ""),
+    shippingDiscountShopifyId: String(row.shipping_discount_shopify_id ?? ""),
+    customerLink: String(row.customer_link ?? ""),
+    status: row.status === "used" || row.status === "expired" || row.status === "cancelled" ? row.status : "active",
+    shopifyOrderId: String(row.shopify_order_id ?? ""),
+    shopifyOrderName: String(row.shopify_order_name ?? ""),
+    createdAt: String(row.created_at ?? ""),
+    updatedAt: String(row.updated_at ?? ""),
+    usedAt: String(row.used_at ?? ""),
+  };
+}
+
+function manualOrderToRow(order: ManualOrder) {
+  return {
+    id: order.id,
+    customer_name: order.customerName,
+    phone_original: order.phoneOriginal,
+    phone_normalized: order.phoneNormalized,
+    phone_last_four: order.phoneLastFour,
+    product_key: order.productKey,
+    product_display_name: order.productDisplayName,
+    shopify_product_id: order.shopifyProductId,
+    shopify_variant_id: order.shopifyVariantId,
+    product_path: order.productPath,
+    shipping_region: order.shippingRegion,
+    product_discount_code: order.productDiscountCode,
+    product_discount_shopify_id: order.productDiscountShopifyId,
+    shipping_discount_code: order.shippingDiscountCode,
+    shipping_discount_shopify_id: order.shippingDiscountShopifyId,
+    customer_link: order.customerLink,
+    status: order.status,
+    shopify_order_id: order.shopifyOrderId || null,
+    shopify_order_name: order.shopifyOrderName || null,
+    created_at: order.createdAt,
+    updated_at: order.updatedAt,
+    used_at: order.usedAt || null,
+  };
+}
+
+export async function fetchManualOrders(): Promise<ManualOrder[]> {
+  const { data, error } = await requireSupabase()
+    .from("manual_orders")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((row) => manualOrderFromRow(row as Record<string, unknown>));
+}
+
+export async function saveManualOrder(order: ManualOrder) {
+  const { error } = await requireSupabase()
+    .from("manual_orders")
+    .upsert(manualOrderToRow({ ...order, updatedAt: new Date().toISOString() }), { onConflict: "id" });
+  if (error) throw error;
+}
+
+export async function updateManualOrder(id: string, patch: Partial<ManualOrder>) {
+  const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  const map: Record<keyof ManualOrder, string> = {
+    id: "id",
+    customerName: "customer_name",
+    phoneOriginal: "phone_original",
+    phoneNormalized: "phone_normalized",
+    phoneLastFour: "phone_last_four",
+    productKey: "product_key",
+    productDisplayName: "product_display_name",
+    shopifyProductId: "shopify_product_id",
+    shopifyVariantId: "shopify_variant_id",
+    productPath: "product_path",
+    shippingRegion: "shipping_region",
+    productDiscountCode: "product_discount_code",
+    productDiscountShopifyId: "product_discount_shopify_id",
+    shippingDiscountCode: "shipping_discount_code",
+    shippingDiscountShopifyId: "shipping_discount_shopify_id",
+    customerLink: "customer_link",
+    status: "status",
+    shopifyOrderId: "shopify_order_id",
+    shopifyOrderName: "shopify_order_name",
+    createdAt: "created_at",
+    updatedAt: "updated_at",
+    usedAt: "used_at",
+  };
+  for (const [key, value] of Object.entries(patch)) {
+    const column = map[key as keyof ManualOrder];
+    if (column) row[column] = value || null;
+  }
+  const { error } = await requireSupabase().from("manual_orders").update(row).eq("id", id);
+  if (error) throw error;
+}
+
+export async function markManualOrderUsedByDiscountCode(code: string, shopifyOrderId: string, shopifyOrderName: string) {
+  if (!code) return null;
+  const now = new Date().toISOString();
+  const { data, error } = await requireSupabase()
+    .from("manual_orders")
+    .update({
+      status: "used",
+      shopify_order_id: shopifyOrderId,
+      shopify_order_name: shopifyOrderName,
+      used_at: now,
+      updated_at: now,
+    })
+    .eq("product_discount_code", code)
+    .neq("status", "cancelled")
+    .select("*")
+    .maybeSingle();
+  if (error) throw error;
+  return data ? manualOrderFromRow(data as Record<string, unknown>) : null;
 }
 
 export async function fetchPaymentProcessorSettings(): Promise<PaymentProcessorSetting[]> {
@@ -1117,6 +1241,7 @@ export function subscribeToSharedData(onChange: (table: string) => void) {
   const client = requireSupabase();
   const channel = client.channel("fulfilment-dashboard")
     .on("postgres_changes", { event: "*", schema: "public", table: "fulfilment_orders" }, () => onChange("fulfilment_orders"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "manual_orders" }, () => onChange("manual_orders"))
     .on("postgres_changes", { event: "*", schema: "public", table: "activity_events" }, () => onChange("activity_events"))
     .on("postgres_changes", { event: "*", schema: "public", table: "payment_processor_settings" }, () => onChange("payment_processor_settings"))
     .on("postgres_changes", { event: "*", schema: "public", table: "sales_fee_settings" }, () => onChange("sales_fee_settings"))

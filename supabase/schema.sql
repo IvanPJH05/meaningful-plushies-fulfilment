@@ -16,6 +16,38 @@ create index if not exists fulfilment_orders_status_idx
 create index if not exists fulfilment_orders_updated_idx
   on public.fulfilment_orders (updated_at desc);
 
+create table if not exists public.manual_orders (
+  id text primary key,
+  customer_name text not null,
+  phone_original text not null default '',
+  phone_normalized text not null,
+  phone_last_four text not null,
+  product_key text not null,
+  product_display_name text not null,
+  shopify_product_id text not null default '',
+  shopify_variant_id text not null default '',
+  product_path text not null,
+  shipping_region text not null check (shipping_region in ('WEST', 'EAST')),
+  product_discount_code text not null unique,
+  product_discount_shopify_id text not null default '',
+  shipping_discount_code text not null unique,
+  shipping_discount_shopify_id text not null default '',
+  customer_link text not null,
+  status text not null default 'active' check (status in ('active', 'used', 'expired', 'cancelled')),
+  shopify_order_id text,
+  shopify_order_name text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  used_at timestamptz
+);
+
+create index if not exists manual_orders_phone_idx
+  on public.manual_orders (phone_normalized);
+create index if not exists manual_orders_status_idx
+  on public.manual_orders (status, created_at desc);
+create index if not exists manual_orders_shopify_order_idx
+  on public.manual_orders (shopify_order_id);
+
 create table if not exists public.activity_events (
   id text primary key,
   order_number text,
@@ -667,6 +699,7 @@ begin
 end $$;
 
 alter table public.fulfilment_orders enable row level security;
+alter table public.manual_orders enable row level security;
 alter table public.activity_events enable row level security;
 alter table public.payment_processor_settings enable row level security;
 alter table public.sales_fee_settings enable row level security;
@@ -689,6 +722,15 @@ create policy "shared dashboard reads orders" on public.fulfilment_orders for se
 create policy "shared dashboard inserts orders" on public.fulfilment_orders for insert to anon, authenticated with check (true);
 create policy "shared dashboard updates orders" on public.fulfilment_orders for update to anon, authenticated using (true) with check (true);
 create policy "shared dashboard deletes orders" on public.fulfilment_orders for delete to anon, authenticated using (true);
+
+drop policy if exists "shared dashboard reads manual orders" on public.manual_orders;
+drop policy if exists "shared dashboard inserts manual orders" on public.manual_orders;
+drop policy if exists "shared dashboard updates manual orders" on public.manual_orders;
+drop policy if exists "shared dashboard deletes manual orders" on public.manual_orders;
+create policy "shared dashboard reads manual orders" on public.manual_orders for select to anon, authenticated using (true);
+create policy "shared dashboard inserts manual orders" on public.manual_orders for insert to anon, authenticated with check (true);
+create policy "shared dashboard updates manual orders" on public.manual_orders for update to anon, authenticated using (true) with check (true);
+create policy "shared dashboard deletes manual orders" on public.manual_orders for delete to anon, authenticated using (true);
 
 drop policy if exists "shared dashboard reads activity" on public.activity_events;
 drop policy if exists "shared dashboard inserts activity" on public.activity_events;
@@ -744,6 +786,7 @@ create policy "shared dashboard updates sales mappings" on public.sales_consumpt
 create policy "shared dashboard deletes sales mappings" on public.sales_consumption_mappings for delete to anon, authenticated using (true);
 
 grant select, insert, update, delete on public.fulfilment_orders to anon, authenticated;
+grant select, insert, update, delete on public.manual_orders to anon, authenticated;
 grant select, insert on public.activity_events to anon, authenticated;
 grant select, insert, update on public.payment_processor_settings to anon, authenticated;
 grant select, insert, update on public.sales_fee_settings to anon, authenticated;
@@ -1063,6 +1106,12 @@ begin
     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'fulfilment_orders'
   ) then
     alter publication supabase_realtime add table public.fulfilment_orders;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'manual_orders'
+  ) then
+    alter publication supabase_realtime add table public.manual_orders;
   end if;
   if not exists (
     select 1 from pg_publication_tables

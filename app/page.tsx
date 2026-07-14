@@ -34,6 +34,7 @@ import {
   fetchEnvelopePrintSettings,
   fetchMetaCapiLogs,
   fetchMetaCapiSettings,
+  fetchManualOrders,
   fetchSalesConsumptionMappings,
   fetchSharedActivity,
   fetchSharedOrders,
@@ -56,6 +57,7 @@ import {
   saveCreatorPayoutInfo,
   saveCreatorProfile,
   saveEnvelopePrintSettings,
+  saveManualOrder,
   saveMetaCapiSettings,
   saveSalesConsumptionMapping,
   saveStockSetting,
@@ -70,7 +72,8 @@ import {
   upsertSharedOrders,
   type DashboardSession,
 } from "../lib/supabase";
-import { orderStatuses, type AccountingBankStatementLine, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type AiAccountantReview, type CommissionStatus, type ContentIdeaItem, type ContentIdeaReference, type ContentPlanItem, type CreatorCommission, type CreatorPayout, type CreatorProfile, type CreatorStatus, type CreatorTier, type DashboardAccount, type EnvelopePrintSettings, type MetaAdsEnvironment, type MetaAdsInsight, type MetaAdsSummary, type MetaCapiLog, type MetaCapiSettings, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesConsumptionMapping, type SalesFeeSetting, type StockSetting, type UserRole } from "../lib/types";
+import { manualOrderProducts } from "../lib/manual-order-products";
+import { orderStatuses, type AccountingBankStatementLine, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type AiAccountantReview, type CommissionStatus, type ContentIdeaItem, type ContentIdeaReference, type ContentPlanItem, type CreatorCommission, type CreatorPayout, type CreatorProfile, type CreatorStatus, type CreatorTier, type DashboardAccount, type EnvelopePrintSettings, type ManualOrder, type MetaAdsEnvironment, type MetaAdsInsight, type MetaAdsSummary, type MetaCapiLog, type MetaCapiSettings, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesConsumptionMapping, type SalesFeeSetting, type StockSetting, type UserRole } from "../lib/types";
 
 type Session = DashboardSession;
 type View =
@@ -81,9 +84,9 @@ type View =
   | "accounting_bank_reconciliation" | "accounting_product_profitability" | "accounting_marketing_profitability" | "accounting_cash_position"
   | "accounting_tax_reports" | "accounting_settings" | "accounting_files" | "accounting_general_journal" | "accounting_t_accounts" | "accounting_unit_costs" | "accounting_financial_reports"
   | "content_dashboard" | "content_plan" | "content_ideas"
-  | "ads_dashboard"
+  | "ads_dashboard" | "manual_orders_dashboard"
   | "creator_dashboard" | "creator_accounts" | "creator_sales" | "creator_commissions" | "creator_payouts" | "creator_analytics" | "creator_free_samples";
-type Workspace = "fulfilment" | "accounting" | "formal_accounting" | "creator" | "inventory" | "reports" | "content" | "ads" | "settings";
+type Workspace = "fulfilment" | "manual_orders" | "accounting" | "formal_accounting" | "creator" | "inventory" | "reports" | "content" | "ads" | "settings";
 type SalesRange = "active" | "today" | "7d" | "30d" | "lifetime";
 type SortKey = "orderNumber" | "importedAt" | "updatedAt";
 type SortDirection = "asc" | "desc";
@@ -602,12 +605,14 @@ const accountingViews: readonly View[] = [
 const formalAccountingViews: readonly View[] = ["accounting_general_journal", "accounting_t_accounts", "accounting_unit_costs", "accounting_financial_reports"];
 const contentViews: readonly View[] = ["content_dashboard", "content_plan", "content_ideas"];
 const adsViews: readonly View[] = ["ads_dashboard"];
+const manualOrderViews: readonly View[] = ["manual_orders_dashboard"];
 const creatorViews: readonly View[] = ["creator_dashboard", "creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
 const creatorAdminViews: readonly View[] = ["creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
-const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "meta_capi", "stock", "sales_report", ...accountingViews, ...formalAccountingViews, ...contentViews, ...adsViews, ...creatorViews];
-const adminOnlyViews = new Set<View>(["history", "settings", "meta_capi", "stock", "sales_report", ...accountingViews, ...formalAccountingViews, ...contentViews, ...adsViews, ...creatorAdminViews]);
+const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "meta_capi", "stock", "sales_report", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...contentViews, ...adsViews, ...creatorViews];
+const adminOnlyViews = new Set<View>(["history", "settings", "meta_capi", "stock", "sales_report", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...contentViews, ...adsViews, ...creatorAdminViews]);
 const workspaceDefaultViews: Record<Workspace, View> = {
   fulfilment: "orders",
+  manual_orders: "manual_orders_dashboard",
   accounting: "accounting_dashboard",
   formal_accounting: "accounting_general_journal",
   creator: "creator_dashboard",
@@ -619,6 +624,7 @@ const workspaceDefaultViews: Record<Workspace, View> = {
 };
 const workspaceLabels: Record<Workspace, string> = {
   fulfilment: "Fulfilment",
+  manual_orders: "Manual Orders",
   accounting: "Book Keeping",
   formal_accounting: "Accounting",
   creator: "Creator Program",
@@ -823,6 +829,9 @@ const contentNavItems: NavItem[] = [
 ];
 const adsNavItems: NavItem[] = [
   { view: "ads_dashboard", label: "Ads Dashboard", icon: "report" },
+];
+const manualOrderNavItems: NavItem[] = [
+  { view: "manual_orders_dashboard", label: "Manual Orders", icon: "orders" },
 ];
 const settingsNavItems: NavItem[] = [
   { view: "settings", label: "Fulfilment Settings", icon: "settings" },
@@ -1131,6 +1140,7 @@ function workspaceForView(view: View): Workspace {
   if (creatorViews.includes(view)) return "creator";
   if (adsViews.includes(view)) return "ads";
   if (contentViews.includes(view)) return "content";
+  if (manualOrderViews.includes(view)) return "manual_orders";
   if (formalAccountingViews.includes(view)) return "formal_accounting";
   if (accountingViews.includes(view)) return "accounting";
   if (view === "stock") return "inventory";
@@ -1149,6 +1159,7 @@ function navItemsForWorkspace(workspace: Workspace, role: UserRole): NavItem[] {
   if (workspace === "reports") return reportsNavItems;
   if (workspace === "content") return contentNavItems;
   if (workspace === "ads") return adsNavItems;
+  if (workspace === "manual_orders") return manualOrderNavItems;
   if (workspace === "settings") return settingsNavItems;
   return [...fulfilmentNavItems, ...fulfilmentAdminNavItems];
 }
@@ -1165,9 +1176,10 @@ function viewTitle(view: View) {
     content_plan: "Planned Content",
     content_ideas: "Idea Brainstorming",
     ads_dashboard: "Ads Dashboard",
+    manual_orders_dashboard: "Manual Orders",
   };
   if (titleOverrides[view]) return titleOverrides[view]!;
-  const item = [...fulfilmentNavItems, ...fulfilmentAdminNavItems, ...accountingNavItems, ...formalAccountingNavItems, ...creatorAdminNavItems, ...inventoryNavItems, ...reportsNavItems, ...contentNavItems, ...adsNavItems, ...settingsNavItems]
+  const item = [...fulfilmentNavItems, ...fulfilmentAdminNavItems, ...manualOrderNavItems, ...accountingNavItems, ...formalAccountingNavItems, ...creatorAdminNavItems, ...inventoryNavItems, ...reportsNavItems, ...contentNavItems, ...adsNavItems, ...settingsNavItems]
     .find((navItem) => navItem.view === view);
   if (item) return item.label;
   return "Orders Dashboard";
@@ -1180,6 +1192,7 @@ export default function Home() {
   const [session, setSession] = useState<Session | null>(() => storedSession);
   const [view, setView] = useState<View>(() => permittedView(storedUi.view, storedSession?.role));
   const [orders, setOrders] = useState<Order[]>([]);
+  const [manualOrders, setManualOrders] = useState<ManualOrder[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState(() => storedUi.query ?? "");
   const [statusFilter, setStatusFilter] = useState<"all" | OrderStatus>(() => choice(storedUi.statusFilter, "all", orderStatusFilterValues));
@@ -1216,6 +1229,15 @@ export default function Home() {
   const [metaAdsConfigured, setMetaAdsConfigured] = useState(false);
   const [metaAdsLoading, setMetaAdsLoading] = useState(false);
   const [metaAdsError, setMetaAdsError] = useState("");
+  const [manualOrderForm, setManualOrderForm] = useState({
+    customerName: "",
+    phone: "",
+    productKey: manualOrderProducts[0]?.key ?? "",
+    shippingRegion: "WEST" as "WEST" | "EAST",
+  });
+  const [manualOrderQuery, setManualOrderQuery] = useState("");
+  const [manualOrderBusy, setManualOrderBusy] = useState("");
+  const [lastManualOrderId, setLastManualOrderId] = useState("");
   const [stockSettings, setStockSettings] = useState<StockSetting[]>([]);
   const [accounts, setAccounts] = useState<DashboardAccount[]>([]);
   const [accountingCategories, setAccountingCategories] = useState<AccountingCategory[]>([]);
@@ -1380,12 +1402,14 @@ export default function Home() {
     }
     if (showLoading) setLoadingOrders(true);
     try {
-      const [sharedOrders, sharedProcessorSettings, sharedSalesFeeSettings] = await Promise.all([
+      const [sharedOrders, sharedManualOrders, sharedProcessorSettings, sharedSalesFeeSettings] = await Promise.all([
         fetchSharedOrders(),
+        fetchManualOrders(),
         fetchPaymentProcessorSettings(),
         fetchSalesFeeSettings(),
       ]);
       setOrders(normalizeSharedOrders(sharedOrders));
+      setManualOrders(sharedManualOrders);
       setProcessorSettings(sharedProcessorSettings);
       setSalesFeeSettings(sharedSalesFeeSettings);
       setDatabaseError("");
@@ -1439,6 +1463,7 @@ export default function Home() {
     try {
       await Promise.all([
         tables.has("fulfilment_orders") ? fetchSharedOrders().then((sharedOrders) => setOrders(normalizeSharedOrders(sharedOrders))) : Promise.resolve(),
+        tables.has("manual_orders") ? fetchManualOrders().then(setManualOrders) : Promise.resolve(),
         tables.has("activity_events") ? fetchSharedActivity().then(setActivity) : Promise.resolve(),
         tables.has("payment_processor_settings") ? fetchPaymentProcessorSettings().then(setProcessorSettings) : Promise.resolve(),
         tables.has("sales_fee_settings") ? fetchSalesFeeSettings().then(setSalesFeeSettings) : Promise.resolve(),
@@ -2177,6 +2202,90 @@ export default function Home() {
     } finally {
       setMetaAdsLoading(false);
     }
+  }
+
+  async function reloadManualOrders() {
+    setManualOrders(await fetchManualOrders());
+  }
+
+  async function refreshManualOrderStatuses() {
+    setManualOrderBusy("refresh");
+    try {
+      let updated = 0;
+      for (const manualOrder of manualOrders.filter((order) => order.status === "active")) {
+        const matchingOrder = orders.find((order) => (order.discountCodes ?? []).includes(manualOrder.productDiscountCode) || order.discountCodeUsed === manualOrder.productDiscountCode);
+        if (!matchingOrder) continue;
+        await saveManualOrder({
+          ...manualOrder,
+          status: "used",
+          shopifyOrderId: matchingOrder.id,
+          shopifyOrderName: `#${matchingOrder.orderNumber}`,
+          usedAt: matchingOrder.importedAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+        updated += 1;
+      }
+      await reloadManualOrders();
+      setNotice(updated ? `${updated} manual order status${updated === 1 ? "" : "es"} refreshed.` : "Manual orders are already up to date.");
+    } catch (error) {
+      setNotice(readableError(error, "Manual order statuses could not be refreshed."));
+    } finally {
+      setManualOrderBusy("");
+    }
+  }
+
+  async function createManualOrder(event: FormEvent) {
+    event.preventDefault();
+    setManualOrderBusy("create");
+    try {
+      const response = await fetch("/api/manual-orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(manualOrderForm),
+      });
+      const result = await response.json() as { ok?: boolean; manualOrder?: ManualOrder; error?: string };
+      if (!response.ok || !result.ok || !result.manualOrder) throw new Error(result.error || "Manual order could not be created.");
+      setManualOrders((current) => [result.manualOrder!, ...current.filter((item) => item.id !== result.manualOrder!.id)]);
+      setLastManualOrderId(result.manualOrder.id);
+      setManualOrderForm((current) => ({ ...current, customerName: "", phone: "" }));
+      setNotice("Manual order link created.");
+      await logActivity("Manual order created", `${result.manualOrder.customerName} - ${result.manualOrder.productDiscountCode}.`);
+    } catch (error) {
+      setNotice(readableError(error, "Manual order could not be created."));
+    } finally {
+      setManualOrderBusy("");
+    }
+  }
+
+  async function cancelManualOrder(order: ManualOrder) {
+    if (!window.confirm(`Cancel manual order code ${order.productDiscountCode}? Shopify will stop accepting both discount codes.`)) return;
+    setManualOrderBusy(order.id);
+    try {
+      const response = await fetch("/api/manual-orders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "cancel", manualOrder: order }),
+      });
+      const result = await response.json() as { ok?: boolean; error?: string };
+      if (!response.ok || !result.ok) throw new Error(result.error || "Manual order could not be cancelled.");
+      await reloadManualOrders();
+      setNotice("Manual order cancelled.");
+      await logActivity("Manual order cancelled", `${order.productDiscountCode} was cancelled.`);
+    } catch (error) {
+      setNotice(readableError(error, "Manual order could not be cancelled."));
+    } finally {
+      setManualOrderBusy("");
+    }
+  }
+
+  async function copyManualOrderText(value: string, label: string) {
+    await navigator.clipboard.writeText(value);
+    setNotice(`${label} copied.`);
+  }
+
+  function manualOrderWhatsAppLink(order: ManualOrder) {
+    const message = `Hi ${order.customerName}, here is your Meaningful Plushies checkout link:\n${order.customerLink}\n\nProduct code: ${order.productDiscountCode}\nShipping code: ${order.shippingDiscountCode}`;
+    return `https://wa.me/${order.phoneNormalized}?text=${encodeURIComponent(message)}`;
   }
 
   async function createAccount() {
@@ -4844,7 +4953,7 @@ export default function Home() {
 
   const workspace = workspaceForView(view);
   const availableWorkspaces: Workspace[] = session.role === "admin"
-    ? ["fulfilment", "accounting", "formal_accounting", "creator", "inventory", "reports", "content", "ads", "settings"]
+    ? ["fulfilment", "manual_orders", "accounting", "formal_accounting", "creator", "inventory", "reports", "content", "ads", "settings"]
     : session.role === "creator" ? ["creator"] : ["fulfilment"];
   const sidebarNavItems = navItemsForWorkspace(workspace, session.role);
   const workspaceTitle = workspaceLabels[workspace];
@@ -4871,6 +4980,21 @@ export default function Home() {
       {databaseError && <div className="notice"><span>Database connection: {databaseError}</span></div>}
       {loadingOrders && <div className="notice"><span>Loading shared orders from Supabase...</span></div>}
       {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice("")}>x</button></div>}
+
+      {workspace === "manual_orders" && session.role === "admin" && <ManualOrdersWorkspacePage
+        manualOrders={manualOrders}
+        form={manualOrderForm}
+        query={manualOrderQuery}
+        busy={manualOrderBusy}
+        lastManualOrderId={lastManualOrderId}
+        onFormChange={(patch) => setManualOrderForm((current) => ({ ...current, ...patch }))}
+        onQueryChange={setManualOrderQuery}
+        onCreate={createManualOrder}
+        onCopy={copyManualOrderText}
+        onCancel={cancelManualOrder}
+        onRefresh={refreshManualOrderStatuses}
+        whatsAppLink={manualOrderWhatsAppLink}
+      />}
 
       {workspace === "accounting" && session.role === "admin" && <AccountingWorkspacePage
         view={view}
@@ -6910,6 +7034,124 @@ function ContentIdeaBrainstormingPage({
 
 function isExpressShipping(order: Pick<Order, "shippingMethod">) {
   return (order.shippingMethod || "").toLowerCase().includes("express");
+}
+
+function ManualOrdersWorkspacePage({
+  manualOrders,
+  form,
+  query,
+  busy,
+  lastManualOrderId,
+  onFormChange,
+  onQueryChange,
+  onCreate,
+  onCopy,
+  onCancel,
+  onRefresh,
+  whatsAppLink,
+}: {
+  manualOrders: ManualOrder[];
+  form: { customerName: string; phone: string; productKey: string; shippingRegion: "WEST" | "EAST" };
+  query: string;
+  busy: string;
+  lastManualOrderId: string;
+  onFormChange: (patch: Partial<{ customerName: string; phone: string; productKey: string; shippingRegion: "WEST" | "EAST" }>) => void;
+  onQueryChange: (value: string) => void;
+  onCreate: (event: FormEvent) => Promise<void>;
+  onCopy: (value: string, label: string) => Promise<void>;
+  onCancel: (order: ManualOrder) => Promise<void>;
+  onRefresh: () => Promise<void>;
+  whatsAppLink: (order: ManualOrder) => string;
+}) {
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleOrders = manualOrders.filter((order) => {
+    if (!normalizedQuery) return true;
+    return [
+      order.customerName,
+      order.phoneOriginal,
+      order.phoneNormalized,
+      order.productDisplayName,
+      order.productDiscountCode,
+      order.shippingDiscountCode,
+      order.shopifyOrderName,
+    ].some((value) => value.toLowerCase().includes(normalizedQuery));
+  });
+  const lastOrder = manualOrders.find((order) => order.id === lastManualOrderId);
+
+  return <section className="manual-orders-workspace">
+    <div className="manual-order-hero card">
+      <div>
+        <p>MANUAL ORDERS</p>
+        <h2>Generate a paid customer checkout link</h2>
+        <span>Use this when someone already paid you by WhatsApp, bank transfer, or another manual method. Shopify still collects their Upload-Lift details, but the customer pays RM0 at checkout.</span>
+      </div>
+      <div className="accounting-status-pill">{manualOrders.length} manual order{manualOrders.length === 1 ? "" : "s"}</div>
+    </div>
+
+    <div className="manual-order-grid">
+      <form className="card manual-order-form" onSubmit={onCreate}>
+        <h3>Create manual order</h3>
+        <label>Customer name<input value={form.customerName} onChange={(event) => onFormChange({ customerName: event.target.value })} placeholder="Sarah Lim" required /></label>
+        <label>Phone<input value={form.phone} onChange={(event) => onFormChange({ phone: event.target.value })} placeholder="0123456789" required /></label>
+        <label>What they bought<select value={form.productKey} onChange={(event) => onFormChange({ productKey: event.target.value })} required>{manualOrderProducts.map((product) => <option key={product.key} value={product.key}>{product.displayName}</option>)}</select></label>
+        <label>Shipping region<select value={form.shippingRegion} onChange={(event) => onFormChange({ shippingRegion: event.target.value === "EAST" ? "EAST" : "WEST" })}><option value="WEST">West Malaysia</option><option value="EAST">East Malaysia</option></select></label>
+        <button className="button primary large" disabled={busy === "create"} type="submit">{busy === "create" ? "Creating..." : "Generate Shopify link"}</button>
+        <p className="manual-order-note">The app creates one 100% product discount and one free-shipping discount. Both expire after 14 days and can only be used once.</p>
+      </form>
+
+      <section className="card manual-order-result">
+        <div className="accounting-form-heading"><div><h3>Latest generated link</h3><p>Copy this to send the customer back to Shopify.</p></div></div>
+        {lastOrder ? <div className="manual-order-created-card">
+          <strong>{lastOrder.customerName}</strong>
+          <span>{lastOrder.productDisplayName}</span>
+          <code>{lastOrder.customerLink}</code>
+          <div className="manual-order-actions">
+            <button className="button primary small" type="button" onClick={() => onCopy(lastOrder.customerLink, "Customer link")}>Copy Link</button>
+            <button className="button secondary small" type="button" onClick={() => onCopy(lastOrder.productDiscountCode, "Product discount")}>Copy Product Code</button>
+            <a className="button secondary small" href={whatsAppLink(lastOrder)} target="_blank" rel="noreferrer">WhatsApp</a>
+            <a className="button secondary small" href={lastOrder.customerLink} target="_blank" rel="noreferrer">Open Link</a>
+          </div>
+        </div> : <div className="empty compact"><strong>No link generated yet</strong><p>Create the first manual order on the left.</p></div>}
+      </section>
+    </div>
+
+    <section className="card accounting-table-card manual-order-table-card">
+      <div className="manual-order-table-toolbar">
+        <div><h3>Manual order records</h3><p>Search by name, phone, discount code, or Shopify order.</p></div>
+        <div className="manual-order-search-actions">
+          <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search manual orders..." />
+          <button className="button secondary" type="button" onClick={() => void onRefresh()}>Refresh Status</button>
+        </div>
+      </div>
+      <div className="table-scroll">
+        <table>
+          <thead><tr><th>Created</th><th>Customer</th><th>Phone</th><th>Product</th><th>Shipping</th><th>Product Discount</th><th>Shipping Discount</th><th>Status</th><th>Shopify Order</th><th>Actions</th></tr></thead>
+          <tbody>
+            {visibleOrders.map((order) => <tr key={order.id}>
+              <td>{formatDate(order.createdAt, true)}</td>
+              <td><strong>{order.customerName}</strong></td>
+              <td>{order.phoneNormalized}<small>{order.phoneOriginal}</small></td>
+              <td>{order.productDisplayName}</td>
+              <td>{order.shippingRegion === "EAST" ? "East Malaysia" : "West Malaysia"}</td>
+              <td><code>{order.productDiscountCode}</code></td>
+              <td><code>{order.shippingDiscountCode}</code></td>
+              <td><span className={`manual-order-status ${order.status}`}>{order.status}</span></td>
+              <td>{order.shopifyOrderName ? <strong>{order.shopifyOrderName}</strong> : "-"}</td>
+              <td><div className="manual-order-row-actions">
+                <button className="button secondary small" type="button" onClick={() => onCopy(order.customerLink, "Customer link")}>Copy Link</button>
+                <button className="button secondary small" type="button" onClick={() => onCopy(`${order.productDiscountCode}\n${order.shippingDiscountCode}`, "Discount codes")}>Copy Codes</button>
+                <a className="button secondary small" href={whatsAppLink(order)} target="_blank" rel="noreferrer">WhatsApp</a>
+                <a className="button secondary small" href={order.customerLink} target="_blank" rel="noreferrer">Open</a>
+                {order.shopifyOrderId && <a className="button secondary small" href={`https://admin.shopify.com/store/${(process.env.NEXT_PUBLIC_SHOPIFY_ADMIN_STORE_HANDLE || "").trim()}/orders/${order.shopifyOrderId.replace(/\D/g, "")}`} target="_blank" rel="noreferrer">Shopify</a>}
+                {order.status === "active" && <button className="button danger small" type="button" disabled={busy === order.id} onClick={() => onCancel(order)}>{busy === order.id ? "Cancelling..." : "Cancel"}</button>}
+              </div></td>
+            </tr>)}
+            {!visibleOrders.length && <tr><td colSpan={10}>No manual orders found.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </section>;
 }
 
 function FormalAccountingWorkspacePage({

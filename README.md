@@ -102,6 +102,37 @@ NEXT_PUBLIC_INFLUENCER_ORDER_PAGE_PATH=/products/build-your-meaningful-plushie
 
 In Shopify, create a matching 100% discount code for each creator free order code, such as `FREE-CREATOR10`. Orders that use a free creator code are treated as free creator samples in sales reporting: they show the product/shipping discount but do not count as bank-transfer cash collected.
 
+## Manual Orders workspace
+
+The **Manual Orders** workspace creates Shopify checkout links for customers who already paid outside Shopify. The admin enters only customer name, phone, product, and shipping region. The app then creates:
+
+- a one-use 100% product discount for the selected Shopify product or variant
+- a one-use free-shipping discount for Malaysia
+- one combined customer link such as `/discount/12345678,SHIP12345678?redirect=/products/...`
+
+Run the latest [`supabase/schema.sql`](supabase/schema.sql) in Supabase SQL Editor. The SQL adds `manual_orders`, unique indexes for both discount codes, status tracking, and realtime updates. This migration has also been applied to the connected Supabase project used by this workspace.
+
+The Shopify app needs these scopes:
+
+```text
+read_discounts,write_discounts,read_orders,write_orders,read_metaobjects,write_metaobjects
+```
+
+Add or verify these Vercel variables:
+
+```env
+SHOPIFY_SHOP_DOMAIN=your-store.myshopify.com
+SHOPIFY_CLIENT_ID=YOUR_SHOPIFY_APP_CLIENT_ID
+SHOPIFY_CLIENT_SECRET=YOUR_SHOPIFY_APP_CLIENT_SECRET
+SHOPIFY_WEBHOOK_SECRET=YOUR_SHOPIFY_APP_CLIENT_SECRET
+NEXT_PUBLIC_SHOPIFY_STOREFRONT_URL=https://meaningfulplushies.com
+MANUAL_ORDER_PRODUCTS_JSON=[{"key":"plushie_20s","displayName":"Meaningful Plushie - 20 seconds","productPath":"products/build-your-meaningful-plushie-wa-p-20s","shopifyProductId":"1234567890","shopifyVariantId":"9876543210"}]
+NEXT_PUBLIC_MANUAL_ORDER_PRODUCTS_JSON=[{"key":"plushie_20s","displayName":"Meaningful Plushie - 20 seconds","productPath":"products/build-your-meaningful-plushie-wa-p-20s"}]
+NEXT_PUBLIC_SHOPIFY_ADMIN_STORE_HANDLE=your-store-handle
+```
+
+`MANUAL_ORDER_PRODUCTS_JSON` is server-side and must include the Shopify product or variant IDs so the discount is product-specific. `NEXT_PUBLIC_MANUAL_ORDER_PRODUCTS_JSON` is optional and only controls what labels appear in the browser form.
+
 ## Meta Conversions API
 
 The app can send server-side Meta Conversions API `Purchase` events after Shopify orders are saved. By default, use **Settings workspace > Meta CAPI** and keep the mode on **Only RM0/manual-payment Shopify orders**. This avoids double counting normal Shopify Pixel purchases while still reporting the corrected revenue for orders where Shopify says RM0 but fulfilment collected payment manually.
