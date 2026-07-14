@@ -169,7 +169,7 @@ async function createProductDiscount(
       endsAt: expiresAt,
       usageLimit: 1,
       appliesOncePerCustomer: true,
-      context: { all: true },
+      context: { all: "ALL" },
       combinesWith: { shippingDiscounts: true },
       customerGets: {
         value: { percentage: 1 },
@@ -207,7 +207,7 @@ async function createShippingDiscount(domain: string, input: ManualOrderCreateIn
       endsAt: expiresAt,
       usageLimit: 1,
       appliesOncePerCustomer: true,
-      context: { all: true },
+      context: { all: "ALL" },
       destination: { countries: { add: ["MY"] } },
       combinesWith: { productDiscounts: true },
     },
