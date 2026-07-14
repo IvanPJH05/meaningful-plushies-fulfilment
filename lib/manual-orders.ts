@@ -34,9 +34,32 @@ function normalizeManualOrderCharacter(value?: string) {
 }
 
 function productHandleFromPath(productPath: string) {
-  const clean = productPath.replace(/^https?:\/\/[^/]+\//, "").replace(/^\/+|\/+$/g, "");
+  const clean = productPath.split(/[?#]/)[0].replace(/^https?:\/\/[^/]+\//, "").replace(/^\/+|\/+$/g, "");
   const parts = clean.split("/").filter(Boolean);
   return parts[parts.length - 1] ?? "";
+}
+
+async function resolveManualOrderProductFromStorefront(product: ManualOrderProductConfig) {
+  const handle = productHandleFromPath(product.productPath);
+  const storefront = (process.env.SHOPIFY_STOREFRONT_URL || process.env.NEXT_PUBLIC_SHOPIFY_STOREFRONT_URL || "").replace(/\/+$/, "");
+  if (!handle || !storefront) return { productId: "", variantId: "" };
+
+  const response = await fetch(`${storefront}/products/${encodeURIComponent(handle)}.js`, {
+    headers: { accept: "application/json" },
+    cache: "no-store",
+  });
+  if (!response.ok) return { productId: "", variantId: "" };
+
+  const data = await response.json() as {
+    id?: number | string;
+    variants?: { id?: number | string }[];
+  };
+  const productId = textValue(data.id);
+  const variantId = textValue(data.variants?.[0]?.id);
+  return {
+    productId: productId ? asShopifyGid(productId, "Product") : "",
+    variantId: variantId ? asShopifyGid(variantId, "ProductVariant") : "",
+  };
 }
 
 async function resolveManualOrderProduct(domain: string, product: ManualOrderProductConfig) {
@@ -45,6 +68,9 @@ async function resolveManualOrderProduct(domain: string, product: ManualOrderPro
   if (configuredProductId || configuredVariantId) {
     return { productId: configuredProductId, variantId: configuredVariantId };
   }
+
+  const storefrontProduct = await resolveManualOrderProductFromStorefront(product);
+  if (storefrontProduct.productId || storefrontProduct.variantId) return storefrontProduct;
 
   const handle = productHandleFromPath(product.productPath);
   if (!handle) return { productId: "", variantId: "" };
