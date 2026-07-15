@@ -65,6 +65,23 @@
   cursor: pointer;
 }
 
+.nfc-link-write {
+  max-width: 430px;
+}
+
+.nfc-write-button {
+  min-width: 54px;
+  border-color: #1769e0 !important;
+  background: #1769e0 !important;
+  color: white !important;
+  box-shadow: 0 6px 14px rgba(23, 105, 224, .14);
+}
+
+.nfc-write-button:disabled {
+  cursor: wait;
+  opacity: .72;
+}
+
 .status-uploading_audio {
   background: #fff0d8;
   color: #a15b0f;

@@ -1367,6 +1367,7 @@ export default function Home() {
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [databaseError, setDatabaseError] = useState("");
   const [refreshingOrderNumber, setRefreshingOrderNumber] = useState("");
+  const [nfcWritingOrderId, setNfcWritingOrderId] = useState("");
 
   const normalizeSharedOrders = useCallback((sharedOrders: Order[]) => sharedOrders.map((order) => {
     const status = legacyStatus[order.status] ?? order.status;
@@ -1866,11 +1867,26 @@ export default function Home() {
     setDraggedColumn(null);
   }
 
-  async function copyCertificateLink(order: Order) {
-    const link = certificateLink(order, false);
-    if (!link) return setNotice(`#${order.orderNumber} has no certificate code.`);
-    await navigator.clipboard.writeText(link);
-    setNotice(`Certificate link for #${order.orderNumber} copied without https://.`);
+  async function writeCertificateLinkToNfc(order: Order) {
+    const link = certificateLink(order);
+    if (!link) return setNotice(`#${order.orderNumber} has no certificate code to write.`);
+    const NDEFReader = (window as typeof window & { NDEFReader?: new () => { write: (message: unknown) => Promise<void> } }).NDEFReader;
+    if (!NDEFReader) {
+      setNotice("This browser cannot write NFC cards. Use Chrome on an NFC-supported Android device, open the Vercel app over HTTPS, then tap Write again.");
+      return;
+    }
+    setNfcWritingOrderId(order.id);
+    setNotice(`Ready to write #${order.orderNumber}. Hold an NFC card near this device.`);
+    try {
+      const writer = new NDEFReader();
+      await writer.write({ records: [{ recordType: "url", data: link }] });
+      setNotice(`NFC card written for #${order.orderNumber}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "NFC write failed.";
+      setNotice(`NFC write failed for #${order.orderNumber}: ${message}`);
+    } finally {
+      setNfcWritingOrderId("");
+    }
   }
 
   async function refreshShopifyOrderNumbers(orderNumbers: string[]) {
@@ -4953,7 +4969,7 @@ export default function Home() {
     if (column === "character") return order.character || "-";
     if (column === "idWebsiteLink") {
       const link = certificateLink(order);
-      return link ? <div className="link-copy"><a href={link} target="_blank" rel="noreferrer">{certificateLink(order, false)}</a><button type="button" onClick={() => copyCertificateLink(order)}>Copy</button></div> : "-";
+      return link ? <div className="link-copy nfc-link-write"><a href={link} target="_blank" rel="noreferrer">{certificateLink(order, false)}</a><button type="button" className="nfc-write-button" disabled={nfcWritingOrderId === order.id} onClick={() => writeCertificateLinkToNfc(order)}>{nfcWritingOrderId === order.id ? "Writing..." : "Write"}</button></div> : "-";
     }
     if (column === "customerName") return order.customerName || "-";
     return order.phone || "-";
