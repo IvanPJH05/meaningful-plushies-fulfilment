@@ -28,6 +28,29 @@ function userErrorMessage(errors: DiscountUserError[] | undefined, fallback: str
 
 const manualOrderCharacters = ["Billy", "Tootsie", "Hunnie", "Dragon Warrior"] as const;
 
+const knownMeaningfulPlushieVariantIds: Record<string, Record<string, string>> = {
+  billy: {
+    "5": "42426495959111",
+    "10": "42426495991879",
+    "20": "42426496024647",
+  },
+  hunnie: {
+    "5": "42426496090183",
+    "10": "42426496122951",
+    "20": "42426496155719",
+  },
+  tootsie: {
+    "5": "42426496221255",
+    "10": "42426496254023",
+    "20": "42426496286791",
+  },
+  "dragon warrior": {
+    "5": "42426496352327",
+    "10": "42426496385095",
+    "20": "42426496417863",
+  },
+};
+
 function normalizeManualOrderCharacter(value?: string) {
   const normalized = (value ?? "").trim().toLowerCase();
   return manualOrderCharacters.find((character) => character.toLowerCase() === normalized) ?? "";
@@ -91,15 +114,29 @@ async function resolveManualOrderProductFromStorefront(input: ManualOrderCreateI
   };
 }
 
+function resolveKnownManualOrderProduct(input: ManualOrderCreateInput, product: ManualOrderProductConfig) {
+  const character = normalizeManualOrderCharacter(input.character).toLowerCase();
+  const seconds = manualOrderSpeakerSeconds(product);
+  const variantId = character && seconds ? knownMeaningfulPlushieVariantIds[character]?.[seconds] ?? "" : "";
+  const productId = product.shopifyProductId || (productHandleFromPath(product.productPath) === "meanngful-plushie" ? "7407587360839" : "");
+  return {
+    productId: productId ? asShopifyGid(productId, "Product") : "",
+    variantId: variantId ? asShopifyGid(variantId, "ProductVariant") : "",
+  };
+}
+
 async function resolveManualOrderProduct(input: ManualOrderCreateInput, product: ManualOrderProductConfig) {
   const configuredProductId = asShopifyGid(product.shopifyProductId ?? "", "Product");
   const configuredVariantId = asShopifyGid(product.shopifyVariantId ?? "", "ProductVariant");
-  if (configuredProductId || configuredVariantId) {
-    return { productId: configuredProductId, variantId: configuredVariantId };
-  }
+  if (configuredVariantId) return { productId: configuredProductId, variantId: configuredVariantId };
 
   const storefrontProduct = await resolveManualOrderProductFromStorefront(input, product);
   if (storefrontProduct.productId || storefrontProduct.variantId) return storefrontProduct;
+
+  const knownProduct = resolveKnownManualOrderProduct(input, product);
+  if (knownProduct.productId || knownProduct.variantId) return knownProduct;
+
+  if (configuredProductId) return { productId: configuredProductId, variantId: "" };
 
   return { productId: "", variantId: "" };
 }
