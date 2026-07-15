@@ -17,6 +17,8 @@ Desktop Chrome cannot directly control most USB NFC reader/writers. The web app 
 
 After writing, the helper password-protects the card using the order number. The certificate link remains readable by phones, but rewriting the card requires the same order number password.
 
+If a card needs to be unlocked manually, open **Fulfilment > NFC Card**, enter the 4-character password, click **Unlock card**, then tap the card on the USB reader. For order passwords longer than 4 characters, use the last 4 letters or numbers.
+
 ## One-time setup for the Start button
 
 Before the browser can open the helper, Windows needs to know what `meaningful-nfc-helper://start` means.

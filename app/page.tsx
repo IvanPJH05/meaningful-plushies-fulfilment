@@ -77,7 +77,7 @@ import { orderStatuses, type AccountingBankStatementLine, type AccountingCategor
 
 type Session = DashboardSession;
 type View =
-  | "orders" | "fulfilment" | "packing_slips" | "print_envelope" | "import" | "tiktok_shop" | "fulfilled" | "history" | "settings" | "meta_capi" | "stock" | "sales_report"
+  | "orders" | "fulfilment" | "packing_slips" | "print_envelope" | "nfc_card" | "import" | "tiktok_shop" | "fulfilled" | "history" | "settings" | "meta_capi" | "stock" | "sales_report"
   | "accounting_dashboard" | "accounting_documents" | "accounting_transactions" | "accounting_csv_import" | "accounting_profit_loss" | "accounting_balance_sheet"
   | "accounting_cash_flow" | "accounting_owner_equity" | "accounting_operating_costs" | "accounting_general_ledger" | "accounting_trial_balance" | "accounting_payable" | "accounting_receivable"
   | "accounting_other_income"
@@ -586,7 +586,7 @@ function cogsAccountForInventoryItem(itemName: string) {
 }
 const processorAccounts = ["Xendit", "Stripe", "TikTok"] as const;
 
-const fulfilmentViews: readonly View[] = ["orders", "fulfilment", "packing_slips", "print_envelope", "import", "tiktok_shop", "fulfilled"];
+const fulfilmentViews: readonly View[] = ["orders", "fulfilment", "packing_slips", "print_envelope", "nfc_card", "import", "tiktok_shop", "fulfilled"];
 const accountingViews: readonly View[] = [
   "accounting_dashboard",
   "accounting_bank_reconciliation",
@@ -777,6 +777,7 @@ const fulfilmentNavItems: NavItem[] = [
   { view: "fulfilment", label: "Fulfilment", icon: "fulfilment" },
   { view: "packing_slips", label: "Packing Slips", icon: "packing" },
   { view: "print_envelope", label: "Print Envelope", icon: "envelope" },
+  { view: "nfc_card", label: "NFC Card", icon: "report" },
   { view: "import", label: "CSV Import", icon: "import" },
   { view: "tiktok_shop", label: "TikTok Shop", icon: "report" },
 ];
@@ -1370,6 +1371,8 @@ export default function Home() {
   const [refreshingOrderNumber, setRefreshingOrderNumber] = useState("");
   const [nfcWritingOrderId, setNfcWritingOrderId] = useState("");
   const [nfcHelperStatus, setNfcHelperStatus] = useState<"unknown" | "checking" | "running" | "not_running" | "starting">("unknown");
+  const [nfcUnlockPassword, setNfcUnlockPassword] = useState("");
+  const [nfcUnlocking, setNfcUnlocking] = useState(false);
 
   const normalizeSharedOrders = useCallback((sharedOrders: Order[]) => sharedOrders.map((order) => {
     const status = legacyStatus[order.status] ?? order.status;
@@ -1925,6 +1928,29 @@ export default function Home() {
       setNotice(`NFC write failed for #${order.orderNumber}: ${message}.${helperHint}`);
     } finally {
       setNfcWritingOrderId("");
+    }
+  }
+
+  async function unlockNfcCard() {
+    const password = nfcUnlockPassword.trim();
+    if (!password) return setNotice("Enter the NFC card password first.");
+    setNfcUnlocking(true);
+    try {
+      setNotice("Sending unlock request. Hold the locked NFC card on the USB reader.");
+      const response = await fetch("http://127.0.0.1:17654/unlock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const result = await response.json().catch(() => ({})) as { ok?: boolean; error?: string };
+      if (!response.ok || !result.ok) throw new Error(result.error || "Desktop NFC writer did not confirm the unlock.");
+      setNotice("NFC card unlocked. You can write it again now.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "NFC unlock failed.";
+      const helperHint = message.includes("Failed to fetch") ? " Start the Windows NFC helper first, then try again." : "";
+      setNotice(`NFC unlock failed: ${message}.${helperHint}`);
+    } finally {
+      setNfcUnlocking(false);
     }
   }
 
@@ -5249,7 +5275,7 @@ export default function Home() {
         onRefresh={loadMetaAdsDashboard}
       />}
 
-      {workspace === "fulfilment" && view !== "import" && view !== "tiktok_shop" && view !== "packing_slips" && view !== "print_envelope" && view !== "history" && view !== "settings" && view !== "stock" && view !== "sales_report" && <>
+      {workspace === "fulfilment" && view !== "import" && view !== "tiktok_shop" && view !== "packing_slips" && view !== "print_envelope" && view !== "nfc_card" && view !== "history" && view !== "settings" && view !== "stock" && view !== "sales_report" && <>
         {view === "orders" && <section className="stats">
           <Stat label="Active orders" value={counts.total} color="navy" />
           <Stat label="Uploading audio" value={counts.voice} color="orange" />
@@ -5300,6 +5326,34 @@ export default function Home() {
           <div className="table-footer">Showing {filtered.length} of {orders.length} orders</div>
         </section>}
       </>}
+
+      {view === "nfc_card" && <section className="nfc-card-page">
+        <div className="card hero-card">
+          <span>NFC CARD</span>
+          <h2>Unlock password-protected NFC cards</h2>
+          <p>If a card was locked before rewriting, enter the password and tap the card on your USB reader. For order cards, the password is usually the last 4 letters or numbers of the order number.</p>
+        </div>
+        <div className="card nfc-unlock-card">
+          <div className={`nfc-helper-panel ${nfcHelperStatus}`}>
+            <div>
+              <strong>Windows NFC Helper</strong>
+              <span>{nfcHelperStatus === "running" ? "Ready. Enter the password, click unlock, then tap the NFC card." : nfcHelperStatus === "checking" ? "Checking local helper..." : nfcHelperStatus === "starting" ? "Opening helper..." : "Start the helper before unlocking cards from this browser."}</span>
+            </div>
+            <div className="nfc-helper-actions">
+              <button className="button primary small" type="button" onClick={startNfcHelper}>Start NFC Helper</button>
+              <button className="button secondary small" type="button" onClick={() => void checkNfcHelper()}>Check helper</button>
+            </div>
+          </div>
+          <div className="nfc-unlock-form">
+            <label>NFC card password<input value={nfcUnlockPassword} onChange={(event) => setNfcUnlockPassword(event.target.value)} placeholder="Example: 1486" /></label>
+            <button className="button primary" type="button" disabled={nfcUnlocking || !nfcUnlockPassword.trim()} onClick={unlockNfcCard}>{nfcUnlocking ? "Unlocking..." : "Unlock card"}</button>
+          </div>
+          <div className="helper-note">
+            <strong>Tip</strong>
+            <p>For order numbers longer than 4 characters, use the last 4 letters or numbers. Example: #TT1032 uses 1032.</p>
+          </div>
+        </div>
+      </section>}
 
       {view === "packing_slips" && <section className="packing-page">
         <div className="packing-controls card">

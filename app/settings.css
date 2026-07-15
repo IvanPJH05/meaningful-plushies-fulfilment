@@ -1326,6 +1326,85 @@ body.print-sales-report .report-table th,
   margin-top: 3px;
 }
 
+.nfc-card-page {
+  display: grid;
+  gap: 18px;
+}
+
+.nfc-card-page .hero-card {
+  padding: 26px 28px;
+  background: linear-gradient(135deg, #eff6ff 0%, #f8fbff 100%);
+}
+
+.nfc-card-page .hero-card span {
+  color: #245fa8;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: .18em;
+}
+
+.nfc-card-page .hero-card h2 {
+  margin: 8px 0 8px;
+  color: #07162f;
+  font-size: 30px;
+}
+
+.nfc-card-page .hero-card p {
+  margin: 0;
+  max-width: 780px;
+  color: #536783;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.nfc-unlock-card {
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+}
+
+.nfc-unlock-form {
+  display: grid;
+  grid-template-columns: minmax(240px, 420px) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.nfc-unlock-form label {
+  display: grid;
+  gap: 7px;
+  color: #536783;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.nfc-unlock-form input {
+  border: 1px solid #c8d8ec;
+  border-radius: 12px;
+  padding: 13px 14px;
+  color: #07162f;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.helper-note {
+  border: 1px solid #d8e6f7;
+  border-radius: 14px;
+  padding: 14px 16px;
+  background: #f5f9ff;
+}
+
+.helper-note strong {
+  color: #0d4b9b;
+}
+
+.helper-note p {
+  margin: 5px 0 0;
+  color: #63758f;
+}
+
 @media (max-width: 980px) {
   .manual-order-grid,
   .manual-order-hero,
