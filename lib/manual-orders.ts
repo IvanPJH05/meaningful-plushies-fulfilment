@@ -21,16 +21,19 @@ function asShopifyGid(value: string, type: "Product" | "ProductVariant") {
   return trimmed.startsWith("gid://") ? trimmed : `gid://shopify/${type}/${trimmed.replace(/\D/g, "")}`;
 }
 
-function shopifyNumericId(value?: string | null) {
-  return (value ?? "").match(/\d+$/)?.[0] ?? "";
-}
-
 function userErrorMessage(errors: DiscountUserError[] | undefined, fallback: string) {
   const messages = (errors ?? []).map((error) => error.message).filter(Boolean);
   return messages.length ? messages.join(" ") : fallback;
 }
 
 const manualOrderCharacters = ["Billy", "Tootsie", "Hunnie", "Dragon Warrior"] as const;
+
+const manualOrderCharacterProductHandles: Record<string, string> = {
+  billy: "billy-wa-order",
+  hunnie: "hunnie-wa-order",
+  tootsie: "tootsie-wa-order",
+  "dragon warrior": "dragon-warrior-wa-order",
+};
 
 const knownMeaningfulPlushieVariantIds: Record<string, Record<string, string>> = {
   billy: {
@@ -78,13 +81,13 @@ function normalizeVariantText(value?: string | null) {
 async function resolveManualOrderProductFromStorefront(input: ManualOrderCreateInput, product: ManualOrderProductConfig) {
   const handle = productHandleFromPath(product.productPath);
   const storefront = (process.env.SHOPIFY_STOREFRONT_URL || process.env.NEXT_PUBLIC_SHOPIFY_STOREFRONT_URL || "https://meaningfulplushies.com").replace(/\/+$/, "");
-  if (!handle || !storefront) return { productId: "", variantId: "" };
+  if (!handle || !storefront) return { productId: "", variantId: "", productPath: "" };
 
   const response = await fetch(`${storefront}/products/${encodeURIComponent(handle)}.js`, {
     headers: { accept: "application/json" },
     cache: "no-store",
   });
-  if (!response.ok) return { productId: "", variantId: "" };
+  if (!response.ok) return { productId: "", variantId: "", productPath: "" };
 
   const data = await response.json() as {
     id?: number | string;
@@ -112,9 +115,11 @@ async function resolveManualOrderProductFromStorefront(input: ManualOrderCreateI
     return characterMatches && secondsMatches;
   });
   const variantId = textValue(variant?.id);
+  if ((character || seconds) && !variantId) return { productId: "", variantId: "", productPath: "" };
   return {
     productId: productId ? asShopifyGid(productId, "Product") : "",
     variantId: variantId ? asShopifyGid(variantId, "ProductVariant") : "",
+    productPath: `products/${handle}`,
   };
 }
 
@@ -127,13 +132,27 @@ function resolveKnownManualOrderProduct(input: ManualOrderCreateInput, product: 
   return {
     productId: productId ? asShopifyGid(productId, "Product") : "",
     variantId: variantId ? asShopifyGid(variantId, "ProductVariant") : "",
+    productPath: product.productPath,
   };
 }
 
 async function resolveManualOrderProduct(input: ManualOrderCreateInput, product: ManualOrderProductConfig) {
   const configuredProductId = asShopifyGid(product.shopifyProductId ?? "", "Product");
   const configuredVariantId = asShopifyGid(product.shopifyVariantId ?? "", "ProductVariant");
-  if (configuredVariantId) return { productId: configuredProductId, variantId: configuredVariantId };
+  if (configuredVariantId) return { productId: configuredProductId, variantId: configuredVariantId, productPath: product.productPath };
+
+  const character = normalizeManualOrderCharacter(input.character).toLowerCase();
+  const characterHandle = manualOrderCharacterProductHandles[character];
+  if (characterHandle) {
+    const characterProduct = {
+      ...product,
+      productPath: `products/${characterHandle}`,
+      shopifyProductId: "",
+      shopifyVariantId: "",
+    };
+    const storefrontCharacterProduct = await resolveManualOrderProductFromStorefront(input, characterProduct);
+    if (storefrontCharacterProduct.productId || storefrontCharacterProduct.variantId) return storefrontCharacterProduct;
+  }
 
   const storefrontProduct = await resolveManualOrderProductFromStorefront(input, product);
   if (storefrontProduct.productId || storefrontProduct.variantId) return storefrontProduct;
@@ -141,9 +160,9 @@ async function resolveManualOrderProduct(input: ManualOrderCreateInput, product:
   const knownProduct = resolveKnownManualOrderProduct(input, product);
   if (knownProduct.productId || knownProduct.variantId) return knownProduct;
 
-  if (configuredProductId) return { productId: configuredProductId, variantId: "" };
+  if (configuredProductId) return { productId: configuredProductId, variantId: "", productPath: product.productPath };
 
-  return { productId: "", variantId: "" };
+  return { productId: "", variantId: "", productPath: product.productPath };
 }
 
 export function normalizeManualOrderPhone(phone: string) {
@@ -174,13 +193,10 @@ export async function generateManualOrderCode(phoneLastFour: string) {
   throw new Error("Could not generate a unique manual order discount code. Please try again.");
 }
 
-export function buildManualOrderCustomerLink(productCode: string, shippingCode: string, productPath: string, variantId?: string) {
+export function buildManualOrderCustomerLink(productCode: string, shippingCode: string, productPath: string) {
   const store = (process.env.SHOPIFY_STOREFRONT_URL || process.env.NEXT_PUBLIC_SHOPIFY_STOREFRONT_URL || "https://meaningfulplushies.com").replace(/\/+$/, "");
-  const numericVariantId = shopifyNumericId(variantId);
-  const discountCodes = `${encodeURIComponent(productCode)},${encodeURIComponent(shippingCode)}`;
-  if (numericVariantId) return `${store}/cart/${numericVariantId}:1?discount=${discountCodes}`;
   const cleanPath = productPath.replace(/^\/+/, "");
-  return `${store}/discount/${encodeURIComponent(productCode)}?redirect=/${cleanPath}`;
+  return `${store}/discount/${encodeURIComponent(productCode)},${encodeURIComponent(shippingCode)}?redirect=/${cleanPath}`;
 }
 
 export async function createCreatorSampleDiscountCode(code: string, creatorName: string) {
@@ -337,13 +353,13 @@ export async function createManualOrderDiscounts(input: ManualOrderCreateInput):
     productDisplayName,
     shopifyProductId: resolvedProduct.productId || product.shopifyProductId || "",
     shopifyVariantId: resolvedProduct.variantId || product.shopifyVariantId || "",
-    productPath: product.productPath,
+    productPath: resolvedProduct.productPath || product.productPath,
     shippingRegion: input.shippingRegion,
     productDiscountCode: productCode,
     productDiscountShopifyId,
     shippingDiscountCode: shippingCode,
     shippingDiscountShopifyId,
-    customerLink: buildManualOrderCustomerLink(productCode, shippingCode, product.productPath, resolvedProduct.variantId),
+    customerLink: buildManualOrderCustomerLink(productCode, shippingCode, resolvedProduct.productPath || product.productPath),
     status: "active",
     shopifyOrderId: "",
     shopifyOrderName: "",
