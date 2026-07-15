@@ -121,6 +121,7 @@ type FreeCreatorSample = {
   creatorName: string;
   creatorUrl: string;
   sampleCode: string;
+  shopifyDiscountId?: string;
   orderNumber?: string;
   givenAt: string;
   notes: string;
@@ -7935,6 +7936,7 @@ function CreatorProgramWorkspacePage({
   });
   const [freeCreatorSamples, setFreeCreatorSamples] = useState<FreeCreatorSample[]>(() => readJson<FreeCreatorSample[]>(freeCreatorSamplesStorageKey) ?? []);
   const [freeCreatorSampleForm, setFreeCreatorSampleForm] = useState({ creatorName: "", creatorUrl: "", sampleCode: "", notes: "" });
+  const [creatingFreeCreatorSample, setCreatingFreeCreatorSample] = useState(false);
   const visibleProfiles = admin ? creatorProfiles : creatorProfiles.filter((profile) => profile.userId === session.id);
   const currentProfile = visibleProfiles[0];
   const visibleCommissions = admin
@@ -8067,28 +8069,56 @@ function CreatorProgramWorkspacePage({
     }
   }
 
-  function saveFreeCreatorSample(event: FormEvent) {
+  async function saveFreeCreatorSample(event: FormEvent) {
     event.preventDefault();
     if (!admin) return;
-    if (!freeCreatorSampleForm.creatorName.trim() || !freeCreatorSampleForm.sampleCode.trim()) {
+    const creatorName = freeCreatorSampleForm.creatorName.trim();
+    const sampleCode = freeCreatorSampleForm.sampleCode.trim().toUpperCase();
+    if (!creatorName || !sampleCode) {
       return setMessage("Add the creator name and the code you gave them.");
     }
-    const now = new Date().toISOString();
-    setFreeCreatorSamples((current) => [{
-      id: crypto.randomUUID(),
-      creatorName: freeCreatorSampleForm.creatorName.trim(),
-      creatorUrl: freeCreatorSampleForm.creatorUrl.trim(),
-      sampleCode: freeCreatorSampleForm.sampleCode.trim().toUpperCase(),
-      orderNumber: "",
-      givenAt: now,
-      notes: freeCreatorSampleForm.notes.trim(),
-    }, ...current]);
-    setFreeCreatorSampleForm({ creatorName: "", creatorUrl: "", sampleCode: "", notes: "" });
-    setMessage("Free creator sample logged.");
+    if (freeCreatorSamples.some((sample) => sample.sampleCode.trim().toUpperCase() === sampleCode)) {
+      return setMessage("This creator sample discount code is already logged.");
+    }
+    setCreatingFreeCreatorSample(true);
+    try {
+      const response = await fetch("/api/shopify/creator-sample-discounts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: sampleCode, creatorName }),
+      });
+      const result = await response.json().catch(() => ({})) as { ok?: boolean; discountId?: string; error?: string };
+      if (!response.ok || !result.ok || !result.discountId) throw new Error(result.error || "Shopify creator sample discount could not be created.");
+      const now = new Date().toISOString();
+      setFreeCreatorSamples((current) => [{
+        id: crypto.randomUUID(),
+        creatorName,
+        creatorUrl: freeCreatorSampleForm.creatorUrl.trim(),
+        sampleCode,
+        shopifyDiscountId: result.discountId,
+        orderNumber: "",
+        givenAt: now,
+        notes: freeCreatorSampleForm.notes.trim(),
+      }, ...current]);
+      setFreeCreatorSampleForm({ creatorName: "", creatorUrl: "", sampleCode: "", notes: "" });
+      setMessage("Free creator sample logged and Shopify RM150 discount created.");
+    } catch (error) {
+      setMessage(readableError(error, "Creator sample discount could not be created in Shopify."));
+    } finally {
+      setCreatingFreeCreatorSample(false);
+    }
   }
 
-  function deleteFreeCreatorSample(sampleId: string) {
-    setFreeCreatorSamples((current) => current.filter((sample) => sample.id !== sampleId));
+  async function deleteFreeCreatorSample(sampleId: string) {
+    const sample = freeCreatorSamples.find((item) => item.id === sampleId);
+    setFreeCreatorSamples((current) => current.filter((item) => item.id !== sampleId));
+    if (sample?.shopifyDiscountId) {
+      void fetch("/api/shopify/creator-sample-discounts", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "deactivate", discountId: sample.shopifyDiscountId }),
+      });
+    }
     setMessage("Free creator sample removed.");
   }
 
@@ -8221,13 +8251,13 @@ function CreatorProgramWorkspacePage({
       {message && <div className="notice"><span>{message}</span><button onClick={() => setMessage("")}>x</button></div>}
       <section className="creator-sample-ledger-layout">
         <form className="creator-form card creator-sample-entry-form" onSubmit={saveFreeCreatorSample}>
-          <div className="accounting-form-heading"><div><h3>New sample record</h3><p>Enter the creator and code you gave them.</p></div></div>
+          <div className="accounting-form-heading"><div><h3>New sample record</h3><p>Creates a one-use RM150 Shopify discount code, then logs the creator here.</p></div></div>
           <div className="creator-sample-form-fields">
             <label>Creator<input value={freeCreatorSampleForm.creatorName} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, creatorName: event.target.value }))} placeholder="Creator name or handle" /></label>
             <label>Discount code<input value={freeCreatorSampleForm.sampleCode} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, sampleCode: event.target.value.toUpperCase() }))} placeholder="FREE-IVAN10" /></label>
             <label>Creator link<input value={freeCreatorSampleForm.creatorUrl} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, creatorUrl: event.target.value }))} placeholder="https://www.tiktok.com/@creator" /></label>
             <label>Notes<textarea value={freeCreatorSampleForm.notes} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Sent link, waiting for order, etc." /></label>
-            <button className="button primary" type="submit">Add creator</button>
+            <button className="button primary" type="submit" disabled={creatingFreeCreatorSample}>{creatingFreeCreatorSample ? "Creating Shopify code..." : "Create RM150 code + add creator"}</button>
           </div>
         </form>
         <section className="card accounting-table-card creator-sample-ledger-card">

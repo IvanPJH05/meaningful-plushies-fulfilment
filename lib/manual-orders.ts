@@ -175,6 +175,47 @@ export function buildManualOrderCustomerLink(productCode: string, shippingCode: 
   return `${store}/discount/${encodeURIComponent(productCode)},${encodeURIComponent(shippingCode)}?redirect=/${cleanPath}`;
 }
 
+export async function createCreatorSampleDiscountCode(code: string, creatorName: string) {
+  const normalizedCode = code.trim().toUpperCase();
+  if (!normalizedCode) throw new Error("Discount code is required.");
+
+  const domain = shopDomain();
+  if (!domain) throw new Error("SHOPIFY_SHOP_DOMAIN is missing in Vercel.");
+
+  const result = await shopifyGraphql<{
+    data?: { discountCodeBasicCreate?: { codeDiscountNode?: { id?: string }, userErrors?: DiscountUserError[] } };
+    errors?: { message?: string }[];
+  }>(domain, `
+    mutation CreateCreatorSampleDiscount($basicCodeDiscount: DiscountCodeBasicInput!) {
+      discountCodeBasicCreate(basicCodeDiscount: $basicCodeDiscount) {
+        codeDiscountNode { id }
+        userErrors { field message code }
+      }
+    }
+  `, {
+    basicCodeDiscount: {
+      title: `Creator Sample - ${creatorName.trim() || normalizedCode}`,
+      code: normalizedCode,
+      startsAt: new Date().toISOString(),
+      usageLimit: 1,
+      appliesOncePerCustomer: true,
+      context: { all: "ALL" },
+      combinesWith: { shippingDiscounts: true },
+      customerGets: {
+        value: { discountAmount: { amount: "150.00", appliesOnEachItem: false } },
+        items: { all: true },
+      },
+    },
+  });
+
+  if (result?.errors?.length) throw new Error(result.errors.map((error) => error.message).filter(Boolean).join(" "));
+  const payload = result?.data?.discountCodeBasicCreate;
+  if (payload?.userErrors?.length) throw new Error(userErrorMessage(payload.userErrors, "Shopify rejected the creator sample discount."));
+  const id = textValue(payload?.codeDiscountNode?.id);
+  if (!id) throw new Error("Shopify did not return the creator sample discount ID.");
+  return id;
+}
+
 async function createProductDiscount(
   domain: string,
   input: ManualOrderCreateInput,
