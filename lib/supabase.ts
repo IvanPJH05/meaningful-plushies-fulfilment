@@ -39,6 +39,12 @@ function supabaseErrorMessage(error: unknown, fallback: string) {
   return detail ? `${message} ${detail}` : message;
 }
 
+function isMissingSupabaseTable(error: unknown, tableName: string) {
+  if (!error || typeof error !== "object") return false;
+  const item = error as { code?: string; message?: string };
+  return item.code === "PGRST205" && Boolean(item.message?.includes(`'public.${tableName}'`));
+}
+
 function creatorSchemaSetupError() {
   return new Error("Creator Program database setup is not installed yet. Run the updated supabase/schema.sql in Supabase SQL Editor, then refresh the app.");
 }
@@ -246,6 +252,7 @@ export async function fetchWhatsAppLeads(): Promise<WhatsAppLead[]> {
     .from("whatsapp_leads")
     .select("*")
     .order("imported_at", { ascending: false });
+  if (isMissingSupabaseTable(error, "whatsapp_leads")) return [];
   if (error) throw error;
   return (data ?? []).map((row) => whatsAppLeadFromRow(row as Record<string, unknown>));
 }
