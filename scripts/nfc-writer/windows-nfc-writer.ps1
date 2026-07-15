@@ -156,7 +156,7 @@ function Send-HttpResponse {
   $statusText = if ($StatusCode -eq 200) { "OK" } elseif ($StatusCode -eq 404) { "Not Found" } else { "Error" }
   $json = $Payload | ConvertTo-Json -Compress
   $body = [System.Text.Encoding]::UTF8.GetBytes($json)
-  $headers = "HTTP/1.1 $StatusCode $statusText`r`nAccess-Control-Allow-Origin: *`r`nAccess-Control-Allow-Headers: Content-Type`r`nAccess-Control-Allow-Methods: GET, POST, OPTIONS`r`nContent-Type: application/json`r`nContent-Length: $($body.Length)`r`nConnection: close`r`n`r`n"
+  $headers = "HTTP/1.1 $StatusCode $statusText`r`nAccess-Control-Allow-Origin: *`r`nAccess-Control-Allow-Headers: Content-Type`r`nAccess-Control-Allow-Methods: GET, POST, OPTIONS`r`nAccess-Control-Allow-Private-Network: true`r`nContent-Type: application/json`r`nContent-Length: $($body.Length)`r`nConnection: close`r`n`r`n"
   $headerBytes = [System.Text.Encoding]::ASCII.GetBytes($headers)
   $Stream.Write($headerBytes, 0, $headerBytes.Length)
   $Stream.Write($body, 0, $body.Length)
