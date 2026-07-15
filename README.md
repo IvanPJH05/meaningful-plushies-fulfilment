@@ -126,8 +126,8 @@ SHOPIFY_CLIENT_ID=YOUR_SHOPIFY_APP_CLIENT_ID
 SHOPIFY_CLIENT_SECRET=YOUR_SHOPIFY_APP_CLIENT_SECRET
 SHOPIFY_WEBHOOK_SECRET=YOUR_SHOPIFY_APP_CLIENT_SECRET
 NEXT_PUBLIC_SHOPIFY_STOREFRONT_URL=https://meaningfulplushies.com
-MANUAL_ORDER_PRODUCTS_JSON=[{"key":"plushie_20s","displayName":"Meaningful Plushie - 20 seconds","productPath":"products/meanngful-plushie","shopifyProductId":"1234567890","shopifyVariantId":"9876543210"}]
-NEXT_PUBLIC_MANUAL_ORDER_PRODUCTS_JSON=[{"key":"plushie_20s","displayName":"Meaningful Plushie - 20 seconds","productPath":"products/meanngful-plushie"}]
+MANUAL_ORDER_PRODUCTS_JSON=[{"key":"plushie_20s","displayName":"Meaningful Plushie - 20 seconds","productPath":"products/meaningful-plushie","shopifyProductId":"1234567890","shopifyVariantId":"9876543210"}]
+NEXT_PUBLIC_MANUAL_ORDER_PRODUCTS_JSON=[{"key":"plushie_20s","displayName":"Meaningful Plushie - 20 seconds","productPath":"products/meaningful-plushie"}]
 NEXT_PUBLIC_SHOPIFY_ADMIN_STORE_HANDLE=your-store-handle
 ```
 

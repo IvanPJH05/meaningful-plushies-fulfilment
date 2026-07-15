@@ -21,6 +21,10 @@ function asShopifyGid(value: string, type: "Product" | "ProductVariant") {
   return trimmed.startsWith("gid://") ? trimmed : `gid://shopify/${type}/${trimmed.replace(/\D/g, "")}`;
 }
 
+function shopifyNumericId(value?: string | null) {
+  return (value ?? "").match(/\d+$/)?.[0] ?? "";
+}
+
 function userErrorMessage(errors: DiscountUserError[] | undefined, fallback: string) {
   const messages = (errors ?? []).map((error) => error.message).filter(Boolean);
   return messages.length ? messages.join(" ") : fallback;
@@ -118,7 +122,8 @@ function resolveKnownManualOrderProduct(input: ManualOrderCreateInput, product: 
   const character = normalizeManualOrderCharacter(input.character).toLowerCase();
   const seconds = manualOrderSpeakerSeconds(product);
   const variantId = character && seconds ? knownMeaningfulPlushieVariantIds[character]?.[seconds] ?? "" : "";
-  const productId = product.shopifyProductId || (productHandleFromPath(product.productPath) === "meanngful-plushie" ? "7407587360839" : "");
+  const handle = productHandleFromPath(product.productPath);
+  const productId = product.shopifyProductId || (["meaningful-plushie", "meanngful-plushie"].includes(handle) ? "7407587360839" : "");
   return {
     productId: productId ? asShopifyGid(productId, "Product") : "",
     variantId: variantId ? asShopifyGid(variantId, "ProductVariant") : "",
@@ -169,10 +174,13 @@ export async function generateManualOrderCode(phoneLastFour: string) {
   throw new Error("Could not generate a unique manual order discount code. Please try again.");
 }
 
-export function buildManualOrderCustomerLink(productCode: string, shippingCode: string, productPath: string) {
+export function buildManualOrderCustomerLink(productCode: string, shippingCode: string, productPath: string, variantId?: string) {
   const store = (process.env.SHOPIFY_STOREFRONT_URL || process.env.NEXT_PUBLIC_SHOPIFY_STOREFRONT_URL || "https://meaningfulplushies.com").replace(/\/+$/, "");
+  const numericVariantId = shopifyNumericId(variantId);
+  const discountCodes = `${encodeURIComponent(productCode)},${encodeURIComponent(shippingCode)}`;
+  if (numericVariantId) return `${store}/cart/${numericVariantId}:1?discount=${discountCodes}`;
   const cleanPath = productPath.replace(/^\/+/, "");
-  return `${store}/discount/${encodeURIComponent(productCode)},${encodeURIComponent(shippingCode)}?redirect=/${cleanPath}`;
+  return `${store}/discount/${encodeURIComponent(productCode)}?redirect=/${cleanPath}`;
 }
 
 export async function createCreatorSampleDiscountCode(code: string, creatorName: string) {
@@ -335,7 +343,7 @@ export async function createManualOrderDiscounts(input: ManualOrderCreateInput):
     productDiscountShopifyId,
     shippingDiscountCode: shippingCode,
     shippingDiscountShopifyId,
-    customerLink: buildManualOrderCustomerLink(productCode, shippingCode, product.productPath),
+    customerLink: buildManualOrderCustomerLink(productCode, shippingCode, product.productPath, resolvedProduct.variantId),
     status: "active",
     shopifyOrderId: "",
     shopifyOrderName: "",
