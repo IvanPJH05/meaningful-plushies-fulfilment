@@ -6,7 +6,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, DragEvent, FormEvent, SVGProps } from "react";
 import { applyTikTokDetailEntries, detectCsvKind, fulfilledOrdersCsv, importShopifyData, importTikTokShopData, normalizePaymentProcessor, parseTikTokDetailsBlock, tikTokCertificateJson, tikTokDetailsToText } from "../lib/importer";
 import { parseBankStatementCsv } from "../lib/bank-statements";
-import { buildSalesReportRows, summarizeSales, type SalesReportRow, type SalesSummary } from "../lib/sales";
+import { buildSalesReportRows, isCreatorFreeOrder, summarizeSales, type SalesReportRow, type SalesSummary } from "../lib/sales";
 import { stockCharacters, summarizeStock } from "../lib/stock";
 import {
   createDashboardAccount,
@@ -35,6 +35,7 @@ import {
   fetchMetaCapiLogs,
   fetchMetaCapiSettings,
   fetchManualOrders,
+  fetchWhatsAppLeads,
   fetchSalesConsumptionMappings,
   fetchSharedActivity,
   fetchSharedOrders,
@@ -61,6 +62,7 @@ import {
   saveMetaCapiSettings,
   saveSalesConsumptionMapping,
   saveStockSetting,
+  saveWhatsAppLeads,
   savePaymentProcessorSetting,
   saveSalesFeeSettings,
   subscribeToSharedData,
@@ -68,12 +70,13 @@ import {
   supabaseConfigured,
   updateDashboardAccount,
   updateCreatorCommissionStatus,
+  updateWhatsAppLead,
   uploadAccountingDocumentFile,
   upsertSharedOrders,
   type DashboardSession,
 } from "../lib/supabase";
 import { manualOrderProducts } from "../lib/manual-order-products";
-import { orderStatuses, type AccountingBankStatementLine, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type AiAccountantReview, type CommissionStatus, type ContentIdeaItem, type ContentIdeaReference, type ContentPlanItem, type CreatorCommission, type CreatorPayout, type CreatorProfile, type CreatorStatus, type CreatorTier, type DashboardAccount, type EnvelopePrintSettings, type ManualOrder, type MetaAdsEnvironment, type MetaAdsInsight, type MetaAdsSummary, type MetaCapiLog, type MetaCapiSettings, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesConsumptionMapping, type SalesFeeSetting, type StockSetting, type UserRole } from "../lib/types";
+import { orderStatuses, type AccountingBankStatementLine, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type AiAccountantReview, type CommissionStatus, type ContentIdeaItem, type ContentIdeaReference, type ContentPlanItem, type CreatorCommission, type CreatorPayout, type CreatorProfile, type CreatorStatus, type CreatorTier, type DashboardAccount, type EnvelopePrintSettings, type ManualOrder, type MetaAdsEnvironment, type MetaAdsInsight, type MetaAdsSummary, type MetaCapiLog, type MetaCapiSettings, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesConsumptionMapping, type SalesFeeSetting, type StockSetting, type UserRole, type WhatsAppLead, type WhatsAppLeadStatus } from "../lib/types";
 
 type Session = DashboardSession;
 type View =
@@ -84,7 +87,7 @@ type View =
   | "accounting_bank_reconciliation" | "accounting_product_profitability" | "accounting_marketing_profitability" | "accounting_cash_position"
   | "accounting_tax_reports" | "accounting_settings" | "accounting_files" | "accounting_general_journal" | "accounting_t_accounts" | "accounting_unit_costs" | "accounting_financial_reports"
   | "content_dashboard" | "content_plan" | "content_ideas"
-  | "ads_dashboard" | "manual_orders_dashboard"
+  | "ads_dashboard" | "manual_orders_dashboard" | "manual_orders_leads"
   | "creator_dashboard" | "creator_accounts" | "creator_sales" | "creator_commissions" | "creator_payouts" | "creator_analytics" | "creator_free_samples";
 type Workspace = "fulfilment" | "manual_orders" | "accounting" | "formal_accounting" | "creator" | "inventory" | "reports" | "content" | "ads" | "settings";
 type SalesRange = "active" | "today" | "7d" | "30d" | "lifetime";
@@ -606,7 +609,7 @@ const accountingViews: readonly View[] = [
 const formalAccountingViews: readonly View[] = ["accounting_general_journal", "accounting_t_accounts", "accounting_unit_costs", "accounting_financial_reports"];
 const contentViews: readonly View[] = ["content_dashboard", "content_plan", "content_ideas"];
 const adsViews: readonly View[] = ["ads_dashboard"];
-const manualOrderViews: readonly View[] = ["manual_orders_dashboard"];
+const manualOrderViews: readonly View[] = ["manual_orders_dashboard", "manual_orders_leads"];
 const manualOrderCharacters = ["Billy", "Tootsie", "Hunnie", "Dragon Warrior"] as const;
 const creatorViews: readonly View[] = ["creator_dashboard", "creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
 const creatorAdminViews: readonly View[] = ["creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
@@ -835,6 +838,7 @@ const adsNavItems: NavItem[] = [
 ];
 const manualOrderNavItems: NavItem[] = [
   { view: "manual_orders_dashboard", label: "Manual Orders", icon: "orders" },
+  { view: "manual_orders_leads", label: "Leads", icon: "report" },
 ];
 const settingsNavItems: NavItem[] = [
   { view: "settings", label: "Fulfilment Settings", icon: "settings" },
@@ -849,6 +853,96 @@ function formatDate(value: string, withTime = false) {
   return new Intl.DateTimeFormat("en-MY", withTime
     ? { dateStyle: "medium", timeStyle: "short" }
     : { day: "2-digit", month: "short", year: "numeric" }).format(date);
+}
+
+function normalizeMalaysiaPhone(value: string) {
+  const digits = value.replace(/\D/g, "");
+  let normalized = digits;
+  if (digits.startsWith("0")) normalized = `6${digits}`;
+  if (digits.startsWith("60")) normalized = digits;
+  if (digits.startsWith("1") && digits.length >= 9) normalized = `60${digits}`;
+  return /^60\d{8,11}$/.test(normalized) ? normalized : "";
+}
+
+function parseSimpleCsv(text: string) {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    const next = text[index + 1];
+    if (char === '"' && quoted && next === '"') {
+      cell += '"';
+      index += 1;
+    } else if (char === '"') {
+      quoted = !quoted;
+    } else if (char === "," && !quoted) {
+      row.push(cell.trim());
+      cell = "";
+    } else if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && next === "\n") index += 1;
+      row.push(cell.trim());
+      if (row.some(Boolean)) rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+  row.push(cell.trim());
+  if (row.some(Boolean)) rows.push(row);
+  return rows;
+}
+
+function csvKey(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function csvValue(row: Record<string, string>, keys: string[]) {
+  for (const key of keys) {
+    const value = row[csvKey(key)];
+    if (value) return value;
+  }
+  return "";
+}
+
+function parseWhatsAppLeadCsv(text: string, existingLeads: WhatsAppLead[]) {
+  const rows = parseSimpleCsv(text);
+  if (rows.length < 2) throw new Error("CSV needs a header row and at least one lead row.");
+  const headers = rows[0].map(csvKey);
+  const existingByPhone = new Map(existingLeads.map((lead) => [lead.phoneNormalized, lead]));
+  const leadsByPhone = new Map<string, WhatsAppLead>();
+  const warnings: string[] = [];
+  const now = new Date().toISOString();
+  rows.slice(1).forEach((cells, rowIndex) => {
+    const row = headers.reduce<Record<string, string>>((result, header, index) => {
+      result[header] = cells[index] ?? "";
+      return result;
+    }, {});
+    const phoneOriginal = csvValue(row, ["phone", "phone_number", "mobile", "whatsapp", "whatsapp_phone", "number"]);
+    const phoneNormalized = normalizeMalaysiaPhone(phoneOriginal);
+    if (!phoneNormalized) {
+      warnings.push(`Row ${rowIndex + 2}: skipped because phone number is missing or invalid.`);
+      return;
+    }
+    const existing = existingByPhone.get(phoneNormalized);
+    leadsByPhone.set(phoneNormalized, {
+      id: existing?.id ?? crypto.randomUUID(),
+      name: csvValue(row, ["name", "customer", "customer_name", "profile_name"]) || existing?.name || "",
+      phoneOriginal: phoneOriginal || existing?.phoneOriginal || phoneNormalized,
+      phoneNormalized,
+      source: csvValue(row, ["source", "lead_source"]) || existing?.source || "",
+      campaign: csvValue(row, ["campaign", "campaign_name"]) || existing?.campaign || "",
+      adName: csvValue(row, ["ad", "ad_name", "adname"]) || existing?.adName || "",
+      firstMessageDate: csvValue(row, ["first_message_date", "date", "created", "messaged_at"]) || existing?.firstMessageDate || "",
+      status: existing?.status ?? "open",
+      notes: csvValue(row, ["notes", "note"]) || existing?.notes || "",
+      importedAt: existing?.importedAt || now,
+      updatedAt: now,
+    });
+  });
+  return { leads: Array.from(leadsByPhone.values()), warnings };
 }
 
 function dateKey(value: string) {
@@ -1180,6 +1274,7 @@ function viewTitle(view: View) {
     content_ideas: "Idea Brainstorming",
     ads_dashboard: "Ads Dashboard",
     manual_orders_dashboard: "Manual Orders",
+    manual_orders_leads: "Leads",
   };
   if (titleOverrides[view]) return titleOverrides[view]!;
   const item = [...fulfilmentNavItems, ...fulfilmentAdminNavItems, ...manualOrderNavItems, ...accountingNavItems, ...formalAccountingNavItems, ...creatorAdminNavItems, ...inventoryNavItems, ...reportsNavItems, ...contentNavItems, ...adsNavItems, ...settingsNavItems]
@@ -1196,6 +1291,7 @@ export default function Home() {
   const [view, setView] = useState<View>(() => permittedView(storedUi.view, storedSession?.role));
   const [orders, setOrders] = useState<Order[]>([]);
   const [manualOrders, setManualOrders] = useState<ManualOrder[]>([]);
+  const [whatsAppLeads, setWhatsAppLeads] = useState<WhatsAppLead[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState(() => storedUi.query ?? "");
   const [statusFilter, setStatusFilter] = useState<"all" | OrderStatus>(() => choice(storedUi.statusFilter, "all", orderStatusFilterValues));
@@ -1246,6 +1342,10 @@ export default function Home() {
     shippingRegion: "WEST" as "WEST" | "EAST",
   });
   const [manualOrderQuery, setManualOrderQuery] = useState("");
+  const [whatsAppLeadQuery, setWhatsAppLeadQuery] = useState("");
+  const [whatsAppLeadCsvName, setWhatsAppLeadCsvName] = useState("");
+  const [whatsAppLeadBusy, setWhatsAppLeadBusy] = useState("");
+  const [whatsAppLeadNoteDrafts, setWhatsAppLeadNoteDrafts] = useState<Record<string, string>>({});
   const [manualOrderBusy, setManualOrderBusy] = useState("");
   const [lastManualOrderId, setLastManualOrderId] = useState("");
   const [stockSettings, setStockSettings] = useState<StockSetting[]>([]);
@@ -1416,14 +1516,16 @@ export default function Home() {
     }
     if (showLoading) setLoadingOrders(true);
     try {
-      const [sharedOrders, sharedManualOrders, sharedProcessorSettings, sharedSalesFeeSettings] = await Promise.all([
+      const [sharedOrders, sharedManualOrders, sharedWhatsAppLeads, sharedProcessorSettings, sharedSalesFeeSettings] = await Promise.all([
         fetchSharedOrders(),
         fetchManualOrders(),
+        fetchWhatsAppLeads(),
         fetchPaymentProcessorSettings(),
         fetchSalesFeeSettings(),
       ]);
       setOrders(normalizeSharedOrders(sharedOrders));
       setManualOrders(sharedManualOrders);
+      setWhatsAppLeads(sharedWhatsAppLeads);
       setProcessorSettings(sharedProcessorSettings);
       setSalesFeeSettings(sharedSalesFeeSettings);
       setDatabaseError("");
@@ -1478,6 +1580,7 @@ export default function Home() {
       await Promise.all([
         tables.has("fulfilment_orders") ? fetchSharedOrders().then((sharedOrders) => setOrders(normalizeSharedOrders(sharedOrders))) : Promise.resolve(),
         tables.has("manual_orders") ? fetchManualOrders().then(setManualOrders) : Promise.resolve(),
+        tables.has("whatsapp_leads") ? fetchWhatsAppLeads().then(setWhatsAppLeads) : Promise.resolve(),
         tables.has("activity_events") ? fetchSharedActivity().then(setActivity) : Promise.resolve(),
         tables.has("payment_processor_settings") ? fetchPaymentProcessorSettings().then(setProcessorSettings) : Promise.resolve(),
         tables.has("sales_fee_settings") ? fetchSalesFeeSettings().then(setSalesFeeSettings) : Promise.resolve(),
@@ -2295,6 +2398,42 @@ export default function Home() {
 
   async function reloadManualOrders() {
     setManualOrders(await fetchManualOrders());
+  }
+
+  async function reloadWhatsAppLeads() {
+    setWhatsAppLeads(await fetchWhatsAppLeads());
+  }
+
+  async function importWhatsAppLeadsCsv(file: File) {
+    setWhatsAppLeadBusy("import");
+    setWhatsAppLeadCsvName(file.name);
+    try {
+      const text = await file.text();
+      const { leads, warnings } = parseWhatsAppLeadCsv(text, whatsAppLeads);
+      if (!leads.length) throw new Error(warnings[0] || "No valid WhatsApp leads found in the CSV.");
+      await saveWhatsAppLeads(leads);
+      await reloadWhatsAppLeads();
+      const warningText = warnings.length ? ` ${warnings.length} row${warnings.length === 1 ? "" : "s"} skipped.` : "";
+      setNotice(`${leads.length} WhatsApp lead${leads.length === 1 ? "" : "s"} imported.${warningText}`);
+    } catch (error) {
+      setNotice(readableError(error, "WhatsApp leads could not be imported."));
+    } finally {
+      setWhatsAppLeadBusy("");
+    }
+  }
+
+  async function saveWhatsAppLeadPatch(lead: WhatsAppLead, patch: Partial<Pick<WhatsAppLead, "status" | "notes">>) {
+    setWhatsAppLeadBusy(lead.id);
+    try {
+      await updateWhatsAppLead(lead.id, patch);
+      setWhatsAppLeads((current) => current.map((item) => item.id === lead.id ? { ...item, ...patch, updatedAt: new Date().toISOString() } : item));
+      setNotice("Lead updated.");
+    } catch (error) {
+      setNotice(readableError(error, "Lead could not be updated."));
+      await reloadWhatsAppLeads();
+    } finally {
+      setWhatsAppLeadBusy("");
+    }
   }
 
   async function refreshManualOrderStatuses() {
@@ -5070,7 +5209,7 @@ export default function Home() {
       {loadingOrders && <div className="notice"><span>Loading shared orders from Supabase...</span></div>}
       {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice("")}>x</button></div>}
 
-      {workspace === "manual_orders" && session.role === "admin" && <ManualOrdersWorkspacePage
+      {workspace === "manual_orders" && view === "manual_orders_dashboard" && session.role === "admin" && <ManualOrdersWorkspacePage
         manualOrders={manualOrders}
         form={manualOrderForm}
         query={manualOrderQuery}
@@ -5083,6 +5222,20 @@ export default function Home() {
         onCancel={cancelManualOrder}
         onRefresh={refreshManualOrderStatuses}
         whatsAppLink={manualOrderWhatsAppLink}
+      />}
+
+      {workspace === "manual_orders" && view === "manual_orders_leads" && session.role === "admin" && <WhatsAppLeadsWorkspacePage
+        leads={whatsAppLeads}
+        manualOrders={manualOrders}
+        query={whatsAppLeadQuery}
+        csvName={whatsAppLeadCsvName}
+        busy={whatsAppLeadBusy}
+        noteDrafts={whatsAppLeadNoteDrafts}
+        onQueryChange={setWhatsAppLeadQuery}
+        onImport={importWhatsAppLeadsCsv}
+        onStatusChange={(lead, status) => saveWhatsAppLeadPatch(lead, { status })}
+        onNoteDraftChange={(leadId, value) => setWhatsAppLeadNoteDrafts((current) => ({ ...current, [leadId]: value }))}
+        onSaveNotes={(lead) => saveWhatsAppLeadPatch(lead, { notes: whatsAppLeadNoteDrafts[lead.id] ?? lead.notes })}
       />}
 
       {workspace === "accounting" && session.role === "admin" && <AccountingWorkspacePage
@@ -5261,6 +5414,7 @@ export default function Home() {
       {workspace === "ads" && session.role === "admin" && <AdsWorkspacePage
         startDate={metaAdsStartDate}
         endDate={metaAdsEndDate}
+        orders={orders}
         environment={metaAdsEnvironment}
         trackingSettings={metaCapiSettings}
         capiEnvironment={metaCapiEnvironment}
@@ -6837,6 +6991,7 @@ function formatPercent(value: number) {
 function AdsWorkspacePage({
   startDate,
   endDate,
+  orders,
   environment,
   trackingSettings,
   capiEnvironment,
@@ -6852,6 +7007,7 @@ function AdsWorkspacePage({
 }: {
   startDate: string;
   endDate: string;
+  orders: Order[];
   environment: MetaAdsEnvironment;
   trackingSettings: MetaCapiSettings;
   capiEnvironment: { pixelConfigured: boolean; tokenConfigured: boolean; tokenMasked: string; testEventCodeConfigured: boolean };
@@ -6871,6 +7027,22 @@ function AdsWorkspacePage({
     const time = new Date(log.createdAt).getTime();
     return Number.isFinite(time) && time >= periodStart && time <= periodEnd;
   });
+  const ordersInPeriod = orders.filter((order) => {
+    const time = new Date(order.orderDate || order.importedAt || order.updatedAt).getTime();
+    return Number.isFinite(time) && time >= periodStart && time <= periodEnd;
+  });
+  const influencerFreeRows = buildSalesReportRows(ordersInPeriod.filter(isCreatorFreeOrder));
+  const influencerFreeSampleValue = influencerFreeRows.reduce((total, row) => total + row.totalDiscount, 0);
+  const influencerFreeSampleCount = influencerFreeRows.length;
+  const paidRevenue = Math.max(0, summary.revenue - influencerFreeSampleValue);
+  const paidPurchases = Math.max(0, summary.purchases - influencerFreeSampleCount);
+  const adjustedSummary = {
+    ...summary,
+    revenue: paidRevenue,
+    purchases: paidPurchases,
+    roas: summary.spend > 0 ? paidRevenue / summary.spend : 0,
+    cpa: paidPurchases > 0 ? summary.spend / paidPurchases : 0,
+  };
   const successfulEvents = logsInPeriod.filter((log) => log.status === "success").length;
   const failedEvents = logsInPeriod.filter((log) => log.status === "failed").length;
   const reviewEvents = logsInPeriod.filter((log) => log.status === "needs_review").length;
@@ -6907,12 +7079,27 @@ function AdsWorkspacePage({
     </section>
 
     <section className="ads-summary-grid">
-      <MoneyStat label="Ad spend" value={summary.spend} tone="fees" />
-      <MoneyStat label="Purchase revenue" value={summary.revenue} tone="sales" />
-      <article className="money-stat ads-ratio"><span>ROAS</span><strong>{formatRatio(summary.roas)}</strong></article>
-      <MoneyStat label="CPA" value={summary.cpa} tone="transfer" />
-      <article className="money-stat ads-ratio"><span>Purchases</span><strong>{formatNumber(summary.purchases)}</strong></article>
+      <MoneyStat label="Ad spend" value={adjustedSummary.spend} tone="fees" />
+      <MoneyStat label="Paid purchase revenue" value={adjustedSummary.revenue} tone="sales" />
+      <article className="money-stat ads-ratio"><span>ROAS</span><strong>{formatRatio(adjustedSummary.roas)}</strong></article>
+      <MoneyStat label="CPA" value={adjustedSummary.cpa} tone="transfer" />
+      <article className="money-stat ads-ratio"><span>Purchases</span><strong>{formatNumber(adjustedSummary.purchases)}</strong></article>
       <article className="money-stat ads-ratio"><span>Tracking success</span><strong>{logsInPeriod.length ? formatPercent(trackingScore) : "-"}</strong></article>
+    </section>
+
+    <section className="card ads-channel-card">
+      <div>
+        <span>Collection channel</span>
+        <strong>Paid purchases</strong>
+        <em>{formatMoney(paidRevenue)}</em>
+      </div>
+      <div>
+        <span>Collection channel</span>
+        <strong>Influencer free sample</strong>
+        <em>{formatMoney(influencerFreeSampleValue)}</em>
+        <small>{formatNumber(influencerFreeSampleCount)} free sample order{influencerFreeSampleCount === 1 ? "" : "s"} excluded from revenue and ROAS.</small>
+      </div>
+      <p>Meta can report free sample checkouts as purchase value. This dashboard removes creator/free-code samples from paid revenue so ROAS is based on real collected sales.</p>
     </section>
 
     <section className="ads-insight-grid">
@@ -6923,7 +7110,7 @@ function AdsWorkspacePage({
 
     <section className="card accounting-table-card ads-table-card">
       <h3>Ad performance</h3>
-      <div className="table-scroll"><table className="orders-table"><thead><tr><th>Ad</th><th>Campaign</th><th>Spend</th><th>Revenue</th><th>ROAS</th><th>CPA</th><th>Purchases</th><th>CTR</th><th>Clicks</th><th>Impressions</th></tr></thead><tbody>{insights.map((ad) => <tr key={ad.adId || `${ad.campaignName}-${ad.adName}`}>
+      <div className="table-scroll"><table className="orders-table"><thead><tr><th>Ad</th><th>Campaign</th><th>Spend</th><th>Meta purchase value</th><th>ROAS</th><th>CPA</th><th>Purchases</th><th>CTR</th><th>Clicks</th><th>Impressions</th></tr></thead><tbody>{insights.map((ad) => <tr key={ad.adId || `${ad.campaignName}-${ad.adName}`}>
         <td><strong>{ad.adName}</strong><br /><small>{ad.adsetName || ad.adId}</small></td>
         <td>{ad.campaignName || "-"}</td>
         <td>{formatMoney(ad.spend)}</td>
@@ -7163,6 +7350,149 @@ function ContentIdeaBrainstormingPage({
 
 function isExpressShipping(order: Pick<Order, "shippingMethod">) {
   return (order.shippingMethod || "").toLowerCase().includes("express");
+}
+
+const whatsAppLeadStatusLabels: Record<WhatsAppLeadStatus, string> = {
+  open: "Open",
+  bought: "Bought",
+  not_bought: "Not bought",
+  follow_up: "Follow up",
+  lost: "Lost",
+};
+
+function WhatsAppLeadsWorkspacePage({
+  leads,
+  manualOrders,
+  query,
+  csvName,
+  busy,
+  noteDrafts,
+  onQueryChange,
+  onImport,
+  onStatusChange,
+  onNoteDraftChange,
+  onSaveNotes,
+}: {
+  leads: WhatsAppLead[];
+  manualOrders: ManualOrder[];
+  query: string;
+  csvName: string;
+  busy: string;
+  noteDrafts: Record<string, string>;
+  onQueryChange: (value: string) => void;
+  onImport: (file: File) => Promise<void>;
+  onStatusChange: (lead: WhatsAppLead, status: WhatsAppLeadStatus) => Promise<void>;
+  onNoteDraftChange: (leadId: string, value: string) => void;
+  onSaveNotes: (lead: WhatsAppLead) => Promise<void>;
+}) {
+  const matchedOrderByPhone = new Map<string, ManualOrder>();
+  manualOrders
+    .filter((order) => order.status !== "cancelled")
+    .forEach((order) => {
+      if (!matchedOrderByPhone.has(order.phoneNormalized)) matchedOrderByPhone.set(order.phoneNormalized, order);
+    });
+  const leadRows = leads.map((lead) => {
+    const matchedOrder = matchedOrderByPhone.get(lead.phoneNormalized);
+    const effectiveStatus: WhatsAppLeadStatus = matchedOrder ? "bought" : lead.status;
+    return { lead, matchedOrder, effectiveStatus };
+  });
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleRows = leadRows.filter(({ lead, matchedOrder, effectiveStatus }) => {
+    if (!normalizedQuery) return true;
+    return [
+      lead.name,
+      lead.phoneOriginal,
+      lead.phoneNormalized,
+      lead.source,
+      lead.campaign,
+      lead.adName,
+      lead.notes,
+      whatsAppLeadStatusLabels[effectiveStatus],
+      matchedOrder?.customerName ?? "",
+      matchedOrder?.productDiscountCode ?? "",
+      matchedOrder?.shopifyOrderName ?? "",
+    ].some((value) => value.toLowerCase().includes(normalizedQuery));
+  });
+  const boughtCount = leadRows.filter((row) => row.effectiveStatus === "bought").length;
+  const openCount = leadRows.filter((row) => row.effectiveStatus !== "bought" && row.effectiveStatus !== "lost").length;
+  const conversionRate = leads.length ? Math.round((boughtCount / leads.length) * 1000) / 10 : 0;
+
+  return <section className="manual-orders-workspace whatsapp-leads-workspace">
+    <div className="manual-order-hero card">
+      <div>
+        <p>WHATSAPP LEADS</p>
+        <h2>Track who texted you and who bought</h2>
+        <span>Import a CSV of WhatsApp texters. The app matches phone numbers against Manual Orders, so you can see which leads became buyers and keep notes for follow-up.</span>
+      </div>
+      <div className="accounting-status-pill">{leads.length} lead{leads.length === 1 ? "" : "s"}</div>
+    </div>
+
+    <div className="whatsapp-lead-summary-grid">
+      <article className="card whatsapp-lead-summary-card"><span>Total leads</span><strong>{leads.length}</strong></article>
+      <article className="card whatsapp-lead-summary-card bought"><span>Bought</span><strong>{boughtCount}</strong></article>
+      <article className="card whatsapp-lead-summary-card"><span>Open / follow up</span><strong>{openCount}</strong></article>
+      <article className="card whatsapp-lead-summary-card"><span>Conversion</span><strong>{conversionRate}%</strong></article>
+    </div>
+
+    <section className="card whatsapp-lead-import-card">
+      <div>
+        <h3>Import WhatsApp leads CSV</h3>
+        <p>Required column: phone. Optional columns: name, source, campaign, ad_name, first_message_date, notes.</p>
+        {csvName && <small>Last selected: {csvName}</small>}
+      </div>
+      <label className="button primary">
+        {busy === "import" ? "Importing..." : "Choose CSV"}
+        <input
+          type="file"
+          accept=".csv,text/csv"
+          disabled={busy === "import"}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (file) void onImport(file);
+          }}
+        />
+      </label>
+    </section>
+
+    <section className="card accounting-table-card manual-order-table-card">
+      <div className="manual-order-table-toolbar">
+        <div><h3>Lead records</h3><p>Search by name, phone, source, notes, or matched order.</p></div>
+        <div className="manual-order-search-actions">
+          <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search leads..." />
+        </div>
+      </div>
+      <div className="table-scroll">
+        <table>
+          <thead><tr><th>Imported</th><th>Lead</th><th>Source</th><th>Status</th><th>Matched Order</th><th>Notes</th><th>Actions</th></tr></thead>
+          <tbody>
+            {visibleRows.map(({ lead, matchedOrder, effectiveStatus }) => {
+              const noteDraft = noteDrafts[lead.id] ?? lead.notes;
+              return <tr key={lead.id}>
+                <td>{formatDate(lead.importedAt, true)}</td>
+                <td><strong>{lead.name || "-"}</strong><small>{lead.phoneNormalized}</small><small>{lead.phoneOriginal}</small></td>
+                <td><strong>{lead.source || "-"}</strong><small>{[lead.campaign, lead.adName].filter(Boolean).join(" / ") || "-"}</small></td>
+                <td>
+                  {matchedOrder
+                    ? <span className="manual-order-status used">Bought</span>
+                    : <select className="whatsapp-lead-status-select" value={lead.status} disabled={busy === lead.id} onChange={(event) => void onStatusChange(lead, event.target.value as WhatsAppLeadStatus)}>
+                      {Object.entries(whatsAppLeadStatusLabels).filter(([status]) => status !== "bought").map(([status, label]) => <option key={status} value={status}>{label}</option>)}
+                    </select>}
+                  {effectiveStatus === "follow_up" && <small>Needs follow-up</small>}
+                </td>
+                <td>{matchedOrder ? <div><strong>{matchedOrder.customerName}</strong><small>{matchedOrder.shopifyOrderName || matchedOrder.productDiscountCode}</small><small>{matchedOrder.productDisplayName}</small></div> : "-"}</td>
+                <td><textarea className="whatsapp-lead-notes" value={noteDraft} onChange={(event) => onNoteDraftChange(lead.id, event.target.value)} placeholder="Add notes..." /></td>
+                <td><div className="manual-order-row-actions">
+                  <button className="button secondary small" type="button" disabled={busy === lead.id || noteDraft === lead.notes} onClick={() => onSaveNotes(lead)}>{busy === lead.id ? "Saving..." : "Save Notes"}</button>
+                </div></td>
+              </tr>;
+            })}
+            {!visibleRows.length && <tr><td colSpan={7}>No WhatsApp leads found.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </section>;
 }
 
 function ManualOrdersWorkspacePage({

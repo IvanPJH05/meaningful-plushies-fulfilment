@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { AccountingBankStatementLine, AccountingCategory, AccountingDocument, AccountingLedgerEntry, AccountingTransaction, AiAccountantReview, CommissionStatus, ContentIdeaItem, ContentIdeaReference, ContentPlanItem, CreatorCommission, CreatorPayout, CreatorProfile, CreatorStatus, CreatorTier, DashboardAccount, EnvelopePrintSettings, ManualOrder, MetaCapiLog, MetaCapiSettings, Order, PaymentProcessorSetting, SalesConsumptionMapping, SalesFeeSetting, StockSetting, UserRole } from "./types";
+import type { AccountingBankStatementLine, AccountingCategory, AccountingDocument, AccountingLedgerEntry, AccountingTransaction, AiAccountantReview, CommissionStatus, ContentIdeaItem, ContentIdeaReference, ContentPlanItem, CreatorCommission, CreatorPayout, CreatorProfile, CreatorStatus, CreatorTier, DashboardAccount, EnvelopePrintSettings, ManualOrder, MetaCapiLog, MetaCapiSettings, Order, PaymentProcessorSetting, SalesConsumptionMapping, SalesFeeSetting, StockSetting, UserRole, WhatsAppLead } from "./types";
 
 export type DashboardSession = DashboardAccount & { token: string };
 
@@ -204,6 +204,70 @@ export async function markManualOrderUsedByDiscountCode(code: string, shopifyOrd
     .maybeSingle();
   if (error) throw error;
   return data ? manualOrderFromRow(data as Record<string, unknown>) : null;
+}
+
+function whatsAppLeadFromRow(row: Record<string, unknown>): WhatsAppLead {
+  const status = String(row.status ?? "open");
+  return {
+    id: String(row.id ?? ""),
+    name: String(row.name ?? ""),
+    phoneOriginal: String(row.phone_original ?? ""),
+    phoneNormalized: String(row.phone_normalized ?? ""),
+    source: String(row.source ?? ""),
+    campaign: String(row.campaign ?? ""),
+    adName: String(row.ad_name ?? ""),
+    firstMessageDate: String(row.first_message_date ?? ""),
+    status: status === "bought" || status === "not_bought" || status === "follow_up" || status === "lost" ? status : "open",
+    notes: String(row.notes ?? ""),
+    importedAt: String(row.imported_at ?? ""),
+    updatedAt: String(row.updated_at ?? ""),
+  };
+}
+
+function whatsAppLeadToRow(lead: WhatsAppLead) {
+  return {
+    id: lead.id,
+    name: lead.name,
+    phone_original: lead.phoneOriginal,
+    phone_normalized: lead.phoneNormalized,
+    source: lead.source,
+    campaign: lead.campaign,
+    ad_name: lead.adName,
+    first_message_date: lead.firstMessageDate || null,
+    status: lead.status,
+    notes: lead.notes,
+    imported_at: lead.importedAt,
+    updated_at: lead.updatedAt,
+  };
+}
+
+export async function fetchWhatsAppLeads(): Promise<WhatsAppLead[]> {
+  const { data, error } = await requireSupabase()
+    .from("whatsapp_leads")
+    .select("*")
+    .order("imported_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((row) => whatsAppLeadFromRow(row as Record<string, unknown>));
+}
+
+export async function saveWhatsAppLeads(leads: WhatsAppLead[]) {
+  if (!leads.length) return;
+  const now = new Date().toISOString();
+  const rows = leads.map((lead) => whatsAppLeadToRow({ ...lead, updatedAt: now }));
+  const { error } = await requireSupabase().from("whatsapp_leads").upsert(rows, { onConflict: "phone_normalized" });
+  if (error) throw error;
+}
+
+export async function updateWhatsAppLead(id: string, patch: Partial<Pick<WhatsAppLead, "name" | "source" | "campaign" | "adName" | "status" | "notes">>) {
+  const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (patch.name !== undefined) row.name = patch.name;
+  if (patch.source !== undefined) row.source = patch.source;
+  if (patch.campaign !== undefined) row.campaign = patch.campaign;
+  if (patch.adName !== undefined) row.ad_name = patch.adName;
+  if (patch.status !== undefined) row.status = patch.status;
+  if (patch.notes !== undefined) row.notes = patch.notes;
+  const { error } = await requireSupabase().from("whatsapp_leads").update(row).eq("id", id);
+  if (error) throw error;
 }
 
 export async function fetchPaymentProcessorSettings(): Promise<PaymentProcessorSetting[]> {
@@ -1242,6 +1306,7 @@ export function subscribeToSharedData(onChange: (table: string) => void) {
   const channel = client.channel("fulfilment-dashboard")
     .on("postgres_changes", { event: "*", schema: "public", table: "fulfilment_orders" }, () => onChange("fulfilment_orders"))
     .on("postgres_changes", { event: "*", schema: "public", table: "manual_orders" }, () => onChange("manual_orders"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "whatsapp_leads" }, () => onChange("whatsapp_leads"))
     .on("postgres_changes", { event: "*", schema: "public", table: "activity_events" }, () => onChange("activity_events"))
     .on("postgres_changes", { event: "*", schema: "public", table: "payment_processor_settings" }, () => onChange("payment_processor_settings"))
     .on("postgres_changes", { event: "*", schema: "public", table: "sales_fee_settings" }, () => onChange("sales_fee_settings"))

@@ -433,6 +433,23 @@ export type ManualOrder = {
   usedAt: string;
 };
 
+export type WhatsAppLeadStatus = "open" | "bought" | "not_bought" | "follow_up" | "lost";
+
+export type WhatsAppLead = {
+  id: string;
+  name: string;
+  phoneOriginal: string;
+  phoneNormalized: string;
+  source: string;
+  campaign: string;
+  adName: string;
+  firstMessageDate: string;
+  status: WhatsAppLeadStatus;
+  notes: string;
+  importedAt: string;
+  updatedAt: string;
+};
+
 export type ImportResult = {
   imported: number;
   updated: number;

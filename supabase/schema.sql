@@ -48,6 +48,28 @@ create index if not exists manual_orders_status_idx
 create index if not exists manual_orders_shopify_order_idx
   on public.manual_orders (shopify_order_id);
 
+create table if not exists public.whatsapp_leads (
+  id text primary key,
+  name text not null default '',
+  phone_original text not null default '',
+  phone_normalized text not null,
+  source text not null default '',
+  campaign text not null default '',
+  ad_name text not null default '',
+  first_message_date timestamptz,
+  status text not null default 'open' check (status in ('open', 'bought', 'not_bought', 'follow_up', 'lost')),
+  notes text not null default '',
+  imported_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists whatsapp_leads_phone_unique_idx
+  on public.whatsapp_leads (phone_normalized);
+create index if not exists whatsapp_leads_status_idx
+  on public.whatsapp_leads (status, imported_at desc);
+create index if not exists whatsapp_leads_source_idx
+  on public.whatsapp_leads (source, campaign, ad_name);
+
 create table if not exists public.activity_events (
   id text primary key,
   order_number text,
@@ -700,6 +722,7 @@ end $$;
 
 alter table public.fulfilment_orders enable row level security;
 alter table public.manual_orders enable row level security;
+alter table public.whatsapp_leads enable row level security;
 alter table public.activity_events enable row level security;
 alter table public.payment_processor_settings enable row level security;
 alter table public.sales_fee_settings enable row level security;
@@ -731,6 +754,14 @@ create policy "shared dashboard reads manual orders" on public.manual_orders for
 create policy "shared dashboard inserts manual orders" on public.manual_orders for insert to anon, authenticated with check (true);
 create policy "shared dashboard updates manual orders" on public.manual_orders for update to anon, authenticated using (true) with check (true);
 create policy "shared dashboard deletes manual orders" on public.manual_orders for delete to anon, authenticated using (true);
+drop policy if exists "shared dashboard reads whatsapp leads" on public.whatsapp_leads;
+drop policy if exists "shared dashboard inserts whatsapp leads" on public.whatsapp_leads;
+drop policy if exists "shared dashboard updates whatsapp leads" on public.whatsapp_leads;
+drop policy if exists "shared dashboard deletes whatsapp leads" on public.whatsapp_leads;
+create policy "shared dashboard reads whatsapp leads" on public.whatsapp_leads for select to anon, authenticated using (true);
+create policy "shared dashboard inserts whatsapp leads" on public.whatsapp_leads for insert to anon, authenticated with check (true);
+create policy "shared dashboard updates whatsapp leads" on public.whatsapp_leads for update to anon, authenticated using (true) with check (true);
+create policy "shared dashboard deletes whatsapp leads" on public.whatsapp_leads for delete to anon, authenticated using (true);
 
 drop policy if exists "shared dashboard reads activity" on public.activity_events;
 drop policy if exists "shared dashboard inserts activity" on public.activity_events;
@@ -787,6 +818,7 @@ create policy "shared dashboard deletes sales mappings" on public.sales_consumpt
 
 grant select, insert, update, delete on public.fulfilment_orders to anon, authenticated;
 grant select, insert, update, delete on public.manual_orders to anon, authenticated;
+grant select, insert, update, delete on public.whatsapp_leads to anon, authenticated;
 grant select, insert on public.activity_events to anon, authenticated;
 grant select, insert, update on public.payment_processor_settings to anon, authenticated;
 grant select, insert, update on public.sales_fee_settings to anon, authenticated;
@@ -1112,6 +1144,12 @@ begin
     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'manual_orders'
   ) then
     alter publication supabase_realtime add table public.manual_orders;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'whatsapp_leads'
+  ) then
+    alter publication supabase_realtime add table public.whatsapp_leads;
   end if;
   if not exists (
     select 1 from pg_publication_tables

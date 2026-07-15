@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { buildSalesReportRows } from "./sales";
+import { buildSalesReportRows, isCreatorFreeOrder } from "./sales";
 import { insertMetaCapiLog, upsertSharedOrders } from "./supabase";
 import type { MetaCapiLog, MetaCapiSettings, Order, PaymentProcessorSetting } from "./types";
 import { objectValue, textValue } from "./shopify-orders";
@@ -99,12 +99,24 @@ function itemAmount(lineItem: Record<string, unknown>, fallback = 0) {
 }
 
 function selectedPurchaseValue(order: Order, group: Order[]) {
+  const creatorFreeSample = isCreatorFreeOrder(order);
   const row = buildSalesReportRows(group)[0];
-  const salePrice = row?.salePrice ?? 0;
-  const isManualCorrection = order.totalAmount <= 0 && salePrice > 0;
-  const paymentMethodSource = isManualCorrection ? "whatsapp_manual" : "shopify_checkout";
-  const trueRevenueSource = isManualCorrection ? "fulfilment_actual_paid_amount" : "shopify_total_price";
-  return { salePrice, isManualCorrection, paymentMethodSource, trueRevenueSource };
+  const salePrice = creatorFreeSample ? 0 : row?.salePrice ?? 0;
+  const isManualCorrection = !creatorFreeSample && order.totalAmount <= 0 && salePrice > 0;
+  const paymentMethodSource = creatorFreeSample ? "influencer_free_sample" : isManualCorrection ? "whatsapp_manual" : "shopify_checkout";
+  const trueRevenueSource = creatorFreeSample ? "influencer_free_sample" : isManualCorrection ? "fulfilment_actual_paid_amount" : "shopify_total_price";
+  return { salePrice, isManualCorrection, paymentMethodSource, trueRevenueSource, creatorFreeSample };
+}
+
+function skipMetaOrder(order: Order, message: string): Order {
+  return {
+    ...order,
+    metaCapiStatus: "skipped",
+    metaCapiError: message,
+    metaCapiNeedsReview: false,
+    metaCapiValueSent: 0,
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 function reviewOrder(order: Order, message: string): Order {
@@ -238,7 +250,7 @@ export async function sendMetaPurchaseEvents(options: SendMetaPurchaseOptions): 
 
   for (const group of groups.values()) {
     const primary = group.reduce((current, candidate) => candidate.totalAmount > current.totalAmount ? candidate : current);
-    const { salePrice, isManualCorrection, paymentMethodSource, trueRevenueSource } = selectedPurchaseValue(primary, group);
+    const { salePrice, isManualCorrection, paymentMethodSource, trueRevenueSource, creatorFreeSample } = selectedPurchaseValue(primary, group);
     if (!options.force && primary.metaCapiSentAt) {
       skipped += 1;
       continue;
@@ -249,6 +261,11 @@ export async function sendMetaPurchaseEvents(options: SendMetaPurchaseOptions): 
     }
     if (options.settings.purchaseMode === "manual_only" && !isManualCorrection) {
       skipped += 1;
+      continue;
+    }
+    if (creatorFreeSample) {
+      skipped += 1;
+      updatedOrders.push(...group.map((order) => skipMetaOrder(order, "Influencer free sample orders are excluded from paid Meta revenue.")));
       continue;
     }
     if (primary.totalAmount <= 0 && salePrice <= 0) {
