@@ -1870,20 +1870,23 @@ export default function Home() {
   async function writeCertificateLinkToNfc(order: Order) {
     const link = certificateLink(order);
     if (!link) return setNotice(`#${order.orderNumber} has no certificate code to write.`);
-    const NDEFReader = (window as typeof window & { NDEFReader?: new () => { write: (message: unknown) => Promise<void> } }).NDEFReader;
-    if (!NDEFReader) {
-      setNotice("This browser cannot write NFC cards. Use Chrome on an NFC-supported Android device, open the Vercel app over HTTPS, then tap Write again.");
-      return;
-    }
     setNfcWritingOrderId(order.id);
-    setNotice(`Ready to write #${order.orderNumber}. Hold an NFC card near this device.`);
     try {
-      const writer = new NDEFReader();
-      await writer.write({ records: [{ recordType: "url", data: link }] });
+      setNotice(`Sending #${order.orderNumber} to the Windows NFC writer. Hold a card on the USB reader.`);
+      const response = await fetch("http://127.0.0.1:17654/write", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: link, label: `#${order.orderNumber}` }),
+      });
+      const result = await response.json().catch(() => ({})) as { ok?: boolean; error?: string };
+      if (!response.ok || !result.ok) throw new Error(result.error || "Desktop NFC writer did not confirm the card.");
       setNotice(`NFC card written for #${order.orderNumber}.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "NFC write failed.";
-      setNotice(`NFC write failed for #${order.orderNumber}: ${message}`);
+      const helperHint = message.includes("Failed to fetch")
+        ? " Start the Windows NFC writer first, then try again."
+        : "";
+      setNotice(`NFC write failed for #${order.orderNumber}: ${message}.${helperHint}`);
     } finally {
       setNfcWritingOrderId("");
     }
