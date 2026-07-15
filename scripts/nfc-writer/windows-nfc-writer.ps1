@@ -63,6 +63,16 @@ public static class PcscNative {
 
 Add-Type -TypeDefinition $source
 
+function Add-ByteRange {
+  param(
+    [Parameter(Mandatory = $true)][System.Collections.Generic.List[byte]]$List,
+    [Parameter(Mandatory = $true)][byte[]]$Bytes
+  )
+  foreach ($byteValue in $Bytes) {
+    $List.Add([byte]$byteValue)
+  }
+}
+
 function ConvertTo-NdefUrlBytes {
   param([Parameter(Mandatory = $true)][string]$Url)
   $cleanUrl = $Url.Trim()
@@ -91,7 +101,7 @@ function ConvertTo-NdefUrlBytes {
   $ndef.Add([byte]$payloadLength)
   $ndef.Add(0x55)
   $ndef.Add([byte]$prefixCode)
-  $ndef.AddRange($urlBytes)
+  Add-ByteRange -List $ndef -Bytes $urlBytes
   return $ndef.ToArray()
 }
 
@@ -101,7 +111,7 @@ function ConvertTo-Type2TagBytes {
   $message = New-Object System.Collections.Generic.List[byte]
   $message.Add(0x03)
   $message.Add([byte]$ndef.Length)
-  $message.AddRange($ndef)
+  Add-ByteRange -List $message -Bytes $ndef
   $message.Add(0xFE)
   while (($message.Count % 4) -ne 0) { $message.Add(0x00) }
   return $message.ToArray()
