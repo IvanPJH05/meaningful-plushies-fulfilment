@@ -7,22 +7,37 @@ Desktop Chrome cannot directly control most USB NFC reader/writers. The web app 
 ## Daily use
 
 1. Plug in the USB NFC reader/writer.
-2. Open this folder:
+2. Open the Vercel fulfilment app in Chrome.
+3. Go to **Fulfilment**.
+4. Click **Start NFC Helper**.
+5. If Chrome asks whether to open the helper, allow it.
+6. Leave the black helper window open.
+7. Click **Write** beside the certificate link.
+8. Tap a blank NFC card on the reader within 30 seconds.
+
+## One-time setup for the Start button
+
+Before the browser can open the helper, Windows needs to know what `meaningful-nfc-helper://start` means.
+
+Run this once:
 
 ```text
 scripts\nfc-writer
 ```
 
-3. Double-click:
+Then double-click:
+
+```text
+install-windows-nfc-protocol.bat
+```
+
+After that, the **Start NFC Helper** button in the app can open the helper.
+
+You can still start it manually by double-clicking:
 
 ```text
 start-windows-nfc-writer.bat
 ```
-
-4. Leave the black helper window open.
-5. Open the Vercel fulfilment app in Chrome.
-6. Click **Write** beside the certificate link.
-7. Tap a blank NFC card on the reader within 30 seconds.
 
 The helper listens only on your own computer at:
 

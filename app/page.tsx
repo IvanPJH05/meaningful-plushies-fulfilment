@@ -1369,6 +1369,7 @@ export default function Home() {
   const [databaseError, setDatabaseError] = useState("");
   const [refreshingOrderNumber, setRefreshingOrderNumber] = useState("");
   const [nfcWritingOrderId, setNfcWritingOrderId] = useState("");
+  const [nfcHelperStatus, setNfcHelperStatus] = useState<"unknown" | "checking" | "running" | "not_running" | "starting">("unknown");
 
   const normalizeSharedOrders = useCallback((sharedOrders: Order[]) => sharedOrders.map((order) => {
     const status = legacyStatus[order.status] ?? order.status;
@@ -1866,6 +1867,40 @@ export default function Home() {
       return next;
     });
     setDraggedColumn(null);
+  }
+
+  async function checkNfcHelper(showResult = true) {
+    setNfcHelperStatus("checking");
+    try {
+      const response = await fetch("http://127.0.0.1:17654/health", { cache: "no-store" });
+      const result = await response.json().catch(() => ({})) as { ok?: boolean };
+      if (!response.ok || !result.ok) throw new Error("Helper did not respond.");
+      setNfcHelperStatus("running");
+      if (showResult) setNotice("Windows NFC helper is running.");
+      return true;
+    } catch {
+      setNfcHelperStatus("not_running");
+      if (showResult) setNotice("Windows NFC helper is not running yet. Click Start NFC Helper, or run the one-time setup first.");
+      return false;
+    }
+  }
+
+  function startNfcHelper() {
+    setNfcHelperStatus("starting");
+    setNotice("Opening Windows NFC helper. If Chrome asks for permission, allow it. If nothing opens, run the one-time setup shown below.");
+    window.location.href = "meaningful-nfc-helper://start";
+    window.setTimeout(() => void checkNfcHelper(false), 2500);
+    window.setTimeout(() => void checkNfcHelper(false), 6000);
+  }
+
+  async function copyNfcHelperSetupCommand() {
+    const command = "scripts\\nfc-writer\\install-windows-nfc-protocol.bat";
+    try {
+      await navigator.clipboard.writeText(command);
+      setNotice("NFC helper setup command copied. Open the repo folder, run it once, then the Start NFC Helper button can open the helper.");
+    } catch {
+      setNotice(`Run this once from the repo folder: ${command}`);
+    }
   }
 
   async function writeCertificateLinkToNfc(order: Order) {
@@ -5250,6 +5285,17 @@ export default function Home() {
 
         {view === "fulfilment" && <section className="card orders-card">
           <div className="toolbar"><div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, plush name, character, customer or phone..." /></div><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /><button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>Move {selectedOrders.length} to next status</button>{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>Delete</button>}</div>
+          <div className={`nfc-helper-panel ${nfcHelperStatus}`}>
+            <div>
+              <strong>Windows NFC Helper</strong>
+              <span>{nfcHelperStatus === "running" ? "Ready. Click Write beside an order, then tap an NFC card." : nfcHelperStatus === "checking" ? "Checking local helper..." : nfcHelperStatus === "starting" ? "Opening helper..." : "Start the helper before writing NFC cards from this browser."}</span>
+            </div>
+            <div className="nfc-helper-actions">
+              <button className="button primary small" type="button" onClick={startNfcHelper}>Start NFC Helper</button>
+              <button className="button secondary small" type="button" onClick={() => void checkNfcHelper()}>Check helper</button>
+              <button className="button secondary small" type="button" onClick={copyNfcHelperSetupCommand}>Copy setup command</button>
+            </div>
+          </div>
           <div className="fulfilment-scroll table-scroll"><table className="orders-table fulfilment-table"><thead><tr><th className="select-column"><input type="checkbox" aria-label="Select visible fulfilment orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th className="locked-order-column">Order ID</th>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <th key={column} className={draggedColumn === column ? "dragging" : ""} draggable onDragStart={(event) => { setDraggedColumn(column); event.dataTransfer.setData("text/plain", column); }} onDragEnd={() => setDraggedColumn(null)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => reorderFulfilmentColumn(event.dataTransfer.getData("text/plain") as FulfilmentColumn, column)}><span className="drag-handle"><Icon name="drag" /></span>{fulfilmentColumnLabels[column]}</th>)}<th>Status</th><th>View</th></tr></thead><tbody>{filtered.map((order) => { const checked = selectedOrders.includes(order.id); const rowClass = [checked ? "selected-row" : "", isExpressShipping(order) ? "express-shipping-row" : ""].filter(Boolean).join(" "); return <tr key={order.id} className={rowClass} onClick={(event) => { if ((event.target as HTMLElement).closest("button,a,input")) return; toggleOrderSelection(order.id); }}><td className="select-column"><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={checked} onChange={() => toggleOrderSelection(order.id)} /></td><td className="locked-order-column"><strong>{orderLabel(order)}</strong>{order.salesChannel === "tiktok" && <span className="tiktok-badge">TikTok Shop</span>}{isExpressShipping(order) && <span className="shipping-badge">Express</span>}</td>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <td key={column} className={column === "idWebsiteLink" ? "certificate-cell" : ""}>{fulfilmentCell(order, column)}</td>)}<td><StatusPill status={order.status} /></td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>; })}</tbody></table>{!filtered.length && <div className="empty"><strong>No fulfilment orders found</strong><p>Try another search or status filter.</p></div>}</div>
           <div className="table-footer">Showing {filtered.length} of {orders.length} orders</div>
         </section>}
