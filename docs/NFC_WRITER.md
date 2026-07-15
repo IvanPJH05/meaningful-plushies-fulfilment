@@ -15,6 +15,8 @@ Desktop Chrome cannot directly control most USB NFC reader/writers. The web app 
 7. Click **Write** beside the certificate link.
 8. Tap a blank NFC card on the reader within 30 seconds.
 
+After writing, the helper password-protects the card using the order number. The certificate link remains readable by phones, but rewriting the card requires the same order number password.
+
 ## One-time setup for the Start button
 
 Before the browser can open the helper, Windows needs to know what `meaningful-nfc-helper://start` means.
@@ -50,5 +52,7 @@ http://127.0.0.1:17654
 This helper writes a normal URL NDEF record to NFC Forum Type 2 cards such as NTAG213, NTAG215, and NTAG216.
 
 It uses the Windows smart-card / PCSC driver. Common ACR122U-style USB NFC readers should work if Windows recognizes them as a smart card reader.
+
+Password locking uses NTAG password protection. If you rewrite a card from the fulfilment app, the helper tries the order number automatically before writing. If the card was locked with a different password, it cannot be rewritten unless you know that password.
 
 If the app says no USB NFC reader is detected, check that Windows recognizes the reader, then restart the helper.

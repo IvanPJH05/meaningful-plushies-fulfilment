@@ -1912,7 +1912,7 @@ export default function Home() {
       const response = await fetch("http://127.0.0.1:17654/write", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: link, label: `#${order.orderNumber}` }),
+        body: JSON.stringify({ url: link, label: `#${order.orderNumber}`, password: order.orderNumber }),
       });
       const result = await response.json().catch(() => ({})) as { ok?: boolean; error?: string };
       if (!response.ok || !result.ok) throw new Error(result.error || "Desktop NFC writer did not confirm the card.");

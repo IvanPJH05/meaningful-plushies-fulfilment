@@ -123,8 +123,106 @@ function Test-SuccessResponse {
   return ($Response[$Response.Length - 2] -eq 0x90 -and $Response[$Response.Length - 1] -eq 0x00)
 }
 
+function New-ByteArray {
+  param([Parameter(Mandatory = $true)][object[]]$Values)
+  $bytes = New-Object byte[] $Values.Count
+  for ($index = 0; $index -lt $Values.Count; $index += 1) {
+    $bytes[$index] = [byte]$Values[$index]
+  }
+  return $bytes
+}
+
+function Get-ResponseData {
+  param([byte[]]$Response, [int]$Length)
+  if (-not (Test-SuccessResponse -Response $Response)) { return $null }
+  if ($Response.Length -lt ($Length + 2)) { return $null }
+  $data = New-Object byte[] $Length
+  [Array]::Copy($Response, 0, $data, 0, $Length)
+  return $data
+}
+
+function Read-CardPage {
+  param([IntPtr]$Card, [uint32]$Protocol, [int]$Page)
+  $command = New-ByteArray @(0xFF, 0xB0, 0x00, [byte]$Page, 0x04)
+  $response = [PcscNative]::Transmit($Card, $Protocol, $command)
+  $data = Get-ResponseData -Response $response -Length 4
+  if (-not $data) { throw "Could not read NFC card page $Page." }
+  return $data
+}
+
+function Write-CardPage {
+  param([IntPtr]$Card, [uint32]$Protocol, [int]$Page, [byte[]]$Data)
+  if ($Data.Length -ne 4) { throw "NFC page writes must contain exactly 4 bytes." }
+  $command = New-ByteArray @(0xFF, 0xD6, 0x00, [byte]$Page, 0x04, $Data[0], $Data[1], $Data[2], $Data[3])
+  $response = [PcscNative]::Transmit($Card, $Protocol, $command)
+  if (-not (Test-SuccessResponse -Response $response)) {
+    throw "The NFC card rejected page $Page. It may be locked, unsupported, or not an NTAG/Type 2 card."
+  }
+}
+
+function Invoke-NativeNfcCommand {
+  param([IntPtr]$Card, [uint32]$Protocol, [byte[]]$NativeCommand)
+  $command = New-Object System.Collections.Generic.List[byte]
+  foreach ($value in @(0xFF, 0x00, 0x00, 0x00, [byte](3 + $NativeCommand.Length), 0xD4, 0x40, 0x01)) {
+    $command.Add([byte]$value)
+  }
+  Add-ByteRange -List $command -Bytes $NativeCommand
+  $response = [PcscNative]::Transmit($Card, $Protocol, $command.ToArray())
+  if (-not (Test-SuccessResponse -Response $response)) { return $null }
+  if ($response.Length -ge 5 -and $response[0] -eq 0xD5 -and $response[1] -eq 0x41 -and $response[2] -eq 0x00) {
+    $length = $response.Length - 5
+    $data = New-Object byte[] $length
+    if ($length -gt 0) { [Array]::Copy($response, 3, $data, 0, $length) }
+    return $data
+  }
+  return $response
+}
+
+function Get-NfcPasswordBytes {
+  param([Parameter(Mandatory = $true)][string]$PasswordSource)
+  $clean = ($PasswordSource.ToUpperInvariant() -replace '[^A-Z0-9]', '')
+  if ([string]::IsNullOrWhiteSpace($clean)) { throw "Missing order number password for NFC card lock." }
+  if ($clean.Length -gt 4) { $clean = $clean.Substring($clean.Length - 4) }
+  while ($clean.Length -lt 4) { $clean = "0$clean" }
+  return [System.Text.Encoding]::ASCII.GetBytes($clean)
+}
+
+function Get-NtagLayout {
+  param([IntPtr]$Card, [uint32]$Protocol)
+  $version = Invoke-NativeNfcCommand -Card $Card -Protocol $Protocol -NativeCommand (New-ByteArray @(0x60))
+  if ($version -and $version.Length -ge 7) {
+    $storage = $version[6]
+    if ($storage -eq 0x0F) { return @{ Name = "NTAG213"; UserEndPage = 39; Auth0Page = 41; AccessPage = 42; PasswordPage = 43; PackPage = 44 } }
+    if ($storage -eq 0x11) { return @{ Name = "NTAG215"; UserEndPage = 129; Auth0Page = 131; AccessPage = 132; PasswordPage = 133; PackPage = 134 } }
+    if ($storage -eq 0x13) { return @{ Name = "NTAG216"; UserEndPage = 225; Auth0Page = 227; AccessPage = 228; PasswordPage = 229; PackPage = 230 } }
+  }
+  Write-Host "Could not detect exact NTAG type. Assuming NTAG213 layout."
+  return @{ Name = "NTAG213"; UserEndPage = 39; Auth0Page = 41; AccessPage = 42; PasswordPage = 43; PackPage = 44 }
+}
+
+function Try-AuthenticateNtag {
+  param([IntPtr]$Card, [uint32]$Protocol, [byte[]]$Password)
+  $auth = New-ByteArray @(0x1B, $Password[0], $Password[1], $Password[2], $Password[3])
+  $response = Invoke-NativeNfcCommand -Card $Card -Protocol $Protocol -NativeCommand $auth
+  return [bool]($response -and $response.Length -ge 2)
+}
+
+function Set-NtagPasswordProtection {
+  param([IntPtr]$Card, [uint32]$Protocol, [hashtable]$Layout, [byte[]]$Password)
+  Write-CardPage -Card $Card -Protocol $Protocol -Page $Layout.PasswordPage -Data $Password
+  Write-CardPage -Card $Card -Protocol $Protocol -Page $Layout.PackPage -Data (New-ByteArray @(0x4D, 0x50, 0x00, 0x00))
+
+  $access = Read-CardPage -Card $Card -Protocol $Protocol -Page $Layout.AccessPage
+  $access[0] = [byte]($access[0] -band 0x7F)
+  Write-CardPage -Card $Card -Protocol $Protocol -Page $Layout.AccessPage -Data $access
+
+  $auth0 = Read-CardPage -Card $Card -Protocol $Protocol -Page $Layout.Auth0Page
+  $auth0[3] = 0x04
+  Write-CardPage -Card $Card -Protocol $Protocol -Page $Layout.Auth0Page -Data $auth0
+}
+
 function Write-NfcUrl {
-  param([Parameter(Mandatory = $true)][string]$Url, [int]$TimeoutSeconds = 30)
+  param([Parameter(Mandatory = $true)][string]$Url, [string]$PasswordSource = "", [int]$TimeoutSeconds = 30)
   $context = [IntPtr]::Zero
   $result = [PcscNative]::SCardEstablishContext([PcscNative]::SCARD_SCOPE_USER, [IntPtr]::Zero, [IntPtr]::Zero, [ref]$context)
   if ($result -ne 0) { throw "Could not open Windows NFC service: 0x$($result.ToString('X8'))" }
@@ -145,13 +243,24 @@ function Write-NfcUrl {
     if ($card -eq [IntPtr]::Zero) { throw "Timed out. Tap the NFC card on the reader within $TimeoutSeconds seconds." }
     try {
       $bytes = ConvertTo-Type2TagBytes -Url $Url
+      $layout = Get-NtagLayout -Card $card -Protocol $protocol
+      $endPage = 4 + [int][Math]::Ceiling($bytes.Length / 4) - 1
+      if ($endPage -gt $layout.UserEndPage) { throw "The certificate URL is too long for this $($layout.Name) NFC card." }
+      $password = if ([string]::IsNullOrWhiteSpace($PasswordSource)) { $null } else { Get-NfcPasswordBytes -PasswordSource $PasswordSource }
+      if ($password) {
+        if (Try-AuthenticateNtag -Card $card -Protocol $protocol -Password $password) {
+          Write-Host "Card unlocked with order password."
+        } else {
+          Write-Host "Card did not need the order password, or this reader cannot report authentication before writing."
+        }
+      }
       for ($offset = 0; $offset -lt $bytes.Length; $offset += 4) {
         $page = 4 + [int]($offset / 4)
-        $command = [byte[]]@(0xFF, 0xD6, 0x00, [byte]$page, 0x04, $bytes[$offset], $bytes[$offset + 1], $bytes[$offset + 2], $bytes[$offset + 3])
-        $response = [PcscNative]::Transmit($card, $protocol, $command)
-        if (-not (Test-SuccessResponse -Response $response)) {
-          throw "The NFC card rejected page $page. It may be locked, unsupported, or not an NTAG/Type 2 card."
-        }
+        Write-CardPage -Card $card -Protocol $protocol -Page $page -Data (New-ByteArray @($bytes[$offset], $bytes[$offset + 1], $bytes[$offset + 2], $bytes[$offset + 3]))
+      }
+      if ($password) {
+        Set-NtagPasswordProtection -Card $card -Protocol $protocol -Layout $layout -Password $password
+        Write-Host "Card write-protected with order password."
       }
     } finally {
       [void][PcscNative]::SCardDisconnect($card, [PcscNative]::SCARD_LEAVE_CARD)
@@ -213,12 +322,13 @@ while ($true) {
     $payload = $body | ConvertFrom-Json
     $url = [string]$payload.url
     $label = [string]$payload.label
+    $password = [string]$payload.password
     if ([string]::IsNullOrWhiteSpace($url)) {
       Send-HttpResponse -Stream $stream -StatusCode 400 -Payload @{ ok = $false; error = "Missing URL to write." }
       continue
     }
     Write-Host "Ready to write $label -> $url"
-    Write-NfcUrl -Url $url
+    Write-NfcUrl -Url $url -PasswordSource $password
     Send-HttpResponse -Stream $stream -StatusCode 200 -Payload @{ ok = $true }
     Write-Host "Card written successfully."
   } catch {
