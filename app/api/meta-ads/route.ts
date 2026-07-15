@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { fetchMetaAdsInsights } from "../../../lib/meta-ads";
+import { fetchMetaAdsInsights, metaAdsEnvironmentStatus } from "../../../lib/meta-ads";
 
 export const runtime = "nodejs";
 
@@ -37,11 +37,16 @@ export async function GET(request: Request) {
     const result = await fetchMetaAdsInsights(from, to);
     return json(200, { ok: true, from, to, ...result });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Meta ads dashboard could not be loaded.";
     return json(500, {
       ok: false,
       from,
       to,
-      error: error instanceof Error ? error.message : "Meta ads dashboard could not be loaded.",
+      configured: false,
+      environment: metaAdsEnvironmentStatus(),
+      error: message.includes("Cannot parse access token")
+        ? "Meta Ads token is invalid. Replace `META_ADS_ACCESS_TOKEN` in Vercel with a real Meta Marketing API access token, then redeploy."
+        : message,
     });
   }
 }

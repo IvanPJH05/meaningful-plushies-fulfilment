@@ -2281,11 +2281,11 @@ export default function Home() {
         summary?: MetaAdsSummary;
         insights?: MetaAdsInsight[];
       };
-      if (!response.ok || !result.ok) throw new Error(result.error || "Meta ads dashboard could not be loaded.");
       setMetaAdsConfigured(result.configured === true);
       setMetaAdsEnvironment(result.environment ?? defaultMetaAdsEnvironment);
       setMetaAdsSummary(result.summary ?? defaultMetaAdsSummary);
       setMetaAdsInsights(result.insights ?? []);
+      if (!response.ok || !result.ok) throw new Error(result.error || "Meta ads dashboard could not be loaded.");
     } catch (error) {
       setMetaAdsError(readableError(error, "Meta ads dashboard could not be loaded."));
     } finally {
@@ -6892,6 +6892,7 @@ function AdsWorkspacePage({
       <h3>Meta ads connection is not configured yet</h3>
       <p>Add `META_AD_ACCOUNT_ID` and `META_ADS_ACCESS_TOKEN` in Vercel. The token needs Meta Marketing API access with permission to read ads insights.</p>
       <div className="ads-setup-grid"><span>Ad account: <strong>{environment.adAccountConfigured ? "Configured" : "Missing"}</strong></span><span>Token: <strong>{environment.tokenConfigured ? environment.tokenMasked : "Missing"}</strong></span><span>Graph API: <strong>{environment.graphVersion}</strong></span></div>
+      {environment.tokenConfigured && error && <p className="ads-tracking-notes">The token is present, but Meta rejected it. Replace the Vercel value with the actual access token, not the token name, Pixel ID, or app secret.</p>}
     </section>}
 
     <section className="card ads-setup-card">
