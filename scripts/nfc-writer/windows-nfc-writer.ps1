@@ -160,6 +160,16 @@ function Write-CardPage {
   }
 }
 
+function Send-CardCommand {
+  param([IntPtr]$Card, [uint32]$Protocol, [byte[]]$Command)
+  $response = [PcscNative]::Transmit($Card, $Protocol, $Command)
+  if ($response.Length -ge 2 -and $response[$response.Length - 2] -eq 0x61) {
+    $getResponse = New-ByteArray @(0xFF, 0xC0, 0x00, 0x00, $response[$response.Length - 1])
+    return [PcscNative]::Transmit($Card, $Protocol, $getResponse)
+  }
+  return $response
+}
+
 function Invoke-NativeNfcCommand {
   param([IntPtr]$Card, [uint32]$Protocol, [byte[]]$NativeCommand)
   $command = New-Object System.Collections.Generic.List[byte]
@@ -167,7 +177,7 @@ function Invoke-NativeNfcCommand {
     $command.Add([byte]$value)
   }
   Add-ByteRange -List $command -Bytes $NativeCommand
-  $response = [PcscNative]::Transmit($Card, $Protocol, $command.ToArray())
+  $response = Send-CardCommand -Card $Card -Protocol $Protocol -Command $command.ToArray()
   if (-not (Test-SuccessResponse -Response $response)) { return $null }
   if ($response.Length -ge 5 -and $response[0] -eq 0xD5 -and $response[1] -eq 0x43 -and $response[2] -eq 0x00) {
     $length = $response.Length - 5
