@@ -163,13 +163,13 @@ function Write-CardPage {
 function Invoke-NativeNfcCommand {
   param([IntPtr]$Card, [uint32]$Protocol, [byte[]]$NativeCommand)
   $command = New-Object System.Collections.Generic.List[byte]
-  foreach ($value in @(0xFF, 0x00, 0x00, 0x00, [byte](3 + $NativeCommand.Length), 0xD4, 0x40, 0x01)) {
+  foreach ($value in @(0xFF, 0x00, 0x00, 0x00, [byte](2 + $NativeCommand.Length), 0xD4, 0x42)) {
     $command.Add([byte]$value)
   }
   Add-ByteRange -List $command -Bytes $NativeCommand
   $response = [PcscNative]::Transmit($Card, $Protocol, $command.ToArray())
   if (-not (Test-SuccessResponse -Response $response)) { return $null }
-  if ($response.Length -ge 5 -and $response[0] -eq 0xD5 -and $response[1] -eq 0x41 -and $response[2] -eq 0x00) {
+  if ($response.Length -ge 5 -and $response[0] -eq 0xD5 -and $response[1] -eq 0x43 -and $response[2] -eq 0x00) {
     $length = $response.Length - 5
     $data = New-Object byte[] $length
     if ($length -gt 0) { [Array]::Copy($response, 3, $data, 0, $length) }
@@ -256,7 +256,15 @@ function Write-NfcUrl {
       }
       for ($offset = 0; $offset -lt $bytes.Length; $offset += 4) {
         $page = 4 + [int]($offset / 4)
-        Write-CardPage -Card $card -Protocol $protocol -Page $page -Data (New-ByteArray @($bytes[$offset], $bytes[$offset + 1], $bytes[$offset + 2], $bytes[$offset + 3]))
+        $pageData = New-ByteArray @($bytes[$offset], $bytes[$offset + 1], $bytes[$offset + 2], $bytes[$offset + 3])
+        try {
+          Write-CardPage -Card $card -Protocol $protocol -Page $page -Data $pageData
+        } catch {
+          if (-not $password) { throw }
+          Write-Host "Write was rejected on page $page. Trying the order password again..."
+          if (-not (Try-AuthenticateNtag -Card $card -Protocol $protocol -Password $password)) { throw }
+          Write-CardPage -Card $card -Protocol $protocol -Page $page -Data $pageData
+        }
       }
       if ($password) {
         Set-NtagPasswordProtection -Card $card -Protocol $protocol -Layout $layout -Password $password
