@@ -5,11 +5,48 @@ import {
   metaCoexistenceManualSetupSteps,
 } from "@/src/modules/onboarding/meta-coexistence";
 import { paidManualOrderPhase2Policy } from "@/src/modules/sales/paid-manual-order-flow";
-import { getMissingPhase1Env, getMissingPhase2Env } from "@/src/shared/validation/env";
+import {
+  getMissingPhase1Env,
+  getMissingPhase2Env,
+  hasMetaWebhookSecret,
+  hasShopifyAdminAuth,
+} from "@/src/shared/validation/env";
+
+const webhookEndpoint = "/api/crm/whatsapp/webhook";
+const commandEndpoint = "/api/crm/ai/commands/manual-order";
+
+function getPublicBaseUrl() {
+  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "");
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return "https://meaningful-plushies-fulfilment.vercel.app";
+}
+
+function StatusRow(props: { label: string; ready: boolean; detail: string }) {
+  return (
+    <div className={styles.statusRow}>
+      <div>
+        <p className={styles.statusLabel}>{props.label}</p>
+        <p className={styles.statusDetail}>{props.detail}</p>
+      </div>
+      <span className={props.ready ? styles.readyBadge : styles.missingBadge}>
+        {props.ready ? "Ready" : "Needed"}
+      </span>
+    </div>
+  );
+}
 
 export default function CrmPhaseOnePage() {
   const missingEnv = getMissingPhase1Env();
   const missingPhase2Env = getMissingPhase2Env();
+  const baseUrl = getPublicBaseUrl();
+  const webhookUrl = `${baseUrl}${webhookEndpoint}`;
+  const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN || "Not configured yet";
+  const shopifyReady = hasShopifyAdminAuth();
+  const metaWebhookSecretReady = hasMetaWebhookSecret();
+  const whatsappSendReady = Boolean(process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID);
+  const databaseReady = Boolean(process.env.DATABASE_URL);
+  const phase2Ready = missingPhase2Env.length === 0;
 
   return (
     <main className={styles.page}>
@@ -35,13 +72,70 @@ export default function CrmPhaseOnePage() {
           <p className={styles.cardTitle}>AI order rule</p>
           <p className={styles.cardValue}>Paid first</p>
         </div>
-        <div className={styles.card}>
+        <div className={`${styles.card} ${phase2Ready ? styles.cardReady : styles.cardMissing}`}>
           <p className={styles.cardTitle}>Phase 2 readiness</p>
-          <p className={styles.cardValue}>{missingPhase2Env.length === 0 ? "Ready" : `${missingPhase2Env.length} missing`}</p>
+          <p className={styles.cardValue}>{phase2Ready ? "Ready" : `${missingPhase2Env.length} left`}</p>
         </div>
       </section>
 
       <section className={styles.sectionGrid}>
+        <div className={`${styles.panel} ${styles.fullWidthPanel}`}>
+          <div className={styles.panelHeader}>
+            <div>
+              <h2>Connection checklist</h2>
+              <p>This tells us what can work today and what still needs a real Meta or WhatsApp value from your account.</p>
+            </div>
+            <span className={phase2Ready ? styles.readyBadge : styles.missingBadge}>
+              {phase2Ready ? "All connected" : "Setup still needed"}
+            </span>
+          </div>
+          <div className={styles.statusGrid}>
+            <StatusRow
+              label="Supabase CRM database"
+              ready={databaseReady}
+              detail="Stores CRM businesses, leads, conversations, command logs, and audit records."
+            />
+            <StatusRow
+              label="Shopify manual-order access"
+              ready={shopifyReady}
+              detail="Uses either SHOPIFY_ADMIN_ACCESS_TOKEN or the existing Shopify client ID and client secret."
+            />
+            <StatusRow
+              label="Meta webhook signature"
+              ready={metaWebhookSecretReady}
+              detail="Needed so incoming WhatsApp webhook messages can be trusted."
+            />
+            <StatusRow
+              label="WhatsApp send access"
+              ready={whatsappSendReady}
+              detail="Needs WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID before the app can send messages."
+            />
+          </div>
+        </div>
+
+        <div className={`${styles.panel} ${styles.fullWidthPanel}`}>
+          <div className={styles.panelHeader}>
+            <div>
+              <h2>Meta webhook values</h2>
+              <p>Paste these into Meta when setting up the WhatsApp webhook. The access token stays private in Vercel.</p>
+            </div>
+          </div>
+          <div className={styles.setupGrid}>
+            <div className={styles.setupBox}>
+              <p className={styles.setupLabel}>Callback URL</p>
+              <code>{webhookUrl}</code>
+            </div>
+            <div className={styles.setupBox}>
+              <p className={styles.setupLabel}>Verify token</p>
+              <code>{verifyToken}</code>
+            </div>
+            <div className={styles.setupBox}>
+              <p className={styles.setupLabel}>Subscribe to fields</p>
+              <code>messages, message_template_status_update, phone_number_name_update</code>
+            </div>
+          </div>
+        </div>
+
         <div className={styles.panel}>
           <h2>Phase plan</h2>
           <p>Phase 2 is active as a controlled backend flow. Full autonomous replies and a live inbox still stay behind later approval.</p>
@@ -63,8 +157,8 @@ export default function CrmPhaseOnePage() {
             ))}
           </ol>
           <pre className={styles.code}>{JSON.stringify({
-            commandEndpoint: "/api/crm/ai/commands/manual-order",
-            webhookEndpoint: "/api/crm/whatsapp/webhook",
+            commandEndpoint,
+            webhookEndpoint,
             missingPhase2Env,
           }, null, 2)}</pre>
         </div>

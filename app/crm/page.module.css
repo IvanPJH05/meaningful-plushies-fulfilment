@@ -62,6 +62,14 @@
   margin: 0;
 }
 
+.cardReady {
+  border-left: 5px solid #059669;
+}
+
+.cardMissing {
+  border-left: 5px solid #d9467c;
+}
+
 .sectionGrid {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
@@ -76,6 +84,17 @@
   padding: 22px;
 }
 
+.fullWidthPanel {
+  grid-column: 1 / -1;
+}
+
+.panelHeader {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
 .panel h2 {
   font-size: 22px;
   margin: 0 0 8px;
@@ -86,6 +105,89 @@
   color: #52657f;
   font-size: 15px;
   line-height: 1.55;
+}
+
+.statusGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.statusRow {
+  border: 1px solid #dbe4f0;
+  border-radius: 14px;
+  background: #f8fbff;
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 14px;
+}
+
+.statusLabel {
+  color: #0f172a !important;
+  font-size: 14px !important;
+  font-weight: 900;
+  margin: 0 0 6px;
+}
+
+.statusDetail {
+  font-size: 13px !important;
+  margin: 0;
+}
+
+.readyBadge,
+.missingBadge {
+  border-radius: 999px;
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 7px 10px;
+}
+
+.readyBadge {
+  background: #dcfce7;
+  color: #047857;
+}
+
+.missingBadge {
+  background: #fee2e2;
+  color: #be123c;
+}
+
+.setupGrid {
+  display: grid;
+  grid-template-columns: 1.25fr 0.75fr 1fr;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.setupBox {
+  border: 1px solid #dbe4f0;
+  border-radius: 14px;
+  background: #f8fbff;
+  padding: 14px;
+}
+
+.setupLabel {
+  color: #607089 !important;
+  font-size: 12px !important;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  margin: 0 0 8px;
+  text-transform: uppercase;
+}
+
+.setupBox code {
+  background: #0f172a;
+  border-radius: 10px;
+  color: #dbeafe;
+  display: block;
+  font-size: 13px;
+  line-height: 1.45;
+  overflow: auto;
+  padding: 12px;
 }
 
 .pillRow {
@@ -120,7 +222,9 @@
 
 @media (max-width: 1100px) {
   .grid,
-  .sectionGrid {
+  .sectionGrid,
+  .statusGrid,
+  .setupGrid {
     grid-template-columns: 1fr;
   }
 }

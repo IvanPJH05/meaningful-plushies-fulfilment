@@ -6,6 +6,7 @@ import {
   buildManualOrderReadyWhatsAppMessage,
   buildPaidManualOrderCommand,
 } from "../src/modules/sales/paid-manual-order-flow.ts";
+import { getMissingPhase2Env } from "../src/shared/validation/env.ts";
 import { verifyMetaWebhookSignature } from "../src/modules/whatsapp/meta-signature.ts";
 import { buildWhatsAppTextPayload, sendWhatsAppTextMessage } from "../src/modules/whatsapp/outbound.ts";
 import { normalizeWhatsAppWebhookPayload } from "../src/modules/whatsapp/webhook-normalizer.ts";
@@ -49,6 +50,21 @@ test("manual order WhatsApp message tells the customer payment was received", ()
   assert.match(message, /payment received/i);
   assert.match(message, /https:\/\/meaningfulplushies\.com\/discount\/1234/);
   assert.match(message, /Discount code: 1234/);
+});
+
+test("phase 2 accepts Shopify client credentials when admin token is not present", () => {
+  const missing = getMissingPhase2Env({
+    DATABASE_URL: "postgresql://user:pass@example.com:5432/postgres",
+    WHATSAPP_VERIFY_TOKEN: "verify-token",
+    WHATSAPP_ACCESS_TOKEN: "whatsapp-token",
+    WHATSAPP_PHONE_NUMBER_ID: "12345",
+    WHATSAPP_WEBHOOK_SECRET: "webhook-secret",
+    SHOPIFY_SHOP_DOMAIN: "meaningful-plushies.myshopify.com",
+    SHOPIFY_CLIENT_ID: "client-id",
+    SHOPIFY_CLIENT_SECRET: "client-secret",
+  });
+
+  assert.deepEqual(missing, []);
 });
 
 test("Meta webhook signature verification accepts valid signed payloads", () => {

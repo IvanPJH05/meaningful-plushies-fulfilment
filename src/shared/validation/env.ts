@@ -14,6 +14,8 @@ export const crmServerEnvSchema = z.object({
   WHATSAPP_PHONE_NUMBER_ID: z.string().optional(),
   SHOPIFY_SHOP_DOMAIN: z.string().optional(),
   SHOPIFY_ADMIN_ACCESS_TOKEN: z.string().optional(),
+  SHOPIFY_CLIENT_ID: z.string().optional(),
+  SHOPIFY_CLIENT_SECRET: z.string().optional(),
   S3_ENDPOINT: z.string().optional(),
   S3_BUCKET: z.string().optional(),
   S3_ACCESS_KEY_ID: z.string().optional(),
@@ -26,29 +28,50 @@ export function getCrmServerEnv(input: NodeJS.ProcessEnv = process.env): CrmServ
   return crmServerEnvSchema.parse(input);
 }
 
-export function getMissingPhase1Env(input: NodeJS.ProcessEnv = process.env): string[] {
+type EnvLookup = Record<string, string | undefined>;
+
+export function hasMetaWebhookSecret(input: EnvLookup = process.env): boolean {
+  return Boolean(input.WHATSAPP_WEBHOOK_SECRET || input.META_APP_SECRET);
+}
+
+export function hasShopifyAdminAuth(input: EnvLookup = process.env): boolean {
+  return Boolean(
+    input.SHOPIFY_ADMIN_ACCESS_TOKEN ||
+      (input.SHOPIFY_CLIENT_ID && input.SHOPIFY_CLIENT_SECRET),
+  );
+}
+
+export function getMissingPhase1Env(input: EnvLookup = process.env): string[] {
   const recommended = [
     "DATABASE_URL",
     "CRM_SESSION_SECRET",
     "CRM_CREDENTIAL_ENCRYPTION_KEY",
     "META_APP_ID",
-    "META_APP_SECRET",
     "WHATSAPP_VERIFY_TOKEN",
   ];
 
-  return recommended.filter((key) => !input[key]);
+  const missing = recommended.filter((key) => !input[key]);
+  if (!hasMetaWebhookSecret(input)) {
+    missing.push("META_APP_SECRET or WHATSAPP_WEBHOOK_SECRET");
+  }
+  return missing;
 }
 
-export function getMissingPhase2Env(input: NodeJS.ProcessEnv = process.env): string[] {
+export function getMissingPhase2Env(input: EnvLookup = process.env): string[] {
   const recommended = [
     "DATABASE_URL",
     "WHATSAPP_VERIFY_TOKEN",
-    "META_APP_SECRET",
     "WHATSAPP_ACCESS_TOKEN",
     "WHATSAPP_PHONE_NUMBER_ID",
     "SHOPIFY_SHOP_DOMAIN",
-    "SHOPIFY_ADMIN_ACCESS_TOKEN",
   ];
 
-  return recommended.filter((key) => !input[key]);
+  const missing = recommended.filter((key) => !input[key]);
+  if (!hasMetaWebhookSecret(input)) {
+    missing.push("META_APP_SECRET or WHATSAPP_WEBHOOK_SECRET");
+  }
+  if (!hasShopifyAdminAuth(input)) {
+    missing.push("SHOPIFY_ADMIN_ACCESS_TOKEN or SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET");
+  }
+  return missing;
 }
