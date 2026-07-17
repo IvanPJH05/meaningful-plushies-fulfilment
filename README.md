@@ -107,10 +107,9 @@ In Shopify, create a matching 100% discount code for each creator free order cod
 The **Manual Orders** workspace creates Shopify checkout links for customers who already paid outside Shopify. The admin enters only customer name, phone, product, and shipping region. The app then creates:
 
 - a one-use 100% product discount for the selected Shopify product or variant
-- a one-use free-shipping discount for Malaysia
-- one combined customer link such as `/discount/12345678,SHIP12345678?redirect=/products/...`
+- one customer link such as `/discount/12345678?redirect=/products/...`
 
-Run the latest [`supabase/schema.sql`](supabase/schema.sql) in Supabase SQL Editor. The SQL adds `manual_orders`, unique indexes for both discount codes, status tracking, and realtime updates. This migration has also been applied to the connected Supabase project used by this workspace.
+Run the latest [`supabase/schema.sql`](supabase/schema.sql) in Supabase SQL Editor. The SQL adds `manual_orders`, discount-code indexes, status tracking, and realtime updates. This migration has also been applied to the connected Supabase project used by this workspace.
 
 The Shopify app needs these scopes:
 

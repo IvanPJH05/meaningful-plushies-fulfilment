@@ -2486,7 +2486,7 @@ export default function Home() {
   }
 
   async function cancelManualOrder(order: ManualOrder) {
-    if (!window.confirm(`Cancel manual order code ${order.productDiscountCode}? Shopify will stop accepting both discount codes.`)) return;
+    if (!window.confirm(`Cancel manual order code ${order.productDiscountCode}? Shopify will stop accepting this discount code.`)) return;
     setManualOrderBusy(order.id);
     try {
       const response = await fetch("/api/manual-orders", {
@@ -2512,7 +2512,7 @@ export default function Home() {
   }
 
   function manualOrderWhatsAppLink(order: ManualOrder) {
-    const message = `Hi ${order.customerName}, here is your Meaningful Plushies checkout link:\n${order.customerLink}\n\nProduct code: ${order.productDiscountCode}\nShipping code: ${order.shippingDiscountCode}`;
+    const message = `Hi ${order.customerName}, here is your Meaningful Plushies checkout link:\n${order.customerLink}\n\nDiscount code: ${order.productDiscountCode}`;
     return `https://wa.me/${order.phoneNormalized}?text=${encodeURIComponent(message)}`;
   }
 
@@ -7571,7 +7571,7 @@ function ManualOrdersWorkspacePage({
         </div>
         <label>Shipping region<select value={form.shippingRegion} onChange={(event) => onFormChange({ shippingRegion: event.target.value === "EAST" ? "EAST" : "WEST" })}><option value="WEST">West Malaysia</option><option value="EAST">East Malaysia</option></select></label>
         <button className="button primary large" disabled={busy === "create"} type="submit">{busy === "create" ? "Creating..." : "Generate Shopify link"}</button>
-        <p className="manual-order-note">The app creates one 100% product discount and one free-shipping discount. Both expire after 14 days and can only be used once.</p>
+        <p className="manual-order-note">The app creates one 100% product discount. It expires after 14 days and can only be used once.</p>
       </form>
 
       <section className="card manual-order-result">
@@ -7587,8 +7587,7 @@ function ManualOrdersWorkspacePage({
           <div className="manual-order-summary-grid">
             <div><span>Product</span><strong>{lastOrder.productDisplayName}</strong></div>
             <div><span>Region</span><strong>{lastOrder.shippingRegion === "EAST" ? "East Malaysia" : "West Malaysia"}</strong></div>
-            <div><span>Product code</span><strong>{lastOrder.productDiscountCode}</strong></div>
-            <div><span>Shipping code</span><strong>{lastOrder.shippingDiscountCode}</strong></div>
+            <div><span>Discount code</span><strong>{lastOrder.productDiscountCode}</strong></div>
           </div>
           <div className="manual-order-link-box">
             <span>Checkout link</span>
@@ -7614,7 +7613,7 @@ function ManualOrdersWorkspacePage({
       </div>
       <div className="table-scroll">
         <table>
-          <thead><tr><th>Created</th><th>Customer</th><th>Phone</th><th>Product</th><th>Shipping</th><th>Product Discount</th><th>Shipping Discount</th><th>Status</th><th>Shopify Order</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Created</th><th>Customer</th><th>Phone</th><th>Product</th><th>Shipping</th><th>Discount</th><th>Status</th><th>Shopify Order</th><th>Actions</th></tr></thead>
           <tbody>
             {visibleOrders.map((order) => <tr key={order.id}>
               <td>{formatDate(order.createdAt, true)}</td>
@@ -7623,19 +7622,18 @@ function ManualOrdersWorkspacePage({
               <td>{order.productDisplayName}</td>
               <td>{order.shippingRegion === "EAST" ? "East Malaysia" : "West Malaysia"}</td>
               <td><code>{order.productDiscountCode}</code></td>
-              <td><code>{order.shippingDiscountCode}</code></td>
               <td><span className={`manual-order-status ${order.status}`}>{order.status}</span></td>
               <td>{order.shopifyOrderName ? <strong>{order.shopifyOrderName}</strong> : "-"}</td>
               <td><div className="manual-order-row-actions">
                 <button className="button secondary small" type="button" onClick={() => onCopy(order.customerLink, "Customer link")}>Copy Link</button>
-                <button className="button secondary small" type="button" onClick={() => onCopy(`${order.productDiscountCode}\n${order.shippingDiscountCode}`, "Discount codes")}>Copy Codes</button>
+                <button className="button secondary small" type="button" onClick={() => onCopy(order.productDiscountCode, "Discount code")}>Copy Code</button>
                 <a className="button secondary small" href={whatsAppLink(order)} target="_blank" rel="noreferrer">WhatsApp</a>
                 <a className="button secondary small" href={order.customerLink} target="_blank" rel="noreferrer">Open</a>
                 {order.shopifyOrderId && <a className="button secondary small" href={`https://admin.shopify.com/store/${(process.env.NEXT_PUBLIC_SHOPIFY_ADMIN_STORE_HANDLE || "").trim()}/orders/${order.shopifyOrderId.replace(/\D/g, "")}`} target="_blank" rel="noreferrer">Shopify</a>}
                 {order.status === "active" && <button className="button danger small" type="button" disabled={busy === order.id} onClick={() => onCancel(order)}>{busy === order.id ? "Cancelling..." : "Cancel"}</button>}
               </div></td>
             </tr>)}
-            {!visibleOrders.length && <tr><td colSpan={10}>No manual orders found.</td></tr>}
+            {!visibleOrders.length && <tr><td colSpan={9}>No manual orders found.</td></tr>}
           </tbody>
         </table>
       </div>

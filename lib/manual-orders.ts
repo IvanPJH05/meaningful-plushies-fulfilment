@@ -1,5 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 
+import { buildManualOrderCustomerLink } from "./manual-order-links";
 import { manualOrderProductByKey, type ManualOrderProductConfig } from "./manual-order-products";
 import { shopDomain, shopifyGraphql, textValue } from "./shopify-orders";
 import { fetchManualOrders } from "./supabase";
@@ -184,20 +185,16 @@ export async function generateManualOrderCode(phoneLastFour: string) {
   const existing = new Set((await fetchManualOrders()).flatMap((order) => [
     order.productDiscountCode,
     order.shippingDiscountCode,
-  ]));
+  ].filter(Boolean)));
   for (let attempt = 0; attempt < 25; attempt += 1) {
     const prefix = String(randomInt(0, 10_000)).padStart(4, "0");
     const code = `${prefix}${phoneLastFour}`;
-    if (!existing.has(code) && !existing.has(`SHIP${code}`)) return code;
+    if (!existing.has(code)) return code;
   }
   throw new Error("Could not generate a unique manual order discount code. Please try again.");
 }
 
-export function buildManualOrderCustomerLink(productCode: string, shippingCode: string, productPath: string) {
-  const store = (process.env.SHOPIFY_STOREFRONT_URL || process.env.NEXT_PUBLIC_SHOPIFY_STOREFRONT_URL || "https://meaningfulplushies.com").replace(/\/+$/, "");
-  const cleanPath = productPath.replace(/^\/+/, "");
-  return `${store}/discount/${encodeURIComponent(productCode)},${encodeURIComponent(shippingCode)}?redirect=/${cleanPath}`;
-}
+export { buildManualOrderCustomerLink };
 
 export async function createCreatorSampleDiscountCode(code: string, creatorName: string) {
   const normalizedCode = code.trim().toUpperCase();
@@ -290,39 +287,6 @@ async function createProductDiscount(
   return id;
 }
 
-async function createShippingDiscount(domain: string, input: ManualOrderCreateInput, code: string, expiresAt: string) {
-  const result = await shopifyGraphql<{
-    data?: { discountCodeFreeShippingCreate?: { codeDiscountNode?: { id?: string }, userErrors?: DiscountUserError[] } };
-    errors?: { message?: string }[];
-  }>(domain, `
-    mutation CreateManualShippingDiscount($freeShippingCodeDiscount: DiscountCodeFreeShippingInput!) {
-      discountCodeFreeShippingCreate(freeShippingCodeDiscount: $freeShippingCodeDiscount) {
-        codeDiscountNode { id }
-        userErrors { field message code }
-      }
-    }
-  `, {
-    freeShippingCodeDiscount: {
-      title: `Manual Order Shipping - ${input.customerName.trim()}`,
-      code,
-      startsAt: new Date().toISOString(),
-      endsAt: expiresAt,
-      usageLimit: 1,
-      appliesOncePerCustomer: true,
-      context: { all: "ALL" },
-      destination: { countries: { add: ["MY"] } },
-      combinesWith: { productDiscounts: true },
-    },
-  });
-
-  if (result?.errors?.length) throw new Error(result.errors.map((error) => error.message).filter(Boolean).join(" "));
-  const payload = result?.data?.discountCodeFreeShippingCreate;
-  if (payload?.userErrors?.length) throw new Error(userErrorMessage(payload.userErrors, "Shopify rejected the shipping discount."));
-  const id = textValue(payload?.codeDiscountNode?.id);
-  if (!id) throw new Error("Shopify did not return the shipping discount ID.");
-  return id;
-}
-
 export async function createManualOrderDiscounts(input: ManualOrderCreateInput): Promise<ManualOrder> {
   const product = manualOrderProductByKey(input.productKey);
   if (!product) throw new Error("Choose a valid manual order product.");
@@ -335,11 +299,9 @@ export async function createManualOrderDiscounts(input: ManualOrderCreateInput):
   const character = normalizeManualOrderCharacter(input.character);
   if (input.character && !character) throw new Error("Choose a valid character.");
   const productCode = await generateManualOrderCode(phone.lastFour);
-  const shippingCode = `SHIP${productCode}`;
   const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
   const resolvedProduct = await resolveManualOrderProduct(input, product);
   const productDiscountShopifyId = await createProductDiscount(domain, input, product, productCode, expiresAt, resolvedProduct);
-  const shippingDiscountShopifyId = await createShippingDiscount(domain, input, shippingCode, expiresAt);
   const now = new Date().toISOString();
   const productDisplayName = character ? `${character} - ${product.displayName}` : product.displayName;
 
@@ -357,9 +319,9 @@ export async function createManualOrderDiscounts(input: ManualOrderCreateInput):
     shippingRegion: input.shippingRegion,
     productDiscountCode: productCode,
     productDiscountShopifyId,
-    shippingDiscountCode: shippingCode,
-    shippingDiscountShopifyId,
-    customerLink: buildManualOrderCustomerLink(productCode, shippingCode, resolvedProduct.productPath || product.productPath),
+    shippingDiscountCode: "",
+    shippingDiscountShopifyId: "",
+    customerLink: buildManualOrderCustomerLink(productCode, resolvedProduct.productPath || product.productPath),
     status: "active",
     shopifyOrderId: "",
     shopifyOrderName: "",
