@@ -220,6 +220,14 @@ async function resolveManualOrderProductFromStorefront(input: ManualOrderCreateI
     }[];
   };
   const productId = textValue(data.id);
+  if (productOnly && productId) {
+    return {
+      productId: asShopifyGid(productId, "Product"),
+      variantId: "",
+      productPath: `products/${handle}`,
+    };
+  }
+
   const character = normalizeManualOrderCharacter(input.character);
   const seconds = manualOrderSpeakerSeconds(product);
   const variant = data.variants?.find((item) => {
