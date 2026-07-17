@@ -430,6 +430,7 @@ export async function createManualOrderDiscounts(input: ManualOrderCreateInput):
   const productDiscountShopifyId = await createProductDiscount(domain, input, product, productCode, expiresAt, resolvedProduct);
   const now = new Date().toISOString();
   const productDisplayName = character ? `${character} - ${product.displayName}` : product.displayName;
+  const noShippingDiscountCode = `NO-SHIP-${productCode}`;
 
   return {
     id: randomUUID(),
@@ -445,7 +446,7 @@ export async function createManualOrderDiscounts(input: ManualOrderCreateInput):
     shippingRegion: input.shippingRegion,
     productDiscountCode: productCode,
     productDiscountShopifyId,
-    shippingDiscountCode: "",
+    shippingDiscountCode: noShippingDiscountCode,
     shippingDiscountShopifyId: "",
     customerLink: buildManualOrderCustomerLink(productCode, resolvedProduct.productPath || product.productPath),
     status: "active",

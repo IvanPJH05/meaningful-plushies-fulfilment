@@ -10,11 +10,20 @@ function json(status: number, body: Record<string, unknown>) {
   return NextResponse.json(body, { status });
 }
 
+function errorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string" && error.trim()) return error;
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string" && error.message.trim()) {
+    return error.message;
+  }
+  return fallback;
+}
+
 export async function GET() {
   try {
     return json(200, { ok: true, manualOrders: await fetchManualOrders() });
   } catch (error) {
-    return json(500, { ok: false, error: error instanceof Error ? error.message : "Manual orders could not be loaded." });
+    return json(500, { ok: false, error: errorMessage(error, "Manual orders could not be loaded.") });
   }
 }
 
@@ -37,7 +46,7 @@ export async function POST(request: Request) {
     await saveManualOrder(manualOrder);
     return json(200, { ok: true, manualOrder });
   } catch (error) {
-    return json(500, { ok: false, error: error instanceof Error ? error.message : "Manual order could not be created." });
+    return json(500, { ok: false, error: errorMessage(error, "Manual order could not be created.") });
   }
 }
 
@@ -70,6 +79,6 @@ export async function PATCH(request: Request) {
 
     return json(400, { ok: false, error: "Invalid manual order action." });
   } catch (error) {
-    return json(500, { ok: false, error: error instanceof Error ? error.message : "Manual order could not be updated." });
+    return json(500, { ok: false, error: errorMessage(error, "Manual order could not be updated.") });
   }
 }

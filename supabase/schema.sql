@@ -30,7 +30,7 @@ create table if not exists public.manual_orders (
   shipping_region text not null check (shipping_region in ('WEST', 'EAST')),
   product_discount_code text not null unique,
   product_discount_shopify_id text not null default '',
-  shipping_discount_code text not null unique,
+  shipping_discount_code text,
   shipping_discount_shopify_id text not null default '',
   customer_link text not null,
   status text not null default 'active' check (status in ('active', 'used', 'expired', 'cancelled')),
@@ -47,6 +47,9 @@ create index if not exists manual_orders_status_idx
   on public.manual_orders (status, created_at desc);
 create index if not exists manual_orders_shopify_order_idx
   on public.manual_orders (shopify_order_id);
+
+alter table public.manual_orders drop constraint if exists manual_orders_shipping_discount_code_key;
+alter table public.manual_orders alter column shipping_discount_code drop not null;
 
 create table if not exists public.whatsapp_leads (
   id text primary key,
