@@ -1,6 +1,7 @@
 import { randomInt, randomUUID } from "node:crypto";
 
 import { buildManualOrderCustomerLink } from "./manual-order-links";
+import { manualOrderProductPathForSelection, manualOrderSpeakerSeconds, normalizeManualOrderCharacter } from "./manual-order-product-paths";
 import { manualOrderProductByKey, type ManualOrderProductConfig } from "./manual-order-products";
 import { shopDomain, shopifyGraphql, textValue } from "./shopify-orders";
 import { fetchManualOrders } from "./supabase";
@@ -27,15 +28,6 @@ function userErrorMessage(errors: DiscountUserError[] | undefined, fallback: str
   return messages.length ? messages.join(" ") : fallback;
 }
 
-const manualOrderCharacters = ["Billy", "Tootsie", "Hunnie", "Dragon Warrior"] as const;
-
-const manualOrderCharacterProductHandles: Record<string, string> = {
-  billy: "billy-wa-order",
-  hunnie: "hunnie-wa-order",
-  tootsie: "tootsie-wa-order",
-  "dragon warrior": "dragon-warrior-wa-order",
-};
-
 const knownMeaningfulPlushieVariantIds: Record<string, Record<string, string>> = {
   billy: {
     "5": "42426495959111",
@@ -59,27 +51,17 @@ const knownMeaningfulPlushieVariantIds: Record<string, Record<string, string>> =
   },
 };
 
-function normalizeManualOrderCharacter(value?: string) {
-  const normalized = (value ?? "").trim().toLowerCase();
-  return manualOrderCharacters.find((character) => character.toLowerCase() === normalized) ?? "";
-}
-
 function productHandleFromPath(productPath: string) {
   const clean = productPath.split(/[?#]/)[0].replace(/^https?:\/\/[^/]+\//, "").replace(/^\/+|\/+$/g, "");
   const parts = clean.split("/").filter(Boolean);
   return parts[parts.length - 1] ?? "";
 }
 
-function manualOrderSpeakerSeconds(product: ManualOrderProductConfig) {
-  const match = `${product.key} ${product.displayName}`.match(/(\d+)\s*s(?:econds?)?/i);
-  return match?.[1] ?? "";
-}
-
 function normalizeVariantText(value?: string | null) {
   return (value ?? "").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-async function resolveManualOrderProductFromStorefront(input: ManualOrderCreateInput, product: ManualOrderProductConfig) {
+async function resolveManualOrderProductFromStorefront(input: ManualOrderCreateInput, product: ManualOrderProductConfig, productOnly = false) {
   const handle = productHandleFromPath(product.productPath);
   const storefront = (process.env.SHOPIFY_STOREFRONT_URL || process.env.NEXT_PUBLIC_SHOPIFY_STOREFRONT_URL || "https://meaningfulplushies.com").replace(/\/+$/, "");
   if (!handle || !storefront) return { productId: "", variantId: "", productPath: "" };
@@ -119,7 +101,7 @@ async function resolveManualOrderProductFromStorefront(input: ManualOrderCreateI
   if ((character || seconds) && !variantId) return { productId: "", variantId: "", productPath: "" };
   return {
     productId: productId ? asShopifyGid(productId, "Product") : "",
-    variantId: variantId ? asShopifyGid(variantId, "ProductVariant") : "",
+    variantId: productOnly ? "" : variantId ? asShopifyGid(variantId, "ProductVariant") : "",
     productPath: `products/${handle}`,
   };
 }
@@ -142,16 +124,15 @@ async function resolveManualOrderProduct(input: ManualOrderCreateInput, product:
   const configuredVariantId = asShopifyGid(product.shopifyVariantId ?? "", "ProductVariant");
   if (configuredVariantId) return { productId: configuredProductId, variantId: configuredVariantId, productPath: product.productPath };
 
-  const character = normalizeManualOrderCharacter(input.character).toLowerCase();
-  const characterHandle = manualOrderCharacterProductHandles[character];
-  if (characterHandle) {
+  const exactProductPath = manualOrderProductPathForSelection(input.character, product);
+  if (exactProductPath) {
     const characterProduct = {
       ...product,
-      productPath: `products/${characterHandle}`,
+      productPath: exactProductPath,
       shopifyProductId: "",
       shopifyVariantId: "",
     };
-    const storefrontCharacterProduct = await resolveManualOrderProductFromStorefront(input, characterProduct);
+    const storefrontCharacterProduct = await resolveManualOrderProductFromStorefront(input, characterProduct, true);
     if (storefrontCharacterProduct.productId || storefrontCharacterProduct.variantId) return storefrontCharacterProduct;
   }
 
