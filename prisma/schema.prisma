@@ -1,0 +1,702 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  SALES
+  FULFILMENT
+  VIEWER
+}
+
+enum WhatsAppConnectionStatus {
+  NOT_CONNECTED
+  PENDING_META_SETUP
+  CONNECTED
+  SUSPENDED
+  DISCONNECTED
+}
+
+enum CoexistenceStatus {
+  NOT_STARTED
+  REQUESTED
+  ENABLED
+  REVOKED
+}
+
+enum ConnectionHealth {
+  UNKNOWN
+  HEALTHY
+  WARNING
+  ERROR
+}
+
+enum ConversationStatus {
+  OPEN
+  WAITING_CUSTOMER
+  WAITING_TEAM
+  RESOLVED
+  ARCHIVED
+}
+
+enum AiMode {
+  OFF
+  SUGGEST_ONLY
+  AUTO_REPLY
+}
+
+enum AiCommandType {
+  CREATE_MANUAL_ORDER
+  SEND_WHATSAPP_MESSAGE
+}
+
+enum AiCommandStatus {
+  DRAFT
+  PAYMENT_REQUIRED
+  READY
+  EXECUTED
+  FAILED
+  CANCELLED
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageSenderType {
+  CUSTOMER
+  TEAM
+  AI
+  SYSTEM
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  AUDIO
+  VIDEO
+  DOCUMENT
+  TEMPLATE
+  SYSTEM
+}
+
+enum MessageStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum LeadStage {
+  NEW
+  QUALIFYING
+  READY_TO_ORDER
+  CHECKOUT_SENT
+  PAID
+  FULFILMENT
+  LOST
+}
+
+enum LeadTemperature {
+  COLD
+  WARM
+  HOT
+}
+
+enum PaymentStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+  REFUNDED
+}
+
+enum CheckoutType {
+  SHOPIFY_DRAFT_ORDER
+  SHOPIFY_CHECKOUT_LINK
+  MANUAL_PAYMENT
+}
+
+enum CheckoutStatus {
+  DRAFT
+  SENT
+  OPENED
+  COMPLETED
+  EXPIRED
+  CANCELLED
+}
+
+enum FollowUpStatus {
+  SCHEDULED
+  SENT
+  CANCELLED
+  FAILED
+}
+
+enum WebhookEventStatus {
+  RECEIVED
+  PROCESSED
+  FAILED
+  IGNORED
+}
+
+enum AuditActorType {
+  USER
+  SYSTEM
+  META
+  SHOPIFY
+}
+
+model Business {
+  id                   String               @id @default(cuid())
+  slug                 String               @unique
+  name                 String
+  timezone             String               @default("Asia/Kuala_Lumpur")
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  users                UserBusinessRole[]
+  whatsappConnections  WhatsAppConnection[]
+  shopifyConnections   ShopifyConnection[]
+  contacts             Contact[]
+  conversations        Conversation[]
+  messages             Message[]
+  leads                Lead[]
+  products             Product[]
+  productVariants      ProductVariant[]
+  priceRules           PriceRule[]
+  promotions           Promotion[]
+  checkoutSessions     CheckoutSession[]
+  orders               Order[]
+  payments             Payment[]
+  followUps            FollowUp[]
+  aiAgentConfigs       AiAgentConfig[]
+  aiRuns               AiRun[]
+  aiCommands           AiCommand[]
+  webhookEvents        WebhookEvent[]
+  auditLogs            AuditLog[]
+
+  @@map("crm_businesses")
+}
+
+model User {
+  id           String             @id @default(cuid())
+  email        String             @unique
+  displayName  String
+  passwordHash String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  businesses   UserBusinessRole[]
+  sessions     UserSession[]
+  auditLogs    AuditLog[]
+
+  @@map("crm_users")
+}
+
+model UserBusinessRole {
+  id         String   @id @default(cuid())
+  businessId String
+  userId     String
+  role       UserRole @default(VIEWER)
+  createdAt  DateTime @default(now())
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, userId])
+  @@index([userId])
+  @@map("crm_user_business_roles")
+}
+
+model UserSession {
+  id           String   @id @default(cuid())
+  userId       String
+  tokenHash    String   @unique
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  lastSeenAt   DateTime @default(now())
+  userAgent    String?
+  ipAddress    String?
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("crm_user_sessions")
+}
+
+model WhatsAppConnection {
+  id                         String                   @id @default(cuid())
+  businessId                 String
+  metaBusinessId             String?
+  whatsappBusinessAccountId  String?
+  phoneNumberId              String?
+  displayPhoneNumber         String?
+  status                     WhatsAppConnectionStatus @default(NOT_CONNECTED)
+  coexistenceStatus          CoexistenceStatus        @default(NOT_STARTED)
+  connectionHealth           ConnectionHealth         @default(UNKNOWN)
+  encryptedAccessToken       String?
+  accessTokenExpiresAt       DateTime?
+  webhookVerifyTokenHash     String?
+  lastWebhookAt              DateTime?
+  createdAt                  DateTime                 @default(now())
+  updatedAt                  DateTime                 @updatedAt
+  business                   Business                 @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, status])
+  @@map("crm_whatsapp_connections")
+}
+
+model ShopifyConnection {
+  id                        String           @id @default(cuid())
+  businessId                String
+  storeDomain               String
+  encryptedAdminAccessToken String?
+  encryptedWebhookSecret    String?
+  storefrontUrl             String?
+  status                    ConnectionHealth @default(UNKNOWN)
+  createdAt                 DateTime         @default(now())
+  updatedAt                 DateTime         @updatedAt
+  business                  Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, storeDomain])
+  @@map("crm_shopify_connections")
+}
+
+model Contact {
+  id             String         @id @default(cuid())
+  businessId     String
+  waId           String?
+  phone          String?
+  displayName    String?
+  firstName      String?
+  lastName       String?
+  email          String?
+  source         String?
+  tags           String[]       @default([])
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  business       Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  conversations  Conversation[]
+  leads          Lead[]
+  orders         Order[]
+
+  @@unique([businessId, waId])
+  @@index([businessId, phone])
+  @@map("crm_contacts")
+}
+
+model Conversation {
+  id              String             @id @default(cuid())
+  businessId      String
+  contactId       String
+  status          ConversationStatus @default(OPEN)
+  aiMode          AiMode             @default(SUGGEST_ONLY)
+  assignedUserId  String?
+  lastMessageAt   DateTime?
+  unreadCount     Int                @default(0)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  business        Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  contact         Contact            @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  messages        Message[]
+  leads           Lead[]
+  aiRuns          AiRun[]
+  aiCommands      AiCommand[]
+
+  @@index([businessId, status, lastMessageAt])
+  @@index([businessId, contactId])
+  @@map("crm_conversations")
+}
+
+model Message {
+  id                String             @id @default(cuid())
+  businessId        String
+  conversationId    String
+  externalMessageId String?
+  direction         MessageDirection
+  senderType        MessageSenderType
+  messageType       MessageType        @default(TEXT)
+  body              String?
+  status            MessageStatus      @default(QUEUED)
+  metadata          Json?
+  sentAt            DateTime?
+  deliveredAt       DateTime?
+  readAt            DateTime?
+  failedReason      String?
+  createdAt         DateTime           @default(now())
+  business          Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  conversation      Conversation       @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  attachments       MessageAttachment[]
+
+  @@unique([businessId, externalMessageId])
+  @@index([businessId, conversationId, createdAt])
+  @@map("crm_messages")
+}
+
+model MessageAttachment {
+  id             String   @id @default(cuid())
+  messageId      String
+  storageKey     String
+  contentType    String
+  originalName   String?
+  sizeBytes      Int?
+  createdAt      DateTime @default(now())
+  message        Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@map("crm_message_attachments")
+}
+
+model Lead {
+  id                 String          @id @default(cuid())
+  businessId         String
+  contactId          String?
+  conversationId     String?
+  stage              LeadStage       @default(NEW)
+  temperature        LeadTemperature @default(WARM)
+  customerName       String?
+  phone              String?
+  requestedCharacter String?
+  requestedVoice     String?
+  notes              String?
+  sourceCampaign     String?
+  sourceAd           String?
+  estimatedValue     Decimal?        @db.Decimal(12, 2)
+  paymentStatus      PaymentStatus   @default(UNPAID)
+  paidAmount         Decimal?        @db.Decimal(12, 2)
+  paymentConfirmedAt DateTime?
+  manualOrderId      String?
+  manualOrderLinkSentAt DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  business           Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  contact            Contact?        @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  conversation       Conversation?   @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  events             LeadEvent[]
+  checkoutSessions   CheckoutSession[]
+  followUps          FollowUp[]
+  aiRuns             AiRun[]
+  aiCommands         AiCommand[]
+
+  @@index([businessId, stage, updatedAt])
+  @@map("crm_leads")
+}
+
+model LeadEvent {
+  id        String   @id @default(cuid())
+  leadId    String
+  type      String
+  details   Json?
+  createdAt DateTime @default(now())
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId, createdAt])
+  @@map("crm_lead_events")
+}
+
+model Product {
+  id             String           @id @default(cuid())
+  businessId     String
+  name           String
+  handle         String?
+  shopifyProductId String?
+  active         Boolean          @default(true)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  business       Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  variants       ProductVariant[]
+  priceRules     PriceRule[]
+
+  @@unique([businessId, name])
+  @@index([businessId, active])
+  @@map("crm_products")
+}
+
+model ProductVariant {
+  id                String          @id @default(cuid())
+  businessId        String
+  productId         String
+  name              String
+  sku               String?
+  characterName     String?
+  voiceDurationSec  Int?
+  shopifyVariantId  String?
+  price             Decimal         @db.Decimal(12, 2)
+  active            Boolean         @default(true)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  business          Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  product           Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  priceRules        PriceRule[]
+  orderLines        OrderLine[]
+
+  @@unique([businessId, productId, name])
+  @@index([businessId, characterName, voiceDurationSec])
+  @@map("crm_product_variants")
+}
+
+model PriceRule {
+  id               String          @id @default(cuid())
+  businessId       String
+  productId        String?
+  productVariantId String?
+  name             String
+  amount           Decimal         @db.Decimal(12, 2)
+  currency         String          @default("MYR")
+  startsAt         DateTime
+  endsAt           DateTime?
+  active           Boolean         @default(true)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  business         Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  product          Product?        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productVariant   ProductVariant? @relation(fields: [productVariantId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, active, startsAt])
+  @@map("crm_price_rules")
+}
+
+model Promotion {
+  id              String            @id @default(cuid())
+  businessId      String
+  code            String
+  name            String
+  description     String?
+  discountType    String
+  discountValue   Decimal           @db.Decimal(12, 2)
+  startsAt        DateTime
+  endsAt          DateTime?
+  active          Boolean           @default(true)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  business        Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  checkoutSessions CheckoutSession[]
+
+  @@unique([businessId, code])
+  @@index([businessId, active])
+  @@map("crm_promotions")
+}
+
+model CheckoutSession {
+  id                  String          @id @default(cuid())
+  businessId          String
+  leadId              String?
+  promotionId         String?
+  checkoutType        CheckoutType
+  status              CheckoutStatus  @default(DRAFT)
+  checkoutUrl         String?
+  shopifyDraftOrderId String?
+  shopifyCheckoutId   String?
+  totalAmount         Decimal         @db.Decimal(12, 2)
+  currency            String          @default("MYR")
+  expiresAt           DateTime?
+  sentAt              DateTime?
+  completedAt         DateTime?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  business            Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  lead                Lead?           @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  promotion           Promotion?      @relation(fields: [promotionId], references: [id], onDelete: SetNull)
+  order               Order?
+
+  @@index([businessId, status, createdAt])
+  @@map("crm_checkout_sessions")
+}
+
+model Order {
+  id                String           @id @default(cuid())
+  businessId        String
+  contactId         String?
+  checkoutSessionId String?          @unique
+  externalOrderId   String?
+  orderNumber       String?
+  source            String
+  paymentStatus     PaymentStatus    @default(UNPAID)
+  totalAmount       Decimal          @db.Decimal(12, 2)
+  currency          String           @default("MYR")
+  placedAt          DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  business          Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  contact           Contact?         @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  checkoutSession   CheckoutSession? @relation(fields: [checkoutSessionId], references: [id], onDelete: SetNull)
+  lines             OrderLine[]
+  payments          Payment[]
+
+  @@unique([businessId, externalOrderId])
+  @@index([businessId, source, placedAt])
+  @@map("crm_orders")
+}
+
+model OrderLine {
+  id               String          @id @default(cuid())
+  orderId          String
+  productVariantId String?
+  description      String
+  quantity         Int             @default(1)
+  unitPrice        Decimal         @db.Decimal(12, 2)
+  totalAmount      Decimal         @db.Decimal(12, 2)
+  metadata         Json?
+  order            Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productVariant   ProductVariant? @relation(fields: [productVariantId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@map("crm_order_lines")
+}
+
+model Payment {
+  id                String        @id @default(cuid())
+  businessId        String
+  orderId           String?
+  provider          String
+  externalPaymentId String?
+  amount            Decimal       @db.Decimal(12, 2)
+  feesAmount        Decimal       @default(0) @db.Decimal(12, 2)
+  currency          String        @default("MYR")
+  paidAt            DateTime?
+  metadata          Json?
+  createdAt         DateTime      @default(now())
+  business          Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  order             Order?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@unique([businessId, externalPaymentId])
+  @@index([businessId, provider, paidAt])
+  @@map("crm_payments")
+}
+
+model FollowUp {
+  id          String         @id @default(cuid())
+  businessId  String
+  leadId      String
+  status      FollowUpStatus @default(SCHEDULED)
+  scheduledAt DateTime
+  sentAt      DateTime?
+  templateKey String?
+  messageBody String
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  business    Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  lead        Lead           @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, status, scheduledAt])
+  @@map("crm_follow_ups")
+}
+
+model AiAgentConfig {
+  id                 String   @id @default(cuid())
+  businessId         String
+  name               String
+  version            Int      @default(1)
+  systemPrompt       String
+  allowedToolNames   String[] @default([])
+  enabled            Boolean  @default(false)
+  requiresHumanReview Boolean @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  business           Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, name, version])
+  @@map("crm_ai_agent_configs")
+}
+
+model AiRun {
+  id             String          @id @default(cuid())
+  businessId     String
+  conversationId String?
+  leadId         String?
+  model          String
+  promptVersion  String?
+  inputTokens    Int?
+  outputTokens   Int?
+  result         Json?
+  error          String?
+  createdAt      DateTime        @default(now())
+  business       Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  conversation   Conversation?   @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  lead           Lead?           @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  toolExecutions AiToolExecution[]
+  commands       AiCommand[]
+
+  @@index([businessId, createdAt])
+  @@map("crm_ai_runs")
+}
+
+model AiToolExecution {
+  id          String   @id @default(cuid())
+  aiRunId     String
+  toolName    String
+  input       Json?
+  output      Json?
+  error       String?
+  createdAt   DateTime @default(now())
+  aiRun       AiRun    @relation(fields: [aiRunId], references: [id], onDelete: Cascade)
+
+  @@index([aiRunId])
+  @@map("crm_ai_tool_executions")
+}
+
+model AiCommand {
+  id                       String          @id @default(cuid())
+  businessId               String
+  conversationId           String?
+  leadId                   String?
+  aiRunId                  String?
+  type                     AiCommandType
+  status                   AiCommandStatus @default(DRAFT)
+  requiresPaymentConfirmed Boolean         @default(true)
+  paymentConfirmedAt       DateTime?
+  payload                  Json
+  result                   Json?
+  error                    String?
+  executedAt               DateTime?
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime        @updatedAt
+  business                 Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  conversation             Conversation?   @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  lead                     Lead?           @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  aiRun                    AiRun?          @relation(fields: [aiRunId], references: [id], onDelete: SetNull)
+
+  @@index([businessId, status, createdAt])
+  @@index([conversationId, createdAt])
+  @@index([leadId, createdAt])
+  @@map("crm_ai_commands")
+}
+
+model WebhookEvent {
+  id              String             @id @default(cuid())
+  businessId      String
+  source          String
+  externalEventId String
+  payload         Json
+  status          WebhookEventStatus @default(RECEIVED)
+  receivedAt      DateTime           @default(now())
+  processedAt     DateTime?
+  error           String?
+  business        Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, source, externalEventId])
+  @@index([businessId, status, receivedAt])
+  @@map("crm_webhook_events")
+}
+
+model AuditLog {
+  id          String         @id @default(cuid())
+  businessId  String
+  actorType   AuditActorType
+  actorUserId String?
+  action      String
+  entityType  String
+  entityId    String?
+  before      Json?
+  after       Json?
+  createdAt   DateTime       @default(now())
+  business    Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  actorUser   User?          @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([businessId, entityType, entityId])
+  @@index([businessId, createdAt])
+  @@map("crm_audit_logs")
+}

@@ -203,3 +203,25 @@ Open `http://localhost:3000`. The current login screen controls dashboard roles 
 ## Security note
 
 The included policies allow users with the public Vercel link to read and change dashboard data, which matches the current shared-link workflow. Before exposing the site publicly, replace the demo login with Supabase Auth and restrict the row-level security policies to authenticated staff.
+
+## WhatsApp CRM Phase 1
+
+The app now includes a Phase 1 foundation for a future official Meta WhatsApp Business Platform CRM. It does not automate WhatsApp yet. It adds the database model, tenant boundaries, encrypted credential helpers, queue foundations, setup documentation, and a base dashboard at `/crm`.
+
+Start local services:
+
+```powershell
+docker compose up -d
+```
+
+Then configure `DATABASE_URL`, generate Prisma, and run migrations:
+
+```powershell
+npm run db:generate
+npm run db:migrate
+npm run db:seed
+```
+
+Important: this CRM must use the official Meta WhatsApp Business Platform only. WhatsApp Web automation, unofficial QR-login bots, browser sessions, and reverse-engineered WhatsApp clients are not supported.
+
+Full Phase 1 notes are in `docs/WHATSAPP_CRM_PHASE1.md`.
