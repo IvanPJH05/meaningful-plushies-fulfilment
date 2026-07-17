@@ -3,7 +3,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import { buildManualOrderCustomerLink } from "./manual-order-links";
 import { manualOrderProductPathForSelection, manualOrderSpeakerSeconds, normalizeManualOrderCharacter } from "./manual-order-product-paths";
 import { manualOrderProductByKey, type ManualOrderProductConfig } from "./manual-order-products";
-import { shopDomain, shopifyGraphql, textValue } from "./shopify-orders";
+import { cleanShopifyOrderNumber, objectValue, shopDomain, shopifyGraphql, textValue } from "./shopify-orders";
 import { fetchManualOrders } from "./supabase";
 import type { ManualOrder } from "./types";
 
@@ -59,6 +59,143 @@ function productHandleFromPath(productPath: string) {
 
 function normalizeVariantText(value?: string | null) {
   return (value ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function normalizePhoneDigits(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (digits.startsWith("0")) return `6${digits}`;
+  if (digits.startsWith("60")) return digits;
+  if (digits.startsWith("1") && digits.length >= 9) return `60${digits}`;
+  return digits;
+}
+
+function arrayRecords(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.map(objectValue) : [];
+}
+
+function manualOrderShopifyDiscountCodes(order: Record<string, unknown>) {
+  const directCodes = arrayRecords(order.discount_codes).map((item) => textValue(item.code).trim());
+  const applications = order.discountApplications ?? order.discount_applications;
+  const nodes = objectValue(applications).nodes;
+  const edges = objectValue(applications).edges;
+  const rows = Array.isArray(nodes)
+    ? nodes.map(objectValue)
+    : Array.isArray(edges)
+      ? edges.map((edge) => objectValue(objectValue(edge).node))
+      : arrayRecords(applications);
+  return [...new Set([
+    ...directCodes,
+    ...rows.map((item) => (textValue(item.code) || textValue(item.title)).trim()),
+  ].filter(Boolean).map((code) => code.toUpperCase()))];
+}
+
+function manualOrderShopifyPhones(order: Record<string, unknown>) {
+  const customer = objectValue(order.customer);
+  const shippingAddress = objectValue(order.shippingAddress ?? order.shipping_address);
+  const billingAddress = objectValue(order.billingAddress ?? order.billing_address);
+  return [
+    textValue(order.phone),
+    textValue(customer.phone),
+    textValue(shippingAddress.phone),
+    textValue(billingAddress.phone),
+  ].map(normalizePhoneDigits).filter(Boolean);
+}
+
+function manualOrderShopifyTotal(order: Record<string, unknown>) {
+  const currentTotal = objectValue(objectValue(order.currentTotalPriceSet).shopMoney).amount;
+  const currentTotalAmount = Number(textValue(currentTotal));
+  if (Number.isFinite(currentTotalAmount)) return currentTotalAmount;
+  const totalPrice = Number(textValue(order.total_price ?? order.current_total_price));
+  return Number.isFinite(totalPrice) ? totalPrice : 0;
+}
+
+function manualOrderShopifyLineText(order: Record<string, unknown>) {
+  const lineItems = order.lineItems ?? order.line_items;
+  const nodes = objectValue(lineItems).nodes;
+  const rows = Array.isArray(nodes) ? nodes.map(objectValue) : arrayRecords(lineItems);
+  return rows.map((item) => `${textValue(item.name)} ${textValue(item.title)}`).join(" ").toLowerCase();
+}
+
+function manualOrderMatchesShopifyOrder(manualOrder: ManualOrder, order: Record<string, unknown>) {
+  const discountCodes = manualOrderShopifyDiscountCodes(order);
+  if (discountCodes.includes(manualOrder.productDiscountCode.toUpperCase())) return true;
+
+  const phones = manualOrderShopifyPhones(order);
+  const phoneMatches = phones.includes(manualOrder.phoneNormalized);
+  if (!phoneMatches) return false;
+
+  const createdAt = Date.parse(textValue(order.createdAt ?? order.created_at));
+  const manualCreatedAt = Date.parse(manualOrder.createdAt);
+  const createdAfterManualOrder = !Number.isFinite(createdAt) || !Number.isFinite(manualCreatedAt) || createdAt >= manualCreatedAt - 60 * 60 * 1000;
+  if (!createdAfterManualOrder) return false;
+
+  const totalLooksManual = manualOrderShopifyTotal(order) <= 1;
+  const lineText = manualOrderShopifyLineText(order);
+  const productLooksRight = manualOrder.productDisplayName
+    .toLowerCase()
+    .split(/\s+-\s+|\s+/)
+    .filter((part) => part.length >= 3 && !["meaningful", "plushie", "seconds"].includes(part))
+    .some((part) => lineText.includes(part));
+  return totalLooksManual && productLooksRight;
+}
+
+function manualOrderMatchQueries(manualOrder: ManualOrder) {
+  const phone = manualOrder.phoneNormalized;
+  return [...new Set([
+    `discount_code:${manualOrder.productDiscountCode}`,
+    manualOrder.productDiscountCode,
+    phone ? `phone:${phone}` : "",
+    phone ? phone : "",
+    manualOrder.phoneOriginal ? normalizePhoneDigits(manualOrder.phoneOriginal) : "",
+  ].filter(Boolean))];
+}
+
+export async function findShopifyOrderForManualOrder(manualOrder: ManualOrder) {
+  const domain = shopDomain();
+  if (!domain) throw new Error("SHOPIFY_SHOP_DOMAIN is missing in Vercel.");
+
+  for (const queryText of manualOrderMatchQueries(manualOrder)) {
+    const result = await shopifyGraphql<{
+      data?: { orders?: { nodes?: Record<string, unknown>[] } };
+      errors?: { message?: string }[];
+    }>(domain, `
+      query ManualOrderMatch($query: String!) {
+        orders(first: 10, query: $query, sortKey: CREATED_AT, reverse: true) {
+          nodes {
+            id
+            legacyResourceId
+            name
+            createdAt
+            phone
+            currentTotalPriceSet { shopMoney { amount currencyCode } }
+            customer { phone }
+            shippingAddress { phone }
+            billingAddress { phone }
+            discountApplications(first: 10) {
+              nodes {
+                ... on DiscountCodeApplication { code title }
+                ... on ManualDiscountApplication { title }
+                ... on ScriptDiscountApplication { title }
+                ... on AutomaticDiscountApplication { title }
+              }
+            }
+            lineItems(first: 20) { nodes { name title } }
+          }
+        }
+      }
+    `, { query: queryText });
+
+    if (result?.errors?.length) throw new Error(result.errors.map((error) => error.message).filter(Boolean).join(" "));
+    const match = (result?.data?.orders?.nodes ?? []).find((order) => manualOrderMatchesShopifyOrder(manualOrder, objectValue(order)));
+    if (match) {
+      return {
+        shopifyOrderId: textValue(match.legacyResourceId) || textValue(match.id),
+        shopifyOrderName: textValue(match.name) || `#${cleanShopifyOrderNumber(textValue(match.legacyResourceId) || textValue(match.id))}`,
+        usedAt: textValue(match.createdAt) || new Date().toISOString(),
+      };
+    }
+  }
+  return null;
 }
 
 async function resolveManualOrderProductFromStorefront(input: ManualOrderCreateInput, product: ManualOrderProductConfig, productOnly = false) {

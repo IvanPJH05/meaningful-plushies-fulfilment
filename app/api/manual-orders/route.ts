@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { createManualOrderDiscounts, deactivateManualOrderDiscount } from "../../../lib/manual-orders";
+import { createManualOrderDiscounts, deactivateManualOrderDiscount, findShopifyOrderForManualOrder } from "../../../lib/manual-orders";
 import { fetchManualOrders, saveManualOrder, updateManualOrder } from "../../../lib/supabase";
 import type { ManualOrder } from "../../../lib/types";
 
@@ -44,11 +44,31 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const body = await request.json() as { action?: string; manualOrder?: ManualOrder };
-    if (body.action !== "cancel" || !body.manualOrder) return json(400, { ok: false, error: "Invalid manual order action." });
-    await deactivateManualOrderDiscount(body.manualOrder.productDiscountShopifyId);
-    await deactivateManualOrderDiscount(body.manualOrder.shippingDiscountShopifyId);
-    await updateManualOrder(body.manualOrder.id, { status: "cancelled" });
-    return json(200, { ok: true });
+    if (body.action === "cancel" && body.manualOrder) {
+      await deactivateManualOrderDiscount(body.manualOrder.productDiscountShopifyId);
+      await deactivateManualOrderDiscount(body.manualOrder.shippingDiscountShopifyId);
+      await updateManualOrder(body.manualOrder.id, { status: "cancelled" });
+      return json(200, { ok: true });
+    }
+
+    if (body.action === "refresh") {
+      const manualOrders = await fetchManualOrders();
+      let updated = 0;
+      for (const manualOrder of manualOrders.filter((order) => order.status === "active")) {
+        const match = await findShopifyOrderForManualOrder(manualOrder);
+        if (!match) continue;
+        await updateManualOrder(manualOrder.id, {
+          status: "used",
+          shopifyOrderId: match.shopifyOrderId,
+          shopifyOrderName: match.shopifyOrderName,
+          usedAt: match.usedAt,
+        });
+        updated += 1;
+      }
+      return json(200, { ok: true, updated, manualOrders: await fetchManualOrders() });
+    }
+
+    return json(400, { ok: false, error: "Invalid manual order action." });
   } catch (error) {
     return json(500, { ok: false, error: error instanceof Error ? error.message : "Manual order could not be updated." });
   }

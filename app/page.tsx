@@ -58,7 +58,6 @@ import {
   saveCreatorPayoutInfo,
   saveCreatorProfile,
   saveEnvelopePrintSettings,
-  saveManualOrder,
   saveMetaCapiSettings,
   saveSalesConsumptionMapping,
   saveStockSetting,
@@ -2439,21 +2438,16 @@ export default function Home() {
   async function refreshManualOrderStatuses() {
     setManualOrderBusy("refresh");
     try {
-      let updated = 0;
-      for (const manualOrder of manualOrders.filter((order) => order.status === "active")) {
-        const matchingOrder = orders.find((order) => (order.discountCodes ?? []).includes(manualOrder.productDiscountCode) || order.discountCodeUsed === manualOrder.productDiscountCode);
-        if (!matchingOrder) continue;
-        await saveManualOrder({
-          ...manualOrder,
-          status: "used",
-          shopifyOrderId: matchingOrder.id,
-          shopifyOrderName: `#${matchingOrder.orderNumber}`,
-          usedAt: matchingOrder.importedAt || new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        });
-        updated += 1;
-      }
-      await reloadManualOrders();
+      const response = await fetch("/api/manual-orders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "refresh" }),
+      });
+      const result = await response.json() as { ok?: boolean; updated?: number; manualOrders?: ManualOrder[]; error?: string };
+      if (!response.ok || !result.ok) throw new Error(result.error || "Manual order statuses could not be refreshed.");
+      const updated = result.updated ?? 0;
+      if (result.manualOrders) setManualOrders(result.manualOrders);
+      else await reloadManualOrders();
       setNotice(updated ? `${updated} manual order status${updated === 1 ? "" : "es"} refreshed.` : "Manual orders are already up to date.");
     } catch (error) {
       setNotice(readableError(error, "Manual order statuses could not be refreshed."));
@@ -7537,6 +7531,12 @@ function ManualOrdersWorkspacePage({
   });
   const lastOrder = manualOrders.find((order) => order.id === lastManualOrderId);
   const selectedProduct = manualOrderProducts.find((product) => product.key === form.productKey) ?? manualOrderProducts[0];
+  const statusLabel = (status: ManualOrder["status"]) => {
+    if (status === "used") return "Done";
+    if (status === "cancelled") return "Cancelled";
+    if (status === "expired") return "Expired";
+    return "Active";
+  };
   const speakerLabel = (productName: string) => {
     const match = productName.match(/(\d+)\s*seconds?/i);
     return match ? `${match[1]}s` : productName;
@@ -7582,7 +7582,7 @@ function ManualOrdersWorkspacePage({
               <span>Ready to send</span>
               <strong>{lastOrder.customerName}</strong>
             </div>
-            <em>{lastOrder.status}</em>
+            <em>{statusLabel(lastOrder.status)}</em>
           </div>
           <div className="manual-order-summary-grid">
             <div><span>Product</span><strong>{lastOrder.productDisplayName}</strong></div>
@@ -7622,7 +7622,7 @@ function ManualOrdersWorkspacePage({
               <td>{order.productDisplayName}</td>
               <td>{order.shippingRegion === "EAST" ? "East Malaysia" : "West Malaysia"}</td>
               <td><code>{order.productDiscountCode}</code></td>
-              <td><span className={`manual-order-status ${order.status}`}>{order.status}</span></td>
+              <td><span className={`manual-order-status ${order.status}`}>{statusLabel(order.status)}</span></td>
               <td>{order.shopifyOrderName ? <strong>{order.shopifyOrderName}</strong> : "-"}</td>
               <td><div className="manual-order-row-actions">
                 <button className="button secondary small" type="button" onClick={() => onCopy(order.customerLink, "Customer link")}>Copy Link</button>
