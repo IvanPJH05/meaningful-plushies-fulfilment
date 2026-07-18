@@ -36,6 +36,10 @@ function hashPreview(value: string | null | undefined) {
   return createHash("sha256").update(value || "").digest("hex").slice(0, 12);
 }
 
+function hashValue(value: string) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
 function messageType(type: string) {
   if (type === "image") return MessageType.IMAGE;
   if (type === "audio") return MessageType.AUDIO;
@@ -46,6 +50,47 @@ function messageType(type: string) {
 
 function jsonValue(value: unknown) {
   return JSON.parse(JSON.stringify(value));
+}
+
+async function recordRawWhatsAppWebhook(args: {
+  rawBody: string;
+  payload: unknown;
+  status: WebhookEventStatus;
+  parsedMessageCount?: number;
+  error?: string;
+}) {
+  const business = await ensureDefaultBusiness();
+  const externalEventId = hashValue(args.rawBody);
+  await prisma.webhookEvent.upsert({
+    where: {
+      businessId_source_externalEventId: {
+        businessId: business.id,
+        source: "meta_whatsapp_raw",
+        externalEventId,
+      },
+    },
+    update: {
+      payload: jsonValue({
+        raw: args.payload,
+        parsedMessageCount: args.parsedMessageCount ?? null,
+      }),
+      status: args.status,
+      processedAt: args.status === WebhookEventStatus.RECEIVED ? undefined : new Date(),
+      error: args.error || null,
+    },
+    create: {
+      businessId: business.id,
+      source: "meta_whatsapp_raw",
+      externalEventId,
+      payload: jsonValue({
+        raw: args.payload,
+        parsedMessageCount: args.parsedMessageCount ?? null,
+      }),
+      status: args.status,
+      processedAt: args.status === WebhookEventStatus.RECEIVED ? undefined : new Date(),
+      error: args.error || null,
+    },
+  });
 }
 
 type StoredWhatsAppMessage = {
@@ -399,7 +444,18 @@ export async function POST(request: Request) {
 
   try {
     const payload = JSON.parse(rawBody) as unknown;
+    await recordRawWhatsAppWebhook({
+      rawBody,
+      payload,
+      status: WebhookEventStatus.RECEIVED,
+    });
     const storedMessages = await storeWhatsAppMessages(payload);
+    await recordRawWhatsAppWebhook({
+      rawBody,
+      payload,
+      status: WebhookEventStatus.PROCESSED,
+      parsedMessageCount: storedMessages.length,
+    });
     const ai = [];
     for (const message of storedMessages) {
       if (message.direction === "inbound") {
@@ -408,6 +464,16 @@ export async function POST(request: Request) {
     }
     return json(200, { ok: true, stored: storedMessages.length, ai });
   } catch (error) {
+    try {
+      await recordRawWhatsAppWebhook({
+        rawBody,
+        payload: JSON.parse(rawBody) as unknown,
+        status: WebhookEventStatus.FAILED,
+        error: error instanceof Error ? error.message : "WhatsApp webhook could not be processed.",
+      });
+    } catch {
+      // If the payload itself is not valid JSON, keep the Meta response clean.
+    }
     return json(500, {
       ok: false,
       error: error instanceof Error ? error.message : "WhatsApp webhook could not be processed.",

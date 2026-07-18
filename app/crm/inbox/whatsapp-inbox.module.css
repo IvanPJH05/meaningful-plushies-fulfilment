@@ -1,8 +1,8 @@
 .page {
-  min-height: 100vh;
   background: #eef3f8;
   color: #102033;
-  padding: 24px;
+  min-height: 100vh;
+  padding: 18px;
 }
 
 .header {
@@ -13,28 +13,28 @@
   display: flex;
   gap: 18px;
   justify-content: space-between;
-  margin-bottom: 14px;
-  padding: 22px 24px;
+  margin-bottom: 12px;
+  padding: 18px 22px;
 }
 
 .eyebrow {
   color: #1d5ca8;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 900;
   letter-spacing: 0.18em;
-  margin: 0 0 8px;
+  margin: 0 0 7px;
   text-transform: uppercase;
 }
 
 .header h1 {
-  font-size: 32px;
+  font-size: 28px;
   line-height: 1;
-  margin: 0 0 8px;
+  margin: 0 0 7px;
 }
 
 .header span {
   color: #586a82;
-  font-size: 15px;
+  font-size: 14px;
 }
 
 .headerActions {
@@ -44,11 +44,11 @@
 
 .primaryButton,
 .secondaryButton {
-  border-radius: 12px;
+  border-radius: 11px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 900;
-  padding: 12px 16px;
+  padding: 11px 15px;
   text-decoration: none;
 }
 
@@ -77,8 +77,8 @@
   color: #0c4f96;
   display: flex;
   justify-content: space-between;
-  margin-bottom: 14px;
-  padding: 12px 16px;
+  margin-bottom: 12px;
+  padding: 11px 15px;
 }
 
 .notice button {
@@ -89,15 +89,124 @@
   font-size: 18px;
 }
 
-.inboxShell {
+.connectionPanel {
+  background: #ffffff;
+  border: 1px solid #d7e3f2;
+  border-radius: 16px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 12px;
+  padding: 12px;
+}
+
+.connectionPanel div {
+  background: #f7fbff;
+  border: 1px solid #e0e9f5;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.connectionPanel span,
+.connectionPanel small {
+  color: #60728a;
+  font-size: 11px;
+}
+
+.connectionPanel span {
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.connectionPanel strong {
+  color: #102033;
+  font-size: 18px;
+  line-height: 1.15;
+}
+
+.syncWarning {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 14px;
+  color: #7c2d12;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 12px;
+  padding: 13px 15px;
+}
+
+.syncWarning strong {
+  color: #9a3412;
+  font-size: 14px;
+}
+
+.syncWarning span {
+  color: #8a4b21;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.whatsappWorkspace {
   background: #fff;
   border: 1px solid #d7e3f2;
   border-radius: 18px;
   display: grid;
-  grid-template-columns: 360px minmax(0, 1fr);
-  height: calc(100vh - 158px);
-  min-height: 640px;
+  grid-template-columns: 78px 360px minmax(0, 1fr) 330px;
+  height: calc(100vh - 126px);
+  min-height: 680px;
   overflow: hidden;
+}
+
+@media (max-width: 1100px) {
+  .connectionPanel {
+    grid-template-columns: 1fr;
+  }
+}
+
+.workspaceRail {
+  align-items: stretch;
+  background: #102033;
+  border-right: 1px solid #0c1828;
+  color: #c9d7e8;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 10px;
+}
+
+.railLogo {
+  align-items: center;
+  background: #ffffff;
+  border-radius: 14px;
+  color: #0f2b4d;
+  display: flex;
+  font-size: 17px;
+  font-weight: 950;
+  height: 52px;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.workspaceRail a {
+  border-radius: 12px;
+  color: #b9cae0;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 11px 8px;
+  text-align: center;
+  text-decoration: none;
+}
+
+.workspaceRail a:hover,
+.workspaceRail .railActive {
+  background: #1c3b62;
+  color: #ffffff;
 }
 
 .conversationList {
@@ -108,9 +217,37 @@
   min-width: 0;
 }
 
+.listHeader {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  padding: 16px 16px 10px;
+}
+
+.listHeader h2 {
+  font-size: 22px;
+  margin: 0;
+}
+
+.listHeader p {
+  color: #667892;
+  font-size: 11px;
+  margin: 4px 0 0;
+}
+
+.listHeader button {
+  background: #ffffff;
+  border: 1px solid #cbd8e8;
+  border-radius: 999px;
+  color: #174d8f;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 8px 12px;
+}
+
 .searchBox {
-  border-bottom: 1px solid #d7e3f2;
-  padding: 14px;
+  padding: 0 14px 12px;
 }
 
 .searchBox input {
@@ -118,19 +255,65 @@
   border: 1px solid #cfdbeb;
   border-radius: 999px;
   color: #102033;
-  height: 42px;
+  height: 40px;
   padding: 0 15px;
   width: 100%;
 }
 
-.conversationCount {
-  color: #607089;
-  font-size: 12px;
+.filterPills {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  padding: 0 14px 12px;
+}
+
+.filterPills button {
+  background: #e9eff7;
+  border: 0;
+  border-radius: 999px;
+  color: #3d4e66;
+  cursor: pointer;
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 9px 12px;
+}
+
+.filterPills .activeFilter {
+  background: #ffffff;
+  box-shadow: 0 4px 13px rgba(16, 32, 51, 0.12);
+  color: #0750a4;
+}
+
+.inboxStats {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, 1fr);
+  padding: 0 14px 12px;
+}
+
+.inboxStats span {
+  background: #ffffff;
+  border: 1px solid #e2ebf5;
+  border-radius: 12px;
+  color: #102033;
+  display: flex;
+  flex-direction: column;
+  font-size: 16px;
+  font-weight: 950;
+  padding: 9px 8px;
+  text-align: center;
+}
+
+.inboxStats small {
+  color: #697c96;
+  font-size: 9px;
   font-weight: 800;
-  padding: 10px 16px;
+  margin-top: 2px;
 }
 
 .conversationRows {
+  border-top: 1px solid #e4edf7;
   overflow: auto;
 }
 
@@ -161,7 +344,7 @@
   border-radius: 999px;
   color: white;
   display: inline-flex;
-  font-weight: 900;
+  font-weight: 950;
   justify-content: center;
 }
 
@@ -171,7 +354,7 @@
 }
 
 .avatarLarge {
-  font-size: 20px;
+  font-size: 18px;
   height: 50px;
   width: 50px;
 }
@@ -229,10 +412,11 @@
 
 .chatPanel {
   background:
-    radial-gradient(circle at top left, rgba(23, 105, 224, 0.08), transparent 30%),
-    #edf3f8;
+    linear-gradient(rgba(237, 243, 248, 0.92), rgba(237, 243, 248, 0.92)),
+    radial-gradient(circle at 20% 20%, rgba(23, 105, 224, 0.12), transparent 26%),
+    radial-gradient(circle at 80% 10%, rgba(18, 135, 92, 0.11), transparent 24%);
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   min-width: 0;
 }
 
@@ -241,8 +425,9 @@
   background: rgba(255, 255, 255, 0.96);
   border-bottom: 1px solid #d7e3f2;
   display: flex;
+  gap: 12px;
   justify-content: space-between;
-  padding: 14px 18px;
+  padding: 13px 16px;
 }
 
 .chatIdentity {
@@ -262,21 +447,22 @@
   margin: 0;
 }
 
-.chatBadges {
+.chatControls {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
 }
 
-.chatBadges span {
-  background: #eaf3ff;
-  border-radius: 999px;
-  color: #174d8f;
+.chatControls select {
+  background: #ffffff;
+  border: 1px solid #cbd8e8;
+  border-radius: 11px;
+  color: #102033;
   font-size: 12px;
-  font-weight: 900;
-  padding: 8px 10px;
-  text-transform: capitalize;
+  font-weight: 850;
+  height: 40px;
+  padding: 0 10px;
 }
 
 .messageStream {
@@ -291,7 +477,7 @@
   border: 1px solid #d7e3f2;
   border-radius: 18px;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
-  max-width: min(680px, 80%);
+  max-width: min(720px, 82%);
   padding: 12px 14px;
 }
 
@@ -355,6 +541,43 @@
   padding: 7px 10px;
 }
 
+.attachmentList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 8px 0;
+}
+
+.attachmentList span {
+  background: #eaf3ff;
+  border-radius: 999px;
+  color: #174d8f;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 6px 9px;
+}
+
+.quickReplies {
+  background: rgba(255, 255, 255, 0.96);
+  border-top: 1px solid #d7e3f2;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 10px 14px;
+}
+
+.quickReplies button {
+  background: #eef5ff;
+  border: 1px solid #cbdff7;
+  border-radius: 999px;
+  color: #174d8f;
+  cursor: pointer;
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 9px 12px;
+}
+
 .composer {
   align-items: flex-end;
   background: rgba(255, 255, 255, 0.96);
@@ -383,9 +606,147 @@
   color: #102033;
 }
 
-@media (max-width: 980px) {
+.detailPanel {
+  background: #f8fbff;
+  border-left: 1px solid #d7e3f2;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+  padding: 14px;
+}
+
+.detailCard {
+  background: #ffffff;
+  border: 1px solid #dbe6f3;
+  border-radius: 16px;
+  padding: 15px;
+}
+
+.profileHeader {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.profileHeader h3 {
+  font-size: 17px;
+  margin: 0 0 4px;
+}
+
+.profileHeader p {
+  color: #667892;
+  margin: 0;
+}
+
+.detailGrid {
+  display: grid;
+  gap: 9px 10px;
+  grid-template-columns: 95px minmax(0, 1fr);
+}
+
+.detailGrid span {
+  color: #6b7c94;
+  font-size: 12px;
+}
+
+.detailGrid strong {
+  color: #102033;
+  font-size: 12px;
+  text-transform: capitalize;
+}
+
+.summaryGrid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.summaryGrid span {
+  background: #eef5ff;
+  border-radius: 12px;
+  color: #174d8f;
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+  text-align: center;
+}
+
+.summaryGrid strong {
+  font-size: 18px;
+}
+
+.summaryGrid small {
+  color: #607089;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.actionStack {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.actionStack button,
+.fullWidthButton {
+  background: #ffffff;
+  border: 1px solid #cbd8e8;
+  border-radius: 11px;
+  color: #174d8f;
+  cursor: pointer;
+  display: block;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 10px 12px;
+  text-align: center;
+  text-decoration: none;
+}
+
+.fullWidthButton {
+  margin-top: 12px;
+}
+
+.contextRows {
+  display: grid;
+  gap: 8px;
+}
+
+.contextRow {
+  background: #f6f9fd;
+  border: 1px solid #e2ebf5;
+  border-radius: 12px;
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+}
+
+.contextRow strong {
+  color: #102033;
+  font-size: 13px;
+}
+
+.contextRow span,
+.contextRow small,
+.muted {
+  color: #65758d;
+  font-size: 12px;
+}
+
+@media (max-width: 1300px) {
+  .whatsappWorkspace {
+    grid-template-columns: 70px 330px minmax(0, 1fr);
+  }
+
+  .detailPanel {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
   .page {
-    padding: 14px;
+    padding: 12px;
   }
 
   .header,
@@ -394,13 +755,29 @@
     flex-direction: column;
   }
 
-  .inboxShell {
+  .whatsappWorkspace {
     grid-template-columns: 1fr;
     height: auto;
   }
 
+  .workspaceRail {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+
+  .railLogo {
+    flex: 0 0 52px;
+    margin-bottom: 0;
+  }
+
+  .workspaceRail a {
+    align-items: center;
+    display: flex;
+    min-width: fit-content;
+  }
+
   .conversationList {
-    max-height: 340px;
+    max-height: 440px;
   }
 
   .chatPanel {

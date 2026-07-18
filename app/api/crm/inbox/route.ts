@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import {
+  AiMode,
+  ConversationStatus,
   MessageDirection,
   MessageSenderType,
   MessageStatus,
@@ -30,6 +32,20 @@ function messagePreview(body: string | null | undefined) {
   return text.length > 80 ? `${text.slice(0, 80)}...` : text;
 }
 
+function decimalNumber(value: unknown) {
+  if (value === null || value === undefined) return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function isConversationStatus(value: unknown): value is ConversationStatus {
+  return typeof value === "string" && Object.values(ConversationStatus).includes(value as ConversationStatus);
+}
+
+function isAiMode(value: unknown): value is AiMode {
+  return typeof value === "string" && Object.values(AiMode).includes(value as AiMode);
+}
+
 async function getInbox(conversationId?: string | null) {
   const business = await ensureDefaultBusiness();
   const conversations = await prisma.conversation.findMany({
@@ -50,10 +66,19 @@ async function getInbox(conversationId?: string | null) {
 
   const selectedConversationId = conversationId || conversations[0]?.id || null;
   const selectedConversation = selectedConversationId
-    ? conversations.find((item) => item.id === selectedConversationId)
-      || await prisma.conversation.findFirst({
+    ? await prisma.conversation.findFirst({
         where: { businessId: business.id, id: selectedConversationId },
-        include: { contact: true },
+        include: {
+          contact: true,
+          leads: {
+            orderBy: { updatedAt: "desc" },
+            take: 5,
+          },
+          aiCommands: {
+            orderBy: { createdAt: "desc" },
+            take: 5,
+          },
+        },
       })
     : null;
 
@@ -105,7 +130,33 @@ async function getInbox(conversationId?: string | null) {
           waId: selectedConversation.contact.waId,
           phone: selectedConversation.contact.phone,
           displayName: selectedConversation.contact.displayName || selectedConversation.contact.phone || selectedConversation.contact.waId || "WhatsApp customer",
+          email: selectedConversation.contact.email,
+          source: selectedConversation.contact.source,
+          tags: selectedConversation.contact.tags,
         },
+        leads: selectedConversation.leads.map((lead) => ({
+          id: lead.id,
+          stage: lead.stage,
+          temperature: lead.temperature,
+          customerName: lead.customerName,
+          phone: lead.phone,
+          requestedCharacter: lead.requestedCharacter,
+          requestedVoice: lead.requestedVoice,
+          estimatedValue: decimalNumber(lead.estimatedValue),
+          paymentStatus: lead.paymentStatus,
+          paidAmount: decimalNumber(lead.paidAmount),
+          manualOrderId: lead.manualOrderId,
+          manualOrderLinkSentAt: serializeDate(lead.manualOrderLinkSentAt),
+          updatedAt: serializeDate(lead.updatedAt),
+        })),
+        commands: selectedConversation.aiCommands.map((command) => ({
+          id: command.id,
+          type: command.type,
+          status: command.status,
+          error: command.error,
+          executedAt: serializeDate(command.executedAt),
+          createdAt: serializeDate(command.createdAt),
+        })),
       }
       : null,
     messages: messages.map((message) => ({
@@ -139,6 +190,72 @@ export async function GET(request: Request) {
     return json(500, {
       ok: false,
       error: error instanceof Error ? error.message : "CRM inbox could not be loaded.",
+    });
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const business = await ensureDefaultBusiness();
+    const body = await request.json().catch(() => ({})) as {
+      conversationId?: string;
+      status?: unknown;
+      aiMode?: unknown;
+      displayName?: unknown;
+    };
+
+    if (!body.conversationId) {
+      return json(400, { ok: false, error: "conversationId is required." });
+    }
+
+    const conversation = await prisma.conversation.findFirst({
+      where: { businessId: business.id, id: body.conversationId },
+      include: { contact: true },
+    });
+    if (!conversation) {
+      return json(404, { ok: false, error: "Conversation not found." });
+    }
+
+    const conversationData: {
+      status?: ConversationStatus;
+      aiMode?: AiMode;
+      unreadCount?: number;
+    } = {};
+    if (body.status !== undefined) {
+      if (!isConversationStatus(body.status)) {
+        return json(400, { ok: false, error: "Choose a valid conversation status." });
+      }
+      conversationData.status = body.status;
+      if (body.status !== ConversationStatus.WAITING_TEAM) {
+        conversationData.unreadCount = 0;
+      }
+    }
+    if (body.aiMode !== undefined) {
+      if (!isAiMode(body.aiMode)) {
+        return json(400, { ok: false, error: "Choose a valid AI mode." });
+      }
+      conversationData.aiMode = body.aiMode;
+    }
+
+    if (Object.keys(conversationData).length) {
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: conversationData,
+      });
+    }
+
+    if (typeof body.displayName === "string" && body.displayName.trim()) {
+      await prisma.contact.update({
+        where: { id: conversation.contact.id },
+        data: { displayName: body.displayName.trim() },
+      });
+    }
+
+    return json(200, { ok: true, inbox: await getInbox(body.conversationId) });
+  } catch (error) {
+    return json(500, {
+      ok: false,
+      error: error instanceof Error ? error.message : "Conversation could not be updated.",
     });
   }
 }

@@ -15,6 +15,7 @@ import {
 import { getMissingPhase2Env, getMissingPhase3Env } from "../src/shared/validation/env.ts";
 import { verifyMetaWebhookSignature } from "../src/modules/whatsapp/meta-signature.ts";
 import { buildWhatsAppTextPayload, sendWhatsAppTextMessage } from "../src/modules/whatsapp/outbound.ts";
+import { verifyWebhookChallenge } from "../src/modules/whatsapp/webhook-verification.ts";
 import { normalizeWhatsAppWebhookPayload } from "../src/modules/whatsapp/webhook-normalizer.ts";
 
 test("paid manual order commands are blocked before payment confirmation", () => {
@@ -134,6 +135,22 @@ test("Meta webhook signature verification accepts valid signed payloads", () => 
 
   assert.equal(verifyMetaWebhookSignature(rawBody, signature, secret), true);
   assert.equal(verifyMetaWebhookSignature(rawBody, "sha256=bad", secret), false);
+});
+
+test("WhatsApp webhook verification tolerates copied token whitespace and quotes", () => {
+  assert.equal(verifyWebhookChallenge({
+    mode: "subscribe",
+    token: " verify-token ",
+    expectedToken: "\"verify-token\"",
+    challenge: "123",
+  }), true);
+
+  assert.equal(verifyWebhookChallenge({
+    mode: "subscribe",
+    token: "wrong",
+    expectedToken: "verify-token",
+    challenge: "123",
+  }), false);
 });
 
 test("WhatsApp webhooks normalize inbound customer text messages", () => {

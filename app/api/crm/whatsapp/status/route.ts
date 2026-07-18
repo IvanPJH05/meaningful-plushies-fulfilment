@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 
+import { prisma } from "@/src/infrastructure/database/prisma";
+import { ensureDefaultBusiness } from "@/src/modules/businesses/default-business";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -23,6 +26,19 @@ function json(status: number, body: Record<string, unknown>) {
   return NextResponse.json(body, { status });
 }
 
+function serializeDate(value: Date | null | undefined) {
+  return value ? value.toISOString() : null;
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function numberValue(value: unknown) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
 async function graphGet(path: string, accessToken: string) {
   const graphVersion = process.env.META_GRAPH_API_VERSION || "v20.0";
   const url = new URL(`https://graph.facebook.com/${graphVersion}/${path}`);
@@ -43,6 +59,72 @@ async function graphGet(path: string, accessToken: string) {
   }
 
   return { ok: true, status: response.status, data } as const;
+}
+
+async function getWebhookActivity() {
+  try {
+    const business = await ensureDefaultBusiness();
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const [rawLast24h, parsedLast24h, recent] = await Promise.all([
+      prisma.webhookEvent.count({
+        where: {
+          businessId: business.id,
+          source: "meta_whatsapp_raw",
+          receivedAt: { gte: since },
+        },
+      }),
+      prisma.webhookEvent.count({
+        where: {
+          businessId: business.id,
+          source: "meta_whatsapp",
+          receivedAt: { gte: since },
+        },
+      }),
+      prisma.webhookEvent.findMany({
+        where: {
+          businessId: business.id,
+          source: { in: ["meta_whatsapp_raw", "meta_whatsapp"] },
+        },
+        orderBy: { receivedAt: "desc" },
+        take: 12,
+        select: {
+          source: true,
+          externalEventId: true,
+          status: true,
+          receivedAt: true,
+          processedAt: true,
+          error: true,
+          payload: true,
+        },
+      }),
+    ]);
+
+    return {
+      ok: true,
+      rawLast24h,
+      parsedLast24h,
+      latestRawReceivedAt: serializeDate(recent.find((row) => row.source === "meta_whatsapp_raw")?.receivedAt),
+      latestParsedReceivedAt: serializeDate(recent.find((row) => row.source === "meta_whatsapp")?.receivedAt),
+      recent: recent.map((row) => {
+        const payload = objectValue(row.payload);
+        return {
+          source: row.source,
+          eventHash: row.externalEventId.slice(0, 12),
+          status: row.status,
+          receivedAt: serializeDate(row.receivedAt),
+          processedAt: serializeDate(row.processedAt),
+          parsedMessageCount: numberValue(payload.parsedMessageCount),
+          direction: typeof payload.direction === "string" ? payload.direction : null,
+          error: row.error,
+        };
+      }),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : "Webhook activity could not be loaded.",
+    };
+  }
 }
 
 export async function GET() {
@@ -103,6 +185,8 @@ export async function GET() {
       error: "WHATSAPP_BUSINESS_ACCOUNT_ID is required to verify whether this app is subscribed to WhatsApp webhooks.",
     };
 
+  const webhookActivity = await getWebhookActivity();
+
   return json(200, {
     ...base,
     phoneCheck,
@@ -112,6 +196,7 @@ export async function GET() {
     effectiveWabaId: wabaId || null,
     wabaPhoneNumbersCheck,
     subscribedAppsCheck,
+    webhookActivity,
     note: "No access token value is returned by this endpoint.",
   });
 }
