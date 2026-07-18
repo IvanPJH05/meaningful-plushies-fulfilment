@@ -8,9 +8,12 @@ import { paidManualOrderPhase2Policy } from "@/src/modules/sales/paid-manual-ord
 import {
   getMissingPhase1Env,
   getMissingPhase2Env,
+  getMissingPhase3Env,
   hasMetaWebhookSecret,
+  hasOpenAiApiKey,
   hasShopifyAdminAuth,
 } from "@/src/shared/validation/env";
+import { crmAiAutoReplyEnabled, crmAiSuggestEnabled, whatsappAssistantModel } from "@/src/modules/openai/whatsapp-assistant";
 
 const webhookEndpoint = "/api/crm/whatsapp/webhook";
 const commandEndpoint = "/api/crm/ai/commands/manual-order";
@@ -39,14 +42,19 @@ function StatusRow(props: { label: string; ready: boolean; detail: string }) {
 export default function CrmPhaseOnePage() {
   const missingEnv = getMissingPhase1Env();
   const missingPhase2Env = getMissingPhase2Env();
+  const missingPhase3Env = getMissingPhase3Env();
   const baseUrl = getPublicBaseUrl();
   const webhookUrl = `${baseUrl}${webhookEndpoint}`;
   const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN || "Not configured yet";
   const shopifyReady = hasShopifyAdminAuth();
   const metaWebhookSecretReady = hasMetaWebhookSecret();
   const whatsappSendReady = Boolean(process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID);
+  const openAiReady = hasOpenAiApiKey();
+  const aiSuggestReady = crmAiSuggestEnabled();
+  const aiAutoReplyReady = crmAiAutoReplyEnabled();
   const databaseReady = Boolean(process.env.DATABASE_URL);
   const phase2Ready = missingPhase2Env.length === 0;
+  const phase3Ready = missingPhase3Env.length === 0;
 
   return (
     <main className={styles.page}>
@@ -75,6 +83,10 @@ export default function CrmPhaseOnePage() {
         <div className={`${styles.card} ${phase2Ready ? styles.cardReady : styles.cardMissing}`}>
           <p className={styles.cardTitle}>Phase 2 readiness</p>
           <p className={styles.cardValue}>{phase2Ready ? "Ready" : `${missingPhase2Env.length} left`}</p>
+        </div>
+        <div className={`${styles.card} ${phase3Ready ? styles.cardReady : styles.cardMissing}`}>
+          <p className={styles.cardTitle}>ChatGPT connection</p>
+          <p className={styles.cardValue}>{phase3Ready ? "Ready" : `${missingPhase3Env.length} left`}</p>
         </div>
       </section>
 
@@ -109,6 +121,16 @@ export default function CrmPhaseOnePage() {
               label="WhatsApp send access"
               ready={whatsappSendReady}
               detail="Needs WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID before the app can send messages."
+            />
+            <StatusRow
+              label="ChatGPT / OpenAI"
+              ready={openAiReady}
+              detail={`Uses OPENAI_API_KEY. Model: ${whatsappAssistantModel()}.`}
+            />
+            <StatusRow
+              label="AI reply mode"
+              ready={aiSuggestReady || aiAutoReplyReady}
+              detail={aiAutoReplyReady ? "Automatic WhatsApp replies are enabled." : "Suggest-only mode is enabled. Set CRM_AI_AUTO_REPLY=true only when ready for live replies."}
             />
           </div>
         </div>
@@ -160,6 +182,9 @@ export default function CrmPhaseOnePage() {
             commandEndpoint,
             webhookEndpoint,
             missingPhase2Env,
+            missingPhase3Env,
+            aiReplyMode: aiAutoReplyReady ? "auto_reply" : aiSuggestReady ? "suggest_only" : "off",
+            openAiModel: whatsappAssistantModel(),
           }, null, 2)}</pre>
         </div>
 

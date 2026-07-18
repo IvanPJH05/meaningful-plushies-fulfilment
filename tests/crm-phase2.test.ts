@@ -3,10 +3,16 @@ import { createHmac } from "node:crypto";
 import test from "node:test";
 
 import {
+  buildWhatsAppAssistantInput,
+  buildWhatsAppAssistantInstructions,
+  createWhatsAppAssistantReply,
+  crmAiAutoReplyEnabled,
+} from "../src/modules/openai/whatsapp-assistant.ts";
+import {
   buildManualOrderReadyWhatsAppMessage,
   buildPaidManualOrderCommand,
 } from "../src/modules/sales/paid-manual-order-flow.ts";
-import { getMissingPhase2Env } from "../src/shared/validation/env.ts";
+import { getMissingPhase2Env, getMissingPhase3Env } from "../src/shared/validation/env.ts";
 import { verifyMetaWebhookSignature } from "../src/modules/whatsapp/meta-signature.ts";
 import { buildWhatsAppTextPayload, sendWhatsAppTextMessage } from "../src/modules/whatsapp/outbound.ts";
 import { normalizeWhatsAppWebhookPayload } from "../src/modules/whatsapp/webhook-normalizer.ts";
@@ -65,6 +71,60 @@ test("phase 2 accepts Shopify client credentials when admin token is not present
   });
 
   assert.deepEqual(missing, []);
+});
+
+test("phase 3 reports OpenAI key as the remaining ChatGPT setup item", () => {
+  const missing = getMissingPhase3Env({
+    DATABASE_URL: "postgresql://user:pass@example.com:5432/postgres",
+    WHATSAPP_VERIFY_TOKEN: "verify-token",
+    WHATSAPP_ACCESS_TOKEN: "whatsapp-token",
+    WHATSAPP_PHONE_NUMBER_ID: "12345",
+    WHATSAPP_WEBHOOK_SECRET: "webhook-secret",
+    SHOPIFY_SHOP_DOMAIN: "meaningful-plushies.myshopify.com",
+    SHOPIFY_CLIENT_ID: "client-id",
+    SHOPIFY_CLIENT_SECRET: "client-secret",
+  });
+
+  assert.deepEqual(missing, ["OPENAI_API_KEY"]);
+});
+
+test("WhatsApp assistant builds a direct sales reply prompt", () => {
+  const instructions = buildWhatsAppAssistantInstructions({
+    customerName: "Sarah",
+    customerPhone: "60123456789",
+    latestMessage: "Hi, I want Hunnie 10s",
+  });
+  const input = buildWhatsAppAssistantInput({
+    latestMessage: "Hi, I want Hunnie 10s",
+    recentMessages: [
+      { direction: "customer", body: "Hello" },
+      { direction: "assistant", body: "Hi, how can I help?" },
+    ],
+  });
+
+  assert.match(instructions, /WhatsApp sales assistant/);
+  assert.match(instructions, /Do not create or promise a Shopify checkout link/);
+  assert.match(input, /Recent conversation/);
+  assert.match(input, /Latest customer message/);
+});
+
+test("WhatsApp assistant does not call OpenAI when the API key is missing", async () => {
+  const previousKey = process.env.OPENAI_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  try {
+    const result = await createWhatsAppAssistantReply({
+      latestMessage: "I want to buy",
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, "missing_openai_api_key");
+  } finally {
+    if (previousKey) process.env.OPENAI_API_KEY = previousKey;
+  }
+});
+
+test("WhatsApp assistant auto reply requires an explicit environment switch", () => {
+  assert.equal(crmAiAutoReplyEnabled({}), false);
+  assert.equal(crmAiAutoReplyEnabled({ CRM_AI_AUTO_REPLY: "true" }), true);
 });
 
 test("Meta webhook signature verification accepts valid signed payloads", () => {

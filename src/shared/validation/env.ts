@@ -16,6 +16,12 @@ export const crmServerEnvSchema = z.object({
   SHOPIFY_ADMIN_ACCESS_TOKEN: z.string().optional(),
   SHOPIFY_CLIENT_ID: z.string().optional(),
   SHOPIFY_CLIENT_SECRET: z.string().optional(),
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_MODEL: z.string().optional(),
+  CRM_OPENAI_MODEL: z.string().optional(),
+  CRM_AI_AUTO_REPLY: z.string().optional(),
+  WHATSAPP_AI_AUTO_REPLY: z.string().optional(),
+  CRM_AI_SUGGEST_REPLY: z.string().optional(),
   S3_ENDPOINT: z.string().optional(),
   S3_BUCKET: z.string().optional(),
   S3_ACCESS_KEY_ID: z.string().optional(),
@@ -39,6 +45,10 @@ export function hasShopifyAdminAuth(input: EnvLookup = process.env): boolean {
     input.SHOPIFY_ADMIN_ACCESS_TOKEN ||
       (input.SHOPIFY_CLIENT_ID && input.SHOPIFY_CLIENT_SECRET),
   );
+}
+
+export function hasOpenAiApiKey(input: EnvLookup = process.env): boolean {
+  return Boolean(input.OPENAI_API_KEY);
 }
 
 export function getMissingPhase1Env(input: EnvLookup = process.env): string[] {
@@ -72,6 +82,14 @@ export function getMissingPhase2Env(input: EnvLookup = process.env): string[] {
   }
   if (!hasShopifyAdminAuth(input)) {
     missing.push("SHOPIFY_ADMIN_ACCESS_TOKEN or SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET");
+  }
+  return missing;
+}
+
+export function getMissingPhase3Env(input: EnvLookup = process.env): string[] {
+  const missing = getMissingPhase2Env(input);
+  if (!hasOpenAiApiKey(input)) {
+    missing.push("OPENAI_API_KEY");
   }
   return missing;
 }
