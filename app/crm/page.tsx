@@ -156,7 +156,7 @@ export default function CrmPhaseOnePage() {
             </div>
             <div className={styles.setupBox}>
               <p className={styles.setupLabel}>Subscribe to fields</p>
-              <code>messages, message_template_status_update, phone_number_name_update</code>
+              <code>messages, history, smb_message_echoes, message_template_status_update, phone_number_name_update</code>
             </div>
           </div>
         </div>
