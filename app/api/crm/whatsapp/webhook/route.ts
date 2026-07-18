@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import {
   AiCommandStatus,
   AiCommandType,
+  ConversationStatus,
   MessageDirection,
   MessageSenderType,
   MessageStatus,
@@ -21,12 +23,17 @@ import {
 } from "@/src/modules/openai/whatsapp-assistant";
 import { verifyMetaWebhookSignature } from "@/src/modules/whatsapp/meta-signature";
 import { sendWhatsAppTextMessage } from "@/src/modules/whatsapp/outbound";
+import { verifyWebhookChallenge } from "@/src/modules/whatsapp/webhook-verification";
 import { normalizeWhatsAppWebhookPayload } from "@/src/modules/whatsapp/webhook-normalizer";
 
 export const runtime = "nodejs";
 
 function json(status: number, body: Record<string, unknown>) {
   return NextResponse.json(body, { status });
+}
+
+function hashPreview(value: string | null | undefined) {
+  return createHash("sha256").update(value || "").digest("hex").slice(0, 12);
 }
 
 function messageType(type: string) {
@@ -41,12 +48,13 @@ function jsonValue(value: unknown) {
   return JSON.parse(JSON.stringify(value));
 }
 
-type StoredInboundMessage = {
+type StoredWhatsAppMessage = {
   businessId: string;
   conversationId: string;
   contactId: string;
   customerName: string;
   waId: string;
+  direction: "inbound" | "outbound";
   text: string;
   messageType: MessageType;
   created: boolean;
@@ -62,7 +70,7 @@ function assistantHistoryDirection(message: {
   return "team";
 }
 
-async function handleAiForInboundMessage(item: StoredInboundMessage) {
+async function handleAiForInboundMessage(item: StoredWhatsAppMessage) {
   if (!item.created || item.messageType !== MessageType.TEXT || !item.text.trim()) {
     return { skipped: true, reason: "not_new_customer_text" };
   }
@@ -195,32 +203,37 @@ async function handleAiForInboundMessage(item: StoredInboundMessage) {
   };
 }
 
-async function storeInboundMessages(rawPayload: unknown) {
+async function storeWhatsAppMessages(rawPayload: unknown) {
   const business = await ensureDefaultBusiness();
   const normalizedMessages = normalizeWhatsAppWebhookPayload(rawPayload);
-  const storedMessages: StoredInboundMessage[] = [];
+  const storedMessages: StoredWhatsAppMessage[] = [];
 
   for (const message of normalizedMessages) {
     if (!message.messageId || !message.waId) continue;
+    const isInbound = message.direction === "inbound";
+    const direction = isInbound ? MessageDirection.INBOUND : MessageDirection.OUTBOUND;
+    const senderType = isInbound ? MessageSenderType.CUSTOMER : MessageSenderType.TEAM;
+    const status = isInbound ? MessageStatus.DELIVERED : MessageStatus.SENT;
+    const displayName = message.displayName.trim();
 
     await prisma.webhookEvent.upsert({
       where: {
         businessId_source_externalEventId: {
           businessId: business.id,
           source: "meta_whatsapp",
-          externalEventId: message.messageId,
+          externalEventId: `${message.direction}:${message.messageId}`,
         },
       },
       update: {
-        payload: jsonValue(message.raw),
+        payload: jsonValue({ direction: message.direction, raw: message.raw }),
         status: WebhookEventStatus.PROCESSED,
         processedAt: new Date(),
       },
       create: {
         businessId: business.id,
         source: "meta_whatsapp",
-        externalEventId: message.messageId,
-        payload: jsonValue(message.raw),
+        externalEventId: `${message.direction}:${message.messageId}`,
+        payload: jsonValue({ direction: message.direction, raw: message.raw }),
         status: WebhookEventStatus.PROCESSED,
         processedAt: new Date(),
       },
@@ -235,34 +248,38 @@ async function storeInboundMessages(rawPayload: unknown) {
       },
       update: {
         phone: message.waId,
-        displayName: message.displayName || undefined,
+        displayName: displayName || undefined,
       },
       create: {
         businessId: business.id,
         waId: message.waId,
         phone: message.waId,
-        displayName: message.displayName || undefined,
+        displayName: displayName || undefined,
         source: "whatsapp",
       },
     });
 
-    const conversation = await prisma.conversation.findFirst({
+    let conversation = await prisma.conversation.findFirst({
       where: {
         businessId: business.id,
         contactId: contact.id,
         status: { notIn: ["RESOLVED", "ARCHIVED"] },
       },
       orderBy: { updatedAt: "desc" },
-    }) ?? await prisma.conversation.create({
-      data: {
-        businessId: business.id,
-        contactId: contact.id,
-        lastMessageAt: message.timestamp,
-        unreadCount: 1,
-      },
     });
+    if (!conversation) {
+      conversation = await prisma.conversation.create({
+        data: {
+          businessId: business.id,
+          contactId: contact.id,
+          status: isInbound ? ConversationStatus.WAITING_TEAM : ConversationStatus.WAITING_CUSTOMER,
+          lastMessageAt: message.timestamp,
+          unreadCount: 0,
+        },
+      });
+    }
 
-    const existingInboundMessage = await prisma.message.findUnique({
+    const existingMessage = await prisma.message.findUnique({
       where: {
         businessId_externalMessageId: {
           businessId: business.id,
@@ -280,19 +297,37 @@ async function storeInboundMessages(rawPayload: unknown) {
       },
       update: {
         body: message.text,
-        metadata: jsonValue({ phoneNumberId: message.phoneNumberId, raw: message.raw }),
+        direction,
+        senderType,
+        messageType: messageType(message.messageType),
+        status,
+        metadata: jsonValue({
+          direction: message.direction,
+          phoneNumberId: message.phoneNumberId,
+          source: "meta_whatsapp_webhook",
+          raw: message.raw,
+        }),
+        sentAt: isInbound ? undefined : message.timestamp,
+        deliveredAt: isInbound ? message.timestamp : undefined,
       },
       create: {
         businessId: business.id,
         conversationId: conversation.id,
         externalMessageId: message.messageId,
-        direction: MessageDirection.INBOUND,
-        senderType: MessageSenderType.CUSTOMER,
+        direction,
+        senderType,
         messageType: messageType(message.messageType),
         body: message.text,
-        status: MessageStatus.DELIVERED,
-        metadata: jsonValue({ phoneNumberId: message.phoneNumberId, raw: message.raw }),
-        deliveredAt: message.timestamp,
+        status,
+        metadata: jsonValue({
+          direction: message.direction,
+          phoneNumberId: message.phoneNumberId,
+          source: "meta_whatsapp_webhook",
+          raw: message.raw,
+        }),
+        createdAt: message.timestamp,
+        sentAt: isInbound ? undefined : message.timestamp,
+        deliveredAt: isInbound ? message.timestamp : undefined,
       },
     });
 
@@ -300,7 +335,12 @@ async function storeInboundMessages(rawPayload: unknown) {
       where: { id: conversation.id },
       data: {
         lastMessageAt: message.timestamp,
-        unreadCount: { increment: 1 },
+        ...(!existingMessage && isInbound
+          ? { status: ConversationStatus.WAITING_TEAM, unreadCount: { increment: 1 } }
+          : {}),
+        ...(!existingMessage && !isInbound
+          ? { status: ConversationStatus.WAITING_CUSTOMER, unreadCount: 0 }
+          : {}),
       },
     });
 
@@ -308,11 +348,12 @@ async function storeInboundMessages(rawPayload: unknown) {
       businessId: business.id,
       conversationId: conversation.id,
       contactId: contact.id,
-      customerName: message.displayName,
+      customerName: displayName,
       waId: message.waId,
+      direction: message.direction,
       text: message.text,
       messageType: messageType(message.messageType),
-      created: !existingInboundMessage,
+      created: !existingMessage,
     });
   }
 
@@ -325,9 +366,24 @@ export async function GET(request: Request) {
   const token = url.searchParams.get("hub.verify_token");
   const challenge = url.searchParams.get("hub.challenge");
 
-  if (mode === "subscribe" && token && token === process.env.WHATSAPP_VERIFY_TOKEN && challenge) {
+  if (verifyWebhookChallenge({
+    mode,
+    token,
+    expectedToken: process.env.WHATSAPP_VERIFY_TOKEN,
+    challenge,
+  })) {
     return new NextResponse(challenge, { status: 200 });
   }
+
+  console.warn("WhatsApp webhook verification failed", {
+    hasMode: Boolean(mode),
+    mode,
+    hasChallenge: Boolean(challenge),
+    providedTokenLength: token?.length ?? 0,
+    expectedTokenLength: process.env.WHATSAPP_VERIFY_TOKEN?.length ?? 0,
+    providedTokenHash: hashPreview(token),
+    expectedTokenHash: hashPreview(process.env.WHATSAPP_VERIFY_TOKEN),
+  });
 
   return json(403, { ok: false, error: "WhatsApp webhook verification failed." });
 }
@@ -343,10 +399,12 @@ export async function POST(request: Request) {
 
   try {
     const payload = JSON.parse(rawBody) as unknown;
-    const storedMessages = await storeInboundMessages(payload);
+    const storedMessages = await storeWhatsAppMessages(payload);
     const ai = [];
     for (const message of storedMessages) {
-      ai.push(await handleAiForInboundMessage(message));
+      if (message.direction === "inbound") {
+        ai.push(await handleAiForInboundMessage(message));
+      }
     }
     return json(200, { ok: true, stored: storedMessages.length, ai });
   } catch (error) {
