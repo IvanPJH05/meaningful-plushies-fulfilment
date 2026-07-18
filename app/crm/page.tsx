@@ -65,6 +65,9 @@ export default function CrmPhaseOnePage() {
           Phase 2 starts the paid-first sales flow beside the current fulfilment app: WhatsApp webhooks,
           AI command logging, and a guarded manual-order command that only runs after payment is confirmed.
         </p>
+        <div className={styles.heroActions}>
+          <a href="/crm/inbox">Open WhatsApp inbox</a>
+        </div>
       </section>
 
       <section className={styles.grid} aria-label="Phase 1 status">

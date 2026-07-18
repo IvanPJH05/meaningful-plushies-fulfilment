@@ -35,6 +35,23 @@
   margin: 0;
 }
 
+.heroActions {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.heroActions a {
+  background: #1769e0;
+  border-radius: 12px;
+  color: #fff;
+  display: inline-flex;
+  font-size: 14px;
+  font-weight: 900;
+  padding: 12px 16px;
+  text-decoration: none;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
