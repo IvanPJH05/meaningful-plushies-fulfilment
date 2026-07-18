@@ -4,7 +4,7 @@ export const metaCoexistenceManualSetupSteps = [
   "Connect the existing Meaningful Plushies WhatsApp Business Account.",
   "Enable WhatsApp Business Platform Coexistence for the phone number in Meta Business Suite.",
   "Add the production webhook callback URL from this app.",
-  "Subscribe to messages, message_template_status_update, and phone_number_name_update webhook fields.",
+  "Subscribe to messages, history, smb_message_echoes, message_template_status_update, and phone_number_name_update webhook fields.",
   "Generate a permanent system user access token with WhatsApp Business permissions.",
   "Paste the encrypted token into the CRM connection setup page.",
   "Send a test message and verify it appears in the webhook log before enabling AI.",
