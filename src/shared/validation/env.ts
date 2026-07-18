@@ -12,6 +12,7 @@ export const crmServerEnvSchema = z.object({
   WHATSAPP_WEBHOOK_SECRET: z.string().optional(),
   WHATSAPP_ACCESS_TOKEN: z.string().optional(),
   WHATSAPP_PHONE_NUMBER_ID: z.string().optional(),
+  WHATSAPP_BUSINESS_ACCOUNT_ID: z.string().optional(),
   SHOPIFY_SHOP_DOMAIN: z.string().optional(),
   SHOPIFY_ADMIN_ACCESS_TOKEN: z.string().optional(),
   SHOPIFY_CLIENT_ID: z.string().optional(),
@@ -73,6 +74,7 @@ export function getMissingPhase2Env(input: EnvLookup = process.env): string[] {
     "WHATSAPP_VERIFY_TOKEN",
     "WHATSAPP_ACCESS_TOKEN",
     "WHATSAPP_PHONE_NUMBER_ID",
+    "WHATSAPP_BUSINESS_ACCOUNT_ID",
     "SHOPIFY_SHOP_DOMAIN",
   ];
 
