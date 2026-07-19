@@ -101,6 +101,7 @@ type WhatsAppConnectionStatus = {
       display_phone_number?: string;
       verified_name?: string;
       platform_type?: string;
+      code_verification_status?: string;
     };
   };
   subscribedAppsCheck?: {
@@ -195,6 +196,7 @@ export default function WhatsAppInboxClient() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [repairingSubscription, setRepairingSubscription] = useState(false);
   const [notice, setNotice] = useState("");
   const messageStreamRef = useRef<HTMLDivElement | null>(null);
 
@@ -237,10 +239,12 @@ export default function WhatsAppInboxClient() {
   const selected = inbox.selectedConversation;
   const connectedNumber = connectionStatus?.phoneCheck?.data?.display_phone_number || "Not detected";
   const connectedName = connectionStatus?.phoneCheck?.data?.verified_name || "WhatsApp Cloud API";
+  const phoneVerificationStatus = connectionStatus?.phoneCheck?.data?.code_verification_status || "";
   const webhookActivity = connectionStatus?.webhookActivity;
   const onlyMetaTestConversation = inbox.conversations.length === 1
     && inbox.conversations[0]?.contact.waId === "16315551181"
     && inbox.conversations[0]?.lastMessage?.preview === "this is a text message";
+  const noLiveWebhooks = webhookActivity?.ok && (webhookActivity.rawLast24h ?? 0) === 0;
 
   const visibleConversations = useMemo(() => {
     const query = normalizeSearch(search);
@@ -331,6 +335,27 @@ export default function WhatsAppInboxClient() {
     }
   }
 
+  async function repairWebhookSubscription() {
+    setRepairingSubscription(true);
+    setNotice("");
+    try {
+      const response = await fetch("/api/crm/whatsapp/repair-subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "Meta webhook subscription could not be repaired.");
+      }
+      setNotice(data.message || "WhatsApp webhook subscription repaired. Send a new WhatsApp message, then refresh this inbox.");
+      await loadConnectionStatus();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Meta webhook subscription could not be repaired.");
+    } finally {
+      setRepairingSubscription(false);
+    }
+  }
+
   async function updateConversation(patch: { status?: string; aiMode?: string; displayName?: string }) {
     if (!selectedId) return;
     setSaving(true);
@@ -365,6 +390,13 @@ export default function WhatsAppInboxClient() {
         <div className={styles.headerActions}>
           <a className={styles.secondaryButton} href="/crm">CRM setup</a>
           <button
+            className={styles.secondaryButton}
+            onClick={() => void repairWebhookSubscription()}
+            disabled={repairingSubscription}
+          >
+            {repairingSubscription ? "Repairing..." : "Repair webhook"}
+          </button>
+          <button
             className={styles.primaryButton}
             onClick={() => {
               void loadConnectionStatus();
@@ -388,7 +420,7 @@ export default function WhatsAppInboxClient() {
         <div>
           <span>Connected WhatsApp number</span>
           <strong>{connectedNumber}</strong>
-          <small>{connectedName}</small>
+          <small>{connectedName}{phoneVerificationStatus ? ` | ${formatLabel(phoneVerificationStatus)}` : ""}</small>
         </div>
         <div>
           <span>Meta webhooks in the last 24h</span>
@@ -402,12 +434,21 @@ export default function WhatsAppInboxClient() {
         </div>
       </section>
 
-      {onlyMetaTestConversation && (
+      {phoneVerificationStatus === "NOT_VERIFIED" && (
         <section className={styles.syncWarning}>
-          <strong>Only Meta&apos;s test message has reached this inbox.</strong>
+          <strong>Meta says this WhatsApp phone number is not verified yet.</strong>
+          <span>
+            The app can receive Meta&apos;s test payload, but real customer chats may not arrive until the connected number is verified and approved for WhatsApp Business Platform / Coexistence.
+          </span>
+        </section>
+      )}
+
+      {(onlyMetaTestConversation || noLiveWebhooks) && (
+        <section className={styles.syncWarning}>
+          <strong>No real WhatsApp webhooks have reached this inbox recently.</strong>
           <span>
             Real chats will appear here only after Meta sends webhooks for the connected number {connectedNumber}.
-            Existing WhatsApp Web history may not backfill until Coexistence history sync is approved again.
+            Click Repair webhook, send a brand-new WhatsApp message to that number, then refresh. Existing WhatsApp Web history may not backfill until Coexistence history sync is approved again.
           </span>
         </section>
       )}

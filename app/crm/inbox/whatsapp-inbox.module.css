@@ -69,6 +69,11 @@
   color: #174d8f;
 }
 
+.secondaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .notice {
   align-items: center;
   background: #eaf3ff;

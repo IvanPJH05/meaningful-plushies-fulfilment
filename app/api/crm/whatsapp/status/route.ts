@@ -179,7 +179,10 @@ export async function GET() {
     };
 
   const subscribedAppsCheck = wabaId
-    ? await graphGet(`${encodeURIComponent(wabaId)}/subscribed_apps`, accessToken)
+    ? await graphGet(
+      `${encodeURIComponent(wabaId)}/subscribed_apps?fields=id,name,whatsapp_business_api_data,subscribed_fields`,
+      accessToken,
+    )
     : {
       ok: false,
       error: "WHATSAPP_BUSINESS_ACCOUNT_ID is required to verify whether this app is subscribed to WhatsApp webhooks.",
