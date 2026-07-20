@@ -99,6 +99,96 @@
   font-size: 18px;
 }
 
+.bootScreen {
+  align-items: center;
+  background:
+    linear-gradient(rgba(239, 234, 226, 0.92), rgba(239, 234, 226, 0.92)),
+    radial-gradient(circle at 18px 18px, rgba(127, 117, 104, 0.12) 1px, transparent 1px);
+  background-size: auto, 34px 34px;
+  border: 1px solid #d7e3f2;
+  border-radius: 18px;
+  display: flex;
+  flex: 1 1 auto;
+  justify-content: center;
+  min-height: 0;
+  padding: 28px;
+}
+
+.bootCard {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #d7e3f2;
+  border-radius: 24px;
+  box-shadow: 0 18px 55px rgba(15, 23, 42, 0.12);
+  display: flex;
+  flex-direction: column;
+  max-width: 440px;
+  padding: 34px;
+  text-align: center;
+}
+
+.bootLogo {
+  align-items: center;
+  background: #102033;
+  border-radius: 18px;
+  color: #ffffff;
+  display: inline-flex;
+  font-size: 22px;
+  font-weight: 950;
+  height: 62px;
+  justify-content: center;
+  margin-bottom: 18px;
+  width: 62px;
+}
+
+.bootCard h2 {
+  font-size: 25px;
+  margin: 0 0 10px;
+}
+
+.bootCard p:not(.eyebrow) {
+  color: #5f7188;
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.bootDots {
+  display: flex;
+  gap: 8px;
+  margin-top: 22px;
+}
+
+.bootDots span {
+  animation: bootPulse 1s ease-in-out infinite;
+  background: #1769e0;
+  border-radius: 999px;
+  height: 9px;
+  opacity: 0.35;
+  width: 9px;
+}
+
+.bootDots span:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.bootDots span:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+@keyframes bootPulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translateY(-4px);
+  }
+}
+
 .connectionPanel {
   background: #ffffff;
   border: 1px solid #d7e3f2;

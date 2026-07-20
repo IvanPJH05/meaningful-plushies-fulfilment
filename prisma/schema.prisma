@@ -176,6 +176,7 @@ model Business {
   payments             Payment[]
   followUps            FollowUp[]
   aiAgentConfigs       AiAgentConfig[]
+  whatsappFlows        WhatsAppFlow[]
   aiRuns               AiRun[]
   aiCommands           AiCommand[]
   webhookEvents        WebhookEvent[]
@@ -600,6 +601,23 @@ model AiAgentConfig {
 
   @@unique([businessId, name, version])
   @@map("crm_ai_agent_configs")
+}
+
+model WhatsAppFlow {
+  id           String   @id @default(cuid())
+  businessId   String
+  name         String
+  triggerWords String[] @default([])
+  messages     Json     @default("[]")
+  notes        String?
+  active       Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  business     Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, name])
+  @@index([businessId, active, updatedAt])
+  @@map("crm_whatsapp_flows")
 }
 
 model AiRun {

@@ -105,7 +105,13 @@ function isAiMode(value: unknown): value is AiMode {
 
 type InboxScope = "all" | "list" | "conversation";
 
-async function getConversationList(businessId: string) {
+function clampNumber(value: string | null, fallback: number, min: number, max: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(parsed)));
+}
+
+async function getConversationList(businessId: string, limit = 75) {
   const conversations = await prisma.conversation.findMany({
     where: { businessId },
     select: {
@@ -145,7 +151,7 @@ async function getConversationList(businessId: string) {
       { lastMessageAt: "desc" },
       { updatedAt: "desc" },
     ],
-    take: 75,
+    take: limit,
   });
 
   return conversations.map((conversation) => {
@@ -276,7 +282,7 @@ async function getSelectedConversation(businessId: string, conversationId?: stri
     : null;
 }
 
-async function getConversationMessages(businessId: string, conversationId?: string | null) {
+async function getConversationMessages(businessId: string, conversationId?: string | null, limit = 90) {
   const messages = conversationId
     ? (await prisma.message.findMany({
       where: { businessId, conversationId },
@@ -303,7 +309,7 @@ async function getConversationMessages(businessId: string, conversationId?: stri
         },
       },
       orderBy: { createdAt: "desc" },
-      take: 180,
+      take: limit,
     })).reverse()
     : [];
 
@@ -313,6 +319,9 @@ async function getConversationMessages(businessId: string, conversationId?: stri
       originalName: attachment.originalName,
       contentType: attachment.contentType,
       sizeBytes: attachment.sizeBytes,
+      previewCacheKey: attachment.sizeBytes
+        ? `${attachment.contentType}:${attachment.sizeBytes}:${attachment.originalName || ""}`
+        : null,
       url: `/api/crm/inbox/attachments/${attachment.id}`,
       downloadUrl: `/api/crm/inbox/attachments/${attachment.id}?download=1`,
     }));
@@ -338,6 +347,7 @@ async function getConversationMessages(businessId: string, conversationId?: stri
           originalName: media.filename || null,
           contentType: media.mimeType || fallbackWhatsAppMediaContentType(message.messageType),
           sizeBytes: null,
+          previewCacheKey: null,
           url: `/api/crm/inbox/messages/${message.id}/media`,
           downloadUrl: `/api/crm/inbox/messages/${message.id}/media?download=1`,
         }]
@@ -346,12 +356,17 @@ async function getConversationMessages(businessId: string, conversationId?: stri
   });
 }
 
-async function getInbox(conversationId?: string | null, scope: InboxScope = "all") {
+async function getInbox(
+  conversationId?: string | null,
+  scope: InboxScope = "all",
+  listLimit = 75,
+  messageLimit = 90,
+) {
   const business = await ensureDefaultBusiness();
-  const conversations = scope === "conversation" ? [] : await getConversationList(business.id);
+  const conversations = scope === "conversation" ? [] : await getConversationList(business.id, listLimit);
   const selectedConversationId = conversationId || conversations[0]?.id || null;
   const selectedConversation = scope === "list" ? null : await getSelectedConversation(business.id, selectedConversationId);
-  const messages = scope === "list" ? [] : await getConversationMessages(business.id, selectedConversationId);
+  const messages = scope === "list" ? [] : await getConversationMessages(business.id, selectedConversationId, messageLimit);
 
   return {
     conversations,
@@ -366,7 +381,9 @@ export async function GET(request: Request) {
     const conversationId = url.searchParams.get("conversationId");
     const requestedScope = url.searchParams.get("scope");
     const scope: InboxScope = requestedScope === "list" || requestedScope === "conversation" ? requestedScope : "all";
-    return json(200, { ok: true, inbox: await getInbox(conversationId, scope) });
+    const limit = clampNumber(url.searchParams.get("limit"), 75, 1, 100);
+    const messageLimit = clampNumber(url.searchParams.get("messageLimit"), 90, 20, 180);
+    return json(200, { ok: true, inbox: await getInbox(conversationId, scope, limit, messageLimit) });
   } catch (error) {
     return json(500, {
       ok: false,

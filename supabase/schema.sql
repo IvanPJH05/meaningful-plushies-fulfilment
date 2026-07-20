@@ -1284,6 +1284,36 @@ begin
   end if;
 end $$;
 
+do $$
+begin
+  if to_regclass('public.crm_businesses') is not null then
+    create table if not exists public.crm_whatsapp_flows (
+      id text primary key default gen_random_uuid()::text,
+      business_id text not null references public.crm_businesses(id) on delete cascade,
+      name text not null,
+      trigger_words text[] not null default '{}',
+      messages jsonb not null default '[]'::jsonb,
+      notes text,
+      active boolean not null default false,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      unique (business_id, name)
+    );
+
+    create index if not exists crm_whatsapp_flows_business_active_idx
+      on public.crm_whatsapp_flows (business_id, active, updated_at desc);
+
+    alter table public.crm_whatsapp_flows enable row level security;
+
+    drop policy if exists "shared crm reads whatsapp flows" on public.crm_whatsapp_flows;
+    drop policy if exists "shared crm changes whatsapp flows" on public.crm_whatsapp_flows;
+    create policy "shared crm reads whatsapp flows" on public.crm_whatsapp_flows for select to anon, authenticated using (true);
+    create policy "shared crm changes whatsapp flows" on public.crm_whatsapp_flows for all to anon, authenticated using (true) with check (true);
+
+    grant select, insert, update, delete on public.crm_whatsapp_flows to anon, authenticated;
+  end if;
+end $$;
+
 create or replace function public.broadcast_crm_whatsapp_inbox_change()
 returns trigger
 security definer

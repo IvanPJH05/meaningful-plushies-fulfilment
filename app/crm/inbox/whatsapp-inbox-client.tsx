@@ -45,6 +45,7 @@ type InboxMessage = {
     originalName: string | null;
     contentType: string;
     sizeBytes: number | null;
+    previewCacheKey?: string | null;
     url?: string;
     downloadUrl?: string;
   }[];
@@ -115,6 +116,10 @@ type CrmRealtimePayload = {
 const CONVERSATION_CACHE_TTL_MS = 60_000;
 const REALTIME_REFRESH_DEBOUNCE_MS = 160;
 const CRM_REALTIME_TOPIC = "crm-whatsapp-inbox";
+const INITIAL_CHAT_LIMIT = 20;
+const FULL_CHAT_LIMIT = 75;
+const MESSAGE_FETCH_LIMIT = 90;
+const attachmentPreviewUrlByKey = new Map<string, string>();
 
 function optimisticOutboundMessage(id: string, body: string): InboxMessage {
   return {
@@ -235,6 +240,16 @@ function isAudioAttachment(attachment: NonNullable<InboxMessage["attachments"]>[
   return attachment.contentType.toLowerCase().startsWith("audio/");
 }
 
+function reusableAttachmentPreviewUrl(attachment: NonNullable<InboxMessage["attachments"]>[number]) {
+  if (!attachment.url) return "";
+  const key = attachment.previewCacheKey || "";
+  if (!key) return attachment.url;
+  const cachedUrl = attachmentPreviewUrlByKey.get(key);
+  if (cachedUrl) return cachedUrl;
+  attachmentPreviewUrlByKey.set(key, attachment.url);
+  return attachment.url;
+}
+
 function AttachmentPreview(props: {
   attachment: NonNullable<InboxMessage["attachments"]>[number];
 }) {
@@ -242,8 +257,9 @@ function AttachmentPreview(props: {
   const [previewFailed, setPreviewFailed] = useState(false);
   const label = attachment.originalName || attachment.contentType || "Attachment";
   const openUrl = attachment.downloadUrl || attachment.url || "#";
+  const previewUrl = reusableAttachmentPreviewUrl(attachment);
 
-  if (attachment.url && isImageAttachment(attachment) && !previewFailed) {
+  if (previewUrl && isImageAttachment(attachment) && !previewFailed) {
     return (
       <a
         className={styles.imageAttachment}
@@ -253,7 +269,7 @@ function AttachmentPreview(props: {
         title="Open image"
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img alt={label} loading="lazy" onError={() => setPreviewFailed(true)} src={attachment.url} />
+        <img alt={label} decoding="async" loading="lazy" onError={() => setPreviewFailed(true)} src={previewUrl} />
         <span>{label}</span>
       </a>
     );
@@ -297,6 +313,8 @@ export default function WhatsAppInboxClient() {
   const [filter, setFilter] = useState("ALL");
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(true);
+  const [booting, setBooting] = useState(true);
+  const [backgroundLoading, setBackgroundLoading] = useState(false);
   const [conversationLoading, setConversationLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [generatingAi, setGeneratingAi] = useState(false);
@@ -348,7 +366,7 @@ export default function WhatsAppInboxClient() {
   }, []);
 
   const fetchConversation = useCallback(async (conversationId: string) => {
-    const response = await fetch(`/api/crm/inbox?scope=conversation&conversationId=${encodeURIComponent(conversationId)}`, {
+    const response = await fetch(`/api/crm/inbox?scope=conversation&conversationId=${encodeURIComponent(conversationId)}&messageLimit=${MESSAGE_FETCH_LIMIT}`, {
       cache: "no-store",
     });
     const data = await response.json();
@@ -358,10 +376,12 @@ export default function WhatsAppInboxClient() {
     return data.inbox as InboxPayload;
   }, []);
 
-  const loadInbox = useCallback(async (conversationId?: string) => {
+  const loadInbox = useCallback(async (conversationId?: string, listLimit = FULL_CHAT_LIMIT) => {
     setLoading(true);
     try {
-      const query = conversationId ? `?conversationId=${encodeURIComponent(conversationId)}` : "?scope=list";
+      const query = conversationId
+        ? `?conversationId=${encodeURIComponent(conversationId)}&limit=${listLimit}&messageLimit=${MESSAGE_FETCH_LIMIT}`
+        : `?scope=list&limit=${listLimit}`;
       const response = await fetch(`/api/crm/inbox${query}`, { cache: "no-store" });
       const data = await response.json();
       if (!response.ok || !data.ok) {
@@ -377,8 +397,8 @@ export default function WhatsAppInboxClient() {
     }
   }, [rememberConversation]);
 
-  const loadConversationList = useCallback(async () => {
-    const response = await fetch("/api/crm/inbox?scope=list", { cache: "no-store" });
+  const loadConversationList = useCallback(async (listLimit = FULL_CHAT_LIMIT) => {
+    const response = await fetch(`/api/crm/inbox?scope=list&limit=${listLimit}`, { cache: "no-store" });
     const data = await response.json();
     if (!response.ok || !data.ok) {
       throw new Error(data.error || "CRM chat list could not be loaded.");
@@ -431,11 +451,35 @@ export default function WhatsAppInboxClient() {
   }, [loadConversation]);
 
   useEffect(() => {
-    loadInbox().catch((error) => {
-      setNotice(error instanceof Error ? error.message : "CRM inbox could not be loaded.");
-      setLoading(false);
-    });
-  }, [loadInbox]);
+    let active = true;
+
+    async function bootInbox() {
+      setBooting(true);
+      try {
+        await loadInbox(undefined, INITIAL_CHAT_LIMIT);
+        if (!active) return;
+        setBooting(false);
+        setBackgroundLoading(true);
+        await loadConversationList(FULL_CHAT_LIMIT);
+      } catch (error) {
+        if (active) {
+          setNotice(error instanceof Error ? error.message : "CRM inbox could not be loaded.");
+        }
+      } finally {
+        if (active) {
+          setBackgroundLoading(false);
+          setBooting(false);
+          setLoading(false);
+        }
+      }
+    }
+
+    void bootInbox();
+
+    return () => {
+      active = false;
+    };
+  }, [loadConversationList, loadInbox]);
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
@@ -739,11 +783,27 @@ export default function WhatsAppInboxClient() {
         </div>
       )}
 
+      {booting ? (
+        <section className={styles.bootScreen}>
+          <div className={styles.bootCard}>
+            <span className={styles.bootLogo}>MP</span>
+            <p className={styles.eyebrow}>WhatsApp CRM</p>
+            <h2>Loading your latest chats</h2>
+            <p>Opening the newest {INITIAL_CHAT_LIMIT} conversations first. The rest will continue syncing in the background.</p>
+            <div className={styles.bootDots}>
+              <span />
+              <span />
+              <span />
+            </div>
+          </div>
+        </section>
+      ) : (
       <section className={styles.whatsappWorkspace}>
         <aside className={styles.workspaceRail}>
           <div className={styles.railLogo}>MP</div>
           <a className={styles.railActive} href="/crm/inbox">Inbox</a>
           <a href="/manual-orders">Manual orders</a>
+          <a href="/crm/flows">Flows</a>
           <a href="/crm">Setup</a>
         </aside>
 
@@ -751,7 +811,10 @@ export default function WhatsAppInboxClient() {
           <div className={styles.listHeader}>
             <div>
               <h2>Chats</h2>
-              <p>{visibleConversations.length} shown from {inbox.conversations.length}</p>
+              <p>
+                {visibleConversations.length} shown from {inbox.conversations.length}
+                {backgroundLoading ? " | loading older chats..." : ""}
+              </p>
             </div>
             <button
               onClick={() => {
@@ -1019,6 +1082,7 @@ export default function WhatsAppInboxClient() {
           )}
         </aside>
       </section>
+      )}
     </main>
   );
 }
