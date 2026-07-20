@@ -116,6 +116,28 @@ const CONVERSATION_CACHE_TTL_MS = 60_000;
 const REALTIME_REFRESH_DEBOUNCE_MS = 160;
 const CRM_REALTIME_TOPIC = "crm-whatsapp-inbox";
 
+function optimisticOutboundMessage(id: string, body: string): InboxMessage {
+  return {
+    id,
+    direction: "OUTBOUND",
+    senderType: "TEAM",
+    messageType: "TEXT",
+    body,
+    status: "SENDING",
+    failedReason: null,
+    createdAt: new Date().toISOString(),
+    sentAt: null,
+    attachments: [],
+  };
+}
+
+function normalizeReturnedMessage(message: InboxMessage): InboxMessage {
+  return {
+    ...message,
+    attachments: message.attachments ?? [],
+  };
+}
+
 const statusOptions = [
   { value: "OPEN", label: "Open" },
   { value: "WAITING_TEAM", label: "Waiting team" },
@@ -300,6 +322,29 @@ export default function WhatsAppInboxClient() {
         loadedAt: Date.now(),
       },
     }));
+  }, []);
+
+  const patchConversationMessages = useCallback((
+    conversationId: string,
+    updater: (messages: InboxMessage[]) => InboxMessage[],
+  ) => {
+    setInbox((current) => (
+      current.selectedConversation?.id === conversationId
+        ? { ...current, messages: updater(current.messages) }
+        : current
+    ));
+    setConversationCache((current) => {
+      const cached = current[conversationId];
+      if (!cached) return current;
+      return {
+        ...current,
+        [conversationId]: {
+          ...cached,
+          messages: updater(cached.messages),
+          loadedAt: Date.now(),
+        },
+      };
+    });
   }, []);
 
   const fetchConversation = useCallback(async (conversationId: string) => {
@@ -541,27 +586,52 @@ export default function WhatsAppInboxClient() {
     const body = (bodyOverride || draft).trim();
     if (!selectedId || !body) return;
 
+    const conversationId = selectedId;
+    const optimisticId = messageId ? "" : `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    if (optimisticId) {
+      patchConversationMessages(conversationId, (messages) => [
+        ...messages,
+        optimisticOutboundMessage(optimisticId, body),
+      ]);
+      setDraft("");
+    }
+
     setSending(true);
     setNotice("");
     try {
       const response = await fetch("/api/crm/inbox", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId: selectedId, messageId, body }),
+        body: JSON.stringify({ conversationId, messageId, body }),
       });
       const data = await response.json();
       if (data.message) {
-        if (!messageId) setDraft("");
-        const nextInbox = await fetchConversation(selectedId);
-        rememberConversation(nextInbox.selectedConversation, nextInbox.messages);
-        setInbox((current) => ({
-          ...current,
-          selectedConversation: nextInbox.selectedConversation,
-          messages: nextInbox.messages,
-        }));
+        const returnedMessage = normalizeReturnedMessage(data.message);
+        if (optimisticId) {
+          patchConversationMessages(conversationId, (messages) => (
+            messages.map((message) => (message.id === optimisticId ? returnedMessage : message))
+          ));
+        } else {
+          const nextInbox = await fetchConversation(conversationId);
+          rememberConversation(nextInbox.selectedConversation, nextInbox.messages);
+          setInbox((current) => ({
+            ...current,
+            selectedConversation: nextInbox.selectedConversation,
+            messages: nextInbox.messages,
+          }));
+        }
         void loadConversationList();
       }
       if (!response.ok || !data.ok) {
+        if (optimisticId && !data.message) {
+          patchConversationMessages(conversationId, (messages) => (
+            messages.map((message) => (
+              message.id === optimisticId
+                ? { ...message, status: "FAILED", failedReason: data.error || "WhatsApp message could not be sent." }
+                : message
+            ))
+          ));
+        }
         setNotice(data.error || "WhatsApp message could not be sent.");
         return;
       }
@@ -569,6 +639,15 @@ export default function WhatsAppInboxClient() {
         ? "Message saved, but WhatsApp sending is not fully configured yet."
         : "Message sent.");
     } catch (error) {
+      if (optimisticId) {
+        patchConversationMessages(conversationId, (messages) => (
+          messages.map((message) => (
+            message.id === optimisticId
+              ? { ...message, status: "FAILED", failedReason: error instanceof Error ? error.message : "WhatsApp message could not be sent." }
+              : message
+          ))
+        ));
+      }
       setNotice(error instanceof Error ? error.message : "WhatsApp message could not be sent.");
     } finally {
       setSending(false);

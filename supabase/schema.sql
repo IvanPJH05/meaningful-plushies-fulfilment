@@ -859,6 +859,13 @@ on conflict (id) do update set
   file_size_limit = excluded.file_size_limit,
   allowed_mime_types = excluded.allowed_mime_types;
 
+insert into storage.buckets(id, name, public, file_size_limit, allowed_mime_types)
+values ('whatsapp-media', 'whatsapp-media', false, 26214400, null)
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
 create table if not exists public.accounting_categories (
   id uuid primary key default gen_random_uuid(),
   name text not null unique,
@@ -1124,6 +1131,13 @@ create policy "shared accounting reads document files" on storage.objects for se
 create policy "shared accounting inserts document files" on storage.objects for insert to anon, authenticated with check (bucket_id = 'accounting-documents');
 create policy "shared accounting updates document files" on storage.objects for update to anon, authenticated using (bucket_id = 'accounting-documents') with check (bucket_id = 'accounting-documents');
 create policy "shared accounting deletes document files" on storage.objects for delete to anon, authenticated using (bucket_id = 'accounting-documents');
+
+drop policy if exists "shared crm reads whatsapp media files" on storage.objects;
+drop policy if exists "shared crm inserts whatsapp media files" on storage.objects;
+drop policy if exists "shared crm updates whatsapp media files" on storage.objects;
+create policy "shared crm reads whatsapp media files" on storage.objects for select to anon, authenticated using (bucket_id = 'whatsapp-media');
+create policy "shared crm inserts whatsapp media files" on storage.objects for insert to anon, authenticated with check (bucket_id = 'whatsapp-media');
+create policy "shared crm updates whatsapp media files" on storage.objects for update to anon, authenticated using (bucket_id = 'whatsapp-media') with check (bucket_id = 'whatsapp-media');
 
 grant select, insert, update, delete on public.accounting_categories to anon, authenticated;
 grant select, insert, update, delete on public.accounting_documents to anon, authenticated;
