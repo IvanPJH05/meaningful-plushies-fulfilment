@@ -131,6 +131,78 @@
   margin-top: 18px;
 }
 
+.setupActions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.setupActions button {
+  background: #ffffff;
+  border: 1px solid #cbd8e8;
+  border-radius: 11px;
+  color: #174d8f;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 900;
+  padding: 10px 13px;
+}
+
+.setupActions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.inlineNotice {
+  background: #eaf3ff;
+  border: 1px solid #bed8ff;
+  border-radius: 12px;
+  color: #0c4f96;
+  font-size: 14px;
+  margin-top: 14px;
+  padding: 11px 13px;
+}
+
+.liveStatusGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 18px;
+}
+
+.liveStatusCard {
+  background: #f8fbff;
+  border: 1px solid #dbe4f0;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  padding: 14px;
+}
+
+.liveStatusCard span,
+.liveStatusCard small {
+  color: #607089;
+  font-size: 12px;
+}
+
+.liveStatusCard span {
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.liveStatusCard strong {
+  color: #0f172a;
+  font-size: 18px;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .statusRow {
   border: 1px solid #dbe4f0;
   border-radius: 14px;
@@ -241,6 +313,7 @@
   .grid,
   .sectionGrid,
   .statusGrid,
+  .liveStatusGrid,
   .setupGrid {
     grid-template-columns: 1fr;
   }

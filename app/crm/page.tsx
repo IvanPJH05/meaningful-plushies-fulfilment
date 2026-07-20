@@ -1,4 +1,5 @@
 import styles from "./page.module.css";
+import WhatsAppSetupStatus from "./whatsapp-setup-status";
 import { CRM_AI_MODES, CRM_LEAD_STAGES, CRM_PHASES } from "@/src/shared/constants/crm";
 import {
   metaCoexistenceLimitations,
@@ -94,6 +95,8 @@ export default function CrmPhaseOnePage() {
       </section>
 
       <section className={styles.sectionGrid}>
+        <WhatsAppSetupStatus />
+
         <div className={`${styles.panel} ${styles.fullWidthPanel}`}>
           <div className={styles.panelHeader}>
             <div>

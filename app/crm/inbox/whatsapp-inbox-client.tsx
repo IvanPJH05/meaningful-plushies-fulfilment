@@ -94,31 +94,13 @@ type InboxPayload = {
   messages: InboxMessage[];
 };
 
-type WhatsAppConnectionStatus = {
-  ok: boolean;
-  phoneCheck?: {
-    ok?: boolean;
-    error?: string;
-    data?: {
-      display_phone_number?: string;
-      verified_name?: string;
-      platform_type?: string;
-      code_verification_status?: string;
-    };
-  };
-  subscribedAppsCheck?: {
-    ok?: boolean;
-    error?: string;
-  };
-  webhookActivity?: {
-    ok?: boolean;
-    rawLast24h?: number;
-    parsedLast24h?: number;
-    latestRawReceivedAt?: string | null;
-    latestParsedReceivedAt?: string | null;
-    error?: string;
-  };
-};
+type ActiveConversation = NonNullable<SelectedConversation>;
+
+type ConversationCache = Record<string, {
+  selectedConversation: ActiveConversation;
+  messages: InboxMessage[];
+  loadedAt: number;
+}>;
 
 const statusOptions = [
   { value: "OPEN", label: "Open" },
@@ -209,9 +191,71 @@ function isImageAttachment(attachment: NonNullable<InboxMessage["attachments"]>[
   return attachment.contentType.toLowerCase().startsWith("image/");
 }
 
+function isVideoAttachment(attachment: NonNullable<InboxMessage["attachments"]>[number]) {
+  return attachment.contentType.toLowerCase().startsWith("video/");
+}
+
+function isAudioAttachment(attachment: NonNullable<InboxMessage["attachments"]>[number]) {
+  return attachment.contentType.toLowerCase().startsWith("audio/");
+}
+
+function AttachmentPreview(props: {
+  attachment: NonNullable<InboxMessage["attachments"]>[number];
+}) {
+  const { attachment } = props;
+  const [previewFailed, setPreviewFailed] = useState(false);
+  const label = attachment.originalName || attachment.contentType || "Attachment";
+  const openUrl = attachment.downloadUrl || attachment.url || "#";
+
+  if (attachment.url && isImageAttachment(attachment) && !previewFailed) {
+    return (
+      <a
+        className={styles.imageAttachment}
+        href={openUrl}
+        rel="noreferrer"
+        target="_blank"
+        title="Open image"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img alt={label} loading="lazy" onError={() => setPreviewFailed(true)} src={attachment.url} />
+        <span>{label}</span>
+      </a>
+    );
+  }
+
+  if (attachment.url && isVideoAttachment(attachment) && !previewFailed) {
+    return (
+      <div className={styles.mediaAttachment}>
+        <video controls onError={() => setPreviewFailed(true)} preload="metadata" src={attachment.url} />
+        <a href={openUrl} rel="noreferrer" target="_blank">{label}</a>
+      </div>
+    );
+  }
+
+  if (attachment.url && isAudioAttachment(attachment) && !previewFailed) {
+    return (
+      <div className={styles.audioAttachment}>
+        <audio controls onError={() => setPreviewFailed(true)} preload="metadata" src={attachment.url} />
+        <a href={openUrl} rel="noreferrer" target="_blank">{label}</a>
+      </div>
+    );
+  }
+
+  return (
+    <a
+      className={styles.fileAttachment}
+      href={openUrl}
+      rel="noreferrer"
+      target="_blank"
+    >
+      {previewFailed ? `Open ${label}` : label}
+    </a>
+  );
+}
+
 export default function WhatsAppInboxClient() {
   const [inbox, setInbox] = useState<InboxPayload>({ conversations: [], selectedConversation: null, messages: [] });
-  const [connectionStatus, setConnectionStatus] = useState<WhatsAppConnectionStatus | null>(null);
+  const [conversationCache, setConversationCache] = useState<ConversationCache>({});
   const [selectedId, setSelectedId] = useState<string>("");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("ALL");
@@ -221,17 +265,36 @@ export default function WhatsAppInboxClient() {
   const [sending, setSending] = useState(false);
   const [generatingAi, setGeneratingAi] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [repairingSubscription, setRepairingSubscription] = useState(false);
   const [notice, setNotice] = useState("");
   const messageStreamRef = useRef<HTMLDivElement | null>(null);
   const selectedIdRef = useRef("");
+  const conversationCacheRef = useRef<ConversationCache>({});
 
-  const loadConnectionStatus = useCallback(async () => {
-    const response = await fetch("/api/crm/whatsapp/status", { cache: "no-store" });
+  useEffect(() => {
+    conversationCacheRef.current = conversationCache;
+  }, [conversationCache]);
+
+  const rememberConversation = useCallback((selectedConversation: SelectedConversation, messages: InboxMessage[]) => {
+    if (!selectedConversation) return;
+    setConversationCache((current) => ({
+      ...current,
+      [selectedConversation.id]: {
+        selectedConversation,
+        messages,
+        loadedAt: Date.now(),
+      },
+    }));
+  }, []);
+
+  const fetchConversation = useCallback(async (conversationId: string) => {
+    const response = await fetch(`/api/crm/inbox?scope=conversation&conversationId=${encodeURIComponent(conversationId)}`, {
+      cache: "no-store",
+    });
     const data = await response.json();
-    if (response.ok && data.ok) {
-      setConnectionStatus(data);
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || "CRM conversation could not be loaded.");
     }
+    return data.inbox as InboxPayload;
   }, []);
 
   const loadInbox = useCallback(async (conversationId?: string) => {
@@ -247,10 +310,11 @@ export default function WhatsAppInboxClient() {
       const nextSelected = data.inbox.selectedConversation?.id || "";
       selectedIdRef.current = nextSelected;
       setSelectedId(nextSelected);
+      rememberConversation(data.inbox.selectedConversation, data.inbox.messages);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [rememberConversation]);
 
   const loadConversationList = useCallback(async () => {
     const response = await fetch("/api/crm/inbox?scope=list", { cache: "no-store" });
@@ -267,33 +331,27 @@ export default function WhatsAppInboxClient() {
   const loadConversation = useCallback(async (conversationId: string, showSpinner = true) => {
     if (showSpinner) setConversationLoading(true);
     try {
-      const response = await fetch(`/api/crm/inbox?scope=conversation&conversationId=${encodeURIComponent(conversationId)}`, {
-        cache: "no-store",
-      });
-      const data = await response.json();
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error || "CRM conversation could not be loaded.");
-      }
+      const nextInbox = await fetchConversation(conversationId);
+      rememberConversation(nextInbox.selectedConversation, nextInbox.messages);
       if (selectedIdRef.current !== conversationId) {
         return;
       }
       setInbox((current) => ({
         ...current,
-        selectedConversation: data.inbox.selectedConversation,
-        messages: data.inbox.messages,
+        selectedConversation: nextInbox.selectedConversation,
+        messages: nextInbox.messages,
       }));
     } finally {
       if (showSpinner) setConversationLoading(false);
     }
-  }, []);
+  }, [fetchConversation, rememberConversation]);
 
   useEffect(() => {
     loadInbox().catch((error) => {
       setNotice(error instanceof Error ? error.message : "CRM inbox could not be loaded.");
       setLoading(false);
     });
-    loadConnectionStatus().catch(() => undefined);
-  }, [loadConnectionStatus, loadInbox]);
+  }, [loadInbox]);
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
@@ -303,7 +361,7 @@ export default function WhatsAppInboxClient() {
     const intervalId = window.setInterval(() => {
       if (document.visibilityState === "hidden") return;
       loadConversationList().catch(() => undefined);
-    }, 5000);
+    }, 4000);
     return () => window.clearInterval(intervalId);
   }, [loadConversationList]);
 
@@ -323,17 +381,6 @@ export default function WhatsAppInboxClient() {
   }, [inbox.messages, selectedId]);
 
   const selected = inbox.selectedConversation;
-  const connectedNumber = connectionStatus?.phoneCheck?.data?.display_phone_number || "Not detected";
-  const connectedName = connectionStatus?.phoneCheck?.data?.verified_name || "WhatsApp Cloud API";
-  const phoneVerificationStatus = connectionStatus?.phoneCheck?.data?.code_verification_status || "";
-  const webhookActivity = connectionStatus?.webhookActivity;
-  const onlyMetaTestConversation = inbox.conversations.length === 1
-    && inbox.conversations[0]?.contact.waId === "16315551181"
-    && inbox.conversations[0]?.lastMessage?.preview === "this is a text message";
-  const parsedWebhooksLast24h = webhookActivity?.ok ? webhookActivity.parsedLast24h ?? 0 : 0;
-  const hasLiveWebhookTraffic = parsedWebhooksLast24h > 0 && !onlyMetaTestConversation;
-  const noLiveWebhooks = webhookActivity?.ok && (webhookActivity.rawLast24h ?? 0) === 0;
-  const shouldWarnNoLiveWebhooks = (onlyMetaTestConversation || noLiveWebhooks) && !hasLiveWebhookTraffic;
 
   const visibleConversations = useMemo(() => {
     const query = normalizeSearch(search);
@@ -394,8 +441,19 @@ export default function WhatsAppInboxClient() {
     selectedIdRef.current = conversationId;
     setSelectedId(conversationId);
     setNotice("");
+    const cached = conversationCacheRef.current[conversationId];
+    if (cached) {
+      setInbox((current) => ({
+        ...current,
+        selectedConversation: cached.selectedConversation,
+        messages: cached.messages,
+      }));
+      if (Date.now() - cached.loadedAt < 10_000) {
+        return;
+      }
+    }
     const summary = inbox.conversations.find((conversation) => conversation.id === conversationId);
-    if (summary) {
+    if (!cached && summary) {
       setInbox((current) => ({
         ...current,
         selectedConversation: selectedFromSummary(summary),
@@ -420,7 +478,13 @@ export default function WhatsAppInboxClient() {
       const data = await response.json();
       if (data.message) {
         if (!messageId) setDraft("");
-        await loadConversation(selectedId, false);
+        const nextInbox = await fetchConversation(selectedId);
+        rememberConversation(nextInbox.selectedConversation, nextInbox.messages);
+        setInbox((current) => ({
+          ...current,
+          selectedConversation: nextInbox.selectedConversation,
+          messages: nextInbox.messages,
+        }));
         void loadConversationList();
       }
       if (!response.ok || !data.ok) {
@@ -434,27 +498,6 @@ export default function WhatsAppInboxClient() {
       setNotice(error instanceof Error ? error.message : "WhatsApp message could not be sent.");
     } finally {
       setSending(false);
-    }
-  }
-
-  async function repairWebhookSubscription() {
-    setRepairingSubscription(true);
-    setNotice("");
-    try {
-      const response = await fetch("/api/crm/whatsapp/repair-subscription", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      const data = await response.json();
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error || "Meta webhook subscription could not be repaired.");
-      }
-      setNotice(data.message || "WhatsApp webhook subscription repaired. Send a new WhatsApp message, then refresh this inbox.");
-      await loadConnectionStatus();
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Meta webhook subscription could not be repaired.");
-    } finally {
-      setRepairingSubscription(false);
     }
   }
 
@@ -477,7 +520,7 @@ export default function WhatsAppInboxClient() {
       if (!response.ok || !data.ok) {
         throw new Error(data.error || "AI reply could not be generated.");
       }
-      setNotice("AI reply generated. Review it, then send the suggestion if it looks right.");
+      setNotice("AI reply generated.");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "AI reply could not be generated.");
     } finally {
@@ -500,6 +543,7 @@ export default function WhatsAppInboxClient() {
         throw new Error(data.error || "Conversation could not be updated.");
       }
       setInbox(data.inbox);
+      rememberConversation(data.inbox.selectedConversation, data.inbox.messages);
       void loadConversationList();
       setNotice("Conversation updated.");
     } catch (error) {
@@ -514,22 +558,13 @@ export default function WhatsAppInboxClient() {
       <section className={styles.header}>
         <div>
           <p className={styles.eyebrow}>WhatsApp CRM</p>
-          <h1>WhatsApp Inbox</h1>
-          <span>Manage customer chats, AI suggestions, and sales follow-up in one place.</span>
+          <h1>Inbox</h1>
+          <span>Read and reply to WhatsApp messages from one clean chat screen.</span>
         </div>
         <div className={styles.headerActions}>
-          <a className={styles.secondaryButton} href="/crm">CRM setup</a>
-          <button
-            className={styles.secondaryButton}
-            onClick={() => void repairWebhookSubscription()}
-            disabled={repairingSubscription}
-          >
-            {repairingSubscription ? "Repairing..." : "Repair webhook"}
-          </button>
           <button
             className={styles.primaryButton}
             onClick={() => {
-              void loadConnectionStatus();
               void loadConversationList();
               if (selectedId) {
                 void loadConversation(selectedId, false);
@@ -551,53 +586,6 @@ export default function WhatsAppInboxClient() {
         </div>
       )}
 
-      <section className={styles.connectionPanel}>
-        <div>
-          <span>Connected WhatsApp number</span>
-          <strong>{connectedNumber}</strong>
-          <small>{connectedName}{phoneVerificationStatus ? ` | ${formatLabel(phoneVerificationStatus)}` : ""}</small>
-        </div>
-        <div>
-          <span>Meta webhooks in the last 24h</span>
-          <strong>{webhookActivity?.ok ? `${webhookActivity.rawLast24h ?? 0} received` : "Unknown"}</strong>
-          <small>{webhookActivity?.ok ? `${webhookActivity.parsedLast24h ?? 0} messages parsed` : webhookActivity?.error || "Checking connection..."}</small>
-        </div>
-        <div>
-          <span>Latest webhook</span>
-          <strong>{webhookActivity?.latestRawReceivedAt ? formatTime(webhookActivity.latestRawReceivedAt) : "None yet"}</strong>
-          <small>{connectionStatus?.subscribedAppsCheck?.ok ? "Webhook app subscription found" : connectionStatus?.subscribedAppsCheck?.error || "Checking subscription..."}</small>
-        </div>
-      </section>
-
-      {phoneVerificationStatus === "NOT_VERIFIED" && hasLiveWebhookTraffic && (
-        <section className={styles.syncInfo}>
-          <strong>WhatsApp is connected and receiving customer messages.</strong>
-          <span>
-            Meta&apos;s API still reports the phone verification flag as pending, but WhatsApp Manager shows this number as connected and the app has received {parsedWebhooksLast24h} parsed WhatsApp message{parsedWebhooksLast24h === 1 ? "" : "s"} in the last 24 hours.
-            If replies fail, check the WhatsApp access token and app permissions next.
-          </span>
-        </section>
-      )}
-
-      {phoneVerificationStatus === "NOT_VERIFIED" && !hasLiveWebhookTraffic && (
-        <section className={styles.syncWarning}>
-          <strong>Meta says this WhatsApp phone number is not verified yet.</strong>
-          <span>
-            Real customer chats and outbound replies may be blocked until the connected number is verified and approved for WhatsApp Business Platform / Coexistence.
-          </span>
-        </section>
-      )}
-
-      {shouldWarnNoLiveWebhooks && (
-        <section className={styles.syncWarning}>
-          <strong>No real WhatsApp webhooks have reached this inbox recently.</strong>
-          <span>
-            Real chats will appear here only after Meta sends webhooks for the connected number {connectedNumber}.
-            Click Repair webhook, send a brand-new WhatsApp message to that number, then refresh. Existing WhatsApp Web history may not backfill until Coexistence history sync is approved again.
-          </span>
-        </section>
-      )}
-
       <section className={styles.whatsappWorkspace}>
         <aside className={styles.workspaceRail}>
           <div className={styles.railLogo}>MP</div>
@@ -614,7 +602,6 @@ export default function WhatsAppInboxClient() {
             </div>
             <button
               onClick={() => {
-                void loadConnectionStatus();
                 void loadConversationList();
                 if (selectedId) {
                   void loadConversation(selectedId, false);
@@ -731,36 +718,9 @@ export default function WhatsAppInboxClient() {
                       {message.body && <p>{message.body}</p>}
                       {!!message.attachments?.length && (
                         <div className={styles.attachmentList}>
-                          {message.attachments.map((attachment) => {
-                            const label = attachment.originalName || attachment.contentType || "Attachment";
-                            if (attachment.url && isImageAttachment(attachment)) {
-                              return (
-                                <a
-                                  className={styles.imageAttachment}
-                                  href={attachment.downloadUrl || attachment.url}
-                                  key={attachment.id}
-                                  rel="noreferrer"
-                                  target="_blank"
-                                  title="Open image"
-                                >
-                                  <img alt={label} loading="lazy" src={attachment.url} />
-                                  <span>{label}</span>
-                                </a>
-                              );
-                            }
-
-                            return (
-                              <a
-                                className={styles.fileAttachment}
-                                href={attachment.downloadUrl || attachment.url || "#"}
-                                key={attachment.id}
-                                rel="noreferrer"
-                                target="_blank"
-                              >
-                                {label}
-                              </a>
-                            );
-                          })}
+                          {message.attachments.map((attachment) => (
+                            <AttachmentPreview attachment={attachment} key={attachment.id} />
+                          ))}
                         </div>
                       )}
                       <div className={styles.messageFooter}>

@@ -40,6 +40,15 @@ function messagePreview(body: string | null | undefined) {
   return text.length > 80 ? `${text.slice(0, 80)}...` : text;
 }
 
+function mediaPreviewLabel(contentType: string | null | undefined) {
+  const type = (contentType || "").toLowerCase();
+  if (type.startsWith("image/")) return "Photo";
+  if (type.startsWith("video/")) return "Video";
+  if (type.startsWith("audio/")) return "Voice message";
+  if (type.includes("pdf")) return "PDF";
+  return "Attachment";
+}
+
 function decimalNumber(value: unknown) {
   if (value === null || value === undefined) return null;
   const numeric = Number(value);
@@ -123,7 +132,7 @@ async function getConversationList(businessId: string) {
         ? {
           id: lastMessage.id,
           preview: lastMessage.attachments.length && !lastMessage.body
-            ? `[${lastMessage.attachments[0]?.contentType || "Media message"}]`
+            ? mediaPreviewLabel(lastMessage.attachments[0]?.contentType)
             : messagePreview(lastMessage.body),
           direction: lastMessage.direction,
           senderType: lastMessage.senderType,
@@ -262,7 +271,7 @@ async function getConversationMessages(businessId: string, conversationId?: stri
         },
       },
       orderBy: { createdAt: "desc" },
-      take: 120,
+      take: 180,
     })).reverse()
     : [];
 
