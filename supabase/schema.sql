@@ -1269,3 +1269,77 @@ begin
     alter publication supabase_realtime add table public.creator_payouts;
   end if;
 end $$;
+
+create or replace function public.broadcast_crm_whatsapp_inbox_change()
+returns trigger
+security definer
+set search_path = ''
+language plpgsql
+as $$
+declare
+  changed_row jsonb;
+  changed_id text;
+  changed_conversation_id text;
+  changed_message_id text;
+begin
+  changed_row := case when TG_OP = 'DELETE' then to_jsonb(OLD) else to_jsonb(NEW) end;
+  changed_id := changed_row ->> 'id';
+
+  if TG_TABLE_NAME = 'crm_conversations' then
+    changed_conversation_id := changed_id;
+  elsif TG_TABLE_NAME in ('crm_messages', 'crm_leads', 'crm_ai_commands') then
+    changed_conversation_id := changed_row ->> 'conversation_id';
+  elsif TG_TABLE_NAME = 'crm_message_attachments' then
+    changed_message_id := changed_row ->> 'message_id';
+
+    select crm_messages.conversation_id
+    into changed_conversation_id
+    from public.crm_messages
+    where crm_messages.id = changed_message_id
+    limit 1;
+  else
+    changed_conversation_id := null;
+  end if;
+
+  perform realtime.send(
+    jsonb_build_object(
+      'table', TG_TABLE_NAME,
+      'operation', TG_OP,
+      'id', changed_id,
+      'conversationId', changed_conversation_id,
+      'messageId', changed_message_id,
+      'sentAt', now()
+    ),
+    'crm_change',
+    'crm-whatsapp-inbox',
+    false
+  );
+
+  return null;
+end;
+$$;
+
+revoke all on function public.broadcast_crm_whatsapp_inbox_change() from public;
+
+do $$
+declare
+  target_table text;
+begin
+  foreach target_table in array array[
+    'crm_contacts',
+    'crm_conversations',
+    'crm_messages',
+    'crm_message_attachments',
+    'crm_leads',
+    'crm_ai_commands'
+  ]
+  loop
+    if to_regclass('public.' || target_table) is not null then
+      execute format('drop trigger if exists broadcast_crm_whatsapp_inbox_change on public.%I', target_table);
+      execute format(
+        'create trigger broadcast_crm_whatsapp_inbox_change after insert or update or delete on public.%I for each row execute function public.broadcast_crm_whatsapp_inbox_change()',
+        target_table
+      );
+    end if;
+  end loop;
+end $$;

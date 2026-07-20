@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { supabase } from "@/lib/supabase";
+
 import styles from "./whatsapp-inbox.module.css";
 
 type ConversationSummary = {
@@ -101,6 +103,18 @@ type ConversationCache = Record<string, {
   messages: InboxMessage[];
   loadedAt: number;
 }>;
+
+type CrmRealtimePayload = {
+  table?: string;
+  operation?: string;
+  id?: string | null;
+  conversationId?: string | null;
+  messageId?: string | null;
+};
+
+const CONVERSATION_CACHE_TTL_MS = 60_000;
+const REALTIME_REFRESH_DEBOUNCE_MS = 160;
+const CRM_REALTIME_TOPIC = "crm-whatsapp-inbox";
 
 const statusOptions = [
   { value: "OPEN", label: "Open" },
@@ -269,6 +283,8 @@ export default function WhatsAppInboxClient() {
   const messageStreamRef = useRef<HTMLDivElement | null>(null);
   const selectedIdRef = useRef("");
   const conversationCacheRef = useRef<ConversationCache>({});
+  const listRefreshTimerRef = useRef<number | null>(null);
+  const conversationRefreshTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     conversationCacheRef.current = conversationCache;
@@ -300,7 +316,7 @@ export default function WhatsAppInboxClient() {
   const loadInbox = useCallback(async (conversationId?: string) => {
     setLoading(true);
     try {
-      const query = conversationId ? `?conversationId=${encodeURIComponent(conversationId)}` : "";
+      const query = conversationId ? `?conversationId=${encodeURIComponent(conversationId)}` : "?scope=list";
       const response = await fetch(`/api/crm/inbox${query}`, { cache: "no-store" });
       const data = await response.json();
       if (!response.ok || !data.ok) {
@@ -346,6 +362,29 @@ export default function WhatsAppInboxClient() {
     }
   }, [fetchConversation, rememberConversation]);
 
+  const scheduleListRefresh = useCallback((delay = REALTIME_REFRESH_DEBOUNCE_MS) => {
+    if (listRefreshTimerRef.current !== null) {
+      window.clearTimeout(listRefreshTimerRef.current);
+    }
+    listRefreshTimerRef.current = window.setTimeout(() => {
+      listRefreshTimerRef.current = null;
+      loadConversationList().catch(() => undefined);
+    }, delay);
+  }, [loadConversationList]);
+
+  const scheduleConversationRefresh = useCallback((conversationId?: string | null, delay = REALTIME_REFRESH_DEBOUNCE_MS) => {
+    const currentSelected = selectedIdRef.current;
+    if (!currentSelected) return;
+    if (conversationId && conversationId !== currentSelected) return;
+    if (conversationRefreshTimerRef.current !== null) {
+      window.clearTimeout(conversationRefreshTimerRef.current);
+    }
+    conversationRefreshTimerRef.current = window.setTimeout(() => {
+      conversationRefreshTimerRef.current = null;
+      loadConversation(currentSelected, false).catch(() => undefined);
+    }, delay);
+  }, [loadConversation]);
+
   useEffect(() => {
     loadInbox().catch((error) => {
       setNotice(error instanceof Error ? error.message : "CRM inbox could not be loaded.");
@@ -358,21 +397,54 @@ export default function WhatsAppInboxClient() {
   }, [selectedId]);
 
   useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      if (document.visibilityState === "hidden") return;
-      loadConversationList().catch(() => undefined);
-    }, 4000);
-    return () => window.clearInterval(intervalId);
-  }, [loadConversationList]);
+    const realtimeClient = supabase;
+    if (!realtimeClient) return undefined;
+    const channel = realtimeClient
+      .channel(CRM_REALTIME_TOPIC, { config: { broadcast: { self: true } } })
+      .on("broadcast", { event: "crm_change" }, (event) => {
+        const payload = (event.payload ?? {}) as CrmRealtimePayload;
+        scheduleListRefresh();
+        if (payload.table !== "crm_contacts") {
+          const changedConversationId = payload.conversationId
+            || (payload.table === "crm_conversations" ? payload.id : null);
+          scheduleConversationRefresh(changedConversationId);
+        }
+      })
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          scheduleListRefresh(0);
+        }
+      });
+
+    return () => {
+      void realtimeClient.removeChannel(channel);
+    };
+  }, [scheduleConversationRefresh, scheduleListRefresh]);
 
   useEffect(() => {
-    if (!selectedId) return undefined;
-    const intervalId = window.setInterval(() => {
-      if (document.visibilityState === "hidden") return;
-      loadConversation(selectedId, false).catch(() => undefined);
-    }, 2500);
-    return () => window.clearInterval(intervalId);
-  }, [loadConversation, selectedId]);
+    const refreshVisibleInbox = () => {
+      if (document.visibilityState !== "visible") return;
+      scheduleListRefresh(0);
+      scheduleConversationRefresh(selectedIdRef.current, 0);
+    };
+    document.addEventListener("visibilitychange", refreshVisibleInbox);
+    window.addEventListener("focus", refreshVisibleInbox);
+    return () => {
+      document.removeEventListener("visibilitychange", refreshVisibleInbox);
+      window.removeEventListener("focus", refreshVisibleInbox);
+    };
+  }, [scheduleConversationRefresh, scheduleListRefresh]);
+
+  useEffect(() => {
+    return () => {
+      if (listRefreshTimerRef.current !== null) {
+        window.clearTimeout(listRefreshTimerRef.current);
+      }
+      if (conversationRefreshTimerRef.current !== null) {
+        window.clearTimeout(conversationRefreshTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const element = messageStreamRef.current;
@@ -448,9 +520,11 @@ export default function WhatsAppInboxClient() {
         selectedConversation: cached.selectedConversation,
         messages: cached.messages,
       }));
-      if (Date.now() - cached.loadedAt < 10_000) {
+      if (Date.now() - cached.loadedAt < CONVERSATION_CACHE_TTL_MS) {
         return;
       }
+      void loadConversation(conversationId, false);
+      return;
     }
     const summary = inbox.conversations.find((conversation) => conversation.id === conversationId);
     if (!cached && summary) {
