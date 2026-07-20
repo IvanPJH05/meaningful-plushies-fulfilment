@@ -14,6 +14,10 @@ import {
   createWhatsAppAssistantReply,
   type WhatsAppAssistantMessage,
 } from "@/src/modules/openai/whatsapp-assistant";
+import {
+  fallbackWhatsAppMediaContentType,
+  whatsappMediaFromMessageMetadata,
+} from "@/src/modules/whatsapp/media-metadata";
 import { sendWhatsAppTextMessage } from "@/src/modules/whatsapp/outbound";
 
 export const runtime = "nodejs";
@@ -57,14 +61,40 @@ function isAiMode(value: unknown): value is AiMode {
   return typeof value === "string" && Object.values(AiMode).includes(value as AiMode);
 }
 
-async function getInbox(conversationId?: string | null) {
-  const business = await ensureDefaultBusiness();
+type InboxScope = "all" | "list" | "conversation";
+
+async function getConversationList(businessId: string) {
   const conversations = await prisma.conversation.findMany({
-    where: { businessId: business.id },
-    include: {
-      contact: true,
+    where: { businessId },
+    select: {
+      id: true,
+      status: true,
+      aiMode: true,
+      unreadCount: true,
+      lastMessageAt: true,
+      updatedAt: true,
+      contact: {
+        select: {
+          id: true,
+          waId: true,
+          phone: true,
+          displayName: true,
+        },
+      },
       messages: {
         orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          body: true,
+          direction: true,
+          senderType: true,
+          status: true,
+          createdAt: true,
+          attachments: {
+            select: { contentType: true },
+            take: 1,
+          },
+        },
         take: 1,
       },
     },
@@ -75,102 +105,181 @@ async function getInbox(conversationId?: string | null) {
     take: 75,
   });
 
-  const selectedConversationId = conversationId || conversations[0]?.id || null;
-  const selectedConversation = selectedConversationId
+  return conversations.map((conversation) => {
+    const lastMessage = conversation.messages[0];
+    return {
+      id: conversation.id,
+      status: conversation.status,
+      aiMode: conversation.aiMode,
+      unreadCount: conversation.unreadCount,
+      lastMessageAt: serializeDate(conversation.lastMessageAt || conversation.updatedAt),
+      contact: {
+        id: conversation.contact.id,
+        waId: conversation.contact.waId,
+        phone: conversation.contact.phone,
+        displayName: conversation.contact.displayName || conversation.contact.phone || conversation.contact.waId || "WhatsApp customer",
+      },
+      lastMessage: lastMessage
+        ? {
+          id: lastMessage.id,
+          preview: lastMessage.attachments.length && !lastMessage.body
+            ? `[${lastMessage.attachments[0]?.contentType || "Media message"}]`
+            : messagePreview(lastMessage.body),
+          direction: lastMessage.direction,
+          senderType: lastMessage.senderType,
+          status: lastMessage.status,
+          createdAt: serializeDate(lastMessage.createdAt),
+        }
+        : null,
+    };
+  });
+}
+
+async function getSelectedConversation(businessId: string, conversationId?: string | null) {
+  const selectedConversation = conversationId
     ? await prisma.conversation.findFirst({
-        where: { businessId: business.id, id: selectedConversationId },
-        include: {
-          contact: true,
+        where: { businessId, id: conversationId },
+        select: {
+          id: true,
+          status: true,
+          aiMode: true,
+          unreadCount: true,
+          lastMessageAt: true,
+          updatedAt: true,
+          contact: {
+            select: {
+              id: true,
+              waId: true,
+              phone: true,
+              displayName: true,
+              email: true,
+              source: true,
+              tags: true,
+            },
+          },
           leads: {
             orderBy: { updatedAt: "desc" },
+            select: {
+              id: true,
+              stage: true,
+              temperature: true,
+              customerName: true,
+              phone: true,
+              requestedCharacter: true,
+              requestedVoice: true,
+              estimatedValue: true,
+              paymentStatus: true,
+              paidAmount: true,
+              manualOrderId: true,
+              manualOrderLinkSentAt: true,
+              updatedAt: true,
+            },
             take: 5,
           },
           aiCommands: {
             orderBy: { createdAt: "desc" },
+            select: {
+              id: true,
+              type: true,
+              status: true,
+              error: true,
+              executedAt: true,
+              createdAt: true,
+            },
             take: 5,
           },
         },
       })
     : null;
 
-  const messages = selectedConversationId
+  return selectedConversation
+    ? {
+      id: selectedConversation.id,
+      status: selectedConversation.status,
+      aiMode: selectedConversation.aiMode,
+      unreadCount: selectedConversation.unreadCount,
+      lastMessageAt: serializeDate(selectedConversation.lastMessageAt || selectedConversation.updatedAt),
+      contact: {
+        id: selectedConversation.contact.id,
+        waId: selectedConversation.contact.waId,
+        phone: selectedConversation.contact.phone,
+        displayName: selectedConversation.contact.displayName || selectedConversation.contact.phone || selectedConversation.contact.waId || "WhatsApp customer",
+        email: selectedConversation.contact.email,
+        source: selectedConversation.contact.source,
+        tags: selectedConversation.contact.tags,
+      },
+      leads: selectedConversation.leads.map((lead) => ({
+        id: lead.id,
+        stage: lead.stage,
+        temperature: lead.temperature,
+        customerName: lead.customerName,
+        phone: lead.phone,
+        requestedCharacter: lead.requestedCharacter,
+        requestedVoice: lead.requestedVoice,
+        estimatedValue: decimalNumber(lead.estimatedValue),
+        paymentStatus: lead.paymentStatus,
+        paidAmount: decimalNumber(lead.paidAmount),
+        manualOrderId: lead.manualOrderId,
+        manualOrderLinkSentAt: serializeDate(lead.manualOrderLinkSentAt),
+        updatedAt: serializeDate(lead.updatedAt),
+      })),
+      commands: selectedConversation.aiCommands.map((command) => ({
+        id: command.id,
+        type: command.type,
+        status: command.status,
+        error: command.error,
+        executedAt: serializeDate(command.executedAt),
+        createdAt: serializeDate(command.createdAt),
+      })),
+    }
+    : null;
+}
+
+async function getConversationMessages(businessId: string, conversationId?: string | null) {
+  const messages = conversationId
     ? (await prisma.message.findMany({
-      where: { businessId: business.id, conversationId: selectedConversationId },
-      include: { attachments: true },
+      where: { businessId, conversationId },
+      select: {
+        id: true,
+        direction: true,
+        senderType: true,
+        messageType: true,
+        body: true,
+        status: true,
+        failedReason: true,
+        metadata: true,
+        createdAt: true,
+        sentAt: true,
+        deliveredAt: true,
+        readAt: true,
+        attachments: {
+          select: {
+            id: true,
+            originalName: true,
+            contentType: true,
+            sizeBytes: true,
+          },
+        },
+      },
       orderBy: { createdAt: "desc" },
       take: 120,
     })).reverse()
     : [];
 
-  return {
-    conversations: conversations.map((conversation) => {
-      const lastMessage = conversation.messages[0];
-      return {
-        id: conversation.id,
-        status: conversation.status,
-        aiMode: conversation.aiMode,
-        unreadCount: conversation.unreadCount,
-        lastMessageAt: serializeDate(conversation.lastMessageAt || conversation.updatedAt),
-        contact: {
-          id: conversation.contact.id,
-          waId: conversation.contact.waId,
-          phone: conversation.contact.phone,
-          displayName: conversation.contact.displayName || conversation.contact.phone || conversation.contact.waId || "WhatsApp customer",
-        },
-        lastMessage: lastMessage
-          ? {
-            id: lastMessage.id,
-            preview: messagePreview(lastMessage.body),
-            direction: lastMessage.direction,
-            senderType: lastMessage.senderType,
-            status: lastMessage.status,
-            createdAt: serializeDate(lastMessage.createdAt),
-          }
-          : null,
-      };
-    }),
-    selectedConversation: selectedConversation
-      ? {
-        id: selectedConversation.id,
-        status: selectedConversation.status,
-        aiMode: selectedConversation.aiMode,
-        unreadCount: selectedConversation.unreadCount,
-        lastMessageAt: serializeDate(selectedConversation.lastMessageAt || selectedConversation.updatedAt),
-        contact: {
-          id: selectedConversation.contact.id,
-          waId: selectedConversation.contact.waId,
-          phone: selectedConversation.contact.phone,
-          displayName: selectedConversation.contact.displayName || selectedConversation.contact.phone || selectedConversation.contact.waId || "WhatsApp customer",
-          email: selectedConversation.contact.email,
-          source: selectedConversation.contact.source,
-          tags: selectedConversation.contact.tags,
-        },
-        leads: selectedConversation.leads.map((lead) => ({
-          id: lead.id,
-          stage: lead.stage,
-          temperature: lead.temperature,
-          customerName: lead.customerName,
-          phone: lead.phone,
-          requestedCharacter: lead.requestedCharacter,
-          requestedVoice: lead.requestedVoice,
-          estimatedValue: decimalNumber(lead.estimatedValue),
-          paymentStatus: lead.paymentStatus,
-          paidAmount: decimalNumber(lead.paidAmount),
-          manualOrderId: lead.manualOrderId,
-          manualOrderLinkSentAt: serializeDate(lead.manualOrderLinkSentAt),
-          updatedAt: serializeDate(lead.updatedAt),
-        })),
-        commands: selectedConversation.aiCommands.map((command) => ({
-          id: command.id,
-          type: command.type,
-          status: command.status,
-          error: command.error,
-          executedAt: serializeDate(command.executedAt),
-          createdAt: serializeDate(command.createdAt),
-        })),
-      }
-      : null,
-    messages: messages.map((message) => ({
+  return messages.map((message) => {
+    const attachments = message.attachments.map((attachment) => ({
+      id: attachment.id,
+      originalName: attachment.originalName,
+      contentType: attachment.contentType,
+      sizeBytes: attachment.sizeBytes,
+      url: `/api/crm/inbox/attachments/${attachment.id}`,
+      downloadUrl: `/api/crm/inbox/attachments/${attachment.id}?download=1`,
+    }));
+    const media = attachments.length
+      ? null
+      : whatsappMediaFromMessageMetadata(message.metadata, message.messageType);
+
+    return {
       id: message.id,
       direction: message.direction,
       senderType: message.senderType,
@@ -182,13 +291,31 @@ async function getInbox(conversationId?: string | null) {
       sentAt: serializeDate(message.sentAt),
       deliveredAt: serializeDate(message.deliveredAt),
       readAt: serializeDate(message.readAt),
-      attachments: message.attachments.map((attachment) => ({
-        id: attachment.id,
-        originalName: attachment.originalName,
-        contentType: attachment.contentType,
-        sizeBytes: attachment.sizeBytes,
-      })),
-    })),
+      attachments: media
+        ? [{
+          id: `whatsapp-media-${message.id}`,
+          originalName: media.filename || null,
+          contentType: media.mimeType || fallbackWhatsAppMediaContentType(message.messageType),
+          sizeBytes: null,
+          url: `/api/crm/inbox/messages/${message.id}/media`,
+          downloadUrl: `/api/crm/inbox/messages/${message.id}/media?download=1`,
+        }]
+        : attachments,
+    };
+  });
+}
+
+async function getInbox(conversationId?: string | null, scope: InboxScope = "all") {
+  const business = await ensureDefaultBusiness();
+  const conversations = scope === "conversation" ? [] : await getConversationList(business.id);
+  const selectedConversationId = conversationId || conversations[0]?.id || null;
+  const selectedConversation = scope === "list" ? null : await getSelectedConversation(business.id, selectedConversationId);
+  const messages = scope === "list" ? [] : await getConversationMessages(business.id, selectedConversationId);
+
+  return {
+    conversations,
+    selectedConversation,
+    messages,
   };
 }
 
@@ -196,7 +323,9 @@ export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const conversationId = url.searchParams.get("conversationId");
-    return json(200, { ok: true, inbox: await getInbox(conversationId) });
+    const requestedScope = url.searchParams.get("scope");
+    const scope: InboxScope = requestedScope === "list" || requestedScope === "conversation" ? requestedScope : "all";
+    return json(200, { ok: true, inbox: await getInbox(conversationId, scope) });
   } catch (error) {
     return json(500, {
       ok: false,

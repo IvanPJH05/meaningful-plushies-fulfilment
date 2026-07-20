@@ -6,6 +6,12 @@ export type NormalizedWhatsAppMessage = {
   direction: "inbound" | "outbound";
   messageType: "text" | "image" | "audio" | "video" | "document" | "unknown";
   text: string;
+  media?: {
+    id: string;
+    mimeType: string;
+    sha256: string;
+    filename: string;
+  };
   timestamp: Date;
   raw: Record<string, unknown>;
 };
@@ -70,6 +76,22 @@ function messageType(message: Record<string, unknown>): NormalizedWhatsAppMessag
   return "unknown";
 }
 
+function messageMedia(message: Record<string, unknown>, type: NormalizedWhatsAppMessage["messageType"]) {
+  if (!["image", "audio", "video", "document"].includes(type)) return undefined;
+  const typedMedia = objectValue(message[type]);
+  const genericMedia = objectValue(message.media);
+  const media = Object.keys(typedMedia).length ? typedMedia : genericMedia;
+  const id = firstTextValue(media.id, media.media_id, media.mediaId, message.media_id, message.mediaId);
+  if (!id) return undefined;
+
+  return {
+    id,
+    mimeType: firstTextValue(media.mime_type, media.mimeType, media.content_type, media.contentType),
+    sha256: firstTextValue(media.sha256, media.sha_256),
+    filename: firstTextValue(media.filename, media.file_name, media.name),
+  };
+}
+
 function messageId(message: Record<string, unknown>) {
   return firstTextValue(
     message.id,
@@ -110,14 +132,16 @@ export function normalizeWhatsAppWebhookPayload(payload: unknown): NormalizedWha
     if (seen.has(key)) return;
     seen.add(key);
 
+    const type = messageType(input.message);
     messages.push({
       messageId: id,
       waId,
       phoneNumberId: input.phoneNumberId,
       displayName: input.displayName || profileName(input.message),
       direction: input.direction,
-      messageType: messageType(input.message),
+      messageType: type,
       text: messageText(input.message),
+      media: messageMedia(input.message, type),
       timestamp: dateFromValue(input.message.timestamp ?? input.message.sendTime ?? input.message.createTime ?? input.fallbackTimestamp),
       raw: input.message,
     });

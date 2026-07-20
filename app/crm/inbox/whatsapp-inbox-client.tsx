@@ -43,6 +43,8 @@ type InboxMessage = {
     originalName: string | null;
     contentType: string;
     sizeBytes: number | null;
+    url?: string;
+    downloadUrl?: string;
   }[];
 };
 
@@ -186,6 +188,27 @@ function money(value: number | null | undefined) {
   return `RM ${value.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+function selectedFromSummary(conversation: ConversationSummary): NonNullable<SelectedConversation> {
+  return {
+    id: conversation.id,
+    status: conversation.status,
+    aiMode: conversation.aiMode,
+    unreadCount: conversation.unreadCount,
+    lastMessageAt: conversation.lastMessageAt,
+    contact: {
+      ...conversation.contact,
+      source: "whatsapp",
+      tags: [],
+    },
+    leads: [],
+    commands: [],
+  };
+}
+
+function isImageAttachment(attachment: NonNullable<InboxMessage["attachments"]>[number]) {
+  return attachment.contentType.toLowerCase().startsWith("image/");
+}
+
 export default function WhatsAppInboxClient() {
   const [inbox, setInbox] = useState<InboxPayload>({ conversations: [], selectedConversation: null, messages: [] });
   const [connectionStatus, setConnectionStatus] = useState<WhatsAppConnectionStatus | null>(null);
@@ -194,12 +217,14 @@ export default function WhatsAppInboxClient() {
   const [filter, setFilter] = useState("ALL");
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(true);
+  const [conversationLoading, setConversationLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [generatingAi, setGeneratingAi] = useState(false);
   const [saving, setSaving] = useState(false);
   const [repairingSubscription, setRepairingSubscription] = useState(false);
   const [notice, setNotice] = useState("");
   const messageStreamRef = useRef<HTMLDivElement | null>(null);
+  const selectedIdRef = useRef("");
 
   const loadConnectionStatus = useCallback(async () => {
     const response = await fetch("/api/crm/whatsapp/status", { cache: "no-store" });
@@ -211,16 +236,55 @@ export default function WhatsAppInboxClient() {
 
   const loadInbox = useCallback(async (conversationId?: string) => {
     setLoading(true);
-    const query = conversationId ? `?conversationId=${encodeURIComponent(conversationId)}` : "";
-    const response = await fetch(`/api/crm/inbox${query}`, { cache: "no-store" });
+    try {
+      const query = conversationId ? `?conversationId=${encodeURIComponent(conversationId)}` : "";
+      const response = await fetch(`/api/crm/inbox${query}`, { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "CRM inbox could not be loaded.");
+      }
+      setInbox(data.inbox);
+      const nextSelected = data.inbox.selectedConversation?.id || "";
+      selectedIdRef.current = nextSelected;
+      setSelectedId(nextSelected);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const loadConversationList = useCallback(async () => {
+    const response = await fetch("/api/crm/inbox?scope=list", { cache: "no-store" });
     const data = await response.json();
     if (!response.ok || !data.ok) {
-      throw new Error(data.error || "CRM inbox could not be loaded.");
+      throw new Error(data.error || "CRM chat list could not be loaded.");
     }
-    setInbox(data.inbox);
-    const nextSelected = data.inbox.selectedConversation?.id || "";
-    setSelectedId(nextSelected);
-    setLoading(false);
+    setInbox((current) => ({
+      ...current,
+      conversations: data.inbox.conversations,
+    }));
+  }, []);
+
+  const loadConversation = useCallback(async (conversationId: string, showSpinner = true) => {
+    if (showSpinner) setConversationLoading(true);
+    try {
+      const response = await fetch(`/api/crm/inbox?scope=conversation&conversationId=${encodeURIComponent(conversationId)}`, {
+        cache: "no-store",
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "CRM conversation could not be loaded.");
+      }
+      if (selectedIdRef.current !== conversationId) {
+        return;
+      }
+      setInbox((current) => ({
+        ...current,
+        selectedConversation: data.inbox.selectedConversation,
+        messages: data.inbox.messages,
+      }));
+    } finally {
+      if (showSpinner) setConversationLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -230,6 +294,27 @@ export default function WhatsAppInboxClient() {
     });
     loadConnectionStatus().catch(() => undefined);
   }, [loadConnectionStatus, loadInbox]);
+
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      loadConversationList().catch(() => undefined);
+    }, 5000);
+    return () => window.clearInterval(intervalId);
+  }, [loadConversationList]);
+
+  useEffect(() => {
+    if (!selectedId) return undefined;
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      loadConversation(selectedId, false).catch(() => undefined);
+    }, 2500);
+    return () => window.clearInterval(intervalId);
+  }, [loadConversation, selectedId]);
 
   useEffect(() => {
     const element = messageStreamRef.current;
@@ -306,9 +391,18 @@ export default function WhatsAppInboxClient() {
   }, [selected]);
 
   async function selectConversation(conversationId: string) {
+    selectedIdRef.current = conversationId;
     setSelectedId(conversationId);
     setNotice("");
-    await loadInbox(conversationId);
+    const summary = inbox.conversations.find((conversation) => conversation.id === conversationId);
+    if (summary) {
+      setInbox((current) => ({
+        ...current,
+        selectedConversation: selectedFromSummary(summary),
+        messages: [],
+      }));
+    }
+    await loadConversation(conversationId);
   }
 
   async function sendMessage(messageId?: string, bodyOverride?: string) {
@@ -326,7 +420,8 @@ export default function WhatsAppInboxClient() {
       const data = await response.json();
       if (data.message) {
         if (!messageId) setDraft("");
-        await loadInbox(selectedId);
+        await loadConversation(selectedId, false);
+        void loadConversationList();
       }
       if (!response.ok || !data.ok) {
         setNotice(data.error || "WhatsApp message could not be sent.");
@@ -376,7 +471,8 @@ export default function WhatsAppInboxClient() {
       });
       const data = await response.json();
       if (data.message) {
-        await loadInbox(selectedId);
+        await loadConversation(selectedId, false);
+        void loadConversationList();
       }
       if (!response.ok || !data.ok) {
         throw new Error(data.error || "AI reply could not be generated.");
@@ -404,6 +500,7 @@ export default function WhatsAppInboxClient() {
         throw new Error(data.error || "Conversation could not be updated.");
       }
       setInbox(data.inbox);
+      void loadConversationList();
       setNotice("Conversation updated.");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Conversation could not be updated.");
@@ -433,7 +530,12 @@ export default function WhatsAppInboxClient() {
             className={styles.primaryButton}
             onClick={() => {
               void loadConnectionStatus();
-              void loadInbox(selectedId);
+              void loadConversationList();
+              if (selectedId) {
+                void loadConversation(selectedId, false);
+              } else {
+                void loadInbox();
+              }
             }}
             disabled={loading}
           >
@@ -513,7 +615,12 @@ export default function WhatsAppInboxClient() {
             <button
               onClick={() => {
                 void loadConnectionStatus();
-                void loadInbox(selectedId);
+                void loadConversationList();
+                if (selectedId) {
+                  void loadConversation(selectedId, false);
+                } else {
+                  void loadInbox();
+                }
               }}
               disabled={loading}
             >
@@ -606,6 +713,9 @@ export default function WhatsAppInboxClient() {
               </div>
 
               <div className={styles.messageStream} ref={messageStreamRef}>
+                {conversationLoading && !inbox.messages.length && (
+                  <div className={styles.emptyChat}>Loading chat...</div>
+                )}
                 {inbox.messages.map((message) => {
                   const inbound = message.direction === "INBOUND";
                   const queuedAi = message.senderType === "AI" && message.status === "QUEUED";
@@ -618,12 +728,39 @@ export default function WhatsAppInboxClient() {
                         <span>{messageLabel(message)}</span>
                         <time>{formatTime(message.createdAt)}</time>
                       </div>
-                      <p>{message.body}</p>
+                      {message.body && <p>{message.body}</p>}
                       {!!message.attachments?.length && (
                         <div className={styles.attachmentList}>
-                          {message.attachments.map((attachment) => (
-                            <span key={attachment.id}>{attachment.originalName || attachment.contentType}</span>
-                          ))}
+                          {message.attachments.map((attachment) => {
+                            const label = attachment.originalName || attachment.contentType || "Attachment";
+                            if (attachment.url && isImageAttachment(attachment)) {
+                              return (
+                                <a
+                                  className={styles.imageAttachment}
+                                  href={attachment.downloadUrl || attachment.url}
+                                  key={attachment.id}
+                                  rel="noreferrer"
+                                  target="_blank"
+                                  title="Open image"
+                                >
+                                  <img alt={label} loading="lazy" src={attachment.url} />
+                                  <span>{label}</span>
+                                </a>
+                              );
+                            }
+
+                            return (
+                              <a
+                                className={styles.fileAttachment}
+                                href={attachment.downloadUrl || attachment.url || "#"}
+                                key={attachment.id}
+                                rel="noreferrer"
+                                target="_blank"
+                              >
+                                {label}
+                              </a>
+                            );
+                          })}
                         </div>
                       )}
                       <div className={styles.messageFooter}>
@@ -641,7 +778,7 @@ export default function WhatsAppInboxClient() {
                     </article>
                   );
                 })}
-                {!inbox.messages.length && <div className={styles.emptyChat}>No messages in this conversation yet.</div>}
+                {!conversationLoading && !inbox.messages.length && <div className={styles.emptyChat}>No messages in this conversation yet.</div>}
               </div>
 
               <div className={styles.quickReplies}>

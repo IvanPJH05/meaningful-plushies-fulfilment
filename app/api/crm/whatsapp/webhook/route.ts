@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { createHash } from "node:crypto";
 import {
   AiCommandStatus,
@@ -22,6 +22,7 @@ import {
   type WhatsAppAssistantMessage,
 } from "@/src/modules/openai/whatsapp-assistant";
 import { verifyMetaWebhookSignature } from "@/src/modules/whatsapp/meta-signature";
+import { fallbackWhatsAppMediaContentType } from "@/src/modules/whatsapp/media-metadata";
 import { sendWhatsAppTextMessage } from "@/src/modules/whatsapp/outbound";
 import { verifyWebhookChallenge } from "@/src/modules/whatsapp/webhook-verification";
 import { normalizeWhatsAppWebhookPayload } from "@/src/modules/whatsapp/webhook-normalizer";
@@ -104,6 +105,44 @@ type StoredWhatsAppMessage = {
   messageType: MessageType;
   created: boolean;
 };
+
+async function saveWhatsAppMediaAttachment(args: {
+  messageId: string;
+  media?: {
+    id: string;
+    mimeType: string;
+    filename: string;
+  };
+  messageType: string;
+}) {
+  if (!args.media?.id) return;
+
+  const storageKey = `whatsapp-media:${args.media.id}`;
+  const existing = await prisma.messageAttachment.findFirst({
+    where: { messageId: args.messageId, storageKey },
+  });
+
+  const data = {
+    storageKey,
+    contentType: args.media.mimeType || fallbackWhatsAppMediaContentType(args.messageType),
+    originalName: args.media.filename || `${args.messageType}-${args.media.id}`,
+  };
+
+  if (existing) {
+    await prisma.messageAttachment.update({
+      where: { id: existing.id },
+      data,
+    });
+    return;
+  }
+
+  await prisma.messageAttachment.create({
+    data: {
+      messageId: args.messageId,
+      ...data,
+    },
+  });
+}
 
 function assistantHistoryDirection(message: {
   direction: MessageDirection;
@@ -333,7 +372,7 @@ async function storeWhatsAppMessages(rawPayload: unknown) {
       },
     });
 
-    await prisma.message.upsert({
+    const storedMessage = await prisma.message.upsert({
       where: {
         businessId_externalMessageId: {
           businessId: business.id,
@@ -350,6 +389,7 @@ async function storeWhatsAppMessages(rawPayload: unknown) {
           direction: message.direction,
           phoneNumberId: message.phoneNumberId,
           source: "meta_whatsapp_webhook",
+          media: message.media || null,
           raw: message.raw,
         }),
         sentAt: isInbound ? undefined : message.timestamp,
@@ -368,12 +408,19 @@ async function storeWhatsAppMessages(rawPayload: unknown) {
           direction: message.direction,
           phoneNumberId: message.phoneNumberId,
           source: "meta_whatsapp_webhook",
+          media: message.media || null,
           raw: message.raw,
         }),
         createdAt: message.timestamp,
         sentAt: isInbound ? undefined : message.timestamp,
         deliveredAt: isInbound ? message.timestamp : undefined,
       },
+    });
+
+    await saveWhatsAppMediaAttachment({
+      messageId: storedMessage.id,
+      media: message.media,
+      messageType: message.messageType,
     });
 
     await prisma.conversation.update({
@@ -444,11 +491,6 @@ export async function POST(request: Request) {
 
   try {
     const payload = JSON.parse(rawBody) as unknown;
-    await recordRawWhatsAppWebhook({
-      rawBody,
-      payload,
-      status: WebhookEventStatus.RECEIVED,
-    });
     const storedMessages = await storeWhatsAppMessages(payload);
     await recordRawWhatsAppWebhook({
       rawBody,
@@ -456,13 +498,22 @@ export async function POST(request: Request) {
       status: WebhookEventStatus.PROCESSED,
       parsedMessageCount: storedMessages.length,
     });
-    const ai = [];
-    for (const message of storedMessages) {
-      if (message.direction === "inbound") {
-        ai.push(await handleAiForInboundMessage(message));
-      }
+    const aiMessages = storedMessages.filter((message) => message.direction === "inbound");
+    if (aiMessages.length) {
+      after(async () => {
+        try {
+          await Promise.all(aiMessages.map((message) => handleAiForInboundMessage(message)));
+        } catch (error) {
+          console.error("WhatsApp AI background task failed", error);
+        }
+      });
     }
-    return json(200, { ok: true, stored: storedMessages.length, ai });
+
+    return json(200, {
+      ok: true,
+      stored: storedMessages.length,
+      ai: aiMessages.length ? "scheduled" : "none",
+    });
   } catch (error) {
     try {
       await recordRawWhatsAppWebhook({

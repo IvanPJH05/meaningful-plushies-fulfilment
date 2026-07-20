@@ -591,13 +591,47 @@
   margin: 8px 0;
 }
 
-.attachmentList span {
+.attachmentList a {
+  text-decoration: none;
+}
+
+.fileAttachment {
   background: #eaf3ff;
   border-radius: 999px;
   color: #174d8f;
   font-size: 11px;
   font-weight: 900;
   padding: 6px 9px;
+}
+
+.imageAttachment {
+  background: #f8fbff;
+  border: 1px solid #d7e3f2;
+  border-radius: 14px;
+  color: #174d8f;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: min(280px, 100%);
+  overflow: hidden;
+  padding: 7px;
+}
+
+.imageAttachment img {
+  background: #ffffff;
+  border-radius: 10px;
+  display: block;
+  max-height: 280px;
+  max-width: 100%;
+  object-fit: cover;
+}
+
+.imageAttachment span {
+  font-size: 11px;
+  font-weight: 900;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .quickReplies {
