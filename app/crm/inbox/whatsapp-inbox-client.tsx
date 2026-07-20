@@ -804,12 +804,19 @@ export default function WhatsAppInboxClient() {
               >
                 <span className={styles.avatar}>{initials(conversation.contact.displayName)}</span>
                 <span className={styles.conversationMain}>
-                  <strong>{conversation.contact.displayName}</strong>
-                  <small>{conversation.lastMessage?.preview || "No messages yet"}</small>
-                </span>
-                <span className={styles.conversationMeta}>
-                  <small>{formatTime(conversation.lastMessageAt)}</small>
-                  {conversation.unreadCount > 0 && <b>{conversation.unreadCount}</b>}
+                  <span className={styles.conversationTopLine}>
+                    <strong className={styles.conversationName}>{conversation.contact.displayName}</strong>
+                    <time className={styles.conversationTime}>{formatTime(conversation.lastMessageAt)}</time>
+                  </span>
+                  <span className={styles.conversationBottomLine}>
+                    <small className={styles.conversationPreview}>
+                      {conversation.lastMessage?.direction === "OUTBOUND" && (
+                        <span className={styles.previewPrefix}>You: </span>
+                      )}
+                      {conversation.lastMessage?.preview || "No messages yet"}
+                    </small>
+                    {conversation.unreadCount > 0 && <b className={styles.unreadBadge}>{conversation.unreadCount}</b>}
+                  </span>
                 </span>
               </button>
             ))}

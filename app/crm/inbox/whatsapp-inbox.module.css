@@ -365,9 +365,10 @@
   color: inherit;
   cursor: pointer;
   display: grid;
-  gap: 10px;
-  grid-template-columns: 42px minmax(0, 1fr) 56px;
-  padding: 14px 16px;
+  gap: 12px;
+  grid-template-columns: 48px minmax(0, 1fr);
+  min-height: 72px;
+  padding: 11px 14px;
   text-align: left;
   width: 100%;
 }
@@ -389,8 +390,9 @@
 }
 
 .avatar {
-  height: 42px;
-  width: 42px;
+  font-size: 16px;
+  height: 48px;
+  width: 48px;
 }
 
 .avatarLarge {
@@ -400,44 +402,62 @@
 }
 
 .conversationMain {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
   min-width: 0;
 }
 
-.conversationMain strong,
-.conversationMain small,
-.conversationMeta small {
-  display: block;
+.conversationTopLine,
+.conversationBottomLine {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  min-width: 0;
 }
 
-.conversationMain strong {
+.conversationTopLine {
+  justify-content: space-between;
+}
+
+.conversationName {
   font-size: 14px;
-  margin-bottom: 4px;
-}
-
-.conversationMain small {
-  color: #62748d;
+  line-height: 1.2;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.conversationMeta {
-  text-align: right;
+.conversationPreview {
+  color: #62748d;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.conversationMeta small {
+.conversationTime {
   color: #7a8aa0;
+  flex: 0 0 auto;
   font-size: 11px;
+  font-weight: 750;
 }
 
-.conversationMeta b {
+.previewPrefix {
+  color: #31445e;
+  font-weight: 850;
+}
+
+.unreadBadge {
   background: #dcfce7;
   border-radius: 999px;
   color: #047857;
   display: inline-flex;
+  flex: 0 0 auto;
   font-size: 11px;
   justify-content: center;
-  margin-top: 6px;
   min-width: 22px;
   padding: 4px 7px;
 }

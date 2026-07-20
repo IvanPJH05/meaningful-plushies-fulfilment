@@ -34,9 +34,8 @@ function serializeDate(value: Date | null | undefined) {
   return value ? value.toISOString() : null;
 }
 
-function messagePreview(body: string | null | undefined) {
+function textPreview(body: string | null | undefined) {
   const text = (body || "").replace(/\s+/g, " ").trim();
-  if (!text) return "No message text";
   return text.length > 80 ? `${text.slice(0, 80)}...` : text;
 }
 
@@ -47,6 +46,40 @@ function mediaPreviewLabel(contentType: string | null | undefined) {
   if (type.startsWith("audio/")) return "Voice message";
   if (type.includes("pdf")) return "PDF";
   return "Attachment";
+}
+
+function messageTypePreviewLabel(messageType: MessageType | null | undefined) {
+  switch (messageType) {
+    case MessageType.IMAGE:
+      return "Photo";
+    case MessageType.VIDEO:
+      return "Video";
+    case MessageType.AUDIO:
+      return "Voice message";
+    case MessageType.DOCUMENT:
+      return "Document";
+    case MessageType.TEMPLATE:
+      return "Template message";
+    case MessageType.SYSTEM:
+      return "System message";
+    case MessageType.TEXT:
+    default:
+      return "Message";
+  }
+}
+
+function messagePreview(message: {
+  body: string | null;
+  messageType?: MessageType | null;
+  attachments?: { contentType: string | null }[];
+}) {
+  const text = textPreview(message.body);
+  if (text) return text;
+
+  const attachment = message.attachments?.[0];
+  if (attachment) return mediaPreviewLabel(attachment.contentType);
+
+  return messageTypePreviewLabel(message.messageType);
 }
 
 function decimalNumber(value: unknown) {
@@ -95,6 +128,7 @@ async function getConversationList(businessId: string) {
         select: {
           id: true,
           body: true,
+          messageType: true,
           direction: true,
           senderType: true,
           status: true,
@@ -131,9 +165,7 @@ async function getConversationList(businessId: string) {
       lastMessage: lastMessage
         ? {
           id: lastMessage.id,
-          preview: lastMessage.attachments.length && !lastMessage.body
-            ? mediaPreviewLabel(lastMessage.attachments[0]?.contentType)
-            : messagePreview(lastMessage.body),
+          preview: messagePreview(lastMessage),
           direction: lastMessage.direction,
           senderType: lastMessage.senderType,
           status: lastMessage.status,
