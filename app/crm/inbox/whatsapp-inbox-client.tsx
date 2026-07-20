@@ -195,6 +195,7 @@ export default function WhatsAppInboxClient() {
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [generatingAi, setGeneratingAi] = useState(false);
   const [saving, setSaving] = useState(false);
   const [repairingSubscription, setRepairingSubscription] = useState(false);
   const [notice, setNotice] = useState("");
@@ -320,11 +321,14 @@ export default function WhatsAppInboxClient() {
         body: JSON.stringify({ conversationId: selectedId, messageId, body }),
       });
       const data = await response.json();
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error || "WhatsApp message could not be sent.");
+      if (data.message) {
+        if (!messageId) setDraft("");
+        await loadInbox(selectedId);
       }
-      if (!messageId) setDraft("");
-      await loadInbox(selectedId);
+      if (!response.ok || !data.ok) {
+        setNotice(data.error || "WhatsApp message could not be sent.");
+        return;
+      }
       setNotice(data.message?.status === "QUEUED"
         ? "Message saved, but WhatsApp sending is not fully configured yet."
         : "Message sent.");
@@ -353,6 +357,32 @@ export default function WhatsAppInboxClient() {
       setNotice(error instanceof Error ? error.message : "Meta webhook subscription could not be repaired.");
     } finally {
       setRepairingSubscription(false);
+    }
+  }
+
+  async function generateAiReply() {
+    if (!selectedId) return;
+
+    setGeneratingAi(true);
+    setNotice("");
+    try {
+      const response = await fetch("/api/crm/inbox", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId: selectedId, action: "suggest" }),
+      });
+      const data = await response.json();
+      if (data.message) {
+        await loadInbox(selectedId);
+      }
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || "AI reply could not be generated.");
+      }
+      setNotice("AI reply generated. Review it, then send the suggestion if it looks right.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "AI reply could not be generated.");
+    } finally {
+      setGeneratingAi(false);
     }
   }
 
@@ -602,6 +632,9 @@ export default function WhatsAppInboxClient() {
               </div>
 
               <div className={styles.quickReplies}>
+                <button onClick={() => void generateAiReply()} disabled={generatingAi || sending}>
+                  {generatingAi ? "Thinking..." : "AI reply"}
+                </button>
                 {quickReplies.map((reply) => (
                   <button key={reply.label} onClick={() => setDraft(reply.body)}>
                     {reply.label}

@@ -1,8 +1,12 @@
 .page {
-  background: #eef3f8;
+  background: #dfe7ef;
   color: #102033;
-  min-height: 100vh;
-  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100vh;
+  overflow: hidden;
+  padding: 12px;
 }
 
 .header {
@@ -13,8 +17,8 @@
   display: flex;
   gap: 18px;
   justify-content: space-between;
-  margin-bottom: 12px;
-  padding: 18px 22px;
+  margin-bottom: 0;
+  padding: 13px 18px;
 }
 
 .eyebrow {
@@ -27,14 +31,14 @@
 }
 
 .header h1 {
-  font-size: 28px;
+  font-size: 24px;
   line-height: 1;
-  margin: 0 0 7px;
+  margin: 0 0 5px;
 }
 
 .header span {
   color: #586a82;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .headerActions {
@@ -82,7 +86,7 @@
   color: #0c4f96;
   display: flex;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 0;
   padding: 11px 15px;
 }
 
@@ -101,8 +105,8 @@
   display: grid;
   gap: 10px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin-bottom: 12px;
-  padding: 12px;
+  margin-bottom: 0;
+  padding: 9px;
 }
 
 .connectionPanel div {
@@ -113,7 +117,7 @@
   flex-direction: column;
   gap: 5px;
   min-width: 0;
-  padding: 12px;
+  padding: 9px 11px;
 }
 
 .connectionPanel span,
@@ -130,7 +134,7 @@
 
 .connectionPanel strong {
   color: #102033;
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1.15;
 }
 
@@ -142,8 +146,8 @@
   display: flex;
   flex-direction: column;
   gap: 5px;
-  margin-bottom: 12px;
-  padding: 13px 15px;
+  margin-bottom: 0;
+  padding: 10px 13px;
 }
 
 .syncWarning strong {
@@ -163,8 +167,9 @@
   border-radius: 18px;
   display: grid;
   grid-template-columns: 78px 360px minmax(0, 1fr) 330px;
-  height: calc(100vh - 126px);
-  min-height: 680px;
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -215,11 +220,14 @@
 }
 
 .conversationList {
-  background: #f8fbff;
+  background: #ffffff;
   border-right: 1px solid #d7e3f2;
   display: flex;
   flex-direction: column;
+  height: 100%;
+  min-height: 0;
   min-width: 0;
+  overflow: hidden;
 }
 
 .listHeader {
@@ -319,7 +327,10 @@
 
 .conversationRows {
   border-top: 1px solid #e4edf7;
-  overflow: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .conversationRow {
@@ -417,12 +428,14 @@
 
 .chatPanel {
   background:
-    linear-gradient(rgba(237, 243, 248, 0.92), rgba(237, 243, 248, 0.92)),
-    radial-gradient(circle at 20% 20%, rgba(23, 105, 224, 0.12), transparent 26%),
-    radial-gradient(circle at 80% 10%, rgba(18, 135, 92, 0.11), transparent 24%);
+    linear-gradient(rgba(239, 234, 226, 0.9), rgba(239, 234, 226, 0.9)),
+    radial-gradient(circle at 18px 18px, rgba(127, 117, 104, 0.12) 1px, transparent 1px);
+  background-size: auto, 34px 34px;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
+  min-height: 0;
   min-width: 0;
+  overflow: hidden;
 }
 
 .chatHeader {
@@ -474,7 +487,9 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  overflow: auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 22px;
 }
 
@@ -494,8 +509,8 @@
 
 .outbound {
   align-self: flex-end;
-  background: #dcfce7;
-  border-color: #b7edcb;
+  background: #d9fdd3;
+  border-color: #beeab8;
   border-top-right-radius: 6px;
 }
 
@@ -585,7 +600,7 @@
 
 .composer {
   align-items: flex-end;
-  background: rgba(255, 255, 255, 0.96);
+  background: #f0f2f5;
   border-top: 1px solid #d7e3f2;
   display: grid;
   gap: 12px;
@@ -617,7 +632,9 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  overflow: auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 14px;
 }
 

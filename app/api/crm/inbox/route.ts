@@ -10,6 +10,10 @@ import {
 
 import { prisma } from "@/src/infrastructure/database/prisma";
 import { ensureDefaultBusiness } from "@/src/modules/businesses/default-business";
+import {
+  createWhatsAppAssistantReply,
+  type WhatsAppAssistantMessage,
+} from "@/src/modules/openai/whatsapp-assistant";
 import { sendWhatsAppTextMessage } from "@/src/modules/whatsapp/outbound";
 
 export const runtime = "nodejs";
@@ -36,6 +40,13 @@ function decimalNumber(value: unknown) {
   if (value === null || value === undefined) return null;
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : null;
+}
+
+function assistantDirection(direction: MessageDirection, senderType: MessageSenderType): WhatsAppAssistantMessage["direction"] {
+  if (direction === MessageDirection.INBOUND) return "customer";
+  if (senderType === MessageSenderType.TEAM) return "team";
+  if (senderType === MessageSenderType.AI) return "assistant";
+  return "system";
 }
 
 function isConversationStatus(value: unknown): value is ConversationStatus {
@@ -83,12 +94,12 @@ async function getInbox(conversationId?: string | null) {
     : null;
 
   const messages = selectedConversationId
-    ? await prisma.message.findMany({
+    ? (await prisma.message.findMany({
       where: { businessId: business.id, conversationId: selectedConversationId },
       include: { attachments: true },
-      orderBy: { createdAt: "asc" },
-      take: 250,
-    })
+      orderBy: { createdAt: "desc" },
+      take: 120,
+    })).reverse()
     : [];
 
   return {
@@ -267,6 +278,7 @@ export async function POST(request: Request) {
       conversationId?: string;
       body?: string;
       messageId?: string;
+      action?: "send" | "suggest";
     };
 
     if (!body.conversationId) {
@@ -279,6 +291,80 @@ export async function POST(request: Request) {
     });
     if (!conversation) {
       return json(404, { ok: false, error: "Conversation not found." });
+    }
+
+    if (body.action === "suggest") {
+      const recentDescending = await prisma.message.findMany({
+        where: { businessId: business.id, conversationId: conversation.id },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+      });
+      const recentMessages = recentDescending.reverse();
+      const latestCustomerMessage = [...recentMessages]
+        .reverse()
+        .find((message) => message.direction === MessageDirection.INBOUND && message.body?.trim());
+
+      if (!latestCustomerMessage?.body?.trim()) {
+        return json(400, { ok: false, error: "There is no customer message for AI to reply to yet." });
+      }
+
+      const suggestion = await createWhatsAppAssistantReply({
+        customerName: conversation.contact.displayName || conversation.contact.phone || undefined,
+        customerPhone: conversation.contact.phone || conversation.contact.waId || undefined,
+        latestMessage: latestCustomerMessage.body,
+        recentMessages: recentMessages
+          .filter((message) => message.body?.trim())
+          .map((message) => ({
+            direction: assistantDirection(message.direction, message.senderType),
+            body: message.body || "",
+          })),
+      });
+
+      if (!suggestion.ok || !suggestion.reply) {
+        const error = suggestion.reason === "missing_openai_api_key"
+          ? "OPENAI_API_KEY is missing in Vercel, so AI replies cannot be generated yet."
+          : suggestion.error || "AI reply could not be generated.";
+        return json(400, { ok: false, error });
+      }
+
+      const message = await prisma.message.create({
+        data: {
+          businessId: business.id,
+          conversationId: conversation.id,
+          direction: MessageDirection.OUTBOUND,
+          senderType: MessageSenderType.AI,
+          messageType: MessageType.TEXT,
+          body: suggestion.reply,
+          status: MessageStatus.QUEUED,
+          metadata: jsonValue({
+            generatedFromInbox: true,
+            model: suggestion.model,
+            promptVersion: "whatsapp-sales-v1",
+          }),
+        },
+      });
+
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          lastMessageAt: new Date(),
+        },
+      });
+
+      return json(200, {
+        ok: true,
+        message: {
+          id: message.id,
+          direction: message.direction,
+          senderType: message.senderType,
+          messageType: message.messageType,
+          body: message.body || "",
+          status: message.status,
+          failedReason: message.failedReason,
+          createdAt: serializeDate(message.createdAt),
+          sentAt: serializeDate(message.sentAt),
+        },
+      });
     }
 
     const recipient = conversation.contact.waId || conversation.contact.phone;
