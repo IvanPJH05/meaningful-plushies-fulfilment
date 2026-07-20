@@ -245,7 +245,10 @@ export default function WhatsAppInboxClient() {
   const onlyMetaTestConversation = inbox.conversations.length === 1
     && inbox.conversations[0]?.contact.waId === "16315551181"
     && inbox.conversations[0]?.lastMessage?.preview === "this is a text message";
+  const parsedWebhooksLast24h = webhookActivity?.ok ? webhookActivity.parsedLast24h ?? 0 : 0;
+  const hasLiveWebhookTraffic = parsedWebhooksLast24h > 0 && !onlyMetaTestConversation;
   const noLiveWebhooks = webhookActivity?.ok && (webhookActivity.rawLast24h ?? 0) === 0;
+  const shouldWarnNoLiveWebhooks = (onlyMetaTestConversation || noLiveWebhooks) && !hasLiveWebhookTraffic;
 
   const visibleConversations = useMemo(() => {
     const query = normalizeSearch(search);
@@ -464,16 +467,26 @@ export default function WhatsAppInboxClient() {
         </div>
       </section>
 
-      {phoneVerificationStatus === "NOT_VERIFIED" && (
-        <section className={styles.syncWarning}>
-          <strong>Meta says this WhatsApp phone number is not verified yet.</strong>
+      {phoneVerificationStatus === "NOT_VERIFIED" && hasLiveWebhookTraffic && (
+        <section className={styles.syncInfo}>
+          <strong>WhatsApp webhooks are reaching this inbox.</strong>
           <span>
-            The app can receive Meta&apos;s test payload, but real customer chats may not arrive until the connected number is verified and approved for WhatsApp Business Platform / Coexistence.
+            Meta still reports this phone number as not verified, but the app has received {parsedWebhooksLast24h} parsed WhatsApp message{parsedWebhooksLast24h === 1 ? "" : "s"} in the last 24 hours.
+            If sending replies is blocked, finish the phone number / Coexistence verification in Meta.
           </span>
         </section>
       )}
 
-      {(onlyMetaTestConversation || noLiveWebhooks) && (
+      {phoneVerificationStatus === "NOT_VERIFIED" && !hasLiveWebhookTraffic && (
+        <section className={styles.syncWarning}>
+          <strong>Meta says this WhatsApp phone number is not verified yet.</strong>
+          <span>
+            Real customer chats and outbound replies may be blocked until the connected number is verified and approved for WhatsApp Business Platform / Coexistence.
+          </span>
+        </section>
+      )}
+
+      {shouldWarnNoLiveWebhooks && (
         <section className={styles.syncWarning}>
           <strong>No real WhatsApp webhooks have reached this inbox recently.</strong>
           <span>

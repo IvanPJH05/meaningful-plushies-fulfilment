@@ -161,6 +161,29 @@
   line-height: 1.45;
 }
 
+.syncInfo {
+  background: #ecfdf5;
+  border: 1px solid #bbf7d0;
+  border-radius: 14px;
+  color: #14532d;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 0;
+  padding: 10px 13px;
+}
+
+.syncInfo strong {
+  color: #047857;
+  font-size: 14px;
+}
+
+.syncInfo span {
+  color: #166534;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .whatsappWorkspace {
   background: #fff;
   border: 1px solid #d7e3f2;
