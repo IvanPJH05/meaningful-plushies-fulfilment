@@ -298,6 +298,36 @@ test("keeps blank TikTok detail rows blank instead of reading the next row", () 
   });
 });
 
+test("parses TikTok plushie details with curly apostrophe labels", () => {
+  const parsed = parseTikTokDetailsBlock([
+    "Plushie\u2019s Name - Mikoo",
+    "Plushie\u2019s Gender - male",
+    "Plushie\u2019s Birth Date - 18/5/2026",
+    "Plushie\u2019s Birth Place - Selangor",
+    "Plushie\u2019s Favourite Person - Aqilah",
+    "Plushie Belongs To - Hakimi",
+    "Meaningful Note - i\u2019ll always love you endlessly, completely and with every piece of who i am",
+  ].join("\n"));
+
+  assert.deepEqual({
+    plushName: parsed.plushName,
+    gender: parsed.gender,
+    birthDate: parsed.birthDate,
+    birthPlace: parsed.birthPlace,
+    favouritePerson: parsed.favouritePerson,
+    belongsTo: parsed.belongsTo,
+    meaningfulNote: parsed.meaningfulNote,
+  }, {
+    plushName: "Mikoo",
+    gender: "Male",
+    birthDate: "18/5/2026",
+    birthPlace: "Selangor",
+    favouritePerson: "Aqilah",
+    belongsTo: "Hakimi",
+    meaningfulNote: "i'll always love you endlessly, completely and with every piece of who i am",
+  });
+});
+
 test("updates existing TikTok orders from detail entries without a CSV", () => {
   const existing: Order = {
     id: "tiktok-584697260225955022",

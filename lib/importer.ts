@@ -528,8 +528,23 @@ function titleCase(value: string) {
   return value.toLowerCase().replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
 }
 
+function normalizeTikTokDetailText(value: string) {
+  return value
+    .replace(/\u2026/g, "...")
+    .replace(/[\u2018\u2019\u201B`\u00B4]/g, "'")
+    .replace(/[\u201C\u201D]/g, "\"")
+    .replace(/[\uFF1A]/g, ":")
+    .replace(/[\u2013\u2014\u2212]/g, "-")
+    .replace(/\u00EF\u00BC\u0161/g, ":")
+    .replace(/\u00E2\u20AC\u00A6/g, "...")
+    .replace(/\u00E2\u20AC\u201C/g, "-")
+    .replace(/\u00E2\u20AC\u201D/g, "-");
+}
+
 function tikTokDetailValue(raw: string, labels: string[]) {
-  const normalizedRaw = raw.replace(/\u2026/g, "...").replace(/[：]/g, ":").replace(/[–—]/g, "-");
+  raw = normalizeTikTokDetailText(raw);
+  labels = labels.map(normalizeTikTokDetailText);
+  const normalizedRaw = raw;
   for (const label of labels) {
     const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const match = normalizedRaw.match(new RegExp(`(?:^|[\\r\\n])[^\\S\\r\\n]*${escaped}[^\\S\\r\\n]*(?:[-:]|\\.\\.\\.)[^\\S\\r\\n]*([^\\r\\n]*)`, "i"));
@@ -544,11 +559,11 @@ export function parseTikTokDetailsBlock(raw: string): TikTokDetails {
     fileDataUrl: "",
     fileName: "",
     fileType: "",
-    plushName: tikTokDetailValue(raw, ["Plushie's Name", "Plushie Name", "Name", "Nama Plushie", "Nama Mainan", "Nama"]),
-    gender: titleCase(tikTokDetailValue(raw, ["Plushie's Gender", "Plushie Gender", "Gender", "Jantina Plushie", "Jantina"])),
-    birthDate: tikTokDetailValue(raw, ["Plushie's Birth Date", "Plushie Birth Date", "Birth Date", "Tarikh Lahir Plushie", "Tarikh Lahir"]),
-    birthPlace: tikTokDetailValue(raw, ["Plushie's Birth Place", "Plushie Birth Place", "Birth Place", "Tempat Lahir Plushie", "Tempat Lahir"]),
-    favouritePerson: titleCase(tikTokDetailValue(raw, ["Plushie's Favourite Person", "Plushie Favourite Person", "Favourite Person", "Favorite Person", "Orang Kegemaran Plushie", "Orang Kegemaran"])),
+    plushName: tikTokDetailValue(raw, ["Plushie's Name", "Plushies Name", "Plushie Name", "Name", "Nama Plushie", "Nama Mainan", "Nama"]),
+    gender: titleCase(tikTokDetailValue(raw, ["Plushie's Gender", "Plushies Gender", "Plushie Gender", "Gender", "Jantina Plushie", "Jantina"])),
+    birthDate: tikTokDetailValue(raw, ["Plushie's Birth Date", "Plushies Birth Date", "Plushie Birth Date", "Birth Date", "Tarikh Lahir Plushie", "Tarikh Lahir"]),
+    birthPlace: tikTokDetailValue(raw, ["Plushie's Birth Place", "Plushies Birth Place", "Plushie Birth Place", "Birth Place", "Tempat Lahir Plushie", "Tempat Lahir"]),
+    favouritePerson: titleCase(tikTokDetailValue(raw, ["Plushie's Favourite Person", "Plushies Favourite Person", "Plushie Favourite Person", "Favourite Person", "Favorite Person", "Orang Kegemaran Plushie", "Orang Kegemaran"])),
     belongsTo: titleCase(tikTokDetailValue(raw, ["Plushie Belongs to", "Belongs To", "Belongs to", "Mainan lembut itu milik", "Milik", "Kepunyaan"])),
     meaningfulNote: tikTokDetailValue(raw, ["Meaningful Note", "Nota bermakna", "Nota Bermakna", "Nota"]),
   };
