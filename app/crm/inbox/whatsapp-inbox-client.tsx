@@ -469,10 +469,10 @@ export default function WhatsAppInboxClient() {
 
       {phoneVerificationStatus === "NOT_VERIFIED" && hasLiveWebhookTraffic && (
         <section className={styles.syncInfo}>
-          <strong>WhatsApp webhooks are reaching this inbox.</strong>
+          <strong>WhatsApp is connected and receiving customer messages.</strong>
           <span>
-            Meta still reports this phone number as not verified, but the app has received {parsedWebhooksLast24h} parsed WhatsApp message{parsedWebhooksLast24h === 1 ? "" : "s"} in the last 24 hours.
-            If sending replies is blocked, finish the phone number / Coexistence verification in Meta.
+            Meta&apos;s API still reports the phone verification flag as pending, but WhatsApp Manager shows this number as connected and the app has received {parsedWebhooksLast24h} parsed WhatsApp message{parsedWebhooksLast24h === 1 ? "" : "s"} in the last 24 hours.
+            If replies fail, check the WhatsApp access token and app permissions next.
           </span>
         </section>
       )}
