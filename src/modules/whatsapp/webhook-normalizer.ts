@@ -1,3 +1,5 @@
+export type NormalizedWhatsAppMessageSource = "messages" | "message_echoes" | "history" | "provider_history";
+
 export type NormalizedWhatsAppMessage = {
   messageId: string;
   waId: string;
@@ -13,6 +15,7 @@ export type NormalizedWhatsAppMessage = {
     filename: string;
   };
   timestamp: Date;
+  source: NormalizedWhatsAppMessageSource;
   raw: Record<string, unknown>;
 };
 
@@ -34,6 +37,16 @@ function firstTextValue(...values: unknown[]) {
     if (text) return text;
   }
   return "";
+}
+
+function booleanValue(value: unknown) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "yes"].includes(normalized)) return true;
+    if (["false", "0", "no"].includes(normalized)) return false;
+  }
+  return null;
 }
 
 function dateFromValue(value: unknown) {
@@ -109,7 +122,91 @@ function profileName(message: Record<string, unknown>) {
 }
 
 function normalizePhone(value: unknown) {
-  return textValue(value).replace(/^\+/, "").trim();
+  return textValue(value).replace(/[^\d]/g, "").trim();
+}
+
+function messageTimestamp(message: Record<string, unknown>, fallbackTimestamp?: unknown) {
+  return dateFromValue(message.timestamp ?? message.sendTime ?? message.createTime ?? message.sent_at ?? fallbackTimestamp);
+}
+
+type HistoryContext = {
+  phoneNumberId: string;
+  businessPhone: string;
+  fallbackTimestamp?: unknown;
+  contacts: Map<string, string>;
+  threadWaId?: string;
+};
+
+function explicitDirection(message: Record<string, unknown>): NormalizedWhatsAppMessage["direction"] | null {
+  const fromMe = booleanValue(message.from_me ?? message.fromMe ?? message.is_from_me ?? message.isFromMe);
+  if (fromMe === true) return "outbound";
+  if (fromMe === false) return "inbound";
+
+  const direction = firstTextValue(
+    message.direction,
+    message.message_direction,
+    message.messageDirection,
+    message.sender_type,
+    message.senderType,
+  ).toLowerCase();
+
+  if (!direction) return null;
+  if (direction.includes("out") || direction.includes("sent") || direction.includes("business") || direction.includes("team")) {
+    return "outbound";
+  }
+  if (direction.includes("in") || direction.includes("received") || direction.includes("customer")) {
+    return "inbound";
+  }
+
+  return null;
+}
+
+function historyDirection(message: Record<string, unknown>, context: HistoryContext) {
+  const explicit = explicitDirection(message);
+  if (explicit) return explicit;
+
+  const from = normalizePhone(firstTextValue(message.from, message.sender, message.sender_id, message.fromUserId));
+  const to = normalizePhone(firstTextValue(message.to, message.recipient, message.recipient_id, message.toUserId));
+
+  if (context.businessPhone) {
+    if (from && from === context.businessPhone) return "outbound";
+    if (to && to === context.businessPhone) return "inbound";
+  }
+
+  if (!from && to) return "outbound";
+  if (from && !to) return "inbound";
+
+  return null;
+}
+
+function historyWaId(message: Record<string, unknown>, direction: NormalizedWhatsAppMessage["direction"], context: HistoryContext) {
+  const candidate = direction === "inbound"
+    ? firstTextValue(message.from, message.sender, message.sender_id, message.fromUserId, context.threadWaId)
+    : firstTextValue(message.to, message.recipient, message.recipient_id, message.toUserId, context.threadWaId);
+
+  return normalizePhone(candidate);
+}
+
+function historyDisplayName(waId: string, message: Record<string, unknown>, context: HistoryContext) {
+  return context.contacts.get(waId) || profileName(message);
+}
+
+function looksLikeMessage(message: Record<string, unknown>) {
+  if (!messageId(message)) return false;
+  if (textValue(message.type)) return true;
+  if (Object.keys(objectValue(message.text)).length || textValue(message.text)) return true;
+  if (firstTextValue(message.body, message.message, message.caption)) return true;
+  return ["image", "audio", "video", "document", "media"].some((key) => Object.keys(objectValue(message[key])).length);
+}
+
+function contactMap(value: Record<string, unknown>) {
+  return new Map(
+    arrayValue(value.contacts).map((contact) => {
+      const row = objectValue(contact);
+      const waId = normalizePhone(row.wa_id);
+      return [waId, textValue(objectValue(row.profile).name)] as const;
+    }).filter(([waId]) => waId),
+  );
 }
 
 export function normalizeWhatsAppWebhookPayload(payload: unknown): NormalizedWhatsAppMessage[] {
@@ -122,6 +219,7 @@ export function normalizeWhatsAppWebhookPayload(payload: unknown): NormalizedWha
     phoneNumberId: string;
     displayName?: string;
     direction: NormalizedWhatsAppMessage["direction"];
+    source: NormalizedWhatsAppMessageSource;
     fallbackTimestamp?: unknown;
   }) {
     const id = messageId(input.message);
@@ -142,21 +240,41 @@ export function normalizeWhatsAppWebhookPayload(payload: unknown): NormalizedWha
       messageType: type,
       text: messageText(input.message),
       media: messageMedia(input.message, type),
-      timestamp: dateFromValue(input.message.timestamp ?? input.message.sendTime ?? input.message.createTime ?? input.fallbackTimestamp),
+      timestamp: messageTimestamp(input.message, input.fallbackTimestamp),
+      source: input.source,
       raw: input.message,
     });
   }
 
-  function scanProviderStyleEvent(value: Record<string, unknown>, fallbackPhoneNumberId = "", fallbackTimestamp?: unknown) {
+  function addHistoryMessage(message: Record<string, unknown>, context: HistoryContext, source: NormalizedWhatsAppMessageSource = "history") {
+    if (!looksLikeMessage(message)) return;
+    const direction = historyDirection(message, context);
+    if (!direction) return;
+    const waId = historyWaId(message, direction, context);
+    if (!waId) return;
+
+    addMessage({
+      message,
+      waId,
+      phoneNumberId: context.phoneNumberId,
+      displayName: historyDisplayName(waId, message, context),
+      direction,
+      source,
+      fallbackTimestamp: context.fallbackTimestamp,
+    });
+  }
+
+  function scanProviderStyleEvent(value: Record<string, unknown>, context: HistoryContext) {
     const inbound = objectValue(value.whatsappInboundMessage);
     if (Object.keys(inbound).length) {
       addMessage({
         message: inbound,
-        waId: firstTextValue(inbound.from, inbound.fromUserId),
-        phoneNumberId: fallbackPhoneNumberId,
+        waId: firstTextValue(inbound.from, inbound.fromUserId, context.threadWaId),
+        phoneNumberId: context.phoneNumberId,
         displayName: profileName(inbound),
         direction: "inbound",
-        fallbackTimestamp,
+        source: "provider_history",
+        fallbackTimestamp: context.fallbackTimestamp,
       });
     }
 
@@ -164,30 +282,55 @@ export function normalizeWhatsAppWebhookPayload(payload: unknown): NormalizedWha
     if (Object.keys(outbound).length) {
       addMessage({
         message: outbound,
-        waId: firstTextValue(outbound.to, outbound.toUserId),
-        phoneNumberId: fallbackPhoneNumberId,
+        waId: firstTextValue(outbound.to, outbound.toUserId, context.threadWaId),
+        phoneNumberId: context.phoneNumberId,
         displayName: profileName(outbound),
         direction: "outbound",
-        fallbackTimestamp,
+        source: "provider_history",
+        fallbackTimestamp: context.fallbackTimestamp,
       });
     }
   }
 
-  function scanNestedProviderEvents(value: unknown, fallbackPhoneNumberId = "", fallbackTimestamp?: unknown, depth = 0) {
-    if (depth > 5) return;
+  function scanHistoryNode(value: unknown, context: HistoryContext, depth = 0) {
+    if (depth > 8) return;
+    if (Array.isArray(value)) {
+      for (const item of value) scanHistoryNode(item, context, depth + 1);
+      return;
+    }
+
     const object = objectValue(value);
     if (!Object.keys(object).length) return;
 
-    scanProviderStyleEvent(object, fallbackPhoneNumberId, fallbackTimestamp);
+    const objectThreadWaId = normalizePhone(firstTextValue(
+      object.wa_id,
+      object.contact_wa_id,
+      object.customer_wa_id,
+      object.contactId,
+      object.contact_id,
+      objectValue(object.contact).wa_id,
+      objectValue(object.customer).wa_id,
+      arrayValue(object.messages).length ? object.id : "",
+    ));
+    const nextContext = objectThreadWaId ? { ...context, threadWaId: objectThreadWaId } : context;
 
-    for (const child of Object.values(object)) {
-      if (Array.isArray(child)) {
-        for (const item of child) {
-          scanNestedProviderEvents(item, fallbackPhoneNumberId, fallbackTimestamp, depth + 1);
-        }
-      } else if (child && typeof child === "object") {
-        scanNestedProviderEvents(child, fallbackPhoneNumberId, fallbackTimestamp, depth + 1);
-      }
+    scanProviderStyleEvent(object, nextContext);
+    addHistoryMessage(object, nextContext);
+
+    for (const key of [
+      "history",
+      "threads",
+      "thread",
+      "messages",
+      "message_echoes",
+      "events",
+      "data",
+      "items",
+      "chat_history",
+      "conversation",
+      "conversations",
+    ]) {
+      if (object[key] !== undefined) scanHistoryNode(object[key], nextContext, depth + 1);
     }
   }
 
@@ -196,22 +339,19 @@ export function normalizeWhatsAppWebhookPayload(payload: unknown): NormalizedWha
       const value = objectValue(objectValue(change).value);
       const metadata = objectValue(value.metadata);
       const phoneNumberId = textValue(metadata.phone_number_id);
-      const contacts = new Map(
-        arrayValue(value.contacts).map((contact) => {
-          const row = objectValue(contact);
-          return [textValue(row.wa_id), textValue(objectValue(row.profile).name)] as const;
-        }),
-      );
+      const businessPhone = normalizePhone(metadata.display_phone_number);
+      const contacts = contactMap(value);
 
       for (const item of arrayValue(value.messages)) {
         const message = objectValue(item);
-        const waId = textValue(message.from);
+        const waId = normalizePhone(message.from);
         addMessage({
           message,
           waId,
           phoneNumberId,
           displayName: contacts.get(waId) ?? "",
           direction: "inbound",
+          source: "messages",
         });
       }
 
@@ -224,18 +364,30 @@ export function normalizeWhatsAppWebhookPayload(payload: unknown): NormalizedWha
           phoneNumberId,
           displayName: profileName(message),
           direction: "outbound",
+          source: "message_echoes",
         });
       }
 
-      for (const item of arrayValue(value.history)) {
-        scanNestedProviderEvents(item, phoneNumberId, value.timestamp);
+      if (value.history !== undefined) {
+        scanHistoryNode(value.history, {
+          phoneNumberId,
+          businessPhone,
+          fallbackTimestamp: value.timestamp,
+          contacts,
+        });
       }
-
-      scanNestedProviderEvents(value, phoneNumberId, value.timestamp);
     }
   }
 
-  scanNestedProviderEvents(payload, "", objectValue(payload).createTime);
+  const root = objectValue(payload);
+  if (root.whatsappInboundMessage || root.whatsappMessage) {
+    scanProviderStyleEvent(root, {
+      phoneNumberId: "",
+      businessPhone: "",
+      fallbackTimestamp: root.createTime,
+      contacts: new Map(),
+    });
+  }
 
   return messages;
 }

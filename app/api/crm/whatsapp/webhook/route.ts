@@ -25,7 +25,10 @@ import { verifyMetaWebhookSignature } from "@/src/modules/whatsapp/meta-signatur
 import { fallbackWhatsAppMediaContentType } from "@/src/modules/whatsapp/media-metadata";
 import { sendWhatsAppTextMessage } from "@/src/modules/whatsapp/outbound";
 import { verifyWebhookChallenge } from "@/src/modules/whatsapp/webhook-verification";
-import { normalizeWhatsAppWebhookPayload } from "@/src/modules/whatsapp/webhook-normalizer";
+import {
+  normalizeWhatsAppWebhookPayload,
+  type NormalizedWhatsAppMessageSource,
+} from "@/src/modules/whatsapp/webhook-normalizer";
 
 export const runtime = "nodejs";
 
@@ -51,6 +54,34 @@ function messageType(type: string) {
 
 function jsonValue(value: unknown) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function arrayValue(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function payloadHasWhatsAppHistory(payload: unknown) {
+  for (const entry of arrayValue(objectValue(payload).entry)) {
+    for (const change of arrayValue(objectValue(entry).changes)) {
+      const value = objectValue(objectValue(change).value);
+      if (value.history !== undefined) return true;
+    }
+  }
+  return false;
+}
+
+function payloadHasLiveWhatsAppMessages(payload: unknown) {
+  for (const entry of arrayValue(objectValue(payload).entry)) {
+    for (const change of arrayValue(objectValue(entry).changes)) {
+      const value = objectValue(objectValue(change).value);
+      if (arrayValue(value.messages).length || arrayValue(value.message_echoes).length) return true;
+    }
+  }
+  return false;
 }
 
 async function recordRawWhatsAppWebhook(args: {
@@ -104,7 +135,28 @@ type StoredWhatsAppMessage = {
   text: string;
   messageType: MessageType;
   created: boolean;
+  source: NormalizedWhatsAppMessageSource;
 };
+
+function scheduleAiForStoredMessages(storedMessages: StoredWhatsAppMessage[]) {
+  const aiMessages = storedMessages.filter((message) => (
+    message.direction === "inbound"
+    && message.source !== "history"
+    && message.source !== "provider_history"
+  ));
+
+  if (aiMessages.length) {
+    after(async () => {
+      try {
+        await Promise.all(aiMessages.map((message) => handleAiForInboundMessage(message)));
+      } catch (error) {
+        console.error("WhatsApp AI background task failed", error);
+      }
+    });
+  }
+
+  return aiMessages.length;
+}
 
 async function saveWhatsAppMediaAttachment(args: {
   messageId: string;
@@ -295,6 +347,8 @@ async function storeWhatsAppMessages(rawPayload: unknown) {
   for (const message of normalizedMessages) {
     if (!message.messageId || !message.waId) continue;
     const isInbound = message.direction === "inbound";
+    const isHistorySync = message.source === "history" || message.source === "provider_history";
+    const metadataSource = isHistorySync ? "meta_whatsapp_history_sync" : "meta_whatsapp_webhook";
     const direction = isInbound ? MessageDirection.INBOUND : MessageDirection.OUTBOUND;
     const senderType = isInbound ? MessageSenderType.CUSTOMER : MessageSenderType.TEAM;
     const status = isInbound ? MessageStatus.DELIVERED : MessageStatus.SENT;
@@ -309,7 +363,7 @@ async function storeWhatsAppMessages(rawPayload: unknown) {
         },
       },
       update: {
-        payload: jsonValue({ direction: message.direction, raw: message.raw }),
+        payload: jsonValue({ direction: message.direction, source: message.source, raw: message.raw }),
         status: WebhookEventStatus.PROCESSED,
         processedAt: new Date(),
       },
@@ -317,7 +371,7 @@ async function storeWhatsAppMessages(rawPayload: unknown) {
         businessId: business.id,
         source: "meta_whatsapp",
         externalEventId: `${message.direction}:${message.messageId}`,
-        payload: jsonValue({ direction: message.direction, raw: message.raw }),
+        payload: jsonValue({ direction: message.direction, source: message.source, raw: message.raw }),
         status: WebhookEventStatus.PROCESSED,
         processedAt: new Date(),
       },
@@ -356,7 +410,11 @@ async function storeWhatsAppMessages(rawPayload: unknown) {
         data: {
           businessId: business.id,
           contactId: contact.id,
-          status: isInbound ? ConversationStatus.WAITING_TEAM : ConversationStatus.WAITING_CUSTOMER,
+          status: isHistorySync
+            ? ConversationStatus.OPEN
+            : isInbound
+              ? ConversationStatus.WAITING_TEAM
+              : ConversationStatus.WAITING_CUSTOMER,
           lastMessageAt: message.timestamp,
           unreadCount: 0,
         },
@@ -388,7 +446,8 @@ async function storeWhatsAppMessages(rawPayload: unknown) {
         metadata: jsonValue({
           direction: message.direction,
           phoneNumberId: message.phoneNumberId,
-          source: "meta_whatsapp_webhook",
+          source: metadataSource,
+          webhookSource: message.source,
           media: message.media || null,
           raw: message.raw,
         }),
@@ -407,7 +466,8 @@ async function storeWhatsAppMessages(rawPayload: unknown) {
         metadata: jsonValue({
           direction: message.direction,
           phoneNumberId: message.phoneNumberId,
-          source: "meta_whatsapp_webhook",
+          source: metadataSource,
+          webhookSource: message.source,
           media: message.media || null,
           raw: message.raw,
         }),
@@ -423,18 +483,25 @@ async function storeWhatsAppMessages(rawPayload: unknown) {
       messageType: message.messageType,
     });
 
-    await prisma.conversation.update({
-      where: { id: conversation.id },
-      data: {
-        lastMessageAt: message.timestamp,
-        ...(!existingMessage && isInbound
-          ? { status: ConversationStatus.WAITING_TEAM, unreadCount: { increment: 1 } }
-          : {}),
-        ...(!existingMessage && !isInbound
-          ? { status: ConversationStatus.WAITING_CUSTOMER, unreadCount: 0 }
-          : {}),
-      },
-    });
+    const previousLastMessageAt = conversation.lastMessageAt || conversation.updatedAt || new Date(0);
+    const shouldMoveLastMessageAt = message.timestamp.getTime() >= previousLastMessageAt.getTime();
+    const shouldChangeLiveState = !existingMessage && !isHistorySync;
+    const conversationUpdate = {
+      ...(shouldMoveLastMessageAt ? { lastMessageAt: message.timestamp } : {}),
+      ...(shouldChangeLiveState && isInbound
+        ? { status: ConversationStatus.WAITING_TEAM, unreadCount: { increment: 1 } }
+        : {}),
+      ...(shouldChangeLiveState && !isInbound
+        ? { status: ConversationStatus.WAITING_CUSTOMER, unreadCount: 0 }
+        : {}),
+    };
+
+    if (Object.keys(conversationUpdate).length) {
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: conversationUpdate,
+      });
+    }
 
     storedMessages.push({
       businessId: business.id,
@@ -446,6 +513,7 @@ async function storeWhatsAppMessages(rawPayload: unknown) {
       text: message.text,
       messageType: messageType(message.messageType),
       created: !existingMessage,
+      source: message.source,
     });
   }
 
@@ -491,6 +559,43 @@ export async function POST(request: Request) {
 
   try {
     const payload = JSON.parse(rawBody) as unknown;
+    const isHistoryOnlyPayload = payloadHasWhatsAppHistory(payload) && !payloadHasLiveWhatsAppMessages(payload);
+
+    if (isHistoryOnlyPayload) {
+      await recordRawWhatsAppWebhook({
+        rawBody,
+        payload,
+        status: WebhookEventStatus.RECEIVED,
+      });
+
+      after(async () => {
+        try {
+          const storedMessages = await storeWhatsAppMessages(payload);
+          await recordRawWhatsAppWebhook({
+            rawBody,
+            payload,
+            status: WebhookEventStatus.PROCESSED,
+            parsedMessageCount: storedMessages.length,
+          });
+        } catch (error) {
+          console.error("WhatsApp history sync background task failed", error);
+          await recordRawWhatsAppWebhook({
+            rawBody,
+            payload,
+            status: WebhookEventStatus.FAILED,
+            error: error instanceof Error ? error.message : "WhatsApp history sync could not be processed.",
+          });
+        }
+      });
+
+      return json(200, {
+        ok: true,
+        stored: "scheduled",
+        sync: "history_scheduled",
+        ai: "none",
+      });
+    }
+
     const storedMessages = await storeWhatsAppMessages(payload);
     await recordRawWhatsAppWebhook({
       rawBody,
@@ -498,21 +603,12 @@ export async function POST(request: Request) {
       status: WebhookEventStatus.PROCESSED,
       parsedMessageCount: storedMessages.length,
     });
-    const aiMessages = storedMessages.filter((message) => message.direction === "inbound");
-    if (aiMessages.length) {
-      after(async () => {
-        try {
-          await Promise.all(aiMessages.map((message) => handleAiForInboundMessage(message)));
-        } catch (error) {
-          console.error("WhatsApp AI background task failed", error);
-        }
-      });
-    }
+    const aiMessageCount = scheduleAiForStoredMessages(storedMessages);
 
     return json(200, {
       ok: true,
       stored: storedMessages.length,
-      ai: aiMessages.length ? "scheduled" : "none",
+      ai: aiMessageCount ? "scheduled" : "none",
     });
   } catch (error) {
     try {

@@ -220,6 +220,87 @@ test("WhatsApp webhooks normalize inbound customer text messages", () => {
   assert.equal(messages[0].displayName, "Sarah");
   assert.equal(messages[0].phoneNumberId, "12345");
   assert.equal(messages[0].text, "I already paid");
+  assert.equal(messages[0].source, "messages");
+});
+
+test("WhatsApp history sync normalizes old inbound and outbound messages safely", () => {
+  const messages = normalizeWhatsAppWebhookPayload({
+    entry: [{
+      changes: [{
+        value: {
+          metadata: {
+            phone_number_id: "12345",
+            display_phone_number: "+60 17-665 6202",
+          },
+          contacts: [{ wa_id: "60123456789", profile: { name: "Sarah" } }],
+          history: [{
+            threads: [{
+              id: "60123456789",
+              messages: [
+                {
+                  id: "wamid.history-in",
+                  from: "60123456789",
+                  timestamp: "1780000100",
+                  type: "text",
+                  text: { body: "old customer hello" },
+                },
+                {
+                  id: "wamid.history-out",
+                  from: "60176656202",
+                  to: "60123456789",
+                  timestamp: "1780000200",
+                  type: "text",
+                  text: { body: "old team reply" },
+                },
+                {
+                  id: "wamid.ambiguous",
+                  from: "60111111111",
+                  to: "60122222222",
+                  timestamp: "1780000300",
+                  type: "text",
+                  text: { body: "skip because direction is unclear" },
+                },
+              ],
+            }],
+          }],
+        },
+      }],
+    }],
+  });
+
+  assert.equal(messages.length, 2);
+  assert.deepEqual(messages.map((message) => message.messageId), ["wamid.history-in", "wamid.history-out"]);
+  assert.equal(messages[0].direction, "inbound");
+  assert.equal(messages[0].waId, "60123456789");
+  assert.equal(messages[0].displayName, "Sarah");
+  assert.equal(messages[0].source, "history");
+  assert.equal(messages[1].direction, "outbound");
+  assert.equal(messages[1].waId, "60123456789");
+  assert.equal(messages[1].source, "history");
+});
+
+test("WhatsApp normalizer ignores nested provider-style debug objects outside history sync", () => {
+  const messages = normalizeWhatsAppWebhookPayload({
+    entry: [{
+      changes: [{
+        value: {
+          metadata: { phone_number_id: "12345" },
+          messages: [],
+          debug: {
+            whatsappInboundMessage: {
+              id: "wamid.debug",
+              from: "60123456789",
+              timestamp: "1780000000",
+              type: "text",
+              text: { body: "do not import random nested debug data" },
+            },
+          },
+        },
+      }],
+    }],
+  });
+
+  assert.equal(messages.length, 0);
 });
 
 test("outbound WhatsApp text payload is ready for the official API", () => {
