@@ -280,6 +280,23 @@ function messageLabel(message: InboxMessage) {
   return "Customer";
 }
 
+function fallbackMessageText(message: InboxMessage) {
+  if (message.attachments?.length) return "";
+  if (message.messageType === "SYSTEM") return "WhatsApp event";
+  if (message.messageType === "IMAGE") return "Photo";
+  if (message.messageType === "VIDEO") return "Video";
+  if (message.messageType === "AUDIO") return "Voice message";
+  if (message.messageType === "DOCUMENT") return "Document";
+  if (message.messageType === "TEMPLATE") return "Template message";
+  return "WhatsApp message";
+}
+
+function messageDisplayText(message: InboxMessage) {
+  const body = message.body.trim();
+  if (body) return message.body;
+  return fallbackMessageText(message);
+}
+
 function money(value: number | null | undefined) {
   if (value === null || value === undefined) return "-";
   return `RM ${value.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -1370,6 +1387,8 @@ export default function WhatsAppInboxClient() {
                 {inbox.messages.map((message) => {
                   const inbound = message.direction === "INBOUND";
                   const queuedAi = message.senderType === "AI" && message.status === "QUEUED";
+                  const displayText = messageDisplayText(message);
+                  const isFallbackText = !message.body.trim() && !!displayText;
                   return (
                     <article
                       className={`${styles.messageBubble} ${inbound ? styles.inbound : styles.outbound} ${queuedAi ? styles.aiSuggestion : ""}`}
@@ -1379,7 +1398,7 @@ export default function WhatsAppInboxClient() {
                         <span>{messageLabel(message)}</span>
                         <time>{formatTime(message.createdAt)}</time>
                       </div>
-                      {message.body && <p>{message.body}</p>}
+                      {displayText && <p className={isFallbackText ? styles.messageFallback : undefined}>{displayText}</p>}
                       {!!message.attachments?.length && (
                         <div className={styles.attachmentList}>
                           {message.attachments.map((attachment) => (

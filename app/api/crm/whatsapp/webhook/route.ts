@@ -49,6 +49,8 @@ function messageType(type: string) {
   if (type === "audio") return MessageType.AUDIO;
   if (type === "video") return MessageType.VIDEO;
   if (type === "document") return MessageType.DOCUMENT;
+  if (type === "button" || type === "interactive") return MessageType.TEXT;
+  if (type !== "text") return MessageType.SYSTEM;
   return MessageType.TEXT;
 }
 

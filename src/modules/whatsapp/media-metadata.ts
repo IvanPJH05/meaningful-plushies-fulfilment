@@ -26,6 +26,7 @@ export function fallbackWhatsAppMediaContentType(type: string) {
   if (normalized === "audio") return "audio/ogg";
   if (normalized === "video") return "video/mp4";
   if (normalized === "document") return "application/octet-stream";
+  if (normalized === "sticker") return "image/webp";
   return "application/octet-stream";
 }
 

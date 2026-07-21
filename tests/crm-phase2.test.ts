@@ -223,6 +223,100 @@ test("WhatsApp webhooks normalize inbound customer text messages", () => {
   assert.equal(messages[0].source, "messages");
 });
 
+test("WhatsApp webhooks turn customer reactions into visible message text", () => {
+  const messages = normalizeWhatsAppWebhookPayload({
+    entry: [{
+      changes: [{
+        value: {
+          metadata: { phone_number_id: "12345" },
+          contacts: [{ wa_id: "60123456789", profile: { name: "Sarah" } }],
+          messages: [{
+            id: "wamid.reaction",
+            from: "60123456789",
+            timestamp: "1780000000",
+            type: "reaction",
+            reaction: {
+              message_id: "wamid.team-message",
+              emoji: "❤️",
+            },
+          }],
+        },
+      }],
+    }],
+  });
+
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].messageType, "reaction");
+  assert.equal(messages[0].text, "Reacted ❤️ to a message");
+});
+
+test("WhatsApp webhooks describe empty reaction removals", () => {
+  const messages = normalizeWhatsAppWebhookPayload({
+    entry: [{
+      changes: [{
+        value: {
+          metadata: { phone_number_id: "12345" },
+          contacts: [{ wa_id: "60123456789", profile: { name: "Sarah" } }],
+          messages: [{
+            id: "wamid.reaction-remove",
+            from: "60123456789",
+            timestamp: "1780000000",
+            type: "reaction",
+            reaction: {
+              message_id: "wamid.team-message",
+              emoji: "",
+            },
+          }],
+        },
+      }],
+    }],
+  });
+
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].messageType, "reaction");
+  assert.equal(messages[0].text, "Removed a reaction");
+});
+
+test("WhatsApp webhooks avoid blank text for media and unsupported events", () => {
+  const messages = normalizeWhatsAppWebhookPayload({
+    entry: [{
+      changes: [{
+        value: {
+          metadata: { phone_number_id: "12345" },
+          contacts: [{ wa_id: "60123456789", profile: { name: "Sarah" } }],
+          messages: [
+            {
+              id: "wamid.photo",
+              from: "60123456789",
+              timestamp: "1780000000",
+              type: "image",
+              image: { id: "media-photo" },
+            },
+            {
+              id: "wamid.voice",
+              from: "60123456789",
+              timestamp: "1780000001",
+              type: "audio",
+              audio: { id: "media-audio" },
+            },
+            {
+              id: "wamid.unsupported",
+              from: "60123456789",
+              timestamp: "1780000002",
+              type: "unsupported",
+            },
+          ],
+        },
+      }],
+    }],
+  });
+
+  assert.equal(messages.length, 3);
+  assert.equal(messages[0].text, "Sent a photo");
+  assert.equal(messages[1].text, "Sent a voice message");
+  assert.equal(messages[2].text, "Unsupported WhatsApp message");
+});
+
 test("WhatsApp history sync normalizes old inbound and outbound messages safely", () => {
   const messages = normalizeWhatsAppWebhookPayload({
     entry: [{

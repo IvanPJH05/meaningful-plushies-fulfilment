@@ -20,6 +20,7 @@ import {
   whatsappMediaFromMessageMetadata,
 } from "@/src/modules/whatsapp/media-metadata";
 import { sendWhatsAppTextMessage } from "@/src/modules/whatsapp/outbound";
+import { whatsAppDisplayTextFromMessage } from "@/src/modules/whatsapp/webhook-normalizer";
 
 export const runtime = "nodejs";
 
@@ -69,17 +70,52 @@ function messageTypePreviewLabel(messageType: MessageType | null | undefined) {
   }
 }
 
+function rawWhatsAppMessageFromMetadata(metadata: unknown) {
+  const root = metadata && typeof metadata === "object" && !Array.isArray(metadata)
+    ? metadata as Record<string, unknown>
+    : {};
+  const raw = root.raw && typeof root.raw === "object" && !Array.isArray(root.raw)
+    ? root.raw as Record<string, unknown>
+    : {};
+  return Object.keys(raw).length ? raw : null;
+}
+
+function rawWhatsAppDisplayText(metadata: unknown) {
+  const raw = rawWhatsAppMessageFromMetadata(metadata);
+  return raw ? whatsAppDisplayTextFromMessage(raw) : "";
+}
+
 function messagePreview(message: {
   body: string | null;
   messageType?: MessageType | null;
+  metadata?: unknown;
   attachments?: { contentType: string | null }[];
 }) {
   const text = textPreview(message.body);
   if (text) return text;
 
+  const rawText = textPreview(rawWhatsAppDisplayText(message.metadata));
+  if (rawText) return rawText;
+
   const attachment = message.attachments?.[0];
   if (attachment) return mediaPreviewLabel(attachment.contentType);
 
+  return messageTypePreviewLabel(message.messageType);
+}
+
+function messageBody(message: {
+  body: string | null;
+  metadata?: unknown;
+  messageType?: MessageType | null;
+  attachments?: { contentType: string | null }[];
+}) {
+  const body = (message.body || "").trim();
+  if (body) return message.body || "";
+
+  const rawText = rawWhatsAppDisplayText(message.metadata);
+  if (rawText) return rawText;
+
+  if (message.attachments?.length) return "";
   return messageTypePreviewLabel(message.messageType);
 }
 
@@ -139,6 +175,7 @@ async function getConversationList(businessId: string, limit = 75) {
           direction: true,
           senderType: true,
           status: true,
+          metadata: true,
           createdAt: true,
           attachments: {
             select: { contentType: true },
@@ -347,7 +384,12 @@ async function getConversationMessages(businessId: string, conversationId?: stri
       direction: message.direction,
       senderType: message.senderType,
       messageType: message.messageType,
-      body: message.body || "",
+      body: messageBody({
+        body: message.body,
+        metadata: message.metadata,
+        messageType: message.messageType,
+        attachments,
+      }),
       status: message.status,
       failedReason: message.failedReason,
       createdAt: serializeDate(message.createdAt),

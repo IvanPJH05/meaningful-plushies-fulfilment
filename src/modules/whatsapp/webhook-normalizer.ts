@@ -6,7 +6,22 @@ export type NormalizedWhatsAppMessage = {
   phoneNumberId: string;
   displayName: string;
   direction: "inbound" | "outbound";
-  messageType: "text" | "image" | "audio" | "video" | "document" | "unknown";
+  messageType:
+    | "text"
+    | "image"
+    | "audio"
+    | "video"
+    | "document"
+    | "button"
+    | "interactive"
+    | "reaction"
+    | "sticker"
+    | "contacts"
+    | "location"
+    | "order"
+    | "system"
+    | "unsupported"
+    | "unknown";
   text: string;
   media?: {
     id: string;
@@ -39,6 +54,14 @@ function firstTextValue(...values: unknown[]) {
   return "";
 }
 
+function titleCaseLabel(value: string) {
+  return value
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
 function booleanValue(value: unknown) {
   if (typeof value === "boolean") return value;
   if (typeof value === "string") {
@@ -67,22 +90,111 @@ function dateFromValue(value: unknown) {
 }
 
 function messageText(message: Record<string, unknown>) {
-  const type = textValue(message.type);
+  return whatsAppDisplayTextFromMessage(message);
+}
+
+export function whatsAppDisplayTextFromMessage(message: Record<string, unknown>) {
+  const type = textValue(message.type).toLowerCase();
   if (type === "text") return textValue(message.text) || textValue(objectValue(message.text).body);
-  if (type === "button") return textValue(objectValue(message.button).text);
+  if (type === "reaction") {
+    const reaction = objectValue(message.reaction);
+    const emoji = textValue(reaction.emoji).trim();
+    return emoji ? `Reacted ${emoji} to a message` : "Removed a reaction";
+  }
+  if (type === "button") {
+    const button = objectValue(message.button);
+    const text = firstTextValue(button.text, button.payload);
+    return text ? `Tapped button: ${text}` : "Tapped a button";
+  }
   if (type === "interactive") {
     const interactive = objectValue(message.interactive);
-    return textValue(objectValue(interactive.button_reply).title) || textValue(objectValue(interactive.list_reply).title);
+    const buttonReply = objectValue(interactive.button_reply);
+    const listReply = objectValue(interactive.list_reply);
+    const nfmReply = objectValue(interactive.nfm_reply);
+    const title = firstTextValue(
+      buttonReply.title,
+      buttonReply.id,
+      listReply.title,
+      listReply.id,
+      nfmReply.name,
+      nfmReply.body,
+      nfmReply.response_json,
+    );
+    return title ? `Selected: ${title}` : "Sent an interactive reply";
   }
-  if (type === "image") return textValue(objectValue(message.image).caption);
-  if (type === "video") return textValue(objectValue(message.video).caption);
-  if (type === "document") return textValue(objectValue(message.document).caption) || textValue(objectValue(message.document).filename);
-  return firstTextValue(message.text, objectValue(message.text).body, message.body, message.message, message.caption);
+  if (type === "image") return firstTextValue(objectValue(message.image).caption, "Sent a photo");
+  if (type === "video") return firstTextValue(objectValue(message.video).caption, "Sent a video");
+  if (type === "audio") return "Sent a voice message";
+  if (type === "document") {
+    const document = objectValue(message.document);
+    const documentText = firstTextValue(document.caption, document.filename, document.file_name, document.name);
+    return documentText || "Sent a document";
+  }
+  if (type === "sticker") return "Sent a sticker";
+  if (type === "contacts") {
+    const names = arrayValue(message.contacts)
+      .map((contact) => {
+        const record = objectValue(contact);
+        const name = objectValue(record.name);
+        return firstTextValue(
+          name.formatted_name,
+          name.first_name,
+          record.name,
+          record.wa_id,
+        );
+      })
+      .filter(Boolean);
+    return names.length ? `Shared contact: ${names.join(", ")}` : "Shared a contact";
+  }
+  if (type === "location") {
+    const location = objectValue(message.location);
+    const place = firstTextValue(
+      location.name,
+      location.address,
+      location.url,
+      location.latitude && location.longitude ? `${location.latitude}, ${location.longitude}` : "",
+    );
+    return place ? `Shared location: ${place}` : "Shared a location";
+  }
+  if (type === "order") return "Sent an order";
+  if (type === "system") {
+    const system = objectValue(message.system);
+    const details = firstTextValue(system.body, system.type, system.wa_id);
+    return details ? `System message: ${details}` : "System message";
+  }
+  if (type === "unsupported") return "Unsupported WhatsApp message";
+
+  const fallback = firstTextValue(
+    message.text,
+    objectValue(message.text).body,
+    message.body,
+    message.message,
+    message.caption,
+    objectValue(message.error).message,
+    ...arrayValue(message.errors).map((error) => objectValue(error).message),
+  );
+  if (fallback) return fallback;
+  return type ? `${titleCaseLabel(type)} message` : "WhatsApp message";
 }
 
 function messageType(message: Record<string, unknown>): NormalizedWhatsAppMessage["messageType"] {
-  const type = textValue(message.type);
-  if (["text", "image", "audio", "video", "document"].includes(type)) {
+  const type = textValue(message.type).toLowerCase();
+  if ([
+    "text",
+    "image",
+    "audio",
+    "video",
+    "document",
+    "button",
+    "interactive",
+    "reaction",
+    "sticker",
+    "contacts",
+    "location",
+    "order",
+    "system",
+    "unsupported",
+  ].includes(type)) {
     return type as NormalizedWhatsAppMessage["messageType"];
   }
   if (firstTextValue(message.text, objectValue(message.text).body, message.body)) return "text";
@@ -90,7 +202,7 @@ function messageType(message: Record<string, unknown>): NormalizedWhatsAppMessag
 }
 
 function messageMedia(message: Record<string, unknown>, type: NormalizedWhatsAppMessage["messageType"]) {
-  if (!["image", "audio", "video", "document"].includes(type)) return undefined;
+  if (!["image", "audio", "video", "document", "sticker"].includes(type)) return undefined;
   const typedMedia = objectValue(message[type]);
   const genericMedia = objectValue(message.media);
   const media = Object.keys(typedMedia).length ? typedMedia : genericMedia;
@@ -196,7 +308,19 @@ function looksLikeMessage(message: Record<string, unknown>) {
   if (textValue(message.type)) return true;
   if (Object.keys(objectValue(message.text)).length || textValue(message.text)) return true;
   if (firstTextValue(message.body, message.message, message.caption)) return true;
-  return ["image", "audio", "video", "document", "media"].some((key) => Object.keys(objectValue(message[key])).length);
+  return [
+    "image",
+    "audio",
+    "video",
+    "document",
+    "sticker",
+    "reaction",
+    "contacts",
+    "location",
+    "interactive",
+    "button",
+    "media",
+  ].some((key) => Object.keys(objectValue(message[key])).length);
 }
 
 function contactMap(value: Record<string, unknown>) {

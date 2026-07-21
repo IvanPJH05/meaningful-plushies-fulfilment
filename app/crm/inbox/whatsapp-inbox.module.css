@@ -674,6 +674,11 @@
   white-space: pre-wrap;
 }
 
+.messageBubble .messageFallback {
+  color: #52637a;
+  font-style: italic;
+}
+
 .messageFooter button {
   background: #1769e0;
   border: 0;
