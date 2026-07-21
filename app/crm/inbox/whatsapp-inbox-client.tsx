@@ -217,6 +217,50 @@ function optimisticOutboundMessage(id: string, body: string): InboxMessage {
   };
 }
 
+function messageTimeValue(message: InboxMessage) {
+  const value = message.createdAt || message.sentAt;
+  const time = value ? new Date(value).getTime() : 0;
+  return Number.isFinite(time) ? time : 0;
+}
+
+function isLocalPendingMessage(message: InboxMessage) {
+  return message.id.startsWith("local-") && ["SENDING", "FAILED"].includes(message.status);
+}
+
+function hasMatchingSavedMessage(localMessage: InboxMessage, serverMessages: InboxMessage[], usedIndexes: Set<number>) {
+  const localTime = messageTimeValue(localMessage);
+  for (let index = 0; index < serverMessages.length; index += 1) {
+    const serverMessage = serverMessages[index];
+    if (usedIndexes.has(index)) continue;
+    if (serverMessage.id.startsWith("local-")) continue;
+    if (serverMessage.direction !== localMessage.direction) continue;
+    if (serverMessage.senderType !== localMessage.senderType) continue;
+    if ((serverMessage.body || "").trim() !== (localMessage.body || "").trim()) continue;
+
+    const serverTime = messageTimeValue(serverMessage);
+    const closeEnough = !localTime || !serverTime || Math.abs(serverTime - localTime) < 120000;
+    if (!closeEnough) continue;
+
+    usedIndexes.add(index);
+    return true;
+  }
+  return false;
+}
+
+function mergeLocalPendingMessages(serverMessages: InboxMessage[], currentMessages: InboxMessage[] = []) {
+  const pendingMessages = currentMessages.filter(isLocalPendingMessage);
+  if (!pendingMessages.length) return serverMessages;
+
+  const usedServerIndexes = new Set<number>();
+  const merged = [...serverMessages];
+  for (const localMessage of pendingMessages) {
+    if (hasMatchingSavedMessage(localMessage, serverMessages, usedServerIndexes)) continue;
+    merged.push(localMessage);
+  }
+
+  return merged.sort((left, right) => messageTimeValue(left) - messageTimeValue(right));
+}
+
 function normalizeReturnedMessage(message: InboxMessage): InboxMessage {
   return {
     ...message,
@@ -588,6 +632,7 @@ export default function WhatsAppInboxClient() {
   const messageStreamRef = useRef<HTMLDivElement | null>(null);
   const selectedIdRef = useRef(initialCache?.selectedId || initialCache?.inbox.selectedConversation?.id || "");
   const conversationCacheRef = useRef<ConversationCache>(initialCache?.conversationCache || {});
+  const sendingRef = useRef(false);
   const listRefreshTimerRef = useRef<number | null>(null);
   const conversationRefreshTimerRef = useRef<number | null>(null);
   const detailLoadTimerRef = useRef<number | null>(null);
@@ -647,7 +692,7 @@ export default function WhatsAppInboxClient() {
             leads: current[selectedConversation.id]?.selectedConversation.leads || selectedConversation.leads || [],
             commands: current[selectedConversation.id]?.selectedConversation.commands || selectedConversation.commands || [],
           },
-        messages,
+        messages: mergeLocalPendingMessages(messages, current[selectedConversation.id]?.messages),
         loadedAt: Date.now(),
       },
     }));
@@ -802,7 +847,10 @@ export default function WhatsAppInboxClient() {
               : nextInbox.selectedConversation.commands || [],
           }
           : nextInbox.selectedConversation,
-        messages: nextInbox.messages,
+        messages: mergeLocalPendingMessages(
+          nextInbox.messages,
+          current.selectedConversation?.id === conversationId ? current.messages : conversationCacheRef.current[conversationId]?.messages,
+        ),
       }));
     } finally {
       if (showSpinner) setConversationLoading(false);
@@ -1122,6 +1170,7 @@ export default function WhatsAppInboxClient() {
   async function sendMessage(messageId?: string, bodyOverride?: string) {
     const body = (bodyOverride || draft).trim();
     if (!selectedId || !body) return;
+    if (sendingRef.current) return;
 
     const conversationId = selectedId;
     const optimisticId = messageId ? "" : `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -1133,6 +1182,7 @@ export default function WhatsAppInboxClient() {
       setDraft("");
     }
 
+    sendingRef.current = true;
     setSending(true);
     setNotice("");
     try {
@@ -1181,6 +1231,7 @@ export default function WhatsAppInboxClient() {
       }
       setNotice(error instanceof Error ? error.message : "WhatsApp message could not be sent.");
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   }
@@ -1463,6 +1514,13 @@ export default function WhatsAppInboxClient() {
                 <textarea
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+                    event.preventDefault();
+                    if (!sending && draft.trim()) {
+                      void sendMessage();
+                    }
+                  }}
                   placeholder="Type a WhatsApp message..."
                   rows={2}
                 />
