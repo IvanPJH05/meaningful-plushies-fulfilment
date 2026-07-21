@@ -1722,6 +1722,7 @@ export default function WhatsAppInboxClient() {
                   <button
                     className={styles.detailToggle}
                     type="button"
+                    aria-expanded={!detailPanelCollapsed}
                     onClick={() => setDetailPanelCollapsed((value) => !value)}
                   >
                     {detailPanelCollapsed ? "Show details" : "Hide details"}
@@ -1846,14 +1847,7 @@ export default function WhatsAppInboxClient() {
           )}
         </section>
 
-        {detailPanelCollapsed ? (
-          <aside className={styles.collapsedDetailPanel}>
-            <button type="button" onClick={() => setDetailPanelCollapsed(false)}>
-              <span>Customer</span>
-              <strong>Open details</strong>
-            </button>
-          </aside>
-        ) : (
+        {!detailPanelCollapsed && (
           <aside className={styles.detailPanel}>
             {selected ? (
               selected.detailsLoaded ? (

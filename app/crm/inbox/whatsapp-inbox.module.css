@@ -4,9 +4,18 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  font-family: Roboto, Arial, sans-serif;
+  font-weight: 500;
   height: 100vh;
   overflow: hidden;
-  padding: 10px;
+  padding: 0;
+}
+
+.page button,
+.page input,
+.page select,
+.page textarea {
+  font-family: Roboto, Arial, sans-serif;
 }
 
 .header {
@@ -83,7 +92,7 @@
   align-items: center;
   background: #eaf3ff;
   border: 1px solid #bed8ff;
-  border-radius: 12px;
+  border-radius: 0;
   color: #0c4f96;
   display: flex;
   justify-content: space-between;
@@ -106,7 +115,7 @@
     radial-gradient(circle at 18px 18px, rgba(127, 117, 104, 0.12) 1px, transparent 1px);
   background-size: auto, 34px 34px;
   border: 1px solid #d7e3f2;
-  border-radius: 18px;
+  border-radius: 0;
   display: flex;
   flex: 1 1 auto;
   justify-content: center;
@@ -273,18 +282,18 @@
 
 .whatsappWorkspace {
   background: #fff;
-  border: 1px solid #d7e3f2;
-  border-radius: 18px;
+  border: 0;
+  border-radius: 0;
   display: grid;
-  grid-template-columns: 78px 360px minmax(0, 1fr) 330px;
+  grid-template-columns: 88px 360px minmax(0, 1fr) 336px;
   flex: 1 1 auto;
-  height: auto;
+  height: 100%;
   min-height: 0;
   overflow: hidden;
 }
 
 .detailCollapsed {
-  grid-template-columns: 78px 360px minmax(0, 1fr) 58px;
+  grid-template-columns: 88px 360px minmax(0, 1fr);
 }
 
 @media (max-width: 1100px) {
@@ -300,8 +309,8 @@
   color: #c9d7e8;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px 10px;
+  gap: 12px;
+  padding: 14px 9px;
 }
 
 .railLogo {
@@ -320,9 +329,10 @@
 .workspaceRail a {
   border-radius: 12px;
   color: #b9cae0;
-  font-size: 11px;
-  font-weight: 900;
-  padding: 11px 8px;
+  font-size: 12px;
+  font-weight: 950;
+  line-height: 1.18;
+  padding: 12px 8px;
   text-align: center;
   text-decoration: none;
 }
@@ -352,7 +362,8 @@
 }
 
 .listHeader h2 {
-  font-size: 22px;
+  font-size: 23px;
+  font-weight: 950;
   margin: 0;
 }
 
@@ -485,7 +496,9 @@
 }
 
 .conversationName {
-  font-size: 14px;
+  color: #0c1c31;
+  font-size: 15px;
+  font-weight: 900;
   line-height: 1.2;
   min-width: 0;
   overflow: hidden;
@@ -494,8 +507,10 @@
 }
 
 .conversationPreview {
-  color: #62748d;
+  color: #4f627a;
   flex: 1 1 auto;
+  font-size: 13px;
+  font-weight: 500;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -564,12 +579,16 @@
 }
 
 .chatIdentity h2 {
-  font-size: 18px;
+  color: #0c1c31;
+  font-size: 19px;
+  font-weight: 950;
   margin: 0 0 4px;
 }
 
 .chatIdentity p {
-  color: #65758d;
+  color: #4f627a;
+  font-size: 15px;
+  font-weight: 500;
   margin: 0;
 }
 
@@ -597,10 +616,11 @@
   border-radius: 11px;
   color: #174d8f;
   cursor: pointer;
-  font-size: 12px;
-  font-weight: 900;
+  font-size: 13px;
+  font-weight: 950;
   height: 40px;
-  padding: 0 12px;
+  min-width: 104px;
+  padding: 0 14px;
 }
 
 .detailToggle:hover {
@@ -979,55 +999,10 @@
   padding: 14px;
 }
 
-.collapsedDetailPanel {
-  align-items: stretch;
-  background: #f8fbff;
-  border-left: 1px solid #d7e3f2;
-  display: flex;
-  justify-content: center;
-  min-height: 0;
-  padding: 12px 8px;
-}
-
-.collapsedDetailPanel button {
-  align-items: center;
-  background: #ffffff;
-  border: 1px solid #dbe6f3;
-  border-radius: 16px;
-  color: #174d8f;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  justify-content: center;
-  padding: 12px 8px;
-  text-align: center;
-  width: 100%;
-}
-
-.collapsedDetailPanel span,
-.collapsedDetailPanel strong {
-  writing-mode: vertical-rl;
-}
-
-.collapsedDetailPanel span {
-  color: #6b7c94;
-  font-size: 10px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.collapsedDetailPanel strong {
-  color: #174d8f;
-  font-size: 12px;
-  font-weight: 950;
-}
-
 .detailCard {
   background: #ffffff;
   border: 1px solid #dbe6f3;
-  border-radius: 16px;
+  border-radius: 12px;
   padding: 15px;
 }
 
@@ -1067,29 +1042,35 @@
 }
 
 .profileHeader h3 {
-  font-size: 17px;
+  color: #0c1c31;
+  font-size: 18px;
+  font-weight: 950;
   margin: 0 0 4px;
 }
 
 .profileHeader p {
-  color: #667892;
+  color: #4f627a;
+  font-size: 15px;
+  font-weight: 500;
   margin: 0;
 }
 
 .detailGrid {
   display: grid;
   gap: 9px 10px;
-  grid-template-columns: 95px minmax(0, 1fr);
+  grid-template-columns: 98px minmax(0, 1fr);
 }
 
 .detailGrid span {
-  color: #6b7c94;
-  font-size: 12px;
+  color: #566982;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .detailGrid strong {
-  color: #102033;
-  font-size: 12px;
+  color: #06172b;
+  font-size: 13px;
+  font-weight: 900;
   text-transform: capitalize;
 }
 
@@ -1110,13 +1091,14 @@
 }
 
 .summaryGrid strong {
-  font-size: 18px;
+  font-size: 20px;
+  font-weight: 950;
 }
 
 .summaryGrid small {
-  color: #607089;
-  font-size: 10px;
-  font-weight: 800;
+  color: #4f627a;
+  font-size: 11px;
+  font-weight: 900;
 }
 
 .actionStack {
@@ -1133,8 +1115,8 @@
   color: #174d8f;
   cursor: pointer;
   display: block;
-  font-size: 12px;
-  font-weight: 900;
+  font-size: 13px;
+  font-weight: 950;
   padding: 10px 12px;
   text-align: center;
   text-decoration: none;
@@ -1160,23 +1142,24 @@
 
 .contextRow strong {
   color: #102033;
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 950;
 }
 
 .contextRow span,
 .contextRow small,
 .muted {
-  color: #65758d;
-  font-size: 12px;
+  color: #566982;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 @media (max-width: 1300px) {
   .whatsappWorkspace {
-    grid-template-columns: 70px 330px minmax(0, 1fr);
+    grid-template-columns: 78px 330px minmax(0, 1fr);
   }
 
-  .detailPanel,
-  .collapsedDetailPanel {
+  .detailPanel {
     display: none;
   }
 
@@ -1187,7 +1170,7 @@
 
 @media (max-width: 900px) {
   .page {
-    padding: 12px;
+    padding: 0;
   }
 
   .header,
