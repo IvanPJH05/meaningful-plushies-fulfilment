@@ -605,14 +605,14 @@ model AiAgentConfig {
 
 model WhatsAppFlow {
   id           String   @id @default(cuid())
-  businessId   String
+  businessId   String   @map("business_id")
   name         String
-  triggerWords String[] @default([])
+  triggerWords String[] @default([]) @map("trigger_words")
   messages     Json     @default("[]")
   notes        String?
   active       Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
   business     Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@unique([businessId, name])
