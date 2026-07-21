@@ -31,6 +31,7 @@ type ConversationSummary = {
 
 type InboxMessage = {
   id: string;
+  clientKey?: string;
   direction: string;
   senderType: string;
   messageType: string;
@@ -205,6 +206,7 @@ function hasEveryConversationWarmed(snapshot: InboxTabCache | null | undefined) 
 function optimisticOutboundMessage(id: string, body: string): InboxMessage {
   return {
     id,
+    clientKey: id,
     direction: "OUTBOUND",
     senderType: "TEAM",
     messageType: "TEXT",
@@ -227,45 +229,77 @@ function isLocalPendingMessage(message: InboxMessage) {
   return message.id.startsWith("local-") && ["SENDING", "FAILED"].includes(message.status);
 }
 
-function hasMatchingSavedMessage(localMessage: InboxMessage, serverMessages: InboxMessage[], usedIndexes: Set<number>) {
-  const localTime = messageTimeValue(localMessage);
-  for (let index = 0; index < serverMessages.length; index += 1) {
-    const serverMessage = serverMessages[index];
+function messagesAreCloseEnough(left: InboxMessage, right: InboxMessage) {
+  const leftTime = messageTimeValue(left);
+  const rightTime = messageTimeValue(right);
+  return !leftTime || !rightTime || Math.abs(leftTime - rightTime) < 120000;
+}
+
+function hasSameVisibleMessage(left: InboxMessage, right: InboxMessage) {
+  return left.direction === right.direction
+    && left.senderType === right.senderType
+    && (left.body || "").trim() === (right.body || "").trim()
+    && messagesAreCloseEnough(left, right);
+}
+
+function findMatchingCurrentMessage(serverMessage: InboxMessage, currentMessages: InboxMessage[], usedIndexes: Set<number>) {
+  let fallbackIndex = -1;
+  for (let index = 0; index < currentMessages.length; index += 1) {
+    const currentMessage = currentMessages[index];
     if (usedIndexes.has(index)) continue;
+    if (currentMessage.id === serverMessage.id) return index;
+    if (fallbackIndex === -1 && currentMessage.clientKey && hasSameVisibleMessage(currentMessage, serverMessage)) {
+      fallbackIndex = index;
+    }
+  }
+  return fallbackIndex;
+}
+
+function hasMatchingSavedMessage(localMessage: InboxMessage, serverMessages: InboxMessage[]) {
+  for (const serverMessage of serverMessages) {
     if (serverMessage.id.startsWith("local-")) continue;
-    if (serverMessage.direction !== localMessage.direction) continue;
-    if (serverMessage.senderType !== localMessage.senderType) continue;
-    if ((serverMessage.body || "").trim() !== (localMessage.body || "").trim()) continue;
-
-    const serverTime = messageTimeValue(serverMessage);
-    const closeEnough = !localTime || !serverTime || Math.abs(serverTime - localTime) < 120000;
-    if (!closeEnough) continue;
-
-    usedIndexes.add(index);
-    return true;
+    if (hasSameVisibleMessage(localMessage, serverMessage)) return true;
   }
   return false;
 }
 
 function mergeLocalPendingMessages(serverMessages: InboxMessage[], currentMessages: InboxMessage[] = []) {
-  const pendingMessages = currentMessages.filter(isLocalPendingMessage);
-  if (!pendingMessages.length) return serverMessages;
+  if (!currentMessages.length) return serverMessages;
 
-  const usedServerIndexes = new Set<number>();
-  const merged = [...serverMessages];
+  const usedCurrentIndexes = new Set<number>();
+  const merged = serverMessages.map((serverMessage) => {
+    const matchIndex = findMatchingCurrentMessage(serverMessage, currentMessages, usedCurrentIndexes);
+    if (matchIndex === -1) return serverMessage;
+
+    usedCurrentIndexes.add(matchIndex);
+    const currentMessage = currentMessages[matchIndex];
+    return {
+      ...serverMessage,
+      clientKey: currentMessage.clientKey,
+      createdAt: currentMessage.clientKey ? currentMessage.createdAt || serverMessage.createdAt : serverMessage.createdAt,
+    };
+  });
+
+  const pendingMessages = currentMessages.filter(isLocalPendingMessage);
   for (const localMessage of pendingMessages) {
-    if (hasMatchingSavedMessage(localMessage, serverMessages, usedServerIndexes)) continue;
+    if (hasMatchingSavedMessage(localMessage, merged)) continue;
     merged.push(localMessage);
   }
 
   return merged.sort((left, right) => messageTimeValue(left) - messageTimeValue(right));
 }
 
-function normalizeReturnedMessage(message: InboxMessage): InboxMessage {
+function normalizeReturnedMessage(message: InboxMessage, stableFrom?: InboxMessage): InboxMessage {
   return {
     ...message,
+    clientKey: stableFrom?.clientKey,
+    createdAt: stableFrom?.clientKey ? stableFrom.createdAt || message.createdAt : message.createdAt,
     attachments: message.attachments ?? [],
   };
+}
+
+function messageRenderKey(message: InboxMessage) {
+  return message.clientKey || message.id;
 }
 
 const statusOptions = [
@@ -1193,11 +1227,12 @@ export default function WhatsAppInboxClient() {
       });
       const data = await response.json();
       if (data.message) {
-        const returnedMessage = normalizeReturnedMessage(data.message);
         if (optimisticId) {
-          patchConversationMessages(conversationId, (messages) => (
-            messages.map((message) => (message.id === optimisticId ? returnedMessage : message))
-          ));
+          patchConversationMessages(conversationId, (messages) => {
+            const stableMessage = messages.find((message) => message.id === optimisticId);
+            const returnedMessage = normalizeReturnedMessage(data.message, stableMessage);
+            return messages.map((message) => (message.id === optimisticId ? returnedMessage : message));
+          });
         } else {
           await loadConversation(conversationId, false);
         }
@@ -1216,9 +1251,9 @@ export default function WhatsAppInboxClient() {
         setNotice(data.error || "WhatsApp message could not be sent.");
         return;
       }
-      setNotice(data.message?.status === "QUEUED"
-        ? "Message saved, but WhatsApp sending is not fully configured yet."
-        : "Message sent.");
+      if (data.message?.status === "QUEUED") {
+        setNotice("Message saved, but WhatsApp sending is not fully configured yet.");
+      }
     } catch (error) {
       if (optimisticId) {
         patchConversationMessages(conversationId, (messages) => (
@@ -1451,7 +1486,7 @@ export default function WhatsAppInboxClient() {
                   return (
                     <article
                       className={`${styles.messageBubble} ${inbound ? styles.inbound : styles.outbound} ${queuedAi ? styles.aiSuggestion : ""} ${reactions.length ? styles.messageBubbleWithReaction : ""}`}
-                      key={message.id}
+                      key={messageRenderKey(message)}
                     >
                       <div className={styles.messageTopline}>
                         <span>{messageLabel(message)}</span>
