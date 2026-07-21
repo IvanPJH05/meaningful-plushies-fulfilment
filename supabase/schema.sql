@@ -1311,6 +1311,32 @@ begin
     create policy "shared crm changes whatsapp flows" on public.crm_whatsapp_flows for all to anon, authenticated using (true) with check (true);
 
     grant select, insert, update, delete on public.crm_whatsapp_flows to anon, authenticated;
+
+    create table if not exists public.crm_ai_agent_configs (
+      id text primary key default gen_random_uuid()::text,
+      business_id text not null references public.crm_businesses(id) on delete cascade,
+      name text not null,
+      version integer not null default 1,
+      system_prompt text not null,
+      allowed_tool_names text[] not null default '{}',
+      enabled boolean not null default false,
+      requires_human_review boolean not null default true,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      unique (business_id, name, version)
+    );
+
+    create index if not exists crm_ai_agent_configs_business_name_idx
+      on public.crm_ai_agent_configs (business_id, name, version desc);
+
+    alter table public.crm_ai_agent_configs enable row level security;
+
+    drop policy if exists "shared crm reads ai agent configs" on public.crm_ai_agent_configs;
+    drop policy if exists "shared crm changes ai agent configs" on public.crm_ai_agent_configs;
+    create policy "shared crm reads ai agent configs" on public.crm_ai_agent_configs for select to anon, authenticated using (true);
+    create policy "shared crm changes ai agent configs" on public.crm_ai_agent_configs for all to anon, authenticated using (true) with check (true);
+
+    grant select, insert, update, delete on public.crm_ai_agent_configs to anon, authenticated;
   end if;
 end $$;
 

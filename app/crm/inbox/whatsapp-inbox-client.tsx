@@ -1093,7 +1093,7 @@ export default function WhatsAppInboxClient() {
           <a className={styles.railActive} href="/crm/inbox">Inbox</a>
           <a href="/manual-orders">Manual orders</a>
           <a href="/crm/flows">Flows</a>
-          <a href="/crm">Setup</a>
+          <a href="/crm/setup">Setup</a>
         </aside>
 
         <aside className={styles.conversationList}>

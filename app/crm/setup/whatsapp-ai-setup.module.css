@@ -1,0 +1,259 @@
+.page {
+  background: #dfe7ef;
+  color: #102033;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 100vh;
+  padding: 10px;
+}
+
+.header {
+  align-items: center;
+  background: linear-gradient(135deg, #e8f2ff, #ffffff);
+  border: 1px solid #d7e3f2;
+  border-radius: 18px;
+  display: flex;
+  justify-content: space-between;
+  min-height: 68px;
+  padding: 12px 18px;
+}
+
+.eyebrow {
+  color: #1d5ca8;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  margin: 0 0 5px;
+  text-transform: uppercase;
+}
+
+.header h1,
+.setupHeader h2 {
+  margin: 0;
+}
+
+.header h1 {
+  font-size: 26px;
+}
+
+.header span,
+.textCard small,
+.toggleCard small,
+.saveBar p {
+  color: #5f7188;
+}
+
+.headerActions a,
+.primaryButton {
+  border-radius: 11px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 900;
+  padding: 10px 14px;
+  text-decoration: none;
+}
+
+.headerActions a {
+  background: #ffffff;
+  border: 1px solid #cbd8e8;
+  color: #174d8f;
+}
+
+.primaryButton {
+  background: #1769e0;
+  border: 1px solid #1769e0;
+  color: #ffffff;
+}
+
+.primaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.layout {
+  background: #ffffff;
+  border: 1px solid #d7e3f2;
+  border-radius: 18px;
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  min-height: calc(100vh - 110px);
+  overflow: hidden;
+}
+
+.workspaceRail {
+  align-items: stretch;
+  background: #102033;
+  color: #c9d7e8;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 10px;
+}
+
+.railLogo {
+  align-items: center;
+  background: #ffffff;
+  border-radius: 14px;
+  color: #0f2b4d;
+  display: flex;
+  font-size: 17px;
+  font-weight: 950;
+  height: 52px;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.workspaceRail a {
+  border-radius: 12px;
+  color: #b9cae0;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 11px 8px;
+  text-align: center;
+  text-decoration: none;
+}
+
+.workspaceRail a:hover,
+.workspaceRail .railActive {
+  background: #1c3b62;
+  color: #ffffff;
+}
+
+.setupPanel {
+  background: #f8fbff;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 22px;
+}
+
+.setupHeader,
+.saveBar {
+  align-items: center;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+}
+
+.setupHeader span {
+  background: #ecfdf5;
+  border-radius: 999px;
+  color: #047857;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 8px 12px;
+}
+
+.notice {
+  background: #eaf3ff;
+  border: 1px solid #b9d5ff;
+  border-radius: 12px;
+  color: #0f4f9c;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 11px 13px;
+}
+
+.toggleGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.toggleCard,
+.textCard,
+.saveBar {
+  background: #ffffff;
+  border: 1px solid #dbe6f3;
+  border-radius: 18px;
+}
+
+.toggleCard {
+  align-items: flex-start;
+  cursor: pointer;
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+}
+
+.toggleCard input {
+  accent-color: #1769e0;
+  height: 18px;
+  margin-top: 2px;
+  width: 18px;
+}
+
+.toggleCard span,
+.textCard {
+  display: flex;
+  flex-direction: column;
+}
+
+.toggleCard strong {
+  font-size: 15px;
+}
+
+.toggleCard small,
+.textCard small {
+  font-size: 12px;
+  line-height: 1.45;
+  margin-top: 4px;
+}
+
+.formGrid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.textCard {
+  gap: 7px;
+  padding: 16px;
+}
+
+.textCard span {
+  color: #476079;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.textCard textarea {
+  background: #ffffff;
+  border: 1px solid #cfdbeb;
+  border-radius: 12px;
+  color: #102033;
+  font-size: 14px;
+  line-height: 1.45;
+  margin-top: 6px;
+  padding: 12px;
+  resize: vertical;
+}
+
+.saveBar {
+  bottom: 0;
+  box-shadow: 0 -10px 30px rgba(15, 23, 42, 0.06);
+  padding: 16px;
+  position: sticky;
+}
+
+.saveBar strong {
+  font-size: 15px;
+}
+
+.saveBar p {
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 4px 0 0;
+}
+
+@media (max-width: 1000px) {
+  .toggleGrid,
+  .formGrid {
+    grid-template-columns: 1fr;
+  }
+}

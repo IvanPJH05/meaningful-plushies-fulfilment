@@ -7,6 +7,10 @@ import {
   buildWhatsAppAssistantInstructions,
   createWhatsAppAssistantReply,
   crmAiAutoReplyEnabled,
+  defaultWhatsAppAssistantTraining,
+  normalizeWhatsAppAssistantTraining,
+  parseWhatsAppAssistantTraining,
+  serializeWhatsAppAssistantTraining,
 } from "../src/modules/openai/whatsapp-assistant.ts";
 import {
   buildManualOrderReadyWhatsAppMessage,
@@ -65,6 +69,7 @@ test("phase 2 accepts Shopify client credentials when admin token is not present
     WHATSAPP_VERIFY_TOKEN: "verify-token",
     WHATSAPP_ACCESS_TOKEN: "whatsapp-token",
     WHATSAPP_PHONE_NUMBER_ID: "12345",
+    WHATSAPP_BUSINESS_ACCOUNT_ID: "67890",
     WHATSAPP_WEBHOOK_SECRET: "webhook-secret",
     SHOPIFY_SHOP_DOMAIN: "meaningful-plushies.myshopify.com",
     SHOPIFY_CLIENT_ID: "client-id",
@@ -80,6 +85,7 @@ test("phase 3 reports OpenAI key as the remaining ChatGPT setup item", () => {
     WHATSAPP_VERIFY_TOKEN: "verify-token",
     WHATSAPP_ACCESS_TOKEN: "whatsapp-token",
     WHATSAPP_PHONE_NUMBER_ID: "12345",
+    WHATSAPP_BUSINESS_ACCOUNT_ID: "67890",
     WHATSAPP_WEBHOOK_SECRET: "webhook-secret",
     SHOPIFY_SHOP_DOMAIN: "meaningful-plushies.myshopify.com",
     SHOPIFY_CLIENT_ID: "client-id",
@@ -104,9 +110,46 @@ test("WhatsApp assistant builds a direct sales reply prompt", () => {
   });
 
   assert.match(instructions, /WhatsApp sales assistant/);
-  assert.match(instructions, /Do not create or promise a Shopify checkout link/);
+  assert.match(instructions, /Do not create or promise a checkout link/);
   assert.match(input, /Recent conversation/);
   assert.match(input, /Latest customer message/);
+});
+
+test("WhatsApp assistant prompt uses saved business training", () => {
+  const instructions = buildWhatsAppAssistantInstructions({
+    customerName: "Aisyah",
+    customerPhone: "60123456789",
+    latestMessage: "boleh saya tahu harga?",
+    training: {
+      brandVoice: "Reply in warm Manglish and keep it casual.",
+      productGuide: "Always mention Billy, Tootsie, Hunnie, and Dragon Warrior when customers ask choices.",
+      replyRules: "Never confirm payment unless a team member already verified it.",
+      requiresHumanReview: true,
+    },
+  });
+
+  assert.match(instructions, /Aisyah/);
+  assert.match(instructions, /Reply in warm Manglish/);
+  assert.match(instructions, /Billy, Tootsie, Hunnie, and Dragon Warrior/);
+  assert.match(instructions, /Never confirm payment/);
+  assert.match(instructions, /team reviews this suggestion/i);
+});
+
+test("WhatsApp assistant training normalizes and preserves older plain prompts", () => {
+  const normalized = normalizeWhatsAppAssistantTraining({
+    enabled: false,
+    brandVoice: "Short and kind.",
+  });
+  assert.equal(normalized.enabled, false);
+  assert.equal(normalized.brandVoice, "Short and kind.");
+  assert.equal(normalized.productGuide, defaultWhatsAppAssistantTraining.productGuide);
+
+  const roundTripped = parseWhatsAppAssistantTraining(serializeWhatsAppAssistantTraining(normalized));
+  assert.equal(roundTripped.enabled, false);
+  assert.equal(roundTripped.brandVoice, "Short and kind.");
+
+  const olderPrompt = parseWhatsAppAssistantTraining("Only answer with verified business facts.");
+  assert.equal(olderPrompt.replyRules, "Only answer with verified business facts.");
 });
 
 test("WhatsApp assistant does not call OpenAI when the API key is missing", async () => {

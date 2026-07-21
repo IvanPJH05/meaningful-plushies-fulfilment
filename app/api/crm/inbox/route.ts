@@ -10,6 +10,7 @@ import {
 
 import { prisma } from "@/src/infrastructure/database/prisma";
 import { ensureDefaultBusiness } from "@/src/modules/businesses/default-business";
+import { getWhatsAppAssistantTraining } from "@/src/modules/crm/whatsapp-ai-settings";
 import {
   createWhatsAppAssistantReply,
   type WhatsAppAssistantMessage,
@@ -511,10 +512,16 @@ export async function POST(request: Request) {
         return json(400, { ok: false, error: "There is no customer message for AI to reply to yet." });
       }
 
+      const training = await getWhatsAppAssistantTraining(business.id);
+      if (!training.enabled) {
+        return json(400, { ok: false, error: "WhatsApp AI suggestions are turned off in CRM setup." });
+      }
+
       const suggestion = await createWhatsAppAssistantReply({
         customerName: conversation.contact.displayName || conversation.contact.phone || undefined,
         customerPhone: conversation.contact.phone || conversation.contact.waId || undefined,
         latestMessage: latestCustomerMessage.body,
+        training,
         recentMessages: recentMessages
           .filter((message) => message.body?.trim())
           .map((message) => ({
@@ -542,7 +549,8 @@ export async function POST(request: Request) {
           metadata: jsonValue({
             generatedFromInbox: true,
             model: suggestion.model,
-            promptVersion: "whatsapp-sales-v1",
+            promptVersion: "whatsapp-sales-v2",
+            humanReviewRequired: training.requiresHumanReview,
           }),
         },
       });

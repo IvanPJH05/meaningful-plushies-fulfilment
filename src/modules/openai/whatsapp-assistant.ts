@@ -3,11 +3,23 @@ export type WhatsAppAssistantMessage = {
   body: string;
 };
 
+export type WhatsAppAssistantTraining = {
+  enabled: boolean;
+  requiresHumanReview: boolean;
+  brandVoice: string;
+  businessFacts: string;
+  productGuide: string;
+  replyRules: string;
+  faq: string;
+  exampleReplies: string;
+};
+
 export type WhatsAppAssistantInput = {
   customerName?: string;
   customerPhone?: string;
   latestMessage: string;
   recentMessages?: WhatsAppAssistantMessage[];
+  training?: Partial<WhatsAppAssistantTraining>;
 };
 
 export type WhatsAppAssistantResult = {
@@ -20,9 +32,89 @@ export type WhatsAppAssistantResult = {
 };
 
 export const defaultWhatsAppAssistantModel = "gpt-5.6-sol";
+export const whatsappAssistantConfigName = "whatsapp_sales_assistant";
+export const whatsappAssistantConfigVersion = 1;
+
+export const defaultWhatsAppAssistantTraining: WhatsAppAssistantTraining = {
+  enabled: true,
+  requiresHumanReview: true,
+  brandVoice: [
+    "Friendly, warm, simple, and helpful.",
+    "Mirror the customer's language when practical. If they use Malay, reply in natural Malay or Manglish.",
+    "Keep replies short enough for WhatsApp unless the customer asks for details.",
+  ].join("\n"),
+  businessFacts: [
+    "Meaningful Plushies sells personalized plushies with a recorded voice message and certificate details.",
+    "Customers normally need to provide plush name, gender, birth date, birth place, favourite person, belongs to, and meaningful note.",
+    "The team creates Shopify checkout or detail links after payment is checked.",
+  ].join("\n"),
+  productGuide: [
+    "Main characters: Billy, Tootsie, Hunnie, and Dragon Warrior.",
+    "Voice lengths: 5 seconds, 10 seconds, and 20 seconds.",
+    "If the customer is choosing, ask what character and voice length they prefer.",
+  ].join("\n"),
+  replyRules: [
+    "Do not say payment is confirmed unless the business/team has confirmed it.",
+    "Do not invent order status, tracking numbers, discounts, stock, or delivery promises.",
+    "Do not create or promise a checkout link yourself. If payment looks paid, say the team will verify it and send the link.",
+    "If the customer asks a question you cannot answer safely, ask the team to check and keep the customer reassured.",
+  ].join("\n"),
+  faq: [
+    "If the customer asks what details are needed, ask for: plush name, gender, birth date, birth place, favourite person, belongs to, and meaningful note.",
+    "If the customer says they paid, thank them and say the team will verify payment.",
+  ].join("\n"),
+  exampleReplies: [
+    "Hi! Can I get the plushie details? Name, gender, birth date, birth place, favourite person, belongs to, and meaningful note.",
+    "Thank you! I will get the team to verify the payment first, then we will send the Shopify link for the details.",
+  ].join("\n\n"),
+};
 
 function compactText(value: string) {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function stringValue(value: unknown, fallback: string) {
+  return typeof value === "string" ? value : fallback;
+}
+
+function booleanValue(value: unknown, fallback: boolean) {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+export function normalizeWhatsAppAssistantTraining(value?: Partial<WhatsAppAssistantTraining> | null): WhatsAppAssistantTraining {
+  const source = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  return {
+    enabled: booleanValue(source.enabled, defaultWhatsAppAssistantTraining.enabled),
+    requiresHumanReview: booleanValue(source.requiresHumanReview, defaultWhatsAppAssistantTraining.requiresHumanReview),
+    brandVoice: stringValue(source.brandVoice, defaultWhatsAppAssistantTraining.brandVoice),
+    businessFacts: stringValue(source.businessFacts, defaultWhatsAppAssistantTraining.businessFacts),
+    productGuide: stringValue(source.productGuide, defaultWhatsAppAssistantTraining.productGuide),
+    replyRules: stringValue(source.replyRules, defaultWhatsAppAssistantTraining.replyRules),
+    faq: stringValue(source.faq, defaultWhatsAppAssistantTraining.faq),
+    exampleReplies: stringValue(source.exampleReplies, defaultWhatsAppAssistantTraining.exampleReplies),
+  };
+}
+
+export function parseWhatsAppAssistantTraining(systemPrompt?: string | null): WhatsAppAssistantTraining {
+  if (!systemPrompt?.trim()) return defaultWhatsAppAssistantTraining;
+
+  try {
+    const parsed = JSON.parse(systemPrompt) as unknown;
+    if (parsed && typeof parsed === "object") {
+      return normalizeWhatsAppAssistantTraining(parsed as Partial<WhatsAppAssistantTraining>);
+    }
+  } catch {
+    // Older rows may contain a plain prompt. Preserve it as the custom rule block.
+  }
+
+  return normalizeWhatsAppAssistantTraining({
+    ...defaultWhatsAppAssistantTraining,
+    replyRules: systemPrompt,
+  });
+}
+
+export function serializeWhatsAppAssistantTraining(training: Partial<WhatsAppAssistantTraining>) {
+  return JSON.stringify(normalizeWhatsAppAssistantTraining(training));
 }
 
 export function crmAiAutoReplyEnabled(input: Record<string, string | undefined> = process.env) {
@@ -43,15 +135,27 @@ export function whatsappAssistantModel(input: Record<string, string | undefined>
 
 export function buildWhatsAppAssistantInstructions(input: WhatsAppAssistantInput) {
   const customerName = input.customerName?.trim() || "the customer";
+  const training = normalizeWhatsAppAssistantTraining(input.training);
+  const trainingSections = [
+    ["Brand voice", training.brandVoice],
+    ["Business facts", training.businessFacts],
+    ["Product guide", training.productGuide],
+    ["Rules", training.replyRules],
+    ["FAQ", training.faq],
+    ["Example good replies", training.exampleReplies],
+  ]
+    .filter(([, value]) => value.trim())
+    .map(([label, value]) => `${label}:\n${value.trim()}`)
+    .join("\n\n");
+
   return [
     "You are the WhatsApp sales assistant for Meaningful Plushies.",
-    "Write one concise, friendly reply that can be sent directly on WhatsApp.",
+    "Write one concise, friendly reply that can be reviewed and sent directly on WhatsApp.",
     "Keep the reply under 900 characters unless the customer asks for detailed help.",
     "Use simple English or Malay if the customer writes Malay. Mirror the customer's language where practical.",
-    "You sell personalized plushies with recorded voice messages and certificate details.",
-    "Do not say payment is confirmed unless the message clearly includes confirmation from the business, not just the customer claiming they paid.",
-    "Do not create or promise a Shopify checkout link yourself. If payment looks paid, say the team will verify it and send the checkout link.",
-    "If the customer asks what details are needed, ask for plush name, gender, birth date, birth place, favourite person, belongs to, and meaningful note.",
+    "Never pretend that you performed an action in the system. You can only draft a reply.",
+    training.requiresHumanReview ? "The team reviews this suggestion before sending. Do not write as if it was already sent." : "",
+    trainingSections ? `Saved training from the business:\n\n${trainingSections}` : "",
     `Customer name: ${customerName}.`,
     input.customerPhone ? `Customer phone: ${input.customerPhone}.` : "",
   ].filter(Boolean).join("\n");
