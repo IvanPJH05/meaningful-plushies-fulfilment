@@ -264,7 +264,8 @@
 }
 
 .formGrid,
-.delayGrid {
+.delayGrid,
+.triggerModeGrid {
   display: grid;
   gap: 12px;
 }
@@ -273,8 +274,45 @@
   grid-template-columns: minmax(0, 1fr) 140px;
 }
 
+.triggerModeGrid {
+  grid-template-columns: 150px minmax(0, 1fr);
+}
+
 .delayGrid {
   grid-template-columns: 90px 130px minmax(0, 1fr);
+}
+
+.helperText {
+  background: #f3f8ff;
+  border: 1px solid #d7e6f8;
+  border-radius: 12px;
+  color: #52677f;
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 0;
+  padding: 10px 12px;
+}
+
+.mediaList {
+  display: grid;
+  gap: 10px;
+}
+
+.mediaItem {
+  align-items: end;
+  background: #f7fbff;
+  border: 1px solid #dce8f7;
+  border-radius: 14px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 105px minmax(170px, 1fr) minmax(130px, 0.8fr) auto;
+  padding: 12px;
+}
+
+.mediaButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .actionHeader h3 {

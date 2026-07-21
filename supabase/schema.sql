@@ -1291,6 +1291,8 @@ begin
       id text primary key default gen_random_uuid()::text,
       business_id text not null references public.crm_businesses(id) on delete cascade,
       name text not null,
+      trigger_type text not null default 'keywords',
+      trigger_button_label text,
       trigger_words text[] not null default '{}',
       messages jsonb not null default '[]'::jsonb,
       notes text,
@@ -1299,6 +1301,10 @@ begin
       updated_at timestamptz not null default now(),
       unique (business_id, name)
     );
+
+    alter table public.crm_whatsapp_flows
+      add column if not exists trigger_type text not null default 'keywords',
+      add column if not exists trigger_button_label text;
 
     create index if not exists crm_whatsapp_flows_business_active_idx
       on public.crm_whatsapp_flows (business_id, active, updated_at desc);
@@ -1310,7 +1316,9 @@ begin
     create policy "shared crm reads whatsapp flows" on public.crm_whatsapp_flows for select to anon, authenticated using (true);
     create policy "shared crm changes whatsapp flows" on public.crm_whatsapp_flows for all to anon, authenticated using (true) with check (true);
 
-    grant select, insert, update, delete on public.crm_whatsapp_flows to anon, authenticated;
+    grant usage on schema public to anon, authenticated, service_role;
+    grant select, insert, update, delete on public.crm_whatsapp_flows to anon, authenticated, service_role;
+    grant all on table public.crm_whatsapp_flows to service_role;
 
     create table if not exists public.crm_ai_agent_configs (
       id text primary key default gen_random_uuid()::text,

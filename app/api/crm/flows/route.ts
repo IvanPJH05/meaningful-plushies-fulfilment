@@ -8,6 +8,11 @@ export const runtime = "nodejs";
 type FlowPayload = {
   id?: unknown;
   name?: unknown;
+  triggerType?: unknown;
+  triggerMode?: unknown;
+  triggerButtonLabel?: unknown;
+  buttonLabel?: unknown;
+  buttonName?: unknown;
   trigger?: unknown;
   triggerWords?: unknown;
   description?: unknown;
@@ -18,8 +23,17 @@ type FlowPayload = {
   messages?: unknown;
 };
 
-const actionTypes = ["Send Message", "Send Image", "AI Reply", "Update Status", "Add Note"] as const;
+const actionTypes = ["Send Message", "Send Media", "Send Image", "Send Video", "AI Reply", "Update Status", "Add Note"] as const;
 const delayUnits = ["seconds", "minutes", "hours", "days"] as const;
+const mediaTypes = ["image", "video"] as const;
+
+type TriggerType = "keywords" | "click";
+
+type FlowMediaItem = {
+  type: typeof mediaTypes[number];
+  url: string;
+  caption?: string;
+};
 
 type FlowStep = {
   type: typeof actionTypes[number];
@@ -27,6 +41,8 @@ type FlowStep = {
   delayUnit: typeof delayUnits[number];
   message: string;
   imageUrl?: string;
+  videoUrl?: string;
+  mediaItems?: FlowMediaItem[];
 };
 
 function json(status: number, body: Record<string, unknown>) {
@@ -53,12 +69,63 @@ function splitTriggerWords(value: unknown) {
 
 function normalizeActionType(value: unknown): FlowStep["type"] {
   const text = stringValue(value).toLowerCase();
+  if (["send media", "media", "media group", "send media group"].includes(text)) return "Send Media";
   return actionTypes.find((type) => type.toLowerCase() === text) || "Send Message";
 }
 
 function normalizeDelayUnit(value: unknown): FlowStep["delayUnit"] {
   const text = stringValue(value).toLowerCase();
   return delayUnits.find((unit) => unit === text) || "minutes";
+}
+
+function normalizeTriggerType(value: unknown, label: string): TriggerType {
+  const text = stringValue(value).toLowerCase();
+  if (text.includes("click") || text.includes("button") || label) return "click";
+  return "keywords";
+}
+
+function inferMediaTypeFromUrl(url: string): FlowMediaItem["type"] {
+  const cleanUrl = url.split("?")[0].toLowerCase();
+  return cleanUrl.endsWith(".mp4") || cleanUrl.endsWith(".mov") || cleanUrl.endsWith(".webm") ? "video" : "image";
+}
+
+function normalizeMediaType(value: unknown, url: string): FlowMediaItem["type"] {
+  const text = stringValue(value).toLowerCase();
+  return mediaTypes.find((type) => type === text) || inferMediaTypeFromUrl(url);
+}
+
+function normalizeMediaItems(value: unknown, step: Record<string, unknown>, stepType: FlowStep["type"], message: string): FlowMediaItem[] {
+  const items: FlowMediaItem[] = [];
+  const addItem = (candidate: unknown) => {
+    const record = recordValue(candidate);
+    const url = typeof candidate === "string"
+      ? stringValue(candidate)
+      : stringValue(record.url ?? record.mediaUrl ?? record.imageUrl ?? record.videoUrl ?? record.link);
+    if (!url) return;
+    items.push({
+      type: normalizeMediaType(record.type ?? record.mediaType, url),
+      url,
+      ...(stringValue(record.caption ?? record.message ?? record.text) ? {
+        caption: stringValue(record.caption ?? record.message ?? record.text),
+      } : {}),
+    });
+  };
+
+  if (Array.isArray(value)) value.forEach(addItem);
+  else if (value) addItem(value);
+
+  const imageUrl = stringValue(step.imageUrl ?? (stepType === "Send Image" ? step.mediaUrl ?? step.url : ""));
+  if (imageUrl) items.push({ type: "image", url: imageUrl, ...(message ? { caption: message } : {}) });
+
+  const videoUrl = stringValue(step.videoUrl ?? (stepType === "Send Video" ? step.mediaUrl ?? step.url : ""));
+  if (videoUrl) items.push({ type: "video", url: videoUrl, ...(message ? { caption: message } : {}) });
+
+  if (!items.length && stepType === "Send Media") {
+    const url = stringValue(step.mediaUrl ?? step.url ?? step.imageUrl ?? step.videoUrl);
+    if (url) items.push({ type: normalizeMediaType(step.mediaType ?? step.type, url), url, ...(message ? { caption: message } : {}) });
+  }
+
+  return items;
 }
 
 function flowStepFromLegacyText(value: string): FlowStep | null {
@@ -103,17 +170,22 @@ function normalizeFlowStep(value: unknown): FlowStep | null {
   const type = normalizeActionType(step.type ?? step.actionType);
   const delay = Math.max(0, Number(step.delayValue ?? step.delay ?? 0) || 0);
   const message = stringValue(step.message ?? step.body ?? step.caption ?? step.text);
-  const imageUrl = stringValue(step.imageUrl ?? step.mediaUrl ?? step.url);
+  const mediaItems = normalizeMediaItems(step.mediaItems ?? step.media ?? step.attachments, step, type, message);
+  const firstImage = mediaItems.find((item) => item.type === "image")?.url || "";
+  const firstVideo = mediaItems.find((item) => item.type === "video")?.url || "";
+  const mediaAction = type === "Send Image" || type === "Send Video" || type === "Send Media";
 
-  if (type === "Send Image" && !imageUrl) return null;
-  if (type !== "Send Image" && !message) return null;
+  if (mediaAction && !mediaItems.length) return null;
+  if (!mediaAction && type !== "AI Reply" && !message) return null;
 
   return {
     type,
     delayValue: `${delay}`,
     delayUnit: normalizeDelayUnit(step.delayUnit ?? step.unit),
     message,
-    ...(imageUrl ? { imageUrl } : {}),
+    ...(firstImage ? { imageUrl: firstImage } : {}),
+    ...(firstVideo ? { videoUrl: firstVideo } : {}),
+    ...(mediaItems.length ? { mediaItems } : {}),
   };
 }
 
@@ -135,12 +207,15 @@ function activeFromPayload(payload: FlowPayload) {
 function flowResponse(flow: {
   id: string;
   name: string;
+  triggerType: string | null;
+  triggerButtonLabel: string | null;
   triggerWords: string[];
   notes: string | null;
   active: boolean;
   messages: unknown;
   updatedAt: Date;
 }) {
+  const triggerType = normalizeTriggerType(flow.triggerType, flow.triggerButtonLabel || "");
   const messages = Array.isArray(flow.messages)
     ? flow.messages.map(normalizeFlowStep).filter((step): step is FlowStep => Boolean(step))
     : [];
@@ -148,6 +223,8 @@ function flowResponse(flow: {
   return {
     id: flow.id,
     name: flow.name,
+    triggerType,
+    triggerButtonLabel: flow.triggerButtonLabel || "",
     trigger: flow.triggerWords.join(", "),
     description: flow.notes || "",
     status: flow.active ? "Active" : "Draft",
@@ -158,12 +235,22 @@ function flowResponse(flow: {
 
 function normalizePayload(payload: FlowPayload) {
   const name = stringValue(payload.name);
+  const triggerButtonLabel = stringValue(payload.triggerButtonLabel ?? payload.buttonLabel ?? payload.buttonName);
+  const triggerType = normalizeTriggerType(payload.triggerType ?? payload.triggerMode, triggerButtonLabel);
   const triggerWords = splitTriggerWords(payload.triggerWords ?? payload.trigger);
   const notes = stringValue(payload.notes ?? payload.description);
   const messages = stepsFromValue(payload.messages ?? payload.steps);
   const active = activeFromPayload(payload);
 
-  return { name, triggerWords, notes, messages, active };
+  return {
+    name,
+    triggerType,
+    triggerButtonLabel: triggerType === "click" ? (triggerButtonLabel || name) : "",
+    triggerWords: triggerType === "click" ? [] : triggerWords,
+    notes,
+    messages,
+    active,
+  };
 }
 
 export async function GET() {
@@ -197,6 +284,8 @@ export async function POST(request: Request) {
       data: {
         businessId: business.id,
         name: normalized.name,
+        triggerType: normalized.triggerType,
+        triggerButtonLabel: normalized.triggerButtonLabel,
         triggerWords: normalized.triggerWords,
         notes: normalized.notes,
         messages: normalized.messages,
@@ -236,6 +325,8 @@ export async function PATCH(request: Request) {
       where: { id: existingFlow.id },
       data: {
         name: normalized.name,
+        triggerType: normalized.triggerType,
+        triggerButtonLabel: normalized.triggerButtonLabel,
         triggerWords: normalized.triggerWords,
         notes: normalized.notes,
         messages: normalized.messages,

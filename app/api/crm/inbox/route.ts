@@ -23,6 +23,7 @@ import {
   sendWhatsAppImageMessage,
   sendWhatsAppReactionMessage,
   sendWhatsAppTextMessage,
+  sendWhatsAppVideoMessage,
 } from "@/src/modules/whatsapp/outbound";
 import { whatsAppDisplayTextFromMessage } from "@/src/modules/whatsapp/webhook-normalizer";
 
@@ -945,14 +946,19 @@ export async function POST(request: Request) {
     const mediaType = stringValue(body.mediaType).toLowerCase();
     const mediaUrl = stringValue(body.mediaUrl);
     const sendingImage = mediaType === "image" && Boolean(mediaUrl);
+    const sendingVideo = mediaType === "video" && Boolean(mediaUrl);
+    const sendingMedia = sendingImage || sendingVideo;
     const messageBody = (body.body || existingMessage?.body || "").trim();
-    if (!messageBody && !sendingImage) {
-      return json(400, { ok: false, error: "Message body or image is required." });
+    if (!messageBody && !sendingMedia) {
+      return json(400, { ok: false, error: "Message body or media is required." });
     }
 
     let delivery: unknown = null;
     let deliveryError = "";
     let status: MessageStatus = MessageStatus.QUEUED;
+    const outboundMessageType = sendingImage ? MessageType.IMAGE : sendingVideo ? MessageType.VIDEO : MessageType.TEXT;
+    const mediaContentType = sendingVideo ? "video/mp4" : "image/jpeg";
+    const mediaFilename = sendingVideo ? "Flow video" : "Flow image";
 
     try {
       delivery = sendingImage
@@ -962,6 +968,13 @@ export async function POST(request: Request) {
           caption: messageBody || undefined,
           contextMessageId: replyContextMessageId,
         })
+        : sendingVideo
+          ? await sendWhatsAppVideoMessage({
+            to: recipient,
+            videoUrl: mediaUrl,
+            caption: messageBody || undefined,
+            contextMessageId: replyContextMessageId,
+          })
         : await sendWhatsAppTextMessage({
           to: recipient,
           body: messageBody,
@@ -981,12 +994,12 @@ export async function POST(request: Request) {
         data: {
           externalMessageId: externalMessageId || existingMessage.externalMessageId || undefined,
           body: messageBody,
-          messageType: sendingImage ? MessageType.IMAGE : MessageType.TEXT,
+          messageType: outboundMessageType,
           status,
           metadata: jsonValue({
             ...(existingMessage.metadata && typeof existingMessage.metadata === "object" ? existingMessage.metadata : {}),
             sentFromInbox: true,
-            ...(sendingImage ? { media: { url: mediaUrl, contentType: "image/jpeg", filename: "Flow image" } } : {}),
+            ...(sendingMedia ? { media: { url: mediaUrl, contentType: mediaContentType, filename: mediaFilename } } : {}),
             ...(replyToMetadata ? { replyTo: replyToMetadata } : {}),
             delivery,
           }),
@@ -1001,12 +1014,12 @@ export async function POST(request: Request) {
           externalMessageId: externalMessageId || undefined,
           direction: MessageDirection.OUTBOUND,
           senderType: MessageSenderType.TEAM,
-          messageType: sendingImage ? MessageType.IMAGE : MessageType.TEXT,
+          messageType: outboundMessageType,
           body: messageBody,
           status,
           metadata: jsonValue({
             sentFromInbox: true,
-            ...(sendingImage ? { media: { url: mediaUrl, contentType: "image/jpeg", filename: "Flow image" } } : {}),
+            ...(sendingMedia ? { media: { url: mediaUrl, contentType: mediaContentType, filename: mediaFilename } } : {}),
             ...(replyToMetadata ? { replyTo: replyToMetadata } : {}),
             delivery,
           }),
@@ -1039,13 +1052,13 @@ export async function POST(request: Request) {
         createdAt: serializeDate(message.createdAt),
         sentAt: serializeDate(message.sentAt),
         replyTo: replyToMetadata,
-        attachments: sendingImage
+        attachments: sendingMedia
           ? [{
-            id: `outbound-image-${message.id}`,
-            originalName: "Flow image",
-            contentType: "image/jpeg",
+            id: `outbound-${mediaType}-${message.id}`,
+            originalName: mediaFilename,
+            contentType: mediaContentType,
             sizeBytes: null,
-            previewCacheKey: `outbound-image:${mediaUrl}`,
+            previewCacheKey: `outbound-${mediaType}:${mediaUrl}`,
             url: mediaUrl,
             downloadUrl: mediaUrl,
           }]

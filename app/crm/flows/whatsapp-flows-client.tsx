@@ -7,6 +7,8 @@ import styles from "./whatsapp-flows.module.css";
 type WhatsAppFlow = {
   id: string;
   name: string;
+  triggerType?: TriggerType;
+  triggerButtonLabel?: string;
   trigger: string;
   description: string;
   status: "Draft" | "Active";
@@ -14,15 +16,27 @@ type WhatsAppFlow = {
   updatedAt: string;
 };
 
-type ActionType = "Send Message" | "Send Image" | "AI Reply" | "Update Status" | "Add Note";
+type TriggerType = "keywords" | "click";
+type MediaType = "image" | "video";
+type ActionType = "Send Message" | "Send Media" | "AI Reply" | "Update Status" | "Add Note";
+type StoredActionType = ActionType | "Send Image" | "Send Video";
 type DelayUnit = "seconds" | "minutes" | "hours" | "days";
 
+type FlowMediaItem = {
+  id?: string;
+  type: MediaType;
+  url: string;
+  caption?: string;
+};
+
 type FlowStep = {
-  type: ActionType;
+  type: StoredActionType;
   delayValue: string;
   delayUnit: DelayUnit;
   message: string;
   imageUrl?: string;
+  videoUrl?: string;
+  mediaItems?: FlowMediaItem[];
 };
 
 type FlowAction = {
@@ -31,18 +45,20 @@ type FlowAction = {
   delayValue: string;
   delayUnit: DelayUnit;
   message: string;
-  imageUrl: string;
+  mediaItems: FlowMediaItem[];
 };
 
 type FlowForm = {
   name: string;
+  triggerType: TriggerType;
+  triggerButtonLabel: string;
   trigger: string;
   description: string;
   status: "Draft" | "Active";
   actions: FlowAction[];
 };
 
-const actionTypes: ActionType[] = ["Send Message", "Send Image", "AI Reply", "Update Status", "Add Note"];
+const actionTypes: ActionType[] = ["Send Message", "Send Media", "AI Reply", "Update Status", "Add Note"];
 const delayUnits: DelayUnit[] = ["seconds", "minutes", "hours", "days"];
 
 function makeId() {
@@ -50,20 +66,32 @@ function makeId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function makeAction(action?: Partial<FlowAction>): FlowAction {
+function makeMediaItem(media?: Partial<FlowMediaItem>): FlowMediaItem {
   return {
     id: makeId(),
-    type: action?.type || "Send Message",
+    type: media?.type === "video" ? "video" : "image",
+    url: media?.url || "",
+    caption: media?.caption || "",
+  };
+}
+
+function makeAction(action?: Partial<FlowAction>): FlowAction {
+  const type = action?.type || "Send Message";
+  return {
+    id: makeId(),
+    type,
     delayValue: action?.delayValue ?? "0",
     delayUnit: action?.delayUnit || "minutes",
     message: action?.message || "",
-    imageUrl: action?.imageUrl || "",
+    mediaItems: action?.mediaItems?.length ? action.mediaItems.map(makeMediaItem) : (type === "Send Media" ? [makeMediaItem()] : []),
   };
 }
 
 function emptyFlowForm(): FlowForm {
   return {
     name: "",
+    triggerType: "click",
+    triggerButtonLabel: "",
     trigger: "",
     description: "",
     status: "Draft",
@@ -74,6 +102,8 @@ function emptyFlowForm(): FlowForm {
 const starterTemplates: FlowForm[] = [
   {
     name: "New customer details",
+    triggerType: "click",
+    triggerButtonLabel: "Ask details",
     trigger: "interested, price, details",
     description: "Ask for plushie details after a customer shows interest.",
     status: "Draft",
@@ -100,6 +130,8 @@ const starterTemplates: FlowForm[] = [
   },
   {
     name: "Payment received",
+    triggerType: "click",
+    triggerButtonLabel: "Payment received",
     trigger: "paid, payment done, transfer",
     description: "Confirm payment and tell the customer the Shopify details link is coming.",
     status: "Draft",
@@ -112,6 +144,8 @@ const starterTemplates: FlowForm[] = [
   },
   {
     name: "Checking order",
+    triggerType: "click",
+    triggerButtonLabel: "Checking order",
     trigger: "tracking, order, update",
     description: "Use this when you need time to check an order.",
     status: "Draft",
@@ -130,22 +164,48 @@ const starterTemplates: FlowForm[] = [
   },
 ];
 
+function normaliseTriggerType(value?: string, fallback: TriggerType = "click"): TriggerType {
+  const normalised = (value || "").trim().toLowerCase();
+  if (normalised === "click" || normalised === "button") return "click";
+  if (normalised === "keywords" || normalised === "words") return "keywords";
+  return fallback;
+}
+
 function normaliseActionType(value: string): ActionType {
-  return actionTypes.find((type) => type.toLowerCase() === value.trim().toLowerCase()) || "Send Message";
+  const normalised = value.trim().toLowerCase();
+  if (normalised === "send image" || normalised === "send video") return "Send Media";
+  return actionTypes.find((type) => type.toLowerCase() === normalised) || "Send Message";
 }
 
 function normaliseDelayUnit(value: string): DelayUnit {
   return delayUnits.find((unit) => unit === value.toLowerCase()) || "minutes";
 }
 
+function mediaItemsFromStep(step: FlowStep): FlowMediaItem[] {
+  const items = Array.isArray(step.mediaItems) ? step.mediaItems : [];
+  const mediaItems = items
+    .map((item) => makeMediaItem({
+      type: item.type,
+      url: item.url || "",
+      caption: item.caption || "",
+    }))
+    .filter((item) => item.url.trim());
+
+  if (mediaItems.length) return mediaItems;
+  if (step.imageUrl) return [makeMediaItem({ type: "image", url: step.imageUrl, caption: step.message || "" })];
+  if (step.videoUrl) return [makeMediaItem({ type: "video", url: step.videoUrl, caption: step.message || "" })];
+  return [];
+}
+
 function actionFromStep(step: FlowStep | string): FlowAction {
   if (typeof step !== "string") {
+    const type = normaliseActionType(step.type);
     return makeAction({
-      type: normaliseActionType(step.type),
+      type,
       delayValue: step.delayValue ?? "0",
       delayUnit: normaliseDelayUnit(step.delayUnit),
       message: step.message || "",
-      imageUrl: step.imageUrl || "",
+      mediaItems: type === "Send Media" ? mediaItemsFromStep(step) : [],
     });
   }
 
@@ -177,6 +237,8 @@ function actionFromStep(step: FlowStep | string): FlowAction {
 function formFromFlow(flow: WhatsAppFlow): FlowForm {
   return {
     name: flow.name,
+    triggerType: normaliseTriggerType(flow.triggerType, "click"),
+    triggerButtonLabel: flow.triggerButtonLabel || "",
     trigger: flow.trigger,
     description: flow.description,
     status: flow.status,
@@ -184,17 +246,24 @@ function formFromFlow(flow: WhatsAppFlow): FlowForm {
   };
 }
 
-function formatActionStep(action: FlowAction) {
+function formatActionStep(action: FlowAction): FlowStep | null {
   const message = action.message.trim();
-  const imageUrl = action.imageUrl.trim();
-  if (action.type === "Send Image" && !imageUrl) return null;
-  if (action.type !== "Send Image" && !message) return null;
+  const mediaItems: FlowMediaItem[] = action.mediaItems
+    .map((item) => ({
+      type: item.type,
+      url: item.url.trim(),
+      caption: (item.caption || "").trim(),
+    }))
+    .filter((item) => item.url);
+
+  if (action.type === "Send Media" && !mediaItems.length) return null;
+  if (action.type !== "Send Media" && action.type !== "AI Reply" && !message) return null;
   return {
     type: action.type,
     delayValue: `${Math.max(0, Number(action.delayValue) || 0)}`,
     delayUnit: action.delayUnit,
     message,
-    ...(imageUrl ? { imageUrl } : {}),
+    ...(mediaItems.length ? { mediaItems } : {}),
   };
 }
 
@@ -202,6 +271,8 @@ function flowPayloadFromForm(form: FlowForm, id?: string) {
   return {
     id,
     name: form.name.trim(),
+    triggerType: form.triggerType,
+    triggerButtonLabel: form.triggerButtonLabel.trim(),
     trigger: form.trigger.trim(),
     description: form.description.trim(),
     status: form.status,
@@ -219,6 +290,14 @@ function cloneTemplate(template: FlowForm): FlowForm {
 function actionPreview(action: FlowAction) {
   const delay = Math.max(0, Number(action.delayValue) || 0);
   return delay > 0 ? `${delay} ${action.delayUnit}` : "No delay";
+}
+
+function actionSummary(action: FlowAction) {
+  if (action.type === "Send Media") {
+    const mediaCount = action.mediaItems.filter((item) => item.url.trim()).length;
+    return mediaCount ? `${mediaCount} media item${mediaCount === 1 ? "" : "s"}` : "No media added yet";
+  }
+  return action.message || "No message yet";
 }
 
 export default function WhatsAppFlowsClient() {
@@ -255,7 +334,9 @@ export default function WhatsAppFlowsClient() {
 
   const activeCount = useMemo(() => flows.filter((flow) => flow.status === "Active").length, [flows]);
   const hasUsableAction = useMemo(() => form.actions.some((action) => (
-    action.type === "Send Image" ? action.imageUrl.trim() : action.message.trim()
+    action.type === "Send Media"
+      ? action.mediaItems.some((item) => item.url.trim())
+      : action.type === "AI Reply" || action.message.trim()
   )), [form.actions]);
 
   async function saveFlow() {
@@ -317,6 +398,41 @@ export default function WhatsAppFlowsClient() {
     setForm((current) => ({
       ...current,
       actions: current.actions.map((action) => (action.id === actionId ? { ...action, ...patch } : action)),
+    }));
+  }
+
+  function updateMediaItem(actionId: string, mediaId: string | undefined, patch: Partial<FlowMediaItem>) {
+    setForm((current) => ({
+      ...current,
+      actions: current.actions.map((action) => {
+        if (action.id !== actionId) return action;
+        return {
+          ...action,
+          mediaItems: action.mediaItems.map((item) => (item.id === mediaId ? { ...item, ...patch } : item)),
+        };
+      }),
+    }));
+  }
+
+  function addMediaItem(actionId: string, type: MediaType) {
+    setForm((current) => ({
+      ...current,
+      actions: current.actions.map((action) => (
+        action.id === actionId
+          ? { ...action, mediaItems: [...action.mediaItems, makeMediaItem({ type })] }
+          : action
+      )),
+    }));
+  }
+
+  function removeMediaItem(actionId: string, mediaId: string | undefined) {
+    setForm((current) => ({
+      ...current,
+      actions: current.actions.map((action) => {
+        if (action.id !== actionId) return action;
+        const mediaItems = action.mediaItems.filter((item) => item.id !== mediaId);
+        return { ...action, mediaItems: mediaItems.length ? mediaItems : [makeMediaItem()] };
+      }),
     }));
   }
 
@@ -395,14 +511,44 @@ export default function WhatsAppFlowsClient() {
                 </label>
               </div>
 
-              <label>
-                Trigger words
-                <input
-                  value={form.trigger}
-                  onChange={(event) => setForm((current) => ({ ...current, trigger: event.target.value }))}
-                  placeholder="Example: price, interested, details"
-                />
-              </label>
+              <div className={styles.triggerModeGrid}>
+                <label>
+                  Trigger
+                  <select
+                    value={form.triggerType}
+                    onChange={(event) => setForm((current) => ({ ...current, triggerType: event.target.value as TriggerType }))}
+                  >
+                    <option value="click">Click button</option>
+                    <option value="keywords">Trigger words</option>
+                  </select>
+                </label>
+
+                {form.triggerType === "click" ? (
+                  <label>
+                    Button name
+                    <input
+                      value={form.triggerButtonLabel}
+                      onChange={(event) => setForm((current) => ({ ...current, triggerButtonLabel: event.target.value }))}
+                      placeholder="Example: Ask details"
+                    />
+                  </label>
+                ) : (
+                  <label>
+                    Trigger words
+                    <input
+                      value={form.trigger}
+                      onChange={(event) => setForm((current) => ({ ...current, trigger: event.target.value }))}
+                      placeholder="Example: price, interested, details"
+                    />
+                  </label>
+                )}
+              </div>
+
+              <p className={styles.helperText}>
+                {form.triggerType === "click"
+                  ? "This flow appears as a quick button in the inbox. Click it to send the message sequence."
+                  : "The flow can run when a WhatsApp message contains one of these words."}
+              </p>
 
               <label>
                 Notes
@@ -423,7 +569,7 @@ export default function WhatsAppFlowsClient() {
                       <span className={styles.nodeBadge}>Action {index + 1}</span>
                       <h3>{action.type}</h3>
                     </div>
-                    <button className={styles.textButton} onClick={() => removeAction(action.id)} disabled={form.actions.length === 1}>
+                    <button className={styles.textButton} type="button" onClick={() => removeAction(action.id)} disabled={form.actions.length === 1}>
                       Remove
                     </button>
                   </div>
@@ -455,7 +601,13 @@ export default function WhatsAppFlowsClient() {
                       Action
                       <select
                         value={action.type}
-                        onChange={(event) => updateAction(action.id, { type: event.target.value as ActionType })}
+                        onChange={(event) => {
+                          const nextType = event.target.value as ActionType;
+                          updateAction(action.id, {
+                            type: nextType,
+                            mediaItems: nextType === "Send Media" && !action.mediaItems.length ? [makeMediaItem()] : action.mediaItems,
+                          });
+                        }}
                       >
                         {actionTypes.map((type) => (
                           <option key={type} value={type}>
@@ -466,25 +618,61 @@ export default function WhatsAppFlowsClient() {
                     </label>
                   </div>
 
-                  {action.type === "Send Image" ? (
+                  {action.type === "Send Media" ? (
                     <>
                       <label>
-                        Image URL
-                        <input
-                          value={action.imageUrl}
-                          onChange={(event) => updateAction(action.id, { imageUrl: event.target.value })}
-                          placeholder="Paste a public image URL that WhatsApp can fetch"
-                        />
-                      </label>
-                      <label>
-                        Caption (optional)
+                        Caption / instruction
                         <textarea
                           value={action.message}
                           onChange={(event) => updateAction(action.id, { message: event.target.value })}
-                          placeholder="Optional caption to send with the image."
-                          rows={4}
+                          placeholder="Optional caption for the first media item, or an internal note for this action."
+                          rows={3}
                         />
                       </label>
+
+                      <div className={styles.mediaList}>
+                        {action.mediaItems.map((item, itemIndex) => (
+                          <div className={styles.mediaItem} key={item.id || `${action.id}-${itemIndex}`}>
+                            <label>
+                              Type
+                              <select
+                                value={item.type}
+                                onChange={(event) => updateMediaItem(action.id, item.id, { type: event.target.value as MediaType })}
+                              >
+                                <option value="image">Image</option>
+                                <option value="video">Video</option>
+                              </select>
+                            </label>
+                            <label>
+                              Media URL
+                              <input
+                                value={item.url}
+                                onChange={(event) => updateMediaItem(action.id, item.id, { url: event.target.value })}
+                                placeholder={item.type === "video" ? "Paste a public video URL" : "Paste a public image URL"}
+                              />
+                            </label>
+                            <label>
+                              Caption
+                              <input
+                                value={item.caption || ""}
+                                onChange={(event) => updateMediaItem(action.id, item.id, { caption: event.target.value })}
+                                placeholder={itemIndex === 0 ? "Optional. Uses action caption if blank." : "Optional caption"}
+                              />
+                            </label>
+                            <button className={styles.textButton} type="button" onClick={() => removeMediaItem(action.id, item.id)}>
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                        <div className={styles.mediaButtons}>
+                          <button className={styles.secondaryButton} type="button" onClick={() => addMediaItem(action.id, "image")}>
+                            Add image
+                          </button>
+                          <button className={styles.secondaryButton} type="button" onClick={() => addMediaItem(action.id, "video")}>
+                            Add video
+                          </button>
+                        </div>
+                      </div>
                     </>
                   ) : (
                     <label>
@@ -541,7 +729,11 @@ export default function WhatsAppFlowsClient() {
               </div>
 
               <div className={styles.flowMeta}>
-                <span>Trigger: {flow.trigger || "Manual only"}</span>
+                <span>
+                  {normaliseTriggerType(flow.triggerType) === "click"
+                    ? `Button: ${flow.triggerButtonLabel || flow.name}`
+                    : `Trigger: ${flow.trigger || "Manual only"}`}
+                </span>
                 <strong>{flow.steps.length} actions</strong>
               </div>
 
@@ -553,8 +745,8 @@ export default function WhatsAppFlowsClient() {
                       <span>{actionPreview(parsed)}</span>
                       <div>
                         <strong>{parsed.type}</strong>
-                        <p>{parsed.type === "Send Image" ? parsed.imageUrl : parsed.message}</p>
-                        {parsed.type === "Send Image" && parsed.message && <p>{parsed.message}</p>}
+                        <p>{actionSummary(parsed)}</p>
+                        {parsed.type === "Send Media" && parsed.message && <p>{parsed.message}</p>}
                       </div>
                     </div>
                   );

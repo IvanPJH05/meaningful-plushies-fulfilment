@@ -116,8 +116,16 @@ type InboxPayload = {
 
 type ActiveConversation = NonNullable<SelectedConversation>;
 
-type FlowActionType = "Send Message" | "Send Image" | "AI Reply" | "Update Status" | "Add Note";
+type FlowTriggerType = "keywords" | "click";
+type FlowMediaType = "image" | "video";
+type FlowActionType = "Send Message" | "Send Media" | "Send Image" | "Send Video" | "AI Reply" | "Update Status" | "Add Note";
 type FlowDelayUnit = "seconds" | "minutes" | "hours" | "days";
+
+type FlowMediaItem = {
+  type: FlowMediaType;
+  url: string;
+  caption?: string;
+};
 
 type WhatsAppFlowStep = {
   type: FlowActionType;
@@ -125,11 +133,15 @@ type WhatsAppFlowStep = {
   delayUnit: FlowDelayUnit;
   message: string;
   imageUrl?: string;
+  videoUrl?: string;
+  mediaItems?: FlowMediaItem[];
 };
 
 type WhatsAppFlow = {
   id: string;
   name: string;
+  triggerType?: FlowTriggerType;
+  triggerButtonLabel?: string;
   trigger: string;
   description: string;
   status: "Draft" | "Active";
@@ -509,15 +521,17 @@ function personalizeFlowText(text: string, conversation: ActiveConversation | nu
     .trim();
 }
 
-function optimisticImageAttachment(id: string, imageUrl: string): NonNullable<InboxMessage["attachments"]>[number] {
+function optimisticMediaAttachment(id: string, media: FlowMediaItem): NonNullable<InboxMessage["attachments"]>[number] {
+  const contentType = media.type === "video" ? "video/mp4" : "image/jpeg";
+  const originalName = media.type === "video" ? "Flow video" : "Flow image";
   return {
-    id: `local-image-${id}`,
-    originalName: "Flow image",
-    contentType: "image/jpeg",
+    id: `local-${media.type}-${id}`,
+    originalName,
+    contentType,
     sizeBytes: null,
-    previewCacheKey: `flow-image:${imageUrl}`,
-    url: imageUrl,
-    downloadUrl: imageUrl,
+    previewCacheKey: `flow-${media.type}:${media.url}`,
+    url: media.url,
+    downloadUrl: media.url,
   };
 }
 
@@ -1403,8 +1417,24 @@ export default function WhatsAppInboxClient() {
   }, [inbox.messages]);
 
   const activeFlows = useMemo(() => (
-    flows.filter((flow) => flow.status === "Active" && flow.steps.length > 0)
+    flows.filter((flow) => flow.status === "Active" && flow.steps.length > 0 && (flow.triggerType || "click") === "click")
   ), [flows]);
+
+  function mediaItemsFromStep(step: WhatsAppFlowStep): FlowMediaItem[] {
+    const mediaItems = Array.isArray(step.mediaItems) ? step.mediaItems : [];
+    const normalised = mediaItems
+      .map((item) => ({
+        type: item.type === "video" ? "video" as const : "image" as const,
+        url: (item.url || "").trim(),
+        caption: (item.caption || "").trim(),
+      }))
+      .filter((item) => item.url);
+
+    if (normalised.length) return normalised;
+    if (step.imageUrl?.trim()) return [{ type: "image", url: step.imageUrl.trim(), caption: step.message || "" }];
+    if (step.videoUrl?.trim()) return [{ type: "video", url: step.videoUrl.trim(), caption: step.message || "" }];
+    return [];
+  }
 
   async function selectConversation(conversationId: string) {
     messageShouldStickToBottomRef.current = true;
@@ -1435,11 +1465,11 @@ export default function WhatsAppInboxClient() {
     await loadConversation(conversationId);
   }
 
-  async function sendMessage(messageId?: string, bodyOverride?: string, media?: { type: "image"; url: string }) {
+  async function sendMessage(messageId?: string, bodyOverride?: string, media?: { type: FlowMediaType; url: string }) {
     const body = (bodyOverride !== undefined ? bodyOverride : draft).trim();
     const mediaUrl = media?.url.trim() || "";
-    const sendingImage = media?.type === "image" && Boolean(mediaUrl);
-    if (!selectedId || (!body && !sendingImage)) return;
+    const sendingMedia = (media?.type === "image" || media?.type === "video") && Boolean(mediaUrl);
+    if (!selectedId || (!body && !sendingMedia)) return;
     if (sendingRef.current) return;
 
     const conversationId = selectedId;
@@ -1448,12 +1478,19 @@ export default function WhatsAppInboxClient() {
     const optimisticId = messageId ? "" : `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     messageShouldStickToBottomRef.current = true;
     if (optimisticId) {
-      const optimisticAttachments = sendingImage ? [optimisticImageAttachment(optimisticId, mediaUrl)] : [];
+      const optimisticAttachments = sendingMedia && media ? [optimisticMediaAttachment(optimisticId, { type: media.type, url: mediaUrl })] : [];
+      const fallbackBody = media?.type === "video" ? "Video" : "Photo";
       patchConversationMessages(conversationId, (messages) => [
         ...messages,
-        optimisticOutboundMessage(optimisticId, body || "Photo", sendingImage ? "IMAGE" : "TEXT", optimisticAttachments, optimisticReplyTo),
+        optimisticOutboundMessage(
+          optimisticId,
+          body || fallbackBody,
+          media?.type === "video" ? "VIDEO" : media?.type === "image" ? "IMAGE" : "TEXT",
+          optimisticAttachments,
+          optimisticReplyTo,
+        ),
       ]);
-      if (bodyOverride === undefined && !sendingImage) {
+      if (bodyOverride === undefined && !sendingMedia) {
         setDraft("");
         setReplyTarget(null);
       }
@@ -1471,7 +1508,7 @@ export default function WhatsAppInboxClient() {
           messageId,
           body,
           replyToMessageId: activeReplyTarget?.id,
-          ...(sendingImage ? { mediaType: "image", mediaUrl } : {}),
+          ...(sendingMedia && media ? { mediaType: media.type, mediaUrl } : {}),
         }),
       });
       const data = await response.json();
@@ -1638,10 +1675,16 @@ export default function WhatsAppInboxClient() {
           continue;
         }
 
-        if (step.type === "Send Image") {
-          const caption = personalizeFlowText(step.message, selected);
-          if (step.imageUrl) {
-            await sendMessage(undefined, caption, { type: "image", url: step.imageUrl });
+        if (step.type === "Send Media" || step.type === "Send Image" || step.type === "Send Video") {
+          const mediaItems = mediaItemsFromStep(step);
+          if (mediaItems.length) {
+            for (const [index, item] of mediaItems.entries()) {
+              const caption = personalizeFlowText(item.caption || (index === 0 ? step.message : ""), selected);
+              await sendMessage(undefined, caption, { type: item.type, url: item.url });
+            }
+          } else {
+            const text = personalizeFlowText(step.message, selected);
+            if (text) await sendMessage(undefined, text);
           }
           continue;
         }
@@ -1952,7 +1995,7 @@ export default function WhatsAppInboxClient() {
                     onClick={() => void runFlow(flow)}
                     type="button"
                   >
-                    {runningFlowId === flow.id ? "Sending..." : flow.name}
+                    {runningFlowId === flow.id ? "Sending..." : flow.triggerButtonLabel || flow.name}
                   </button>
                 ))}
               </div>
