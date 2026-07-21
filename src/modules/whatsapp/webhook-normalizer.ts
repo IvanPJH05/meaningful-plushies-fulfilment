@@ -99,7 +99,7 @@ export function whatsAppDisplayTextFromMessage(message: Record<string, unknown>)
   if (type === "reaction") {
     const reaction = objectValue(message.reaction);
     const emoji = textValue(reaction.emoji).trim();
-    return emoji ? `Reacted ${emoji} to a message` : "Removed a reaction";
+    return emoji || "Reaction removed";
   }
   if (type === "button") {
     const button = objectValue(message.button);

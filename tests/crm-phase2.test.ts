@@ -223,7 +223,7 @@ test("WhatsApp webhooks normalize inbound customer text messages", () => {
   assert.equal(messages[0].source, "messages");
 });
 
-test("WhatsApp webhooks turn customer reactions into visible message text", () => {
+test("WhatsApp webhooks keep reaction text compact for bubble badges", () => {
   const messages = normalizeWhatsAppWebhookPayload({
     entry: [{
       changes: [{
@@ -247,7 +247,7 @@ test("WhatsApp webhooks turn customer reactions into visible message text", () =
 
   assert.equal(messages.length, 1);
   assert.equal(messages[0].messageType, "reaction");
-  assert.equal(messages[0].text, "Reacted ❤️ to a message");
+  assert.equal(messages[0].text, "❤️");
 });
 
 test("WhatsApp webhooks describe empty reaction removals", () => {
@@ -274,7 +274,7 @@ test("WhatsApp webhooks describe empty reaction removals", () => {
 
   assert.equal(messages.length, 1);
   assert.equal(messages[0].messageType, "reaction");
-  assert.equal(messages[0].text, "Removed a reaction");
+  assert.equal(messages[0].text, "Reaction removed");
 });
 
 test("WhatsApp webhooks avoid blank text for media and unsupported events", () => {

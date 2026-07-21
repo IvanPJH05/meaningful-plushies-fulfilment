@@ -80,6 +80,46 @@ function rawWhatsAppMessageFromMetadata(metadata: unknown) {
   return Object.keys(raw).length ? raw : null;
 }
 
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function firstStringValue(...values: unknown[]) {
+  for (const value of values) {
+    const text = stringValue(value);
+    if (text) return text;
+  }
+  return "";
+}
+
+function whatsAppReactionFromMetadata(metadata: unknown) {
+  const raw = rawWhatsAppMessageFromMetadata(metadata);
+  if (!raw || stringValue(raw.type).toLowerCase() !== "reaction") return null;
+
+  const reaction = recordValue(raw.reaction);
+  const context = recordValue(raw.context);
+  const emoji = stringValue(reaction.emoji);
+  const targetExternalMessageId = firstStringValue(
+    reaction.message_id,
+    reaction.messageId,
+    reaction.id,
+    context.message_id,
+    context.messageId,
+    context.id,
+  );
+
+  return {
+    emoji,
+    targetExternalMessageId,
+    actorKey: firstStringValue(raw.from, raw.to, `${raw.direction || ""}:${raw.sender_type || ""}`),
+    removed: !emoji,
+  };
+}
+
 function rawWhatsAppDisplayText(metadata: unknown) {
   const raw = rawWhatsAppMessageFromMetadata(metadata);
   return raw ? whatsAppDisplayTextFromMessage(raw) : "";
@@ -91,6 +131,9 @@ function messagePreview(message: {
   metadata?: unknown;
   attachments?: { contentType: string | null }[];
 }) {
+  const reaction = whatsAppReactionFromMetadata(message.metadata);
+  if (reaction) return reaction.emoji ? `${reaction.emoji} reaction` : "Reaction removed";
+
   const text = textPreview(message.body);
   if (text) return text;
 
@@ -109,6 +152,9 @@ function messageBody(message: {
   messageType?: MessageType | null;
   attachments?: { contentType: string | null }[];
 }) {
+  const reaction = whatsAppReactionFromMetadata(message.metadata);
+  if (reaction) return reaction.emoji || "Reaction removed";
+
   const body = (message.body || "").trim();
   if (body) return message.body || "";
 
@@ -335,6 +381,7 @@ async function getConversationMessages(businessId: string, conversationId?: stri
       where: { businessId, conversationId },
       select: {
         id: true,
+        externalMessageId: true,
         direction: true,
         senderType: true,
         messageType: true,
@@ -357,11 +404,45 @@ async function getConversationMessages(businessId: string, conversationId?: stri
         },
       },
       orderBy: { createdAt: "desc" },
-      take: limit,
+      take: Math.min(limit * 2, 360),
     })).reverse()
     : [];
 
-  return messages.map((message) => {
+  type MessageReaction = {
+    id: string;
+    emoji: string;
+    direction: MessageDirection;
+    senderType: MessageSenderType;
+    createdAt: string | null;
+  };
+
+  const reactionsByTarget = new Map<string, Map<string, MessageReaction>>();
+  const displayMessages = [];
+
+  for (const message of messages) {
+    const reaction = whatsAppReactionFromMetadata(message.metadata);
+    if (reaction?.targetExternalMessageId) {
+      const actorKey = reaction.actorKey || `${message.direction}:${message.senderType}`;
+      const targetReactions = reactionsByTarget.get(reaction.targetExternalMessageId) || new Map<string, MessageReaction>();
+      if (reaction.removed) {
+        targetReactions.delete(actorKey);
+      } else {
+        targetReactions.set(actorKey, {
+          id: message.id,
+          emoji: reaction.emoji,
+          direction: message.direction,
+          senderType: message.senderType,
+          createdAt: serializeDate(message.createdAt),
+        });
+      }
+      reactionsByTarget.set(reaction.targetExternalMessageId, targetReactions);
+      continue;
+    }
+
+    displayMessages.push(message);
+  }
+
+  return displayMessages.slice(-limit).map((message) => {
     const attachments = message.attachments.map((attachment) => ({
       id: attachment.id,
       originalName: attachment.originalName,
@@ -407,6 +488,9 @@ async function getConversationMessages(businessId: string, conversationId?: stri
           downloadUrl: `/api/crm/inbox/messages/${message.id}/media?download=1`,
         }]
         : attachments,
+      reactions: message.externalMessageId
+        ? Array.from(reactionsByTarget.get(message.externalMessageId)?.values() || [])
+        : [],
     };
   });
 }

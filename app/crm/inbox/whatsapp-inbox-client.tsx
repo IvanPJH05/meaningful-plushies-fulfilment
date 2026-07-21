@@ -50,6 +50,13 @@ type InboxMessage = {
     url?: string;
     downloadUrl?: string;
   }[];
+  reactions?: {
+    id: string;
+    emoji: string;
+    direction: string;
+    senderType: string;
+    createdAt: string | null;
+  }[];
 };
 
 type ConversationLead = {
@@ -1389,9 +1396,10 @@ export default function WhatsAppInboxClient() {
                   const queuedAi = message.senderType === "AI" && message.status === "QUEUED";
                   const displayText = messageDisplayText(message);
                   const isFallbackText = !message.body.trim() && !!displayText;
+                  const reactions = (message.reactions || []).filter((reaction) => reaction.emoji.trim());
                   return (
                     <article
-                      className={`${styles.messageBubble} ${inbound ? styles.inbound : styles.outbound} ${queuedAi ? styles.aiSuggestion : ""}`}
+                      className={`${styles.messageBubble} ${inbound ? styles.inbound : styles.outbound} ${queuedAi ? styles.aiSuggestion : ""} ${reactions.length ? styles.messageBubbleWithReaction : ""}`}
                       key={message.id}
                     >
                       <div className={styles.messageTopline}>
@@ -1418,6 +1426,16 @@ export default function WhatsAppInboxClient() {
                           </button>
                         )}
                       </div>
+                      {!!reactions.length && (
+                        <div className={styles.messageReactions} aria-label="Message reactions">
+                          {reactions.slice(0, 3).map((reaction) => (
+                            <span className={styles.messageReaction} key={reaction.id}>{reaction.emoji}</span>
+                          ))}
+                          {reactions.length > 3 && (
+                            <span className={styles.messageReactionCount}>+{reactions.length - 3}</span>
+                          )}
+                        </div>
+                      )}
                     </article>
                   );
                 })}
