@@ -58,6 +58,13 @@ type InboxMessage = {
     senderType: string;
     createdAt: string | null;
   }[];
+  replyTo?: {
+    id?: string;
+    externalMessageId?: string | null;
+    senderLabel: string;
+    preview: string;
+    createdAt: string | null;
+  } | null;
 };
 
 type ConversationLead = {
@@ -232,6 +239,7 @@ function optimisticOutboundMessage(
   body: string,
   messageType = "TEXT",
   attachments: InboxMessage["attachments"] = [],
+  replyTo: InboxMessage["replyTo"] = null,
 ): InboxMessage {
   return {
     id,
@@ -245,6 +253,7 @@ function optimisticOutboundMessage(
     createdAt: new Date().toISOString(),
     sentAt: null,
     attachments,
+    replyTo,
   };
 }
 
@@ -306,6 +315,7 @@ function mergeLocalPendingMessages(serverMessages: InboxMessage[], currentMessag
       ...serverMessage,
       clientKey: currentMessage.clientKey,
       createdAt: currentMessage.clientKey ? currentMessage.createdAt || serverMessage.createdAt : serverMessage.createdAt,
+      replyTo: serverMessage.replyTo ?? currentMessage.replyTo ?? null,
     };
   });
 
@@ -324,6 +334,7 @@ function normalizeReturnedMessage(message: InboxMessage, stableFrom?: InboxMessa
     clientKey: stableFrom?.clientKey,
     createdAt: stableFrom?.clientKey ? stableFrom.createdAt || message.createdAt : message.createdAt,
     attachments: message.attachments ?? [],
+    replyTo: message.replyTo ?? stableFrom?.replyTo ?? null,
   };
 }
 
@@ -426,6 +437,17 @@ function messageVisibleText(message: InboxMessage) {
   const displayText = messageDisplayText(message);
   if (hasVisualAttachment(message) && isAutoMediaCaption(displayText)) return "";
   return displayText;
+}
+
+const QUICK_REACTION_EMOJIS = ["\u2764\ufe0f", "\ud83d\udc4d", "\ud83d\ude02", "\ud83d\ude2e", "\ud83d\ude4f", "\u2705"];
+
+function messageReplyPreview(message: InboxMessage): NonNullable<InboxMessage["replyTo"]> {
+  return {
+    id: message.id,
+    senderLabel: messageLabel(message),
+    preview: messageVisibleText(message).trim() || fallbackMessageText(message),
+    createdAt: message.createdAt,
+  };
 }
 
 function isMediaOnlyMessage(message: InboxMessage) {
@@ -835,6 +857,9 @@ export default function WhatsAppInboxClient() {
   const [detailPanelLoading, setDetailPanelLoading] = useState(false);
   const [detailPanelCollapsed, setDetailPanelCollapsed] = useState(false);
   const [sending, setSending] = useState(false);
+  const [replyTarget, setReplyTarget] = useState<InboxMessage | null>(null);
+  const [reactionPickerMessageId, setReactionPickerMessageId] = useState("");
+  const [reactingMessageId, setReactingMessageId] = useState("");
   const [generatingAi, setGeneratingAi] = useState(false);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
@@ -1386,6 +1411,9 @@ export default function WhatsAppInboxClient() {
     selectedIdRef.current = conversationId;
     setSelectedId(conversationId);
     setNotice("");
+    setReplyTarget(null);
+    setReactionPickerMessageId("");
+    setReactingMessageId("");
     const cached = conversationCacheRef.current[conversationId];
     if (cached) {
       setInbox((current) => ({
@@ -1415,15 +1443,20 @@ export default function WhatsAppInboxClient() {
     if (sendingRef.current) return;
 
     const conversationId = selectedId;
+    const activeReplyTarget = bodyOverride === undefined && !messageId ? replyTarget : null;
+    const optimisticReplyTo = activeReplyTarget ? messageReplyPreview(activeReplyTarget) : null;
     const optimisticId = messageId ? "" : `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     messageShouldStickToBottomRef.current = true;
     if (optimisticId) {
       const optimisticAttachments = sendingImage ? [optimisticImageAttachment(optimisticId, mediaUrl)] : [];
       patchConversationMessages(conversationId, (messages) => [
         ...messages,
-        optimisticOutboundMessage(optimisticId, body || "Photo", sendingImage ? "IMAGE" : "TEXT", optimisticAttachments),
+        optimisticOutboundMessage(optimisticId, body || "Photo", sendingImage ? "IMAGE" : "TEXT", optimisticAttachments, optimisticReplyTo),
       ]);
-      if (bodyOverride === undefined && !sendingImage) setDraft("");
+      if (bodyOverride === undefined && !sendingImage) {
+        setDraft("");
+        setReplyTarget(null);
+      }
     }
 
     sendingRef.current = true;
@@ -1437,6 +1470,7 @@ export default function WhatsAppInboxClient() {
           conversationId,
           messageId,
           body,
+          replyToMessageId: activeReplyTarget?.id,
           ...(sendingImage ? { mediaType: "image", mediaUrl } : {}),
         }),
       });
@@ -1483,6 +1517,79 @@ export default function WhatsAppInboxClient() {
     } finally {
       sendingRef.current = false;
       setSending(false);
+    }
+  }
+
+  async function reactToMessage(message: InboxMessage, emoji: string) {
+    if (!selectedId || reactingMessageId) return;
+    if (message.id.startsWith("local-")) {
+      setNotice("Wait until WhatsApp confirms this message before reacting to it.");
+      return;
+    }
+
+    const conversationId = selectedId;
+    const localReactionId = `local-reaction-${message.id}-${Date.now()}`;
+    setReactionPickerMessageId("");
+    setReactingMessageId(message.id);
+    patchConversationMessages(conversationId, (messages) => (
+      messages.map((item) => (
+        item.id === message.id
+          ? {
+            ...item,
+            reactions: [
+              ...(item.reactions || []).filter((reaction) => !(reaction.direction === "OUTBOUND" && reaction.senderType === "TEAM")),
+              {
+                id: localReactionId,
+                emoji,
+                direction: "OUTBOUND",
+                senderType: "TEAM",
+                createdAt: new Date().toISOString(),
+              },
+            ],
+          }
+          : item
+      ))
+    ));
+
+    try {
+      const response = await fetch("/api/crm/inbox", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationId,
+          action: "react",
+          targetMessageId: message.id,
+          reactionEmoji: emoji,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok || !data.reaction) {
+        throw new Error(data.error || "WhatsApp reaction could not be sent.");
+      }
+      patchConversationMessages(conversationId, (messages) => (
+        messages.map((item) => (
+          item.id === message.id
+            ? {
+              ...item,
+              reactions: (item.reactions || []).map((reaction) => (
+                reaction.id === localReactionId ? data.reaction : reaction
+              )),
+            }
+            : item
+        ))
+      ));
+      void loadConversationList();
+    } catch (error) {
+      patchConversationMessages(conversationId, (messages) => (
+        messages.map((item) => (
+          item.id === message.id
+            ? { ...item, reactions: (item.reactions || []).filter((reaction) => reaction.id !== localReactionId) }
+            : item
+        ))
+      ));
+      setNotice(error instanceof Error ? error.message : "WhatsApp reaction could not be sent.");
+    } finally {
+      setReactingMessageId("");
     }
   }
 
@@ -1753,12 +1860,47 @@ export default function WhatsAppInboxClient() {
                   return (
                     <article
                       className={`${styles.messageBubble} ${inbound ? styles.inbound : styles.outbound} ${queuedAi ? styles.aiSuggestion : ""} ${reactions.length ? styles.messageBubbleWithReaction : ""} ${mediaOnly ? styles.mediaOnlyBubble : ""} ${groupedMedia ? styles.groupedMediaBubble : ""}`}
+                      data-message-id={message.id}
                       key={messageRenderKey(message)}
+                      onMouseLeave={() => setReactionPickerMessageId((current) => (current === message.id ? "" : current))}
+                      tabIndex={0}
                     >
-                      <div className={styles.messageTopline}>
-                        <span>{messageLabel(message)}</span>
-                        <time>{formatTime(message.createdAt)}</time>
+                      <div className={styles.messageActions}>
+                        <button type="button" onClick={() => setReplyTarget(message)}>Reply</button>
+                        <button
+                          disabled={message.id.startsWith("local-") || reactingMessageId === message.id}
+                          onClick={() => setReactionPickerMessageId((current) => (current === message.id ? "" : message.id))}
+                          type="button"
+                        >
+                          React
+                        </button>
+                        {reactionPickerMessageId === message.id && (
+                          <div className={styles.reactionPicker}>
+                            {QUICK_REACTION_EMOJIS.map((emoji) => (
+                              <button
+                                className={styles.reactionButton}
+                                disabled={reactingMessageId === message.id}
+                                key={emoji}
+                                onClick={() => void reactToMessage(message, emoji)}
+                                type="button"
+                              >
+                                {emoji}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
+                      {queuedAi && (
+                        <div className={styles.messageTopline}>
+                          <span>{messageLabel(message)}</span>
+                        </div>
+                      )}
+                      {message.replyTo && (
+                        <div className={styles.quotedMessage}>
+                          <span>{message.replyTo.senderLabel}</span>
+                          <strong>{message.replyTo.preview}</strong>
+                        </div>
+                      )}
                       {displayText && <p className={isFallbackText ? styles.messageFallback : undefined}>{displayText}</p>}
                       {!!message.attachments?.length && (
                         <div className={`${styles.attachmentList} ${mediaOnly ? styles.mediaOnlyAttachments : ""}`}>
@@ -1768,8 +1910,6 @@ export default function WhatsAppInboxClient() {
                         </div>
                       )}
                       <div className={styles.messageFooter}>
-                        <span>{message.status.toLowerCase()}</span>
-                        {message.failedReason && <span>{message.failedReason}</span>}
                         {queuedAi && (
                           <button
                             onClick={() => void sendMessage(message.id, message.body)}
@@ -1778,6 +1918,9 @@ export default function WhatsAppInboxClient() {
                             Send suggestion
                           </button>
                         )}
+                        <time className={styles.messageTime}>{formatTime(message.createdAt)}</time>
+                        <span className={styles.deliveryStatus}>{message.status.toLowerCase()}</span>
+                        {message.failedReason && <span>{message.failedReason}</span>}
                       </div>
                       {!!reactions.length && (
                         <div className={styles.messageReactions} aria-label="Message reactions">
@@ -1821,6 +1964,22 @@ export default function WhatsAppInboxClient() {
                   void sendMessage();
                 }}
               >
+                {replyTarget && (
+                  <div className={styles.replyComposer}>
+                    <div className={styles.replyComposerText}>
+                      <span>Replying to {messageLabel(replyTarget)}</span>
+                      <strong>{messageVisibleText(replyTarget).trim() || fallbackMessageText(replyTarget)}</strong>
+                    </div>
+                    <button
+                      aria-label="Cancel reply"
+                      className={styles.replyCancelButton}
+                      onClick={() => setReplyTarget(null)}
+                      type="button"
+                    >
+                      x
+                    </button>
+                  </div>
+                )}
                 <textarea
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}

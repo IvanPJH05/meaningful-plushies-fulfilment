@@ -2,12 +2,14 @@ export type WhatsAppTextPayloadInput = {
   to: string;
   body: string;
   previewUrl?: boolean;
+  contextMessageId?: string;
 };
 
 export type WhatsAppImagePayloadInput = {
   to: string;
   imageUrl: string;
   caption?: string;
+  contextMessageId?: string;
 };
 
 export function buildWhatsAppTextPayload(input: WhatsAppTextPayloadInput) {
@@ -15,6 +17,7 @@ export function buildWhatsAppTextPayload(input: WhatsAppTextPayloadInput) {
     messaging_product: "whatsapp",
     recipient_type: "individual",
     to: input.to.replace(/\D/g, ""),
+    ...(input.contextMessageId ? { context: { message_id: input.contextMessageId } } : {}),
     type: "text",
     text: {
       preview_url: input.previewUrl ?? true,
@@ -28,10 +31,28 @@ export function buildWhatsAppImagePayload(input: WhatsAppImagePayloadInput) {
     messaging_product: "whatsapp",
     recipient_type: "individual",
     to: input.to.replace(/\D/g, ""),
+    ...(input.contextMessageId ? { context: { message_id: input.contextMessageId } } : {}),
     type: "image",
     image: {
       link: input.imageUrl,
       ...(input.caption?.trim() ? { caption: input.caption.trim() } : {}),
+    },
+  };
+}
+
+export function buildWhatsAppReactionPayload(input: {
+  to: string;
+  messageId: string;
+  emoji: string;
+}) {
+  return {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to: input.to.replace(/\D/g, ""),
+    type: "reaction",
+    reaction: {
+      message_id: input.messageId,
+      emoji: input.emoji,
     },
   };
 }
@@ -76,5 +97,14 @@ export async function sendWhatsAppTextMessage(input: WhatsAppTextPayloadInput) {
 
 export async function sendWhatsAppImageMessage(input: WhatsAppImagePayloadInput) {
   const payload = buildWhatsAppImagePayload(input);
+  return sendWhatsAppPayload(payload);
+}
+
+export async function sendWhatsAppReactionMessage(input: {
+  to: string;
+  messageId: string;
+  emoji: string;
+}) {
+  const payload = buildWhatsAppReactionPayload(input);
   return sendWhatsAppPayload(payload);
 }

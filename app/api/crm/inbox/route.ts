@@ -19,7 +19,11 @@ import {
   fallbackWhatsAppMediaContentType,
   whatsappMediaFromMessageMetadata,
 } from "@/src/modules/whatsapp/media-metadata";
-import { sendWhatsAppImageMessage, sendWhatsAppTextMessage } from "@/src/modules/whatsapp/outbound";
+import {
+  sendWhatsAppImageMessage,
+  sendWhatsAppReactionMessage,
+  sendWhatsAppTextMessage,
+} from "@/src/modules/whatsapp/outbound";
 import { whatsAppDisplayTextFromMessage } from "@/src/modules/whatsapp/webhook-normalizer";
 
 export const runtime = "nodejs";
@@ -120,6 +124,21 @@ function whatsAppReactionFromMetadata(metadata: unknown) {
   };
 }
 
+function rawWhatsAppContextExternalId(metadata: unknown) {
+  const raw = rawWhatsAppMessageFromMetadata(metadata);
+  if (!raw) return "";
+  const context = recordValue(raw.context);
+  return firstStringValue(context.message_id, context.messageId, context.id);
+}
+
+function deliveryMessageId(delivery: unknown) {
+  const root = recordValue(delivery);
+  const response = recordValue(root.response);
+  const messages = Array.isArray(response.messages) ? response.messages : [];
+  const firstMessage = recordValue(messages[0]);
+  return firstStringValue(firstMessage.id);
+}
+
 function rawWhatsAppDisplayText(metadata: unknown) {
   const raw = rawWhatsAppMessageFromMetadata(metadata);
   return raw ? whatsAppDisplayTextFromMessage(raw) : "";
@@ -161,6 +180,51 @@ function messagePreview(message: {
   if (attachment) return mediaPreviewLabel(attachment.contentType);
 
   return messageTypePreviewLabel(message.messageType);
+}
+
+function serializedMessageSenderLabel(message: {
+  direction: MessageDirection;
+  senderType: MessageSenderType;
+}) {
+  if (message.direction === MessageDirection.INBOUND) return "Customer";
+  if (message.senderType === MessageSenderType.AI) return "AI";
+  if (message.senderType === MessageSenderType.SYSTEM) return "System";
+  return "You";
+}
+
+function replyPreviewForMessage(message: {
+  id: string;
+  externalMessageId: string | null;
+  direction: MessageDirection;
+  senderType: MessageSenderType;
+  messageType?: MessageType | null;
+  body: string | null;
+  metadata?: unknown;
+  createdAt?: Date | null;
+  attachments?: { contentType: string | null }[];
+}) {
+  return {
+    id: message.id,
+    externalMessageId: message.externalMessageId,
+    senderLabel: serializedMessageSenderLabel(message),
+    preview: messagePreview(message),
+    createdAt: serializeDate(message.createdAt),
+  };
+}
+
+function replyPreviewFromMetadata(metadata: unknown) {
+  const root = recordValue(metadata);
+  const replyTo = recordValue(root.replyTo);
+  const preview = stringValue(replyTo.preview);
+  if (!preview) return null;
+
+  return {
+    id: stringValue(replyTo.id) || undefined,
+    externalMessageId: stringValue(replyTo.externalMessageId) || undefined,
+    senderLabel: stringValue(replyTo.senderLabel) || "Message",
+    preview,
+    createdAt: stringValue(replyTo.createdAt) || null,
+  };
 }
 
 function messageBody(message: {
@@ -435,6 +499,13 @@ async function getConversationMessages(businessId: string, conversationId?: stri
 
   const reactionsByTarget = new Map<string, Map<string, MessageReaction>>();
   const displayMessages = [];
+  const messagesByExternalId = new Map<string, typeof messages[number]>();
+
+  for (const message of messages) {
+    if (message.externalMessageId) {
+      messagesByExternalId.set(message.externalMessageId, message);
+    }
+  }
 
   for (const message of messages) {
     const reaction = whatsAppReactionFromMetadata(message.metadata);
@@ -480,6 +551,10 @@ async function getConversationMessages(businessId: string, conversationId?: stri
       ? outboundMediaFromMetadata(message.id, message.metadata)
       : null;
 
+    const savedReply = replyPreviewFromMetadata(message.metadata);
+    const contextExternalMessageId = rawWhatsAppContextExternalId(message.metadata);
+    const contextReply = contextExternalMessageId ? messagesByExternalId.get(contextExternalMessageId) : null;
+
     return {
       id: message.id,
       direction: message.direction,
@@ -513,6 +588,7 @@ async function getConversationMessages(businessId: string, conversationId?: stri
       reactions: message.externalMessageId
         ? Array.from(reactionsByTarget.get(message.externalMessageId)?.values() || [])
         : [],
+      replyTo: savedReply || (contextReply ? replyPreviewForMessage(contextReply) : null),
     };
   });
 }
@@ -630,9 +706,12 @@ export async function POST(request: Request) {
       conversationId?: string;
       body?: string;
       messageId?: string;
+      replyToMessageId?: string;
+      targetMessageId?: string;
+      reactionEmoji?: string;
       mediaType?: string;
       mediaUrl?: string;
-      action?: "send" | "suggest";
+      action?: "send" | "suggest" | "react";
     };
 
     if (!body.conversationId) {
@@ -733,6 +812,100 @@ export async function POST(request: Request) {
       return json(400, { ok: false, error: "This contact has no WhatsApp phone number." });
     }
 
+    if (body.action === "react") {
+      const emoji = stringValue(body.reactionEmoji);
+      if (!emoji) {
+        return json(400, { ok: false, error: "Reaction emoji is required." });
+      }
+
+      const targetMessage = body.targetMessageId
+        ? await prisma.message.findFirst({
+          where: {
+            businessId: business.id,
+            conversationId: conversation.id,
+            id: body.targetMessageId,
+          },
+          select: {
+            id: true,
+            externalMessageId: true,
+          },
+        })
+        : null;
+
+      if (!targetMessage) {
+        return json(404, { ok: false, error: "Message not found." });
+      }
+
+      if (!targetMessage.externalMessageId) {
+        return json(400, {
+          ok: false,
+          error: "This message cannot be reacted to until WhatsApp confirms it.",
+        });
+      }
+
+      let delivery: unknown = null;
+      let deliveryError = "";
+      let status: MessageStatus = MessageStatus.QUEUED;
+
+      try {
+        delivery = await sendWhatsAppReactionMessage({
+          to: recipient,
+          messageId: targetMessage.externalMessageId,
+          emoji,
+        });
+        const sent = Boolean(delivery && typeof delivery === "object" && (delivery as { sent?: boolean }).sent);
+        status = sent ? MessageStatus.SENT : MessageStatus.QUEUED;
+      } catch (error) {
+        deliveryError = error instanceof Error ? error.message : "WhatsApp reaction could not be sent.";
+        status = MessageStatus.FAILED;
+      }
+
+      const externalMessageId = deliveryMessageId(delivery);
+      const message = await prisma.message.create({
+        data: {
+          businessId: business.id,
+          conversationId: conversation.id,
+          externalMessageId: externalMessageId || undefined,
+          direction: MessageDirection.OUTBOUND,
+          senderType: MessageSenderType.TEAM,
+          messageType: MessageType.SYSTEM,
+          body: emoji,
+          status,
+          metadata: jsonValue({
+            sentFromInbox: true,
+            raw: {
+              type: "reaction",
+              from: process.env.WHATSAPP_PHONE_NUMBER_ID || "team",
+              to: recipient,
+              direction: "OUTBOUND",
+              sender_type: "TEAM",
+              reaction: {
+                message_id: targetMessage.externalMessageId,
+                emoji,
+              },
+            },
+            delivery,
+          }),
+          sentAt: status === MessageStatus.SENT ? new Date() : undefined,
+          failedReason: deliveryError || undefined,
+        },
+      });
+
+      return json(200, {
+        ok: status !== MessageStatus.FAILED,
+        delivery,
+        error: deliveryError || undefined,
+        reaction: {
+          id: message.id,
+          emoji,
+          direction: message.direction,
+          senderType: message.senderType,
+          createdAt: serializeDate(message.createdAt),
+        },
+        targetMessageId: targetMessage.id,
+      });
+    }
+
     const existingMessage = body.messageId
       ? await prisma.message.findFirst({
         where: {
@@ -742,6 +915,32 @@ export async function POST(request: Request) {
         },
       })
       : null;
+
+    const replyToMessage = body.replyToMessageId
+      ? await prisma.message.findFirst({
+        where: {
+          businessId: business.id,
+          conversationId: conversation.id,
+          id: body.replyToMessageId,
+        },
+        select: {
+          id: true,
+          externalMessageId: true,
+          direction: true,
+          senderType: true,
+          messageType: true,
+          body: true,
+          metadata: true,
+          createdAt: true,
+          attachments: {
+            select: { contentType: true },
+            take: 1,
+          },
+        },
+      })
+      : null;
+    const replyContextMessageId = replyToMessage?.externalMessageId || undefined;
+    const replyToMetadata = replyToMessage ? replyPreviewForMessage(replyToMessage) : null;
 
     const mediaType = stringValue(body.mediaType).toLowerCase();
     const mediaUrl = stringValue(body.mediaUrl);
@@ -757,8 +956,17 @@ export async function POST(request: Request) {
 
     try {
       delivery = sendingImage
-        ? await sendWhatsAppImageMessage({ to: recipient, imageUrl: mediaUrl, caption: messageBody || undefined })
-        : await sendWhatsAppTextMessage({ to: recipient, body: messageBody });
+        ? await sendWhatsAppImageMessage({
+          to: recipient,
+          imageUrl: mediaUrl,
+          caption: messageBody || undefined,
+          contextMessageId: replyContextMessageId,
+        })
+        : await sendWhatsAppTextMessage({
+          to: recipient,
+          body: messageBody,
+          contextMessageId: replyContextMessageId,
+        });
       const sent = Boolean(delivery && typeof delivery === "object" && (delivery as { sent?: boolean }).sent);
       status = sent ? MessageStatus.SENT : MessageStatus.QUEUED;
     } catch (error) {
@@ -766,10 +974,12 @@ export async function POST(request: Request) {
       status = MessageStatus.FAILED;
     }
 
+    const externalMessageId = deliveryMessageId(delivery);
     const message = existingMessage
       ? await prisma.message.update({
         where: { id: existingMessage.id },
         data: {
+          externalMessageId: externalMessageId || existingMessage.externalMessageId || undefined,
           body: messageBody,
           messageType: sendingImage ? MessageType.IMAGE : MessageType.TEXT,
           status,
@@ -777,6 +987,7 @@ export async function POST(request: Request) {
             ...(existingMessage.metadata && typeof existingMessage.metadata === "object" ? existingMessage.metadata : {}),
             sentFromInbox: true,
             ...(sendingImage ? { media: { url: mediaUrl, contentType: "image/jpeg", filename: "Flow image" } } : {}),
+            ...(replyToMetadata ? { replyTo: replyToMetadata } : {}),
             delivery,
           }),
           sentAt: status === MessageStatus.SENT ? new Date() : existingMessage.sentAt,
@@ -787,6 +998,7 @@ export async function POST(request: Request) {
         data: {
           businessId: business.id,
           conversationId: conversation.id,
+          externalMessageId: externalMessageId || undefined,
           direction: MessageDirection.OUTBOUND,
           senderType: MessageSenderType.TEAM,
           messageType: sendingImage ? MessageType.IMAGE : MessageType.TEXT,
@@ -795,6 +1007,7 @@ export async function POST(request: Request) {
           metadata: jsonValue({
             sentFromInbox: true,
             ...(sendingImage ? { media: { url: mediaUrl, contentType: "image/jpeg", filename: "Flow image" } } : {}),
+            ...(replyToMetadata ? { replyTo: replyToMetadata } : {}),
             delivery,
           }),
           sentAt: status === MessageStatus.SENT ? new Date() : undefined,
@@ -825,6 +1038,7 @@ export async function POST(request: Request) {
         failedReason: message.failedReason,
         createdAt: serializeDate(message.createdAt),
         sentAt: serializeDate(message.sentAt),
+        replyTo: replyToMetadata,
         attachments: sendingImage
           ? [{
             id: `outbound-image-${message.id}`,
