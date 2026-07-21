@@ -3,6 +3,14 @@ export type WhatsAppAssistantMessage = {
   body: string;
 };
 
+export type WhatsAppAssistantMedia = {
+  name?: string;
+  contentType?: string;
+  sizeBytes?: number;
+  dataUrl?: string;
+  note?: string;
+};
+
 export type WhatsAppAssistantTraining = {
   enabled: boolean;
   requiresHumanReview: boolean;
@@ -19,6 +27,7 @@ export type WhatsAppAssistantInput = {
   customerPhone?: string;
   latestMessage: string;
   recentMessages?: WhatsAppAssistantMessage[];
+  media?: WhatsAppAssistantMedia[];
   training?: Partial<WhatsAppAssistantTraining>;
 };
 
@@ -153,6 +162,7 @@ export function buildWhatsAppAssistantInstructions(input: WhatsAppAssistantInput
     "Write one concise, friendly reply that can be reviewed and sent directly on WhatsApp.",
     "Keep the reply under 900 characters unless the customer asks for detailed help.",
     "Use simple English or Malay if the customer writes Malay. Mirror the customer's language where practical.",
+    "If media is included, use what you can see. If the attachment is not visible to you, mention that the team will check it instead of pretending you saw it.",
     "Never pretend that you performed an action in the system. You can only draft a reply.",
     training.requiresHumanReview ? "The team reviews this suggestion before sending. Do not write as if it was already sent." : "",
     trainingSections ? `Saved training from the business:\n\n${trainingSections}` : "",
@@ -168,10 +178,51 @@ export function buildWhatsAppAssistantInput(input: WhatsAppAssistantInput) {
     .slice(-8)
     .join("\n");
 
+  const mediaContext = (input.media ?? [])
+    .map((media, index) => {
+      const label = [
+        media.name ? `name: ${media.name}` : "",
+        media.contentType ? `type: ${media.contentType}` : "",
+        typeof media.sizeBytes === "number" ? `size: ${media.sizeBytes} bytes` : "",
+        media.note ? `note: ${compactText(media.note)}` : "",
+        media.dataUrl && media.contentType?.toLowerCase().startsWith("image/") ? "image: visible to the AI" : "",
+      ].filter(Boolean).join(", ");
+      return `Media ${index + 1}: ${label || "attached media"}`;
+    })
+    .join("\n");
+
   return [
     history ? `Recent conversation:\n${history}` : "",
+    mediaContext ? `Customer media:\n${mediaContext}` : "",
     `Latest customer message:\n${input.latestMessage.trim()}`,
   ].filter(Boolean).join("\n\n");
+}
+
+type ResponseInputContent =
+  | { type: "input_text"; text: string }
+  | { type: "input_image"; image_url: string; detail: "low" | "high" | "auto" };
+
+function buildResponseInput(input: WhatsAppAssistantInput) {
+  const content: ResponseInputContent[] = [
+    { type: "input_text", text: buildWhatsAppAssistantInput(input) },
+  ];
+
+  for (const media of input.media ?? []) {
+    const contentType = media.contentType?.toLowerCase() || "";
+    if (media.dataUrl && contentType.startsWith("image/")) {
+      content.push({
+        type: "input_image",
+        image_url: media.dataUrl,
+        detail: "auto",
+      });
+    }
+  }
+
+  if (content.length === 1) {
+    return buildWhatsAppAssistantInput(input);
+  }
+
+  return [{ role: "user", content }];
 }
 
 function textFromResponse(data: unknown) {
@@ -207,8 +258,9 @@ export async function createWhatsAppAssistantReply(input: WhatsAppAssistantInput
     body: JSON.stringify({
       model,
       instructions: buildWhatsAppAssistantInstructions(input),
-      input: buildWhatsAppAssistantInput(input),
+      input: buildResponseInput(input),
       max_output_tokens: 450,
+      truncation: "auto",
     }),
   });
 

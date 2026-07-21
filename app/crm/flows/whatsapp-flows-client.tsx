@@ -200,6 +200,7 @@ export default function WhatsAppFlowsClient() {
           <a href="/crm/inbox">Inbox</a>
           <a href="/manual-orders">Manual orders</a>
           <a className={styles.railActive} href="/crm/flows">Flows</a>
+          <a href="/crm/test-ai">Test AI</a>
           <a href="/crm/setup">Setup</a>
         </aside>
 
