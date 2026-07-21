@@ -1314,20 +1314,20 @@ begin
 
     create table if not exists public.crm_ai_agent_configs (
       id text primary key default gen_random_uuid()::text,
-      business_id text not null references public.crm_businesses(id) on delete cascade,
+      "businessId" text not null references public.crm_businesses(id) on delete cascade,
       name text not null,
       version integer not null default 1,
-      system_prompt text not null,
-      allowed_tool_names text[] not null default '{}',
+      "systemPrompt" text not null,
+      "allowedToolNames" text[] not null default '{}',
       enabled boolean not null default false,
-      requires_human_review boolean not null default true,
-      created_at timestamptz not null default now(),
-      updated_at timestamptz not null default now(),
-      unique (business_id, name, version)
+      "requiresHumanReview" boolean not null default true,
+      "createdAt" timestamptz not null default now(),
+      "updatedAt" timestamptz not null default now(),
+      unique ("businessId", name, version)
     );
 
     create index if not exists crm_ai_agent_configs_business_name_idx
-      on public.crm_ai_agent_configs (business_id, name, version desc);
+      on public.crm_ai_agent_configs ("businessId", name, version desc);
 
     alter table public.crm_ai_agent_configs enable row level security;
 
