@@ -556,6 +556,7 @@ export default function WhatsAppInboxClient() {
   const [backgroundLoading, setBackgroundLoading] = useState(false);
   const [conversationLoading, setConversationLoading] = useState(false);
   const [detailPanelLoading, setDetailPanelLoading] = useState(false);
+  const [detailPanelCollapsed, setDetailPanelCollapsed] = useState(false);
   const [sending, setSending] = useState(false);
   const [generatingAi, setGeneratingAi] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1039,15 +1040,6 @@ export default function WhatsAppInboxClient() {
     });
   }, [filter, inbox.conversations, search]);
 
-  const inboxStats = useMemo(() => {
-    return {
-      all: inbox.conversations.length,
-      unread: inbox.conversations.filter((item) => item.unreadCount > 0).length,
-      waitingTeam: inbox.conversations.filter((item) => item.status === "WAITING_TEAM").length,
-      waitingCustomer: inbox.conversations.filter((item) => item.status === "WAITING_CUSTOMER").length,
-    };
-  }, [inbox.conversations]);
-
   const selectedStats = useMemo(() => {
     return {
       inbound: inbox.messages.filter((message) => message.direction === "INBOUND").length,
@@ -1247,7 +1239,7 @@ export default function WhatsAppInboxClient() {
           </div>
         </section>
       ) : (
-      <section className={styles.whatsappWorkspace}>
+      <section className={`${styles.whatsappWorkspace} ${detailPanelCollapsed ? styles.detailCollapsed : ""}`}>
         <aside className={styles.workspaceRail}>
           <div className={styles.railLogo}>MP</div>
           <Link className={styles.railActive} href="/crm/inbox">Inbox</Link>
@@ -1299,13 +1291,6 @@ export default function WhatsAppInboxClient() {
                 {option.label}
               </button>
             ))}
-          </div>
-
-          <div className={styles.inboxStats}>
-            <span>{inboxStats.all}<small>All</small></span>
-            <span>{inboxStats.unread}<small>Unread</small></span>
-            <span>{inboxStats.waitingTeam}<small>Need reply</small></span>
-            <span>{inboxStats.waitingCustomer}<small>Waiting</small></span>
           </div>
 
           <div className={styles.conversationRows}>
@@ -1369,6 +1354,13 @@ export default function WhatsAppInboxClient() {
                       <option key={option.value} value={option.value}>{option.label}</option>
                     ))}
                   </select>
+                  <button
+                    className={styles.detailToggle}
+                    type="button"
+                    onClick={() => setDetailPanelCollapsed((value) => !value)}
+                  >
+                    {detailPanelCollapsed ? "Show details" : "Hide details"}
+                  </button>
                 </div>
               </div>
 
@@ -1451,124 +1443,133 @@ export default function WhatsAppInboxClient() {
           )}
         </section>
 
-        <aside className={styles.detailPanel}>
-          {selected ? (
-            selected.detailsLoaded ? (
-              <>
+        {detailPanelCollapsed ? (
+          <aside className={styles.collapsedDetailPanel}>
+            <button type="button" onClick={() => setDetailPanelCollapsed(false)}>
+              <span>Customer</span>
+              <strong>Open details</strong>
+            </button>
+          </aside>
+        ) : (
+          <aside className={styles.detailPanel}>
+            {selected ? (
+              selected.detailsLoaded ? (
+                <>
+                  <section className={styles.detailCard}>
+                    <p className={styles.eyebrow}>Customer</p>
+                    <div className={styles.profileHeader}>
+                      <span className={styles.avatarLarge}>{initials(selected.contact.displayName)}</span>
+                      <div>
+                        <h3>{selected.contact.displayName}</h3>
+                        <p>{selected.contact.phone || selected.contact.waId}</p>
+                      </div>
+                    </div>
+                    <div className={styles.detailGrid}>
+                      <span>Source</span>
+                      <strong>{selected.contact.source || "WhatsApp"}</strong>
+                      <span>Status</span>
+                      <strong>{formatLabel(selected.status)}</strong>
+                      <span>AI mode</span>
+                      <strong>{formatLabel(selected.aiMode)}</strong>
+                      <span>Last message</span>
+                      <strong>{formatTime(selected.lastMessageAt)}</strong>
+                    </div>
+                  </section>
+
+                  <section className={styles.detailCard}>
+                    <p className={styles.eyebrow}>Conversation</p>
+                    <div className={styles.summaryGrid}>
+                      <span><strong>{selectedStats.inbound}</strong><small>Customer</small></span>
+                      <span><strong>{selectedStats.outbound}</strong><small>Sent</small></span>
+                      <span><strong>{selectedStats.aiSuggestions}</strong><small>AI drafts</small></span>
+                    </div>
+                    <div className={styles.actionStack}>
+                      <button onClick={() => void updateConversation({ status: "WAITING_TEAM" })}>Needs reply</button>
+                      <button onClick={() => void updateConversation({ status: "WAITING_CUSTOMER" })}>Waiting customer</button>
+                      <button onClick={() => void updateConversation({ status: "RESOLVED" })}>Mark resolved</button>
+                    </div>
+                  </section>
+
+                  <section className={styles.detailCard}>
+                    <p className={styles.eyebrow}>Lead / order context</p>
+                    {selected.leads?.length ? (
+                      <div className={styles.contextRows}>
+                        {selected.leads.map((lead) => (
+                          <div key={lead.id} className={styles.contextRow}>
+                            <strong>{lead.customerName || selected.contact.displayName}</strong>
+                            <span>{formatLabel(lead.stage)} | {lead.requestedCharacter || "No character"} {lead.requestedVoice || ""}</span>
+                            <small>{lead.paymentStatus.toLowerCase()} | {money(lead.paidAmount || lead.estimatedValue)}</small>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className={styles.muted}>No linked CRM lead yet.</p>
+                    )}
+                    <a className={styles.fullWidthButton} href="/manual-orders">Open manual orders</a>
+                  </section>
+
+                  <section className={styles.detailCard}>
+                    <p className={styles.eyebrow}>AI command log</p>
+                    {selected.commands?.length ? (
+                      <div className={styles.contextRows}>
+                        {selected.commands.map((command) => (
+                          <div key={command.id} className={styles.contextRow}>
+                            <strong>{formatLabel(command.type)}</strong>
+                            <span>{formatLabel(command.status)}</span>
+                            <small>{command.error || formatDay(command.executedAt || command.createdAt)}</small>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className={styles.muted}>No AI commands logged for this chat.</p>
+                    )}
+                  </section>
+                </>
+              ) : (
+                <>
+                  <section className={styles.detailCard}>
+                    <p className={styles.eyebrow}>Customer</p>
+                    <div className={styles.panelSkeleton}>
+                      <span className={styles.skeletonAvatar} />
+                      <span className={styles.skeletonLine} />
+                      <span className={styles.skeletonLineShort} />
+                      <p className={styles.muted}>
+                        {detailPanelLoading ? "Loading customer context..." : "Customer context will load after the chat opens."}
+                      </p>
+                    </div>
+                  </section>
+                  <section className={styles.detailCard}>
+                    <p className={styles.eyebrow}>Conversation</p>
+                    <div className={styles.summaryGrid}>
+                      <span><strong>{selectedStats.inbound}</strong><small>Customer</small></span>
+                      <span><strong>{selectedStats.outbound}</strong><small>Sent</small></span>
+                      <span><strong>{selectedStats.aiSuggestions}</strong><small>AI drafts</small></span>
+                    </div>
+                  </section>
+                  <section className={styles.detailCard}>
+                    <p className={styles.eyebrow}>Lead / order context</p>
+                    <div className={styles.panelSkeleton}>
+                      <span className={styles.skeletonLine} />
+                      <span className={styles.skeletonLineShort} />
+                    </div>
+                  </section>
+                  <section className={styles.detailCard}>
+                    <p className={styles.eyebrow}>AI command log</p>
+                    <div className={styles.panelSkeleton}>
+                      <span className={styles.skeletonLine} />
+                      <span className={styles.skeletonLineShort} />
+                    </div>
+                  </section>
+                </>
+              )
+            ) : (
               <section className={styles.detailCard}>
                 <p className={styles.eyebrow}>Customer</p>
-                <div className={styles.profileHeader}>
-                  <span className={styles.avatarLarge}>{initials(selected.contact.displayName)}</span>
-                  <div>
-                    <h3>{selected.contact.displayName}</h3>
-                    <p>{selected.contact.phone || selected.contact.waId}</p>
-                  </div>
-                </div>
-                <div className={styles.detailGrid}>
-                  <span>Source</span>
-                  <strong>{selected.contact.source || "WhatsApp"}</strong>
-                  <span>Status</span>
-                  <strong>{formatLabel(selected.status)}</strong>
-                  <span>AI mode</span>
-                  <strong>{formatLabel(selected.aiMode)}</strong>
-                  <span>Last message</span>
-                  <strong>{formatTime(selected.lastMessageAt)}</strong>
-                </div>
+                <p className={styles.muted}>Select a chat to see customer details, lead status, and AI command history.</p>
               </section>
-
-              <section className={styles.detailCard}>
-                <p className={styles.eyebrow}>Conversation</p>
-                <div className={styles.summaryGrid}>
-                  <span><strong>{selectedStats.inbound}</strong><small>Customer</small></span>
-                  <span><strong>{selectedStats.outbound}</strong><small>Sent</small></span>
-                  <span><strong>{selectedStats.aiSuggestions}</strong><small>AI drafts</small></span>
-                </div>
-                <div className={styles.actionStack}>
-                  <button onClick={() => void updateConversation({ status: "WAITING_TEAM" })}>Needs reply</button>
-                  <button onClick={() => void updateConversation({ status: "WAITING_CUSTOMER" })}>Waiting customer</button>
-                  <button onClick={() => void updateConversation({ status: "RESOLVED" })}>Mark resolved</button>
-                </div>
-              </section>
-
-              <section className={styles.detailCard}>
-                <p className={styles.eyebrow}>Lead / order context</p>
-                {selected.leads?.length ? (
-                  <div className={styles.contextRows}>
-                    {selected.leads.map((lead) => (
-                      <div key={lead.id} className={styles.contextRow}>
-                        <strong>{lead.customerName || selected.contact.displayName}</strong>
-                        <span>{formatLabel(lead.stage)} | {lead.requestedCharacter || "No character"} {lead.requestedVoice || ""}</span>
-                        <small>{lead.paymentStatus.toLowerCase()} | {money(lead.paidAmount || lead.estimatedValue)}</small>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className={styles.muted}>No linked CRM lead yet.</p>
-                )}
-                <a className={styles.fullWidthButton} href="/manual-orders">Open manual orders</a>
-              </section>
-
-              <section className={styles.detailCard}>
-                <p className={styles.eyebrow}>AI command log</p>
-                {selected.commands?.length ? (
-                  <div className={styles.contextRows}>
-                    {selected.commands.map((command) => (
-                      <div key={command.id} className={styles.contextRow}>
-                        <strong>{formatLabel(command.type)}</strong>
-                        <span>{formatLabel(command.status)}</span>
-                        <small>{command.error || formatDay(command.executedAt || command.createdAt)}</small>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className={styles.muted}>No AI commands logged for this chat.</p>
-                )}
-              </section>
-              </>
-            ) : (
-              <>
-                <section className={styles.detailCard}>
-                  <p className={styles.eyebrow}>Customer</p>
-                  <div className={styles.panelSkeleton}>
-                    <span className={styles.skeletonAvatar} />
-                    <span className={styles.skeletonLine} />
-                    <span className={styles.skeletonLineShort} />
-                    <p className={styles.muted}>
-                      {detailPanelLoading ? "Loading customer context..." : "Customer context will load after the chat opens."}
-                    </p>
-                  </div>
-                </section>
-                <section className={styles.detailCard}>
-                  <p className={styles.eyebrow}>Conversation</p>
-                  <div className={styles.summaryGrid}>
-                    <span><strong>{selectedStats.inbound}</strong><small>Customer</small></span>
-                    <span><strong>{selectedStats.outbound}</strong><small>Sent</small></span>
-                    <span><strong>{selectedStats.aiSuggestions}</strong><small>AI drafts</small></span>
-                  </div>
-                </section>
-                <section className={styles.detailCard}>
-                  <p className={styles.eyebrow}>Lead / order context</p>
-                  <div className={styles.panelSkeleton}>
-                    <span className={styles.skeletonLine} />
-                    <span className={styles.skeletonLineShort} />
-                  </div>
-                </section>
-                <section className={styles.detailCard}>
-                  <p className={styles.eyebrow}>AI command log</p>
-                  <div className={styles.panelSkeleton}>
-                    <span className={styles.skeletonLine} />
-                    <span className={styles.skeletonLineShort} />
-                  </div>
-                </section>
-              </>
-            )
-          ) : (
-            <section className={styles.detailCard}>
-              <p className={styles.eyebrow}>Customer</p>
-              <p className={styles.muted}>Select a chat to see customer details, lead status, and AI command history.</p>
-            </section>
-          )}
-        </aside>
+            )}
+          </aside>
+        )}
       </section>
       )}
     </main>

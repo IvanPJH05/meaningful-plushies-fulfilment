@@ -283,6 +283,10 @@
   overflow: hidden;
 }
 
+.detailCollapsed {
+  grid-template-columns: 78px 360px minmax(0, 1fr) 58px;
+}
+
 @media (max-width: 1100px) {
   .connectionPanel {
     grid-template-columns: 1fr;
@@ -385,8 +389,9 @@
 
 .filterPills {
   display: flex;
+  flex-wrap: wrap;
   gap: 7px;
-  overflow-x: auto;
+  overflow: visible;
   padding: 0 14px 12px;
 }
 
@@ -406,33 +411,6 @@
   background: #ffffff;
   box-shadow: 0 4px 13px rgba(16, 32, 51, 0.12);
   color: #0750a4;
-}
-
-.inboxStats {
-  display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(4, 1fr);
-  padding: 0 14px 12px;
-}
-
-.inboxStats span {
-  background: #ffffff;
-  border: 1px solid #e2ebf5;
-  border-radius: 12px;
-  color: #102033;
-  display: flex;
-  flex-direction: column;
-  font-size: 16px;
-  font-weight: 950;
-  padding: 9px 8px;
-  text-align: center;
-}
-
-.inboxStats small {
-  color: #697c96;
-  font-size: 9px;
-  font-weight: 800;
-  margin-top: 2px;
 }
 
 .conversationRows {
@@ -611,6 +589,22 @@
   font-weight: 850;
   height: 40px;
   padding: 0 10px;
+}
+
+.detailToggle {
+  background: #eef5ff;
+  border: 1px solid #cbdff7;
+  border-radius: 11px;
+  color: #174d8f;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+  height: 40px;
+  padding: 0 12px;
+}
+
+.detailToggle:hover {
+  background: #e0ecfb;
 }
 
 .messageStream {
@@ -869,6 +863,51 @@
   padding: 14px;
 }
 
+.collapsedDetailPanel {
+  align-items: stretch;
+  background: #f8fbff;
+  border-left: 1px solid #d7e3f2;
+  display: flex;
+  justify-content: center;
+  min-height: 0;
+  padding: 12px 8px;
+}
+
+.collapsedDetailPanel button {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #dbe6f3;
+  border-radius: 16px;
+  color: #174d8f;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: center;
+  padding: 12px 8px;
+  text-align: center;
+  width: 100%;
+}
+
+.collapsedDetailPanel span,
+.collapsedDetailPanel strong {
+  writing-mode: vertical-rl;
+}
+
+.collapsedDetailPanel span {
+  color: #6b7c94;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.collapsedDetailPanel strong {
+  color: #174d8f;
+  font-size: 12px;
+  font-weight: 950;
+}
+
 .detailCard {
   background: #ffffff;
   border: 1px solid #dbe6f3;
@@ -1020,7 +1059,12 @@
     grid-template-columns: 70px 330px minmax(0, 1fr);
   }
 
-  .detailPanel {
+  .detailPanel,
+  .collapsedDetailPanel {
+    display: none;
+  }
+
+  .detailToggle {
     display: none;
   }
 }
