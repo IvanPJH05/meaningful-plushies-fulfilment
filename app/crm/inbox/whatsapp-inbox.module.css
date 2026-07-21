@@ -745,6 +745,38 @@
   white-space: nowrap;
 }
 
+.imageSkeleton {
+  align-items: center;
+  background:
+    linear-gradient(100deg, #eef5ff 0%, #f8fbff 48%, #e7f0fb 100%);
+  border: 1px dashed #c8d9ee;
+  border-radius: 10px;
+  color: #48627d;
+  display: flex;
+  font-size: 12px;
+  font-weight: 900;
+  height: 150px;
+  justify-content: center;
+  letter-spacing: 0;
+  max-width: 100%;
+  text-transform: none;
+  width: min(260px, 70vw);
+}
+
+.mediaLoadButton {
+  background: #eaf3ff;
+  border: 1px solid #cbdff7;
+  border-radius: 999px;
+  color: #174d8f;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 8px 11px;
+  text-decoration: none;
+  width: fit-content;
+}
+
 .mediaAttachment,
 .audioAttachment {
   background: #f8fbff;
@@ -846,6 +878,34 @@
   border: 1px solid #dbe6f3;
   border-radius: 16px;
   padding: 15px;
+}
+
+.panelSkeleton {
+  display: grid;
+  gap: 10px;
+}
+
+.skeletonAvatar,
+.skeletonLine,
+.skeletonLineShort {
+  background: linear-gradient(100deg, #edf4fd 0%, #f8fbff 50%, #e8f0fb 100%);
+  border-radius: 999px;
+  display: block;
+}
+
+.skeletonAvatar {
+  height: 50px;
+  width: 50px;
+}
+
+.skeletonLine {
+  height: 13px;
+  width: 100%;
+}
+
+.skeletonLineShort {
+  height: 13px;
+  width: 62%;
 }
 
 .profileHeader {

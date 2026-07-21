@@ -82,6 +82,7 @@ type SelectedConversation = {
   aiMode: string;
   unreadCount: number;
   lastMessageAt: string | null;
+  detailsLoaded?: boolean;
   contact: ConversationSummary["contact"] & {
     email?: string | null;
     source?: string | null;
@@ -116,10 +117,12 @@ type CrmRealtimePayload = {
 const CONVERSATION_CACHE_TTL_MS = 60_000;
 const REALTIME_REFRESH_DEBOUNCE_MS = 160;
 const CRM_REALTIME_TOPIC = "crm-whatsapp-inbox";
-const INITIAL_CHAT_LIMIT = 20;
-const FULL_CHAT_LIMIT = 75;
+const PRELOAD_CONVERSATION_LIMIT = 20;
+const CHAT_LIST_LIMIT = 1000;
 const MESSAGE_FETCH_LIMIT = 90;
-const attachmentPreviewUrlByKey = new Map<string, string>();
+const MEDIA_OBJECT_CACHE_LIMIT = 80;
+const MEDIA_NEAR_VIEWPORT_MARGIN = "520px";
+const mediaObjectUrlByKey = new Map<string, string>();
 
 function optimisticOutboundMessage(id: string, body: string): InboxMessage {
   return {
@@ -223,6 +226,7 @@ function selectedFromSummary(conversation: ConversationSummary): NonNullable<Sel
       source: "whatsapp",
       tags: [],
     },
+    detailsLoaded: false,
     leads: [],
     commands: [],
   };
@@ -240,57 +244,213 @@ function isAudioAttachment(attachment: NonNullable<InboxMessage["attachments"]>[
   return attachment.contentType.toLowerCase().startsWith("audio/");
 }
 
-function reusableAttachmentPreviewUrl(attachment: NonNullable<InboxMessage["attachments"]>[number]) {
-  if (!attachment.url) return "";
-  const key = attachment.previewCacheKey || "";
-  if (!key) return attachment.url;
-  const cachedUrl = attachmentPreviewUrlByKey.get(key);
-  if (cachedUrl) return cachedUrl;
-  attachmentPreviewUrlByKey.set(key, attachment.url);
-  return attachment.url;
+function attachmentCacheKey(attachment: NonNullable<InboxMessage["attachments"]>[number]) {
+  return attachment.previewCacheKey || attachment.id || attachment.url || "";
+}
+
+function cacheMediaObjectUrl(key: string, objectUrl: string) {
+  if (!key) return;
+  const previousUrl = mediaObjectUrlByKey.get(key);
+  if (previousUrl) {
+    if (previousUrl !== objectUrl) URL.revokeObjectURL(previousUrl);
+    mediaObjectUrlByKey.delete(key);
+  }
+  mediaObjectUrlByKey.set(key, objectUrl);
+  while (mediaObjectUrlByKey.size > MEDIA_OBJECT_CACHE_LIMIT) {
+    const oldestKey = mediaObjectUrlByKey.keys().next().value as string | undefined;
+    if (!oldestKey) break;
+    const oldestUrl = mediaObjectUrlByKey.get(oldestKey);
+    if (oldestUrl) URL.revokeObjectURL(oldestUrl);
+    mediaObjectUrlByKey.delete(oldestKey);
+  }
+}
+
+function useNearViewport<T extends HTMLElement>() {
+  const ref = useRef<T | null>(null);
+  const [nearViewport, setNearViewport] = useState(false);
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || nearViewport) return undefined;
+    if (!("IntersectionObserver" in window)) {
+      setNearViewport(true);
+      return undefined;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setNearViewport(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: MEDIA_NEAR_VIEWPORT_MARGIN });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [nearViewport]);
+
+  return [ref, nearViewport] as const;
+}
+
+async function createThumbnailObjectUrl(blob: Blob) {
+  if (!blob.type.toLowerCase().startsWith("image/") || typeof createImageBitmap === "undefined") {
+    return URL.createObjectURL(blob);
+  }
+
+  try {
+    const bitmap = await createImageBitmap(blob);
+    const maxWidth = 420;
+    const maxHeight = 320;
+    const scale = Math.min(1, maxWidth / bitmap.width, maxHeight / bitmap.height);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const context = canvas.getContext("2d");
+    if (!context) {
+      bitmap.close();
+      return URL.createObjectURL(blob);
+    }
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+
+    const thumbnail = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, "image/jpeg", 0.78);
+    });
+    return URL.createObjectURL(thumbnail || blob);
+  } catch {
+    return URL.createObjectURL(blob);
+  }
+}
+
+function LazyImageAttachment(props: {
+  attachment: NonNullable<InboxMessage["attachments"]>[number];
+  label: string;
+  openUrl: string;
+}) {
+  const { attachment, label, openUrl } = props;
+  const cacheKey = attachmentCacheKey(attachment);
+  const sourceUrl = attachment.url || "";
+  const cachedUrl = cacheKey ? mediaObjectUrlByKey.get(cacheKey) || "" : "";
+  const [elementRef, nearViewport] = useNearViewport<HTMLAnchorElement>();
+  const [previewUrl, setPreviewUrl] = useState(cachedUrl);
+  const [previewFailed, setPreviewFailed] = useState(false);
+
+  useEffect(() => {
+    if (!sourceUrl || previewUrl || previewFailed || !nearViewport) return undefined;
+    const controller = new AbortController();
+    let active = true;
+
+    async function loadPreview() {
+      try {
+        const response = await fetch(sourceUrl, {
+          cache: "force-cache",
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error("Image preview could not be loaded.");
+        const blob = await response.blob();
+        const objectUrl = await createThumbnailObjectUrl(blob);
+        if (!active) {
+          URL.revokeObjectURL(objectUrl);
+          return;
+        }
+        if (cacheKey) cacheMediaObjectUrl(cacheKey, objectUrl);
+        setPreviewUrl(objectUrl);
+      } catch {
+        if (!controller.signal.aborted) {
+          setPreviewFailed(true);
+        }
+      }
+    }
+
+    void loadPreview();
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [cacheKey, nearViewport, previewFailed, previewUrl, sourceUrl]);
+
+  return (
+    <a
+      className={styles.imageAttachment}
+      href={openUrl}
+      ref={elementRef}
+      rel="noreferrer"
+      target="_blank"
+      title="Open image"
+    >
+      {previewUrl && !previewFailed ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img alt={label} decoding="async" loading="lazy" onError={() => setPreviewFailed(true)} src={previewUrl} />
+      ) : (
+        <span className={styles.imageSkeleton}>
+          {previewFailed ? "Open photo" : "Loading photo..."}
+        </span>
+      )}
+      <span>{label}</span>
+    </a>
+  );
+}
+
+function DeferredMediaAttachment(props: {
+  attachment: NonNullable<InboxMessage["attachments"]>[number];
+  label: string;
+  openUrl: string;
+  type: "audio" | "video";
+}) {
+  const { attachment, label, openUrl, type } = props;
+  const [expanded, setExpanded] = useState(false);
+  const [previewFailed, setPreviewFailed] = useState(false);
+
+  if (!expanded || previewFailed) {
+    return (
+      <a
+        className={styles.mediaLoadButton}
+        href={expanded && previewFailed ? openUrl : undefined}
+        onClick={(event) => {
+          if (expanded && previewFailed) return;
+          event.preventDefault();
+          setExpanded(true);
+        }}
+        rel="noreferrer"
+        target="_blank"
+      >
+        {previewFailed ? `Open ${label}` : `Load ${type === "video" ? "video" : "voice message"}`}
+      </a>
+    );
+  }
+
+  if (type === "video") {
+    return (
+      <div className={styles.mediaAttachment}>
+        <video controls onError={() => setPreviewFailed(true)} preload="none" src={attachment.url} />
+        <a href={openUrl} rel="noreferrer" target="_blank">{label}</a>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.audioAttachment}>
+      <audio controls onError={() => setPreviewFailed(true)} preload="none" src={attachment.url} />
+      <a href={openUrl} rel="noreferrer" target="_blank">{label}</a>
+    </div>
+  );
 }
 
 function AttachmentPreview(props: {
   attachment: NonNullable<InboxMessage["attachments"]>[number];
 }) {
   const { attachment } = props;
-  const [previewFailed, setPreviewFailed] = useState(false);
   const label = attachment.originalName || attachment.contentType || "Attachment";
   const openUrl = attachment.downloadUrl || attachment.url || "#";
-  const previewUrl = reusableAttachmentPreviewUrl(attachment);
 
-  if (previewUrl && isImageAttachment(attachment) && !previewFailed) {
-    return (
-      <a
-        className={styles.imageAttachment}
-        href={openUrl}
-        rel="noreferrer"
-        target="_blank"
-        title="Open image"
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img alt={label} decoding="async" loading="lazy" onError={() => setPreviewFailed(true)} src={previewUrl} />
-        <span>{label}</span>
-      </a>
-    );
+  if (attachment.url && isImageAttachment(attachment)) {
+    return <LazyImageAttachment attachment={attachment} label={label} openUrl={openUrl} />;
   }
 
-  if (attachment.url && isVideoAttachment(attachment) && !previewFailed) {
-    return (
-      <div className={styles.mediaAttachment}>
-        <video controls onError={() => setPreviewFailed(true)} preload="metadata" src={attachment.url} />
-        <a href={openUrl} rel="noreferrer" target="_blank">{label}</a>
-      </div>
-    );
+  if (attachment.url && isVideoAttachment(attachment)) {
+    return <DeferredMediaAttachment attachment={attachment} label={label} openUrl={openUrl} type="video" />;
   }
 
-  if (attachment.url && isAudioAttachment(attachment) && !previewFailed) {
-    return (
-      <div className={styles.audioAttachment}>
-        <audio controls onError={() => setPreviewFailed(true)} preload="metadata" src={attachment.url} />
-        <a href={openUrl} rel="noreferrer" target="_blank">{label}</a>
-      </div>
-    );
+  if (attachment.url && isAudioAttachment(attachment)) {
+    return <DeferredMediaAttachment attachment={attachment} label={label} openUrl={openUrl} type="audio" />;
   }
 
   return (
@@ -300,7 +460,7 @@ function AttachmentPreview(props: {
       rel="noreferrer"
       target="_blank"
     >
-      {previewFailed ? `Open ${label}` : label}
+      {label}
     </a>
   );
 }
@@ -316,6 +476,7 @@ export default function WhatsAppInboxClient() {
   const [booting, setBooting] = useState(true);
   const [backgroundLoading, setBackgroundLoading] = useState(false);
   const [conversationLoading, setConversationLoading] = useState(false);
+  const [detailPanelLoading, setDetailPanelLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [generatingAi, setGeneratingAi] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -325,6 +486,7 @@ export default function WhatsAppInboxClient() {
   const conversationCacheRef = useRef<ConversationCache>({});
   const listRefreshTimerRef = useRef<number | null>(null);
   const conversationRefreshTimerRef = useRef<number | null>(null);
+  const detailLoadTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     conversationCacheRef.current = conversationCache;
@@ -335,7 +497,14 @@ export default function WhatsAppInboxClient() {
     setConversationCache((current) => ({
       ...current,
       [selectedConversation.id]: {
-        selectedConversation,
+        selectedConversation: selectedConversation.detailsLoaded
+          ? selectedConversation
+          : {
+            ...selectedConversation,
+            detailsLoaded: current[selectedConversation.id]?.selectedConversation.detailsLoaded || false,
+            leads: current[selectedConversation.id]?.selectedConversation.leads || selectedConversation.leads || [],
+            commands: current[selectedConversation.id]?.selectedConversation.commands || selectedConversation.commands || [],
+          },
         messages,
         loadedAt: Date.now(),
       },
@@ -365,8 +534,8 @@ export default function WhatsAppInboxClient() {
     });
   }, []);
 
-  const fetchConversation = useCallback(async (conversationId: string) => {
-    const response = await fetch(`/api/crm/inbox?scope=conversation&conversationId=${encodeURIComponent(conversationId)}&messageLimit=${MESSAGE_FETCH_LIMIT}`, {
+  const fetchConversation = useCallback(async (conversationId: string, includeDetails = false) => {
+    const response = await fetch(`/api/crm/inbox?scope=conversation&conversationId=${encodeURIComponent(conversationId)}&messageLimit=${MESSAGE_FETCH_LIMIT}&details=${includeDetails ? "1" : "0"}`, {
       cache: "no-store",
     });
     const data = await response.json();
@@ -376,11 +545,68 @@ export default function WhatsAppInboxClient() {
     return data.inbox as InboxPayload;
   }, []);
 
-  const loadInbox = useCallback(async (conversationId?: string, listLimit = FULL_CHAT_LIMIT) => {
+  const fetchConversationDetails = useCallback(async (conversationId: string) => {
+    const response = await fetch(`/api/crm/inbox?scope=details&conversationId=${encodeURIComponent(conversationId)}`, {
+      cache: "no-store",
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || "CRM customer details could not be loaded.");
+    }
+    return data.inbox.selectedConversation as SelectedConversation;
+  }, []);
+
+  const mergeConversationDetails = useCallback((conversationId: string, details: SelectedConversation) => {
+    if (!details) return;
+    setInbox((current) => {
+      if (current.selectedConversation?.id !== conversationId) return current;
+      return {
+        ...current,
+        selectedConversation: {
+          ...current.selectedConversation,
+          ...details,
+          detailsLoaded: true,
+          leads: details.leads || [],
+          commands: details.commands || [],
+        },
+      };
+    });
+    setConversationCache((current) => {
+      const cached = current[conversationId];
+      if (!cached) return current;
+      return {
+        ...current,
+        [conversationId]: {
+          ...cached,
+          selectedConversation: {
+            ...cached.selectedConversation,
+            ...details,
+            detailsLoaded: true,
+            leads: details.leads || [],
+            commands: details.commands || [],
+          },
+        },
+      };
+    });
+  }, []);
+
+  const loadConversationDetails = useCallback(async (conversationId: string) => {
+    setDetailPanelLoading(true);
+    try {
+      const details = await fetchConversationDetails(conversationId);
+      mergeConversationDetails(conversationId, details);
+    } finally {
+      if (selectedIdRef.current === conversationId) {
+        setDetailPanelLoading(false);
+      }
+    }
+  }, [fetchConversationDetails, mergeConversationDetails]);
+
+  const loadInbox = useCallback(async (conversationId?: string, listLimit = CHAT_LIST_LIMIT) => {
     setLoading(true);
     try {
       const query = conversationId
-        ? `?conversationId=${encodeURIComponent(conversationId)}&limit=${listLimit}&messageLimit=${MESSAGE_FETCH_LIMIT}`
+        ? `?conversationId=${encodeURIComponent(conversationId)}&limit=${listLimit}&messageLimit=${MESSAGE_FETCH_LIMIT}&details=0`
         : `?scope=list&limit=${listLimit}`;
       const response = await fetch(`/api/crm/inbox${query}`, { cache: "no-store" });
       const data = await response.json();
@@ -397,7 +623,7 @@ export default function WhatsAppInboxClient() {
     }
   }, [rememberConversation]);
 
-  const loadConversationList = useCallback(async (listLimit = FULL_CHAT_LIMIT) => {
+  const loadConversationList = useCallback(async (listLimit = CHAT_LIST_LIMIT) => {
     const response = await fetch(`/api/crm/inbox?scope=list&limit=${listLimit}`, { cache: "no-store" });
     const data = await response.json();
     if (!response.ok || !data.ok) {
@@ -407,6 +633,7 @@ export default function WhatsAppInboxClient() {
       ...current,
       conversations: data.inbox.conversations,
     }));
+    return data.inbox as InboxPayload;
   }, []);
 
   const loadConversation = useCallback(async (conversationId: string, showSpinner = true) => {
@@ -419,11 +646,37 @@ export default function WhatsAppInboxClient() {
       }
       setInbox((current) => ({
         ...current,
-        selectedConversation: nextInbox.selectedConversation,
+        selectedConversation: nextInbox.selectedConversation
+          ? {
+            ...nextInbox.selectedConversation,
+            detailsLoaded: current.selectedConversation?.id === conversationId
+              ? current.selectedConversation.detailsLoaded || nextInbox.selectedConversation.detailsLoaded || false
+              : nextInbox.selectedConversation.detailsLoaded || false,
+            leads: current.selectedConversation?.id === conversationId && current.selectedConversation.detailsLoaded
+              ? current.selectedConversation.leads || []
+              : nextInbox.selectedConversation.leads || [],
+            commands: current.selectedConversation?.id === conversationId && current.selectedConversation.detailsLoaded
+              ? current.selectedConversation.commands || []
+              : nextInbox.selectedConversation.commands || [],
+          }
+          : nextInbox.selectedConversation,
         messages: nextInbox.messages,
       }));
     } finally {
       if (showSpinner) setConversationLoading(false);
+    }
+  }, [fetchConversation, rememberConversation]);
+
+  const preloadConversations = useCallback(async (conversationIds: string[]) => {
+    const uniqueIds = Array.from(new Set(conversationIds)).filter(Boolean);
+    for (let index = 0; index < uniqueIds.length; index += 4) {
+      const batch = uniqueIds.slice(index, index + 4);
+      await Promise.all(batch.map(async (conversationId) => {
+        const cached = conversationCacheRef.current[conversationId];
+        if (cached && Date.now() - cached.loadedAt < CONVERSATION_CACHE_TTL_MS) return;
+        const nextInbox = await fetchConversation(conversationId, false);
+        rememberConversation(nextInbox.selectedConversation, nextInbox.messages);
+      }));
     }
   }, [fetchConversation, rememberConversation]);
 
@@ -455,12 +708,29 @@ export default function WhatsAppInboxClient() {
 
     async function bootInbox() {
       setBooting(true);
+      setLoading(true);
       try {
-        await loadInbox(undefined, INITIAL_CHAT_LIMIT);
+        const listInbox = await loadConversationList(CHAT_LIST_LIMIT);
         if (!active) return;
-        setBooting(false);
+        const firstConversation = listInbox.conversations[0];
+        if (firstConversation) {
+          selectedIdRef.current = firstConversation.id;
+          setSelectedId(firstConversation.id);
+          setInbox((current) => ({
+            ...current,
+            selectedConversation: selectedFromSummary(firstConversation),
+            messages: [],
+          }));
+          await loadConversation(firstConversation.id, false);
+        }
+        if (!active) return;
         setBackgroundLoading(true);
-        await loadConversationList(FULL_CHAT_LIMIT);
+        await preloadConversations(
+          listInbox.conversations
+            .slice(0, PRELOAD_CONVERSATION_LIMIT)
+            .map((conversation) => conversation.id)
+            .filter((conversationId) => conversationId !== firstConversation?.id),
+        );
       } catch (error) {
         if (active) {
           setNotice(error instanceof Error ? error.message : "CRM inbox could not be loaded.");
@@ -479,7 +749,7 @@ export default function WhatsAppInboxClient() {
     return () => {
       active = false;
     };
-  }, [loadConversationList, loadInbox]);
+  }, [loadConversation, loadConversationList, preloadConversations]);
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
@@ -532,8 +802,33 @@ export default function WhatsAppInboxClient() {
       if (conversationRefreshTimerRef.current !== null) {
         window.clearTimeout(conversationRefreshTimerRef.current);
       }
+      if (detailLoadTimerRef.current !== null) {
+        window.clearTimeout(detailLoadTimerRef.current);
+      }
     };
   }, []);
+
+  useEffect(() => {
+    if (!selectedId || inbox.selectedConversation?.id !== selectedId) return undefined;
+    if (inbox.selectedConversation.detailsLoaded) {
+      setDetailPanelLoading(false);
+      return undefined;
+    }
+    if (detailLoadTimerRef.current !== null) {
+      window.clearTimeout(detailLoadTimerRef.current);
+    }
+    detailLoadTimerRef.current = window.setTimeout(() => {
+      detailLoadTimerRef.current = null;
+      void loadConversationDetails(selectedId).catch(() => undefined);
+    }, 180);
+
+    return () => {
+      if (detailLoadTimerRef.current !== null) {
+        window.clearTimeout(detailLoadTimerRef.current);
+        detailLoadTimerRef.current = null;
+      }
+    };
+  }, [inbox.selectedConversation?.detailsLoaded, inbox.selectedConversation?.id, loadConversationDetails, selectedId]);
 
   useEffect(() => {
     const element = messageStreamRef.current;
@@ -656,13 +951,7 @@ export default function WhatsAppInboxClient() {
             messages.map((message) => (message.id === optimisticId ? returnedMessage : message))
           ));
         } else {
-          const nextInbox = await fetchConversation(conversationId);
-          rememberConversation(nextInbox.selectedConversation, nextInbox.messages);
-          setInbox((current) => ({
-            ...current,
-            selectedConversation: nextInbox.selectedConversation,
-            messages: nextInbox.messages,
-          }));
+          await loadConversation(conversationId, false);
         }
         void loadConversationList();
       }
@@ -789,7 +1078,7 @@ export default function WhatsAppInboxClient() {
             <span className={styles.bootLogo}>MP</span>
             <p className={styles.eyebrow}>WhatsApp CRM</p>
             <h2>Loading your latest chats</h2>
-            <p>Opening the newest {INITIAL_CHAT_LIMIT} conversations first. The rest will continue syncing in the background.</p>
+            <p>Loading every chat, then warming the newest {PRELOAD_CONVERSATION_LIMIT} full conversations so they open quickly.</p>
             <div className={styles.bootDots}>
               <span />
               <span />
@@ -813,7 +1102,7 @@ export default function WhatsAppInboxClient() {
               <h2>Chats</h2>
               <p>
                 {visibleConversations.length} shown from {inbox.conversations.length}
-                {backgroundLoading ? " | loading older chats..." : ""}
+                {backgroundLoading ? " | warming latest chats..." : ""}
               </p>
             </div>
             <button
@@ -1003,7 +1292,8 @@ export default function WhatsAppInboxClient() {
 
         <aside className={styles.detailPanel}>
           {selected ? (
-            <>
+            selected.detailsLoaded ? (
+              <>
               <section className={styles.detailCard}>
                 <p className={styles.eyebrow}>Customer</p>
                 <div className={styles.profileHeader}>
@@ -1073,7 +1363,44 @@ export default function WhatsAppInboxClient() {
                   <p className={styles.muted}>No AI commands logged for this chat.</p>
                 )}
               </section>
-            </>
+              </>
+            ) : (
+              <>
+                <section className={styles.detailCard}>
+                  <p className={styles.eyebrow}>Customer</p>
+                  <div className={styles.panelSkeleton}>
+                    <span className={styles.skeletonAvatar} />
+                    <span className={styles.skeletonLine} />
+                    <span className={styles.skeletonLineShort} />
+                    <p className={styles.muted}>
+                      {detailPanelLoading ? "Loading customer context..." : "Customer context will load after the chat opens."}
+                    </p>
+                  </div>
+                </section>
+                <section className={styles.detailCard}>
+                  <p className={styles.eyebrow}>Conversation</p>
+                  <div className={styles.summaryGrid}>
+                    <span><strong>{selectedStats.inbound}</strong><small>Customer</small></span>
+                    <span><strong>{selectedStats.outbound}</strong><small>Sent</small></span>
+                    <span><strong>{selectedStats.aiSuggestions}</strong><small>AI drafts</small></span>
+                  </div>
+                </section>
+                <section className={styles.detailCard}>
+                  <p className={styles.eyebrow}>Lead / order context</p>
+                  <div className={styles.panelSkeleton}>
+                    <span className={styles.skeletonLine} />
+                    <span className={styles.skeletonLineShort} />
+                  </div>
+                </section>
+                <section className={styles.detailCard}>
+                  <p className={styles.eyebrow}>AI command log</p>
+                  <div className={styles.panelSkeleton}>
+                    <span className={styles.skeletonLine} />
+                    <span className={styles.skeletonLineShort} />
+                  </div>
+                </section>
+              </>
+            )
           ) : (
             <section className={styles.detailCard}>
               <p className={styles.eyebrow}>Customer</p>

@@ -103,7 +103,7 @@ function isAiMode(value: unknown): value is AiMode {
   return typeof value === "string" && Object.values(AiMode).includes(value as AiMode);
 }
 
-type InboxScope = "all" | "list" | "conversation";
+type InboxScope = "all" | "list" | "conversation" | "details";
 
 function clampNumber(value: string | null, fallback: number, min: number, max: number) {
   const parsed = Number(value);
@@ -182,7 +182,11 @@ async function getConversationList(businessId: string, limit = 75) {
   });
 }
 
-async function getSelectedConversation(businessId: string, conversationId?: string | null) {
+async function getSelectedConversation(
+  businessId: string,
+  conversationId?: string | null,
+  includeDetails = true,
+) {
   const selectedConversation = conversationId
     ? await prisma.conversation.findFirst({
         where: { businessId, id: conversationId },
@@ -204,37 +208,41 @@ async function getSelectedConversation(businessId: string, conversationId?: stri
               tags: true,
             },
           },
-          leads: {
-            orderBy: { updatedAt: "desc" },
-            select: {
-              id: true,
-              stage: true,
-              temperature: true,
-              customerName: true,
-              phone: true,
-              requestedCharacter: true,
-              requestedVoice: true,
-              estimatedValue: true,
-              paymentStatus: true,
-              paidAmount: true,
-              manualOrderId: true,
-              manualOrderLinkSentAt: true,
-              updatedAt: true,
-            },
-            take: 5,
-          },
-          aiCommands: {
-            orderBy: { createdAt: "desc" },
-            select: {
-              id: true,
-              type: true,
-              status: true,
-              error: true,
-              executedAt: true,
-              createdAt: true,
-            },
-            take: 5,
-          },
+          ...(includeDetails
+            ? {
+                leads: {
+                  orderBy: { updatedAt: "desc" },
+                  select: {
+                    id: true,
+                    stage: true,
+                    temperature: true,
+                    customerName: true,
+                    phone: true,
+                    requestedCharacter: true,
+                    requestedVoice: true,
+                    estimatedValue: true,
+                    paymentStatus: true,
+                    paidAmount: true,
+                    manualOrderId: true,
+                    manualOrderLinkSentAt: true,
+                    updatedAt: true,
+                  },
+                  take: 5,
+                },
+                aiCommands: {
+                  orderBy: { createdAt: "desc" },
+                  select: {
+                    id: true,
+                    type: true,
+                    status: true,
+                    error: true,
+                    executedAt: true,
+                    createdAt: true,
+                  },
+                  take: 5,
+                },
+              }
+            : {}),
         },
       })
     : null;
@@ -255,7 +263,8 @@ async function getSelectedConversation(businessId: string, conversationId?: stri
         source: selectedConversation.contact.source,
         tags: selectedConversation.contact.tags,
       },
-      leads: selectedConversation.leads.map((lead) => ({
+      detailsLoaded: includeDetails,
+      leads: includeDetails && "leads" in selectedConversation ? selectedConversation.leads.map((lead) => ({
         id: lead.id,
         stage: lead.stage,
         temperature: lead.temperature,
@@ -269,15 +278,15 @@ async function getSelectedConversation(businessId: string, conversationId?: stri
         manualOrderId: lead.manualOrderId,
         manualOrderLinkSentAt: serializeDate(lead.manualOrderLinkSentAt),
         updatedAt: serializeDate(lead.updatedAt),
-      })),
-      commands: selectedConversation.aiCommands.map((command) => ({
+      })) : [],
+      commands: includeDetails && "aiCommands" in selectedConversation ? selectedConversation.aiCommands.map((command) => ({
         id: command.id,
         type: command.type,
         status: command.status,
         error: command.error,
         executedAt: serializeDate(command.executedAt),
         createdAt: serializeDate(command.createdAt),
-      })),
+      })) : [],
     }
     : null;
 }
@@ -302,6 +311,7 @@ async function getConversationMessages(businessId: string, conversationId?: stri
         attachments: {
           select: {
             id: true,
+            storageKey: true,
             originalName: true,
             contentType: true,
             sizeBytes: true,
@@ -319,9 +329,11 @@ async function getConversationMessages(businessId: string, conversationId?: stri
       originalName: attachment.originalName,
       contentType: attachment.contentType,
       sizeBytes: attachment.sizeBytes,
-      previewCacheKey: attachment.sizeBytes
-        ? `${attachment.contentType}:${attachment.sizeBytes}:${attachment.originalName || ""}`
-        : null,
+      previewCacheKey: attachment.storageKey || (
+        attachment.sizeBytes
+          ? `${attachment.contentType}:${attachment.sizeBytes}:${attachment.originalName || ""}`
+          : null
+      ),
       url: `/api/crm/inbox/attachments/${attachment.id}`,
       downloadUrl: `/api/crm/inbox/attachments/${attachment.id}?download=1`,
     }));
@@ -347,7 +359,7 @@ async function getConversationMessages(businessId: string, conversationId?: stri
           originalName: media.filename || null,
           contentType: media.mimeType || fallbackWhatsAppMediaContentType(message.messageType),
           sizeBytes: null,
-          previewCacheKey: null,
+          previewCacheKey: `whatsapp-media:${media.id}`,
           url: `/api/crm/inbox/messages/${message.id}/media`,
           downloadUrl: `/api/crm/inbox/messages/${message.id}/media?download=1`,
         }]
@@ -361,12 +373,13 @@ async function getInbox(
   scope: InboxScope = "all",
   listLimit = 75,
   messageLimit = 90,
+  includeDetails = true,
 ) {
   const business = await ensureDefaultBusiness();
-  const conversations = scope === "conversation" ? [] : await getConversationList(business.id, listLimit);
+  const conversations = scope === "conversation" || scope === "details" ? [] : await getConversationList(business.id, listLimit);
   const selectedConversationId = conversationId || conversations[0]?.id || null;
-  const selectedConversation = scope === "list" ? null : await getSelectedConversation(business.id, selectedConversationId);
-  const messages = scope === "list" ? [] : await getConversationMessages(business.id, selectedConversationId, messageLimit);
+  const selectedConversation = scope === "list" ? null : await getSelectedConversation(business.id, selectedConversationId, includeDetails);
+  const messages = scope === "list" || scope === "details" ? [] : await getConversationMessages(business.id, selectedConversationId, messageLimit);
 
   return {
     conversations,
@@ -380,10 +393,13 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const conversationId = url.searchParams.get("conversationId");
     const requestedScope = url.searchParams.get("scope");
-    const scope: InboxScope = requestedScope === "list" || requestedScope === "conversation" ? requestedScope : "all";
-    const limit = clampNumber(url.searchParams.get("limit"), 75, 1, 100);
-    const messageLimit = clampNumber(url.searchParams.get("messageLimit"), 90, 20, 180);
-    return json(200, { ok: true, inbox: await getInbox(conversationId, scope, limit, messageLimit) });
+    const scope: InboxScope = requestedScope === "list" || requestedScope === "conversation" || requestedScope === "details"
+      ? requestedScope
+      : "all";
+    const limit = clampNumber(url.searchParams.get("limit"), 75, 1, 1000);
+    const messageLimit = clampNumber(url.searchParams.get("messageLimit"), 90, 1, 180);
+    const includeDetails = scope === "details" || url.searchParams.get("details") !== "0";
+    return json(200, { ok: true, inbox: await getInbox(conversationId, scope, limit, messageLimit, includeDetails) });
   } catch (error) {
     return json(500, {
       ok: false,
