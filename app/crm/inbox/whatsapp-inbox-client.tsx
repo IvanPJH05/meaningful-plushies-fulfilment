@@ -148,10 +148,13 @@ const REALTIME_REFRESH_DEBOUNCE_MS = 160;
 const CRM_REALTIME_TOPIC = "crm-whatsapp-inbox";
 const CHAT_LIST_LIMIT = 1000;
 const MESSAGE_FETCH_LIMIT = 90;
-const MEDIA_OBJECT_CACHE_LIMIT = 80;
+const MEDIA_OBJECT_CACHE_LIMIT = 260;
 const MEDIA_NEAR_VIEWPORT_MARGIN = "520px";
+const MESSAGE_STICKY_BOTTOM_DISTANCE = 180;
 const INBOX_TAB_CACHE_KEY = "meaningful-plushies.whatsapp-inbox.v2";
 const mediaObjectUrlByKey = new Map<string, string>();
+const mediaWarmPromiseByKey = new Map<string, Promise<void>>();
+const videoMetadataWarmedByKey = new Set<string>();
 let inboxMemorySnapshot: InboxTabCache | null = null;
 
 type InboxTabCache = {
@@ -408,6 +411,33 @@ function messageDisplayText(message: InboxMessage) {
   return fallbackMessageText(message);
 }
 
+function isAutoMediaCaption(value: string) {
+  return /^(sent\s+a\s+)?(photo|image|picture|video)$/i.test(value.trim())
+    || /^(image|video)\//i.test(value.trim());
+}
+
+function hasVisualAttachment(message: InboxMessage) {
+  return Boolean(message.attachments?.some((attachment) => (
+    isImageAttachment(attachment) || isVideoAttachment(attachment)
+  )));
+}
+
+function messageVisibleText(message: InboxMessage) {
+  const displayText = messageDisplayText(message);
+  if (hasVisualAttachment(message) && isAutoMediaCaption(displayText)) return "";
+  return displayText;
+}
+
+function isMediaOnlyMessage(message: InboxMessage) {
+  return hasVisualAttachment(message) && !messageVisibleText(message).trim();
+}
+
+function isGroupedMediaMessage(message: InboxMessage, previousMessage?: InboxMessage) {
+  if (!previousMessage || !isMediaOnlyMessage(message) || !isMediaOnlyMessage(previousMessage)) return false;
+  if (message.direction !== previousMessage.direction || message.senderType !== previousMessage.senderType) return false;
+  return messagesAreCloseEnough(message, previousMessage);
+}
+
 function money(value: number | null | undefined) {
   if (value === null || value === undefined) return "-";
   return `RM ${value.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -482,7 +512,13 @@ function isAudioAttachment(attachment: NonNullable<InboxMessage["attachments"]>[
 }
 
 function attachmentCacheKey(attachment: NonNullable<InboxMessage["attachments"]>[number]) {
-  return attachment.previewCacheKey || attachment.id || attachment.url || "";
+  return attachment.previewCacheKey
+    || (attachment.sizeBytes
+      ? `${attachment.contentType}:${attachment.sizeBytes}:${attachment.originalName || ""}`
+      : "")
+    || attachment.url
+    || attachment.id
+    || "";
 }
 
 function cacheMediaObjectUrl(key: string, objectUrl: string) {
@@ -499,6 +535,17 @@ function cacheMediaObjectUrl(key: string, objectUrl: string) {
     const oldestUrl = mediaObjectUrlByKey.get(oldestKey);
     if (oldestUrl) URL.revokeObjectURL(oldestUrl);
     mediaObjectUrlByKey.delete(oldestKey);
+  }
+}
+
+function rememberVideoMetadataWarm(key: string) {
+  if (!key) return;
+  videoMetadataWarmedByKey.delete(key);
+  videoMetadataWarmedByKey.add(key);
+  while (videoMetadataWarmedByKey.size > MEDIA_OBJECT_CACHE_LIMIT) {
+    const oldestKey = videoMetadataWarmedByKey.values().next().value as string | undefined;
+    if (!oldestKey) break;
+    videoMetadataWarmedByKey.delete(oldestKey);
   }
 }
 
@@ -553,6 +600,67 @@ async function createThumbnailObjectUrl(blob: Blob) {
     return URL.createObjectURL(thumbnail || blob);
   } catch {
     return URL.createObjectURL(blob);
+  }
+}
+
+async function warmMediaAttachment(attachment: NonNullable<InboxMessage["attachments"]>[number]) {
+  if (!attachment.url || (!isImageAttachment(attachment) && !isVideoAttachment(attachment))) return;
+  const cacheKey = attachmentCacheKey(attachment);
+  if (
+    !cacheKey
+    || mediaObjectUrlByKey.has(cacheKey)
+    || videoMetadataWarmedByKey.has(cacheKey)
+    || mediaWarmPromiseByKey.has(cacheKey)
+  ) return;
+
+  const promise = (async () => {
+    try {
+      if (isVideoAttachment(attachment)) {
+        await new Promise<void>((resolve) => {
+          const video = document.createElement("video");
+          const cleanup = () => {
+            video.removeAttribute("src");
+            video.load();
+          };
+          const finish = () => {
+            window.clearTimeout(timer);
+            cleanup();
+            resolve();
+          };
+          const timer = window.setTimeout(finish, 3500);
+          video.muted = true;
+          video.preload = "metadata";
+          video.addEventListener("loadedmetadata", finish, { once: true });
+          video.addEventListener("error", finish, { once: true });
+          video.src = attachment.url || "";
+          video.load();
+        });
+        rememberVideoMetadataWarm(cacheKey);
+        return;
+      }
+      const response = await fetch(attachment.url || "", { cache: "force-cache" });
+      if (!response.ok) return;
+      const blob = await response.blob();
+      const objectUrl = await createThumbnailObjectUrl(blob);
+      cacheMediaObjectUrl(cacheKey, objectUrl);
+    } catch {
+      // Media warm-up should never block opening the chat.
+    } finally {
+      mediaWarmPromiseByKey.delete(cacheKey);
+    }
+  })();
+
+  mediaWarmPromiseByKey.set(cacheKey, promise);
+  await promise;
+}
+
+async function warmConversationMedia(messages: InboxMessage[]) {
+  const attachments = messages
+    .flatMap((message) => message.attachments || [])
+    .filter((attachment) => attachment.url && (isImageAttachment(attachment) || isVideoAttachment(attachment)));
+
+  for (let index = 0; index < attachments.length; index += 4) {
+    await Promise.all(attachments.slice(index, index + 4).map(warmMediaAttachment));
   }
 }
 
@@ -621,7 +729,6 @@ function LazyImageAttachment(props: {
           {previewFailed ? "Open photo" : "Loading photo..."}
         </span>
       )}
-      <span>{label}</span>
     </a>
   );
 }
@@ -633,32 +740,36 @@ function DeferredMediaAttachment(props: {
   type: "audio" | "video";
 }) {
   const { attachment, label, openUrl, type } = props;
+  const [elementRef, nearViewport] = useNearViewport<HTMLDivElement>();
   const [expanded, setExpanded] = useState(false);
   const [previewFailed, setPreviewFailed] = useState(false);
+  const shouldShowPreview = expanded || (type === "video" && nearViewport);
 
-  if (!expanded || previewFailed) {
+  if (!shouldShowPreview || previewFailed) {
     return (
-      <a
-        className={styles.mediaLoadButton}
-        href={expanded && previewFailed ? openUrl : undefined}
-        onClick={(event) => {
-          if (expanded && previewFailed) return;
-          event.preventDefault();
-          setExpanded(true);
-        }}
-        rel="noreferrer"
-        target="_blank"
-      >
-        {previewFailed ? `Open ${label}` : `Load ${type === "video" ? "video" : "voice message"}`}
-      </a>
+      <div ref={elementRef}>
+        <a
+          className={styles.mediaLoadButton}
+          href={expanded && previewFailed ? openUrl : undefined}
+          onClick={(event) => {
+            if (expanded && previewFailed) return;
+            event.preventDefault();
+            setExpanded(true);
+          }}
+          rel="noreferrer"
+          target="_blank"
+        >
+          {previewFailed ? `Open ${label}` : `Load ${type === "video" ? "video" : "voice message"}`}
+        </a>
+      </div>
     );
   }
 
   if (type === "video") {
     return (
-      <div className={styles.mediaAttachment}>
-        <video controls onError={() => setPreviewFailed(true)} preload="none" src={attachment.url} />
-        <a href={openUrl} rel="noreferrer" target="_blank">{label}</a>
+      <div className={styles.mediaAttachment} ref={elementRef}>
+        <video controls onError={() => setPreviewFailed(true)} preload="metadata" src={attachment.url} />
+        <a href={openUrl} rel="noreferrer" target="_blank">Open video</a>
       </div>
     );
   }
@@ -731,6 +842,9 @@ export default function WhatsAppInboxClient() {
   const [flowsLoading, setFlowsLoading] = useState(false);
   const [runningFlowId, setRunningFlowId] = useState("");
   const messageStreamRef = useRef<HTMLDivElement | null>(null);
+  const conversationRowsRef = useRef<HTMLDivElement | null>(null);
+  const conversationRowsScrollTopRef = useRef(0);
+  const messageShouldStickToBottomRef = useRef(true);
   const selectedIdRef = useRef(initialCache?.selectedId || initialCache?.inbox.selectedConversation?.id || "");
   const conversationCacheRef = useRef<ConversationCache>(initialCache?.conversationCache || {});
   const sendingRef = useRef(false);
@@ -739,6 +853,14 @@ export default function WhatsAppInboxClient() {
   const detailLoadTimerRef = useRef<number | null>(null);
   const persistTimerRef = useRef<number | null>(null);
   const restoredFromCacheRef = useRef(initialCacheFullyWarmed);
+
+  const restoreConversationRowsScroll = useCallback((scrollTop = conversationRowsScrollTopRef.current) => {
+    window.requestAnimationFrame(() => {
+      const element = conversationRowsRef.current;
+      if (!element) return;
+      element.scrollTop = Math.min(scrollTop, Math.max(0, element.scrollHeight - element.clientHeight));
+    });
+  }, []);
 
   useEffect(() => {
     conversationCacheRef.current = conversationCache;
@@ -806,6 +928,7 @@ export default function WhatsAppInboxClient() {
 
   const rememberConversation = useCallback((selectedConversation: SelectedConversation, messages: InboxMessage[]) => {
     if (!selectedConversation) return;
+    void warmConversationMedia(messages);
     setConversationCache((current) => ({
       ...current,
       [selectedConversation.id]: {
@@ -936,6 +1059,7 @@ export default function WhatsAppInboxClient() {
   }, [rememberConversation]);
 
   const loadConversationList = useCallback(async (listLimit = CHAT_LIST_LIMIT) => {
+    const scrollTop = conversationRowsRef.current?.scrollTop ?? conversationRowsScrollTopRef.current;
     const response = await fetch(`/api/crm/inbox?scope=list&limit=${listLimit}`, { cache: "no-store" });
     const data = await response.json();
     if (!response.ok || !data.ok) {
@@ -945,8 +1069,10 @@ export default function WhatsAppInboxClient() {
       ...current,
       conversations: data.inbox.conversations,
     }));
+    conversationRowsScrollTopRef.current = scrollTop;
+    restoreConversationRowsScroll(scrollTop);
     return data.inbox as InboxPayload;
-  }, []);
+  }, [restoreConversationRowsScroll]);
 
   const loadConversation = useCallback(async (conversationId: string, showSpinner = true) => {
     if (showSpinner) setConversationLoading(true);
@@ -1000,6 +1126,7 @@ export default function WhatsAppInboxClient() {
         try {
           const nextInbox = await fetchConversation(conversationId, false);
           rememberConversation(nextInbox.selectedConversation, nextInbox.messages);
+          await warmConversationMedia(nextInbox.messages);
         } catch {
           // A single slow or failed chat should not block the rest of the inbox from opening.
         }
@@ -1216,7 +1343,12 @@ export default function WhatsAppInboxClient() {
   useEffect(() => {
     const element = messageStreamRef.current;
     if (!element) return;
-    element.scrollTop = element.scrollHeight;
+    if (!messageShouldStickToBottomRef.current) return;
+    window.requestAnimationFrame(() => {
+      const nextElement = messageStreamRef.current;
+      if (!nextElement || !messageShouldStickToBottomRef.current) return;
+      nextElement.scrollTop = nextElement.scrollHeight;
+    });
   }, [inbox.messages, selectedId]);
 
   const selected = inbox.selectedConversation;
@@ -1250,6 +1382,7 @@ export default function WhatsAppInboxClient() {
   ), [flows]);
 
   async function selectConversation(conversationId: string) {
+    messageShouldStickToBottomRef.current = true;
     selectedIdRef.current = conversationId;
     setSelectedId(conversationId);
     setNotice("");
@@ -1283,6 +1416,7 @@ export default function WhatsAppInboxClient() {
 
     const conversationId = selectedId;
     const optimisticId = messageId ? "" : `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    messageShouldStickToBottomRef.current = true;
     if (optimisticId) {
       const optimisticAttachments = sendingImage ? [optimisticImageAttachment(optimisticId, mediaUrl)] : [];
       patchConversationMessages(conversationId, (messages) => [
@@ -1518,7 +1652,13 @@ export default function WhatsAppInboxClient() {
             ))}
           </div>
 
-          <div className={styles.conversationRows}>
+          <div
+            className={styles.conversationRows}
+            onScroll={(event) => {
+              conversationRowsScrollTopRef.current = event.currentTarget.scrollTop;
+            }}
+            ref={conversationRowsRef}
+          >
             {visibleConversations.map((conversation) => (
               <button
                 className={`${styles.conversationRow} ${conversation.id === selectedId ? styles.activeConversation : ""}`}
@@ -1589,19 +1729,29 @@ export default function WhatsAppInboxClient() {
                 </div>
               </div>
 
-              <div className={styles.messageStream} ref={messageStreamRef}>
+              <div
+                className={styles.messageStream}
+                onScroll={(event) => {
+                  const element = event.currentTarget;
+                  const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+                  messageShouldStickToBottomRef.current = distanceFromBottom < MESSAGE_STICKY_BOTTOM_DISTANCE;
+                }}
+                ref={messageStreamRef}
+              >
                 {conversationLoading && !inbox.messages.length && (
                   <div className={styles.emptyChat}>Loading chat...</div>
                 )}
-                {inbox.messages.map((message) => {
+                {inbox.messages.map((message, index) => {
                   const inbound = message.direction === "INBOUND";
                   const queuedAi = message.senderType === "AI" && message.status === "QUEUED";
-                  const displayText = messageDisplayText(message);
+                  const displayText = messageVisibleText(message);
                   const isFallbackText = !message.body.trim() && !!displayText;
                   const reactions = (message.reactions || []).filter((reaction) => reaction.emoji.trim());
+                  const mediaOnly = isMediaOnlyMessage(message);
+                  const groupedMedia = isGroupedMediaMessage(message, inbox.messages[index - 1]);
                   return (
                     <article
-                      className={`${styles.messageBubble} ${inbound ? styles.inbound : styles.outbound} ${queuedAi ? styles.aiSuggestion : ""} ${reactions.length ? styles.messageBubbleWithReaction : ""}`}
+                      className={`${styles.messageBubble} ${inbound ? styles.inbound : styles.outbound} ${queuedAi ? styles.aiSuggestion : ""} ${reactions.length ? styles.messageBubbleWithReaction : ""} ${mediaOnly ? styles.mediaOnlyBubble : ""} ${groupedMedia ? styles.groupedMediaBubble : ""}`}
                       key={messageRenderKey(message)}
                     >
                       <div className={styles.messageTopline}>
@@ -1610,7 +1760,7 @@ export default function WhatsAppInboxClient() {
                       </div>
                       {displayText && <p className={isFallbackText ? styles.messageFallback : undefined}>{displayText}</p>}
                       {!!message.attachments?.length && (
-                        <div className={styles.attachmentList}>
+                        <div className={`${styles.attachmentList} ${mediaOnly ? styles.mediaOnlyAttachments : ""}`}>
                           {message.attachments.map((attachment) => (
                             <AttachmentPreview attachment={attachment} key={attachment.id} />
                           ))}

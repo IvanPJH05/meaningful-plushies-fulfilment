@@ -630,6 +630,27 @@
   margin-bottom: 14px;
 }
 
+.groupedMediaBubble {
+  margin-top: -8px;
+}
+
+.mediaOnlyBubble {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  max-width: min(380px, 82%);
+  padding: 0;
+}
+
+.mediaOnlyBubble .messageTopline {
+  display: none;
+}
+
+.mediaOnlyBubble .messageFooter {
+  margin-top: 3px;
+  padding: 0 5px;
+}
+
 .inbound {
   align-self: flex-start;
   background: #fff;
@@ -737,6 +758,11 @@
   max-width: 100%;
 }
 
+.mediaOnlyAttachments {
+  gap: 3px;
+  margin: 0;
+}
+
 .attachmentList a {
   text-decoration: none;
 }
@@ -763,6 +789,15 @@
   padding: 7px;
 }
 
+.mediaOnlyAttachments .imageAttachment {
+  background: transparent;
+  border: 0;
+  border-radius: 16px;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
+  max-width: min(380px, 100%);
+  padding: 0;
+}
+
 .imageAttachment img {
   background: #ffffff;
   border-radius: 10px;
@@ -770,6 +805,12 @@
   max-height: 320px;
   max-width: min(360px, 100%);
   object-fit: cover;
+}
+
+.mediaOnlyAttachments .imageAttachment img {
+  border-radius: 16px;
+  max-height: 420px;
+  max-width: min(380px, 100%);
 }
 
 .imageAttachment span {
@@ -825,12 +866,26 @@
   padding: 7px;
 }
 
+.mediaOnlyAttachments .mediaAttachment {
+  background: transparent;
+  border: 0;
+  border-radius: 16px;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
+  max-width: min(380px, 100%);
+  padding: 0;
+}
+
 .mediaAttachment video {
   background: #0f172a;
   border-radius: 10px;
   display: block;
   max-height: 320px;
   max-width: 100%;
+}
+
+.mediaOnlyAttachments .mediaAttachment video {
+  border-radius: 16px;
+  max-height: 420px;
 }
 
 .audioAttachment audio {
