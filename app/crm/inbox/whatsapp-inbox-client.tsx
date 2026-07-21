@@ -109,6 +109,27 @@ type InboxPayload = {
 
 type ActiveConversation = NonNullable<SelectedConversation>;
 
+type FlowActionType = "Send Message" | "Send Image" | "AI Reply" | "Update Status" | "Add Note";
+type FlowDelayUnit = "seconds" | "minutes" | "hours" | "days";
+
+type WhatsAppFlowStep = {
+  type: FlowActionType;
+  delayValue: string;
+  delayUnit: FlowDelayUnit;
+  message: string;
+  imageUrl?: string;
+};
+
+type WhatsAppFlow = {
+  id: string;
+  name: string;
+  trigger: string;
+  description: string;
+  status: "Draft" | "Active";
+  steps: WhatsAppFlowStep[];
+  updatedAt: string;
+};
+
 type ConversationCache = Record<string, {
   selectedConversation: ActiveConversation;
   messages: InboxMessage[];
@@ -203,19 +224,24 @@ function hasEveryConversationWarmed(snapshot: InboxTabCache | null | undefined) 
   return snapshot.inbox.conversations.every((conversation) => Boolean(snapshot.conversationCache[conversation.id]));
 }
 
-function optimisticOutboundMessage(id: string, body: string): InboxMessage {
+function optimisticOutboundMessage(
+  id: string,
+  body: string,
+  messageType = "TEXT",
+  attachments: InboxMessage["attachments"] = [],
+): InboxMessage {
   return {
     id,
     clientKey: id,
     direction: "OUTBOUND",
     senderType: "TEAM",
-    messageType: "TEXT",
+    messageType,
     body,
     status: "SENDING",
     failedReason: null,
     createdAt: new Date().toISOString(),
     sentAt: null,
-    attachments: [],
+    attachments,
   };
 }
 
@@ -402,6 +428,44 @@ function selectedFromSummary(conversation: ConversationSummary): NonNullable<Sel
     detailsLoaded: false,
     leads: [],
     commands: [],
+  };
+}
+
+function flowDelayMs(step: WhatsAppFlowStep) {
+  const amount = Math.max(0, Number(step.delayValue) || 0);
+  const multipliers: Record<FlowDelayUnit, number> = {
+    seconds: 1000,
+    minutes: 60 * 1000,
+    hours: 60 * 60 * 1000,
+    days: 24 * 60 * 60 * 1000,
+  };
+  return amount * multipliers[step.delayUnit];
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+function personalizeFlowText(text: string, conversation: ActiveConversation | null) {
+  const name = conversation?.contact.displayName || "";
+  const phone = conversation?.contact.phone || conversation?.contact.waId || "";
+  return text
+    .replaceAll("{{name}}", name)
+    .replaceAll("{{phone}}", phone)
+    .trim();
+}
+
+function optimisticImageAttachment(id: string, imageUrl: string): NonNullable<InboxMessage["attachments"]>[number] {
+  return {
+    id: `local-image-${id}`,
+    originalName: "Flow image",
+    contentType: "image/jpeg",
+    sizeBytes: null,
+    previewCacheKey: `flow-image:${imageUrl}`,
+    url: imageUrl,
+    downloadUrl: imageUrl,
   };
 }
 
@@ -663,6 +727,9 @@ export default function WhatsAppInboxClient() {
   const [generatingAi, setGeneratingAi] = useState(false);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
+  const [flows, setFlows] = useState<WhatsAppFlow[]>([]);
+  const [flowsLoading, setFlowsLoading] = useState(false);
+  const [runningFlowId, setRunningFlowId] = useState("");
   const messageStreamRef = useRef<HTMLDivElement | null>(null);
   const selectedIdRef = useRef(initialCache?.selectedId || initialCache?.inbox.selectedConversation?.id || "");
   const conversationCacheRef = useRef<ConversationCache>(initialCache?.conversationCache || {});
@@ -712,6 +779,30 @@ export default function WhatsAppInboxClient() {
       }
     };
   }, [conversationCache, filter, inbox, search, selectedId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadFlows() {
+      setFlowsLoading(true);
+      try {
+        const response = await fetch("/api/crm/flows", { cache: "no-store" });
+        const result = (await response.json()) as { ok?: boolean; flows?: WhatsAppFlow[]; error?: string };
+        if (!response.ok || !result.ok) throw new Error(result.error || "WhatsApp flows could not be loaded.");
+        if (!cancelled) setFlows(result.flows || []);
+      } catch (error) {
+        if (!cancelled) setNotice(error instanceof Error ? error.message : "WhatsApp flows could not be loaded.");
+      } finally {
+        if (!cancelled) setFlowsLoading(false);
+      }
+    }
+
+    void loadFlows();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const rememberConversation = useCallback((selectedConversation: SelectedConversation, messages: InboxMessage[]) => {
     if (!selectedConversation) return;
@@ -1154,27 +1245,9 @@ export default function WhatsAppInboxClient() {
     };
   }, [inbox.messages]);
 
-  const quickReplies = useMemo(() => {
-    const name = selected?.contact.displayName || "there";
-    return [
-      {
-        label: "Ask details",
-        body: `Hi ${name}, boleh share details plushie ya?\n\nName:\nGender:\nBirth date:\nBirth place:\nFavourite person:\nBelongs to:\nMeaningful note:`,
-      },
-      {
-        label: "Payment received",
-        body: `Hi ${name}, payment received. I will send your Shopify link here so you can fill in the plushie details.`,
-      },
-      {
-        label: "Checking order",
-        body: `Hi ${name}, I am checking this for you now. I will update you here once it is ready.`,
-      },
-      {
-        label: "Thank you",
-        body: `Thank you ${name}. We have received the details and will start processing your Meaningful Plushie.`,
-      },
-    ];
-  }, [selected]);
+  const activeFlows = useMemo(() => (
+    flows.filter((flow) => flow.status === "Active" && flow.steps.length > 0)
+  ), [flows]);
 
   async function selectConversation(conversationId: string) {
     selectedIdRef.current = conversationId;
@@ -1201,19 +1274,22 @@ export default function WhatsAppInboxClient() {
     await loadConversation(conversationId);
   }
 
-  async function sendMessage(messageId?: string, bodyOverride?: string) {
-    const body = (bodyOverride || draft).trim();
-    if (!selectedId || !body) return;
+  async function sendMessage(messageId?: string, bodyOverride?: string, media?: { type: "image"; url: string }) {
+    const body = (bodyOverride !== undefined ? bodyOverride : draft).trim();
+    const mediaUrl = media?.url.trim() || "";
+    const sendingImage = media?.type === "image" && Boolean(mediaUrl);
+    if (!selectedId || (!body && !sendingImage)) return;
     if (sendingRef.current) return;
 
     const conversationId = selectedId;
     const optimisticId = messageId ? "" : `local-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     if (optimisticId) {
+      const optimisticAttachments = sendingImage ? [optimisticImageAttachment(optimisticId, mediaUrl)] : [];
       patchConversationMessages(conversationId, (messages) => [
         ...messages,
-        optimisticOutboundMessage(optimisticId, body),
+        optimisticOutboundMessage(optimisticId, body || "Photo", sendingImage ? "IMAGE" : "TEXT", optimisticAttachments),
       ]);
-      setDraft("");
+      if (bodyOverride === undefined && !sendingImage) setDraft("");
     }
 
     sendingRef.current = true;
@@ -1223,7 +1299,12 @@ export default function WhatsAppInboxClient() {
       const response = await fetch("/api/crm/inbox", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId, messageId, body }),
+        body: JSON.stringify({
+          conversationId,
+          messageId,
+          body,
+          ...(sendingImage ? { mediaType: "image", mediaUrl } : {}),
+        }),
       });
       const data = await response.json();
       if (data.message) {
@@ -1295,6 +1376,41 @@ export default function WhatsAppInboxClient() {
       setNotice(error instanceof Error ? error.message : "AI reply could not be generated.");
     } finally {
       setGeneratingAi(false);
+    }
+  }
+
+  async function runFlow(flow: WhatsAppFlow) {
+    if (!selectedId || runningFlowId) return;
+
+    setRunningFlowId(flow.id);
+    setNotice("");
+    try {
+      for (const step of flow.steps) {
+        const delay = flowDelayMs(step);
+        if (delay > 0) {
+          await wait(delay);
+        }
+
+        if (step.type === "Send Message") {
+          const text = personalizeFlowText(step.message, selected);
+          if (text) await sendMessage(undefined, text);
+          continue;
+        }
+
+        if (step.type === "Send Image") {
+          const caption = personalizeFlowText(step.message, selected);
+          if (step.imageUrl) {
+            await sendMessage(undefined, caption, { type: "image", url: step.imageUrl });
+          }
+          continue;
+        }
+
+        if (step.type === "AI Reply") {
+          await generateAiReply();
+        }
+      }
+    } finally {
+      setRunningFlowId("");
     }
   }
 
@@ -1529,12 +1645,20 @@ export default function WhatsAppInboxClient() {
               </div>
 
               <div className={styles.quickReplies}>
-                <button onClick={() => void generateAiReply()} disabled={generatingAi || sending}>
-                  {generatingAi ? "Thinking..." : "AI reply"}
-                </button>
-                {quickReplies.map((reply) => (
-                  <button key={reply.label} onClick={() => setDraft(reply.body)}>
-                    {reply.label}
+                {flowsLoading && <span className={styles.flowHint}>Loading flows...</span>}
+                {!flowsLoading && !activeFlows.length && (
+                  <Link className={styles.flowSetupLink} href="/crm/flows">
+                    Create flow buttons
+                  </Link>
+                )}
+                {activeFlows.map((flow) => (
+                  <button
+                    disabled={sending || generatingAi || Boolean(runningFlowId)}
+                    key={flow.id}
+                    onClick={() => void runFlow(flow)}
+                    type="button"
+                  >
+                    {runningFlowId === flow.id ? "Sending..." : flow.name}
                   </button>
                 ))}
               </div>

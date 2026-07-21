@@ -10,12 +10,20 @@ type WhatsAppFlow = {
   trigger: string;
   description: string;
   status: "Draft" | "Active";
-  steps: string[];
+  steps: FlowStep[];
   updatedAt: string;
 };
 
-type ActionType = "Send Message" | "AI Reply" | "Update Status" | "Add Note";
+type ActionType = "Send Message" | "Send Image" | "AI Reply" | "Update Status" | "Add Note";
 type DelayUnit = "seconds" | "minutes" | "hours" | "days";
+
+type FlowStep = {
+  type: ActionType;
+  delayValue: string;
+  delayUnit: DelayUnit;
+  message: string;
+  imageUrl?: string;
+};
 
 type FlowAction = {
   id: string;
@@ -23,6 +31,7 @@ type FlowAction = {
   delayValue: string;
   delayUnit: DelayUnit;
   message: string;
+  imageUrl: string;
 };
 
 type FlowForm = {
@@ -33,7 +42,7 @@ type FlowForm = {
   actions: FlowAction[];
 };
 
-const actionTypes: ActionType[] = ["Send Message", "AI Reply", "Update Status", "Add Note"];
+const actionTypes: ActionType[] = ["Send Message", "Send Image", "AI Reply", "Update Status", "Add Note"];
 const delayUnits: DelayUnit[] = ["seconds", "minutes", "hours", "days"];
 
 function makeId() {
@@ -48,6 +57,7 @@ function makeAction(action?: Partial<FlowAction>): FlowAction {
     delayValue: action?.delayValue ?? "0",
     delayUnit: action?.delayUnit || "minutes",
     message: action?.message || "",
+    imageUrl: action?.imageUrl || "",
   };
 }
 
@@ -128,7 +138,17 @@ function normaliseDelayUnit(value: string): DelayUnit {
   return delayUnits.find((unit) => unit === value.toLowerCase()) || "minutes";
 }
 
-function actionFromStep(step: string): FlowAction {
+function actionFromStep(step: FlowStep | string): FlowAction {
+  if (typeof step !== "string") {
+    return makeAction({
+      type: normaliseActionType(step.type),
+      delayValue: step.delayValue ?? "0",
+      delayUnit: normaliseDelayUnit(step.delayUnit),
+      message: step.message || "",
+      imageUrl: step.imageUrl || "",
+    });
+  }
+
   const trimmed = step.trim();
   const delayedMatch = trimmed.match(/^Wait\s+(\d+)\s+(seconds|minutes|hours|days),\s+then\s+([^:]+):\s*([\s\S]*)$/i);
   const immediateMatch = trimmed.match(/^Immediately,\s+then\s+([^:]+):\s*([\s\S]*)$/i);
@@ -166,10 +186,16 @@ function formFromFlow(flow: WhatsAppFlow): FlowForm {
 
 function formatActionStep(action: FlowAction) {
   const message = action.message.trim();
-  if (!message) return "";
-  const delay = Math.max(0, Number(action.delayValue) || 0);
-  const delayText = delay > 0 ? `Wait ${delay} ${action.delayUnit}` : "Immediately";
-  return `${delayText}, then ${action.type}: ${message}`;
+  const imageUrl = action.imageUrl.trim();
+  if (action.type === "Send Image" && !imageUrl) return null;
+  if (action.type !== "Send Image" && !message) return null;
+  return {
+    type: action.type,
+    delayValue: `${Math.max(0, Number(action.delayValue) || 0)}`,
+    delayUnit: action.delayUnit,
+    message,
+    ...(imageUrl ? { imageUrl } : {}),
+  };
 }
 
 function flowPayloadFromForm(form: FlowForm, id?: string) {
@@ -179,7 +205,7 @@ function flowPayloadFromForm(form: FlowForm, id?: string) {
     trigger: form.trigger.trim(),
     description: form.description.trim(),
     status: form.status,
-    steps: form.actions.map(formatActionStep).filter(Boolean),
+    steps: form.actions.map(formatActionStep).filter((step): step is FlowStep => Boolean(step)),
   };
 }
 
@@ -228,7 +254,9 @@ export default function WhatsAppFlowsClient() {
   }, []);
 
   const activeCount = useMemo(() => flows.filter((flow) => flow.status === "Active").length, [flows]);
-  const hasUsableAction = useMemo(() => form.actions.some((action) => action.message.trim()), [form.actions]);
+  const hasUsableAction = useMemo(() => form.actions.some((action) => (
+    action.type === "Send Image" ? action.imageUrl.trim() : action.message.trim()
+  )), [form.actions]);
 
   async function saveFlow() {
     if (!form.name.trim() || !hasUsableAction) return;
@@ -438,15 +466,37 @@ export default function WhatsAppFlowsClient() {
                     </label>
                   </div>
 
-                  <label>
-                    Message or instruction
-                    <textarea
-                      value={action.message}
-                      onChange={(event) => updateAction(action.id, { message: event.target.value })}
-                      placeholder="Write the message, status update, or note for this action."
-                      rows={5}
-                    />
-                  </label>
+                  {action.type === "Send Image" ? (
+                    <>
+                      <label>
+                        Image URL
+                        <input
+                          value={action.imageUrl}
+                          onChange={(event) => updateAction(action.id, { imageUrl: event.target.value })}
+                          placeholder="Paste a public image URL that WhatsApp can fetch"
+                        />
+                      </label>
+                      <label>
+                        Caption (optional)
+                        <textarea
+                          value={action.message}
+                          onChange={(event) => updateAction(action.id, { message: event.target.value })}
+                          placeholder="Optional caption to send with the image."
+                          rows={4}
+                        />
+                      </label>
+                    </>
+                  ) : (
+                    <label>
+                      Message or instruction
+                      <textarea
+                        value={action.message}
+                        onChange={(event) => updateAction(action.id, { message: event.target.value })}
+                        placeholder="Write the message, status update, or note for this action."
+                        rows={5}
+                      />
+                    </label>
+                  )}
                 </section>
               </div>
             ))}
@@ -503,7 +553,8 @@ export default function WhatsAppFlowsClient() {
                       <span>{actionPreview(parsed)}</span>
                       <div>
                         <strong>{parsed.type}</strong>
-                        <p>{parsed.message || step}</p>
+                        <p>{parsed.type === "Send Image" ? parsed.imageUrl : parsed.message}</p>
+                        {parsed.type === "Send Image" && parsed.message && <p>{parsed.message}</p>}
                       </div>
                     </div>
                   );

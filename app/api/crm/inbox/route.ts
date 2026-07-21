@@ -19,7 +19,7 @@ import {
   fallbackWhatsAppMediaContentType,
   whatsappMediaFromMessageMetadata,
 } from "@/src/modules/whatsapp/media-metadata";
-import { sendWhatsAppTextMessage } from "@/src/modules/whatsapp/outbound";
+import { sendWhatsAppImageMessage, sendWhatsAppTextMessage } from "@/src/modules/whatsapp/outbound";
 import { whatsAppDisplayTextFromMessage } from "@/src/modules/whatsapp/webhook-normalizer";
 
 export const runtime = "nodejs";
@@ -123,6 +123,23 @@ function whatsAppReactionFromMetadata(metadata: unknown) {
 function rawWhatsAppDisplayText(metadata: unknown) {
   const raw = rawWhatsAppMessageFromMetadata(metadata);
   return raw ? whatsAppDisplayTextFromMessage(raw) : "";
+}
+
+function outboundMediaFromMetadata(messageId: string, metadata: unknown) {
+  const root = recordValue(metadata);
+  const media = recordValue(root.media);
+  const url = stringValue(media.url);
+  if (!url) return null;
+
+  return {
+    id: `outbound-media-${messageId}`,
+    originalName: stringValue(media.filename) || "Flow image",
+    contentType: stringValue(media.contentType) || stringValue(media.mimeType) || "image/jpeg",
+    sizeBytes: null,
+    previewCacheKey: `outbound-media:${url}`,
+    url,
+    downloadUrl: url,
+  };
 }
 
 function messagePreview(message: {
@@ -459,6 +476,9 @@ async function getConversationMessages(businessId: string, conversationId?: stri
     const media = attachments.length
       ? null
       : whatsappMediaFromMessageMetadata(message.metadata, message.messageType);
+    const outboundMedia = !attachments.length && !media
+      ? outboundMediaFromMetadata(message.id, message.metadata)
+      : null;
 
     return {
       id: message.id,
@@ -487,7 +507,9 @@ async function getConversationMessages(businessId: string, conversationId?: stri
           url: `/api/crm/inbox/messages/${message.id}/media`,
           downloadUrl: `/api/crm/inbox/messages/${message.id}/media?download=1`,
         }]
-        : attachments,
+        : outboundMedia
+          ? [outboundMedia]
+          : attachments,
       reactions: message.externalMessageId
         ? Array.from(reactionsByTarget.get(message.externalMessageId)?.values() || [])
         : [],
@@ -608,6 +630,8 @@ export async function POST(request: Request) {
       conversationId?: string;
       body?: string;
       messageId?: string;
+      mediaType?: string;
+      mediaUrl?: string;
       action?: "send" | "suggest";
     };
 
@@ -719,9 +743,12 @@ export async function POST(request: Request) {
       })
       : null;
 
+    const mediaType = stringValue(body.mediaType).toLowerCase();
+    const mediaUrl = stringValue(body.mediaUrl);
+    const sendingImage = mediaType === "image" && Boolean(mediaUrl);
     const messageBody = (body.body || existingMessage?.body || "").trim();
-    if (!messageBody) {
-      return json(400, { ok: false, error: "Message body is required." });
+    if (!messageBody && !sendingImage) {
+      return json(400, { ok: false, error: "Message body or image is required." });
     }
 
     let delivery: unknown = null;
@@ -729,7 +756,9 @@ export async function POST(request: Request) {
     let status: MessageStatus = MessageStatus.QUEUED;
 
     try {
-      delivery = await sendWhatsAppTextMessage({ to: recipient, body: messageBody });
+      delivery = sendingImage
+        ? await sendWhatsAppImageMessage({ to: recipient, imageUrl: mediaUrl, caption: messageBody || undefined })
+        : await sendWhatsAppTextMessage({ to: recipient, body: messageBody });
       const sent = Boolean(delivery && typeof delivery === "object" && (delivery as { sent?: boolean }).sent);
       status = sent ? MessageStatus.SENT : MessageStatus.QUEUED;
     } catch (error) {
@@ -742,10 +771,12 @@ export async function POST(request: Request) {
         where: { id: existingMessage.id },
         data: {
           body: messageBody,
+          messageType: sendingImage ? MessageType.IMAGE : MessageType.TEXT,
           status,
           metadata: jsonValue({
             ...(existingMessage.metadata && typeof existingMessage.metadata === "object" ? existingMessage.metadata : {}),
             sentFromInbox: true,
+            ...(sendingImage ? { media: { url: mediaUrl, contentType: "image/jpeg", filename: "Flow image" } } : {}),
             delivery,
           }),
           sentAt: status === MessageStatus.SENT ? new Date() : existingMessage.sentAt,
@@ -758,10 +789,14 @@ export async function POST(request: Request) {
           conversationId: conversation.id,
           direction: MessageDirection.OUTBOUND,
           senderType: MessageSenderType.TEAM,
-          messageType: MessageType.TEXT,
+          messageType: sendingImage ? MessageType.IMAGE : MessageType.TEXT,
           body: messageBody,
           status,
-          metadata: jsonValue({ sentFromInbox: true, delivery }),
+          metadata: jsonValue({
+            sentFromInbox: true,
+            ...(sendingImage ? { media: { url: mediaUrl, contentType: "image/jpeg", filename: "Flow image" } } : {}),
+            delivery,
+          }),
           sentAt: status === MessageStatus.SENT ? new Date() : undefined,
           failedReason: deliveryError || undefined,
         },
@@ -790,6 +825,17 @@ export async function POST(request: Request) {
         failedReason: message.failedReason,
         createdAt: serializeDate(message.createdAt),
         sentAt: serializeDate(message.sentAt),
+        attachments: sendingImage
+          ? [{
+            id: `outbound-image-${message.id}`,
+            originalName: "Flow image",
+            contentType: "image/jpeg",
+            sizeBytes: null,
+            previewCacheKey: `outbound-image:${mediaUrl}`,
+            url: mediaUrl,
+            downloadUrl: mediaUrl,
+          }]
+          : [],
       },
     });
   } catch (error) {

@@ -4,6 +4,12 @@ export type WhatsAppTextPayloadInput = {
   previewUrl?: boolean;
 };
 
+export type WhatsAppImagePayloadInput = {
+  to: string;
+  imageUrl: string;
+  caption?: string;
+};
+
 export function buildWhatsAppTextPayload(input: WhatsAppTextPayloadInput) {
   return {
     messaging_product: "whatsapp",
@@ -17,8 +23,20 @@ export function buildWhatsAppTextPayload(input: WhatsAppTextPayloadInput) {
   };
 }
 
-export async function sendWhatsAppTextMessage(input: WhatsAppTextPayloadInput) {
-  const payload = buildWhatsAppTextPayload(input);
+export function buildWhatsAppImagePayload(input: WhatsAppImagePayloadInput) {
+  return {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to: input.to.replace(/\D/g, ""),
+    type: "image",
+    image: {
+      link: input.imageUrl,
+      ...(input.caption?.trim() ? { caption: input.caption.trim() } : {}),
+    },
+  };
+}
+
+async function sendWhatsAppPayload(payload: Record<string, unknown>) {
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
   const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
   const graphVersion = process.env.META_GRAPH_API_VERSION || "v20.0";
@@ -49,4 +67,14 @@ export async function sendWhatsAppTextMessage(input: WhatsAppTextPayloadInput) {
     response: data,
     payload,
   };
+}
+
+export async function sendWhatsAppTextMessage(input: WhatsAppTextPayloadInput) {
+  const payload = buildWhatsAppTextPayload(input);
+  return sendWhatsAppPayload(payload);
+}
+
+export async function sendWhatsAppImageMessage(input: WhatsAppImagePayloadInput) {
+  const payload = buildWhatsAppImagePayload(input);
+  return sendWhatsAppPayload(payload);
 }

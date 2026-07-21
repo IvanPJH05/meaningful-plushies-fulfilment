@@ -868,6 +868,22 @@
   padding: 9px 12px;
 }
 
+.flowHint,
+.flowSetupLink {
+  align-items: center;
+  background: #eef5ff;
+  border: 1px solid #cbdff7;
+  border-radius: 999px;
+  color: #174d8f;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 900;
+  min-height: 36px;
+  padding: 0 13px;
+  text-decoration: none;
+}
+
 .composer {
   align-items: flex-end;
   background: #f0f2f5;
