@@ -1243,7 +1243,6 @@ export default function WhatsAppInboxClient() {
         <aside className={styles.workspaceRail}>
           <div className={styles.railLogo}>MP</div>
           <Link className={styles.railActive} href="/crm/inbox">Inbox</Link>
-          <Link href="/manual-orders">Manual orders</Link>
           <Link href="/crm/flows">Flows</Link>
           <Link href="/crm/test-ai">Test AI</Link>
           <Link href="/crm/setup">Setup</Link>

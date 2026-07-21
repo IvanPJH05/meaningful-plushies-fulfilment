@@ -331,7 +331,6 @@ export default function WhatsAppAiTestClient() {
         <aside className={styles.workspaceRail}>
           <div className={styles.railLogo}>MP</div>
           <Link href="/crm/inbox">Inbox</Link>
-          <Link href="/manual-orders">Manual orders</Link>
           <Link href="/crm/flows">Flows</Link>
           <Link className={styles.railActive} href="/crm/test-ai">Test AI</Link>
           <Link href="/crm/setup">Setup</Link>
