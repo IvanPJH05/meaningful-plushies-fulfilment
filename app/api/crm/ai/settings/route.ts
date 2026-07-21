@@ -7,7 +7,9 @@ import {
 } from "@/src/modules/crm/whatsapp-ai-settings";
 import {
   normalizeWhatsAppAssistantTraining,
+  openAiConfigured,
   type WhatsAppAssistantTraining,
+  whatsappAssistantModel,
 } from "@/src/modules/openai/whatsapp-assistant";
 
 export const runtime = "nodejs";
@@ -20,7 +22,12 @@ export async function GET() {
   try {
     const business = await ensureDefaultBusiness();
     const training = await getWhatsAppAssistantTraining(business.id);
-    return json(200, { ok: true, training });
+    return json(200, {
+      ok: true,
+      training,
+      openAiConfigured: openAiConfigured(),
+      model: whatsappAssistantModel(),
+    });
   } catch (error) {
     return json(500, {
       ok: false,
@@ -39,6 +46,8 @@ export async function POST(request: Request) {
     return json(200, {
       ok: true,
       training: saved.training,
+      openAiConfigured: openAiConfigured(),
+      model: whatsappAssistantModel(),
     });
   } catch (error) {
     return json(500, {

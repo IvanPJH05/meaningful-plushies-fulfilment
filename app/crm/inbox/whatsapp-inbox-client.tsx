@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 
 import { supabase } from "@/lib/supabase";
 
@@ -122,7 +123,92 @@ const CHAT_LIST_LIMIT = 1000;
 const MESSAGE_FETCH_LIMIT = 90;
 const MEDIA_OBJECT_CACHE_LIMIT = 80;
 const MEDIA_NEAR_VIEWPORT_MARGIN = "520px";
+const INBOX_TAB_CACHE_KEY = "meaningful-plushies.whatsapp-inbox.v2";
+const INBOX_TAB_CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 const mediaObjectUrlByKey = new Map<string, string>();
+let inboxMemorySnapshot: InboxTabCache | null = null;
+
+type InboxTabCache = {
+  version: 2;
+  savedAt: number;
+  inbox: InboxPayload;
+  conversationCache: ConversationCache;
+  selectedId: string;
+  search: string;
+  filter: string;
+};
+
+function trimConversationCache(cache: ConversationCache) {
+  return Object.fromEntries(
+    Object.entries(cache)
+      .sort(([, left], [, right]) => right.loadedAt - left.loadedAt)
+      .slice(0, PRELOAD_CONVERSATION_LIMIT),
+  ) as ConversationCache;
+}
+
+function isInboxPayload(value: unknown): value is InboxPayload {
+  const payload = value as InboxPayload | null;
+  return Boolean(
+    payload
+    && Array.isArray(payload.conversations)
+    && Array.isArray(payload.messages)
+    && "selectedConversation" in payload,
+  );
+}
+
+function readInboxTabCache() {
+  if (typeof window === "undefined") return inboxMemorySnapshot;
+  const raw = window.sessionStorage.getItem(INBOX_TAB_CACHE_KEY);
+  if (!raw) return inboxMemorySnapshot;
+  try {
+    const parsed = JSON.parse(raw) as Partial<InboxTabCache>;
+    if (
+      parsed.version !== 2
+      || typeof parsed.savedAt !== "number"
+      || Date.now() - parsed.savedAt > INBOX_TAB_CACHE_MAX_AGE_MS
+      || !isInboxPayload(parsed.inbox)
+    ) {
+      window.sessionStorage.removeItem(INBOX_TAB_CACHE_KEY);
+      return inboxMemorySnapshot;
+    }
+
+    const snapshot: InboxTabCache = {
+      version: 2,
+      savedAt: parsed.savedAt,
+      inbox: parsed.inbox,
+      conversationCache: parsed.conversationCache && typeof parsed.conversationCache === "object"
+        ? parsed.conversationCache
+        : {},
+      selectedId: parsed.selectedId || parsed.inbox.selectedConversation?.id || "",
+      search: parsed.search || "",
+      filter: parsed.filter || "ALL",
+    };
+    inboxMemorySnapshot = snapshot;
+    return snapshot;
+  } catch {
+    window.sessionStorage.removeItem(INBOX_TAB_CACHE_KEY);
+    return inboxMemorySnapshot;
+  }
+}
+
+function writeInboxTabCache(snapshot: InboxTabCache) {
+  inboxMemorySnapshot = snapshot;
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(INBOX_TAB_CACHE_KEY, JSON.stringify(snapshot));
+  } catch {
+    const leanSnapshot = {
+      ...snapshot,
+      conversationCache: trimConversationCache(snapshot.conversationCache),
+    };
+    try {
+      window.sessionStorage.setItem(INBOX_TAB_CACHE_KEY, JSON.stringify(leanSnapshot));
+      inboxMemorySnapshot = leanSnapshot;
+    } catch {
+      // The inbox still works without the tab cache; it will just cold-load next time.
+    }
+  }
+}
 
 function optimisticOutboundMessage(id: string, body: string): InboxMessage {
   return {
@@ -466,14 +552,21 @@ function AttachmentPreview(props: {
 }
 
 export default function WhatsAppInboxClient() {
-  const [inbox, setInbox] = useState<InboxPayload>({ conversations: [], selectedConversation: null, messages: [] });
-  const [conversationCache, setConversationCache] = useState<ConversationCache>({});
-  const [selectedId, setSelectedId] = useState<string>("");
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("ALL");
+  const initialCacheRef = useRef<InboxTabCache | null | undefined>(undefined);
+  if (initialCacheRef.current === undefined) {
+    initialCacheRef.current = readInboxTabCache();
+  }
+  const initialCache = initialCacheRef.current;
+  const [inbox, setInbox] = useState<InboxPayload>(() => initialCache?.inbox || { conversations: [], selectedConversation: null, messages: [] });
+  const [conversationCache, setConversationCache] = useState<ConversationCache>(() => initialCache?.conversationCache || {});
+  const [selectedId, setSelectedId] = useState<string>(() => initialCache?.selectedId || initialCache?.inbox.selectedConversation?.id || "");
+  const [search, setSearch] = useState(() => initialCache?.search || "");
+  const [filter, setFilter] = useState(() => initialCache?.filter || "ALL");
   const [draft, setDraft] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [booting, setBooting] = useState(true);
+  const [loading, setLoading] = useState(() => !initialCache?.inbox.conversations.length);
+  const [booting, setBooting] = useState(() => !initialCache?.inbox.conversations.length);
+  const [bootProgress, setBootProgress] = useState(() => initialCache?.inbox.conversations.length ? 100 : 0);
+  const [bootStatus, setBootStatus] = useState(() => initialCache?.inbox.conversations.length ? "Restored saved chats from this tab." : "Connecting to WhatsApp CRM...");
   const [backgroundLoading, setBackgroundLoading] = useState(false);
   const [conversationLoading, setConversationLoading] = useState(false);
   const [detailPanelLoading, setDetailPanelLoading] = useState(false);
@@ -482,15 +575,44 @@ export default function WhatsAppInboxClient() {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
   const messageStreamRef = useRef<HTMLDivElement | null>(null);
-  const selectedIdRef = useRef("");
-  const conversationCacheRef = useRef<ConversationCache>({});
+  const selectedIdRef = useRef(initialCache?.selectedId || initialCache?.inbox.selectedConversation?.id || "");
+  const conversationCacheRef = useRef<ConversationCache>(initialCache?.conversationCache || {});
   const listRefreshTimerRef = useRef<number | null>(null);
   const conversationRefreshTimerRef = useRef<number | null>(null);
   const detailLoadTimerRef = useRef<number | null>(null);
+  const persistTimerRef = useRef<number | null>(null);
+  const restoredFromCacheRef = useRef(Boolean(initialCache?.inbox.conversations.length));
 
   useEffect(() => {
     conversationCacheRef.current = conversationCache;
   }, [conversationCache]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    if (!inbox.conversations.length && !inbox.selectedConversation) return undefined;
+    if (persistTimerRef.current !== null) {
+      window.clearTimeout(persistTimerRef.current);
+    }
+    persistTimerRef.current = window.setTimeout(() => {
+      persistTimerRef.current = null;
+      writeInboxTabCache({
+        version: 2,
+        savedAt: Date.now(),
+        inbox,
+        conversationCache: trimConversationCache(conversationCache),
+        selectedId,
+        search,
+        filter,
+      });
+    }, 220);
+
+    return () => {
+      if (persistTimerRef.current !== null) {
+        window.clearTimeout(persistTimerRef.current);
+        persistTimerRef.current = null;
+      }
+    };
+  }, [conversationCache, filter, inbox, search, selectedId]);
 
   const rememberConversation = useCallback((selectedConversation: SelectedConversation, messages: InboxMessage[]) => {
     if (!selectedConversation) return;
@@ -667,16 +789,30 @@ export default function WhatsAppInboxClient() {
     }
   }, [fetchConversation, rememberConversation]);
 
-  const preloadConversations = useCallback(async (conversationIds: string[]) => {
+  const preloadConversations = useCallback(async (
+    conversationIds: string[],
+    onProgress?: (completed: number, total: number) => void,
+  ) => {
     const uniqueIds = Array.from(new Set(conversationIds)).filter(Boolean);
+    if (!uniqueIds.length) {
+      onProgress?.(0, 0);
+      return;
+    }
+    let completed = 0;
     for (let index = 0; index < uniqueIds.length; index += 4) {
       const batch = uniqueIds.slice(index, index + 4);
       await Promise.all(batch.map(async (conversationId) => {
         const cached = conversationCacheRef.current[conversationId];
         if (cached && Date.now() - cached.loadedAt < CONVERSATION_CACHE_TTL_MS) return;
-        const nextInbox = await fetchConversation(conversationId, false);
-        rememberConversation(nextInbox.selectedConversation, nextInbox.messages);
+        try {
+          const nextInbox = await fetchConversation(conversationId, false);
+          rememberConversation(nextInbox.selectedConversation, nextInbox.messages);
+        } catch {
+          // A single slow or failed chat should not block the rest of the inbox from opening.
+        }
       }));
+      completed += batch.length;
+      onProgress?.(Math.min(completed, uniqueIds.length), uniqueIds.length);
     }
   }, [fetchConversation, rememberConversation]);
 
@@ -706,13 +842,53 @@ export default function WhatsAppInboxClient() {
   useEffect(() => {
     let active = true;
 
+    function setBootStep(progress: number, status: string) {
+      if (!active) return;
+      setBootProgress(Math.max(0, Math.min(100, progress)));
+      setBootStatus(status);
+    }
+
     async function bootInbox() {
+      if (restoredFromCacheRef.current) {
+        setBooting(false);
+        setLoading(false);
+        setBootStep(100, "Saved chats restored from this browser tab.");
+        setBackgroundLoading(true);
+        try {
+          const listInbox = await loadConversationList(CHAT_LIST_LIMIT);
+          if (!active) return;
+          const nextSelectedId = selectedIdRef.current || listInbox.conversations[0]?.id || "";
+          if (nextSelectedId && !selectedIdRef.current) {
+            selectedIdRef.current = nextSelectedId;
+            setSelectedId(nextSelectedId);
+          }
+          if (nextSelectedId) {
+            await loadConversation(nextSelectedId, false);
+          }
+          if (!active) return;
+          await preloadConversations(
+            listInbox.conversations
+              .slice(0, PRELOAD_CONVERSATION_LIMIT)
+              .map((conversation) => conversation.id)
+              .filter((conversationId) => conversationId !== nextSelectedId),
+          );
+        } catch {
+          if (active) setNotice("Saved chats are shown. Latest WhatsApp refresh could not finish yet.");
+        } finally {
+          if (active) setBackgroundLoading(false);
+        }
+        return;
+      }
+
       setBooting(true);
       setLoading(true);
+      setBootStep(8, "Connecting to WhatsApp CRM...");
       try {
+        setBootStep(18, "Loading every chat in the inbox...");
         const listInbox = await loadConversationList(CHAT_LIST_LIMIT);
         if (!active) return;
         const firstConversation = listInbox.conversations[0];
+        setBootStep(38, `Loaded ${listInbox.conversations.length} chats. Opening the latest chat...`);
         if (firstConversation) {
           selectedIdRef.current = firstConversation.id;
           setSelectedId(firstConversation.id);
@@ -722,6 +898,9 @@ export default function WhatsAppInboxClient() {
             messages: [],
           }));
           await loadConversation(firstConversation.id, false);
+          setBootStep(58, "Latest chat is ready. Warming recent chats...");
+        } else {
+          setBootStep(82, "No WhatsApp chats found yet.");
         }
         if (!active) return;
         setBackgroundLoading(true);
@@ -730,7 +909,16 @@ export default function WhatsAppInboxClient() {
             .slice(0, PRELOAD_CONVERSATION_LIMIT)
             .map((conversation) => conversation.id)
             .filter((conversationId) => conversationId !== firstConversation?.id),
+          (completed, total) => {
+            if (!total) {
+              setBootStep(94, "Recent chats warmed.");
+              return;
+            }
+            const progress = 60 + Math.round((completed / total) * 34);
+            setBootStep(progress, `Warming recent chats ${completed} of ${total}...`);
+          },
         );
+        setBootStep(100, "WhatsApp inbox ready.");
       } catch (error) {
         if (active) {
           setNotice(error instanceof Error ? error.message : "CRM inbox could not be loaded.");
@@ -804,6 +992,9 @@ export default function WhatsAppInboxClient() {
       }
       if (detailLoadTimerRef.current !== null) {
         window.clearTimeout(detailLoadTimerRef.current);
+      }
+      if (persistTimerRef.current !== null) {
+        window.clearTimeout(persistTimerRef.current);
       }
     };
   }, []);
@@ -1078,22 +1269,24 @@ export default function WhatsAppInboxClient() {
             <span className={styles.bootLogo}>MP</span>
             <p className={styles.eyebrow}>WhatsApp CRM</p>
             <h2>Loading your latest chats</h2>
-            <p>Loading every chat, then warming the newest {PRELOAD_CONVERSATION_LIMIT} full conversations so they open quickly.</p>
-            <div className={styles.bootDots}>
-              <span />
-              <span />
-              <span />
+            <p>{bootStatus}</p>
+            <div className={styles.bootProgressShell} aria-label={`WhatsApp inbox ${bootProgress}% loaded`}>
+              <span style={{ width: `${bootProgress}%` }} />
             </div>
+            <strong className={styles.bootPercent}>{bootProgress}%</strong>
+            <small className={styles.bootHint}>
+              The full chat list loads first. The newest {PRELOAD_CONVERSATION_LIMIT} chats are opened in the background so they feel instant.
+            </small>
           </div>
         </section>
       ) : (
       <section className={styles.whatsappWorkspace}>
         <aside className={styles.workspaceRail}>
           <div className={styles.railLogo}>MP</div>
-          <a className={styles.railActive} href="/crm/inbox">Inbox</a>
-          <a href="/manual-orders">Manual orders</a>
-          <a href="/crm/flows">Flows</a>
-          <a href="/crm/setup">Setup</a>
+          <Link className={styles.railActive} href="/crm/inbox">Inbox</Link>
+          <Link href="/manual-orders">Manual orders</Link>
+          <Link href="/crm/flows">Flows</Link>
+          <Link href="/crm/setup">Setup</Link>
         </aside>
 
         <aside className={styles.conversationList}>

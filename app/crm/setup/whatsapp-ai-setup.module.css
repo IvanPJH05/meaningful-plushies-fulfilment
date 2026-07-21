@@ -157,6 +157,112 @@
   padding: 11px 13px;
 }
 
+.connectionGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.goodCard,
+.warningCard,
+.infoCard,
+.trainerCard {
+  background: #ffffff;
+  border: 1px solid #dbe6f3;
+  border-radius: 18px;
+}
+
+.goodCard,
+.warningCard,
+.infoCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+}
+
+.goodCard {
+  border-left: 5px solid #10b981;
+}
+
+.warningCard {
+  border-left: 5px solid #ef4444;
+}
+
+.infoCard {
+  border-left: 5px solid #1769e0;
+}
+
+.goodCard span,
+.warningCard span,
+.infoCard span {
+  color: #476079;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.goodCard strong,
+.warningCard strong,
+.infoCard strong {
+  color: #102033;
+  font-size: 22px;
+}
+
+.goodCard small,
+.warningCard small,
+.infoCard small {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.trainerCard {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.trainerCard h3 {
+  font-size: 20px;
+  margin: 0 0 6px;
+}
+
+.trainerCard p:not(.eyebrow) {
+  color: #5f7188;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.trainerCard textarea {
+  background: #ffffff;
+  border: 1px solid #cfdbeb;
+  border-radius: 14px;
+  color: #102033;
+  font-size: 15px;
+  line-height: 1.5;
+  padding: 13px;
+  resize: vertical;
+  width: 100%;
+}
+
+.trainerActions {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.trainerActions span {
+  color: #60728a;
+  flex: 1 1 auto;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .toggleGrid {
   display: grid;
   gap: 12px;
@@ -252,6 +358,7 @@
 }
 
 @media (max-width: 1000px) {
+  .connectionGrid,
   .toggleGrid,
   .formGrid {
     grid-template-columns: 1fr;
