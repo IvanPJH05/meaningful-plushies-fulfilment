@@ -327,18 +327,6 @@ export default function WhatsAppAiTestClient() {
 
   return (
     <main className={styles.page}>
-      <section className={styles.header}>
-        <div>
-          <p className={styles.eyebrow}>WhatsApp CRM</p>
-          <h1>AI Test Chat</h1>
-          <span>Talk to the assistant like a customer, attach media, then save useful tests into training.</span>
-        </div>
-        <div className={styles.headerActions}>
-          <Link href="/crm/setup">AI setup</Link>
-          <Link href="/crm/inbox">Back to inbox</Link>
-        </div>
-      </section>
-
       <section className={styles.layout}>
         <aside className={styles.workspaceRail}>
           <div className={styles.railLogo}>MP</div>

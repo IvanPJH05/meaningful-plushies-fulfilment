@@ -1223,30 +1223,6 @@ export default function WhatsAppInboxClient() {
 
   return (
     <main className={styles.page}>
-      <section className={styles.header}>
-        <div>
-          <p className={styles.eyebrow}>WhatsApp CRM</p>
-          <h1>Inbox</h1>
-          <span>Read and reply to WhatsApp messages from one clean chat screen.</span>
-        </div>
-        <div className={styles.headerActions}>
-          <button
-            className={styles.primaryButton}
-            onClick={() => {
-              void loadConversationList();
-              if (selectedId) {
-                void loadConversation(selectedId, false);
-              } else {
-                void loadInbox();
-              }
-            }}
-            disabled={loading}
-          >
-            {loading ? "Refreshing..." : "Refresh"}
-          </button>
-        </div>
-      </section>
-
       {notice && (
         <div className={styles.notice}>
           <span>{notice}</span>

@@ -159,17 +159,6 @@ export default function WhatsAppAiSetupClient() {
 
   return (
     <main className={styles.page}>
-      <section className={styles.header}>
-        <div>
-          <p className={styles.eyebrow}>WhatsApp CRM</p>
-          <h1>AI Assistant Setup</h1>
-          <span>Train the assistant with your tone, product facts, rules, FAQs, and example replies.</span>
-        </div>
-        <div className={styles.headerActions}>
-          <Link href="/crm/inbox">Back to inbox</Link>
-        </div>
-      </section>
-
       <section className={styles.layout}>
         <aside className={styles.workspaceRail}>
           <div className={styles.railLogo}>MP</div>

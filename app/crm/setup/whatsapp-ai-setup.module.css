@@ -77,7 +77,7 @@
   border-radius: 18px;
   display: grid;
   grid-template-columns: 78px minmax(0, 1fr);
-  min-height: calc(100vh - 110px);
+  min-height: calc(100vh - 20px);
   overflow: hidden;
 }
 

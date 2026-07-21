@@ -1,22 +1,8 @@
 .page {
-  background: #dfe7ef;
+  background: #edf2f7;
   color: #102033;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
   min-height: 100vh;
   padding: 10px;
-}
-
-.header {
-  align-items: center;
-  background: linear-gradient(135deg, #e8f2ff, #ffffff);
-  border: 1px solid #d7e3f2;
-  border-radius: 18px;
-  display: flex;
-  justify-content: space-between;
-  min-height: 68px;
-  padding: 12px 18px;
 }
 
 .eyebrow {
@@ -24,57 +10,8 @@
   font-size: 10px;
   font-weight: 900;
   letter-spacing: 0.18em;
-  margin: 0 0 5px;
+  margin: 0 0 6px;
   text-transform: uppercase;
-}
-
-.header h1,
-.builderHeader h2,
-.listHeader h2 {
-  margin: 0;
-}
-
-.header h1 {
-  font-size: 26px;
-}
-
-.header span,
-.flowTopline p,
-.triggerText,
-.emptyState p {
-  color: #5f7188;
-}
-
-.headerActions a,
-.primaryButton,
-.secondaryButton,
-.templateRow button,
-.cardActions button {
-  border-radius: 11px;
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 900;
-  padding: 10px 14px;
-  text-decoration: none;
-}
-
-.headerActions a,
-.secondaryButton,
-.cardActions button {
-  background: #ffffff;
-  border: 1px solid #cbd8e8;
-  color: #174d8f;
-}
-
-.primaryButton {
-  background: #1769e0;
-  border: 1px solid #1769e0;
-  color: #ffffff;
-}
-
-.primaryButton:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
 }
 
 .layout {
@@ -82,8 +19,8 @@
   border: 1px solid #d7e3f2;
   border-radius: 18px;
   display: grid;
-  grid-template-columns: 78px minmax(320px, 430px) minmax(0, 1fr);
-  min-height: calc(100vh - 110px);
+  grid-template-columns: 78px minmax(360px, 520px) minmax(0, 1fr);
+  min-height: calc(100vh - 20px);
   overflow: hidden;
 }
 
@@ -130,31 +67,51 @@
 .flowList {
   min-width: 0;
   overflow-y: auto;
-  padding: 22px;
+  padding: 24px;
 }
 
 .builder {
+  background:
+    radial-gradient(circle at 24px 24px, rgba(23, 105, 224, 0.08) 0 2px, transparent 2px 100%),
+    #f7fbff;
+  background-size: 28px 28px;
   border-right: 1px solid #d7e3f2;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
 }
 
 .builderHeader,
 .listHeader,
 .flowTopline,
 .formActions,
-.cardActions {
+.cardActions,
+.nodeHeader,
+.actionHeader,
+.flowMeta {
   align-items: center;
   display: flex;
   gap: 12px;
   justify-content: space-between;
 }
 
+.builderHeader h1,
+.listHeader h2,
+.actionHeader h3,
+.flowTopline h3 {
+  margin: 0;
+}
+
+.builderHeader h1 {
+  font-size: 27px;
+  letter-spacing: -0.03em;
+}
+
 .builderHeader span {
   background: #ecfdf5;
   border-radius: 999px;
   color: #047857;
+  flex: 0 0 auto;
   font-size: 12px;
   font-weight: 900;
   padding: 8px 12px;
@@ -176,10 +133,105 @@
   gap: 8px;
 }
 
+.templateRow button,
+.primaryButton,
+.secondaryButton,
+.addActionButton,
+.cardActions button,
+.textButton {
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 900;
+  padding: 10px 14px;
+}
+
 .templateRow button {
   background: #eef5ff;
   border: 1px solid #cbdff7;
   color: #174d8f;
+}
+
+.flowCanvas {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.nodeCard,
+.actionNode {
+  background: #ffffff;
+  border: 1px solid #d7e3f2;
+  border-radius: 20px;
+  box-shadow: 0 14px 35px rgba(15, 43, 77, 0.08);
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.nodeCard {
+  border-left: 6px solid #1769e0;
+}
+
+.actionNode {
+  border-left: 6px solid #0e9f6e;
+}
+
+.nodeHeader p {
+  color: #5f7188;
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.nodeBadge {
+  background: #eaf3ff;
+  border-radius: 999px;
+  color: #174d8f;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  padding: 7px 10px;
+  text-transform: uppercase;
+}
+
+.nodeConnector {
+  align-self: center;
+  background: #ffffff;
+  border: 1px solid #cbd8e8;
+  border-radius: 999px;
+  color: #52677f;
+  font-size: 11px;
+  font-weight: 900;
+  margin: 10px 0;
+  padding: 7px 12px;
+  position: relative;
+  text-transform: uppercase;
+  width: fit-content;
+}
+
+.nodeConnector::before,
+.nodeConnector::after {
+  background: #cbd8e8;
+  content: "";
+  height: 10px;
+  left: 50%;
+  position: absolute;
+  transform: translateX(-50%);
+  width: 2px;
+}
+
+.nodeConnector::before {
+  bottom: 100%;
+}
+
+.nodeConnector::after {
+  top: 100%;
+}
+
+.actionWrap {
+  display: contents;
 }
 
 .builder label {
@@ -200,6 +252,7 @@
   border-radius: 12px;
   color: #102033;
   font-size: 14px;
+  font-weight: 500;
   letter-spacing: 0;
   padding: 12px;
   text-transform: none;
@@ -208,6 +261,57 @@
 .builder textarea {
   line-height: 1.45;
   resize: vertical;
+}
+
+.formGrid,
+.delayGrid {
+  display: grid;
+  gap: 12px;
+}
+
+.formGrid {
+  grid-template-columns: minmax(0, 1fr) 140px;
+}
+
+.delayGrid {
+  grid-template-columns: 90px 130px minmax(0, 1fr);
+}
+
+.actionHeader h3 {
+  font-size: 18px;
+  margin-top: 8px;
+}
+
+.primaryButton {
+  background: #1769e0;
+  border: 1px solid #1769e0;
+  color: #ffffff;
+}
+
+.primaryButton:disabled,
+.textButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.secondaryButton,
+.cardActions button,
+.textButton {
+  background: #ffffff;
+  border: 1px solid #cbd8e8;
+  color: #174d8f;
+}
+
+.addActionButton {
+  align-self: center;
+  background: #102033;
+  border: 1px solid #102033;
+  color: #ffffff;
+  margin-top: 12px;
+}
+
+.formActions {
+  justify-content: flex-start;
 }
 
 .flowList {
@@ -231,7 +335,8 @@
 }
 
 .flowTopline p,
-.triggerText {
+.emptyState p {
+  color: #5f7188;
   font-size: 13px;
   line-height: 1.4;
   margin: 0;
@@ -256,23 +361,58 @@
   color: #174d8f;
 }
 
-.triggerText {
+.flowMeta {
   background: #f3f7fc;
-  border-radius: 12px;
-  margin-top: 12px;
+  border-radius: 14px;
+  color: #52677f;
+  font-size: 13px;
+  margin-top: 14px;
   padding: 10px 12px;
 }
 
-.flowCard ol {
-  display: grid;
-  gap: 8px;
-  margin: 14px 0;
-  padding-left: 22px;
+.flowMeta strong {
+  color: #102033;
 }
 
-.flowCard li {
-  color: #102033;
+.actionTimeline {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.previewAction {
+  align-items: flex-start;
+  background: #fbfdff;
+  border: 1px solid #e1eaf5;
+  border-radius: 14px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 92px minmax(0, 1fr);
+  padding: 12px;
+}
+
+.previewAction > span {
+  background: #e8f5ef;
+  border-radius: 999px;
+  color: #047857;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 6px 8px;
+  text-align: center;
+}
+
+.previewAction strong {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 3px;
+}
+
+.previewAction p {
+  color: #52677f;
+  font-size: 13px;
   line-height: 1.45;
+  margin: 0;
+  white-space: pre-wrap;
 }
 
 .cardActions {
@@ -288,7 +428,7 @@
   text-align: center;
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1120px) {
   .layout {
     grid-template-columns: 70px 1fr;
   }
