@@ -122,7 +122,6 @@ const MESSAGE_FETCH_LIMIT = 90;
 const MEDIA_OBJECT_CACHE_LIMIT = 80;
 const MEDIA_NEAR_VIEWPORT_MARGIN = "520px";
 const INBOX_TAB_CACHE_KEY = "meaningful-plushies.whatsapp-inbox.v2";
-const INBOX_TAB_CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 const mediaObjectUrlByKey = new Map<string, string>();
 let inboxMemorySnapshot: InboxTabCache | null = null;
 
@@ -155,7 +154,6 @@ function readInboxTabCache() {
     if (
       parsed.version !== 2
       || typeof parsed.savedAt !== "number"
-      || Date.now() - parsed.savedAt > INBOX_TAB_CACHE_MAX_AGE_MS
       || !isInboxPayload(parsed.inbox)
     ) {
       window.sessionStorage.removeItem(INBOX_TAB_CACHE_KEY);
@@ -554,7 +552,7 @@ export default function WhatsAppInboxClient() {
   const [loading, setLoading] = useState(() => !initialCacheFullyWarmed);
   const [booting, setBooting] = useState(() => !initialCacheFullyWarmed);
   const [bootProgress, setBootProgress] = useState(() => initialCacheFullyWarmed ? 100 : 0);
-  const [bootStatus, setBootStatus] = useState(() => initialCacheFullyWarmed ? "Restored every warmed chat from this tab." : "Connecting to WhatsApp CRM...");
+  const [bootStatus, setBootStatus] = useState(() => initialCacheFullyWarmed ? "Restored every warmed chat saved in this tab." : "Connecting to WhatsApp CRM...");
   const [backgroundLoading, setBackgroundLoading] = useState(false);
   const [conversationLoading, setConversationLoading] = useState(false);
   const [detailPanelLoading, setDetailPanelLoading] = useState(false);
@@ -849,7 +847,7 @@ export default function WhatsAppInboxClient() {
       if (restoredFromCacheRef.current) {
         setBooting(false);
         setLoading(false);
-        setBootStep(100, "Saved chats restored from this browser tab.");
+        setBootStep(100, "Saved warmed chats restored from this browser tab.");
         setBackgroundLoading(true);
         try {
           const listInbox = await loadConversationList(CHAT_LIST_LIMIT);
