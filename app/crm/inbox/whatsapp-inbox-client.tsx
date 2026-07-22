@@ -29,6 +29,12 @@ type ConversationSummary = {
   } | null;
 };
 
+type ConversationRowsAnchor = {
+  conversationId: string;
+  offsetTop: number;
+  fallbackScrollTop: number;
+};
+
 type InboxMessage = {
   id: string;
   clientKey?: string;
@@ -1274,13 +1280,63 @@ export default function WhatsAppInboxClient() {
   const backgroundWarmQueueRunningRef = useRef(false);
   const restoredFromCacheRef = useRef(initialCacheFullyWarmed);
 
-  const restoreConversationRowsScroll = useCallback((scrollTop = conversationRowsScrollTopRef.current) => {
+  const clampConversationRowsScrollTop = useCallback((element: HTMLDivElement, scrollTop: number) => (
+    Math.min(scrollTop, Math.max(0, element.scrollHeight - element.clientHeight))
+  ), []);
+
+  const captureConversationRowsAnchor = useCallback((): ConversationRowsAnchor | null => {
+    const element = conversationRowsRef.current;
+    if (!element) return null;
+
+    const rows = Array.from(element.querySelectorAll<HTMLElement>("[data-conversation-id]"));
+    const containerTop = element.getBoundingClientRect().top;
+    const firstVisibleRow = rows.find((row) => row.getBoundingClientRect().bottom > containerTop + 1);
+
+    if (!firstVisibleRow) {
+      return {
+        conversationId: "",
+        offsetTop: 0,
+        fallbackScrollTop: element.scrollTop,
+      };
+    }
+
+    return {
+      conversationId: firstVisibleRow.dataset.conversationId || "",
+      offsetTop: firstVisibleRow.getBoundingClientRect().top - containerTop,
+      fallbackScrollTop: element.scrollTop,
+    };
+  }, []);
+
+  const restoreConversationRowsAnchor = useCallback((anchor: ConversationRowsAnchor | null) => {
+    if (!anchor) return;
     window.requestAnimationFrame(() => {
       const element = conversationRowsRef.current;
       if (!element) return;
-      element.scrollTop = Math.min(scrollTop, Math.max(0, element.scrollHeight - element.clientHeight));
+
+      if (!anchor.conversationId) {
+        element.scrollTop = clampConversationRowsScrollTop(element, anchor.fallbackScrollTop);
+        conversationRowsScrollTopRef.current = element.scrollTop;
+        return;
+      }
+
+      const anchoredRow = Array.from(element.querySelectorAll<HTMLElement>("[data-conversation-id]"))
+        .find((row) => row.dataset.conversationId === anchor.conversationId);
+
+      if (!anchoredRow) {
+        element.scrollTop = clampConversationRowsScrollTop(element, anchor.fallbackScrollTop);
+        conversationRowsScrollTopRef.current = element.scrollTop;
+        return;
+      }
+
+      const containerTop = element.getBoundingClientRect().top;
+      const nextOffset = anchoredRow.getBoundingClientRect().top - containerTop;
+      const scrollDelta = nextOffset - anchor.offsetTop;
+      if (Math.abs(scrollDelta) > 1) {
+        element.scrollTop = clampConversationRowsScrollTop(element, element.scrollTop + scrollDelta);
+      }
+      conversationRowsScrollTopRef.current = element.scrollTop;
     });
-  }, []);
+  }, [clampConversationRowsScrollTop]);
 
   useEffect(() => {
     conversationCacheRef.current = conversationCache;
@@ -1549,20 +1605,19 @@ export default function WhatsAppInboxClient() {
   }, [rememberConversation]);
 
   const loadConversationList = useCallback(async (listLimit = CHAT_LIST_LIMIT) => {
-    const scrollTop = conversationRowsRef.current?.scrollTop ?? conversationRowsScrollTopRef.current;
     const response = await fetch(`/api/crm/inbox?scope=list&limit=${listLimit}`, { cache: "no-store" });
     const data = await response.json();
     if (!response.ok || !data.ok) {
       throw new Error(data.error || "CRM chat list could not be loaded.");
     }
+    const anchor = captureConversationRowsAnchor();
     setInbox((current) => ({
       ...current,
       conversations: data.inbox.conversations,
     }));
-    conversationRowsScrollTopRef.current = scrollTop;
-    restoreConversationRowsScroll(scrollTop);
+    restoreConversationRowsAnchor(anchor);
     return data.inbox as InboxPayload;
-  }, [restoreConversationRowsScroll]);
+  }, [captureConversationRowsAnchor, restoreConversationRowsAnchor]);
 
   const loadConversation = useCallback(async (conversationId: string, showSpinner = true) => {
     if (showSpinner) setConversationLoading(true);
@@ -1931,9 +1986,6 @@ export default function WhatsAppInboxClient() {
     });
   }, [filter, inbox.conversations, search]);
 
-  const visibleConversationFirstId = visibleConversations[0]?.id || "";
-  const visibleConversationLastId = visibleConversations[visibleConversations.length - 1]?.id || "";
-
   useLayoutEffect(() => {
     const element = conversationRowsRef.current;
     if (!element) return;
@@ -1949,11 +2001,11 @@ export default function WhatsAppInboxClient() {
     }
 
     const maxTop = Math.max(0, element.scrollHeight - element.clientHeight);
-    const nextTop = Math.min(conversationRowsScrollTopRef.current, maxTop);
-    if (Math.abs(element.scrollTop - nextTop) > 1) {
-      element.scrollTop = nextTop;
+    if (conversationRowsScrollTopRef.current > maxTop) {
+      element.scrollTop = maxTop;
+      conversationRowsScrollTopRef.current = maxTop;
     }
-  }, [filter, search, visibleConversationFirstId, visibleConversationLastId, visibleConversations.length]);
+  }, [filter, search, visibleConversations.length]);
 
   const selectedStats = useMemo(() => {
     return {
@@ -2259,7 +2311,9 @@ export default function WhatsAppInboxClient() {
       if (!response.ok || !data.ok) {
         throw new Error(data.error || "Conversation could not be updated.");
       }
+      const anchor = captureConversationRowsAnchor();
       setInbox(data.inbox);
+      restoreConversationRowsAnchor(anchor);
       rememberConversation(data.inbox.selectedConversation, data.inbox.messages);
       void loadConversationList();
       setNotice("Conversation updated.");
@@ -2359,6 +2413,7 @@ export default function WhatsAppInboxClient() {
             {visibleConversations.map((conversation) => (
               <button
                 className={`${styles.conversationRow} ${conversation.id === selectedId ? styles.activeConversation : ""}`}
+                data-conversation-id={conversation.id}
                 key={conversation.id}
                 onClick={() => void selectConversation(conversation.id)}
               >
