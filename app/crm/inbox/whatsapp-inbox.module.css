@@ -429,7 +429,9 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  overflow-anchor: none;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .conversationRow {
@@ -443,6 +445,7 @@
   gap: 12px;
   grid-template-columns: 48px minmax(0, 1fr);
   min-height: 72px;
+  overflow-anchor: none;
   padding: 11px 14px;
   text-align: left;
   width: 100%;
@@ -909,6 +912,167 @@
 .mediaOnlyAttachments {
   gap: 3px;
   margin: 0;
+}
+
+.mediaAlbumGrid {
+  border-radius: 15px;
+  display: grid;
+  gap: 3px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: hidden;
+  width: min(330px, 72vw);
+}
+
+.mediaAlbumGrid[data-count="1"] {
+  display: block;
+  width: min(250px, 70vw);
+}
+
+.mediaAlbumTile {
+  aspect-ratio: 1 / 1;
+  background: #dbeafe;
+  border: 0;
+  color: #0f2f55;
+  cursor: pointer;
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  position: relative;
+}
+
+.mediaAlbumGrid[data-count="1"] .mediaAlbumTile {
+  aspect-ratio: 4 / 5;
+}
+
+.mediaAlbumTile img,
+.mediaAlbumTile video {
+  background: #0f172a;
+  display: block;
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.mediaAlbumPlaceholder {
+  align-items: center;
+  display: flex;
+  font-size: 12px;
+  font-weight: 900;
+  height: 100%;
+  justify-content: center;
+  padding: 12px;
+  text-align: center;
+}
+
+.mediaAlbumPlay,
+.mediaAlbumMore {
+  align-items: center;
+  background: rgba(8, 24, 44, 0.72);
+  border-radius: 999px;
+  bottom: 8px;
+  color: #ffffff;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 900;
+  justify-content: center;
+  min-width: 44px;
+  padding: 6px 9px;
+  position: absolute;
+  right: 8px;
+}
+
+.mediaAlbumMore {
+  background: rgba(8, 24, 44, 0.86);
+  bottom: 0;
+  font-size: 28px;
+  height: 100%;
+  left: 0;
+  right: 0;
+  top: 0;
+  width: 100%;
+}
+
+.mediaCarouselBackdrop {
+  align-items: center;
+  background: rgba(5, 11, 22, 0.86);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 24px;
+  position: fixed;
+  z-index: 2000;
+}
+
+.mediaCarouselDialog {
+  background: #0b1220;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 16px;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.42);
+  color: #ffffff;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: min(760px, 100%);
+  overflow: hidden;
+  width: min(1080px, 100%);
+}
+
+.mediaCarouselHeader {
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  display: flex;
+  justify-content: space-between;
+  padding: 14px 16px;
+}
+
+.mediaCarouselHeader button,
+.mediaCarouselNav {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  color: #ffffff;
+  cursor: pointer;
+  font-weight: 900;
+  padding: 10px 14px;
+}
+
+.mediaCarouselHeader button:hover,
+.mediaCarouselNav:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.mediaCarouselNav:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.mediaCarouselStage {
+  align-items: center;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 0;
+  padding: 18px;
+}
+
+.mediaCarouselMedia {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  min-height: 0;
+}
+
+.mediaCarouselMedia img,
+.mediaCarouselMedia video {
+  border-radius: 12px;
+  max-height: calc(100vh - 180px);
+  max-width: 100%;
+  object-fit: contain;
+}
+
+.mediaCarouselMedia a {
+  color: #bfdbfe;
+  font-weight: 900;
 }
 
 .mediaGroupGrid {

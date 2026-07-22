@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import { supabase } from "@/lib/supabase";
@@ -202,7 +202,7 @@ const MESSAGE_FETCH_LIMIT = 90;
 const MEDIA_OBJECT_CACHE_LIMIT = 260;
 const MEDIA_NEAR_VIEWPORT_MARGIN = "520px";
 const MESSAGE_STICKY_BOTTOM_DISTANCE = 180;
-const MEDIA_ALBUM_GROUP_WINDOW_MS = 5 * 60 * 1000;
+const MEDIA_ALBUM_GROUP_WINDOW_MS = 30 * 1000;
 const INBOX_TAB_CACHE_KEY = "meaningful-plushies.whatsapp-inbox.v3";
 const INBOX_LEGACY_TAB_CACHE_KEY = "meaningful-plushies.whatsapp-inbox.v2";
 const INBOX_CACHE_DB_NAME = "meaningful-plushies-whatsapp-cache";
@@ -1117,6 +1117,113 @@ function AttachmentPreview(props: {
   );
 }
 
+function MediaAlbumGrid(props: {
+  attachments: MessageAttachment[];
+  onOpen: (index: number) => void;
+}) {
+  const { attachments, onOpen } = props;
+  const visibleAttachments = attachments.slice(0, 2);
+  const hiddenCount = Math.max(0, attachments.length - visibleAttachments.length);
+
+  return (
+    <div className={styles.mediaAlbumGrid} data-count={visibleAttachments.length}>
+      {visibleAttachments.map((attachment, index) => {
+        const label = attachment.originalName || attachment.contentType || "Attachment";
+        const status = attachmentDisplayStatus(attachment);
+        const previewUrl = attachmentSourceUrl(attachment);
+        const isVideo = isVideoAttachment(attachment);
+        const showMore = hiddenCount > 0 && index === visibleAttachments.length - 1;
+
+        return (
+          <button
+            aria-label={`Open media ${index + 1} of ${attachments.length}`}
+            className={styles.mediaAlbumTile}
+            key={attachment.id}
+            onClick={() => onOpen(index)}
+            type="button"
+          >
+            {status !== "ready" ? (
+              <span className={styles.mediaAlbumPlaceholder}>Preparing media...</span>
+            ) : previewUrl && isImageAttachment(attachment) ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img alt={label} decoding="async" loading="lazy" src={previewUrl} />
+            ) : previewUrl && isVideo ? (
+              <video muted playsInline preload="metadata" src={previewUrl} />
+            ) : (
+              <span className={styles.mediaAlbumPlaceholder}>{isVideo ? "Video" : "Media"}</span>
+            )}
+            {isVideo && <span className={styles.mediaAlbumPlay}>Play</span>}
+            {showMore && <span className={styles.mediaAlbumMore}>+{hiddenCount}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function MediaCarousel(props: {
+  attachments: MessageAttachment[];
+  index: number;
+  onClose: () => void;
+  onSelectIndex: (index: number) => void;
+}) {
+  const { attachments, index, onClose, onSelectIndex } = props;
+  const attachment = attachments[index];
+  if (!attachment) return null;
+
+  const label = attachment.originalName || attachment.contentType || "Media";
+  const sourceUrl = attachmentOpenUrl(attachment);
+  const previousDisabled = index <= 0;
+  const nextDisabled = index >= attachments.length - 1;
+
+  return (
+    <div className={styles.mediaCarouselBackdrop} onClick={onClose} role="presentation">
+      <div
+        aria-label="Media viewer"
+        aria-modal="true"
+        className={styles.mediaCarouselDialog}
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+      >
+        <div className={styles.mediaCarouselHeader}>
+          <strong>{index + 1} / {attachments.length}</strong>
+          <button aria-label="Close media viewer" onClick={onClose} type="button">Close</button>
+        </div>
+        <div className={styles.mediaCarouselStage}>
+          <button
+            aria-label="Previous media"
+            className={styles.mediaCarouselNav}
+            disabled={previousDisabled}
+            onClick={() => onSelectIndex(index - 1)}
+            type="button"
+          >
+            Prev
+          </button>
+          <div className={styles.mediaCarouselMedia}>
+            {isImageAttachment(attachment) ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img alt={label} src={sourceUrl} />
+            ) : isVideoAttachment(attachment) ? (
+              <video autoPlay controls src={sourceUrl} />
+            ) : (
+              <a href={sourceUrl} rel="noreferrer" target="_blank">Open media</a>
+            )}
+          </div>
+          <button
+            aria-label="Next media"
+            className={styles.mediaCarouselNav}
+            disabled={nextDisabled}
+            onClick={() => onSelectIndex(index + 1)}
+            type="button"
+          >
+            Next
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function WhatsAppInboxClient() {
   const initialCacheRef = useRef<InboxTabCache | null | undefined>(undefined);
   if (initialCacheRef.current === undefined) {
@@ -1143,6 +1250,7 @@ export default function WhatsAppInboxClient() {
   const [replyTarget, setReplyTarget] = useState<InboxMessage | null>(null);
   const [reactionPickerMessageId, setReactionPickerMessageId] = useState("");
   const [reactingMessageId, setReactingMessageId] = useState("");
+  const [mediaCarousel, setMediaCarousel] = useState<{ attachments: MessageAttachment[]; index: number } | null>(null);
   const [generatingAi, setGeneratingAi] = useState(false);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
@@ -1155,6 +1263,7 @@ export default function WhatsAppInboxClient() {
   const messageShouldStickToBottomRef = useRef(true);
   const selectedIdRef = useRef(initialCache?.selectedId || initialCache?.inbox.selectedConversation?.id || "");
   const conversationCacheRef = useRef<ConversationCache>(initialCache?.conversationCache || {});
+  const previousConversationListScopeRef = useRef({ filter, search });
   const sendingRef = useRef(false);
   const listRefreshTimerRef = useRef<number | null>(null);
   const conversationRefreshTimerRef = useRef<number | null>(null);
@@ -1178,6 +1287,25 @@ export default function WhatsAppInboxClient() {
   useEffect(() => {
     void warmSharedMediaAssets();
   }, []);
+
+  useEffect(() => {
+    if (!mediaCarousel) return undefined;
+    function handleCarouselKeydown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setMediaCarousel(null);
+        return;
+      }
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      setMediaCarousel((current) => {
+        if (!current) return current;
+        const direction = event.key === "ArrowLeft" ? -1 : 1;
+        const nextIndex = Math.min(Math.max(current.index + direction, 0), current.attachments.length - 1);
+        return { ...current, index: nextIndex };
+      });
+    }
+    window.addEventListener("keydown", handleCarouselKeydown);
+    return () => window.removeEventListener("keydown", handleCarouselKeydown);
+  }, [mediaCarousel]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1761,6 +1889,30 @@ export default function WhatsAppInboxClient() {
     });
   }, [filter, inbox.conversations, search]);
 
+  const visibleConversationFirstId = visibleConversations[0]?.id || "";
+  const visibleConversationLastId = visibleConversations[visibleConversations.length - 1]?.id || "";
+
+  useLayoutEffect(() => {
+    const element = conversationRowsRef.current;
+    if (!element) return;
+
+    const previousScope = previousConversationListScopeRef.current;
+    const scopeChanged = previousScope.filter !== filter || previousScope.search !== search;
+    previousConversationListScopeRef.current = { filter, search };
+
+    if (scopeChanged) {
+      conversationRowsScrollTopRef.current = 0;
+      element.scrollTop = 0;
+      return;
+    }
+
+    const maxTop = Math.max(0, element.scrollHeight - element.clientHeight);
+    const nextTop = Math.min(conversationRowsScrollTopRef.current, maxTop);
+    if (Math.abs(element.scrollTop - nextTop) > 1) {
+      element.scrollTop = nextTop;
+    }
+  }, [filter, search, visibleConversationFirstId, visibleConversationLastId, visibleConversations.length]);
+
   const selectedStats = useMemo(() => {
     return {
       inbound: inbox.messages.filter((message) => message.direction === "INBOUND").length,
@@ -2314,14 +2466,21 @@ export default function WhatsAppInboxClient() {
                       {displayText && <p className={isFallbackText ? styles.messageFallback : undefined}>{displayText}</p>}
                       {!!attachments.length && (
                         <div
-                          className={`${styles.attachmentList} ${mediaOnly ? styles.mediaOnlyAttachments : ""} ${mediaGroupMessages.length > 1 ? styles.mediaGroupGrid : ""}`}
+                          className={`${styles.attachmentList} ${mediaOnly ? styles.mediaOnlyAttachments : ""}`}
                           data-count={Math.min(attachments.length, 4)}
                         >
-                          {attachments.map((attachment) => (
-                            <div className={mediaGroupMessages.length > 1 ? styles.mediaGroupItem : undefined} key={attachment.id}>
-                              <AttachmentPreview attachment={attachment} />
-                            </div>
-                          ))}
+                          {mediaGroupMessages.length > 1 ? (
+                            <MediaAlbumGrid
+                              attachments={attachments}
+                              onOpen={(attachmentIndex) => setMediaCarousel({ attachments, index: attachmentIndex })}
+                            />
+                          ) : (
+                            attachments.map((attachment) => (
+                              <div key={attachment.id}>
+                                <AttachmentPreview attachment={attachment} />
+                              </div>
+                            ))
+                          )}
                         </div>
                       )}
                       <div className={styles.messageFooter}>
@@ -2542,6 +2701,19 @@ export default function WhatsAppInboxClient() {
           </aside>
         )}
       </section>
+      )}
+
+      {mediaCarousel && (
+        <MediaCarousel
+          attachments={mediaCarousel.attachments}
+          index={mediaCarousel.index}
+          onClose={() => setMediaCarousel(null)}
+          onSelectIndex={(index) => setMediaCarousel((current) => {
+            if (!current) return current;
+            const nextIndex = Math.min(Math.max(index, 0), current.attachments.length - 1);
+            return { ...current, index: nextIndex };
+          })}
+        />
       )}
     </main>
   );
