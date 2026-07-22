@@ -47,6 +47,17 @@ function textPreview(body: string | null | undefined) {
   return text.length > 80 ? `${text.slice(0, 80)}...` : text;
 }
 
+function normalizedMessageText(body: string | null | undefined) {
+  return (body || "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function isNonContentWhatsAppPlaceholder(body: string | null | undefined) {
+  const text = normalizedMessageText(body);
+  return text === "unsupported whatsapp message"
+    || text === "unsupported message"
+    || text === "whatsapp event";
+}
+
 function mediaPreviewLabel(contentType: string | null | undefined) {
   const type = (contentType || "").toLowerCase();
   if (type.startsWith("image/")) return "Photo";
@@ -178,8 +189,8 @@ function messagePreview(message: {
   const text = textPreview(message.body);
   if (text) return text;
 
-  const rawText = textPreview(rawWhatsAppDisplayText(message.metadata));
-  if (rawText) return rawText;
+  const rawText = rawWhatsAppDisplayText(message.metadata);
+  if (rawText && !isNonContentWhatsAppPlaceholder(rawText)) return textPreview(rawText);
 
   const attachment = message.attachments?.[0];
   if (attachment) return mediaPreviewLabel(attachment.contentType);

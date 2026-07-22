@@ -553,6 +553,17 @@ function messageDisplayText(message: InboxMessage) {
   return fallbackMessageText(message);
 }
 
+function normalizedMessageText(value: string | null | undefined) {
+  return (value || "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function isNonContentWhatsAppPlaceholder(value: string | null | undefined) {
+  const normalized = normalizedMessageText(value);
+  return normalized === "unsupported whatsapp message"
+    || normalized === "unsupported message"
+    || normalized === "whatsapp event";
+}
+
 function isAutoMediaCaption(value: string) {
   const normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
   if (!normalized) return true;
@@ -571,6 +582,15 @@ function messageVisibleText(message: InboxMessage) {
   const displayText = messageDisplayText(message);
   if (hasVisualAttachment(message) && isAutoMediaCaption(displayText)) return "";
   return displayText;
+}
+
+function shouldHideChatMessage(message: InboxMessage) {
+  if (message.attachments?.length) return false;
+  if (isNonContentWhatsAppPlaceholder(message.body)) return true;
+  if (isNonContentWhatsAppPlaceholder(messageVisibleText(message))) return true;
+  const visibleText = normalizedMessageText(messageVisibleText(message));
+  return message.senderType === "SYSTEM"
+    && (!visibleText || visibleText === "system message" || visibleText.startsWith("system message:"));
 }
 
 const QUICK_REACTION_EMOJIS = ["\u2764\ufe0f", "\ud83d\udc4d", "\ud83d\ude02", "\ud83d\ude2e", "\ud83d\ude4f", "\u2705"];
@@ -617,21 +637,31 @@ function canGroupAdjacentMediaMessages(previousMessage: InboxMessage, message: I
   return mediaMessagesAreCloseEnough(message, previousMessage);
 }
 
+function previousRenderableMessage(messages: InboxMessage[], index: number) {
+  for (let currentIndex = index - 1; currentIndex >= 0; currentIndex -= 1) {
+    const candidate = messages[currentIndex];
+    if (!candidate || shouldHideChatMessage(candidate)) continue;
+    return candidate;
+  }
+  return undefined;
+}
+
 function isMediaGroupContinuation(messages: InboxMessage[], index: number) {
   const message = messages[index];
-  const previousMessage = messages[index - 1];
+  const previousMessage = previousRenderableMessage(messages, index);
   return Boolean(message && previousMessage && canGroupAdjacentMediaMessages(previousMessage, message));
 }
 
 function collectMediaMessageGroup(messages: InboxMessage[], startIndex: number) {
   const firstMessage = messages[startIndex];
-  if (!firstMessage || isMediaGroupContinuation(messages, startIndex) || !isGroupableVisualMediaMessage(firstMessage)) {
+  if (!firstMessage || shouldHideChatMessage(firstMessage) || isMediaGroupContinuation(messages, startIndex) || !isGroupableVisualMediaMessage(firstMessage)) {
     return [];
   }
 
   const group = [firstMessage];
   for (let index = startIndex + 1; index < messages.length; index += 1) {
     const nextMessage = messages[index];
+    if (nextMessage && shouldHideChatMessage(nextMessage)) continue;
     const previousMessage = group[group.length - 1];
     if (!nextMessage || !canGroupAdjacentMediaMessages(previousMessage, nextMessage)) break;
     group.push(nextMessage);
@@ -1027,7 +1057,6 @@ function DeferredMediaAttachment(props: {
     return (
       <div className={styles.mediaAttachment} ref={elementRef}>
         <video controls onError={() => setPreviewFailed(true)} preload="metadata" src={sourceUrl} />
-        <a href={openUrl} rel="noreferrer" target="_blank">Open video</a>
       </div>
     );
   }
@@ -2217,6 +2246,7 @@ export default function WhatsAppInboxClient() {
                   <div className={styles.emptyChat}>Loading chat...</div>
                 )}
                 {inbox.messages.map((message, index) => {
+                  if (shouldHideChatMessage(message)) return null;
                   const mediaGroupMessages = collectMediaMessageGroup(inbox.messages, index);
                   if (!mediaGroupMessages.length && isMediaGroupContinuation(inbox.messages, index)) return null;
 
@@ -2233,7 +2263,7 @@ export default function WhatsAppInboxClient() {
                     : message.reactions || []
                   ).filter((reaction) => reaction.emoji.trim());
                   const mediaOnly = mediaGroupMessages.length ? true : isMediaOnlyMessage(message);
-                  const groupedMedia = mediaGroupMessages.length > 1 || isGroupedMediaMessage(message, inbox.messages[index - 1]);
+                  const groupedMedia = mediaGroupMessages.length > 1 || isGroupedMediaMessage(message, previousRenderableMessage(inbox.messages, index));
                   const messageKey = mediaGroupMessages.length
                     ? `media-group-${mediaGroupMessages.map(messageRenderKey).join("-")}`
                     : messageRenderKey(message);
