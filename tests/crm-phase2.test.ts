@@ -18,6 +18,7 @@ import {
 } from "../src/modules/sales/paid-manual-order-flow.ts";
 import { getMissingPhase2Env, getMissingPhase3Env } from "../src/shared/validation/env.ts";
 import { verifyMetaWebhookSignature } from "../src/modules/whatsapp/meta-signature.ts";
+import { safeStoragePathSegment } from "../src/modules/whatsapp/media-cache.ts";
 import { buildWhatsAppTextPayload, sendWhatsAppTextMessage } from "../src/modules/whatsapp/outbound.ts";
 import { verifyWebhookChallenge } from "../src/modules/whatsapp/webhook-verification.ts";
 import { normalizeWhatsAppWebhookPayload } from "../src/modules/whatsapp/webhook-normalizer.ts";
@@ -77,6 +78,11 @@ test("phase 2 accepts Shopify client credentials when admin token is not present
   });
 
   assert.deepEqual(missing, []);
+});
+
+test("WhatsApp media storage paths are safe for private bucket writes", () => {
+  assert.equal(safeStoragePathSegment("media/id with spaces:and/slashes"), "media_id_with_spaces_and_slashes");
+  assert.equal(safeStoragePathSegment("abc.DEF-123"), "abc.DEF-123");
 });
 
 test("phase 3 reports OpenAI key as the remaining ChatGPT setup item", () => {

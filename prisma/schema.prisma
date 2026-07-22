@@ -338,17 +338,51 @@ model Message {
 }
 
 model MessageAttachment {
-  id             String   @id @default(cuid())
-  messageId      String
-  storageKey     String
-  contentType    String
-  originalName   String?
-  sizeBytes      Int?
-  createdAt      DateTime @default(now())
-  message        Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  id                   String            @id @default(cuid())
+  messageId            String
+  storageKey           String
+  contentType          String
+  originalName         String?
+  sizeBytes            Int?
+  processingStatus     String            @default("ready")
+  externalMediaId      String?
+  mediaMimeType        String?
+  mediaSizeBytes       Int?
+  originalStoragePath  String?
+  thumbnailStoragePath String?
+  previewWidth         Int?
+  previewHeight        Int?
+  originalWidth        Int?
+  originalHeight       Int?
+  mediaSha256          String?
+  processingError      String?
+  processedAt          DateTime?
+  createdAt            DateTime          @default(now())
+  message              Message           @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  mediaJob             WhatsAppMediaJob?
 
   @@index([messageId])
+  @@index([externalMediaId])
+  @@index([processingStatus, createdAt])
   @@map("crm_message_attachments")
+}
+
+model WhatsAppMediaJob {
+  id              String            @id @default(cuid())
+  attachmentId    String            @unique
+  externalMediaId String
+  status          String            @default("pending")
+  attempts        Int               @default(0)
+  nextAttemptAt   DateTime          @default(now())
+  lockedAt        DateTime?
+  lastError       String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  attachment      MessageAttachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt])
+  @@index([externalMediaId])
+  @@map("crm_whatsapp_media_jobs")
 }
 
 model Lead {

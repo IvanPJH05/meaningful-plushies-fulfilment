@@ -156,7 +156,10 @@ function outboundMediaFromMetadata(messageId: string, metadata: unknown) {
     originalName: stringValue(media.filename) || "Flow image",
     contentType: stringValue(media.contentType) || stringValue(media.mimeType) || "image/jpeg",
     sizeBytes: null,
+    processingStatus: "ready",
     previewCacheKey: `outbound-media:${url}`,
+    thumbnailUrl: url,
+    originalUrl: url,
     url,
     downloadUrl: url,
   };
@@ -482,6 +485,18 @@ async function getConversationMessages(businessId: string, conversationId?: stri
             originalName: true,
             contentType: true,
             sizeBytes: true,
+            processingStatus: true,
+            externalMediaId: true,
+            mediaMimeType: true,
+            mediaSizeBytes: true,
+            originalStoragePath: true,
+            thumbnailStoragePath: true,
+            previewWidth: true,
+            previewHeight: true,
+            originalWidth: true,
+            originalHeight: true,
+            processingError: true,
+            processedAt: true,
           },
         },
       },
@@ -532,19 +547,38 @@ async function getConversationMessages(businessId: string, conversationId?: stri
   }
 
   return displayMessages.slice(-limit).map((message) => {
-    const attachments = message.attachments.map((attachment) => ({
-      id: attachment.id,
-      originalName: attachment.originalName,
-      contentType: attachment.contentType,
-      sizeBytes: attachment.sizeBytes,
-      previewCacheKey: attachment.storageKey || (
-        attachment.sizeBytes
-          ? `${attachment.contentType}:${attachment.sizeBytes}:${attachment.originalName || ""}`
-          : null
-      ),
-      url: `/api/crm/inbox/attachments/${attachment.id}`,
-      downloadUrl: `/api/crm/inbox/attachments/${attachment.id}?download=1`,
-    }));
+    const attachments = message.attachments.map((attachment) => {
+      const processingStatus = attachment.processingStatus || "ready";
+      const contentType = attachment.mediaMimeType || attachment.contentType || "application/octet-stream";
+      const originalUrl = `/api/crm/inbox/attachments/${attachment.id}/original`;
+      const thumbnailUrl = attachment.thumbnailStoragePath
+        ? `/api/crm/inbox/attachments/${attachment.id}/thumbnail`
+        : null;
+
+      return {
+        id: attachment.id,
+        originalName: attachment.originalName,
+        contentType,
+        sizeBytes: attachment.mediaSizeBytes || attachment.sizeBytes,
+        processingStatus,
+        previewCacheKey: attachment.thumbnailStoragePath
+          || attachment.originalStoragePath
+          || attachment.storageKey
+          || (attachment.sizeBytes
+            ? `${contentType}:${attachment.sizeBytes}:${attachment.originalName || ""}`
+            : null),
+        thumbnailUrl,
+        originalUrl,
+        url: processingStatus === "ready" ? (thumbnailUrl || originalUrl) : undefined,
+        downloadUrl: `${originalUrl}?download=1`,
+        previewWidth: attachment.previewWidth,
+        previewHeight: attachment.previewHeight,
+        originalWidth: attachment.originalWidth,
+        originalHeight: attachment.originalHeight,
+        processingError: attachment.processingError,
+        processedAt: serializeDate(attachment.processedAt),
+      };
+    });
     const media = attachments.length
       ? null
       : whatsappMediaFromMessageMetadata(message.metadata, message.messageType);
@@ -579,7 +613,10 @@ async function getConversationMessages(businessId: string, conversationId?: stri
           originalName: media.filename || null,
           contentType: media.mimeType || fallbackWhatsAppMediaContentType(message.messageType),
           sizeBytes: null,
+          processingStatus: "ready",
           previewCacheKey: `whatsapp-media:${media.id}`,
+          thumbnailUrl: null,
+          originalUrl: `/api/crm/inbox/messages/${message.id}/media`,
           url: `/api/crm/inbox/messages/${message.id}/media`,
           downloadUrl: `/api/crm/inbox/messages/${message.id}/media?download=1`,
         }]
@@ -1058,7 +1095,10 @@ export async function POST(request: Request) {
             originalName: mediaFilename,
             contentType: mediaContentType,
             sizeBytes: null,
+            processingStatus: "ready",
             previewCacheKey: `outbound-${mediaType}:${mediaUrl}`,
+            thumbnailUrl: mediaUrl,
+            originalUrl: mediaUrl,
             url: mediaUrl,
             downloadUrl: mediaUrl,
           }]

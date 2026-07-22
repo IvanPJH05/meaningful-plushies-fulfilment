@@ -48,6 +48,15 @@ type InboxMessage = {
     contentType: string;
     sizeBytes: number | null;
     previewCacheKey?: string | null;
+    processingStatus?: string | null;
+    thumbnailUrl?: string | null;
+    originalUrl?: string | null;
+    previewWidth?: number | null;
+    previewHeight?: number | null;
+    originalWidth?: number | null;
+    originalHeight?: number | null;
+    processingError?: string | null;
+    processedAt?: string | null;
     url?: string;
     downloadUrl?: string;
   }[];
@@ -115,6 +124,7 @@ type InboxPayload = {
 };
 
 type ActiveConversation = NonNullable<SelectedConversation>;
+type MessageAttachment = NonNullable<InboxMessage["attachments"]>[number];
 
 type FlowTriggerType = "keywords" | "click";
 type FlowMediaType = "image" | "video";
@@ -521,7 +531,7 @@ function personalizeFlowText(text: string, conversation: ActiveConversation | nu
     .trim();
 }
 
-function optimisticMediaAttachment(id: string, media: FlowMediaItem): NonNullable<InboxMessage["attachments"]>[number] {
+function optimisticMediaAttachment(id: string, media: FlowMediaItem): MessageAttachment {
   const contentType = media.type === "video" ? "video/mp4" : "image/jpeg";
   const originalName = media.type === "video" ? "Flow video" : "Flow image";
   return {
@@ -530,25 +540,50 @@ function optimisticMediaAttachment(id: string, media: FlowMediaItem): NonNullabl
     contentType,
     sizeBytes: null,
     previewCacheKey: `flow-${media.type}:${media.url}`,
+    processingStatus: "ready",
+    thumbnailUrl: media.url,
+    originalUrl: media.url,
     url: media.url,
     downloadUrl: media.url,
   };
 }
 
-function isImageAttachment(attachment: NonNullable<InboxMessage["attachments"]>[number]) {
-  return attachment.contentType.toLowerCase().startsWith("image/");
+function attachmentContentType(attachment: MessageAttachment) {
+  return (attachment.contentType || "").toLowerCase();
 }
 
-function isVideoAttachment(attachment: NonNullable<InboxMessage["attachments"]>[number]) {
-  return attachment.contentType.toLowerCase().startsWith("video/");
+function attachmentSourceUrl(attachment: MessageAttachment) {
+  return attachment.thumbnailUrl || attachment.url || attachment.originalUrl || "";
 }
 
-function isAudioAttachment(attachment: NonNullable<InboxMessage["attachments"]>[number]) {
-  return attachment.contentType.toLowerCase().startsWith("audio/");
+function attachmentOpenUrl(attachment: MessageAttachment) {
+  return attachment.originalUrl || attachment.downloadUrl || attachment.url || attachment.thumbnailUrl || "#";
 }
 
-function attachmentCacheKey(attachment: NonNullable<InboxMessage["attachments"]>[number]) {
+function attachmentDisplayStatus(attachment: MessageAttachment) {
+  return attachment.processingStatus || "ready";
+}
+
+function isAttachmentReady(attachment: MessageAttachment) {
+  return attachmentDisplayStatus(attachment) === "ready";
+}
+
+function isImageAttachment(attachment: MessageAttachment) {
+  return attachmentContentType(attachment).startsWith("image/");
+}
+
+function isVideoAttachment(attachment: MessageAttachment) {
+  return attachmentContentType(attachment).startsWith("video/");
+}
+
+function isAudioAttachment(attachment: MessageAttachment) {
+  return attachmentContentType(attachment).startsWith("audio/");
+}
+
+function attachmentCacheKey(attachment: MessageAttachment) {
   return attachment.previewCacheKey
+    || attachment.thumbnailUrl
+    || attachment.originalUrl
     || (attachment.sizeBytes
       ? `${attachment.contentType}:${attachment.sizeBytes}:${attachment.originalName || ""}`
       : "")
@@ -609,38 +644,9 @@ function useNearViewport<T extends HTMLElement>() {
   return [ref, nearViewport] as const;
 }
 
-async function createThumbnailObjectUrl(blob: Blob) {
-  if (!blob.type.toLowerCase().startsWith("image/") || typeof createImageBitmap === "undefined") {
-    return URL.createObjectURL(blob);
-  }
-
-  try {
-    const bitmap = await createImageBitmap(blob);
-    const maxWidth = 420;
-    const maxHeight = 320;
-    const scale = Math.min(1, maxWidth / bitmap.width, maxHeight / bitmap.height);
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-    const context = canvas.getContext("2d");
-    if (!context) {
-      bitmap.close();
-      return URL.createObjectURL(blob);
-    }
-    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    bitmap.close();
-
-    const thumbnail = await new Promise<Blob | null>((resolve) => {
-      canvas.toBlob(resolve, "image/jpeg", 0.78);
-    });
-    return URL.createObjectURL(thumbnail || blob);
-  } catch {
-    return URL.createObjectURL(blob);
-  }
-}
-
-async function warmMediaAttachment(attachment: NonNullable<InboxMessage["attachments"]>[number]) {
-  if (!attachment.url || (!isImageAttachment(attachment) && !isVideoAttachment(attachment))) return;
+async function warmMediaAttachment(attachment: MessageAttachment) {
+  const previewUrl = attachmentSourceUrl(attachment);
+  if (!isAttachmentReady(attachment) || !previewUrl || (!isImageAttachment(attachment) && !isVideoAttachment(attachment))) return;
   const cacheKey = attachmentCacheKey(attachment);
   if (
     !cacheKey
@@ -668,16 +674,16 @@ async function warmMediaAttachment(attachment: NonNullable<InboxMessage["attachm
           video.preload = "metadata";
           video.addEventListener("loadedmetadata", finish, { once: true });
           video.addEventListener("error", finish, { once: true });
-          video.src = attachment.url || "";
+          video.src = previewUrl;
           video.load();
         });
         rememberVideoMetadataWarm(cacheKey);
         return;
       }
-      const response = await fetch(attachment.url || "", { cache: "force-cache" });
+      const response = await fetch(previewUrl, { cache: "force-cache" });
       if (!response.ok) return;
       const blob = await response.blob();
-      const objectUrl = await createThumbnailObjectUrl(blob);
+      const objectUrl = URL.createObjectURL(blob);
       cacheMediaObjectUrl(cacheKey, objectUrl);
     } catch {
       // Media warm-up should never block opening the chat.
@@ -693,7 +699,7 @@ async function warmMediaAttachment(attachment: NonNullable<InboxMessage["attachm
 async function warmConversationMedia(messages: InboxMessage[]) {
   const attachments = messages
     .flatMap((message) => message.attachments || [])
-    .filter((attachment) => attachment.url && (isImageAttachment(attachment) || isVideoAttachment(attachment)));
+    .filter((attachment) => isAttachmentReady(attachment) && attachmentSourceUrl(attachment) && (isImageAttachment(attachment) || isVideoAttachment(attachment)));
 
   for (let index = 0; index < attachments.length; index += 4) {
     await Promise.all(attachments.slice(index, index + 4).map(warmMediaAttachment));
@@ -707,14 +713,16 @@ function LazyImageAttachment(props: {
 }) {
   const { attachment, label, openUrl } = props;
   const cacheKey = attachmentCacheKey(attachment);
-  const sourceUrl = attachment.url || "";
+  const sourceUrl = attachmentSourceUrl(attachment);
   const cachedUrl = cacheKey ? mediaObjectUrlByKey.get(cacheKey) || "" : "";
   const [elementRef, nearViewport] = useNearViewport<HTMLAnchorElement>();
-  const [previewUrl, setPreviewUrl] = useState(cachedUrl);
+  const [previewUrl, setPreviewUrl] = useState(cachedUrl || sourceUrl);
   const [previewFailed, setPreviewFailed] = useState(false);
+  const previewWidth = attachment.previewWidth || attachment.originalWidth || undefined;
+  const previewHeight = attachment.previewHeight || attachment.originalHeight || undefined;
 
   useEffect(() => {
-    if (!sourceUrl || previewUrl || previewFailed || !nearViewport) return undefined;
+    if (!sourceUrl || cachedUrl || previewFailed || !nearViewport) return undefined;
     const controller = new AbortController();
     let active = true;
 
@@ -726,7 +734,7 @@ function LazyImageAttachment(props: {
         });
         if (!response.ok) throw new Error("Image preview could not be loaded.");
         const blob = await response.blob();
-        const objectUrl = await createThumbnailObjectUrl(blob);
+        const objectUrl = URL.createObjectURL(blob);
         if (!active) {
           URL.revokeObjectURL(objectUrl);
           return;
@@ -746,7 +754,7 @@ function LazyImageAttachment(props: {
       active = false;
       controller.abort();
     };
-  }, [cacheKey, nearViewport, previewFailed, previewUrl, sourceUrl]);
+  }, [cachedUrl, cacheKey, nearViewport, previewFailed, sourceUrl]);
 
   return (
     <a
@@ -759,7 +767,15 @@ function LazyImageAttachment(props: {
     >
       {previewUrl && !previewFailed ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img alt={label} decoding="async" loading="lazy" onError={() => setPreviewFailed(true)} src={previewUrl} />
+        <img
+          alt={label}
+          decoding="async"
+          height={previewHeight}
+          loading="lazy"
+          onError={() => setPreviewFailed(true)}
+          src={previewUrl}
+          width={previewWidth}
+        />
       ) : (
         <span className={styles.imageSkeleton}>
           {previewFailed ? "Open photo" : "Loading photo..."}
@@ -780,6 +796,7 @@ function DeferredMediaAttachment(props: {
   const [expanded, setExpanded] = useState(false);
   const [previewFailed, setPreviewFailed] = useState(false);
   const shouldShowPreview = expanded || (type === "video" && nearViewport);
+  const sourceUrl = attachmentOpenUrl(attachment);
 
   if (!shouldShowPreview || previewFailed) {
     return (
@@ -804,7 +821,7 @@ function DeferredMediaAttachment(props: {
   if (type === "video") {
     return (
       <div className={styles.mediaAttachment} ref={elementRef}>
-        <video controls onError={() => setPreviewFailed(true)} preload="metadata" src={attachment.url} />
+        <video controls onError={() => setPreviewFailed(true)} preload="metadata" src={sourceUrl} />
         <a href={openUrl} rel="noreferrer" target="_blank">Open video</a>
       </div>
     );
@@ -812,7 +829,7 @@ function DeferredMediaAttachment(props: {
 
   return (
     <div className={styles.audioAttachment}>
-      <audio controls onError={() => setPreviewFailed(true)} preload="none" src={attachment.url} />
+      <audio controls onError={() => setPreviewFailed(true)} preload="none" src={sourceUrl} />
       <a href={openUrl} rel="noreferrer" target="_blank">{label}</a>
     </div>
   );
@@ -823,17 +840,34 @@ function AttachmentPreview(props: {
 }) {
   const { attachment } = props;
   const label = attachment.originalName || attachment.contentType || "Attachment";
-  const openUrl = attachment.downloadUrl || attachment.url || "#";
+  const status = attachmentDisplayStatus(attachment);
+  const openUrl = attachmentOpenUrl(attachment);
 
-  if (attachment.url && isImageAttachment(attachment)) {
+  if (status === "failed") {
+    return (
+      <span className={styles.mediaFailed}>
+        Unable to load media
+      </span>
+    );
+  }
+
+  if (status !== "ready") {
+    return (
+      <span className={styles.mediaPending}>
+        Preparing media...
+      </span>
+    );
+  }
+
+  if (attachmentSourceUrl(attachment) && isImageAttachment(attachment)) {
     return <LazyImageAttachment attachment={attachment} label={label} openUrl={openUrl} />;
   }
 
-  if (attachment.url && isVideoAttachment(attachment)) {
+  if (attachmentOpenUrl(attachment) && isVideoAttachment(attachment)) {
     return <DeferredMediaAttachment attachment={attachment} label={label} openUrl={openUrl} type="video" />;
   }
 
-  if (attachment.url && isAudioAttachment(attachment)) {
+  if (attachmentOpenUrl(attachment) && isAudioAttachment(attachment)) {
     return <DeferredMediaAttachment attachment={attachment} label={label} openUrl={openUrl} type="audio" />;
   }
 

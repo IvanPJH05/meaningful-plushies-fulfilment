@@ -7,5 +7,5 @@ export async function GET(
   context: { params: Promise<{ attachmentId: string }> },
 ) {
   const { attachmentId } = await context.params;
-  return serveWhatsAppAttachmentMedia(request, attachmentId, "original");
+  return serveWhatsAppAttachmentMedia(request, attachmentId, "thumbnail");
 }

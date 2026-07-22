@@ -866,6 +866,53 @@ on conflict (id) do update set
   file_size_limit = excluded.file_size_limit,
   allowed_mime_types = excluded.allowed_mime_types;
 
+do $$
+begin
+  if to_regclass('public.crm_message_attachments') is not null then
+    alter table public.crm_message_attachments
+      add column if not exists "processingStatus" text not null default 'ready',
+      add column if not exists "externalMediaId" text,
+      add column if not exists "mediaMimeType" text,
+      add column if not exists "mediaSizeBytes" integer,
+      add column if not exists "originalStoragePath" text,
+      add column if not exists "thumbnailStoragePath" text,
+      add column if not exists "previewWidth" integer,
+      add column if not exists "previewHeight" integer,
+      add column if not exists "originalWidth" integer,
+      add column if not exists "originalHeight" integer,
+      add column if not exists "mediaSha256" text,
+      add column if not exists "processingError" text,
+      add column if not exists "processedAt" timestamptz;
+
+    create index if not exists crm_message_attachments_external_media_id_idx
+      on public.crm_message_attachments ("externalMediaId");
+    create index if not exists crm_message_attachments_processing_status_created_at_idx
+      on public.crm_message_attachments ("processingStatus", "createdAt");
+
+    create table if not exists public.crm_whatsapp_media_jobs (
+      id text primary key,
+      "attachmentId" text not null unique references public.crm_message_attachments(id) on delete cascade,
+      "externalMediaId" text not null,
+      status text not null default 'pending',
+      attempts integer not null default 0,
+      "nextAttemptAt" timestamptz not null default now(),
+      "lockedAt" timestamptz,
+      "lastError" text,
+      "createdAt" timestamptz not null default now(),
+      "updatedAt" timestamptz not null default now()
+    );
+
+    create index if not exists crm_whatsapp_media_jobs_status_next_attempt_idx
+      on public.crm_whatsapp_media_jobs (status, "nextAttemptAt");
+    create index if not exists crm_whatsapp_media_jobs_external_media_id_idx
+      on public.crm_whatsapp_media_jobs ("externalMediaId");
+
+    alter table public.crm_whatsapp_media_jobs enable row level security;
+    revoke all on public.crm_whatsapp_media_jobs from anon, authenticated;
+    grant all on table public.crm_whatsapp_media_jobs to service_role;
+  end if;
+end $$;
+
 create table if not exists public.accounting_categories (
   id uuid primary key default gen_random_uuid(),
   name text not null unique,
@@ -1135,9 +1182,8 @@ create policy "shared accounting deletes document files" on storage.objects for 
 drop policy if exists "shared crm reads whatsapp media files" on storage.objects;
 drop policy if exists "shared crm inserts whatsapp media files" on storage.objects;
 drop policy if exists "shared crm updates whatsapp media files" on storage.objects;
-create policy "shared crm reads whatsapp media files" on storage.objects for select to anon, authenticated using (bucket_id = 'whatsapp-media');
-create policy "shared crm inserts whatsapp media files" on storage.objects for insert to anon, authenticated with check (bucket_id = 'whatsapp-media');
-create policy "shared crm updates whatsapp media files" on storage.objects for update to anon, authenticated using (bucket_id = 'whatsapp-media') with check (bucket_id = 'whatsapp-media');
+-- WhatsApp media stays private. The app writes with the service role and serves
+-- files through CRM attachment routes after checking the workspace.
 
 grant select, insert, update, delete on public.accounting_categories to anon, authenticated;
 grant select, insert, update, delete on public.accounting_documents to anon, authenticated;

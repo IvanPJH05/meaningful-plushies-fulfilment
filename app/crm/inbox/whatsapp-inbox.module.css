@@ -987,6 +987,26 @@
   width: min(260px, 70vw);
 }
 
+.mediaPending,
+.mediaFailed {
+  align-items: center;
+  background: #eaf3ff;
+  border: 1px dashed #cbdff7;
+  border-radius: 999px;
+  color: #174d8f;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 7px 10px;
+  width: fit-content;
+}
+
+.mediaFailed {
+  background: #fff1f2;
+  border-color: #fecdd3;
+  color: #be123c;
+}
+
 .mediaLoadButton {
   background: #eaf3ff;
   border: 1px solid #cbdff7;

@@ -22,6 +22,10 @@ import {
   type WhatsAppAssistantMessage,
 } from "@/src/modules/openai/whatsapp-assistant";
 import { verifyMetaWebhookSignature } from "@/src/modules/whatsapp/meta-signature";
+import {
+  enqueueWhatsAppMediaJobsForMessages,
+  processDueWhatsAppMediaJobs,
+} from "@/src/modules/whatsapp/media-jobs";
 import { fallbackWhatsAppMediaContentType } from "@/src/modules/whatsapp/media-metadata";
 import { sendWhatsAppTextMessage } from "@/src/modules/whatsapp/outbound";
 import { verifyWebhookChallenge } from "@/src/modules/whatsapp/webhook-verification";
@@ -128,6 +132,7 @@ async function recordRawWhatsAppWebhook(args: {
 }
 
 type StoredWhatsAppMessage = {
+  messageId: string;
   businessId: string;
   conversationId: string;
   contactId: string;
@@ -160,6 +165,26 @@ function scheduleAiForStoredMessages(storedMessages: StoredWhatsAppMessage[]) {
   return aiMessages.length;
 }
 
+function mediaJobBatchLimit() {
+  return Math.max(1, Math.min(Number(process.env.WHATSAPP_MEDIA_JOBS_PER_WEBHOOK || 3), 10));
+}
+
+function scheduleMediaForStoredMessages(storedMessages: StoredWhatsAppMessage[]) {
+  const messageIds = Array.from(new Set(storedMessages.map((message) => message.messageId).filter(Boolean)));
+  if (!messageIds.length) return 0;
+
+  after(async () => {
+    try {
+      await enqueueWhatsAppMediaJobsForMessages(messageIds);
+      await processDueWhatsAppMediaJobs({ limit: mediaJobBatchLimit() });
+    } catch (error) {
+      console.error("WhatsApp media background task failed", error);
+    }
+  });
+
+  return messageIds.length;
+}
+
 async function saveWhatsAppMediaAttachment(args: {
   messageId: string;
   media?: {
@@ -176,10 +201,14 @@ async function saveWhatsAppMediaAttachment(args: {
     where: { messageId: args.messageId, storageKey },
   });
 
+  const contentType = args.media.mimeType || fallbackWhatsAppMediaContentType(args.messageType);
   const data = {
     storageKey,
-    contentType: args.media.mimeType || fallbackWhatsAppMediaContentType(args.messageType),
+    contentType,
     originalName: args.media.filename || `${args.messageType}-${args.media.id}`,
+    externalMediaId: args.media.id,
+    mediaMimeType: contentType,
+    processingStatus: existing?.originalStoragePath ? "ready" : "pending",
   };
 
   if (existing) {
@@ -506,6 +535,7 @@ async function storeWhatsAppMessages(rawPayload: unknown) {
     }
 
     storedMessages.push({
+      messageId: storedMessage.id,
       businessId: business.id,
       conversationId: conversation.id,
       contactId: contact.id,
@@ -573,6 +603,11 @@ export async function POST(request: Request) {
       after(async () => {
         try {
           const storedMessages = await storeWhatsAppMessages(payload);
+          const messageIds = Array.from(new Set(storedMessages.map((message) => message.messageId).filter(Boolean)));
+          if (messageIds.length) {
+            await enqueueWhatsAppMediaJobsForMessages(messageIds);
+            await processDueWhatsAppMediaJobs({ limit: mediaJobBatchLimit() });
+          }
           await recordRawWhatsAppWebhook({
             rawBody,
             payload,
@@ -606,11 +641,13 @@ export async function POST(request: Request) {
       parsedMessageCount: storedMessages.length,
     });
     const aiMessageCount = scheduleAiForStoredMessages(storedMessages);
+    const mediaMessageCount = scheduleMediaForStoredMessages(storedMessages);
 
     return json(200, {
       ok: true,
       stored: storedMessages.length,
       ai: aiMessageCount ? "scheduled" : "none",
+      media: mediaMessageCount ? "scheduled" : "none",
     });
   } catch (error) {
     try {
