@@ -1216,6 +1216,13 @@ function MediaAlbumTile(props: {
   const isImage = isImageAttachment(attachment);
   const isVideo = isVideoAttachment(attachment);
   const showMore = hiddenCount > 0;
+  const tileClassName = [
+    styles.mediaAlbumTile,
+    isVideo ? styles.mediaAlbumVideoTile : "",
+    showMore ? styles.mediaAlbumTileWithMore : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -1225,7 +1232,7 @@ function MediaAlbumTile(props: {
   return (
     <button
       aria-label={`Open media ${index + 1} of ${total}`}
-      className={styles.mediaAlbumTile}
+      className={tileClassName}
       onClick={() => onOpen(index)}
       type="button"
     >
@@ -1273,11 +1280,7 @@ function MediaAlbumTile(props: {
           {isVideo ? "Video" : "Media"}
         </span>
       )}
-      {(isImage || isVideo) && (
-        <span className={styles.mediaTypeBadge}>
-          {isVideo ? "Video" : "Image"}
-        </span>
-      )}
+      {isVideo && <span className={styles.mediaVideoPlayBadge} aria-hidden="true" />}
       {showMore && <span className={styles.mediaAlbumMore}>+{hiddenCount}</span>}
     </button>
   );
@@ -1288,21 +1291,12 @@ function MediaAlbumGrid(props: {
   onOpen: (index: number) => void;
 }) {
   const { attachments, onOpen } = props;
-  const visibleAttachments = attachments.slice(0, 2);
+  const visibleCount = attachments.length <= 2 ? attachments.length : Math.min(attachments.length, 4);
+  const visibleAttachments = attachments.slice(0, visibleCount);
   const hiddenCount = Math.max(0, attachments.length - visibleAttachments.length);
-  const imageCount = attachments.filter(isImageAttachment).length;
-  const videoCount = attachments.filter(isVideoAttachment).length;
 
   return (
     <div className={styles.mediaAlbum}>
-      <div className={styles.mediaAlbumHeader} aria-label="Grouped media summary">
-        {imageCount > 0 && <span className={styles.mediaAlbumChip}>{formatMediaCount(imageCount, "image")}</span>}
-        {videoCount > 0 && (
-          <span className={`${styles.mediaAlbumChip} ${styles.mediaAlbumChipVideo}`}>
-            {formatMediaCount(videoCount, "video")}
-          </span>
-        )}
-      </div>
       <div className={styles.mediaAlbumGrid} data-count={visibleAttachments.length}>
         {visibleAttachments.map((attachment, index) => (
           <MediaAlbumTile
