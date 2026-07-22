@@ -6,6 +6,7 @@ import {
   readCachedWhatsAppMedia,
   readStoredWhatsAppMedia,
 } from "@/src/modules/whatsapp/media-cache";
+import { mediaAssetPublicUrls } from "@/src/modules/whatsapp/media-assets";
 import {
   enqueueWhatsAppMediaJobForAttachment,
   processDueWhatsAppMediaJobs,
@@ -42,6 +43,21 @@ function buildMediaResponse(args: {
   });
 }
 
+function redirectToMediaAsset(args: {
+  request: Request;
+  contentHash: string;
+  variant: "thumbnail" | "original";
+  download: boolean;
+}) {
+  const urls = mediaAssetPublicUrls(args.contentHash);
+  const target = args.variant === "thumbnail"
+    ? urls.thumbnailUrl
+    : args.download
+      ? urls.downloadUrl
+      : urls.originalUrl;
+  return NextResponse.redirect(new URL(target, args.request.url), 307);
+}
+
 export async function serveWhatsAppAttachmentMedia(
   request: Request,
   attachmentId: string,
@@ -51,6 +67,7 @@ export async function serveWhatsAppAttachmentMedia(
   const attachment = await prisma.messageAttachment.findUnique({
     where: { id: attachmentId },
     include: {
+      mediaAsset: true,
       message: {
         select: {
           businessId: true,
@@ -63,12 +80,23 @@ export async function serveWhatsAppAttachmentMedia(
     return json(404, { ok: false, error: "Attachment not found." });
   }
 
-  const disposition = new URL(request.url).searchParams.get("download") === "1" ? "attachment" : "inline";
+  const download = new URL(request.url).searchParams.get("download") === "1";
+  const disposition = download ? "attachment" : "inline";
   const fallbackContentType = attachment.mediaMimeType || attachment.contentType || "application/octet-stream";
   const fallbackFilename = safeFilename(
     attachment.originalName,
     `${attachment.id}.${fallbackContentType.split("/")[1] || "bin"}`,
   );
+
+  if (attachment.mediaAsset) {
+    return redirectToMediaAsset({
+      request,
+      contentHash: attachment.mediaAsset.contentHash,
+      variant,
+      download,
+    });
+  }
+
   const storagePath = variant === "thumbnail"
     ? (attachment.thumbnailStoragePath || attachment.originalStoragePath)
     : attachment.originalStoragePath;
@@ -92,6 +120,7 @@ export async function serveWhatsAppAttachmentMedia(
   const refreshed = await prisma.messageAttachment.findUnique({
     where: { id: attachmentId },
     include: {
+      mediaAsset: true,
       message: {
         select: {
           businessId: true,
@@ -99,6 +128,15 @@ export async function serveWhatsAppAttachmentMedia(
       },
     },
   });
+  if (refreshed?.mediaAsset) {
+    return redirectToMediaAsset({
+      request,
+      contentHash: refreshed.mediaAsset.contentHash,
+      variant,
+      download,
+    });
+  }
+
   const refreshedPath = variant === "thumbnail"
     ? (refreshed?.thumbnailStoragePath || refreshed?.originalStoragePath)
     : refreshed?.originalStoragePath;

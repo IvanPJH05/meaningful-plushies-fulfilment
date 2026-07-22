@@ -911,6 +911,68 @@
   margin: 0;
 }
 
+.mediaGroupGrid {
+  border-radius: 16px;
+  display: grid;
+  gap: 3px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: hidden;
+  width: min(360px, 76vw);
+}
+
+.mediaGroupGrid[data-count="3"] .mediaGroupItem:first-child {
+  aspect-ratio: 2 / 1;
+  grid-column: span 2;
+}
+
+.mediaGroupGrid[data-count="1"] {
+  display: block;
+}
+
+.mediaGroupItem {
+  aspect-ratio: 1 / 1;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.mediaGroupItem > div {
+  height: 100%;
+}
+
+.mediaGroupItem .imageAttachment,
+.mediaGroupItem .mediaAttachment {
+  border-radius: 0;
+  box-shadow: none;
+  height: 100%;
+  max-width: none;
+  width: 100%;
+}
+
+.mediaGroupItem .imageAttachment img,
+.mediaGroupItem .mediaAttachment video {
+  border-radius: 0;
+  height: 100%;
+  max-height: none;
+  max-width: none;
+  object-fit: cover;
+  width: 100%;
+}
+
+.mediaGroupItem .mediaLoadButton,
+.mediaGroupItem .mediaPending,
+.mediaGroupItem .mediaFailed {
+  align-items: center;
+  border-radius: 0;
+  height: 100%;
+  justify-content: center;
+  width: 100%;
+}
+
+.mediaGroupItem .mediaAttachment a {
+  display: none;
+}
+
 .attachmentList a {
   text-decoration: none;
 }

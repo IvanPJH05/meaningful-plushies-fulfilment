@@ -59,6 +59,21 @@ type InboxMessage = {
     processedAt?: string | null;
     url?: string;
     downloadUrl?: string;
+    mediaAsset?: {
+      id: string;
+      contentHash: string;
+      mimeType: string;
+      mediaType: string;
+      thumbnailUrl?: string | null;
+      originalUrl?: string | null;
+      downloadUrl?: string | null;
+      width?: number | null;
+      height?: number | null;
+      thumbnailWidth?: number | null;
+      thumbnailHeight?: number | null;
+      durationSeconds?: number | null;
+      sizeBytes?: number | null;
+    } | null;
   }[];
   reactions?: {
     id: string;
@@ -126,6 +141,13 @@ type InboxPayload = {
 type ActiveConversation = NonNullable<SelectedConversation>;
 type MessageAttachment = NonNullable<InboxMessage["attachments"]>[number];
 
+type PreloadMediaAsset = {
+  contentHash: string;
+  mediaType: string;
+  thumbnailUrl: string | null;
+  originalUrl: string;
+};
+
 type FlowTriggerType = "keywords" | "click";
 type FlowMediaType = "image" | "video";
 type FlowActionType = "Send Message" | "Send Media" | "Send Image" | "Send Video" | "AI Reply" | "Update Status" | "Add Note";
@@ -180,14 +202,21 @@ const MESSAGE_FETCH_LIMIT = 90;
 const MEDIA_OBJECT_CACHE_LIMIT = 260;
 const MEDIA_NEAR_VIEWPORT_MARGIN = "520px";
 const MESSAGE_STICKY_BOTTOM_DISTANCE = 180;
-const INBOX_TAB_CACHE_KEY = "meaningful-plushies.whatsapp-inbox.v2";
+const MEDIA_ALBUM_GROUP_WINDOW_MS = 5 * 60 * 1000;
+const INBOX_TAB_CACHE_KEY = "meaningful-plushies.whatsapp-inbox.v3";
+const INBOX_LEGACY_TAB_CACHE_KEY = "meaningful-plushies.whatsapp-inbox.v2";
+const INBOX_CACHE_DB_NAME = "meaningful-plushies-whatsapp-cache";
+const INBOX_CACHE_DB_VERSION = 1;
+const INBOX_CACHE_STORE_NAME = "snapshots";
+const INBOX_CACHE_RECORD_KEY = "warm-inbox";
+const INBOX_QUICK_CACHE_CONVERSATION_LIMIT = 20;
 const mediaObjectUrlByKey = new Map<string, string>();
 const mediaWarmPromiseByKey = new Map<string, Promise<void>>();
 const videoMetadataWarmedByKey = new Set<string>();
 let inboxMemorySnapshot: InboxTabCache | null = null;
 
 type InboxTabCache = {
-  version: 2;
+  version: 3;
   savedAt: number;
   inbox: InboxPayload;
   conversationCache: ConversationCache;
@@ -206,36 +235,115 @@ function isInboxPayload(value: unknown): value is InboxPayload {
   );
 }
 
+function normalizeInboxTabCache(value: unknown): InboxTabCache | null {
+  const parsed = value as Partial<InboxTabCache> | null;
+  if (
+    !parsed
+    || parsed.version !== 3
+    || typeof parsed.savedAt !== "number"
+    || !isInboxPayload(parsed.inbox)
+  ) {
+    return null;
+  }
+
+  return {
+    version: 3,
+    savedAt: parsed.savedAt,
+    inbox: parsed.inbox,
+    conversationCache: parsed.conversationCache && typeof parsed.conversationCache === "object"
+      ? parsed.conversationCache
+      : {},
+    selectedId: parsed.selectedId || parsed.inbox.selectedConversation?.id || "",
+    search: parsed.search || "",
+    filter: parsed.filter || "ALL",
+  };
+}
+
+function compactInboxTabCache(snapshot: InboxTabCache): InboxTabCache {
+  const keepIds = new Set<string>();
+  if (snapshot.selectedId) keepIds.add(snapshot.selectedId);
+  snapshot.inbox.conversations.slice(0, INBOX_QUICK_CACHE_CONVERSATION_LIMIT).forEach((conversation) => {
+    keepIds.add(conversation.id);
+  });
+
+  const conversationCache = Object.fromEntries(
+    Object.entries(snapshot.conversationCache).filter(([conversationId]) => keepIds.has(conversationId)),
+  ) as ConversationCache;
+
+  return {
+    ...snapshot,
+    conversationCache,
+  };
+}
+
+function openInboxCacheDatabase(): Promise<IDBDatabase | null> {
+  if (typeof window === "undefined" || !("indexedDB" in window)) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const request = window.indexedDB.open(INBOX_CACHE_DB_NAME, INBOX_CACHE_DB_VERSION);
+
+    request.onupgradeneeded = () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains(INBOX_CACHE_STORE_NAME)) {
+        database.createObjectStore(INBOX_CACHE_STORE_NAME);
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => resolve(null);
+    request.onblocked = () => resolve(null);
+  });
+}
+
+async function readPersistentInboxCache() {
+  const database = await openInboxCacheDatabase();
+  if (!database) return null;
+
+  return new Promise<InboxTabCache | null>((resolve) => {
+    const transaction = database.transaction(INBOX_CACHE_STORE_NAME, "readonly");
+    const request = transaction.objectStore(INBOX_CACHE_STORE_NAME).get(INBOX_CACHE_RECORD_KEY);
+    request.onsuccess = () => resolve(normalizeInboxTabCache(request.result));
+    request.onerror = () => resolve(null);
+    transaction.oncomplete = () => database.close();
+    transaction.onerror = () => database.close();
+    transaction.onabort = () => database.close();
+  });
+}
+
+async function writePersistentInboxCache(snapshot: InboxTabCache) {
+  const database = await openInboxCacheDatabase();
+  if (!database) return;
+
+  await new Promise<void>((resolve) => {
+    const transaction = database.transaction(INBOX_CACHE_STORE_NAME, "readwrite");
+    transaction.objectStore(INBOX_CACHE_STORE_NAME).put(snapshot, INBOX_CACHE_RECORD_KEY);
+    transaction.oncomplete = () => {
+      database.close();
+      resolve();
+    };
+    transaction.onerror = () => {
+      database.close();
+      resolve();
+    };
+    transaction.onabort = () => {
+      database.close();
+      resolve();
+    };
+  });
+}
+
 function readInboxTabCache() {
   if (typeof window === "undefined") return inboxMemorySnapshot;
-  const raw = window.sessionStorage.getItem(INBOX_TAB_CACHE_KEY);
+  const raw = window.localStorage.getItem(INBOX_TAB_CACHE_KEY);
   if (!raw) return inboxMemorySnapshot;
   try {
-    const parsed = JSON.parse(raw) as Partial<InboxTabCache>;
-    if (
-      parsed.version !== 2
-      || typeof parsed.savedAt !== "number"
-      || !isInboxPayload(parsed.inbox)
-    ) {
-      window.sessionStorage.removeItem(INBOX_TAB_CACHE_KEY);
+    const snapshot = normalizeInboxTabCache(JSON.parse(raw));
+    if (!snapshot) {
+      window.localStorage.removeItem(INBOX_TAB_CACHE_KEY);
       return inboxMemorySnapshot;
     }
-
-    const snapshot: InboxTabCache = {
-      version: 2,
-      savedAt: parsed.savedAt,
-      inbox: parsed.inbox,
-      conversationCache: parsed.conversationCache && typeof parsed.conversationCache === "object"
-        ? parsed.conversationCache
-        : {},
-      selectedId: parsed.selectedId || parsed.inbox.selectedConversation?.id || "",
-      search: parsed.search || "",
-      filter: parsed.filter || "ALL",
-    };
     inboxMemorySnapshot = snapshot;
     return snapshot;
   } catch {
-    window.sessionStorage.removeItem(INBOX_TAB_CACHE_KEY);
+    window.localStorage.removeItem(INBOX_TAB_CACHE_KEY);
     return inboxMemorySnapshot;
   }
 }
@@ -244,11 +352,12 @@ function writeInboxTabCache(snapshot: InboxTabCache) {
   inboxMemorySnapshot = snapshot;
   if (typeof window === "undefined") return;
   try {
-    window.sessionStorage.setItem(INBOX_TAB_CACHE_KEY, JSON.stringify(snapshot));
+    window.sessionStorage.removeItem(INBOX_LEGACY_TAB_CACHE_KEY);
+    window.localStorage.setItem(INBOX_TAB_CACHE_KEY, JSON.stringify(compactInboxTabCache(snapshot)));
   } catch {
-    // Keep the full warm cache in memory even if this browser refuses a large sessionStorage write.
-    // Moving around inside the app still stays instant; a hard browser refresh will cold-load again.
+    // Keep the full warm cache in memory and IndexedDB even if this browser refuses localStorage.
   }
+  void writePersistentInboxCache(snapshot);
 }
 
 function hasEveryConversationWarmed(snapshot: InboxTabCache | null | undefined) {
@@ -445,8 +554,11 @@ function messageDisplayText(message: InboxMessage) {
 }
 
 function isAutoMediaCaption(value: string) {
-  return /^(sent\s+a\s+)?(photo|image|picture|video)$/i.test(value.trim())
-    || /^(image|video)\//i.test(value.trim());
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!normalized) return true;
+  return /^(sent\s+an?\s+)?(photo|image|picture|video)$/i.test(normalized)
+    || /^(sent\s+an?\s+)?(photo|image|picture|video)\s+(image|video)\//i.test(normalized)
+    || /^(image|video)\/[a-z0-9.+-]+$/i.test(normalized);
 }
 
 function hasVisualAttachment(message: InboxMessage) {
@@ -480,6 +592,57 @@ function isGroupedMediaMessage(message: InboxMessage, previousMessage?: InboxMes
   if (!previousMessage || !isMediaOnlyMessage(message) || !isMediaOnlyMessage(previousMessage)) return false;
   if (message.direction !== previousMessage.direction || message.senderType !== previousMessage.senderType) return false;
   return messagesAreCloseEnough(message, previousMessage);
+}
+
+function isGroupableVisualMediaMessage(message: InboxMessage) {
+  const attachments = message.attachments || [];
+  const visibleText = messageVisibleText(message).trim();
+  return Boolean(
+    attachments.length
+    && !visibleText
+    && attachments.every((attachment) => isImageAttachment(attachment) || isVideoAttachment(attachment)),
+  );
+}
+
+function mediaMessagesAreCloseEnough(left: InboxMessage, right: InboxMessage) {
+  const leftTime = messageTimeValue(left);
+  const rightTime = messageTimeValue(right);
+  return !leftTime || !rightTime || Math.abs(leftTime - rightTime) <= MEDIA_ALBUM_GROUP_WINDOW_MS;
+}
+
+function canGroupAdjacentMediaMessages(previousMessage: InboxMessage, message: InboxMessage) {
+  if (!isGroupableVisualMediaMessage(previousMessage) || !isGroupableVisualMediaMessage(message)) return false;
+  if (message.direction !== previousMessage.direction || message.senderType !== previousMessage.senderType) return false;
+  if (message.replyTo || previousMessage.replyTo) return false;
+  return mediaMessagesAreCloseEnough(message, previousMessage);
+}
+
+function isMediaGroupContinuation(messages: InboxMessage[], index: number) {
+  const message = messages[index];
+  const previousMessage = messages[index - 1];
+  return Boolean(message && previousMessage && canGroupAdjacentMediaMessages(previousMessage, message));
+}
+
+function collectMediaMessageGroup(messages: InboxMessage[], startIndex: number) {
+  const firstMessage = messages[startIndex];
+  if (!firstMessage || isMediaGroupContinuation(messages, startIndex) || !isGroupableVisualMediaMessage(firstMessage)) {
+    return [];
+  }
+
+  const group = [firstMessage];
+  for (let index = startIndex + 1; index < messages.length; index += 1) {
+    const nextMessage = messages[index];
+    const previousMessage = group[group.length - 1];
+    if (!nextMessage || !canGroupAdjacentMediaMessages(previousMessage, nextMessage)) break;
+    group.push(nextMessage);
+  }
+
+  return group.length > 1 ? group : [];
+}
+
+function mediaGroupAttachments(messages: InboxMessage[]) {
+  return messages.flatMap((message) => message.attachments || [])
+    .filter((attachment) => isImageAttachment(attachment) || isVideoAttachment(attachment));
 }
 
 function money(value: number | null | undefined) {
@@ -549,15 +712,29 @@ function optimisticMediaAttachment(id: string, media: FlowMediaItem): MessageAtt
 }
 
 function attachmentContentType(attachment: MessageAttachment) {
-  return (attachment.contentType || "").toLowerCase();
+  return (attachment.mediaAsset?.mimeType || attachment.contentType || "").toLowerCase();
 }
 
 function attachmentSourceUrl(attachment: MessageAttachment) {
-  return attachment.thumbnailUrl || attachment.url || attachment.originalUrl || "";
+  const cacheKey = attachmentCacheKey(attachment);
+  const cachedUrl = cacheKey ? mediaObjectUrlByKey.get(cacheKey) || "" : "";
+  return cachedUrl
+    || attachment.mediaAsset?.thumbnailUrl
+    || attachment.thumbnailUrl
+    || attachment.url
+    || attachment.mediaAsset?.originalUrl
+    || attachment.originalUrl
+    || "";
 }
 
 function attachmentOpenUrl(attachment: MessageAttachment) {
-  return attachment.originalUrl || attachment.downloadUrl || attachment.url || attachment.thumbnailUrl || "#";
+  return attachment.mediaAsset?.originalUrl
+    || attachment.originalUrl
+    || attachment.mediaAsset?.downloadUrl
+    || attachment.downloadUrl
+    || attachment.url
+    || attachment.thumbnailUrl
+    || "#";
 }
 
 function attachmentDisplayStatus(attachment: MessageAttachment) {
@@ -581,7 +758,8 @@ function isAudioAttachment(attachment: MessageAttachment) {
 }
 
 function attachmentCacheKey(attachment: MessageAttachment) {
-  return attachment.previewCacheKey
+  return attachment.mediaAsset?.contentHash
+    || attachment.previewCacheKey
     || attachment.thumbnailUrl
     || attachment.originalUrl
     || (attachment.sizeBytes
@@ -703,6 +881,33 @@ async function warmConversationMedia(messages: InboxMessage[]) {
 
   for (let index = 0; index < attachments.length; index += 4) {
     await Promise.all(attachments.slice(index, index + 4).map(warmMediaAttachment));
+  }
+}
+
+async function warmSharedMediaAssets() {
+  try {
+    const response = await fetch("/api/crm/media-assets/preload", { cache: "force-cache" });
+    if (!response.ok) return;
+    const result = (await response.json()) as { assets?: PreloadMediaAsset[] };
+    const assets = (result.assets || [])
+      .filter((asset) => asset.thumbnailUrl && asset.contentHash && !mediaObjectUrlByKey.has(asset.contentHash))
+      .slice(0, 50);
+
+    for (let index = 0; index < assets.length; index += 5) {
+      await Promise.all(assets.slice(index, index + 5).map(async (asset) => {
+        if (!asset.thumbnailUrl || mediaObjectUrlByKey.has(asset.contentHash)) return;
+        try {
+          const mediaResponse = await fetch(asset.thumbnailUrl, { cache: "force-cache" });
+          if (!mediaResponse.ok) return;
+          const blob = await mediaResponse.blob();
+          cacheMediaObjectUrl(asset.contentHash, URL.createObjectURL(blob));
+        } catch {
+          // Shared media warm-up is only a speed boost; the chat can still render normally.
+        }
+      }));
+    }
+  } catch {
+    // Ignore preload errors so the inbox never waits on shared media.
   }
 }
 
@@ -899,7 +1104,8 @@ export default function WhatsAppInboxClient() {
   const [loading, setLoading] = useState(() => !initialCacheFullyWarmed);
   const [booting, setBooting] = useState(() => !initialCacheFullyWarmed);
   const [bootProgress, setBootProgress] = useState(() => initialCacheFullyWarmed ? 100 : 0);
-  const [bootStatus, setBootStatus] = useState(() => initialCacheFullyWarmed ? "Restored every warmed chat saved in this tab." : "Connecting to WhatsApp CRM...");
+  const [bootStatus, setBootStatus] = useState(() => initialCacheFullyWarmed ? "Restored every warmed chat saved in this browser." : "Checking warmed chats saved in this browser...");
+  const [persistentCacheHydrated, setPersistentCacheHydrated] = useState(() => initialCacheFullyWarmed);
   const [backgroundLoading, setBackgroundLoading] = useState(false);
   const [conversationLoading, setConversationLoading] = useState(false);
   const [detailPanelLoading, setDetailPanelLoading] = useState(false);
@@ -925,6 +1131,7 @@ export default function WhatsAppInboxClient() {
   const conversationRefreshTimerRef = useRef<number | null>(null);
   const detailLoadTimerRef = useRef<number | null>(null);
   const persistTimerRef = useRef<number | null>(null);
+  const backgroundWarmIdsRef = useRef(new Set<string>());
   const restoredFromCacheRef = useRef(initialCacheFullyWarmed);
 
   const restoreConversationRowsScroll = useCallback((scrollTop = conversationRowsScrollTopRef.current) => {
@@ -940,7 +1147,58 @@ export default function WhatsAppInboxClient() {
   }, [conversationCache]);
 
   useEffect(() => {
+    void warmSharedMediaAssets();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function hydratePersistentCache() {
+      if (initialCacheFullyWarmed) {
+        setPersistentCacheHydrated(true);
+        return;
+      }
+
+      try {
+        const snapshot = await readPersistentInboxCache();
+        if (cancelled) return;
+
+        if (snapshot) {
+          const nextSelectedId = snapshot.selectedId || snapshot.inbox.selectedConversation?.id || "";
+          const fullyWarmed = hasEveryConversationWarmed(snapshot);
+          inboxMemorySnapshot = snapshot;
+          conversationCacheRef.current = snapshot.conversationCache;
+          selectedIdRef.current = nextSelectedId;
+          restoredFromCacheRef.current = fullyWarmed;
+          setInbox(snapshot.inbox);
+          setConversationCache(snapshot.conversationCache);
+          setSelectedId(nextSelectedId);
+          setSearch(snapshot.search || "");
+          setFilter(snapshot.filter || "ALL");
+          if (fullyWarmed) {
+            setBootProgress(100);
+            setBootStatus("Restored every warmed chat saved in this browser.");
+            setBooting(false);
+            setLoading(false);
+          } else {
+            setBootStatus("Saved chats restored. Warming anything missing...");
+          }
+        }
+      } finally {
+        if (!cancelled) setPersistentCacheHydrated(true);
+      }
+    }
+
+    void hydratePersistentCache();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialCacheFullyWarmed]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return undefined;
+    if (!persistentCacheHydrated) return undefined;
     if (!inbox.conversations.length && !inbox.selectedConversation) return undefined;
     if (persistTimerRef.current !== null) {
       window.clearTimeout(persistTimerRef.current);
@@ -948,7 +1206,7 @@ export default function WhatsAppInboxClient() {
     persistTimerRef.current = window.setTimeout(() => {
       persistTimerRef.current = null;
       writeInboxTabCache({
-        version: 2,
+        version: 3,
         savedAt: Date.now(),
         inbox,
         conversationCache,
@@ -963,7 +1221,7 @@ export default function WhatsAppInboxClient() {
         window.clearTimeout(persistTimerRef.current);
         persistTimerRef.current = null;
         writeInboxTabCache({
-          version: 2,
+          version: 3,
           savedAt: Date.now(),
           inbox,
           conversationCache,
@@ -973,7 +1231,7 @@ export default function WhatsAppInboxClient() {
         });
       }
     };
-  }, [conversationCache, filter, inbox, search, selectedId]);
+  }, [conversationCache, filter, inbox, persistentCacheHydrated, search, selectedId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1181,6 +1439,20 @@ export default function WhatsAppInboxClient() {
     }
   }, [fetchConversation, rememberConversation]);
 
+  const warmConversationInBackground = useCallback(async (conversationId?: string | null) => {
+    if (!conversationId) return;
+    if (backgroundWarmIdsRef.current.has(conversationId)) return;
+
+    backgroundWarmIdsRef.current.add(conversationId);
+    try {
+      await loadConversation(conversationId, false);
+    } catch {
+      // Background warming should never interrupt the inbox; clicking can still fetch if needed.
+    } finally {
+      backgroundWarmIdsRef.current.delete(conversationId);
+    }
+  }, [loadConversation]);
+
   const preloadConversations = useCallback(async (
     conversationIds: string[],
     onProgress?: (completed: number, total: number) => void,
@@ -1215,9 +1487,20 @@ export default function WhatsAppInboxClient() {
     }
     listRefreshTimerRef.current = window.setTimeout(() => {
       listRefreshTimerRef.current = null;
-      loadConversationList().catch(() => undefined);
+      loadConversationList()
+        .then((nextInbox) => {
+          nextInbox.conversations.slice(0, 12).forEach((conversation) => {
+            if (conversation.id === selectedIdRef.current) return;
+            const cached = conversationCacheRef.current[conversation.id];
+            const cachedLastMessageAt = cached?.selectedConversation.lastMessageAt || null;
+            if (!cached || cachedLastMessageAt !== conversation.lastMessageAt) {
+              void warmConversationInBackground(conversation.id);
+            }
+          });
+        })
+        .catch(() => undefined);
     }, delay);
-  }, [loadConversationList]);
+  }, [loadConversationList, warmConversationInBackground]);
 
   const scheduleConversationRefresh = useCallback((conversationId?: string | null, delay = REALTIME_REFRESH_DEBOUNCE_MS) => {
     const currentSelected = selectedIdRef.current;
@@ -1233,6 +1516,8 @@ export default function WhatsAppInboxClient() {
   }, [loadConversation]);
 
   useEffect(() => {
+    if (!persistentCacheHydrated) return undefined;
+
     let active = true;
 
     function setBootStep(progress: number, status: string) {
@@ -1245,7 +1530,7 @@ export default function WhatsAppInboxClient() {
       if (restoredFromCacheRef.current) {
         setBooting(false);
         setLoading(false);
-        setBootStep(100, "Saved warmed chats restored from this browser tab.");
+        setBootStep(100, "Saved warmed chats restored from this browser.");
         setBackgroundLoading(true);
         try {
           const listInbox = await loadConversationList(CHAT_LIST_LIMIT);
@@ -1329,7 +1614,7 @@ export default function WhatsAppInboxClient() {
     return () => {
       active = false;
     };
-  }, [loadConversation, loadConversationList, preloadConversations]);
+  }, [loadConversation, loadConversationList, persistentCacheHydrated, preloadConversations]);
 
   useEffect(() => {
     selectedIdRef.current = selectedId;
@@ -1346,6 +1631,9 @@ export default function WhatsAppInboxClient() {
         if (payload.table !== "crm_contacts") {
           const changedConversationId = payload.conversationId
             || (payload.table === "crm_conversations" ? payload.id : null);
+          if (changedConversationId && changedConversationId !== selectedIdRef.current) {
+            void warmConversationInBackground(changedConversationId);
+          }
           scheduleConversationRefresh(changedConversationId);
         }
       })
@@ -1358,7 +1646,7 @@ export default function WhatsAppInboxClient() {
     return () => {
       void realtimeClient.removeChannel(channel);
     };
-  }, [scheduleConversationRefresh, scheduleListRefresh]);
+  }, [scheduleConversationRefresh, scheduleListRefresh, warmConversationInBackground]);
 
   useEffect(() => {
     const refreshVisibleInbox = () => {
@@ -1375,6 +1663,7 @@ export default function WhatsAppInboxClient() {
   }, [scheduleConversationRefresh, scheduleListRefresh]);
 
   useEffect(() => {
+    const backgroundWarmIds = backgroundWarmIdsRef.current;
     return () => {
       if (listRefreshTimerRef.current !== null) {
         window.clearTimeout(listRefreshTimerRef.current);
@@ -1388,6 +1677,7 @@ export default function WhatsAppInboxClient() {
       if (persistTimerRef.current !== null) {
         window.clearTimeout(persistTimerRef.current);
       }
+      backgroundWarmIds.clear();
     };
   }, []);
 
@@ -1927,38 +2217,51 @@ export default function WhatsAppInboxClient() {
                   <div className={styles.emptyChat}>Loading chat...</div>
                 )}
                 {inbox.messages.map((message, index) => {
-                  const inbound = message.direction === "INBOUND";
-                  const queuedAi = message.senderType === "AI" && message.status === "QUEUED";
-                  const displayText = messageVisibleText(message);
+                  const mediaGroupMessages = collectMediaMessageGroup(inbox.messages, index);
+                  if (!mediaGroupMessages.length && isMediaGroupContinuation(inbox.messages, index)) return null;
+
+                  const articleMessage = mediaGroupMessages.length
+                    ? mediaGroupMessages[mediaGroupMessages.length - 1]
+                    : message;
+                  const attachments = mediaGroupMessages.length ? mediaGroupAttachments(mediaGroupMessages) : message.attachments || [];
+                  const inbound = articleMessage.direction === "INBOUND";
+                  const queuedAi = articleMessage.senderType === "AI" && articleMessage.status === "QUEUED";
+                  const displayText = mediaGroupMessages.length ? "" : messageVisibleText(message);
                   const isFallbackText = !message.body.trim() && !!displayText;
-                  const reactions = (message.reactions || []).filter((reaction) => reaction.emoji.trim());
-                  const mediaOnly = isMediaOnlyMessage(message);
-                  const groupedMedia = isGroupedMediaMessage(message, inbox.messages[index - 1]);
+                  const reactions = (mediaGroupMessages.length
+                    ? mediaGroupMessages.flatMap((groupMessage) => groupMessage.reactions || [])
+                    : message.reactions || []
+                  ).filter((reaction) => reaction.emoji.trim());
+                  const mediaOnly = mediaGroupMessages.length ? true : isMediaOnlyMessage(message);
+                  const groupedMedia = mediaGroupMessages.length > 1 || isGroupedMediaMessage(message, inbox.messages[index - 1]);
+                  const messageKey = mediaGroupMessages.length
+                    ? `media-group-${mediaGroupMessages.map(messageRenderKey).join("-")}`
+                    : messageRenderKey(message);
                   return (
                     <article
                       className={`${styles.messageBubble} ${inbound ? styles.inbound : styles.outbound} ${queuedAi ? styles.aiSuggestion : ""} ${reactions.length ? styles.messageBubbleWithReaction : ""} ${mediaOnly ? styles.mediaOnlyBubble : ""} ${groupedMedia ? styles.groupedMediaBubble : ""}`}
-                      data-message-id={message.id}
-                      key={messageRenderKey(message)}
-                      onMouseLeave={() => setReactionPickerMessageId((current) => (current === message.id ? "" : current))}
+                      data-message-id={articleMessage.id}
+                      key={messageKey}
+                      onMouseLeave={() => setReactionPickerMessageId((current) => (current === articleMessage.id ? "" : current))}
                       tabIndex={0}
                     >
                       <div className={styles.messageActions}>
-                        <button type="button" onClick={() => setReplyTarget(message)}>Reply</button>
+                        <button type="button" onClick={() => setReplyTarget(articleMessage)}>Reply</button>
                         <button
-                          disabled={message.id.startsWith("local-") || reactingMessageId === message.id}
-                          onClick={() => setReactionPickerMessageId((current) => (current === message.id ? "" : message.id))}
+                          disabled={articleMessage.id.startsWith("local-") || reactingMessageId === articleMessage.id}
+                          onClick={() => setReactionPickerMessageId((current) => (current === articleMessage.id ? "" : articleMessage.id))}
                           type="button"
                         >
                           React
                         </button>
-                        {reactionPickerMessageId === message.id && (
+                        {reactionPickerMessageId === articleMessage.id && (
                           <div className={styles.reactionPicker}>
                             {QUICK_REACTION_EMOJIS.map((emoji) => (
                               <button
                                 className={styles.reactionButton}
-                                disabled={reactingMessageId === message.id}
+                                disabled={reactingMessageId === articleMessage.id}
                                 key={emoji}
-                                onClick={() => void reactToMessage(message, emoji)}
+                                onClick={() => void reactToMessage(articleMessage, emoji)}
                                 type="button"
                               >
                                 {emoji}
@@ -1969,35 +2272,40 @@ export default function WhatsAppInboxClient() {
                       </div>
                       {queuedAi && (
                         <div className={styles.messageTopline}>
-                          <span>{messageLabel(message)}</span>
+                          <span>{messageLabel(articleMessage)}</span>
                         </div>
                       )}
-                      {message.replyTo && (
+                      {articleMessage.replyTo && (
                         <div className={styles.quotedMessage}>
-                          <span>{message.replyTo.senderLabel}</span>
-                          <strong>{message.replyTo.preview}</strong>
+                          <span>{articleMessage.replyTo.senderLabel}</span>
+                          <strong>{articleMessage.replyTo.preview}</strong>
                         </div>
                       )}
                       {displayText && <p className={isFallbackText ? styles.messageFallback : undefined}>{displayText}</p>}
-                      {!!message.attachments?.length && (
-                        <div className={`${styles.attachmentList} ${mediaOnly ? styles.mediaOnlyAttachments : ""}`}>
-                          {message.attachments.map((attachment) => (
-                            <AttachmentPreview attachment={attachment} key={attachment.id} />
+                      {!!attachments.length && (
+                        <div
+                          className={`${styles.attachmentList} ${mediaOnly ? styles.mediaOnlyAttachments : ""} ${mediaGroupMessages.length > 1 ? styles.mediaGroupGrid : ""}`}
+                          data-count={Math.min(attachments.length, 4)}
+                        >
+                          {attachments.map((attachment) => (
+                            <div className={mediaGroupMessages.length > 1 ? styles.mediaGroupItem : undefined} key={attachment.id}>
+                              <AttachmentPreview attachment={attachment} />
+                            </div>
                           ))}
                         </div>
                       )}
                       <div className={styles.messageFooter}>
                         {queuedAi && (
                           <button
-                            onClick={() => void sendMessage(message.id, message.body)}
+                            onClick={() => void sendMessage(articleMessage.id, articleMessage.body)}
                             disabled={sending}
                           >
                             Send suggestion
                           </button>
                         )}
-                        <time className={styles.messageTime}>{formatTime(message.createdAt)}</time>
-                        <span className={styles.deliveryStatus}>{message.status.toLowerCase()}</span>
-                        {message.failedReason && <span>{message.failedReason}</span>}
+                        <time className={styles.messageTime}>{formatTime(articleMessage.createdAt)}</time>
+                        <span className={styles.deliveryStatus}>{articleMessage.status.toLowerCase()}</span>
+                        {articleMessage.failedReason && <span>{articleMessage.failedReason}</span>}
                       </div>
                       {!!reactions.length && (
                         <div className={styles.messageReactions} aria-label="Message reactions">

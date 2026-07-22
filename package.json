@@ -13,6 +13,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:seed": "node --experimental-strip-types prisma/seed.ts",
+    "backfill:crm-media-assets": "node scripts/backfill-crm-media-assets.mjs",
     "worker": "node --experimental-strip-types apps/worker/index.ts"
   },
   "dependencies": {

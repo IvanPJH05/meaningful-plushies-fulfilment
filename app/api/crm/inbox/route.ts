@@ -19,6 +19,7 @@ import {
   fallbackWhatsAppMediaContentType,
   whatsappMediaFromMessageMetadata,
 } from "@/src/modules/whatsapp/media-metadata";
+import { mediaAssetPublicUrls } from "@/src/modules/whatsapp/media-assets";
 import {
   sendWhatsAppImageMessage,
   sendWhatsAppReactionMessage,
@@ -495,8 +496,25 @@ async function getConversationMessages(businessId: string, conversationId?: stri
             previewHeight: true,
             originalWidth: true,
             originalHeight: true,
+            mediaSha256: true,
             processingError: true,
             processedAt: true,
+            mediaAsset: {
+              select: {
+                id: true,
+                contentHash: true,
+                mimeType: true,
+                mediaType: true,
+                thumbnailStoragePath: true,
+                posterStoragePath: true,
+                width: true,
+                height: true,
+                thumbnailWidth: true,
+                thumbnailHeight: true,
+                durationSeconds: true,
+                sizeBytes: true,
+              },
+            },
           },
         },
       },
@@ -549,11 +567,18 @@ async function getConversationMessages(businessId: string, conversationId?: stri
   return displayMessages.slice(-limit).map((message) => {
     const attachments = message.attachments.map((attachment) => {
       const processingStatus = attachment.processingStatus || "ready";
-      const contentType = attachment.mediaMimeType || attachment.contentType || "application/octet-stream";
-      const originalUrl = `/api/crm/inbox/attachments/${attachment.id}/original`;
-      const thumbnailUrl = attachment.thumbnailStoragePath
+      const mediaAsset = attachment.mediaAsset;
+      const assetUrls = mediaAsset ? mediaAssetPublicUrls(mediaAsset.contentHash) : null;
+      const contentType = mediaAsset?.mimeType || attachment.mediaMimeType || attachment.contentType || "application/octet-stream";
+      const legacyOriginalUrl = `/api/crm/inbox/attachments/${attachment.id}/original`;
+      const legacyThumbnailUrl = attachment.thumbnailStoragePath
         ? `/api/crm/inbox/attachments/${attachment.id}/thumbnail`
         : null;
+      const originalUrl = assetUrls?.originalUrl || legacyOriginalUrl;
+      const thumbnailUrl = mediaAsset && (mediaAsset.thumbnailStoragePath || mediaAsset.posterStoragePath)
+        ? assetUrls?.thumbnailUrl || null
+        : legacyThumbnailUrl;
+      const downloadUrl = assetUrls?.downloadUrl || `${legacyOriginalUrl}?download=1`;
 
       return {
         id: attachment.id,
@@ -561,16 +586,35 @@ async function getConversationMessages(businessId: string, conversationId?: stri
         contentType,
         sizeBytes: attachment.mediaSizeBytes || attachment.sizeBytes,
         processingStatus,
-        previewCacheKey: attachment.thumbnailStoragePath
+        previewCacheKey: mediaAsset?.contentHash
+          || attachment.mediaSha256
+          || attachment.thumbnailStoragePath
           || attachment.originalStoragePath
           || attachment.storageKey
           || (attachment.sizeBytes
             ? `${contentType}:${attachment.sizeBytes}:${attachment.originalName || ""}`
             : null),
+        mediaAsset: mediaAsset
+          ? {
+            id: mediaAsset.id,
+            contentHash: mediaAsset.contentHash,
+            mimeType: mediaAsset.mimeType,
+            mediaType: mediaAsset.mediaType,
+            thumbnailUrl: mediaAsset.thumbnailStoragePath || mediaAsset.posterStoragePath ? assetUrls?.thumbnailUrl || null : null,
+            originalUrl: assetUrls?.originalUrl || originalUrl,
+            downloadUrl: assetUrls?.downloadUrl || downloadUrl,
+            width: mediaAsset.width,
+            height: mediaAsset.height,
+            thumbnailWidth: mediaAsset.thumbnailWidth,
+            thumbnailHeight: mediaAsset.thumbnailHeight,
+            durationSeconds: mediaAsset.durationSeconds,
+            sizeBytes: mediaAsset.sizeBytes,
+          }
+          : null,
         thumbnailUrl,
         originalUrl,
         url: processingStatus === "ready" ? (thumbnailUrl || originalUrl) : undefined,
-        downloadUrl: `${originalUrl}?download=1`,
+        downloadUrl,
         previewWidth: attachment.previewWidth,
         previewHeight: attachment.previewHeight,
         originalWidth: attachment.originalWidth,

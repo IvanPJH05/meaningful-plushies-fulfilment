@@ -1,12 +1,6 @@
-import { createHash } from "node:crypto";
-import sharp from "sharp";
-
 import { prisma } from "@/src/infrastructure/database/prisma";
-import {
-  broadcastWhatsAppCrmChange,
-  safeStoragePathSegment,
-  writeStoredWhatsAppMedia,
-} from "@/src/modules/whatsapp/media-cache";
+import { broadcastWhatsAppCrmChange } from "@/src/modules/whatsapp/media-cache";
+import { createOrReuseMediaAssetFromBytes } from "@/src/modules/whatsapp/media-assets";
 import { fallbackWhatsAppMediaContentType } from "@/src/modules/whatsapp/media-metadata";
 
 const JOB_STATUS_PENDING = "pending";
@@ -42,37 +36,6 @@ function graphVersion() {
 
 function mediaIdFromStorageKey(storageKey: string | null | undefined) {
   return storageKey?.startsWith("whatsapp-media:") ? storageKey.slice("whatsapp-media:".length) : "";
-}
-
-function extensionFromContentType(contentType: string) {
-  const normalized = contentType.toLowerCase().split(";")[0].trim();
-  if (normalized === "image/jpeg") return "jpg";
-  if (normalized === "image/png") return "png";
-  if (normalized === "image/webp") return "webp";
-  if (normalized === "image/gif") return "gif";
-  if (normalized === "video/mp4") return "mp4";
-  if (normalized === "audio/ogg") return "ogg";
-  if (normalized === "audio/mpeg") return "mp3";
-  if (normalized === "application/pdf") return "pdf";
-  return normalized.split("/")[1]?.replace(/[^\w.-]+/g, "") || "bin";
-}
-
-function storageBasePath(args: {
-  businessId: string;
-  conversationId: string;
-  messageId: string;
-  attachmentId: string;
-}) {
-  return [
-    safeStoragePathSegment(args.businessId),
-    safeStoragePathSegment(args.conversationId),
-    safeStoragePathSegment(args.messageId),
-    safeStoragePathSegment(args.attachmentId),
-  ].join("/");
-}
-
-function bufferToArrayBuffer(buffer: Buffer) {
-  return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
 }
 
 function isAllowedContentType(contentType: string) {
@@ -137,6 +100,7 @@ export async function enqueueWhatsAppMediaJobsForMessages(messageIds: string[]) 
       storageKey: true,
       externalMediaId: true,
       originalStoragePath: true,
+      mediaAssetId: true,
       processingStatus: true,
     },
   });
@@ -144,7 +108,7 @@ export async function enqueueWhatsAppMediaJobsForMessages(messageIds: string[]) 
   let queued = 0;
   for (const attachment of attachments) {
     const mediaId = attachment.externalMediaId || mediaIdFromStorageKey(attachment.storageKey);
-    if (!mediaId || attachment.originalStoragePath) continue;
+    if (!mediaId || attachment.mediaAssetId || attachment.originalStoragePath) continue;
 
     await prisma.messageAttachment.update({
       where: { id: attachment.id },
@@ -180,10 +144,11 @@ export async function enqueueWhatsAppMediaJobForAttachment(attachmentId: string)
       storageKey: true,
       externalMediaId: true,
       originalStoragePath: true,
+      mediaAssetId: true,
       processingStatus: true,
     },
   });
-  if (!attachment || attachment.originalStoragePath) return false;
+  if (!attachment || attachment.mediaAssetId || attachment.originalStoragePath) return false;
 
   const mediaId = attachment.externalMediaId || mediaIdFromStorageKey(attachment.storageKey);
   if (!mediaId) return false;
@@ -275,7 +240,7 @@ export async function processWhatsAppMediaJob(jobId: string) {
 
   const attempts = job.attempts + 1;
   const attachment = job.attachment;
-  if (attachment.originalStoragePath && attachment.processingStatus === ATTACHMENT_STATUS_READY) {
+  if ((attachment.mediaAssetId || attachment.originalStoragePath) && attachment.processingStatus === ATTACHMENT_STATUS_READY) {
     await prisma.whatsAppMediaJob.update({
       where: { id: job.id },
       data: {
@@ -313,75 +278,27 @@ export async function processWhatsAppMediaJob(jobId: string) {
       throw new Error(`WhatsApp media is too large (${downloaded.bytes.byteLength} bytes).`);
     }
 
-    const originalBuffer = Buffer.from(downloaded.bytes);
-    const basePath = storageBasePath({
+    const mediaAsset = await createOrReuseMediaAssetFromBytes({
       businessId: attachment.message.businessId,
-      conversationId: attachment.message.conversationId,
-      messageId: attachment.message.id,
-      attachmentId: attachment.id,
-    });
-    const originalPath = `${basePath}/original.${extensionFromContentType(contentType)}`;
-    const originalSaved = await writeStoredWhatsAppMedia({
-      path: originalPath,
       bytes: downloaded.bytes,
       contentType,
-      upsert: true,
     });
-    if (!originalSaved) throw new Error("WhatsApp media original could not be saved to storage.");
-
-    let thumbnailPath: string | null = null;
-    let previewWidth: number | null = null;
-    let previewHeight: number | null = null;
-    let originalWidth: number | null = null;
-    let originalHeight: number | null = null;
-
-    if (contentType.toLowerCase().startsWith("image/")) {
-      const metadataReader = sharp(originalBuffer, { animated: false }).rotate();
-      const imageMetadata = await metadataReader.metadata();
-      originalWidth = imageMetadata.width || null;
-      originalHeight = imageMetadata.height || null;
-
-      const thumb = await sharp(originalBuffer, { animated: false })
-        .rotate()
-        .resize({
-          width: 420,
-          height: 420,
-          fit: "inside",
-          withoutEnlargement: true,
-        })
-        .webp({ quality: 72 })
-        .toBuffer({ resolveWithObject: true });
-
-      thumbnailPath = `${basePath}/thumbnail.webp`;
-      previewWidth = thumb.info.width || null;
-      previewHeight = thumb.info.height || null;
-      const thumbnailSaved = await writeStoredWhatsAppMedia({
-        path: thumbnailPath,
-        bytes: bufferToArrayBuffer(thumb.data),
-        contentType: "image/webp",
-        upsert: true,
-      });
-      if (!thumbnailSaved) {
-        thumbnailPath = null;
-        previewWidth = null;
-        previewHeight = null;
-      }
-    }
 
     await prisma.messageAttachment.update({
       where: { id: attachment.id },
       data: {
-        contentType,
-        mediaMimeType: contentType,
+        contentType: mediaAsset.mimeType,
+        mediaMimeType: mediaAsset.mimeType,
         mediaSizeBytes: downloaded.bytes.byteLength,
         sizeBytes: downloaded.bytes.byteLength,
-        originalStoragePath: originalPath,
-        thumbnailStoragePath: thumbnailPath,
-        previewWidth,
-        previewHeight,
-        originalWidth,
-        originalHeight,
-        mediaSha256: metadata.sha256 || createHash("sha256").update(originalBuffer).digest("hex"),
+        originalStoragePath: mediaAsset.originalStoragePath,
+        thumbnailStoragePath: mediaAsset.thumbnailStoragePath || mediaAsset.posterStoragePath,
+        previewWidth: mediaAsset.thumbnailWidth,
+        previewHeight: mediaAsset.thumbnailHeight,
+        originalWidth: mediaAsset.width,
+        originalHeight: mediaAsset.height,
+        mediaSha256: mediaAsset.contentHash,
+        mediaAssetId: mediaAsset.id,
         processingStatus: ATTACHMENT_STATUS_READY,
         processingError: null,
         processedAt: new Date(),

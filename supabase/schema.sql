@@ -866,6 +866,43 @@ on conflict (id) do update set
   file_size_limit = excluded.file_size_limit,
   allowed_mime_types = excluded.allowed_mime_types;
 
+create table if not exists public.crm_media_assets (
+  id text primary key default gen_random_uuid()::text,
+  business_id text not null references public.crm_businesses(id) on delete cascade,
+  content_hash text not null,
+  mime_type text not null,
+  media_type text not null,
+  original_storage_path text not null,
+  thumbnail_storage_path text,
+  poster_storage_path text,
+  width integer,
+  height integer,
+  thumbnail_width integer,
+  thumbnail_height integer,
+  duration_seconds double precision,
+  size_bytes integer,
+  usage_count integer not null default 0,
+  last_used_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (business_id, content_hash)
+);
+
+create index if not exists crm_media_assets_business_type_used_idx
+  on public.crm_media_assets (business_id, media_type, last_used_at desc);
+
+alter table public.crm_media_assets enable row level security;
+
+drop policy if exists "shared crm reads media assets" on public.crm_media_assets;
+drop policy if exists "shared crm changes media assets" on public.crm_media_assets;
+create policy "shared crm reads media assets" on public.crm_media_assets
+  for select to anon, authenticated, service_role using (true);
+create policy "shared crm changes media assets" on public.crm_media_assets
+  for all to anon, authenticated, service_role using (true) with check (true);
+
+grant select, insert, update, delete on public.crm_media_assets to anon, authenticated, service_role;
+grant all on table public.crm_media_assets to service_role;
+
 do $$
 begin
   if to_regclass('public.crm_message_attachments') is not null then
@@ -882,12 +919,15 @@ begin
       add column if not exists "originalHeight" integer,
       add column if not exists "mediaSha256" text,
       add column if not exists "processingError" text,
-      add column if not exists "processedAt" timestamptz;
+      add column if not exists "processedAt" timestamptz,
+      add column if not exists media_asset_id text references public.crm_media_assets(id) on delete set null;
 
     create index if not exists crm_message_attachments_external_media_id_idx
       on public.crm_message_attachments ("externalMediaId");
     create index if not exists crm_message_attachments_processing_status_created_at_idx
       on public.crm_message_attachments ("processingStatus", "createdAt");
+    create index if not exists crm_message_attachments_media_asset_id_idx
+      on public.crm_message_attachments (media_asset_id);
 
     create table if not exists public.crm_whatsapp_media_jobs (
       id text primary key,
@@ -1359,12 +1399,12 @@ begin
 
     drop policy if exists "shared crm reads whatsapp flows" on public.crm_whatsapp_flows;
     drop policy if exists "shared crm changes whatsapp flows" on public.crm_whatsapp_flows;
-    create policy "shared crm reads whatsapp flows" on public.crm_whatsapp_flows for select using (true);
-    create policy "shared crm changes whatsapp flows" on public.crm_whatsapp_flows for all using (true) with check (true);
+    create policy "shared crm reads whatsapp flows" on public.crm_whatsapp_flows
+      for select to anon, authenticated, service_role using (true);
+    create policy "shared crm changes whatsapp flows" on public.crm_whatsapp_flows
+      for all to anon, authenticated, service_role using (true) with check (true);
 
     grant usage on schema public to anon, authenticated, service_role;
-    grant usage on schema public to public;
-    grant select, insert, update, delete on public.crm_whatsapp_flows to public;
     grant select, insert, update, delete on public.crm_whatsapp_flows to anon, authenticated, service_role;
     grant all on table public.crm_whatsapp_flows to service_role;
 
@@ -1403,11 +1443,12 @@ begin
 
     drop policy if exists "shared crm reads whatsapp flows" on public.crm_whatsapp_flows;
     drop policy if exists "shared crm changes whatsapp flows" on public.crm_whatsapp_flows;
-    create policy "shared crm reads whatsapp flows" on public.crm_whatsapp_flows for select using (true);
-    create policy "shared crm changes whatsapp flows" on public.crm_whatsapp_flows for all using (true) with check (true);
+    create policy "shared crm reads whatsapp flows" on public.crm_whatsapp_flows
+      for select to anon, authenticated, service_role using (true);
+    create policy "shared crm changes whatsapp flows" on public.crm_whatsapp_flows
+      for all to anon, authenticated, service_role using (true) with check (true);
 
-    grant usage on schema public to public;
-    grant select, insert, update, delete on public.crm_whatsapp_flows to public;
+    grant usage on schema public to anon, authenticated, service_role;
     grant select, insert, update, delete on public.crm_whatsapp_flows to anon, authenticated, service_role;
     grant all on table public.crm_whatsapp_flows to service_role;
   end if;

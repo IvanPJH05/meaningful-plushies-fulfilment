@@ -181,6 +181,7 @@ model Business {
   aiCommands           AiCommand[]
   webhookEvents        WebhookEvent[]
   auditLogs            AuditLog[]
+  mediaAssets          MediaAsset[]
 
   @@map("crm_businesses")
 }
@@ -357,14 +358,44 @@ model MessageAttachment {
   mediaSha256          String?
   processingError      String?
   processedAt          DateTime?
+  mediaAssetId         String?           @map("media_asset_id")
   createdAt            DateTime          @default(now())
   message              Message           @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  mediaAsset           MediaAsset?       @relation(fields: [mediaAssetId], references: [id], onDelete: SetNull)
   mediaJob             WhatsAppMediaJob?
 
   @@index([messageId])
   @@index([externalMediaId])
+  @@index([mediaAssetId])
   @@index([processingStatus, createdAt])
   @@map("crm_message_attachments")
+}
+
+model MediaAsset {
+  id                   String              @id @default(cuid())
+  businessId           String              @map("business_id")
+  contentHash          String              @map("content_hash")
+  mimeType             String              @map("mime_type")
+  mediaType            String              @map("media_type")
+  originalStoragePath  String              @map("original_storage_path")
+  thumbnailStoragePath String?             @map("thumbnail_storage_path")
+  posterStoragePath    String?             @map("poster_storage_path")
+  width                Int?
+  height               Int?
+  thumbnailWidth       Int?                @map("thumbnail_width")
+  thumbnailHeight      Int?                @map("thumbnail_height")
+  durationSeconds      Float?              @map("duration_seconds")
+  sizeBytes            Int?                @map("size_bytes")
+  usageCount           Int                 @default(0) @map("usage_count")
+  lastUsedAt           DateTime?           @map("last_used_at")
+  createdAt            DateTime            @default(now()) @map("created_at")
+  updatedAt            DateTime            @updatedAt @map("updated_at")
+  business             Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  attachments          MessageAttachment[]
+
+  @@unique([businessId, contentHash])
+  @@index([businessId, mediaType, lastUsedAt])
+  @@map("crm_media_assets")
 }
 
 model WhatsAppMediaJob {
