@@ -19,7 +19,10 @@ import {
   fallbackWhatsAppMediaContentType,
   whatsappMediaFromMessageMetadata,
 } from "@/src/modules/whatsapp/media-metadata";
-import { mediaAssetPublicUrls } from "@/src/modules/whatsapp/media-assets";
+import {
+  isMediaAssetDatabaseUnavailable,
+  mediaAssetPublicUrls,
+} from "@/src/modules/whatsapp/media-assets";
 import {
   sendWhatsAppImageMessage,
   sendWhatsAppReactionMessage,
@@ -473,8 +476,51 @@ async function getSelectedConversation(
 }
 
 async function getConversationMessages(businessId: string, conversationId?: string | null, limit = 90) {
-  const messages = conversationId
-    ? (await prisma.message.findMany({
+  const loadMessages = async (includeMediaAssets: boolean) => {
+    if (!conversationId) return [];
+
+    const attachmentSelect = {
+      id: true,
+      storageKey: true,
+      originalName: true,
+      contentType: true,
+      sizeBytes: true,
+      processingStatus: true,
+      externalMediaId: true,
+      mediaMimeType: true,
+      mediaSizeBytes: true,
+      originalStoragePath: true,
+      thumbnailStoragePath: true,
+      previewWidth: true,
+      previewHeight: true,
+      originalWidth: true,
+      originalHeight: true,
+      mediaSha256: true,
+      processingError: true,
+      processedAt: true,
+      ...(includeMediaAssets
+        ? {
+          mediaAsset: {
+            select: {
+              id: true,
+              contentHash: true,
+              mimeType: true,
+              mediaType: true,
+              thumbnailStoragePath: true,
+              posterStoragePath: true,
+              width: true,
+              height: true,
+              thumbnailWidth: true,
+              thumbnailHeight: true,
+              durationSeconds: true,
+              sizeBytes: true,
+            },
+          },
+        }
+        : {}),
+    };
+
+    return (await prisma.message.findMany({
       where: { businessId, conversationId },
       select: {
         id: true,
@@ -491,48 +537,25 @@ async function getConversationMessages(businessId: string, conversationId?: stri
         deliveredAt: true,
         readAt: true,
         attachments: {
-          select: {
-            id: true,
-            storageKey: true,
-            originalName: true,
-            contentType: true,
-            sizeBytes: true,
-            processingStatus: true,
-            externalMediaId: true,
-            mediaMimeType: true,
-            mediaSizeBytes: true,
-            originalStoragePath: true,
-            thumbnailStoragePath: true,
-            previewWidth: true,
-            previewHeight: true,
-            originalWidth: true,
-            originalHeight: true,
-            mediaSha256: true,
-            processingError: true,
-            processedAt: true,
-            mediaAsset: {
-              select: {
-                id: true,
-                contentHash: true,
-                mimeType: true,
-                mediaType: true,
-                thumbnailStoragePath: true,
-                posterStoragePath: true,
-                width: true,
-                height: true,
-                thumbnailWidth: true,
-                thumbnailHeight: true,
-                durationSeconds: true,
-                sizeBytes: true,
-              },
-            },
-          },
+          select: attachmentSelect,
         },
       },
       orderBy: { createdAt: "desc" },
       take: Math.min(limit * 2, 360),
-    })).reverse()
-    : [];
+    })).reverse();
+  };
+
+  let messages: Awaited<ReturnType<typeof loadMessages>>;
+  try {
+    messages = await loadMessages(true);
+  } catch (error) {
+    if (!isMediaAssetDatabaseUnavailable(error)) throw error;
+
+    console.warn("WhatsApp inbox loaded without shared crm_media_assets.", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    messages = await loadMessages(false);
+  }
 
   type MessageReaction = {
     id: string;
@@ -578,7 +601,7 @@ async function getConversationMessages(businessId: string, conversationId?: stri
   return displayMessages.slice(-limit).map((message) => {
     const attachments = message.attachments.map((attachment) => {
       const processingStatus = attachment.processingStatus || "ready";
-      const mediaAsset = attachment.mediaAsset;
+      const mediaAsset = "mediaAsset" in attachment ? attachment.mediaAsset : null;
       const assetUrls = mediaAsset ? mediaAssetPublicUrls(mediaAsset.contentHash) : null;
       const contentType = mediaAsset?.mimeType || attachment.mediaMimeType || attachment.contentType || "application/octet-stream";
       const legacyOriginalUrl = `/api/crm/inbox/attachments/${attachment.id}/original`;

@@ -61,6 +61,23 @@ function hashBytes(buffer: Buffer) {
   return createHash("sha256").update(buffer).digest("hex");
 }
 
+export function isMediaAssetDatabaseUnavailable(error: unknown) {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  const code = error instanceof Prisma.PrismaClientKnownRequestError ? error.code : "";
+
+  return message.includes("crm_media_assets")
+    && (
+      message.includes("permission denied")
+      || message.includes("does not exist")
+      || message.includes("doesn't exist")
+      || message.includes("relation")
+      || message.includes("not found")
+      || code === "P1010"
+      || code === "P2021"
+      || code === "P2022"
+    );
+}
+
 export async function createOrReuseMediaAssetFromBytes(args: {
   businessId: string;
   bytes: ArrayBuffer | Buffer;
@@ -72,22 +89,39 @@ export async function createOrReuseMediaAssetFromBytes(args: {
   const mediaType = mediaTypeFromContentType(contentType);
   const now = new Date();
 
-  const existing = await prisma.mediaAsset.findUnique({
-    where: {
-      businessId_contentHash: {
-        businessId: args.businessId,
-        contentHash,
-      },
-    },
-  });
-  if (existing) {
-    return prisma.mediaAsset.update({
-      where: { id: existing.id },
-      data: {
-        usageCount: { increment: 1 },
-        lastUsedAt: now,
+  let existing = null;
+  try {
+    existing = await prisma.mediaAsset.findUnique({
+      where: {
+        businessId_contentHash: {
+          businessId: args.businessId,
+          contentHash,
+        },
       },
     });
+  } catch (error) {
+    if (isMediaAssetDatabaseUnavailable(error)) {
+      console.warn("Shared WhatsApp media asset table is not accessible; falling back to per-attachment media.", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+    throw error;
+  }
+
+  if (existing) {
+    try {
+      return await prisma.mediaAsset.update({
+        where: { id: existing.id },
+        data: {
+          usageCount: { increment: 1 },
+          lastUsedAt: now,
+        },
+      });
+    } catch (error) {
+      if (isMediaAssetDatabaseUnavailable(error)) return null;
+      throw error;
+    }
   }
 
   const basePath = assetBasePath(args.businessId, contentHash);
@@ -158,19 +192,25 @@ export async function createOrReuseMediaAssetFromBytes(args: {
       },
     });
   } catch (error) {
+    if (isMediaAssetDatabaseUnavailable(error)) return null;
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      return prisma.mediaAsset.update({
-        where: {
-          businessId_contentHash: {
-            businessId: args.businessId,
-            contentHash,
+      try {
+        return await prisma.mediaAsset.update({
+          where: {
+            businessId_contentHash: {
+              businessId: args.businessId,
+              contentHash,
+            },
           },
-        },
-        data: {
-          usageCount: { increment: 1 },
-          lastUsedAt: now,
-        },
-      });
+          data: {
+            usageCount: { increment: 1 },
+            lastUsedAt: now,
+          },
+        });
+      } catch (updateError) {
+        if (isMediaAssetDatabaseUnavailable(updateError)) return null;
+        throw updateError;
+      }
     }
     throw error;
   }
@@ -181,14 +221,21 @@ export async function readMediaAssetVariant(args: {
   contentHash: string;
   variant: "thumbnail" | "original";
 }) {
-  const asset = await prisma.mediaAsset.findUnique({
-    where: {
-      businessId_contentHash: {
-        businessId: args.businessId,
-        contentHash: args.contentHash,
+  let asset = null;
+  try {
+    asset = await prisma.mediaAsset.findUnique({
+      where: {
+        businessId_contentHash: {
+          businessId: args.businessId,
+          contentHash: args.contentHash,
+        },
       },
-    },
-  });
+    });
+  } catch (error) {
+    if (isMediaAssetDatabaseUnavailable(error)) return null;
+    throw error;
+  }
+
   if (!asset) return null;
 
   const storagePath = args.variant === "thumbnail"

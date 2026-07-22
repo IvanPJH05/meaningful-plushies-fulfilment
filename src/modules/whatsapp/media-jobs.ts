@@ -1,5 +1,9 @@
 import { prisma } from "@/src/infrastructure/database/prisma";
-import { broadcastWhatsAppCrmChange } from "@/src/modules/whatsapp/media-cache";
+import {
+  broadcastWhatsAppCrmChange,
+  whatsappMediaCachePath,
+  writeCachedWhatsAppMedia,
+} from "@/src/modules/whatsapp/media-cache";
 import { createOrReuseMediaAssetFromBytes } from "@/src/modules/whatsapp/media-assets";
 import { fallbackWhatsAppMediaContentType } from "@/src/modules/whatsapp/media-metadata";
 
@@ -283,6 +287,58 @@ export async function processWhatsAppMediaJob(jobId: string) {
       bytes: downloaded.bytes,
       contentType,
     });
+
+    if (!mediaAsset) {
+      const saved = await writeCachedWhatsAppMedia({
+        businessId: attachment.message.businessId,
+        mediaId,
+        bytes: downloaded.bytes,
+        contentType,
+      });
+      if (!saved) {
+        throw new Error("WhatsApp media could not be cached.");
+      }
+
+      await prisma.messageAttachment.update({
+        where: { id: attachment.id },
+        data: {
+          contentType,
+          mediaMimeType: contentType,
+          mediaSizeBytes: downloaded.bytes.byteLength,
+          sizeBytes: downloaded.bytes.byteLength,
+          originalStoragePath: whatsappMediaCachePath({
+            businessId: attachment.message.businessId,
+            mediaId,
+          }),
+          thumbnailStoragePath: null,
+          previewWidth: null,
+          previewHeight: null,
+          originalWidth: null,
+          originalHeight: null,
+          mediaSha256: metadata.sha256 || null,
+          mediaAssetId: null,
+          processingStatus: ATTACHMENT_STATUS_READY,
+          processingError: null,
+          processedAt: new Date(),
+        },
+      });
+      await prisma.whatsAppMediaJob.update({
+        where: { id: job.id },
+        data: {
+          status: JOB_STATUS_COMPLETED,
+          lockedAt: null,
+          lastError: null,
+        },
+      });
+      await broadcastWhatsAppCrmChange({
+        table: "crm_message_attachments",
+        operation: "UPDATE",
+        id: attachment.id,
+        conversationId: attachment.message.conversationId,
+        messageId: attachment.message.id,
+      });
+      return true;
+    }
 
     await prisma.messageAttachment.update({
       where: { id: attachment.id },

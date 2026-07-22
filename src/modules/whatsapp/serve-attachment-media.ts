@@ -6,7 +6,10 @@ import {
   readCachedWhatsAppMedia,
   readStoredWhatsAppMedia,
 } from "@/src/modules/whatsapp/media-cache";
-import { mediaAssetPublicUrls } from "@/src/modules/whatsapp/media-assets";
+import {
+  isMediaAssetDatabaseUnavailable,
+  mediaAssetPublicUrls,
+} from "@/src/modules/whatsapp/media-assets";
 import {
   enqueueWhatsAppMediaJobForAttachment,
   processDueWhatsAppMediaJobs,
@@ -58,23 +61,46 @@ function redirectToMediaAsset(args: {
   return NextResponse.redirect(new URL(target, args.request.url), 307);
 }
 
+async function findAttachmentForMedia(attachmentId: string) {
+  try {
+    return await prisma.messageAttachment.findUnique({
+      where: { id: attachmentId },
+      include: {
+        mediaAsset: true,
+        message: {
+          select: {
+            businessId: true,
+          },
+        },
+      },
+    });
+  } catch (error) {
+    if (!isMediaAssetDatabaseUnavailable(error)) throw error;
+
+    console.warn("WhatsApp attachment media is falling back without crm_media_assets.", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    const attachment = await prisma.messageAttachment.findUnique({
+      where: { id: attachmentId },
+      include: {
+        message: {
+          select: {
+            businessId: true,
+          },
+        },
+      },
+    });
+    return attachment ? { ...attachment, mediaAsset: null } : null;
+  }
+}
+
 export async function serveWhatsAppAttachmentMedia(
   request: Request,
   attachmentId: string,
   variant: "thumbnail" | "original",
 ) {
   const business = await ensureDefaultBusiness();
-  const attachment = await prisma.messageAttachment.findUnique({
-    where: { id: attachmentId },
-    include: {
-      mediaAsset: true,
-      message: {
-        select: {
-          businessId: true,
-        },
-      },
-    },
-  });
+  const attachment = await findAttachmentForMedia(attachmentId);
 
   if (!attachment || attachment.message.businessId !== business.id) {
     return json(404, { ok: false, error: "Attachment not found." });
@@ -117,17 +143,7 @@ export async function serveWhatsAppAttachmentMedia(
   await enqueueWhatsAppMediaJobForAttachment(attachment.id);
   await processDueWhatsAppMediaJobs({ limit: 1 });
 
-  const refreshed = await prisma.messageAttachment.findUnique({
-    where: { id: attachmentId },
-    include: {
-      mediaAsset: true,
-      message: {
-        select: {
-          businessId: true,
-        },
-      },
-    },
-  });
+  const refreshed = await findAttachmentForMedia(attachmentId);
   if (refreshed?.mediaAsset) {
     return redirectToMediaAsset({
       request,

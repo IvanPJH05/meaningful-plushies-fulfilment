@@ -900,6 +900,7 @@ create policy "shared crm reads media assets" on public.crm_media_assets
 create policy "shared crm changes media assets" on public.crm_media_assets
   for all to anon, authenticated, service_role using (true) with check (true);
 
+grant usage on schema public to anon, authenticated, service_role;
 grant select, insert, update, delete on public.crm_media_assets to anon, authenticated, service_role;
 grant all on table public.crm_media_assets to service_role;
 
