@@ -1359,10 +1359,12 @@ begin
 
     drop policy if exists "shared crm reads whatsapp flows" on public.crm_whatsapp_flows;
     drop policy if exists "shared crm changes whatsapp flows" on public.crm_whatsapp_flows;
-    create policy "shared crm reads whatsapp flows" on public.crm_whatsapp_flows for select to anon, authenticated using (true);
-    create policy "shared crm changes whatsapp flows" on public.crm_whatsapp_flows for all to anon, authenticated using (true) with check (true);
+    create policy "shared crm reads whatsapp flows" on public.crm_whatsapp_flows for select using (true);
+    create policy "shared crm changes whatsapp flows" on public.crm_whatsapp_flows for all using (true) with check (true);
 
     grant usage on schema public to anon, authenticated, service_role;
+    grant usage on schema public to public;
+    grant select, insert, update, delete on public.crm_whatsapp_flows to public;
     grant select, insert, update, delete on public.crm_whatsapp_flows to anon, authenticated, service_role;
     grant all on table public.crm_whatsapp_flows to service_role;
 
@@ -1391,6 +1393,23 @@ begin
     create policy "shared crm changes ai agent configs" on public.crm_ai_agent_configs for all to anon, authenticated using (true) with check (true);
 
     grant select, insert, update, delete on public.crm_ai_agent_configs to anon, authenticated;
+  end if;
+end $$;
+
+do $$
+begin
+  if to_regclass('public.crm_whatsapp_flows') is not null then
+    alter table public.crm_whatsapp_flows enable row level security;
+
+    drop policy if exists "shared crm reads whatsapp flows" on public.crm_whatsapp_flows;
+    drop policy if exists "shared crm changes whatsapp flows" on public.crm_whatsapp_flows;
+    create policy "shared crm reads whatsapp flows" on public.crm_whatsapp_flows for select using (true);
+    create policy "shared crm changes whatsapp flows" on public.crm_whatsapp_flows for all using (true) with check (true);
+
+    grant usage on schema public to public;
+    grant select, insert, update, delete on public.crm_whatsapp_flows to public;
+    grant select, insert, update, delete on public.crm_whatsapp_flows to anon, authenticated, service_role;
+    grant all on table public.crm_whatsapp_flows to service_role;
   end if;
 end $$;
 
