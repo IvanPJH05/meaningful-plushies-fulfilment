@@ -2814,26 +2814,44 @@ export default function WhatsAppInboxClient() {
                       className={`${styles.messageBubble} ${inbound ? styles.inbound : styles.outbound} ${queuedAi ? styles.aiSuggestion : ""} ${reactions.length ? styles.messageBubbleWithReaction : ""} ${mediaOnly ? styles.mediaOnlyBubble : ""} ${groupedMedia ? styles.groupedMediaBubble : ""}`}
                       data-message-id={articleMessage.id}
                       key={messageKey}
+                      onDoubleClick={() => {
+                        if (articleMessage.id.startsWith("local-") || reactingMessageId === articleMessage.id) return;
+                        void reactToMessage(articleMessage, "❤️");
+                      }}
                       onMouseLeave={() => setReactionPickerMessageId((current) => (current === articleMessage.id ? "" : current))}
                       tabIndex={0}
                     >
-                      <div className={styles.messageActions}>
-                        <button type="button" onClick={() => setReplyTarget(articleMessage)}>Reply</button>
+                      <div className={styles.messageActions} onDoubleClick={(event) => event.stopPropagation()}>
                         <button
+                          aria-label="Reply to message"
+                          className={styles.messageActionButton}
+                          title="Reply"
+                          type="button"
+                          onClick={() => setReplyTarget(articleMessage)}
+                        >
+                          ↩
+                        </button>
+                        <button
+                          aria-label="React to message"
+                          className={styles.messageActionButton}
                           disabled={articleMessage.id.startsWith("local-") || reactingMessageId === articleMessage.id}
                           onClick={() => setReactionPickerMessageId((current) => (current === articleMessage.id ? "" : articleMessage.id))}
+                          title="React"
                           type="button"
                         >
-                          React
+                          😊
                         </button>
                         {reactionPickerMessageId === articleMessage.id && (
-                          <div className={styles.reactionPicker}>
+                          <div className={styles.reactionPicker} onDoubleClick={(event) => event.stopPropagation()}>
                             {QUICK_REACTION_EMOJIS.map((emoji) => (
                               <button
                                 className={styles.reactionButton}
                                 disabled={reactingMessageId === articleMessage.id}
                                 key={emoji}
-                                onClick={() => void reactToMessage(articleMessage, emoji)}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void reactToMessage(articleMessage, emoji);
+                                }}
                                 type="button"
                               >
                                 {emoji}
@@ -2945,7 +2963,7 @@ export default function WhatsAppInboxClient() {
                 {replyTarget && (
                   <div className={styles.replyComposer}>
                     <div className={styles.replyComposerText}>
-                      <span>Replying to {messageLabel(replyTarget)}</span>
+                      <span>{messageLabel(replyTarget)}</span>
                       <strong>{messageVisibleText(replyTarget).trim() || fallbackMessageText(replyTarget)}</strong>
                     </div>
                     <button
@@ -2954,7 +2972,7 @@ export default function WhatsAppInboxClient() {
                       onClick={() => setReplyTarget(null)}
                       type="button"
                     >
-                      x
+                      ×
                     </button>
                   </div>
                 )}

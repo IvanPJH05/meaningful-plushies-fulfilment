@@ -4,7 +4,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  font-family: Roboto, Arial, sans-serif;
+  font-family: "Segoe UI", "Helvetica Neue", Helvetica, "Lucida Grande", Arial, sans-serif;
   font-weight: 500;
   height: 100vh;
   overflow: hidden;
@@ -15,7 +15,7 @@
 .page input,
 .page select,
 .page textarea {
-  font-family: Roboto, Arial, sans-serif;
+  font-family: "Segoe UI", "Helvetica Neue", Helvetica, "Lucida Grande", Arial, sans-serif;
 }
 
 .header {
@@ -659,8 +659,8 @@
   border: 0;
   border-radius: 8px;
   box-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13);
-  max-width: min(660px, 76%);
-  padding: 5px 8px 4px;
+  max-width: min(720px, 78%);
+  padding: 7px 10px 5px;
   position: relative;
 }
 
@@ -676,7 +676,7 @@
   background: transparent;
   border: 0;
   box-shadow: none;
-  max-width: min(380px, 82%);
+  max-width: min(430px, 84%);
   padding: 0;
 }
 
@@ -743,9 +743,9 @@
 
 .messageBubble p {
   color: #102033;
-  font-size: 14px;
-  line-height: 1.34;
-  margin: 1px 0 2px;
+  font-size: 15px;
+  line-height: 1.42;
+  margin: 0 0 2px;
   white-space: pre-wrap;
 }
 
@@ -803,11 +803,12 @@
 .messageActions {
   align-items: center;
   display: flex;
-  gap: 4px;
+  gap: 6px;
   opacity: 0;
   pointer-events: none;
   position: absolute;
-  top: -21px;
+  top: 50%;
+  transform: translateY(-50%);
   transition: opacity 0.12s ease;
   z-index: 5;
 }
@@ -819,33 +820,44 @@
 }
 
 .inbound .messageActions {
-  left: 8px;
+  left: calc(100% + 6px);
 }
 
 .outbound .messageActions {
-  right: 8px;
+  flex-direction: row-reverse;
+  right: calc(100% + 6px);
 }
 
 .messageActions button {
+  align-items: center;
   background: #ffffff;
   border: 1px solid #d7e3f2;
   border-radius: 999px;
   box-shadow: 0 3px 10px rgba(15, 23, 42, 0.08);
-  color: #174d8f;
+  color: #54656f;
   cursor: pointer;
-  font-size: 11px;
-  font-weight: 900;
+  display: inline-flex;
+  font-size: 15px;
+  font-weight: 700;
+  height: 30px;
+  justify-content: center;
   line-height: 1;
-  padding: 5px 8px;
+  padding: 0;
+  width: 30px;
 }
 
 .messageActions button:hover {
-  background: #eef5ff;
+  background: #f0f2f5;
+  color: #111b21;
 }
 
 .messageActions button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+.messageActionButton {
+  flex: 0 0 auto;
 }
 
 .reactionPicker {
@@ -858,7 +870,7 @@
   gap: 2px;
   padding: 3px;
   position: absolute;
-  top: -42px;
+  top: -44px;
   z-index: 8;
 }
 
@@ -886,32 +898,32 @@
 }
 
 .quotedMessage {
-  background: rgba(255, 255, 255, 0.56);
-  border-left: 3px solid #53bdeb;
+  background: rgba(255, 255, 255, 0.68);
+  border-left: 4px solid #00a884;
   border-radius: 6px;
   display: grid;
   gap: 1px;
-  margin: 0 0 4px;
+  margin: 0 0 5px;
   max-width: 100%;
   overflow: hidden;
-  padding: 5px 7px;
+  padding: 6px 8px;
 }
 
 .outbound .quotedMessage {
   background: rgba(255, 255, 255, 0.42);
-  border-left-color: #34b7f1;
+  border-left-color: #00a884;
 }
 
 .quotedMessage span {
-  color: #0b5c94;
-  font-size: 11px;
-  font-weight: 900;
+  color: #008069;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .quotedMessage strong {
   color: #53606f;
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1624,6 +1636,8 @@
   border: 1px solid #cbd8e8;
   border-radius: 14px;
   color: #102033;
+  font-size: 15px;
+  line-height: 1.35;
   min-height: 52px;
   padding: 12px 14px;
   resize: vertical;
@@ -1631,15 +1645,16 @@
 
 .replyComposer {
   align-items: center;
-  background: #f8fbff;
-  border: 1px solid #cbdff7;
-  border-left: 4px solid #53bdeb;
-  border-radius: 12px;
+  background: #ffffff;
+  border: 0;
+  border-left: 4px solid #00a884;
+  border-radius: 9px;
+  box-shadow: 0 1px 2px rgba(11, 20, 26, 0.08);
   display: flex;
   gap: 10px;
   grid-column: 1 / -1;
   justify-content: space-between;
-  padding: 8px 10px;
+  padding: 8px 10px 8px 12px;
 }
 
 .replyComposerText {
@@ -1649,17 +1664,17 @@
 }
 
 .replyComposerText span {
-  color: #174d8f;
-  font-size: 11px;
-  font-weight: 900;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  color: #008069;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .replyComposerText strong {
-  color: #102033;
+  color: #54656f;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1667,22 +1682,23 @@
 
 .replyCancelButton {
   align-items: center;
-  background: #eef5ff;
-  border: 1px solid #cbdff7;
+  background: transparent;
+  border: 0;
   border-radius: 999px;
-  color: #174d8f;
+  color: #54656f;
   cursor: pointer;
   display: inline-flex;
   flex: 0 0 auto;
-  font-size: 13px;
-  font-weight: 950;
+  font-size: 22px;
+  font-weight: 400;
   height: 28px;
   justify-content: center;
   width: 28px;
 }
 
 .replyCancelButton:hover {
-  background: #e0ecfb;
+  background: #f0f2f5;
+  color: #111b21;
 }
 
 .noConversation {
