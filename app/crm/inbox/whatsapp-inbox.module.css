@@ -1085,7 +1085,7 @@
 }
 
 .mediaCarouselBackdrop {
-  background: rgba(248, 250, 252, 0.97);
+  background: #ffffff;
   display: flex;
   inset: 0;
   position: fixed;
@@ -1097,7 +1097,7 @@
   color: #0c1c31;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   width: 100vw;
 }
@@ -1107,8 +1107,8 @@
   border-bottom: 1px solid #e2edf8;
   display: flex;
   justify-content: space-between;
-  min-height: 64px;
-  padding: 10px 24px;
+  min-height: 60px;
+  padding: 9px clamp(16px, 2vw, 28px);
 }
 
 .mediaCarouselIdentity {
@@ -1177,10 +1177,11 @@
   align-items: center;
   background: #ffffff;
   display: grid;
-  gap: 10px;
-  grid-template-columns: 64px minmax(0, 1fr) 64px;
+  gap: clamp(10px, 2vw, 28px);
+  grid-template-columns: minmax(48px, 1fr) minmax(0, min(82vw, 1040px)) minmax(48px, 1fr);
   min-height: 0;
-  padding: 8px 24px 12px;
+  overflow: hidden;
+  padding: clamp(8px, 1.5vh, 18px) clamp(12px, 2vw, 28px);
 }
 
 .mediaCarouselNav {
@@ -1212,19 +1213,24 @@
 .mediaCarouselMedia {
   align-items: center;
   display: flex;
-  height: 100%;
+  height: min(78dvh, calc(100dvh - 174px));
   justify-content: center;
   min-height: 0;
+  min-width: 0;
   position: relative;
+  width: 100%;
 }
 
 .mediaCarouselMedia img,
 .mediaCarouselMedia video {
-  background: #f1f5f9;
-  border-radius: 5px;
-  max-height: calc(100vh - 170px);
+  background: transparent;
+  border-radius: 4px;
+  display: block;
+  height: 100%;
+  max-height: 100%;
   max-width: 100%;
   object-fit: contain;
+  width: 100%;
 }
 
 .mediaCarouselMedia a {
@@ -1235,7 +1241,7 @@
 .mediaCarouselFooter {
   background: #ffffff;
   border-top: 1px solid #e2edf8;
-  padding: 8px 16px 10px;
+  padding: 6px clamp(12px, 1.5vw, 22px) 8px;
 }
 
 .mediaCarouselFooterCount {
@@ -1248,10 +1254,12 @@
 
 .mediaCarouselThumbStrip {
   display: flex;
-  gap: 7px;
+  gap: 8px;
   justify-content: flex-start;
   overflow-x: auto;
-  padding: 2px 0;
+  overscroll-behavior-x: contain;
+  padding: 2px 0 4px;
+  scrollbar-width: thin;
 }
 
 .mediaCarouselThumb {
@@ -1260,11 +1268,11 @@
   border-radius: 5px;
   cursor: pointer;
   flex: 0 0 auto;
-  height: 74px;
+  height: clamp(54px, 7vh, 74px);
   overflow: hidden;
   padding: 0;
   position: relative;
-  width: 74px;
+  width: clamp(54px, 7vh, 74px);
 }
 
 .mediaCarouselThumbActive {
@@ -1935,5 +1943,58 @@
 
   .chatPanel {
     min-height: 640px;
+  }
+
+  .mediaCarouselHeader {
+    align-items: flex-start;
+    gap: 10px;
+    min-height: 58px;
+    padding: 8px 12px;
+  }
+
+  .mediaCarouselAvatar {
+    height: 32px;
+    width: 32px;
+  }
+
+  .mediaCarouselTools {
+    gap: 6px;
+  }
+
+  .mediaCarouselTools a,
+  .mediaCarouselTools button {
+    font-size: 12px;
+    padding: 8px 10px;
+  }
+
+  .mediaCarouselStage {
+    gap: 6px;
+    grid-template-columns: 42px minmax(0, 1fr) 42px;
+    padding: 8px;
+  }
+
+  .mediaCarouselNav {
+    font-size: 0;
+    height: 42px;
+    width: 42px;
+  }
+
+  .mediaCarouselNav:first-child::before {
+    content: "<";
+    font-size: 16px;
+  }
+
+  .mediaCarouselNav:last-child::before {
+    content: ">";
+    font-size: 16px;
+  }
+
+  .mediaCarouselMedia {
+    height: calc(100dvh - 156px);
+  }
+
+  .mediaCarouselThumb {
+    height: 54px;
+    width: 54px;
   }
 }
