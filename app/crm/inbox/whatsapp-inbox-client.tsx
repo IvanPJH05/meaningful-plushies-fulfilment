@@ -146,6 +146,12 @@ type InboxPayload = {
 
 type ActiveConversation = NonNullable<SelectedConversation>;
 type MessageAttachment = NonNullable<InboxMessage["attachments"]>[number];
+type MediaCarouselState = {
+  attachments: MessageAttachment[];
+  index: number;
+  subtitle?: string;
+  title?: string;
+} | null;
 
 type PreloadMediaAsset = {
   contentHash: string;
@@ -208,7 +214,7 @@ const MESSAGE_FETCH_LIMIT = 90;
 const MEDIA_OBJECT_CACHE_LIMIT = 260;
 const MEDIA_NEAR_VIEWPORT_MARGIN = "520px";
 const MESSAGE_STICKY_BOTTOM_DISTANCE = 180;
-const MEDIA_ALBUM_GROUP_WINDOW_MS = 30 * 1000;
+const MEDIA_ALBUM_GROUP_WINDOW_MS = 15 * 1000;
 const INBOX_TAB_CACHE_KEY = "meaningful-plushies.whatsapp-inbox.v3";
 const INBOX_LEGACY_TAB_CACHE_KEY = "meaningful-plushies.whatsapp-inbox.v2";
 const INBOX_CACHE_DB_NAME = "meaningful-plushies-whatsapp-cache";
@@ -573,21 +579,31 @@ function isNonContentWhatsAppPlaceholder(value: string | null | undefined) {
 function isAutoMediaCaption(value: string) {
   const normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
   if (!normalized) return true;
-  return /^(sent\s+an?\s+)?(photo|image|picture|video)$/i.test(normalized)
+  return isNonContentWhatsAppPlaceholder(normalized)
+    || /^(sent\s+an?\s+)?(photo|image|picture|video)$/i.test(normalized)
     || /^(sent\s+an?\s+)?(photo|image|picture|video)\s+(image|video)\//i.test(normalized)
     || /^(image|video)\/[a-z0-9.+-]+$/i.test(normalized);
 }
 
-function hasVisualAttachment(message: InboxMessage) {
-  return Boolean(message.attachments?.some((attachment) => (
+function visualMediaAttachments(attachments: MessageAttachment[] | null | undefined) {
+  return (attachments || []).filter((attachment) => (
     isImageAttachment(attachment) || isVideoAttachment(attachment)
-  )));
+  ));
+}
+
+function hasVisualAttachment(message: InboxMessage) {
+  return visualMediaAttachments(message.attachments).length > 0;
 }
 
 function messageVisibleText(message: InboxMessage) {
   const displayText = messageDisplayText(message);
   if (hasVisualAttachment(message) && isAutoMediaCaption(displayText)) return "";
   return displayText;
+}
+
+function isEmptyOrAutoMediaText(value: string | null | undefined) {
+  const text = value || "";
+  return !text.trim() || isAutoMediaCaption(text);
 }
 
 function shouldHideChatMessage(message: InboxMessage) {
@@ -611,22 +627,22 @@ function messageReplyPreview(message: InboxMessage): NonNullable<InboxMessage["r
 }
 
 function isMediaOnlyMessage(message: InboxMessage) {
-  return hasVisualAttachment(message) && !messageVisibleText(message).trim();
+  return hasVisualAttachment(message) && isEmptyOrAutoMediaText(messageDisplayText(message));
 }
 
 function isGroupedMediaMessage(message: InboxMessage, previousMessage?: InboxMessage) {
   if (!previousMessage || !isMediaOnlyMessage(message) || !isMediaOnlyMessage(previousMessage)) return false;
   if (message.direction !== previousMessage.direction || message.senderType !== previousMessage.senderType) return false;
-  return messagesAreCloseEnough(message, previousMessage);
+  return mediaMessagesAreCloseEnough(message, previousMessage);
 }
 
 function isGroupableVisualMediaMessage(message: InboxMessage) {
   const attachments = message.attachments || [];
-  const visibleText = messageVisibleText(message).trim();
+  const visualAttachments = visualMediaAttachments(attachments);
   return Boolean(
-    attachments.length
-    && !visibleText
-    && attachments.every((attachment) => isImageAttachment(attachment) || isVideoAttachment(attachment)),
+    visualAttachments.length
+    && visualAttachments.length === attachments.length
+    && isEmptyOrAutoMediaText(messageDisplayText(message))
   );
 }
 
@@ -677,8 +693,7 @@ function collectMediaMessageGroup(messages: InboxMessage[], startIndex: number) 
 }
 
 function mediaGroupAttachments(messages: InboxMessage[]) {
-  return messages.flatMap((message) => message.attachments || [])
-    .filter((attachment) => isImageAttachment(attachment) || isVideoAttachment(attachment));
+  return messages.flatMap((message) => visualMediaAttachments(message.attachments));
 }
 
 function money(value: number | null | undefined) {
@@ -950,17 +965,25 @@ async function warmSharedMediaAssets() {
 function LazyImageAttachment(props: {
   attachment: NonNullable<InboxMessage["attachments"]>[number];
   label: string;
+  onOpen?: () => void;
   openUrl: string;
 }) {
-  const { attachment, label, openUrl } = props;
+  const { attachment, label, onOpen, openUrl } = props;
   const cacheKey = attachmentCacheKey(attachment);
   const sourceUrl = attachmentSourceUrl(attachment);
   const cachedUrl = cacheKey ? mediaObjectUrlByKey.get(cacheKey) || "" : "";
   const [elementRef, nearViewport] = useNearViewport<HTMLAnchorElement>();
   const [previewUrl, setPreviewUrl] = useState(cachedUrl || sourceUrl);
   const [previewFailed, setPreviewFailed] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(Boolean(cachedUrl));
   const previewWidth = attachment.previewWidth || attachment.originalWidth || undefined;
   const previewHeight = attachment.previewHeight || attachment.originalHeight || undefined;
+
+  useEffect(() => {
+    setPreviewUrl(cachedUrl || sourceUrl);
+    setPreviewFailed(false);
+    setImageLoaded(Boolean(cachedUrl));
+  }, [attachment.id, cachedUrl, sourceUrl]);
 
   useEffect(() => {
     if (!sourceUrl || cachedUrl || previewFailed || !nearViewport) return undefined;
@@ -1005,21 +1028,39 @@ function LazyImageAttachment(props: {
       rel="noreferrer"
       target="_blank"
       title="Open image"
+      onClick={(event) => {
+        if (!onOpen) return;
+        event.preventDefault();
+        onOpen();
+      }}
     >
       {previewUrl && !previewFailed ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          alt={label}
-          decoding="async"
-          height={previewHeight}
-          loading="lazy"
-          onError={() => setPreviewFailed(true)}
-          src={previewUrl}
-          width={previewWidth}
-        />
+        <>
+          {!imageLoaded && (
+            <span className={styles.mediaLoadingOverlay}>
+              <span className={styles.mediaSpinner} />
+            </span>
+          )}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            alt={label}
+            decoding="async"
+            height={previewHeight}
+            loading="lazy"
+            onError={() => setPreviewFailed(true)}
+            onLoad={() => setImageLoaded(true)}
+            src={previewUrl}
+            width={previewWidth}
+          />
+        </>
       ) : (
         <span className={styles.imageSkeleton}>
-          {previewFailed ? "Open photo" : "Loading photo..."}
+          {previewFailed ? "Open photo" : (
+            <>
+              <span className={styles.mediaSpinner} />
+              Loading photo...
+            </>
+          )}
         </span>
       )}
     </a>
@@ -1029,15 +1070,22 @@ function LazyImageAttachment(props: {
 function DeferredMediaAttachment(props: {
   attachment: NonNullable<InboxMessage["attachments"]>[number];
   label: string;
+  onOpen?: () => void;
   openUrl: string;
   type: "audio" | "video";
 }) {
-  const { attachment, label, openUrl, type } = props;
+  const { attachment, label, onOpen, openUrl, type } = props;
   const [elementRef, nearViewport] = useNearViewport<HTMLDivElement>();
   const [expanded, setExpanded] = useState(false);
   const [previewFailed, setPreviewFailed] = useState(false);
+  const [mediaLoaded, setMediaLoaded] = useState(false);
   const shouldShowPreview = expanded || (type === "video" && nearViewport);
   const sourceUrl = attachmentOpenUrl(attachment);
+
+  useEffect(() => {
+    setPreviewFailed(false);
+    setMediaLoaded(false);
+  }, [attachment.id, sourceUrl, type]);
 
   if (!shouldShowPreview || previewFailed) {
     return (
@@ -1062,7 +1110,24 @@ function DeferredMediaAttachment(props: {
   if (type === "video") {
     return (
       <div className={styles.mediaAttachment} ref={elementRef}>
-        <video controls onError={() => setPreviewFailed(true)} preload="metadata" src={sourceUrl} />
+        {!mediaLoaded && (
+          <span className={styles.mediaLoadingOverlay}>
+            <span className={styles.mediaSpinner} />
+          </span>
+        )}
+        <video
+          controls
+          onCanPlay={() => setMediaLoaded(true)}
+          onClick={(event) => {
+            if (!onOpen) return;
+            event.preventDefault();
+            onOpen();
+          }}
+          onError={() => setPreviewFailed(true)}
+          onLoadedMetadata={() => setMediaLoaded(true)}
+          preload="metadata"
+          src={sourceUrl}
+        />
       </div>
     );
   }
@@ -1077,8 +1142,9 @@ function DeferredMediaAttachment(props: {
 
 function AttachmentPreview(props: {
   attachment: NonNullable<InboxMessage["attachments"]>[number];
+  onOpen?: () => void;
 }) {
-  const { attachment } = props;
+  const { attachment, onOpen } = props;
   const label = attachment.originalName || attachment.contentType || "Attachment";
   const status = attachmentDisplayStatus(attachment);
   const openUrl = attachmentOpenUrl(attachment);
@@ -1094,17 +1160,17 @@ function AttachmentPreview(props: {
   if (status !== "ready") {
     return (
       <span className={styles.mediaPending}>
-        Preparing media...
+        <LoadingState label="Preparing media..." />
       </span>
     );
   }
 
   if (attachmentSourceUrl(attachment) && isImageAttachment(attachment)) {
-    return <LazyImageAttachment attachment={attachment} label={label} openUrl={openUrl} />;
+    return <LazyImageAttachment attachment={attachment} label={label} onOpen={onOpen} openUrl={openUrl} />;
   }
 
   if (attachmentOpenUrl(attachment) && isVideoAttachment(attachment)) {
-    return <DeferredMediaAttachment attachment={attachment} label={label} openUrl={openUrl} type="video" />;
+    return <DeferredMediaAttachment attachment={attachment} label={label} onOpen={onOpen} openUrl={openUrl} type="video" />;
   }
 
   if (attachmentOpenUrl(attachment) && isAudioAttachment(attachment)) {
@@ -1123,6 +1189,100 @@ function AttachmentPreview(props: {
   );
 }
 
+function formatMediaCount(count: number, singular: string) {
+  return `${count} ${singular}${count === 1 ? "" : "s"}`;
+}
+
+function LoadingState({ label }: { label: string }) {
+  return (
+    <span className={styles.loadingState}>
+      <span className={styles.mediaSpinner} aria-hidden="true" />
+      {label}
+    </span>
+  );
+}
+
+function MediaAlbumTile(props: {
+  attachment: MessageAttachment;
+  hiddenCount: number;
+  index: number;
+  onOpen: (index: number) => void;
+  total: number;
+}) {
+  const { attachment, hiddenCount, index, onOpen, total } = props;
+  const label = attachment.originalName || attachment.contentType || "Attachment";
+  const status = attachmentDisplayStatus(attachment);
+  const previewUrl = attachmentSourceUrl(attachment);
+  const isImage = isImageAttachment(attachment);
+  const isVideo = isVideoAttachment(attachment);
+  const showMore = hiddenCount > 0;
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    setLoaded(false);
+  }, [attachment.id, previewUrl]);
+
+  return (
+    <button
+      aria-label={`Open media ${index + 1} of ${total}`}
+      className={styles.mediaAlbumTile}
+      onClick={() => onOpen(index)}
+      type="button"
+    >
+      {status !== "ready" ? (
+        <span className={styles.mediaAlbumPlaceholder}>
+          <span className={styles.mediaSpinner} />
+          Preparing media...
+        </span>
+      ) : previewUrl && isImage ? (
+        <>
+          {!loaded && (
+            <span className={styles.mediaLoadingOverlay}>
+              <span className={styles.mediaSpinner} />
+            </span>
+          )}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            alt={label}
+            decoding="async"
+            loading="lazy"
+            onError={() => setLoaded(true)}
+            onLoad={() => setLoaded(true)}
+            src={previewUrl}
+          />
+        </>
+      ) : previewUrl && isVideo ? (
+        <>
+          {!loaded && (
+            <span className={styles.mediaLoadingOverlay}>
+              <span className={styles.mediaSpinner} />
+            </span>
+          )}
+          <video
+            muted
+            onCanPlay={() => setLoaded(true)}
+            onError={() => setLoaded(true)}
+            onLoadedMetadata={() => setLoaded(true)}
+            playsInline
+            preload="metadata"
+            src={previewUrl}
+          />
+        </>
+      ) : (
+        <span className={styles.mediaAlbumPlaceholder}>
+          {isVideo ? "Video" : "Media"}
+        </span>
+      )}
+      {(isImage || isVideo) && (
+        <span className={styles.mediaTypeBadge}>
+          {isVideo ? "Video" : "Image"}
+        </span>
+      )}
+      {showMore && <span className={styles.mediaAlbumMore}>+{hiddenCount}</span>}
+    </button>
+  );
+}
+
 function MediaAlbumGrid(props: {
   attachments: MessageAttachment[];
   onOpen: (index: number) => void;
@@ -1130,40 +1290,91 @@ function MediaAlbumGrid(props: {
   const { attachments, onOpen } = props;
   const visibleAttachments = attachments.slice(0, 2);
   const hiddenCount = Math.max(0, attachments.length - visibleAttachments.length);
+  const imageCount = attachments.filter(isImageAttachment).length;
+  const videoCount = attachments.filter(isVideoAttachment).length;
 
   return (
-    <div className={styles.mediaAlbumGrid} data-count={visibleAttachments.length}>
-      {visibleAttachments.map((attachment, index) => {
-        const label = attachment.originalName || attachment.contentType || "Attachment";
-        const status = attachmentDisplayStatus(attachment);
-        const previewUrl = attachmentSourceUrl(attachment);
-        const isVideo = isVideoAttachment(attachment);
-        const showMore = hiddenCount > 0 && index === visibleAttachments.length - 1;
-
-        return (
-          <button
-            aria-label={`Open media ${index + 1} of ${attachments.length}`}
-            className={styles.mediaAlbumTile}
+    <div className={styles.mediaAlbum}>
+      <div className={styles.mediaAlbumHeader} aria-label="Grouped media summary">
+        {imageCount > 0 && <span className={styles.mediaAlbumChip}>{formatMediaCount(imageCount, "image")}</span>}
+        {videoCount > 0 && (
+          <span className={`${styles.mediaAlbumChip} ${styles.mediaAlbumChipVideo}`}>
+            {formatMediaCount(videoCount, "video")}
+          </span>
+        )}
+      </div>
+      <div className={styles.mediaAlbumGrid} data-count={visibleAttachments.length}>
+        {visibleAttachments.map((attachment, index) => (
+          <MediaAlbumTile
+            attachment={attachment}
+            hiddenCount={index === visibleAttachments.length - 1 ? hiddenCount : 0}
+            index={index}
             key={attachment.id}
-            onClick={() => onOpen(index)}
-            type="button"
-          >
-            {status !== "ready" ? (
-              <span className={styles.mediaAlbumPlaceholder}>Preparing media...</span>
-            ) : previewUrl && isImageAttachment(attachment) ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img alt={label} decoding="async" loading="lazy" src={previewUrl} />
-            ) : previewUrl && isVideo ? (
-              <video muted playsInline preload="metadata" src={previewUrl} />
-            ) : (
-              <span className={styles.mediaAlbumPlaceholder}>{isVideo ? "Video" : "Media"}</span>
-            )}
-            {isVideo && <span className={styles.mediaAlbumPlay}>Play</span>}
-            {showMore && <span className={styles.mediaAlbumMore}>+{hiddenCount}</span>}
-          </button>
-        );
-      })}
+            onOpen={onOpen}
+            total={attachments.length}
+          />
+        ))}
+      </div>
     </div>
+  );
+}
+
+function MediaCarouselThumb(props: {
+  attachment: MessageAttachment;
+  active: boolean;
+  index: number;
+  onSelect: (index: number) => void;
+}) {
+  const { active, attachment, index, onSelect } = props;
+  const label = attachment.originalName || attachment.contentType || "Media";
+  const previewUrl = attachmentSourceUrl(attachment);
+  const isImage = isImageAttachment(attachment);
+  const isVideo = isVideoAttachment(attachment);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    setLoaded(false);
+  }, [attachment.id, previewUrl]);
+
+  return (
+    <button
+      aria-label={`Show media ${index + 1}`}
+      className={`${styles.mediaCarouselThumb} ${active ? styles.mediaCarouselThumbActive : ""}`}
+      onClick={() => onSelect(index)}
+      type="button"
+    >
+      {!loaded && (
+        <span className={styles.mediaThumbLoading}>
+          <span className={styles.mediaSpinner} />
+        </span>
+      )}
+      {previewUrl && isImage ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          alt={label}
+          decoding="async"
+          loading="lazy"
+          onError={() => setLoaded(true)}
+          onLoad={() => setLoaded(true)}
+          src={previewUrl}
+        />
+      ) : previewUrl && isVideo ? (
+        <video
+          muted
+          onCanPlay={() => setLoaded(true)}
+          onError={() => setLoaded(true)}
+          onLoadedMetadata={() => setLoaded(true)}
+          playsInline
+          preload="metadata"
+          src={previewUrl}
+        />
+      ) : (
+        <span className={styles.mediaCarouselThumbFallback}>{isVideo ? "Video" : "Media"}</span>
+      )}
+      {(isImage || isVideo) && (
+        <span className={styles.mediaCarouselThumbType}>{isVideo ? "Video" : "Image"}</span>
+      )}
+    </button>
   );
 }
 
@@ -1172,15 +1383,26 @@ function MediaCarousel(props: {
   index: number;
   onClose: () => void;
   onSelectIndex: (index: number) => void;
+  subtitle?: string;
+  title?: string;
 }) {
-  const { attachments, index, onClose, onSelectIndex } = props;
+  const { attachments, index, onClose, onSelectIndex, subtitle, title } = props;
   const attachment = attachments[index];
-  if (!attachment) return null;
-
-  const label = attachment.originalName || attachment.contentType || "Media";
-  const sourceUrl = attachmentOpenUrl(attachment);
+  const label = attachment?.originalName || attachment?.contentType || "Media";
+  const sourceUrl = attachment ? attachmentOpenUrl(attachment) : "";
+  const previewUrl = attachment ? attachmentSourceUrl(attachment) : "";
+  const displayUrl = sourceUrl !== "#" ? sourceUrl : previewUrl;
   const previousDisabled = index <= 0;
   const nextDisabled = index >= attachments.length - 1;
+  const imageCount = attachments.filter(isImageAttachment).length;
+  const videoCount = attachments.filter(isVideoAttachment).length;
+  const [mediaLoaded, setMediaLoaded] = useState(false);
+
+  useEffect(() => {
+    setMediaLoaded(false);
+  }, [attachment?.id, displayUrl]);
+
+  if (!attachment) return null;
 
   return (
     <div className={styles.mediaCarouselBackdrop} onClick={onClose} role="presentation">
@@ -1192,8 +1414,24 @@ function MediaCarousel(props: {
         role="dialog"
       >
         <div className={styles.mediaCarouselHeader}>
-          <strong>{index + 1} / {attachments.length}</strong>
-          <button aria-label="Close media viewer" onClick={onClose} type="button">Close</button>
+          <div className={styles.mediaCarouselIdentity}>
+            <span className={styles.mediaCarouselAvatar}>MP</span>
+            <div>
+              <strong>{title || "Media preview"}</strong>
+              <span>
+                {subtitle ? `${subtitle} - ` : ""}
+                {index + 1} of {attachments.length}
+                {imageCount > 0 ? ` | ${formatMediaCount(imageCount, "image")}` : ""}
+                {videoCount > 0 ? ` | ${formatMediaCount(videoCount, "video")}` : ""}
+              </span>
+            </div>
+          </div>
+          <div className={styles.mediaCarouselTools}>
+            {displayUrl && displayUrl !== "#" && (
+              <a href={displayUrl} rel="noreferrer" target="_blank">Open original</a>
+            )}
+            <button aria-label="Close media viewer" onClick={onClose} type="button">Close</button>
+          </div>
         </div>
         <div className={styles.mediaCarouselStage}>
           <button
@@ -1206,13 +1444,24 @@ function MediaCarousel(props: {
             Prev
           </button>
           <div className={styles.mediaCarouselMedia}>
-            {isImageAttachment(attachment) ? (
+            {!mediaLoaded && (
+              <span className={styles.mediaPreviewLoading}>
+                <LoadingState label="Loading media..." />
+              </span>
+            )}
+            {isImageAttachment(attachment) && displayUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img alt={label} src={sourceUrl} />
-            ) : isVideoAttachment(attachment) ? (
-              <video autoPlay controls src={sourceUrl} />
+              <img alt={label} onLoad={() => setMediaLoaded(true)} src={displayUrl} />
+            ) : isVideoAttachment(attachment) && displayUrl ? (
+              <video
+                autoPlay
+                controls
+                onCanPlay={() => setMediaLoaded(true)}
+                onLoadedData={() => setMediaLoaded(true)}
+                src={displayUrl}
+              />
             ) : (
-              <a href={sourceUrl} rel="noreferrer" target="_blank">Open media</a>
+              <a href={displayUrl} rel="noreferrer" target="_blank" onClick={() => setMediaLoaded(true)}>Open media</a>
             )}
           </div>
           <button
@@ -1224,6 +1473,22 @@ function MediaCarousel(props: {
           >
             Next
           </button>
+        </div>
+        <div className={styles.mediaCarouselFooter}>
+          <div className={styles.mediaCarouselFooterCount}>
+            {index + 1} of {attachments.length}
+          </div>
+          <div className={styles.mediaCarouselThumbStrip}>
+            {attachments.map((carouselAttachment, carouselIndex) => (
+              <MediaCarouselThumb
+                active={carouselIndex === index}
+                attachment={carouselAttachment}
+                index={carouselIndex}
+                key={carouselAttachment.id}
+                onSelect={onSelectIndex}
+              />
+            ))}
+          </div>
         </div>
       </div>
     </div>
@@ -1256,7 +1521,7 @@ export default function WhatsAppInboxClient() {
   const [replyTarget, setReplyTarget] = useState<InboxMessage | null>(null);
   const [reactionPickerMessageId, setReactionPickerMessageId] = useState("");
   const [reactingMessageId, setReactingMessageId] = useState("");
-  const [mediaCarousel, setMediaCarousel] = useState<{ attachments: MessageAttachment[]; index: number } | null>(null);
+  const [mediaCarousel, setMediaCarousel] = useState<MediaCarouselState>(null);
   const [generatingAi, setGeneratingAi] = useState(false);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
@@ -1986,6 +2251,10 @@ export default function WhatsAppInboxClient() {
     });
   }, [filter, inbox.conversations, search]);
 
+  const visibleConversationOrderKey = useMemo(() => (
+    visibleConversations.map((conversation) => conversation.id).join("|")
+  ), [visibleConversations]);
+
   useLayoutEffect(() => {
     const element = conversationRowsRef.current;
     if (!element) return;
@@ -2001,11 +2270,12 @@ export default function WhatsAppInboxClient() {
     }
 
     const maxTop = Math.max(0, element.scrollHeight - element.clientHeight);
-    if (conversationRowsScrollTopRef.current > maxTop) {
-      element.scrollTop = maxTop;
-      conversationRowsScrollTopRef.current = maxTop;
+    const nextTop = Math.min(conversationRowsScrollTopRef.current, maxTop);
+    if (Math.abs(element.scrollTop - nextTop) > 1) {
+      element.scrollTop = nextTop;
     }
-  }, [filter, search, visibleConversations.length]);
+    conversationRowsScrollTopRef.current = nextTop;
+  }, [filter, search, visibleConversationOrderKey]);
 
   const selectedStats = useMemo(() => {
     return {
@@ -2492,7 +2762,14 @@ export default function WhatsAppInboxClient() {
                 ref={messageStreamRef}
               >
                 {conversationLoading && !inbox.messages.length && (
-                  <div className={styles.emptyChat}>Loading chat...</div>
+                  <div className={styles.emptyChat}>
+                    <LoadingState label="Loading chat..." />
+                  </div>
+                )}
+                {conversationLoading && inbox.messages.length > 0 && (
+                  <div className={styles.chatLoadingPill}>
+                    <LoadingState label="Updating chat..." />
+                  </div>
                 )}
                 {inbox.messages.map((message, index) => {
                   if (shouldHideChatMessage(message)) return null;
@@ -2503,9 +2780,14 @@ export default function WhatsAppInboxClient() {
                     ? mediaGroupMessages[mediaGroupMessages.length - 1]
                     : message;
                   const attachments = mediaGroupMessages.length ? mediaGroupAttachments(mediaGroupMessages) : message.attachments || [];
+                  const visualAttachments = visualMediaAttachments(attachments);
+                  const nonVisualAttachments = attachments.filter((attachment) => (
+                    !isImageAttachment(attachment) && !isVideoAttachment(attachment)
+                  ));
                   const inbound = articleMessage.direction === "INBOUND";
                   const queuedAi = articleMessage.senderType === "AI" && articleMessage.status === "QUEUED";
-                  const displayText = mediaGroupMessages.length ? "" : messageVisibleText(message);
+                  const rawDisplayText = mediaGroupMessages.length ? "" : messageVisibleText(message);
+                  const displayText = visualAttachments.length && isEmptyOrAutoMediaText(rawDisplayText) ? "" : rawDisplayText;
                   const isFallbackText = !message.body.trim() && !!displayText;
                   const reactions = (mediaGroupMessages.length
                     ? mediaGroupMessages.flatMap((groupMessage) => groupMessage.reactions || [])
@@ -2516,6 +2798,17 @@ export default function WhatsAppInboxClient() {
                   const messageKey = mediaGroupMessages.length
                     ? `media-group-${mediaGroupMessages.map(messageRenderKey).join("-")}`
                     : messageRenderKey(message);
+                  const mediaPreviewTitle = inbound ? selected?.contact.displayName || "Customer" : "You";
+                  const mediaPreviewSubtitle = formatTime(articleMessage.createdAt);
+                  const openMediaCarousel = (carouselAttachments: MessageAttachment[], attachmentIndex: number) => {
+                    setMediaCarousel({
+                      attachments: carouselAttachments,
+                      index: attachmentIndex,
+                      subtitle: mediaPreviewSubtitle,
+                      title: mediaPreviewTitle,
+                    });
+                  };
+                  const shouldRenderMediaAlbum = visualAttachments.length > 1;
                   return (
                     <article
                       className={`${styles.messageBubble} ${inbound ? styles.inbound : styles.outbound} ${queuedAi ? styles.aiSuggestion : ""} ${reactions.length ? styles.messageBubbleWithReaction : ""} ${mediaOnly ? styles.mediaOnlyBubble : ""} ${groupedMedia ? styles.groupedMediaBubble : ""}`}
@@ -2566,18 +2859,32 @@ export default function WhatsAppInboxClient() {
                           className={`${styles.attachmentList} ${mediaOnly ? styles.mediaOnlyAttachments : ""}`}
                           data-count={Math.min(attachments.length, 4)}
                         >
-                          {mediaGroupMessages.length > 1 ? (
+                          {shouldRenderMediaAlbum ? (
                             <MediaAlbumGrid
-                              attachments={attachments}
-                              onOpen={(attachmentIndex) => setMediaCarousel({ attachments, index: attachmentIndex })}
+                              attachments={visualAttachments}
+                              onOpen={(attachmentIndex) => openMediaCarousel(visualAttachments, attachmentIndex)}
                             />
                           ) : (
-                            attachments.map((attachment) => (
-                              <div key={attachment.id}>
-                                <AttachmentPreview attachment={attachment} />
-                              </div>
-                            ))
+                            attachments.map((attachment) => {
+                              const visualIndex = visualAttachments.findIndex((candidate) => candidate.id === attachment.id);
+                              const isVisualAttachment = visualIndex >= 0;
+                              return (
+                                <div key={attachment.id}>
+                                  <AttachmentPreview
+                                    attachment={attachment}
+                                    onOpen={isVisualAttachment
+                                      ? () => openMediaCarousel(visualAttachments, visualIndex)
+                                      : undefined}
+                                  />
+                                </div>
+                              );
+                            })
                           )}
+                          {shouldRenderMediaAlbum && nonVisualAttachments.map((attachment) => (
+                            <div key={attachment.id}>
+                              <AttachmentPreview attachment={attachment} />
+                            </div>
+                          ))}
                         </div>
                       )}
                       <div className={styles.messageFooter}>
@@ -2610,7 +2917,7 @@ export default function WhatsAppInboxClient() {
               </div>
 
               <div className={styles.quickReplies}>
-                {flowsLoading && <span className={styles.flowHint}>Loading flows...</span>}
+                {flowsLoading && <LoadingState label="Loading flow buttons..." />}
                 {!flowsLoading && !activeFlows.length && (
                   <Link className={styles.flowSetupLink} href="/crm/flows">
                     Create flow buttons
@@ -2761,7 +3068,11 @@ export default function WhatsAppInboxClient() {
                       <span className={styles.skeletonLine} />
                       <span className={styles.skeletonLineShort} />
                       <p className={styles.muted}>
-                        {detailPanelLoading ? "Loading customer context..." : "Customer context will load after the chat opens."}
+                        {detailPanelLoading ? (
+                          <LoadingState label="Loading customer context..." />
+                        ) : (
+                          "Customer context will load after the chat opens."
+                        )}
                       </p>
                     </div>
                   </section>
@@ -2810,6 +3121,8 @@ export default function WhatsAppInboxClient() {
             const nextIndex = Math.min(Math.max(index, 0), current.attachments.length - 1);
             return { ...current, index: nextIndex };
           })}
+          subtitle={mediaCarousel.subtitle}
+          title={mediaCarousel.title}
         />
       )}
     </main>

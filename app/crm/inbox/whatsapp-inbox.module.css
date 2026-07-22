@@ -346,6 +346,7 @@
 .conversationList {
   background: #ffffff;
   border-right: 1px solid #d7e3f2;
+  contain: layout paint;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -426,6 +427,7 @@
 
 .conversationRows {
   border-top: 1px solid #e4edf7;
+  contain: layout paint;
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -444,6 +446,7 @@
   display: grid;
   gap: 12px;
   grid-template-columns: 48px minmax(0, 1fr);
+  height: 72px;
   min-height: 72px;
   overflow-anchor: none;
   padding: 11px 14px;
@@ -638,6 +641,18 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 12px 18px 9px;
+}
+
+.chatLoadingPill {
+  align-self: center;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid #d7e3f2;
+  border-radius: 999px;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.1);
+  padding: 7px 11px;
+  position: sticky;
+  top: 8px;
+  z-index: 8;
 }
 
 .messageBubble {
@@ -904,28 +919,70 @@
 
 .attachmentList {
   display: grid;
-  gap: 7px;
-  margin: 8px 0;
+  gap: 5px;
+  margin: 5px 0;
   max-width: 100%;
 }
 
 .mediaOnlyAttachments {
-  gap: 3px;
+  gap: 2px;
   margin: 0;
 }
 
-.mediaAlbumGrid {
-  border-radius: 15px;
+.mediaAlbum {
   display: grid;
-  gap: 3px;
+  gap: 2px;
+  width: min(234px, 70vw);
+}
+
+.mediaAlbumHeader {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-start;
+  margin-bottom: 0;
+  padding: 0 1px;
+}
+
+.mediaAlbumChip {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(187, 211, 242, 0.72);
+  border-radius: 999px;
+  color: #174d8f;
+  display: inline-flex;
+  font-size: 10px;
+  font-weight: 900;
+  gap: 4px;
+  line-height: 1;
+  padding: 3px 6px;
+}
+
+.mediaAlbumChip::before {
+  background: #1769e0;
+  border-radius: 999px;
+  content: "";
+  height: 6px;
+  width: 6px;
+}
+
+.mediaAlbumChipVideo::before {
+  background: #7c3aed;
+}
+
+.mediaAlbumGrid {
+  background: #c8d5e4;
+  border-radius: 7px;
+  display: grid;
+  gap: 1px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   overflow: hidden;
-  width: min(330px, 72vw);
+  width: 100%;
 }
 
 .mediaAlbumGrid[data-count="1"] {
   display: block;
-  width: min(250px, 70vw);
+  width: min(200px, 68vw);
 }
 
 .mediaAlbumTile {
@@ -939,6 +996,21 @@
   overflow: hidden;
   padding: 0;
   position: relative;
+}
+
+.mediaAlbumTile:hover {
+  filter: none;
+}
+
+.mediaAlbumTile:hover::after,
+.mediaAlbumTile:focus-visible::after,
+.mediaAlbumTile:active::after {
+  box-shadow: inset 0 0 0 3px #0b5ed7;
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 3;
 }
 
 .mediaAlbumGrid[data-count="1"] .mediaAlbumTile {
@@ -957,122 +1029,325 @@
 .mediaAlbumPlaceholder {
   align-items: center;
   display: flex;
+  flex-direction: column;
   font-size: 12px;
   font-weight: 900;
+  gap: 8px;
   height: 100%;
   justify-content: center;
   padding: 12px;
   text-align: center;
 }
 
-.mediaAlbumPlay,
-.mediaAlbumMore {
-  align-items: center;
-  background: rgba(8, 24, 44, 0.72);
+.mediaTypeBadge {
+  background: rgba(8, 24, 44, 0.76);
   border-radius: 999px;
-  bottom: 8px;
   color: #ffffff;
-  display: inline-flex;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 900;
-  justify-content: center;
-  min-width: 44px;
-  padding: 6px 9px;
+  left: 7px;
+  line-height: 1;
+  padding: 5px 7px;
   position: absolute;
-  right: 8px;
+  top: 7px;
 }
 
 .mediaAlbumMore {
-  background: rgba(8, 24, 44, 0.86);
-  bottom: 0;
+  align-items: center;
+  background: rgba(8, 24, 44, 0.82);
+  color: #ffffff;
+  display: flex;
   font-size: 28px;
+  font-weight: 900;
   height: 100%;
-  left: 0;
-  right: 0;
-  top: 0;
+  inset: 0;
+  justify-content: center;
+  position: absolute;
   width: 100%;
 }
 
 .mediaCarouselBackdrop {
-  align-items: center;
-  background: rgba(5, 11, 22, 0.86);
+  background: rgba(248, 250, 252, 0.97);
   display: flex;
   inset: 0;
-  justify-content: center;
-  padding: 24px;
   position: fixed;
   z-index: 2000;
 }
 
 .mediaCarouselDialog {
-  background: #0b1220;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 16px;
-  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.42);
-  color: #ffffff;
+  background: #ffffff;
+  color: #0c1c31;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  height: min(760px, 100%);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100vh;
   overflow: hidden;
-  width: min(1080px, 100%);
+  width: 100vw;
 }
 
 .mediaCarouselHeader {
   align-items: center;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom: 1px solid #e2edf8;
   display: flex;
   justify-content: space-between;
-  padding: 14px 16px;
+  min-height: 64px;
+  padding: 10px 24px;
 }
 
-.mediaCarouselHeader button,
-.mediaCarouselNav {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 999px;
-  color: #ffffff;
-  cursor: pointer;
+.mediaCarouselIdentity {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+}
+
+.mediaCarouselIdentity div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mediaCarouselIdentity strong {
+  font-size: 15px;
   font-weight: 900;
-  padding: 10px 14px;
 }
 
-.mediaCarouselHeader button:hover,
-.mediaCarouselNav:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.18);
+.mediaCarouselIdentity span:not(.mediaCarouselAvatar) {
+  color: #536985;
+  font-size: 12px;
+  font-weight: 700;
 }
 
-.mediaCarouselNav:disabled {
-  cursor: default;
-  opacity: 0.35;
+.mediaCarouselAvatar {
+  align-items: center;
+  background: #e7f0ff;
+  border-radius: 999px;
+  color: #0b4ea2;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 900;
+  height: 38px;
+  justify-content: center;
+  width: 38px;
+}
+
+.mediaCarouselTools {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.mediaCarouselTools a,
+.mediaCarouselTools button {
+  background: #ffffff;
+  border: 1px solid #cbdcf0;
+  border-radius: 999px;
+  color: #0b4ea2;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 900;
+  padding: 10px 15px;
+  text-decoration: none;
+}
+
+.mediaCarouselTools button {
+  background: #0b5ed7;
+  border-color: #0b5ed7;
+  color: #ffffff;
 }
 
 .mediaCarouselStage {
   align-items: center;
+  background: #ffffff;
   display: grid;
-  gap: 16px;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  grid-template-columns: 64px minmax(0, 1fr) 64px;
   min-height: 0;
-  padding: 18px;
+  padding: 8px 24px 12px;
+}
+
+.mediaCarouselNav {
+  align-items: center;
+  background: rgba(15, 23, 42, 0.68);
+  border: 0;
+  border-radius: 999px;
+  color: #ffffff;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 900;
+  height: 48px;
+  justify-content: center;
+  justify-self: center;
+  line-height: 1;
+  width: 54px;
+}
+
+.mediaCarouselNav:hover:not(:disabled) {
+  background: rgba(15, 23, 42, 0.82);
+}
+
+.mediaCarouselNav:disabled {
+  cursor: default;
+  opacity: 0.18;
 }
 
 .mediaCarouselMedia {
   align-items: center;
   display: flex;
+  height: 100%;
   justify-content: center;
   min-height: 0;
+  position: relative;
 }
 
 .mediaCarouselMedia img,
 .mediaCarouselMedia video {
-  border-radius: 12px;
-  max-height: calc(100vh - 180px);
+  background: #f1f5f9;
+  border-radius: 5px;
+  max-height: calc(100vh - 170px);
   max-width: 100%;
   object-fit: contain;
 }
 
 .mediaCarouselMedia a {
-  color: #bfdbfe;
+  color: #0b5ed7;
   font-weight: 900;
+}
+
+.mediaCarouselFooter {
+  background: #ffffff;
+  border-top: 1px solid #e2edf8;
+  padding: 8px 16px 10px;
+}
+
+.mediaCarouselFooterCount {
+  color: #7a4b32;
+  font-size: 13px;
+  font-weight: 700;
+  padding-bottom: 6px;
+  text-align: center;
+}
+
+.mediaCarouselThumbStrip {
+  display: flex;
+  gap: 7px;
+  justify-content: flex-start;
+  overflow-x: auto;
+  padding: 2px 0;
+}
+
+.mediaCarouselThumb {
+  background: #eef5ff;
+  border: 2px solid transparent;
+  border-radius: 5px;
+  cursor: pointer;
+  flex: 0 0 auto;
+  height: 74px;
+  overflow: hidden;
+  padding: 0;
+  position: relative;
+  width: 74px;
+}
+
+.mediaCarouselThumbActive {
+  background: #d9fdd3;
+  border-color: #00a884;
+  box-shadow: 0 0 0 3px rgba(0, 168, 132, 0.18);
+  transform: none;
+}
+
+.mediaCarouselThumbActive::after {
+  border: 0;
+  box-shadow: inset 0 0 0 4px #00a884;
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+}
+
+.mediaCarouselThumb img,
+.mediaCarouselThumb video {
+  display: block;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.58;
+  width: 100%;
+}
+
+.mediaCarouselThumbActive img,
+.mediaCarouselThumbActive video {
+  opacity: 1;
+}
+
+.mediaCarouselThumbType {
+  background: rgba(8, 24, 44, 0.78);
+  border-radius: 999px;
+  bottom: 4px;
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 900;
+  left: 4px;
+  line-height: 1;
+  padding: 4px 5px;
+  position: absolute;
+}
+
+.mediaCarouselThumbFallback {
+  align-items: center;
+  color: #174d8f;
+  display: flex;
+  font-size: 10px;
+  font-weight: 900;
+  height: 100%;
+  justify-content: center;
+  width: 100%;
+}
+
+.mediaThumbLoading,
+.mediaPreviewLoading,
+.mediaLoadingOverlay {
+  align-items: center;
+  background: rgba(248, 251, 255, 0.68);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  position: absolute;
+  z-index: 2;
+}
+
+.mediaPreviewLoading {
+  border: 1px solid #cbdcf0;
+  border-radius: 999px;
+  color: #174d8f;
+  gap: 9px;
+  inset: auto;
+  padding: 12px 16px;
+}
+
+.loadingState {
+  align-items: center;
+  color: #48627d;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 900;
+  gap: 8px;
+  justify-content: center;
+}
+
+.mediaSpinner {
+  animation: mediaSpin 0.8s linear infinite;
+  border: 2px solid rgba(23, 105, 224, 0.18);
+  border-radius: 999px;
+  border-top-color: #1769e0;
+  display: inline-block;
+  height: 18px;
+  width: 18px;
+}
+
+@keyframes mediaSpin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .mediaGroupGrid {
@@ -1161,6 +1436,7 @@
   max-width: min(280px, 100%);
   overflow: hidden;
   padding: 7px;
+  position: relative;
 }
 
 .mediaOnlyAttachments .imageAttachment {
@@ -1258,6 +1534,7 @@
   max-width: min(380px, 100%);
   overflow: hidden;
   padding: 7px;
+  position: relative;
 }
 
 .mediaOnlyAttachments .mediaAttachment {
