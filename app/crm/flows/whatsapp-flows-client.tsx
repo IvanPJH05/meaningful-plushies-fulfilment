@@ -1368,16 +1368,19 @@ export default function WhatsAppFlowsClient() {
       onDragOver: (event: DragEvent<HTMLElement>) => {
         if (!draggingFlowId) return;
         event.preventDefault();
+        event.stopPropagation();
         event.dataTransfer.dropEffect = "move";
         setDropTargetKey(targetKey);
       },
       onDragLeave: (event: DragEvent<HTMLElement>) => {
+        event.stopPropagation();
         const nextTarget = event.relatedTarget instanceof Node ? event.relatedTarget : null;
         if (nextTarget && event.currentTarget.contains(nextTarget)) return;
         setDropTargetKey((current) => (current === targetKey ? "" : current));
       },
       onDrop: (event: DragEvent<HTMLElement>) => {
         event.preventDefault();
+        event.stopPropagation();
         const rawFlowIds = event.dataTransfer.getData("application/json");
         const fallbackFlowId = event.dataTransfer.getData("text/plain") || draggingFlowId;
         let flowIds = fallbackFlowId ? [fallbackFlowId] : [];
