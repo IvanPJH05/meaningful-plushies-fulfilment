@@ -8,10 +8,11 @@ import {
   mediaTypeFromContentType,
   normalizeMediaContentType,
 } from "@/src/modules/whatsapp/media-assets";
+import { WHATSAPP_MEDIA_CACHE_MAX_BYTES } from "@/src/modules/whatsapp/media-cache";
 
 export const runtime = "nodejs";
 
-const MAX_UPLOAD_BYTES = 16 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = WHATSAPP_MEDIA_CACHE_MAX_BYTES;
 
 function json(status: number, body: Record<string, unknown>) {
   return NextResponse.json(body, { status });
@@ -34,7 +35,7 @@ export async function POST(request: Request) {
     }
 
     if (file.size > MAX_UPLOAD_BYTES) {
-      return json(400, { ok: false, error: "Media files must be 16 MB or smaller." });
+      return json(400, { ok: false, error: `Media files must be ${Math.floor(MAX_UPLOAD_BYTES / 1024 / 1024)} MB or smaller.` });
     }
 
     const business = await ensureDefaultBusiness();

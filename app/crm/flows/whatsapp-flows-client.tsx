@@ -472,6 +472,51 @@ export default function WhatsAppFlowsClient() {
     }));
   }
 
+  async function uploadSingleMediaFile(file: File) {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 60_000);
+
+    try {
+      const data = new FormData();
+      data.append("file", file);
+      const response = await fetch("/api/crm/media-assets", {
+        method: "POST",
+        body: data,
+        signal: controller.signal,
+      });
+      const text = await response.text();
+      let result: {
+        ok?: boolean;
+        asset?: { originalUrl?: string; fileName?: string; contentType?: string; sizeBytes?: number; mediaType?: string };
+        error?: string;
+      } = {};
+      try {
+        result = text ? JSON.parse(text) : {};
+      } catch {
+        result = {};
+      }
+
+      if (!response.ok || !result.ok || !result.asset?.originalUrl) {
+        throw new Error(result.error || `Media could not be uploaded. (${response.status})`);
+      }
+
+      return makeMediaItem({
+        type: result.asset.mediaType === "video" ? "video" : "image",
+        url: result.asset.originalUrl,
+        fileName: result.asset.fileName || file.name,
+        contentType: result.asset.contentType || file.type,
+        sizeBytes: result.asset.sizeBytes || file.size,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new Error(`${file.name} took too long to upload. Try a smaller file or upload it again.`);
+      }
+      throw error;
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  }
+
   async function uploadMediaFiles(actionId: string, item: FlowMediaItem, files: FileList | File[] | null) {
     const selectedFiles = Array.from(files || []);
     if (!selectedFiles.length) return;
@@ -485,32 +530,24 @@ export default function WhatsAppFlowsClient() {
     setUploadingMediaId(mediaId);
     setNotice("");
     try {
-      const uploadedItems = await Promise.all(selectedFiles.map(async (file) => {
-        const data = new FormData();
-        data.append("file", file);
-        const response = await fetch("/api/crm/media-assets", {
-          method: "POST",
-          body: data,
-        });
-        const result = (await response.json()) as {
-          ok?: boolean;
-          asset?: { originalUrl?: string; fileName?: string; contentType?: string; sizeBytes?: number; mediaType?: string };
-          error?: string;
-        };
-        if (!response.ok || !result.ok || !result.asset?.originalUrl) {
-          throw new Error(result.error || "Media could not be uploaded.");
+      const uploadedItems: FlowMediaItem[] = [];
+      const failures: string[] = [];
+      for (const file of selectedFiles) {
+        try {
+          const uploadedItem = await uploadSingleMediaFile(file);
+          uploadedItems.push(uploadedItem);
+          applyUploadedMediaItems(actionId, uploadedItems.length === 1 ? mediaId : undefined, [uploadedItem]);
+        } catch (error) {
+          failures.push(error instanceof Error ? error.message : `${file.name} could not be uploaded.`);
         }
-        return makeMediaItem({
-          type: result.asset.mediaType === "video" ? "video" : "image",
-          url: result.asset.originalUrl,
-          fileName: result.asset.fileName || file.name,
-          contentType: result.asset.contentType || file.type,
-          sizeBytes: result.asset.sizeBytes || file.size,
-        });
-      }));
+      }
 
-      applyUploadedMediaItems(actionId, mediaId, uploadedItems);
-      setNotice(`${uploadedItems.length} media ${uploadedItems.length === 1 ? "file" : "files"} uploaded.`);
+      if (!uploadedItems.length) {
+        throw new Error(failures[0] || "Media could not be uploaded.");
+      }
+      setNotice(failures.length
+        ? `${uploadedItems.length} uploaded. ${failures[0]}`
+        : `${uploadedItems.length} media ${uploadedItems.length === 1 ? "file" : "files"} uploaded.`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Media could not be uploaded.");
     } finally {
