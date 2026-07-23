@@ -63,6 +63,16 @@ type FlowForm = {
 
 const actionTypes: ActionType[] = ["Send Message", "Send Media", "AI Reply", "Update Status", "Add Note"];
 const delayUnits: DelayUnit[] = ["seconds", "minutes", "hours", "days"];
+const FLOW_BUILDER_CACHE_KEY = "crm-whatsapp-flow-builder-cache-v1";
+
+type FlowBuilderCache = {
+  flows: WhatsAppFlow[];
+  form: FlowForm;
+  editingId: string;
+  savedAt: number;
+};
+
+let flowBuilderMemoryCache: FlowBuilderCache | null = null;
 
 function makeId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -103,6 +113,65 @@ function emptyFlowForm(): FlowForm {
     status: "Draft",
     actions: [makeAction()],
   };
+}
+
+function normalizeFlowForm(value: unknown): FlowForm | null {
+  const form = value as Partial<FlowForm> | null;
+  if (!form || typeof form !== "object") return null;
+
+  const triggerType = form.triggerType === "keywords" ? "keywords" : "click";
+  const status = form.status === "Active" ? "Active" : "Draft";
+  const actions = Array.isArray(form.actions)
+    ? form.actions.map((action) => makeAction(action as Partial<FlowAction>)).filter(Boolean)
+    : [];
+
+  return {
+    name: typeof form.name === "string" ? form.name : "",
+    triggerType,
+    triggerButtonLabel: typeof form.triggerButtonLabel === "string" ? form.triggerButtonLabel : "",
+    trigger: typeof form.trigger === "string" ? form.trigger : "",
+    description: typeof form.description === "string" ? form.description : "",
+    status,
+    actions: actions.length ? actions : [makeAction()],
+  };
+}
+
+function normalizeFlowBuilderCache(value: unknown): FlowBuilderCache | null {
+  const cache = value as Partial<FlowBuilderCache> | null;
+  if (!cache || typeof cache !== "object") return null;
+  const form = normalizeFlowForm(cache.form);
+  if (!form || !Array.isArray(cache.flows)) return null;
+
+  return {
+    flows: cache.flows.filter((flow): flow is WhatsAppFlow => Boolean(flow?.id && flow?.name && Array.isArray(flow?.steps))),
+    form,
+    editingId: typeof cache.editingId === "string" ? cache.editingId : "",
+    savedAt: typeof cache.savedAt === "number" ? cache.savedAt : Date.now(),
+  };
+}
+
+function readFlowBuilderCache() {
+  if (flowBuilderMemoryCache) return flowBuilderMemoryCache;
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(FLOW_BUILDER_CACHE_KEY);
+    const cache = raw ? normalizeFlowBuilderCache(JSON.parse(raw)) : null;
+    flowBuilderMemoryCache = cache;
+    return cache;
+  } catch {
+    return null;
+  }
+}
+
+function writeFlowBuilderCache(cache: FlowBuilderCache) {
+  flowBuilderMemoryCache = cache;
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(FLOW_BUILDER_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // The in-memory cache still keeps the current tab fast if storage is full.
+  }
 }
 
 const starterTemplates: FlowForm[] = [
@@ -319,10 +388,11 @@ function formatFileSize(sizeBytes?: number) {
 }
 
 export default function WhatsAppFlowsClient() {
-  const [flows, setFlows] = useState<WhatsAppFlow[]>([]);
-  const [form, setForm] = useState<FlowForm>(() => emptyFlowForm());
-  const [editingId, setEditingId] = useState<string>("");
-  const [loading, setLoading] = useState(true);
+  const [initialCache] = useState(() => readFlowBuilderCache());
+  const [flows, setFlows] = useState<WhatsAppFlow[]>(() => initialCache?.flows || []);
+  const [form, setForm] = useState<FlowForm>(() => initialCache?.form || emptyFlowForm());
+  const [editingId, setEditingId] = useState<string>(() => initialCache?.editingId || "");
+  const [loading, setLoading] = useState(() => !initialCache);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
   const [uploadingMediaId, setUploadingMediaId] = useState("");
@@ -332,7 +402,7 @@ export default function WhatsAppFlowsClient() {
     let cancelled = false;
 
     async function loadFlows() {
-      setLoading(true);
+      if (!initialCache) setLoading(true);
       try {
         const response = await fetch("/api/crm/flows", { cache: "no-store" });
         const result = (await response.json()) as { ok?: boolean; flows?: WhatsAppFlow[]; error?: string };
@@ -350,7 +420,16 @@ export default function WhatsAppFlowsClient() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [initialCache]);
+
+  useEffect(() => {
+    writeFlowBuilderCache({
+      flows,
+      form,
+      editingId,
+      savedAt: Date.now(),
+    });
+  }, [editingId, flows, form]);
 
   const activeCount = useMemo(() => flows.filter((flow) => flow.status === "Active").length, [flows]);
   const hasUsableAction = useMemo(() => form.actions.some((action) => (

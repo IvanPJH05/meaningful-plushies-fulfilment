@@ -20,7 +20,7 @@
   border: 0;
   border-radius: 0;
   display: grid;
-  grid-template-columns: 76px minmax(520px, 58%) minmax(320px, 1fr);
+  grid-template-columns: 88px minmax(520px, 58%) minmax(320px, 1fr);
   height: 100vh;
   min-height: 0;
   overflow: hidden;
@@ -29,11 +29,12 @@
 .workspaceRail {
   align-items: stretch;
   background: #102033;
+  border-right: 1px solid #0c1828;
   color: #c9d7e8;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px 10px;
+  gap: 12px;
+  padding: 14px 9px;
 }
 
 .railLogo {
@@ -52,9 +53,10 @@
 .workspaceRail a {
   border-radius: 12px;
   color: #b9cae0;
-  font-size: 11px;
-  font-weight: 900;
-  padding: 11px 8px;
+  font-size: 12px;
+  font-weight: 950;
+  line-height: 1.18;
+  padding: 12px 8px;
   text-align: center;
   text-decoration: none;
 }
