@@ -1206,6 +1206,147 @@ export default function WhatsAppFlowsClient() {
     setNotice(`Created subfolder "${nextPath}".`);
   }
 
+  async function saveFlowPatch(nextFlow: WhatsAppFlow) {
+    const response = await fetch("/api/crm/flows", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(flowPayloadFromForm(formFromFlow(nextFlow), nextFlow.id)),
+    });
+    const result = (await response.json()) as { ok?: boolean; flow?: WhatsAppFlow; error?: string };
+    if (!response.ok || !result.ok || !result.flow) throw new Error(result.error || "Flow could not be saved.");
+    return result.flow;
+  }
+
+  async function renameFlow(flow: WhatsAppFlow) {
+    const name = window.prompt("Flow name", flow.name);
+    const trimmed = name?.trim();
+    if (!trimmed || trimmed === flow.name) return;
+    if (flows.some((candidate) => candidate.id !== flow.id && candidate.name.trim().toLowerCase() === trimmed.toLowerCase())) {
+      setNotice(`Flow "${trimmed}" already exists.`);
+      return;
+    }
+    const previous = flows;
+    const nextFlow = { ...flow, name: trimmed };
+    setFlows((current) => current.map((candidate) => (candidate.id === flow.id ? nextFlow : candidate)));
+    if (editingId === flow.id) setForm((current) => ({ ...current, name: trimmed }));
+    setSaving(true);
+    setNotice("");
+    try {
+      const savedFlow = await saveFlowPatch(nextFlow);
+      setFlows((current) => current.map((candidate) => (candidate.id === flow.id ? savedFlow : candidate)));
+      if (editingId === flow.id) setForm(formFromFlow(savedFlow));
+      setNotice(`Renamed flow to "${savedFlow.name}".`);
+    } catch (error) {
+      setFlows(previous);
+      if (editingId === flow.id) setForm(formFromFlow(flow));
+      setNotice(error instanceof Error ? error.message : "Flow could not be renamed.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function renameGroup(group: FlowGroup) {
+    const name = window.prompt("Folder name", group.name);
+    const trimmed = name?.trim();
+    if (!trimmed || trimmed === group.name) return;
+    if (flowGroups.some((candidate) => candidate.name !== group.name && candidate.name.trim().toLowerCase() === trimmed.toLowerCase())) {
+      setNotice(`Folder "${trimmed}" already exists.`);
+      return;
+    }
+    const previousFlows = flows;
+    const previousFolders = folders;
+    const nextGroupName = trimmed === "Ungrouped" ? "" : trimmed;
+    const affectedIds = new Set([...group.flows, ...group.subgroups.flatMap(subfolderFlows)].map((flow) => flow.id));
+    const nextFlows = flows.map((flow) => (
+      affectedIds.has(flow.id) ? { ...flow, groupName: nextGroupName } : flow
+    ));
+    const existingFolder = folders.find((folder) => folder.name.toLowerCase() === group.name.toLowerCase());
+    const nextFolders = [
+      ...folders.filter((folder) => folder.name.toLowerCase() !== group.name.toLowerCase()),
+      { name: trimmed, subfolders: existingFolder?.subfolders || flattenSubfolderPaths(group.subgroups) },
+    ];
+    setFlows(nextFlows);
+    saveFolders(nextFolders);
+    if (editingId && affectedIds.has(editingId)) setForm((current) => ({ ...current, groupName: nextGroupName }));
+    setSaving(true);
+    setNotice("");
+    try {
+      const savedFlows = await Promise.all(nextFlows.filter((flow) => affectedIds.has(flow.id)).map(saveFlowPatch));
+      const savedMap = new Map(savedFlows.map((flow) => [flow.id, flow]));
+      setFlows((current) => current.map((flow) => savedMap.get(flow.id) || flow));
+      const editedFlow = savedMap.get(editingId);
+      if (editedFlow) setForm(formFromFlow(editedFlow));
+      setNotice(`Renamed folder to "${trimmed}".`);
+    } catch (error) {
+      setFlows(previousFlows);
+      saveFolders(previousFolders);
+      const editedPreviousFlow = previousFlows.find((flow) => flow.id === editingId);
+      if (editedPreviousFlow) setForm(formFromFlow(editedPreviousFlow));
+      setNotice(error instanceof Error ? error.message : "Folder could not be renamed.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function renameSubfolder(groupName: string, subfolder: FlowSubfolder) {
+    const name = window.prompt("Subfolder name", subfolder.name);
+    const trimmed = name?.trim();
+    if (!trimmed || trimmed === subfolder.name) return;
+    const parentPath = folderPathParts(subfolder.path).slice(0, -1).join("/");
+    const nextPath = childFolderPath(parentPath, trimmed);
+    const group = flowGroups.find((candidate) => candidate.name === groupName);
+    if (group && flattenSubfolderPaths(group.subgroups).some((path) => path !== subfolder.path && path.toLowerCase() === nextPath.toLowerCase())) {
+      setNotice(`Subfolder "${nextPath}" already exists in "${groupName}".`);
+      return;
+    }
+    const previousFlows = flows;
+    const previousFolders = folders;
+    const affectedFlows = subfolderFlows(subfolder);
+    const affectedIds = new Set(affectedFlows.map((flow) => flow.id));
+    const nextFlows = flows.map((flow) => {
+      if (!affectedIds.has(flow.id)) return flow;
+      const subgroupName = flow.subgroupName === subfolder.path || flow.subgroupName?.startsWith(`${subfolder.path}/`)
+        ? `${nextPath}${flow.subgroupName.slice(subfolder.path.length)}`
+        : nextPath;
+      return { ...flow, subgroupName };
+    });
+    const nextFolders = folders.map((folder) => {
+      if (folder.name.toLowerCase() !== groupName.toLowerCase()) return folder;
+      return {
+        ...folder,
+        subfolders: folder.subfolders.map((path) => (
+          path === subfolder.path || path.startsWith(`${subfolder.path}/`)
+            ? `${nextPath}${path.slice(subfolder.path.length)}`
+            : path
+        )),
+      };
+    });
+    setFlows(nextFlows);
+    saveFolders(nextFolders);
+    if (editingId && affectedIds.has(editingId)) {
+      const editedFlow = nextFlows.find((flow) => flow.id === editingId);
+      if (editedFlow) setForm(formFromFlow(editedFlow));
+    }
+    setSaving(true);
+    setNotice("");
+    try {
+      const savedFlows = await Promise.all(nextFlows.filter((flow) => affectedIds.has(flow.id)).map(saveFlowPatch));
+      const savedMap = new Map(savedFlows.map((flow) => [flow.id, flow]));
+      setFlows((current) => current.map((flow) => savedMap.get(flow.id) || flow));
+      const editedFlow = savedMap.get(editingId);
+      if (editedFlow) setForm(formFromFlow(editedFlow));
+      setNotice(`Renamed subfolder to "${trimmed}".`);
+    } catch (error) {
+      setFlows(previousFlows);
+      saveFolders(previousFolders);
+      const editedPreviousFlow = previousFlows.find((flow) => flow.id === editingId);
+      if (editedPreviousFlow) setForm(formFromFlow(editedPreviousFlow));
+      setNotice(error instanceof Error ? error.message : "Subfolder could not be renamed.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function deleteFlow(flowIdToDelete: string) {
     setSaving(true);
     setNotice("");
@@ -1538,6 +1679,9 @@ export default function WhatsAppFlowsClient() {
         <span className={flow.status === "Active" ? styles.activeBadge : styles.draftBadge}>{flow.status}</span>
         <div className={styles.fileActions}>
           <button onClick={() => editFlow(flow)}>Edit</button>
+          <button disabled={saving} onClick={() => void renameFlow(flow)}>
+            Rename
+          </button>
           <button disabled={saving} onClick={() => void duplicateFlow(flow)}>
             Duplicate
           </button>
@@ -1567,6 +1711,9 @@ export default function WhatsAppFlowsClient() {
             <span>{totalFlows} flows</span>
           </div>
           <div className={styles.folderActions}>
+            <button disabled={saving} onClick={() => void renameSubfolder(groupName, subfolder)}>
+              Rename
+            </button>
             <button disabled={saving} onClick={() => createSubfolder(groupName, subfolder.path)}>
               New subfolder
             </button>
@@ -2057,6 +2204,9 @@ export default function WhatsAppFlowsClient() {
                   </span>
                 </div>
                 <div className={styles.folderActions}>
+                  <button disabled={saving} onClick={() => void renameGroup(group)}>
+                    Rename
+                  </button>
                   <button disabled={saving} onClick={() => createSubfolder(group.name)}>
                     New subfolder
                   </button>
