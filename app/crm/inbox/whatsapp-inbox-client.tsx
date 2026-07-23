@@ -169,6 +169,8 @@ type FlowMediaItem = {
   type: FlowMediaType;
   url: string;
   caption?: string;
+  fileName?: string;
+  contentType?: string;
 };
 
 type FlowSelectionOption = {
@@ -2300,9 +2302,11 @@ export default function WhatsAppInboxClient() {
     const seen = new Set<string>();
     const normalised = mediaItems
       .map((item) => ({
-        type: item.type === "video" ? "video" as const : item.type === "pdf" ? "pdf" as const : "image" as const,
+        type: flowMediaType(item),
         url: (item.url || "").trim(),
         caption: (item.caption || "").trim(),
+        fileName: (item.fileName || "").trim(),
+        contentType: (item.contentType || "").trim(),
       }))
       .filter((item) => {
         const key = `${item.type}:${item.url}`;
@@ -2315,6 +2319,15 @@ export default function WhatsAppInboxClient() {
     if (step.imageUrl?.trim()) return [{ type: "image", url: step.imageUrl.trim(), caption: step.message || "" }];
     if (step.videoUrl?.trim()) return [{ type: "video", url: step.videoUrl.trim(), caption: step.message || "" }];
     return [];
+  }
+
+  function flowMediaType(item: Partial<FlowMediaItem>): FlowMediaType {
+    const contentType = (item.contentType || "").toLowerCase();
+    const fileName = (item.fileName || "").toLowerCase();
+    const url = decodeURIComponent((item.url || "").toLowerCase());
+    if (item.type === "pdf" || contentType.includes("pdf") || fileName.endsWith(".pdf") || url.includes(".pdf") || url.includes("application/pdf")) return "pdf";
+    if (item.type === "video" || contentType.startsWith("video/")) return "video";
+    return "image";
   }
 
   async function selectConversation(conversationId: string) {

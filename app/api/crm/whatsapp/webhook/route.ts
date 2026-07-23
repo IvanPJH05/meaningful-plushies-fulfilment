@@ -355,7 +355,7 @@ type FlowStep = {
   message?: string;
   imageUrl?: string;
   videoUrl?: string;
-  mediaItems?: Array<{ type?: string; url?: string; caption?: string; fileName?: string }>;
+  mediaItems?: Array<{ type?: string; url?: string; caption?: string; fileName?: string; contentType?: string }>;
   options?: Array<{
     id?: string;
     label?: string;
@@ -422,7 +422,7 @@ function flowMediaItems(step: FlowStep) {
   const items = Array.isArray(step.mediaItems) ? step.mediaItems : [];
   const normalised = items
     .map((item) => ({
-      type: item.type === "video" ? "video" as const : item.type === "pdf" || item.type === "document" ? "pdf" as const : "image" as const,
+      type: flowMediaType(item),
       url: textValue(item.url).trim(),
       caption: textValue(item.caption).trim(),
       fileName: textValue(item.fileName).trim(),
@@ -432,6 +432,16 @@ function flowMediaItems(step: FlowStep) {
   if (step.imageUrl) return [{ type: "image" as const, url: step.imageUrl, caption: step.message || "" }];
   if (step.videoUrl) return [{ type: "video" as const, url: step.videoUrl, caption: step.message || "" }];
   return [];
+}
+
+function flowMediaType(item: { type?: string; url?: string; fileName?: string; contentType?: string }) {
+  const type = textValue(item.type).toLowerCase();
+  const contentType = textValue(item.contentType).toLowerCase();
+  const fileName = textValue(item.fileName).toLowerCase();
+  const url = decodeURIComponent(textValue(item.url).toLowerCase());
+  if (type === "pdf" || type === "document" || contentType.includes("pdf") || fileName.endsWith(".pdf") || url.includes(".pdf") || url.includes("application/pdf")) return "pdf" as const;
+  if (type === "video" || contentType.startsWith("video/")) return "video" as const;
+  return "image" as const;
 }
 
 async function sendFlowStepFromWebhook(args: {

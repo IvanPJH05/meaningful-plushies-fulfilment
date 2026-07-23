@@ -121,12 +121,17 @@ function normalizeSelectionOptions(value: unknown): SelectionOption[] {
 }
 
 function inferMediaTypeFromUrl(url: string): FlowMediaItem["type"] {
-  const cleanUrl = url.split("?")[0].toLowerCase();
-  if (cleanUrl.endsWith(".pdf")) return "pdf";
-  return cleanUrl.endsWith(".mp4") || cleanUrl.endsWith(".mov") || cleanUrl.endsWith(".webm") ? "video" : "image";
+  const cleanUrl = decodeURIComponent(url.toLowerCase());
+  if (cleanUrl.includes(".pdf") || cleanUrl.includes("application/pdf")) return "pdf";
+  return cleanUrl.includes(".mp4") || cleanUrl.includes(".mov") || cleanUrl.includes(".webm") || cleanUrl.includes("video/") ? "video" : "image";
 }
 
-function normalizeMediaType(value: unknown, url: string): FlowMediaItem["type"] {
+function normalizeMediaType(value: unknown, url: string, contentType?: unknown, fileName?: unknown): FlowMediaItem["type"] {
+  const normalizedContentType = stringValue(contentType).toLowerCase();
+  const normalizedFileName = stringValue(fileName).toLowerCase();
+  if (normalizedContentType.includes("pdf") || normalizedFileName.endsWith(".pdf")) return "pdf";
+  if (normalizedContentType.startsWith("video/")) return "video";
+  if (normalizedContentType.startsWith("image/")) return "image";
   const text = stringValue(value).toLowerCase();
   return mediaTypes.find((type) => type === text) || inferMediaTypeFromUrl(url);
 }
@@ -140,7 +145,7 @@ function normalizeMediaItems(value: unknown, step: Record<string, unknown>, step
       : stringValue(record.url ?? record.mediaUrl ?? record.imageUrl ?? record.videoUrl ?? record.link);
     if (!url) return;
     items.push({
-      type: normalizeMediaType(record.type ?? record.mediaType, url),
+      type: normalizeMediaType(record.type ?? record.mediaType, url, record.contentType ?? record.mimeType, record.fileName ?? record.filename ?? record.name),
       url,
       ...(stringValue(record.caption ?? record.message ?? record.text) ? {
         caption: stringValue(record.caption ?? record.message ?? record.text),
@@ -168,7 +173,7 @@ function normalizeMediaItems(value: unknown, step: Record<string, unknown>, step
 
   if (!items.length && stepType === "Send Media") {
     const url = stringValue(step.mediaUrl ?? step.url ?? step.imageUrl ?? step.videoUrl);
-    if (url) items.push({ type: normalizeMediaType(step.mediaType ?? step.type, url), url, ...(message ? { caption: message } : {}) });
+    if (url) items.push({ type: normalizeMediaType(step.mediaType ?? step.type, url, step.contentType ?? step.mimeType, step.fileName ?? step.filename ?? step.name), url, ...(message ? { caption: message } : {}) });
   }
 
   const seen = new Set<string>();

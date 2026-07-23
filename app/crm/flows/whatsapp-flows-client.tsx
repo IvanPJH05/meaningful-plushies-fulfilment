@@ -118,7 +118,7 @@ function isSelectionKey(value?: string) {
 function makeMediaItem(media?: Partial<FlowMediaItem>): FlowMediaItem {
   return {
     id: makeId(),
-    type: media?.type === "video" ? "video" : "image",
+    type: media?.type === "video" ? "video" : media?.type === "pdf" ? "pdf" : "image",
     url: media?.url || "",
     caption: media?.caption || "",
     fileName: media?.fileName || "",
@@ -327,7 +327,7 @@ function mediaItemsFromStep(step: FlowStep): FlowMediaItem[] {
   const seen = new Set<string>();
   const mediaItems = items
     .map((item) => makeMediaItem({
-      type: item.type,
+      type: mediaTypeFromSavedItem(item),
       url: item.url || "",
       caption: item.caption || "",
       fileName: item.fileName || "",
@@ -345,6 +345,15 @@ function mediaItemsFromStep(step: FlowStep): FlowMediaItem[] {
   if (step.imageUrl) return [makeMediaItem({ type: "image", url: step.imageUrl, caption: step.message || "" })];
   if (step.videoUrl) return [makeMediaItem({ type: "video", url: step.videoUrl, caption: step.message || "" })];
   return [];
+}
+
+function mediaTypeFromSavedItem(item: Partial<FlowMediaItem>): MediaType {
+  const contentType = (item.contentType || "").toLowerCase();
+  const fileName = (item.fileName || "").toLowerCase();
+  const url = decodeURIComponent((item.url || "").toLowerCase());
+  if (item.type === "pdf" || contentType.includes("pdf") || fileName.endsWith(".pdf") || url.includes(".pdf") || url.includes("application/pdf")) return "pdf";
+  if (item.type === "video" || contentType.startsWith("video/")) return "video";
+  return "image";
 }
 
 function actionFromStep(step: FlowStep | string): FlowAction {
