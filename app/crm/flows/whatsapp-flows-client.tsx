@@ -714,19 +714,11 @@ function selectionLinksFromDraft(form: FlowForm, editingId: string): SelectionFl
   });
 }
 
-function selectionPairingIssue(option: SelectionOption, options: SelectionOption[], flows: WhatsAppFlow[]) {
+function selectionPairingIssue(option: SelectionOption, flows: WhatsAppFlow[]) {
   if (!option.targetFlowId) return "";
-  if (options.some((candidate) => candidate.id !== option.id && candidate.targetFlowId === option.targetFlowId)) {
-    return "This target flow is already used by another button. Choose a separate target flow.";
-  }
   const targetFlow = flows.find((flow) => flow.id === option.targetFlowId);
   if (!targetFlow) return "Target flow could not be found.";
-  if (normaliseTriggerType(targetFlow.triggerType) !== "selection_button") {
-    return "Target flow must use the Selection button press trigger.";
-  }
-  const targetKey = (targetFlow.triggerButtonLabel || "").trim();
-  if (!targetKey) return "Target flow does not have a selection key.";
-  if (targetKey !== option.id) return `Key mismatch. Target flow uses ${targetKey}.`;
+  if (targetFlow.status !== "Active") return "Target flow is not active yet.";
   return "";
 }
 
@@ -891,21 +883,21 @@ export default function WhatsAppFlowsClient() {
   )), [form.actions]);
 
   async function repairSelectionTargetKeys(sourceForm: FlowForm) {
-    const desiredKeyByTargetId = new Map<string, string>();
+    const desiredKeysByTargetId = new Map<string, Set<string>>();
     for (const action of sourceForm.actions) {
       if (action.type !== "Ask Selection") continue;
       for (const option of action.options) {
         if (!option.targetFlowId || !option.id) continue;
-        const existingKey = desiredKeyByTargetId.get(option.targetFlowId);
-        if (existingKey && existingKey !== option.id) {
-          throw new Error(`"${option.targetFlowName || "A target flow"}" is linked to more than one button. Duplicate that target flow first, then link each button to its own copy.`);
-        }
-        desiredKeyByTargetId.set(option.targetFlowId, option.id);
+        const keys = desiredKeysByTargetId.get(option.targetFlowId) || new Set<string>();
+        keys.add(option.id);
+        desiredKeysByTargetId.set(option.targetFlowId, keys);
       }
     }
 
     const patchedFlows: WhatsAppFlow[] = [];
-    for (const [targetFlowId, optionKey] of desiredKeyByTargetId.entries()) {
+    for (const [targetFlowId, optionKeys] of desiredKeysByTargetId.entries()) {
+      if (optionKeys.size !== 1) continue;
+      const [optionKey] = Array.from(optionKeys);
       const targetFlow = flows.find((candidate) => candidate.id === targetFlowId);
       if (!targetFlow) continue;
       if (normaliseTriggerType(targetFlow.triggerType) === "selection_button" && targetFlow.triggerButtonLabel === optionKey) continue;
@@ -2021,7 +2013,7 @@ export default function WhatsAppFlowsClient() {
                       </label>
                       <div className={styles.optionList}>
                         {action.options.map((option, optionIndex) => {
-                          const pairingIssue = selectionPairingIssue(option, action.options, flows);
+                          const pairingIssue = selectionPairingIssue(option, flows);
                           return (
                             <div className={`${styles.optionItem} ${pairingIssue ? styles.optionItemError : ""}`} key={option.id || `${action.id}-option-${optionIndex}`}>
                               <label>
@@ -2042,13 +2034,6 @@ export default function WhatsAppFlowsClient() {
                                   value={option.targetFlowId || ""}
                                   onChange={(event) => {
                                     const targetFlowId = event.target.value;
-                                    const duplicateTarget = targetFlowId && action.options.some((current) => (
-                                      current.id !== option.id && current.targetFlowId === targetFlowId
-                                    ));
-                                    if (duplicateTarget) {
-                                      setNotice("Each selection button needs its own target flow. Duplicate the target flow first, then link each button to its own copy.");
-                                      return;
-                                    }
                                     updateAction(action.id, {
                                       options: action.options.map((current) => (
                                         current.id === option.id ? {
