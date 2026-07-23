@@ -1496,16 +1496,17 @@ export default function WhatsAppInboxClient() {
   }
   const initialCache = initialCacheRef.current;
   const initialCacheFullyWarmed = hasEveryConversationWarmed(initialCache);
+  const initialCacheRestored = Boolean(initialCache?.inbox.conversations.length || initialCache?.inbox.selectedConversation);
   const [inbox, setInbox] = useState<InboxPayload>(() => initialCache?.inbox || { conversations: [], selectedConversation: null, messages: [] });
   const [conversationCache, setConversationCache] = useState<ConversationCache>(() => initialCache?.conversationCache || {});
   const [selectedId, setSelectedId] = useState<string>(() => initialCache?.selectedId || initialCache?.inbox.selectedConversation?.id || "");
   const [search, setSearch] = useState(() => initialCache?.search || "");
   const [filter, setFilter] = useState(() => initialCache?.filter || "ALL");
   const [draft, setDraft] = useState("");
-  const [loading, setLoading] = useState(() => !initialCacheFullyWarmed);
-  const [booting, setBooting] = useState(() => !initialCacheFullyWarmed);
-  const [bootProgress, setBootProgress] = useState(() => initialCacheFullyWarmed ? 100 : 0);
-  const [bootStatus, setBootStatus] = useState(() => initialCacheFullyWarmed ? "Restored every warmed chat saved in this browser." : "Checking warmed chats saved in this browser...");
+  const [loading, setLoading] = useState(() => !initialCacheRestored);
+  const [booting, setBooting] = useState(() => !initialCacheRestored);
+  const [bootProgress, setBootProgress] = useState(() => initialCacheRestored ? 100 : 0);
+  const [bootStatus, setBootStatus] = useState(() => initialCacheRestored ? "Restored saved chats from this browser." : "Checking warmed chats saved in this browser...");
   const [persistentCacheHydrated, setPersistentCacheHydrated] = useState(() => initialCacheFullyWarmed);
   const [backgroundLoading, setBackgroundLoading] = useState(false);
   const [conversationLoading, setConversationLoading] = useState(false);
@@ -1537,7 +1538,7 @@ export default function WhatsAppInboxClient() {
   const backgroundWarmIdsRef = useRef(new Set<string>());
   const backgroundWarmQueueRef = useRef<string[]>([]);
   const backgroundWarmQueueRunningRef = useRef(false);
-  const restoredFromCacheRef = useRef(initialCacheFullyWarmed);
+  const restoredFromCacheRef = useRef(initialCacheRestored);
 
   const clampConversationRowsScrollTop = useCallback((element: HTMLDivElement, scrollTop: number) => (
     Math.min(scrollTop, Math.max(0, element.scrollHeight - element.clientHeight))
@@ -1643,19 +1644,20 @@ export default function WhatsAppInboxClient() {
           inboxMemorySnapshot = snapshot;
           conversationCacheRef.current = snapshot.conversationCache;
           selectedIdRef.current = nextSelectedId;
-          restoredFromCacheRef.current = fullyWarmed;
+          restoredFromCacheRef.current = true;
           setInbox(snapshot.inbox);
           setConversationCache(snapshot.conversationCache);
           setSelectedId(nextSelectedId);
           setSearch(snapshot.search || "");
           setFilter(snapshot.filter || "ALL");
+          setBootProgress(100);
+          setBootStatus(fullyWarmed ? "Restored every warmed chat saved in this browser." : "Restored saved chats from this browser.");
+          setBooting(false);
+          setLoading(false);
           if (fullyWarmed) {
-            setBootProgress(100);
-            setBootStatus("Restored every warmed chat saved in this browser.");
-            setBooting(false);
-            setLoading(false);
+            return;
           } else {
-            setBootStatus("Saved chats restored. Warming anything missing...");
+            setBootStatus("Restored saved chats from this browser.");
           }
         }
       } finally {
@@ -2052,9 +2054,10 @@ export default function WhatsAppInboxClient() {
             await loadConversation(nextSelectedId, false);
           }
           if (!active) return;
-          warmQueuedConversations(
-            getMissingOrStaleConversationIds(listInbox.conversations, [nextSelectedId]),
-          );
+          warmQueuedConversations(getMissingOrStaleConversationIds(
+            listInbox.conversations.slice(0, INBOX_QUICK_CACHE_CONVERSATION_LIMIT),
+            [nextSelectedId],
+          ));
         } catch {
           if (active) setNotice("Saved chats are shown. Latest WhatsApp refresh could not finish yet.");
         }
