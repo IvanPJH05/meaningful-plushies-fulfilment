@@ -719,6 +719,33 @@ export default function WhatsAppFlowsClient() {
     setForm(formFromFlow(flow));
   }
 
+  async function duplicateFlow(flow: WhatsAppFlow) {
+    setSaving(true);
+    setNotice("");
+    try {
+      const duplicateForm = {
+        ...formFromFlow(flow),
+        name: `${flow.name} Copy`,
+        status: "Draft" as const,
+      };
+      const response = await fetch("/api/crm/flows", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(flowPayloadFromForm(duplicateForm)),
+      });
+      const result = (await response.json()) as { ok?: boolean; flow?: WhatsAppFlow; error?: string };
+      if (!response.ok || !result.ok || !result.flow) throw new Error(result.error || "Flow could not be duplicated.");
+      setFlows((current) => [result.flow as WhatsAppFlow, ...current]);
+      setEditingId(result.flow.id);
+      setForm(formFromFlow(result.flow));
+      setNotice(`Duplicated "${flow.name}" as a draft.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Flow could not be duplicated.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function deleteFlow(flowIdToDelete: string) {
     setSaving(true);
     setNotice("");
@@ -1454,6 +1481,9 @@ export default function WhatsAppFlowsClient() {
 
               <div className={styles.cardActions}>
                 <button onClick={() => editFlow(flow)}>Edit</button>
+                <button disabled={saving} onClick={() => void duplicateFlow(flow)}>
+                  Duplicate
+                </button>
                 <button disabled={saving} onClick={() => void deleteFlow(flow.id)}>
                   Delete
                 </button>
