@@ -2,6 +2,8 @@
 
 import { type DragEvent, useEffect, useMemo, useState } from "react";
 
+import { supabase } from "@/lib/supabase";
+
 import styles from "./whatsapp-flows.module.css";
 
 type WhatsAppFlow = {
@@ -75,8 +77,10 @@ const actionTypes: ActionType[] = ["Send Message", "Send Media", "Ask Selection"
 const delayUnits: DelayUnit[] = ["seconds", "minutes", "hours", "days"];
 const FLOW_BUILDER_CACHE_KEY = "crm-whatsapp-flow-builder-cache-v1";
 const MAX_BROWSER_IMAGE_BYTES = 3.8 * 1024 * 1024;
-const MAX_BROWSER_MEDIA_BYTES = 15 * 1024 * 1024;
+const MAX_WHATSAPP_VIDEO_BYTES = 16 * 1024 * 1024;
+const MAX_WHATSAPP_DOCUMENT_BYTES = 100 * 1024 * 1024;
 const MAX_FLOW_IMAGE_EDGE = 1800;
+const WHATSAPP_MEDIA_BUCKET = "whatsapp-media";
 
 type FlowBuilderCache = {
   flows: WhatsAppFlow[];
@@ -520,6 +524,25 @@ function formatFileSize(sizeBytes?: number) {
   return `${(sizeBytes / 1024 / 1024).toFixed(sizeBytes >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
 }
 
+function isPdfFile(file: File) {
+  return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+}
+
+function mediaTypeFromFile(file: File): MediaType {
+  if (file.type.startsWith("video/")) return "video";
+  if (isPdfFile(file)) return "pdf";
+  return "image";
+}
+
+function contentTypeFromFile(file: File) {
+  if (isPdfFile(file)) return "application/pdf";
+  return file.type || "application/octet-stream";
+}
+
+function safeStorageFilename(value: string) {
+  return value.replace(/[^\w.\- ]+/g, "_").trim() || "flow-media";
+}
+
 async function canvasToBlob(canvas: HTMLCanvasElement, quality: number) {
   return new Promise<Blob | null>((resolve) => {
     canvas.toBlob(resolve, "image/jpeg", quality);
@@ -577,8 +600,12 @@ async function prepareMediaFileForUpload(file: File) {
     return preparedFile;
   }
 
-  if (file.size > MAX_BROWSER_MEDIA_BYTES) {
-    throw new Error(`${file.name} is too large for flow upload. Keep videos and PDFs under ${Math.floor(MAX_BROWSER_MEDIA_BYTES / 1024 / 1024)} MB.`);
+  if (file.type.startsWith("video/") && file.size > MAX_WHATSAPP_VIDEO_BYTES) {
+    throw new Error(`${file.name} is ${formatFileSize(file.size)}. WhatsApp video messages must be ${Math.floor(MAX_WHATSAPP_VIDEO_BYTES / 1024 / 1024)} MB or smaller.`);
+  }
+
+  if (isPdfFile(file) && file.size > MAX_WHATSAPP_DOCUMENT_BYTES) {
+    throw new Error(`${file.name} is ${formatFileSize(file.size)}. WhatsApp documents must be 100 MB or smaller, so this PDF needs to be compressed or split before it can be sent.`);
   }
 
   return file;
@@ -775,6 +802,40 @@ export default function WhatsAppFlowsClient() {
     }));
   }
 
+  async function uploadMediaFileDirectly(file: File) {
+    if (!supabase) {
+      throw new Error("Direct media upload is not configured.");
+    }
+
+    const uploadFile = await prepareMediaFileForUpload(file);
+    const contentType = contentTypeFromFile(uploadFile);
+    const storagePath = [
+      "flow-uploads",
+      new Date().toISOString().slice(0, 10),
+      `${makeId()}-${safeStorageFilename(uploadFile.name || file.name)}`,
+    ].join("/");
+    const { error } = await supabase.storage
+      .from(WHATSAPP_MEDIA_BUCKET)
+      .upload(storagePath, uploadFile, {
+        contentType,
+        cacheControl: "31536000",
+        upsert: false,
+      });
+
+    if (error) {
+      throw new Error(error.message || `${file.name} could not be uploaded to media storage.`);
+    }
+
+    const mediaUrl = `${window.location.origin}/media-assets/direct?path=${encodeURIComponent(storagePath)}&filename=${encodeURIComponent(uploadFile.name || file.name)}&contentType=${encodeURIComponent(contentType)}`;
+    return makeMediaItem({
+      type: mediaTypeFromFile(uploadFile),
+      url: mediaUrl,
+      fileName: uploadFile.name || file.name,
+      contentType,
+      sizeBytes: uploadFile.size || file.size,
+    });
+  }
+
   async function uploadSingleMediaFile(file: File) {
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 60_000);
@@ -801,8 +862,8 @@ export default function WhatsAppFlowsClient() {
       }
 
       if (!response.ok || !result.ok || !result.asset?.originalUrl) {
-        if (response.status === 413) {
-          throw new Error(`${file.name} is too large to upload here. Try a smaller file.`);
+        if (response.status === 413 || result.error?.includes("Media files must be")) {
+          return uploadMediaFileDirectly(file);
         }
         throw new Error(result.error || `Media could not be uploaded. (${response.status})`);
       }
