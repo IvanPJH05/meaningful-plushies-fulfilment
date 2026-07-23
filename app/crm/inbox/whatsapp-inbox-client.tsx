@@ -2576,7 +2576,7 @@ export default function WhatsAppInboxClient() {
           await generateAiReply();
         }
       }
-      setNotice(`Flow "${flow.name}" sent through WhatsApp.`);
+      setNotice(`Flow "${flow.name}" was submitted to WhatsApp. Delivery will update when WhatsApp confirms it.`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Flow could not be sent through WhatsApp.");
     } finally {

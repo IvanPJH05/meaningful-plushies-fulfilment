@@ -90,11 +90,159 @@ function payloadHasLiveWhatsAppMessages(payload: unknown) {
   return false;
 }
 
+function firstTextValue(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+function timestampFromValue(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return new Date(value > 1_000_000_000_000 ? value : value * 1000);
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) {
+      return new Date(numeric > 1_000_000_000_000 ? numeric : numeric * 1000);
+    }
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+
+  return new Date();
+}
+
+function whatsAppStatusError(status: Record<string, unknown>) {
+  const firstError = objectValue(arrayValue(status.errors)[0]);
+  const errorData = objectValue(firstError.error_data);
+  return firstTextValue(
+    errorData.details,
+    firstError.message,
+    firstError.title,
+    status.status,
+  );
+}
+
+type NormalizedWhatsAppStatus = {
+  messageId: string;
+  status: "sent" | "delivered" | "read" | "failed";
+  timestamp: Date;
+  error: string;
+};
+
+function normalizeWhatsAppStatuses(payload: unknown): NormalizedWhatsAppStatus[] {
+  const statuses: NormalizedWhatsAppStatus[] = [];
+  const seen = new Set<string>();
+
+  for (const entry of arrayValue(objectValue(payload).entry)) {
+    for (const change of arrayValue(objectValue(entry).changes)) {
+      const value = objectValue(objectValue(change).value);
+      for (const item of arrayValue(value.statuses)) {
+        const status = objectValue(item);
+        const messageId = firstTextValue(status.id);
+        const statusName = firstTextValue(status.status).toLowerCase();
+        if (!messageId || !["sent", "delivered", "read", "failed"].includes(statusName)) continue;
+
+        const key = `${messageId}:${statusName}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        statuses.push({
+          messageId,
+          status: statusName as NormalizedWhatsAppStatus["status"],
+          timestamp: timestampFromValue(status.timestamp),
+          error: whatsAppStatusError(status),
+        });
+      }
+    }
+  }
+
+  return statuses;
+}
+
+async function applyWhatsAppStatuses(payload: unknown) {
+  const business = await ensureDefaultBusiness();
+  const statuses = normalizeWhatsAppStatuses(payload);
+  let updated = 0;
+
+  for (const item of statuses) {
+    if (item.status === "failed") {
+      const result = await prisma.message.updateMany({
+        where: {
+          businessId: business.id,
+          externalMessageId: item.messageId,
+        },
+        data: {
+          status: MessageStatus.FAILED,
+          failedReason: item.error || "WhatsApp could not deliver this message.",
+        },
+      });
+      updated += result.count;
+      continue;
+    }
+
+    if (item.status === "read") {
+      const result = await prisma.message.updateMany({
+        where: {
+          businessId: business.id,
+          externalMessageId: item.messageId,
+          status: { not: MessageStatus.FAILED },
+        },
+        data: {
+          status: MessageStatus.READ,
+          deliveredAt: item.timestamp,
+          readAt: item.timestamp,
+          failedReason: null,
+        },
+      });
+      updated += result.count;
+      continue;
+    }
+
+    if (item.status === "delivered") {
+      const result = await prisma.message.updateMany({
+        where: {
+          businessId: business.id,
+          externalMessageId: item.messageId,
+          status: { in: [MessageStatus.QUEUED, MessageStatus.SENT] },
+        },
+        data: {
+          status: MessageStatus.DELIVERED,
+          deliveredAt: item.timestamp,
+          failedReason: null,
+        },
+      });
+      updated += result.count;
+      continue;
+    }
+
+    const result = await prisma.message.updateMany({
+      where: {
+        businessId: business.id,
+        externalMessageId: item.messageId,
+        status: MessageStatus.QUEUED,
+      },
+      data: {
+        status: MessageStatus.SENT,
+        sentAt: item.timestamp,
+        failedReason: null,
+      },
+    });
+    updated += result.count;
+  }
+
+  return { received: statuses.length, updated };
+}
+
 async function recordRawWhatsAppWebhook(args: {
   rawBody: string;
   payload: unknown;
   status: WebhookEventStatus;
   parsedMessageCount?: number;
+  parsedStatusCount?: number;
+  updatedStatusCount?: number;
   error?: string;
 }) {
   const business = await ensureDefaultBusiness();
@@ -111,6 +259,8 @@ async function recordRawWhatsAppWebhook(args: {
       payload: jsonValue({
         raw: args.payload,
         parsedMessageCount: args.parsedMessageCount ?? null,
+        parsedStatusCount: args.parsedStatusCount ?? null,
+        updatedStatusCount: args.updatedStatusCount ?? null,
       }),
       status: args.status,
       processedAt: args.status === WebhookEventStatus.RECEIVED ? undefined : new Date(),
@@ -123,6 +273,8 @@ async function recordRawWhatsAppWebhook(args: {
       payload: jsonValue({
         raw: args.payload,
         parsedMessageCount: args.parsedMessageCount ?? null,
+        parsedStatusCount: args.parsedStatusCount ?? null,
+        updatedStatusCount: args.updatedStatusCount ?? null,
       }),
       status: args.status,
       processedAt: args.status === WebhookEventStatus.RECEIVED ? undefined : new Date(),
@@ -603,6 +755,7 @@ export async function POST(request: Request) {
       after(async () => {
         try {
           const storedMessages = await storeWhatsAppMessages(payload);
+          const statusResult = await applyWhatsAppStatuses(payload);
           const messageIds = Array.from(new Set(storedMessages.map((message) => message.messageId).filter(Boolean)));
           if (messageIds.length) {
             await enqueueWhatsAppMediaJobsForMessages(messageIds);
@@ -613,6 +766,8 @@ export async function POST(request: Request) {
             payload,
             status: WebhookEventStatus.PROCESSED,
             parsedMessageCount: storedMessages.length,
+            parsedStatusCount: statusResult.received,
+            updatedStatusCount: statusResult.updated,
           });
         } catch (error) {
           console.error("WhatsApp history sync background task failed", error);
@@ -634,11 +789,14 @@ export async function POST(request: Request) {
     }
 
     const storedMessages = await storeWhatsAppMessages(payload);
+    const statusResult = await applyWhatsAppStatuses(payload);
     await recordRawWhatsAppWebhook({
       rawBody,
       payload,
       status: WebhookEventStatus.PROCESSED,
       parsedMessageCount: storedMessages.length,
+      parsedStatusCount: statusResult.received,
+      updatedStatusCount: statusResult.updated,
     });
     const aiMessageCount = scheduleAiForStoredMessages(storedMessages);
     const mediaMessageCount = scheduleMediaForStoredMessages(storedMessages);
@@ -646,6 +804,7 @@ export async function POST(request: Request) {
     return json(200, {
       ok: true,
       stored: storedMessages.length,
+      statuses: statusResult.updated,
       ai: aiMessageCount ? "scheduled" : "none",
       media: mediaMessageCount ? "scheduled" : "none",
     });
