@@ -2331,12 +2331,12 @@ export default function WhatsAppInboxClient() {
     await loadConversation(conversationId);
   }
 
-  async function sendMessage(messageId?: string, bodyOverride?: string, media?: { type: FlowMediaType; url: string }) {
+  async function sendMessage(messageId?: string, bodyOverride?: string, media?: { type: FlowMediaType; url: string }): Promise<boolean> {
     const body = (bodyOverride !== undefined ? bodyOverride : draft).trim();
     const mediaUrl = media?.url.trim() || "";
     const sendingMedia = (media?.type === "image" || media?.type === "video") && Boolean(mediaUrl);
-    if (!selectedId || (!body && !sendingMedia)) return;
-    if (sendingRef.current) return;
+    if (!selectedId || (!body && !sendingMedia)) return false;
+    if (sendingRef.current) return false;
 
     const conversationId = selectedId;
     const activeReplyTarget = bodyOverride === undefined && !messageId ? replyTarget : null;
@@ -2378,34 +2378,43 @@ export default function WhatsAppInboxClient() {
         }),
       });
       const data = await response.json();
+      const failed = !response.ok || !data.ok;
+      const failureReason = data.error || "WhatsApp message could not be sent.";
       if (data.message) {
         if (optimisticId) {
           patchConversationMessages(conversationId, (messages) => {
             const stableMessage = messages.find((message) => message.id === optimisticId);
             const returnedMessage = normalizeReturnedMessage(data.message, stableMessage);
-            return messages.map((message) => (message.id === optimisticId ? returnedMessage : message));
+            return messages.map((message) => (
+              message.id === optimisticId
+                ? failed
+                  ? { ...returnedMessage, status: "FAILED", failedReason: failureReason }
+                  : returnedMessage
+                : message
+            ));
           });
         } else {
           await loadConversation(conversationId, false);
         }
         void loadConversationList();
       }
-      if (!response.ok || !data.ok) {
+      if (failed) {
         if (optimisticId && !data.message) {
           patchConversationMessages(conversationId, (messages) => (
             messages.map((message) => (
               message.id === optimisticId
-                ? { ...message, status: "FAILED", failedReason: data.error || "WhatsApp message could not be sent." }
+                ? { ...message, status: "FAILED", failedReason: failureReason }
                 : message
             ))
           ));
         }
-        setNotice(data.error || "WhatsApp message could not be sent.");
-        return;
+        setNotice(failureReason);
+        return false;
       }
       if (data.message?.status === "QUEUED") {
         setNotice("Message saved, but WhatsApp sending is not fully configured yet.");
       }
+      return true;
     } catch (error) {
       if (optimisticId) {
         patchConversationMessages(conversationId, (messages) => (
@@ -2417,6 +2426,7 @@ export default function WhatsAppInboxClient() {
         ));
       }
       setNotice(error instanceof Error ? error.message : "WhatsApp message could not be sent.");
+      return false;
     } finally {
       sendingRef.current = false;
       setSending(false);
@@ -2526,6 +2536,13 @@ export default function WhatsAppInboxClient() {
   async function runFlow(flow: WhatsAppFlow) {
     if (!selectedId || runningFlowId) return;
 
+    async function sendFlowStep(body: string, media?: { type: FlowMediaType; url: string }) {
+      const sent = await sendMessage(undefined, body, media);
+      if (!sent) {
+        throw new Error("WhatsApp did not accept one of the flow messages.");
+      }
+    }
+
     setRunningFlowId(flow.id);
     setNotice("");
     try {
@@ -2537,7 +2554,7 @@ export default function WhatsAppInboxClient() {
 
         if (step.type === "Send Message") {
           const text = personalizeFlowText(step.message, selected);
-          if (text) await sendMessage(undefined, text);
+          if (text) await sendFlowStep(text);
           continue;
         }
 
@@ -2546,11 +2563,11 @@ export default function WhatsAppInboxClient() {
           if (mediaItems.length) {
             for (const [index, item] of mediaItems.entries()) {
               const caption = personalizeFlowText(item.caption || (index === 0 ? step.message : ""), selected);
-              await sendMessage(undefined, caption, { type: item.type, url: item.url });
+              await sendFlowStep(caption, { type: item.type, url: item.url });
             }
           } else {
             const text = personalizeFlowText(step.message, selected);
-            if (text) await sendMessage(undefined, text);
+            if (text) await sendFlowStep(text);
           }
           continue;
         }
@@ -2559,6 +2576,9 @@ export default function WhatsAppInboxClient() {
           await generateAiReply();
         }
       }
+      setNotice(`Flow "${flow.name}" sent through WhatsApp.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Flow could not be sent through WhatsApp.");
     } finally {
       setRunningFlowId("");
     }

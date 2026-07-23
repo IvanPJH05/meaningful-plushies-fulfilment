@@ -155,6 +155,24 @@ function deliveryMessageId(delivery: unknown) {
   return firstStringValue(firstMessage.id);
 }
 
+function deliveryAccepted(delivery: unknown) {
+  return Boolean(delivery && typeof delivery === "object" && (delivery as { sent?: boolean }).sent);
+}
+
+function deliveryFailureReason(delivery: unknown, fallback: string) {
+  if (delivery && typeof delivery === "object") {
+    const value = delivery as { error?: unknown; reason?: unknown };
+    if (typeof value.error === "string" && value.error.trim()) return value.error;
+    if (typeof value.reason === "string" && value.reason.trim()) {
+      return value.reason === "missing_config"
+        ? "WhatsApp sending is not configured in Vercel."
+        : value.reason;
+    }
+  }
+
+  return fallback;
+}
+
 function rawWhatsAppDisplayText(metadata: unknown) {
   const raw = rawWhatsAppMessageFromMetadata(metadata);
   return raw ? whatsAppDisplayTextFromMessage(raw) : "";
@@ -969,8 +987,12 @@ export async function POST(request: Request) {
           messageId: targetMessage.externalMessageId,
           emoji,
         });
-        const sent = Boolean(delivery && typeof delivery === "object" && (delivery as { sent?: boolean }).sent);
+        const sent = deliveryAccepted(delivery);
         status = sent ? MessageStatus.SENT : MessageStatus.QUEUED;
+        if (!sent) {
+          deliveryError = deliveryFailureReason(delivery, "WhatsApp reaction was not accepted by Meta.");
+          status = MessageStatus.FAILED;
+        }
       } catch (error) {
         deliveryError = error instanceof Error ? error.message : "WhatsApp reaction could not be sent.";
         status = MessageStatus.FAILED;
@@ -1007,8 +1029,9 @@ export async function POST(request: Request) {
         },
       });
 
-      return json(200, {
-        ok: status !== MessageStatus.FAILED,
+      const ok = status === MessageStatus.SENT;
+      return json(ok ? 200 : 502, {
+        ok,
         delivery,
         error: deliveryError || undefined,
         reaction: {
@@ -1095,8 +1118,12 @@ export async function POST(request: Request) {
           body: messageBody,
           contextMessageId: replyContextMessageId,
         });
-      const sent = Boolean(delivery && typeof delivery === "object" && (delivery as { sent?: boolean }).sent);
+      const sent = deliveryAccepted(delivery);
       status = sent ? MessageStatus.SENT : MessageStatus.QUEUED;
+      if (!sent) {
+        deliveryError = deliveryFailureReason(delivery, "WhatsApp did not accept the message.");
+        status = MessageStatus.FAILED;
+      }
     } catch (error) {
       deliveryError = error instanceof Error ? error.message : "WhatsApp message could not be sent.";
       status = MessageStatus.FAILED;
@@ -1152,8 +1179,9 @@ export async function POST(request: Request) {
       },
     });
 
-    return json(200, {
-      ok: status !== MessageStatus.FAILED,
+    const ok = status === MessageStatus.SENT;
+    return json(ok ? 200 : 502, {
+      ok,
       delivery,
       error: deliveryError || undefined,
       message: {
