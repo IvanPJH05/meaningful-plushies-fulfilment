@@ -589,7 +589,7 @@ function duplicateFormWithFreshKeys(flow: WhatsAppFlow, overrides: Partial<Pick<
     name: overrides.name ?? `${flow.name} Copy`,
     groupName: overrides.groupName ?? source.groupName,
     subgroupName: overrides.subgroupName ?? source.subgroupName,
-    status: "Draft",
+    status: source.status,
     triggerButtonLabel: source.triggerType === "selection_button" ? makeSelectionKey() : source.triggerButtonLabel,
     actions: source.actions.map((action) => ({
       ...makeAction(action),
@@ -916,7 +916,7 @@ export default function WhatsAppFlowsClient() {
       setFlows((current) => [result.flow as WhatsAppFlow, ...current]);
       setEditingId(result.flow.id);
       setForm(formFromFlow(result.flow));
-      setNotice(`Duplicated "${flow.name}" as a draft.`);
+      setNotice(`Duplicated "${flow.name}" as ${result.flow.status.toLowerCase()}.`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Flow could not be duplicated.");
     } finally {
