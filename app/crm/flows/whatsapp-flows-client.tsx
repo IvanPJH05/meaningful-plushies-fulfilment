@@ -826,10 +826,8 @@ export default function WhatsAppFlowsClient() {
     void uploadMediaFiles(actionId, item, event.dataTransfer.files);
   }
 
-  function mediaAcceptForType(type: MediaType) {
-    if (type === "video") return "video/*";
-    if (type === "pdf") return "application/pdf,.pdf";
-    return "image/*";
+  function mediaAccept() {
+    return "image/*,video/*,application/pdf,.pdf";
   }
 
   function mediaDropText(type: MediaType) {
@@ -1201,7 +1199,7 @@ export default function WhatsAppFlowsClient() {
                                 onDrop={(event) => handleMediaDrop(event, action.id, item)}
                               >
                                 <input
-                                  accept={mediaAcceptForType(item.type)}
+                                  accept={mediaAccept()}
                                   multiple
                                   type="file"
                                   onChange={(event) => {

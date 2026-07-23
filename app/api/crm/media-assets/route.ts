@@ -13,6 +13,7 @@ import { WHATSAPP_MEDIA_CACHE_MAX_BYTES } from "@/src/modules/whatsapp/media-cac
 export const runtime = "nodejs";
 
 const MAX_UPLOAD_BYTES = WHATSAPP_MEDIA_CACHE_MAX_BYTES;
+const GENERIC_UPLOAD_CONTENT_TYPES = new Set(["", "application/octet-stream", "binary/octet-stream"]);
 
 function json(status: number, body: Record<string, unknown>) {
   return NextResponse.json(body, { status });
@@ -28,7 +29,10 @@ export async function POST(request: Request) {
       return json(400, { ok: false, error: "Choose an image, video, or PDF file to upload." });
     }
 
-    const contentType = normalizeMediaContentType(file.type || (file.name.toLowerCase().endsWith(".pdf") ? "application/pdf" : ""));
+    const uploadedContentType = normalizeMediaContentType(file.type);
+    const contentType = file.name.toLowerCase().endsWith(".pdf") && GENERIC_UPLOAD_CONTENT_TYPES.has(uploadedContentType)
+      ? "application/pdf"
+      : uploadedContentType;
     const mediaType = mediaTypeFromContentType(contentType);
     if (mediaType !== "image" && mediaType !== "video" && mediaType !== "pdf") {
       return json(400, { ok: false, error: "Only image, video, and PDF files can be used in flows." });
