@@ -959,8 +959,25 @@ export default function WhatsAppFlowsClient() {
     }
   }
 
-  async function duplicateFlowSet(sourceFlows: WhatsAppFlow[], label: string, overridesForFlow: (flow: WhatsAppFlow) => Partial<Pick<FlowForm, "groupName" | "subgroupName">>) {
-    if (!sourceFlows.length) return;
+  async function deleteCopiedFlows(flowIds: string[]) {
+    await Promise.allSettled(flowIds.map((id) => fetch("/api/crm/flows", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id }),
+    })));
+  }
+
+  async function duplicateFlowSet(
+    sourceFlows: WhatsAppFlow[],
+    label: string,
+    overridesForFlow: (flow: WhatsAppFlow) => Partial<Pick<FlowForm, "groupName" | "subgroupName">>,
+    afterSuccess?: (createdFlows: WhatsAppFlow[]) => void
+  ) {
+    if (!sourceFlows.length) {
+      afterSuccess?.([]);
+      setNotice(`Duplicated ${label}.`);
+      return;
+    }
     setSaving(true);
     setNotice("");
     const createdPairs: Array<{ source: WhatsAppFlow; created: WhatsAppFlow }> = [];
@@ -1032,6 +1049,7 @@ export default function WhatsAppFlowsClient() {
       }
 
       setFlows((current) => [...patchedFlows, ...current]);
+      afterSuccess?.(patchedFlows);
       if (patchedFlows[0]) {
         setEditingId(patchedFlows[0].id);
         setForm(formFromFlow(patchedFlows[0]));
@@ -1040,6 +1058,7 @@ export default function WhatsAppFlowsClient() {
     } catch (error) {
       const createdIds = createdPairs.map((pair) => pair.created.id);
       if (createdIds.length) {
+        await deleteCopiedFlows(createdIds);
         setFlows((current) => current.filter((flow) => !createdIds.includes(flow.id)));
       }
       setNotice(error instanceof Error ? error.message : `${label} could not be duplicated.`);
@@ -1052,10 +1071,16 @@ export default function WhatsAppFlowsClient() {
     const usedGroupNames = new Set(flowGroups.map((candidate) => candidate.name.trim().toLowerCase()));
     const nextGroupName = uniqueCopyName(group.name, usedGroupNames);
     const sourceFlows = [...group.flows, ...group.subgroups.flatMap(subfolderFlows)];
+    const sourceSubfolders = flattenSubfolderPaths(group.subgroups);
     return duplicateFlowSet(sourceFlows, `group "${group.name}"`, (flow) => ({
       groupName: nextGroupName,
       subgroupName: flow.subgroupName || "",
-    }));
+    }), () => {
+      saveFolders([
+        ...folders.filter((folder) => folder.name.toLowerCase() !== nextGroupName.toLowerCase()),
+        { name: nextGroupName, subfolders: sourceSubfolders },
+      ]);
+    });
   }
 
   function subfolderFlows(subfolder: FlowSubfolder): WhatsAppFlow[] {
@@ -1073,12 +1098,34 @@ export default function WhatsAppFlowsClient() {
         .filter(Boolean)
     ));
     const nextRootPath = childFolderPath(parentPath, nextSubgroupName);
+    const copiedSubfolderPaths = [subgroup.path, ...flattenSubfolderPaths(subgroup.subgroups)].map((path) => (
+      path === subgroup.path || path.startsWith(`${subgroup.path}/`)
+        ? `${nextRootPath}${path.slice(subgroup.path.length)}`
+        : nextRootPath
+    ));
     return duplicateFlowSet(subfolderFlows(subgroup), `subfolder "${subgroup.name}"`, (flow) => ({
       groupName: groupName === "Ungrouped" ? "" : groupName,
       subgroupName: flow.subgroupName === subgroup.path || flow.subgroupName?.startsWith(`${subgroup.path}/`)
         ? `${nextRootPath}${flow.subgroupName.slice(subgroup.path.length)}`
         : nextRootPath,
-    }));
+    }), () => {
+      const nextFolders = [...folders];
+      const existingIndex = nextFolders.findIndex((folder) => folder.name.toLowerCase() === groupName.toLowerCase());
+      const folder = existingIndex >= 0
+        ? nextFolders[existingIndex]
+        : { name: groupName, subfolders: [] };
+      const existingPaths = new Set(folder.subfolders.map((path) => path.toLowerCase()));
+      const nextFolder = {
+        ...folder,
+        subfolders: [
+          ...folder.subfolders,
+          ...copiedSubfolderPaths.filter((path) => !existingPaths.has(path.toLowerCase())),
+        ],
+      };
+      if (existingIndex >= 0) nextFolders[existingIndex] = nextFolder;
+      else nextFolders.push(nextFolder);
+      saveFolders(nextFolders);
+    });
   }
 
   async function moveFlowsToFolder(flowIds: string[], groupName: string, subgroupName = "") {
