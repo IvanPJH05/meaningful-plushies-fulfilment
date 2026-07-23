@@ -85,6 +85,14 @@ type FlowBuilderCache = {
   savedAt: number;
 };
 
+type SelectionFlowLink = {
+  targetFlowId: string;
+  sourceFlowId: string;
+  sourceFlowName: string;
+  optionLabel: string;
+  optionKey: string;
+};
+
 let flowBuilderMemoryCache: FlowBuilderCache | null = null;
 
 function makeId() {
@@ -470,8 +478,40 @@ function triggerSummary(flow: Pick<WhatsAppFlow, "name" | "triggerType" | "trigg
   const triggerType = normaliseTriggerType(flow.triggerType);
   if (triggerType === "click") return `Button: ${flow.triggerButtonLabel || flow.name}`;
   if (triggerType === "first_message") return "First customer message";
-  if (triggerType === "selection_button") return `Selection key: ${flow.triggerButtonLabel || flow.name}`;
+  if (triggerType === "selection_button") return "Selection button press";
   return `Trigger: ${flow.trigger || "Keywords"}`;
+}
+
+function selectionLinksFromFlow(flow: Pick<WhatsAppFlow, "id" | "name" | "steps">): SelectionFlowLink[] {
+  return flow.steps.flatMap((step) => {
+    const action = actionFromStep(step);
+    if (action.type !== "Ask Selection") return [];
+    return action.options
+      .filter((option) => option.targetFlowId)
+      .map((option) => ({
+        targetFlowId: option.targetFlowId || "",
+        sourceFlowId: flow.id,
+        sourceFlowName: flow.name,
+        optionLabel: option.label || "Selection option",
+        optionKey: option.id || "",
+      }));
+  });
+}
+
+function selectionLinksFromDraft(form: FlowForm, editingId: string): SelectionFlowLink[] {
+  if (!editingId) return [];
+  return form.actions.flatMap((action) => {
+    if (action.type !== "Ask Selection") return [];
+    return action.options
+      .filter((option) => option.targetFlowId)
+      .map((option) => ({
+        targetFlowId: option.targetFlowId || "",
+        sourceFlowId: editingId,
+        sourceFlowName: form.name || "Unsaved flow",
+        optionLabel: option.label || "Selection option",
+        optionKey: option.id || "",
+      }));
+  });
 }
 
 function formatFileSize(sizeBytes?: number) {
@@ -589,6 +629,17 @@ export default function WhatsAppFlowsClient() {
   }, [editingId, flows, form]);
 
   const activeCount = useMemo(() => flows.filter((flow) => flow.status === "Active").length, [flows]);
+  const selectionLinks = useMemo(() => {
+    const savedLinks = flows.flatMap(selectionLinksFromFlow);
+    const draftLinks = selectionLinksFromDraft(form, editingId);
+    return [
+      ...savedLinks.filter((link) => link.sourceFlowId !== editingId),
+      ...draftLinks,
+    ];
+  }, [editingId, flows, form]);
+  const editingSelectionLinks = useMemo(() => (
+    editingId ? selectionLinks.filter((link) => link.targetFlowId === editingId) : []
+  ), [editingId, selectionLinks]);
   const hasUsableAction = useMemo(() => form.actions.some((action) => (
     action.type === "Send Media"
       ? action.mediaItems.some((item) => item.url.trim())
@@ -943,18 +994,17 @@ export default function WhatsAppFlowsClient() {
                     <input value="A customer sends their first message" disabled />
                   </label>
                 ) : form.triggerType === "selection_button" ? (
-                  <div className={styles.keyField}>
-                    <label>
-                      Trigger key
-                      <input value={form.triggerButtonLabel} readOnly />
-                    </label>
-                    <button
-                      className={styles.secondaryButton}
-                      type="button"
-                      onClick={() => setForm((current) => ({ ...current, triggerButtonLabel: makeSelectionKey() }))}
-                    >
-                      Generate new key
-                    </button>
+                  <div className={styles.linkedTriggerPanel}>
+                    <span>Linked from</span>
+                    {editingSelectionLinks.length ? (
+                      editingSelectionLinks.map((link) => (
+                        <strong key={`${link.sourceFlowId}-${link.optionKey}`}>
+                          {link.sourceFlowName} / {link.optionLabel}
+                        </strong>
+                      ))
+                    ) : (
+                      <strong>Choose this flow in an Ask Selection option to link it.</strong>
+                    )}
                   </div>
                 ) : form.triggerType === "click" ? (
                   <label>
@@ -983,7 +1033,7 @@ export default function WhatsAppFlowsClient() {
                   : form.triggerType === "first_message"
                     ? "This flow runs automatically when a customer sends their first message in a new chat."
                   : form.triggerType === "selection_button"
-                    ? "This flow runs when a customer taps a selection button with this generated key. Active selection keys must be unique."
+                    ? "This flow runs when it is selected in another flow's Ask Selection action. The button key is handled automatically."
                   : "The flow can run when a WhatsApp message contains one of these words."}
               </p>
 
@@ -1136,7 +1186,9 @@ export default function WhatsAppFlowsClient() {
                                   ))}
                               </select>
                               <small>
-                                Option key: {option.id}. This is what the trigger reads, not the visible button text.
+                                {option.targetFlowId
+                                  ? `Linked by key ${option.id}. The target flow will use this key automatically.`
+                                  : `Option key: ${option.id}. Choose a target flow to link this button.`}
                               </small>
                             </label>
                             <button
@@ -1306,6 +1358,22 @@ export default function WhatsAppFlowsClient() {
                 <span>{triggerSummary(flow)}</span>
                 <strong>{flow.steps.length} actions</strong>
               </div>
+
+              {normaliseTriggerType(flow.triggerType) === "selection_button" && (
+                <div className={styles.linkedFlowSummary}>
+                  {selectionLinks.filter((link) => link.targetFlowId === flow.id).length ? (
+                    selectionLinks
+                      .filter((link) => link.targetFlowId === flow.id)
+                      .map((link) => (
+                        <span key={`${flow.id}-${link.sourceFlowId}-${link.optionKey}`}>
+                          Linked from {link.sourceFlowName} / {link.optionLabel}
+                        </span>
+                      ))
+                  ) : (
+                    <span>Not linked yet. Select this flow inside an Ask Selection option.</span>
+                  )}
+                </div>
+              )}
 
               <div className={styles.actionTimeline}>
                 {flow.steps.map((step, index) => {
