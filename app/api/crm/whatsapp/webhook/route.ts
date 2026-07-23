@@ -27,7 +27,12 @@ import {
   processDueWhatsAppMediaJobs,
 } from "@/src/modules/whatsapp/media-jobs";
 import { fallbackWhatsAppMediaContentType } from "@/src/modules/whatsapp/media-metadata";
-import { sendWhatsAppTextMessage } from "@/src/modules/whatsapp/outbound";
+import {
+  sendWhatsAppButtonMessage,
+  sendWhatsAppImageMessage,
+  sendWhatsAppTextMessage,
+  sendWhatsAppVideoMessage,
+} from "@/src/modules/whatsapp/outbound";
 import { verifyWebhookChallenge } from "@/src/modules/whatsapp/webhook-verification";
 import {
   normalizeWhatsAppWebhookPayload,
@@ -95,6 +100,10 @@ function firstTextValue(...values: unknown[]) {
     if (typeof value === "string" && value.trim()) return value.trim();
   }
   return "";
+}
+
+function textValue(value: unknown) {
+  return typeof value === "string" ? value : "";
 }
 
 function timestampFromValue(value: unknown) {
@@ -295,6 +304,7 @@ type StoredWhatsAppMessage = {
   messageType: MessageType;
   created: boolean;
   source: NormalizedWhatsAppMessageSource;
+  raw: Record<string, unknown>;
 };
 
 function scheduleAiForStoredMessages(storedMessages: StoredWhatsAppMessage[]) {
@@ -335,6 +345,234 @@ function scheduleMediaForStoredMessages(storedMessages: StoredWhatsAppMessage[])
   });
 
   return messageIds.length;
+}
+
+type FlowStep = {
+  type?: string;
+  delayValue?: string;
+  delayUnit?: string;
+  message?: string;
+  imageUrl?: string;
+  videoUrl?: string;
+  mediaItems?: Array<{ type?: string; url?: string; caption?: string }>;
+  options?: Array<{ id?: string; label?: string; followUpMessage?: string }>;
+};
+
+function deliveryMessageId(delivery: unknown) {
+  const response = objectValue(objectValue(delivery).response);
+  const firstMessage = objectValue(arrayValue(response.messages)[0]);
+  return textValue(firstMessage.id) || "";
+}
+
+function flowButtonReplyId(raw: Record<string, unknown>) {
+  const interactive = objectValue(raw.interactive);
+  const buttonReply = objectValue(interactive.button_reply);
+  return textValue(buttonReply.id);
+}
+
+function flowDelayMsFromStep(step: FlowStep) {
+  const value = Math.max(0, Number(step.delayValue || 0) || 0);
+  const unit = textValue(step.delayUnit).toLowerCase();
+  if (unit === "days") return value * 24 * 60 * 60 * 1000;
+  if (unit === "hours") return value * 60 * 60 * 1000;
+  if (unit === "seconds") return value * 1000;
+  return value * 60 * 1000;
+}
+
+async function wait(ms: number) {
+  if (ms <= 0) return;
+  await new Promise((resolve) => setTimeout(resolve, Math.min(ms, 30_000)));
+}
+
+async function recordFlowOutbound(args: {
+  businessId: string;
+  conversationId: string;
+  body: string;
+  messageType?: MessageType;
+  metadata: Record<string, unknown>;
+  delivery: unknown;
+  deliveryError?: string;
+}) {
+  const sent = Boolean(objectValue(args.delivery).sent);
+  await prisma.message.create({
+    data: {
+      businessId: args.businessId,
+      conversationId: args.conversationId,
+      direction: MessageDirection.OUTBOUND,
+      senderType: MessageSenderType.SYSTEM,
+      messageType: args.messageType || MessageType.TEXT,
+      body: args.body,
+      status: sent ? MessageStatus.SENT : MessageStatus.FAILED,
+      externalMessageId: deliveryMessageId(args.delivery) || undefined,
+      metadata: jsonValue(args.metadata),
+      sentAt: sent ? new Date() : undefined,
+      failedReason: args.deliveryError || undefined,
+    },
+  });
+}
+
+function flowMediaItems(step: FlowStep) {
+  const items = Array.isArray(step.mediaItems) ? step.mediaItems : [];
+  const normalised = items
+    .map((item) => ({
+      type: item.type === "video" ? "video" as const : "image" as const,
+      url: textValue(item.url).trim(),
+      caption: textValue(item.caption).trim(),
+    }))
+    .filter((item) => item.url);
+  if (normalised.length) return normalised;
+  if (step.imageUrl) return [{ type: "image" as const, url: step.imageUrl, caption: step.message || "" }];
+  if (step.videoUrl) return [{ type: "video" as const, url: step.videoUrl, caption: step.message || "" }];
+  return [];
+}
+
+async function sendFlowStepFromWebhook(args: {
+  item: StoredWhatsAppMessage;
+  flowId: string;
+  stepIndex: number;
+  step: FlowStep;
+}) {
+  const type = textValue(args.step.type) || "Send Message";
+  const body = textValue(args.step.message);
+  if (type === "Ask Selection") {
+    const buttons = arrayValue(args.step.options)
+      .map((option, optionIndex) => {
+        const record = objectValue(option);
+        const label = textValue(record.label).trim();
+        const optionId = textValue(record.id) || `option_${optionIndex + 1}`;
+        return {
+          id: `flow:${args.flowId}:${args.stepIndex}:${optionId}`,
+          title: label,
+        };
+      })
+      .filter((option) => option.title)
+      .slice(0, 3);
+    if (!body || !buttons.length) return "pause";
+    const delivery = await sendWhatsAppButtonMessage({
+      to: args.item.waId,
+      body,
+      buttons,
+    });
+    await recordFlowOutbound({
+      businessId: args.item.businessId,
+      conversationId: args.item.conversationId,
+      body,
+      metadata: { flowId: args.flowId, stepIndex: args.stepIndex, interactive: { type: "button", buttons }, delivery },
+      delivery,
+    });
+    return "pause";
+  }
+
+  if (type === "Send Media" || type === "Send Image" || type === "Send Video") {
+    for (const media of flowMediaItems(args.step)) {
+      const caption = media.caption || body;
+      const delivery = media.type === "video"
+        ? await sendWhatsAppVideoMessage({ to: args.item.waId, videoUrl: media.url, caption: caption || undefined })
+        : await sendWhatsAppImageMessage({ to: args.item.waId, imageUrl: media.url, caption: caption || undefined });
+      await recordFlowOutbound({
+        businessId: args.item.businessId,
+        conversationId: args.item.conversationId,
+        body: caption || (media.type === "video" ? "Video" : "Photo"),
+        messageType: media.type === "video" ? MessageType.VIDEO : MessageType.IMAGE,
+        metadata: { flowId: args.flowId, stepIndex: args.stepIndex, media, delivery },
+        delivery,
+      });
+    }
+    return "continue";
+  }
+
+  if (type === "Send Message" && body) {
+    const delivery = await sendWhatsAppTextMessage({ to: args.item.waId, body });
+    await recordFlowOutbound({
+      businessId: args.item.businessId,
+      conversationId: args.item.conversationId,
+      body,
+      metadata: { flowId: args.flowId, stepIndex: args.stepIndex, delivery },
+      delivery,
+    });
+  }
+  return "continue";
+}
+
+async function runWebhookFlow(args: {
+  item: StoredWhatsAppMessage;
+  flow: { id: string; messages: unknown };
+  startIndex?: number;
+  onlySteps?: FlowStep[];
+}) {
+  const steps = args.onlySteps || (Array.isArray(args.flow.messages) ? args.flow.messages.map((step) => objectValue(step) as FlowStep) : []);
+  for (let index = args.startIndex || 0; index < steps.length; index += 1) {
+    const step = steps[index];
+    await wait(flowDelayMsFromStep(step));
+    const result = await sendFlowStepFromWebhook({
+      item: args.item,
+      flowId: args.flow.id,
+      stepIndex: index,
+      step,
+    });
+    if (result === "pause") return;
+  }
+}
+
+async function handleFlowAutomationForInboundMessages(storedMessages: StoredWhatsAppMessage[]) {
+  const inboundMessages = storedMessages.filter((message) => (
+    message.created
+    && message.direction === "inbound"
+    && message.source !== "history"
+    && message.source !== "provider_history"
+  ));
+  if (!inboundMessages.length) return 0;
+
+  let scheduled = 0;
+  for (const item of inboundMessages) {
+    const replyId = flowButtonReplyId(item.raw);
+    if (replyId.startsWith("flow:")) {
+      const [, flowId, stepIndexText, optionId] = replyId.split(":");
+      const flow = await prisma.whatsAppFlow.findFirst({
+        where: { id: flowId, businessId: item.businessId, active: true },
+      });
+      const stepIndex = Number(stepIndexText);
+      const steps = Array.isArray(flow?.messages) ? flow.messages.map((step) => objectValue(step) as FlowStep) : [];
+      const matchedOption = arrayValue(steps[stepIndex]?.options)
+        .map(objectValue)
+        .find((candidate) => (textValue(candidate.id) || "").trim() === optionId);
+      const followUpMessage = textValue(matchedOption?.followUpMessage);
+      if (flow && followUpMessage) {
+        await runWebhookFlow({
+          item,
+          flow,
+          onlySteps: [{ type: "Send Message", delayValue: "0", delayUnit: "seconds", message: followUpMessage }],
+        });
+        scheduled += 1;
+      }
+      continue;
+    }
+
+    const inboundCount = await prisma.message.count({
+      where: {
+        businessId: item.businessId,
+        conversationId: item.conversationId,
+        direction: MessageDirection.INBOUND,
+      },
+    });
+    if (inboundCount !== 1) continue;
+
+    const flows = await prisma.whatsAppFlow.findMany({
+      where: {
+        businessId: item.businessId,
+        active: true,
+        triggerType: "first_message",
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 1,
+    });
+    for (const flow of flows) {
+      await runWebhookFlow({ item, flow });
+      scheduled += 1;
+    }
+  }
+
+  return scheduled;
 }
 
 async function saveWhatsAppMediaAttachment(args: {
@@ -698,6 +936,7 @@ async function storeWhatsAppMessages(rawPayload: unknown) {
       messageType: messageType(message.messageType),
       created: !existingMessage,
       source: message.source,
+      raw: message.raw,
     });
   }
 
@@ -800,6 +1039,7 @@ export async function POST(request: Request) {
     });
     const aiMessageCount = scheduleAiForStoredMessages(storedMessages);
     const mediaMessageCount = scheduleMediaForStoredMessages(storedMessages);
+    const flowMessageCount = await handleFlowAutomationForInboundMessages(storedMessages);
 
     return json(200, {
       ok: true,
@@ -807,6 +1047,7 @@ export async function POST(request: Request) {
       statuses: statusResult.updated,
       ai: aiMessageCount ? "scheduled" : "none",
       media: mediaMessageCount ? "scheduled" : "none",
+      flows: flowMessageCount ? "sent" : "none",
     });
   } catch (error) {
     try {

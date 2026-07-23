@@ -24,6 +24,7 @@ import {
   mediaAssetPublicUrls,
 } from "@/src/modules/whatsapp/media-assets";
 import {
+  sendWhatsAppButtonMessage,
   sendWhatsAppImageMessage,
   sendWhatsAppReactionMessage,
   sendWhatsAppTextMessage,
@@ -845,6 +846,7 @@ export async function POST(request: Request) {
       reactionEmoji?: string;
       mediaType?: string;
       mediaUrl?: string;
+      buttonOptions?: Array<{ id?: unknown; title?: unknown; label?: unknown }>;
       action?: "send" | "suggest" | "react";
     };
 
@@ -1083,11 +1085,21 @@ export async function POST(request: Request) {
 
     const mediaType = stringValue(body.mediaType).toLowerCase();
     const mediaUrl = stringValue(body.mediaUrl);
+    const buttonOptions = Array.isArray(body.buttonOptions)
+      ? body.buttonOptions.map((option) => {
+        const record = option && typeof option === "object" && !Array.isArray(option) ? option as Record<string, unknown> : {};
+        return {
+          id: stringValue(record.id),
+          title: stringValue(record.title ?? record.label),
+        };
+      }).filter((option) => option.id && option.title).slice(0, 3)
+      : [];
     const sendingImage = mediaType === "image" && Boolean(mediaUrl);
     const sendingVideo = mediaType === "video" && Boolean(mediaUrl);
+    const sendingButtons = buttonOptions.length > 0;
     const sendingMedia = sendingImage || sendingVideo;
     const messageBody = (body.body || existingMessage?.body || "").trim();
-    if (!messageBody && !sendingMedia) {
+    if (!messageBody && !sendingMedia && !sendingButtons) {
       return json(400, { ok: false, error: "Message body or media is required." });
     }
 
@@ -1113,6 +1125,13 @@ export async function POST(request: Request) {
             caption: messageBody || undefined,
             contextMessageId: replyContextMessageId,
           })
+          : sendingButtons
+            ? await sendWhatsAppButtonMessage({
+              to: recipient,
+              body: messageBody,
+              buttons: buttonOptions,
+              contextMessageId: replyContextMessageId,
+            })
         : await sendWhatsAppTextMessage({
           to: recipient,
           body: messageBody,
@@ -1142,6 +1161,7 @@ export async function POST(request: Request) {
             ...(existingMessage.metadata && typeof existingMessage.metadata === "object" ? existingMessage.metadata : {}),
             sentFromInbox: true,
             ...(sendingMedia ? { media: { url: mediaUrl, contentType: mediaContentType, filename: mediaFilename } } : {}),
+            ...(sendingButtons ? { interactive: { type: "button", buttons: buttonOptions } } : {}),
             ...(replyToMetadata ? { replyTo: replyToMetadata } : {}),
             delivery,
           }),
@@ -1162,6 +1182,7 @@ export async function POST(request: Request) {
           metadata: jsonValue({
             sentFromInbox: true,
             ...(sendingMedia ? { media: { url: mediaUrl, contentType: mediaContentType, filename: mediaFilename } } : {}),
+            ...(sendingButtons ? { interactive: { type: "button", buttons: buttonOptions } } : {}),
             ...(replyToMetadata ? { replyTo: replyToMetadata } : {}),
             delivery,
           }),

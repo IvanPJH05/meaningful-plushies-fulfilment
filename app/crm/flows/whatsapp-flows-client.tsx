@@ -16,11 +16,17 @@ type WhatsAppFlow = {
   updatedAt: string;
 };
 
-type TriggerType = "keywords" | "click";
+type TriggerType = "keywords" | "click" | "first_message";
 type MediaType = "image" | "video";
-type ActionType = "Send Message" | "Send Media" | "AI Reply" | "Update Status" | "Add Note";
+type ActionType = "Send Message" | "Send Media" | "Ask Selection" | "AI Reply" | "Update Status" | "Add Note";
 type StoredActionType = ActionType | "Send Image" | "Send Video";
 type DelayUnit = "seconds" | "minutes" | "hours" | "days";
+
+type SelectionOption = {
+  id?: string;
+  label: string;
+  followUpMessage: string;
+};
 
 type FlowMediaItem = {
   id?: string;
@@ -40,6 +46,7 @@ type FlowStep = {
   imageUrl?: string;
   videoUrl?: string;
   mediaItems?: FlowMediaItem[];
+  options?: SelectionOption[];
 };
 
 type FlowAction = {
@@ -49,6 +56,7 @@ type FlowAction = {
   delayUnit: DelayUnit;
   message: string;
   mediaItems: FlowMediaItem[];
+  options: SelectionOption[];
 };
 
 type FlowForm = {
@@ -61,7 +69,7 @@ type FlowForm = {
   actions: FlowAction[];
 };
 
-const actionTypes: ActionType[] = ["Send Message", "Send Media", "AI Reply", "Update Status", "Add Note"];
+const actionTypes: ActionType[] = ["Send Message", "Send Media", "Ask Selection", "AI Reply", "Update Status", "Add Note"];
 const delayUnits: DelayUnit[] = ["seconds", "minutes", "hours", "days"];
 const FLOW_BUILDER_CACHE_KEY = "crm-whatsapp-flow-builder-cache-v1";
 const MAX_BROWSER_UPLOAD_BYTES = 3.8 * 1024 * 1024;
@@ -93,6 +101,14 @@ function makeMediaItem(media?: Partial<FlowMediaItem>): FlowMediaItem {
   };
 }
 
+function makeSelectionOption(option?: Partial<SelectionOption>): SelectionOption {
+  return {
+    id: option?.id || makeId(),
+    label: option?.label || "",
+    followUpMessage: option?.followUpMessage || "",
+  };
+}
+
 function makeAction(action?: Partial<FlowAction>): FlowAction {
   const type = action?.type || "Send Message";
   return {
@@ -102,6 +118,12 @@ function makeAction(action?: Partial<FlowAction>): FlowAction {
     delayUnit: action?.delayUnit || "minutes",
     message: action?.message || "",
     mediaItems: action?.mediaItems?.length ? action.mediaItems.map(makeMediaItem) : (type === "Send Media" ? [makeMediaItem()] : []),
+    options: action?.options?.length
+      ? action.options.slice(0, 3).map(makeSelectionOption)
+      : (type === "Ask Selection" ? [
+        makeSelectionOption({ label: "English" }),
+        makeSelectionOption({ label: "Malay" }),
+      ] : []),
   };
 }
 
@@ -244,6 +266,7 @@ const starterTemplates: FlowForm[] = [
 function normaliseTriggerType(value?: string, fallback: TriggerType = "click"): TriggerType {
   const normalised = (value || "").trim().toLowerCase();
   if (normalised === "click" || normalised === "button") return "click";
+  if (normalised === "first_message" || normalised === "first message" || normalised === "first-message") return "first_message";
   if (normalised === "keywords" || normalised === "words") return "keywords";
   return fallback;
 }
@@ -251,6 +274,7 @@ function normaliseTriggerType(value?: string, fallback: TriggerType = "click"): 
 function normaliseActionType(value: string): ActionType {
   const normalised = value.trim().toLowerCase();
   if (normalised === "send image" || normalised === "send video") return "Send Media";
+  if (normalised === "selection" || normalised === "ask selection" || normalised === "choose option") return "Ask Selection";
   return actionTypes.find((type) => type.toLowerCase() === normalised) || "Send Message";
 }
 
@@ -292,6 +316,7 @@ function actionFromStep(step: FlowStep | string): FlowAction {
       delayUnit: normaliseDelayUnit(step.delayUnit),
       message: step.message || "",
       mediaItems: type === "Send Media" ? mediaItemsFromStep(step) : [],
+      options: type === "Ask Selection" && Array.isArray(step.options) ? step.options.map(makeSelectionOption) : [],
     });
   }
 
@@ -351,6 +376,16 @@ function formatActionStep(action: FlowAction): FlowStep | null {
       return true;
     });
 
+  const options = action.options
+    .map((option) => ({
+      id: option.id || makeId(),
+      label: option.label.trim(),
+      followUpMessage: option.followUpMessage.trim(),
+    }))
+    .filter((option) => option.label)
+    .slice(0, 3);
+
+  if (action.type === "Ask Selection" && (!message || !options.length)) return null;
   if (action.type === "Send Media" && !mediaItems.length) return null;
   if (action.type !== "Send Media" && action.type !== "AI Reply" && !message) return null;
   return {
@@ -359,6 +394,7 @@ function formatActionStep(action: FlowAction): FlowStep | null {
     delayUnit: action.delayUnit,
     message,
     ...(mediaItems.length ? { mediaItems } : {}),
+    ...(options.length ? { options } : {}),
   };
 }
 
@@ -391,6 +427,10 @@ function actionSummary(action: FlowAction) {
   if (action.type === "Send Media") {
     const mediaCount = action.mediaItems.filter((item) => item.url.trim()).length;
     return mediaCount ? `${mediaCount} media item${mediaCount === 1 ? "" : "s"}` : "No media added yet";
+  }
+  if (action.type === "Ask Selection") {
+    const optionCount = action.options.filter((option) => option.label.trim()).length;
+    return optionCount ? `${optionCount} customer option${optionCount === 1 ? "" : "s"}` : "No options yet";
   }
   return action.message || "No message yet";
 }
@@ -816,10 +856,16 @@ export default function WhatsAppFlowsClient() {
                   >
                     <option value="click">Click button</option>
                     <option value="keywords">Trigger words</option>
+                    <option value="first_message">First customer message</option>
                   </select>
                 </label>
 
-                {form.triggerType === "click" ? (
+                {form.triggerType === "first_message" ? (
+                  <label>
+                    Starts when
+                    <input value="A customer sends their first message" disabled />
+                  </label>
+                ) : form.triggerType === "click" ? (
                   <label>
                     Button name
                     <input
@@ -843,6 +889,8 @@ export default function WhatsAppFlowsClient() {
               <p className={styles.helperText}>
                 {form.triggerType === "click"
                   ? "This flow appears as a quick button in the inbox. Click it to send the message sequence."
+                  : form.triggerType === "first_message"
+                    ? "This flow runs automatically when a customer sends their first message in a new chat."
                   : "The flow can run when a WhatsApp message contains one of these words."}
               </p>
 
@@ -854,6 +902,21 @@ export default function WhatsAppFlowsClient() {
                   placeholder="What this flow is for"
                 />
               </label>
+            </section>
+
+            <section className={styles.workflowPreview}>
+              <strong>Workflow preview</strong>
+              <div className={styles.branchList}>
+                <span>{form.triggerType === "first_message" ? "First message" : form.triggerType === "click" ? "Inbox button" : "Trigger words"}</span>
+                {form.actions.map((action, index) => (
+                  <span key={`preview-${action.id}`}>
+                    {index + 1}. {action.type}
+                    {action.type === "Ask Selection"
+                      ? ` -> ${action.options.filter((option) => option.label.trim()).map((option) => option.label.trim()).join(" / ") || "Options"}`
+                      : ""}
+                  </span>
+                ))}
+              </div>
             </section>
 
             {form.actions.map((action, index) => (
@@ -899,12 +962,16 @@ export default function WhatsAppFlowsClient() {
                         value={action.type}
                         onChange={(event) => {
                           const nextType = event.target.value as ActionType;
-                          updateAction(action.id, {
-                            type: nextType,
-                            mediaItems: nextType === "Send Media" && !action.mediaItems.length ? [makeMediaItem()] : action.mediaItems,
-                          });
-                        }}
-                      >
+                    updateAction(action.id, {
+                      type: nextType,
+                      mediaItems: nextType === "Send Media" && !action.mediaItems.length ? [makeMediaItem()] : action.mediaItems,
+                      options: nextType === "Ask Selection" && !action.options.length ? [
+                        makeSelectionOption({ label: "English" }),
+                        makeSelectionOption({ label: "Malay" }),
+                      ] : action.options,
+                    });
+                  }}
+                >
                         {actionTypes.map((type) => (
                           <option key={type} value={type}>
                             {type}
@@ -914,7 +981,66 @@ export default function WhatsAppFlowsClient() {
                     </label>
                   </div>
 
-                  {action.type === "Send Media" ? (
+                  {action.type === "Ask Selection" ? (
+                    <div className={styles.selectionPanel}>
+                      <label>
+                        Question
+                        <textarea
+                          value={action.message}
+                          onChange={(event) => updateAction(action.id, { message: event.target.value })}
+                          placeholder="Example: Which language would you like to use?"
+                          rows={3}
+                        />
+                      </label>
+                      <div className={styles.optionList}>
+                        {action.options.map((option, optionIndex) => (
+                          <div className={styles.optionItem} key={option.id || `${action.id}-option-${optionIndex}`}>
+                            <label>
+                              Button {optionIndex + 1}
+                              <input
+                                value={option.label}
+                                onChange={(event) => updateAction(action.id, {
+                                  options: action.options.map((current) => (
+                                    current.id === option.id ? { ...current, label: event.target.value } : current
+                                  )),
+                                })}
+                                placeholder="Example: English"
+                              />
+                            </label>
+                            <label>
+                              Next message after tap
+                              <textarea
+                                value={option.followUpMessage}
+                                onChange={(event) => updateAction(action.id, {
+                                  options: action.options.map((current) => (
+                                    current.id === option.id ? { ...current, followUpMessage: event.target.value } : current
+                                  )),
+                                })}
+                                placeholder="Message to send after the customer taps this option."
+                                rows={3}
+                              />
+                            </label>
+                            <button
+                              className={styles.textButton}
+                              disabled={action.options.length <= 1}
+                              onClick={() => updateAction(action.id, { options: action.options.filter((current) => current.id !== option.id) })}
+                              type="button"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          className={styles.secondaryButton}
+                          disabled={action.options.length >= 3}
+                          onClick={() => updateAction(action.id, { options: [...action.options, makeSelectionOption()] })}
+                          type="button"
+                        >
+                          Add option
+                        </button>
+                      </div>
+                    </div>
+                  ) : action.type === "Send Media" ? (
                     <>
                       <label>
                         Caption / instruction

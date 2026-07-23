@@ -24,11 +24,11 @@ type FlowPayload = {
   messages?: unknown;
 };
 
-const actionTypes = ["Send Message", "Send Media", "Send Image", "Send Video", "AI Reply", "Update Status", "Add Note"] as const;
+const actionTypes = ["Send Message", "Send Media", "Send Image", "Send Video", "Ask Selection", "AI Reply", "Update Status", "Add Note"] as const;
 const delayUnits = ["seconds", "minutes", "hours", "days"] as const;
 const mediaTypes = ["image", "video"] as const;
 
-type TriggerType = "keywords" | "click";
+type TriggerType = "keywords" | "click" | "first_message";
 
 type FlowMediaItem = {
   type: typeof mediaTypes[number];
@@ -39,6 +39,12 @@ type FlowMediaItem = {
   sizeBytes?: number;
 };
 
+type SelectionOption = {
+  id: string;
+  label: string;
+  followUpMessage: string;
+};
+
 type FlowStep = {
   type: typeof actionTypes[number];
   delayValue: string;
@@ -47,6 +53,7 @@ type FlowStep = {
   imageUrl?: string;
   videoUrl?: string;
   mediaItems?: FlowMediaItem[];
+  options?: SelectionOption[];
 };
 
 function json(status: number, body: Record<string, unknown>) {
@@ -74,6 +81,7 @@ function splitTriggerWords(value: unknown) {
 function normalizeActionType(value: unknown): FlowStep["type"] {
   const text = stringValue(value).toLowerCase();
   if (["send media", "media", "media group", "send media group"].includes(text)) return "Send Media";
+  if (["selection", "ask selection", "choose option", "buttons"].includes(text)) return "Ask Selection";
   return actionTypes.find((type) => type.toLowerCase() === text) || "Send Message";
 }
 
@@ -84,8 +92,22 @@ function normalizeDelayUnit(value: unknown): FlowStep["delayUnit"] {
 
 function normalizeTriggerType(value: unknown, label: string): TriggerType {
   const text = stringValue(value).toLowerCase();
+  if (text.includes("first")) return "first_message";
   if (text.includes("click") || text.includes("button") || label) return "click";
   return "keywords";
+}
+
+function normalizeSelectionOptions(value: unknown): SelectionOption[] {
+  const rows = Array.isArray(value) ? value : [];
+  return rows.map((item, index) => {
+    const record = recordValue(item);
+    const label = stringValue(record.label ?? record.title ?? record.text ?? record.name);
+    return {
+      id: stringValue(record.id) || `option_${index + 1}`,
+      label,
+      followUpMessage: stringValue(record.followUpMessage ?? record.message ?? record.body ?? record.reply),
+    };
+  }).filter((option) => option.label).slice(0, 3);
 }
 
 function inferMediaTypeFromUrl(url: string): FlowMediaItem["type"] {
@@ -190,11 +212,13 @@ function normalizeFlowStep(value: unknown): FlowStep | null {
   const delay = Math.max(0, Number(step.delayValue ?? step.delay ?? 0) || 0);
   const message = stringValue(step.message ?? step.body ?? step.caption ?? step.text);
   const mediaItems = normalizeMediaItems(step.mediaItems ?? step.media ?? step.attachments, step, type, message);
+  const options = normalizeSelectionOptions(step.options ?? step.buttons ?? step.choices);
   const firstImage = mediaItems.find((item) => item.type === "image")?.url || "";
   const firstVideo = mediaItems.find((item) => item.type === "video")?.url || "";
   const mediaAction = type === "Send Image" || type === "Send Video" || type === "Send Media";
 
   if (mediaAction && !mediaItems.length) return null;
+  if (type === "Ask Selection" && (!message || !options.length)) return null;
   if (!mediaAction && type !== "AI Reply" && !message) return null;
 
   return {
@@ -205,6 +229,7 @@ function normalizeFlowStep(value: unknown): FlowStep | null {
     ...(firstImage ? { imageUrl: firstImage } : {}),
     ...(firstVideo ? { videoUrl: firstVideo } : {}),
     ...(mediaItems.length ? { mediaItems } : {}),
+    ...(options.length ? { options } : {}),
   };
 }
 
@@ -265,7 +290,7 @@ function normalizePayload(payload: FlowPayload) {
     name,
     triggerType,
     triggerButtonLabel: triggerType === "click" ? (triggerButtonLabel || name) : "",
-    triggerWords: triggerType === "click" ? [] : triggerWords,
+    triggerWords: triggerType === "keywords" ? triggerWords : [],
     notes,
     messages,
     active,

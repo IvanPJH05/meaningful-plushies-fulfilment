@@ -160,15 +160,21 @@ type PreloadMediaAsset = {
   originalUrl: string;
 };
 
-type FlowTriggerType = "keywords" | "click";
+type FlowTriggerType = "keywords" | "click" | "first_message";
 type FlowMediaType = "image" | "video";
-type FlowActionType = "Send Message" | "Send Media" | "Send Image" | "Send Video" | "AI Reply" | "Update Status" | "Add Note";
+type FlowActionType = "Send Message" | "Send Media" | "Send Image" | "Send Video" | "Ask Selection" | "AI Reply" | "Update Status" | "Add Note";
 type FlowDelayUnit = "seconds" | "minutes" | "hours" | "days";
 
 type FlowMediaItem = {
   type: FlowMediaType;
   url: string;
   caption?: string;
+};
+
+type FlowSelectionOption = {
+  id?: string;
+  label: string;
+  followUpMessage?: string;
 };
 
 type WhatsAppFlowStep = {
@@ -179,6 +185,7 @@ type WhatsAppFlowStep = {
   imageUrl?: string;
   videoUrl?: string;
   mediaItems?: FlowMediaItem[];
+  options?: FlowSelectionOption[];
 };
 
 type WhatsAppFlow = {
@@ -2341,12 +2348,16 @@ export default function WhatsAppInboxClient() {
     messageId?: string,
     bodyOverride?: string,
     media?: { type: FlowMediaType; url: string },
-    options?: { bypassSendingLock?: boolean },
+    options?: {
+      bypassSendingLock?: boolean;
+      buttonOptions?: Array<{ id: string; title: string }>;
+    },
   ): Promise<boolean> {
     const body = (bodyOverride !== undefined ? bodyOverride : draft).trim();
     const mediaUrl = media?.url.trim() || "";
     const sendingMedia = (media?.type === "image" || media?.type === "video") && Boolean(mediaUrl);
-    if (!selectedId || (!body && !sendingMedia)) return false;
+    const sendingButtons = Boolean(options?.buttonOptions?.length);
+    if (!selectedId || (!body && !sendingMedia && !sendingButtons)) return false;
     const useSendingLock = !options?.bypassSendingLock;
     if (useSendingLock && sendingRef.current) return false;
 
@@ -2389,6 +2400,7 @@ export default function WhatsAppInboxClient() {
           body,
           replyToMessageId: activeReplyTarget?.id,
           ...(sendingMedia && media ? { mediaType: media.type, mediaUrl } : {}),
+          ...(sendingButtons ? { buttonOptions: options?.buttonOptions } : {}),
         }),
       });
       const data = await response.json();
@@ -2552,8 +2564,15 @@ export default function WhatsAppInboxClient() {
   async function runFlow(flow: WhatsAppFlow) {
     if (!selectedId || runningFlowId) return;
 
-    async function sendFlowStep(body: string, media?: { type: FlowMediaType; url: string }, options?: { batchMedia?: boolean }) {
-      const sent = await sendMessage(undefined, body, media, { bypassSendingLock: options?.batchMedia });
+    async function sendFlowStep(
+      body: string,
+      media?: { type: FlowMediaType; url: string },
+      options?: { batchMedia?: boolean; buttonOptions?: Array<{ id: string; title: string }> },
+    ) {
+      const sent = await sendMessage(undefined, body, media, {
+        bypassSendingLock: options?.batchMedia,
+        buttonOptions: options?.buttonOptions,
+      });
       if (!sent) {
         throw new Error("WhatsApp did not accept one of the flow messages.");
       }
@@ -2588,6 +2607,20 @@ export default function WhatsAppInboxClient() {
           } else {
             const text = personalizeFlowText(step.message, selected);
             if (text) await sendFlowStep(text);
+          }
+          continue;
+        }
+
+        if (step.type === "Ask Selection") {
+          const options = Array.isArray(step.options) ? step.options
+            .map((option, optionIndex) => ({
+              id: `flow:${flow.id}:${flow.steps.indexOf(step)}:${option.id || `option_${optionIndex + 1}`}`,
+              title: option.label,
+            }))
+            .filter((option) => option.title.trim())
+            .slice(0, 3) : [];
+          if (options.length) {
+            await sendFlowStep(personalizeFlowText(step.message, selected), undefined, { buttonOptions: options });
           }
           continue;
         }

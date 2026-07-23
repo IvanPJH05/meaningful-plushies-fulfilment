@@ -19,6 +19,16 @@ export type WhatsAppVideoPayloadInput = {
   contextMessageId?: string;
 };
 
+export type WhatsAppButtonPayloadInput = {
+  to: string;
+  body: string;
+  buttons: Array<{
+    id: string;
+    title: string;
+  }>;
+  contextMessageId?: string;
+};
+
 export function buildWhatsAppTextPayload(input: WhatsAppTextPayloadInput) {
   return {
     messaging_product: "whatsapp",
@@ -57,6 +67,31 @@ export function buildWhatsAppVideoPayload(input: WhatsAppVideoPayloadInput) {
     video: {
       link: input.videoUrl,
       ...(input.caption?.trim() ? { caption: input.caption.trim() } : {}),
+    },
+  };
+}
+
+export function buildWhatsAppButtonPayload(input: WhatsAppButtonPayloadInput) {
+  return {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to: input.to.replace(/\D/g, ""),
+    ...(input.contextMessageId ? { context: { message_id: input.contextMessageId } } : {}),
+    type: "interactive",
+    interactive: {
+      type: "button",
+      body: {
+        text: input.body,
+      },
+      action: {
+        buttons: input.buttons.slice(0, 3).map((button) => ({
+          type: "reply",
+          reply: {
+            id: button.id.slice(0, 256),
+            title: button.title.slice(0, 20),
+          },
+        })),
+      },
     },
   };
 }
@@ -123,6 +158,11 @@ export async function sendWhatsAppImageMessage(input: WhatsAppImagePayloadInput)
 
 export async function sendWhatsAppVideoMessage(input: WhatsAppVideoPayloadInput) {
   const payload = buildWhatsAppVideoPayload(input);
+  return sendWhatsAppPayload(payload);
+}
+
+export async function sendWhatsAppButtonMessage(input: WhatsAppButtonPayloadInput) {
+  const payload = buildWhatsAppButtonPayload(input);
   return sendWhatsAppPayload(payload);
 }
 

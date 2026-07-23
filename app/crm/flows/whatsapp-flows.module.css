@@ -417,6 +417,58 @@
   gap: 8px;
 }
 
+.selectionPanel {
+  display: grid;
+  gap: 12px;
+}
+
+.optionList {
+  display: grid;
+  gap: 10px;
+}
+
+.optionItem {
+  align-items: stretch;
+  background: #f7fbff;
+  border: 1px solid #dce8f7;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(130px, 0.55fr) minmax(220px, 1fr) auto;
+  min-width: 0;
+  padding: 12px;
+}
+
+.workflowPreview {
+  background: #f7fbff;
+  border: 1px dashed #cbd8e8;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px;
+}
+
+.workflowPreview strong {
+  font-size: 12px;
+}
+
+.branchList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.branchList span {
+  background: #eaf3ff;
+  border: 1px solid #c9dcf5;
+  border-radius: 999px;
+  color: #174d8f;
+  font-size: 12px;
+  font-weight: 850;
+  padding: 7px 10px;
+}
+
 .actionHeader h3 {
   font-size: 18px;
   margin-top: 8px;
@@ -581,6 +633,10 @@
   }
 
   .mediaItem {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .optionItem {
     grid-template-columns: minmax(0, 1fr);
   }
 }
