@@ -519,11 +519,15 @@ async function runWebhookFlow(args: {
   flow: { id: string; messages: unknown };
   startIndex?: number;
   onlySteps?: FlowStep[];
+  skipFirstDelay?: boolean;
 }) {
   const steps = args.onlySteps || (Array.isArray(args.flow.messages) ? args.flow.messages.map((step) => objectValue(step) as FlowStep) : []);
-  for (let index = args.startIndex || 0; index < steps.length; index += 1) {
+  const firstIndex = args.startIndex || 0;
+  for (let index = firstIndex; index < steps.length; index += 1) {
     const step = steps[index];
-    await wait(flowDelayMsFromStep(step));
+    if (!(args.skipFirstDelay && index === firstIndex)) {
+      await wait(flowDelayMsFromStep(step));
+    }
     const result = await sendFlowStepFromWebhook({
       item: args.item,
       flowId: args.flow.id,
@@ -592,7 +596,7 @@ async function handleFlowAutomationForInboundMessages(storedMessages: StoredWhat
         targetFlowId,
       });
       if (targetFlow) {
-        await runWebhookFlow({ item, flow: targetFlow });
+        await runWebhookFlow({ item, flow: targetFlow, skipFirstDelay: true });
         scheduled += 1;
         continue;
       }
