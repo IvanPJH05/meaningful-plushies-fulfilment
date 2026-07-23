@@ -2631,7 +2631,7 @@ export default function WhatsAppInboxClient() {
               title: option.label,
             }))
             .filter((option) => option.title.trim())
-            .slice(0, 3) : [];
+            .slice(0, 4) : [];
           if (options.length) {
             await sendFlowStep(personalizeFlowText(step.message, selected), undefined, { buttonOptions: options });
           }

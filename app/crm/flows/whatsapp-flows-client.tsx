@@ -147,7 +147,7 @@ function makeAction(action?: Partial<FlowAction>): FlowAction {
     message: action?.message || "",
     mediaItems: action?.mediaItems?.length ? action.mediaItems.map(makeMediaItem) : (type === "Send Media" ? [makeMediaItem()] : []),
     options: action?.options?.length
-      ? action.options.slice(0, 3).map(makeSelectionOption)
+      ? action.options.slice(0, 4).map(makeSelectionOption)
       : (type === "Ask Selection" ? [
         makeSelectionOption({ label: "English" }),
         makeSelectionOption({ label: "Malay" }),
@@ -441,7 +441,7 @@ function formatActionStep(action: FlowAction): FlowStep | null {
       targetFlowName: (option.targetFlowName || "").trim(),
     }))
     .filter((option) => option.label)
-    .slice(0, 3);
+    .slice(0, 4);
 
   if (action.type === "Ask Selection" && (!message || !options.length)) return null;
   if (action.type === "Send Media" && !mediaItems.length) return null;
@@ -1307,7 +1307,7 @@ export default function WhatsAppFlowsClient() {
                         ))}
                         <button
                           className={styles.secondaryButton}
-                          disabled={action.options.length >= 3}
+                          disabled={action.options.length >= 4}
                           onClick={() => updateAction(action.id, { options: [...action.options, makeSelectionOption()] })}
                           type="button"
                         >

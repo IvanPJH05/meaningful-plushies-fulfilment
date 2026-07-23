@@ -37,6 +37,18 @@ export type WhatsAppButtonPayloadInput = {
   contextMessageId?: string;
 };
 
+export type WhatsAppListPayloadInput = {
+  to: string;
+  body: string;
+  buttonText?: string;
+  options: Array<{
+    id: string;
+    title: string;
+    description?: string;
+  }>;
+  contextMessageId?: string;
+};
+
 export function buildWhatsAppTextPayload(input: WhatsAppTextPayloadInput) {
   return {
     messaging_product: "whatsapp",
@@ -119,6 +131,35 @@ export function buildWhatsAppButtonPayload(input: WhatsAppButtonPayloadInput) {
   };
 }
 
+export function buildWhatsAppListPayload(input: WhatsAppListPayloadInput) {
+  return {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to: input.to.replace(/\D/g, ""),
+    ...(input.contextMessageId ? { context: { message_id: input.contextMessageId } } : {}),
+    type: "interactive",
+    interactive: {
+      type: "list",
+      body: {
+        text: input.body,
+      },
+      action: {
+        button: (input.buttonText || "Choose").slice(0, 20),
+        sections: [
+          {
+            title: "Options",
+            rows: input.options.slice(0, 10).map((option) => ({
+              id: option.id.slice(0, 200),
+              title: option.title.slice(0, 24),
+              ...(option.description?.trim() ? { description: option.description.trim().slice(0, 72) } : {}),
+            })),
+          },
+        ],
+      },
+    },
+  };
+}
+
 export function buildWhatsAppReactionPayload(input: {
   to: string;
   messageId: string;
@@ -191,6 +232,11 @@ export async function sendWhatsAppDocumentMessage(input: WhatsAppDocumentPayload
 
 export async function sendWhatsAppButtonMessage(input: WhatsAppButtonPayloadInput) {
   const payload = buildWhatsAppButtonPayload(input);
+  return sendWhatsAppPayload(payload);
+}
+
+export async function sendWhatsAppListMessage(input: WhatsAppListPayloadInput) {
+  const payload = buildWhatsAppListPayload(input);
   return sendWhatsAppPayload(payload);
 }
 

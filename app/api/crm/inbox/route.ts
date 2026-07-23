@@ -27,6 +27,7 @@ import {
   sendWhatsAppButtonMessage,
   sendWhatsAppDocumentMessage,
   sendWhatsAppImageMessage,
+  sendWhatsAppListMessage,
   sendWhatsAppReactionMessage,
   sendWhatsAppTextMessage,
   sendWhatsAppVideoMessage,
@@ -1126,7 +1127,7 @@ export async function POST(request: Request) {
           id: stringValue(record.id),
           title: stringValue(record.title ?? record.label),
         };
-      }).filter((option) => option.id && option.title).slice(0, 3)
+      }).filter((option) => option.id && option.title).slice(0, 4)
       : [];
     const sendingImage = mediaType === "image" && Boolean(mediaUrl);
     const sendingVideo = mediaType === "video" && Boolean(mediaUrl);
@@ -1169,12 +1170,20 @@ export async function POST(request: Request) {
               contextMessageId: replyContextMessageId,
             })
           : sendingButtons
-            ? await sendWhatsAppButtonMessage({
-              to: recipient,
-              body: messageBody,
-              buttons: buttonOptions,
-              contextMessageId: replyContextMessageId,
-            })
+            ? buttonOptions.length > 3
+              ? await sendWhatsAppListMessage({
+                to: recipient,
+                body: messageBody,
+                buttonText: "Choose",
+                options: buttonOptions,
+                contextMessageId: replyContextMessageId,
+              })
+              : await sendWhatsAppButtonMessage({
+                to: recipient,
+                body: messageBody,
+                buttons: buttonOptions,
+                contextMessageId: replyContextMessageId,
+              })
         : await sendWhatsAppTextMessage({
           to: recipient,
           body: messageBody,
@@ -1204,7 +1213,7 @@ export async function POST(request: Request) {
             ...(existingMessage.metadata && typeof existingMessage.metadata === "object" ? existingMessage.metadata : {}),
             sentFromInbox: true,
             ...(sendingMedia ? { media: { url: mediaUrl, contentType: mediaContentType, filename: mediaFilename } } : {}),
-            ...(sendingButtons ? { interactive: { type: "button", buttons: buttonOptions } } : {}),
+            ...(sendingButtons ? { interactive: { type: buttonOptions.length > 3 ? "list" : "button", buttons: buttonOptions } } : {}),
             ...(replyToMetadata ? { replyTo: replyToMetadata } : {}),
             delivery,
           }),
@@ -1225,7 +1234,7 @@ export async function POST(request: Request) {
           metadata: jsonValue({
             sentFromInbox: true,
             ...(sendingMedia ? { media: { url: mediaUrl, contentType: mediaContentType, filename: mediaFilename } } : {}),
-            ...(sendingButtons ? { interactive: { type: "button", buttons: buttonOptions } } : {}),
+            ...(sendingButtons ? { interactive: { type: buttonOptions.length > 3 ? "list" : "button", buttons: buttonOptions } } : {}),
             ...(replyToMetadata ? { replyTo: replyToMetadata } : {}),
             delivery,
           }),

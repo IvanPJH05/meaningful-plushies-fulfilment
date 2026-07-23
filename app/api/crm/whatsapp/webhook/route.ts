@@ -31,6 +31,7 @@ import {
   sendWhatsAppButtonMessage,
   sendWhatsAppDocumentMessage,
   sendWhatsAppImageMessage,
+  sendWhatsAppListMessage,
   sendWhatsAppTextMessage,
   sendWhatsAppVideoMessage,
 } from "@/src/modules/whatsapp/outbound";
@@ -374,7 +375,8 @@ function deliveryMessageId(delivery: unknown) {
 function flowButtonReplyId(raw: Record<string, unknown>) {
   const interactive = objectValue(raw.interactive);
   const buttonReply = objectValue(interactive.button_reply);
-  return textValue(buttonReply.id);
+  const listReply = objectValue(interactive.list_reply);
+  return textValue(buttonReply.id) || textValue(listReply.id);
 }
 
 function normalizeTriggerPhrase(value: string) {
@@ -521,18 +523,25 @@ async function sendFlowStepFromWebhook(args: {
         };
       })
       .filter((option) => option.title)
-      .slice(0, 3);
+      .slice(0, 4);
     if (!body || !buttons.length) return "pause";
-    const delivery = await sendWhatsAppButtonMessage({
-      to: args.item.waId,
-      body,
-      buttons,
-    });
+    const delivery = buttons.length > 3
+      ? await sendWhatsAppListMessage({
+        to: args.item.waId,
+        body,
+        buttonText: "Choose",
+        options: buttons,
+      })
+      : await sendWhatsAppButtonMessage({
+        to: args.item.waId,
+        body,
+        buttons,
+      });
     const message = await recordFlowOutbound({
       businessId: args.item.businessId,
       conversationId: args.item.conversationId,
       body,
-      metadata: { flowId: args.flowId, stepIndex: args.stepIndex, interactive: { type: "button", buttons }, delivery },
+      metadata: { flowId: args.flowId, stepIndex: args.stepIndex, interactive: { type: buttons.length > 3 ? "list" : "button", buttons }, delivery },
       delivery,
     });
     if (message.status === MessageStatus.FAILED) {

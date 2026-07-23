@@ -118,7 +118,7 @@ function normalizeSelectionOptions(value: unknown): SelectionOption[] {
       targetFlowId: stringValue(record.targetFlowId ?? record.flowId ?? record.nextFlowId),
       targetFlowName: stringValue(record.targetFlowName ?? record.flowName ?? record.nextFlowName),
     };
-  }).filter((option) => option.label).slice(0, 3);
+  }).filter((option) => option.label).slice(0, 4);
 }
 
 function inferMediaTypeFromUrl(url: string): FlowMediaItem["type"] {
