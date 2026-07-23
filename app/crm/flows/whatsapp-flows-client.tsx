@@ -727,6 +727,8 @@ export default function WhatsAppFlowsClient() {
   const [notice, setNotice] = useState("");
   const [uploadingMediaId, setUploadingMediaId] = useState("");
   const [draggingMediaId, setDraggingMediaId] = useState("");
+  const [draggingFlowId, setDraggingFlowId] = useState("");
+  const [dropTargetKey, setDropTargetKey] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -935,6 +937,33 @@ export default function WhatsAppFlowsClient() {
       groupName: groupName === "Ungrouped" ? "" : groupName,
       subgroupName: nextSubgroupName,
     }));
+  }
+
+  async function moveFlowToFolder(flowId: string, groupName: string, subgroupName = "") {
+    const flow = flows.find((candidate) => candidate.id === flowId);
+    if (!flow) return;
+    const nextGroupName = groupName === "Ungrouped" ? "" : groupName;
+    const previous = flows;
+    const nextFlow = { ...flow, groupName: nextGroupName, subgroupName };
+    setFlows((current) => current.map((candidate) => (candidate.id === flowId ? nextFlow : candidate)));
+    if (editingId === flowId) {
+      setForm((current) => ({ ...current, groupName: nextGroupName, subgroupName }));
+    }
+    setNotice(`Moved "${flow.name}" to ${subgroupName ? `${nextGroupName || "Ungrouped"} / ${subgroupName}` : (nextGroupName || "Ungrouped")}.`);
+    try {
+      const response = await fetch("/api/crm/flows", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(flowPayloadFromForm(formFromFlow(nextFlow), flowId)),
+      });
+      const result = (await response.json()) as { ok?: boolean; flow?: WhatsAppFlow; error?: string };
+      if (!response.ok || !result.ok || !result.flow) throw new Error(result.error || "Flow could not be moved.");
+      setFlows((current) => current.map((candidate) => (candidate.id === flowId ? (result.flow as WhatsAppFlow) : candidate)));
+    } catch (error) {
+      setFlows(previous);
+      if (editingId === flowId) setForm(formFromFlow(flow));
+      setNotice(error instanceof Error ? error.message : "Flow could not be moved.");
+    }
   }
 
   async function deleteFlow(flowIdToDelete: string) {
@@ -1194,9 +1223,41 @@ export default function WhatsAppFlowsClient() {
     setForm(cloneTemplate(template));
   }
 
+  function dropZoneHandlers(targetKey: string, groupName: string, subgroupName = "") {
+    return {
+      onDragOver: (event: DragEvent<HTMLElement>) => {
+        if (!draggingFlowId) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        setDropTargetKey(targetKey);
+      },
+      onDragLeave: () => setDropTargetKey((current) => (current === targetKey ? "" : current)),
+      onDrop: (event: DragEvent<HTMLElement>) => {
+        event.preventDefault();
+        const flowId = event.dataTransfer.getData("text/plain") || draggingFlowId;
+        setDropTargetKey("");
+        setDraggingFlowId("");
+        if (flowId) void moveFlowToFolder(flowId, groupName, subgroupName);
+      },
+    };
+  }
+
   function renderFlowCard(flow: WhatsAppFlow) {
     return (
-      <article className={styles.flowCard} key={flow.id}>
+      <article
+        className={`${styles.flowCard} ${draggingFlowId === flow.id ? styles.draggingFlow : ""}`}
+        draggable
+        key={flow.id}
+        onDragStart={(event) => {
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", flow.id);
+          setDraggingFlowId(flow.id);
+        }}
+        onDragEnd={() => {
+          setDraggingFlowId("");
+          setDropTargetKey("");
+        }}
+      >
         <div className={styles.flowTopline}>
           <div>
             <h3>{flow.name}</h3>
@@ -1704,7 +1765,11 @@ export default function WhatsAppFlowsClient() {
           </div>
 
           {flowGroups.map((group) => (
-            <section className={styles.flowGroup} key={group.name}>
+            <section
+              className={`${styles.flowGroup} ${dropTargetKey === `group:${group.name}` ? styles.dropReady : ""}`}
+              key={group.name}
+              {...dropZoneHandlers(`group:${group.name}`, group.name)}
+            >
               <div className={styles.groupHeader}>
                 <div>
                   <p className={styles.eyebrow}>Group</p>
@@ -1714,11 +1779,16 @@ export default function WhatsAppFlowsClient() {
                   Duplicate group
                 </button>
               </div>
+              <p className={styles.dropHint}>Drop a flow here to move it into this group.</p>
 
               {group.flows.map((flow) => renderFlowCard(flow))}
 
               {group.subgroups.map((subgroup) => (
-                <section className={styles.subflowGroup} key={`${group.name}-${subgroup.name}`}>
+                <section
+                  className={`${styles.subflowGroup} ${dropTargetKey === `subgroup:${group.name}:${subgroup.name}` ? styles.dropReady : ""}`}
+                  key={`${group.name}-${subgroup.name}`}
+                  {...dropZoneHandlers(`subgroup:${group.name}:${subgroup.name}`, group.name, subgroup.name)}
+                >
                   <div className={styles.subgroupHeader}>
                     <div>
                       <p className={styles.eyebrow}>Subflow</p>
@@ -1728,6 +1798,7 @@ export default function WhatsAppFlowsClient() {
                       Duplicate subflow
                     </button>
                   </div>
+                  <p className={styles.dropHint}>Drop a flow here to move it into this subflow.</p>
                   {subgroup.flows.map((flow) => renderFlowCard(flow))}
                 </section>
               ))}
