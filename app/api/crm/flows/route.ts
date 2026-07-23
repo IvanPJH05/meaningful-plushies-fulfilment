@@ -138,7 +138,13 @@ function normalizeMediaItems(value: unknown, step: Record<string, unknown>, step
     if (url) items.push({ type: normalizeMediaType(step.mediaType ?? step.type, url), url, ...(message ? { caption: message } : {}) });
   }
 
-  return items;
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = `${item.type}:${item.url}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function flowStepFromLegacyText(value: string): FlowStep | null {

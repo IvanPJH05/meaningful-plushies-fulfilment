@@ -260,6 +260,7 @@ function normaliseDelayUnit(value: string): DelayUnit {
 
 function mediaItemsFromStep(step: FlowStep): FlowMediaItem[] {
   const items = Array.isArray(step.mediaItems) ? step.mediaItems : [];
+  const seen = new Set<string>();
   const mediaItems = items
     .map((item) => makeMediaItem({
       type: item.type,
@@ -269,7 +270,12 @@ function mediaItemsFromStep(step: FlowStep): FlowMediaItem[] {
       contentType: item.contentType || "",
       sizeBytes: item.sizeBytes,
     }))
-    .filter((item) => item.url.trim());
+    .filter((item) => {
+      const key = `${item.type}:${item.url.trim()}`;
+      if (!item.url.trim() || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 
   if (mediaItems.length) return mediaItems;
   if (step.imageUrl) return [makeMediaItem({ type: "image", url: step.imageUrl, caption: step.message || "" })];
@@ -328,6 +334,7 @@ function formFromFlow(flow: WhatsAppFlow): FlowForm {
 
 function formatActionStep(action: FlowAction): FlowStep | null {
   const message = action.message.trim();
+  const seenMedia = new Set<string>();
   const mediaItems: FlowMediaItem[] = action.mediaItems
     .map((item) => ({
       type: item.type,
@@ -337,7 +344,12 @@ function formatActionStep(action: FlowAction): FlowStep | null {
       contentType: (item.contentType || "").trim(),
       sizeBytes: item.sizeBytes,
     }))
-    .filter((item) => item.url);
+    .filter((item) => {
+      const key = `${item.type}:${item.url}`;
+      if (!item.url || seenMedia.has(key)) return false;
+      seenMedia.add(key);
+      return true;
+    });
 
   if (action.type === "Send Media" && !mediaItems.length) return null;
   if (action.type !== "Send Media" && action.type !== "AI Reply" && !message) return null;

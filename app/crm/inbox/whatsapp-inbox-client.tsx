@@ -2288,13 +2288,19 @@ export default function WhatsAppInboxClient() {
 
   function mediaItemsFromStep(step: WhatsAppFlowStep): FlowMediaItem[] {
     const mediaItems = Array.isArray(step.mediaItems) ? step.mediaItems : [];
+    const seen = new Set<string>();
     const normalised = mediaItems
       .map((item) => ({
         type: item.type === "video" ? "video" as const : "image" as const,
         url: (item.url || "").trim(),
         caption: (item.caption || "").trim(),
       }))
-      .filter((item) => item.url);
+      .filter((item) => {
+        const key = `${item.type}:${item.url}`;
+        if (!item.url || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
 
     if (normalised.length) return normalised;
     if (step.imageUrl?.trim()) return [{ type: "image", url: step.imageUrl.trim(), caption: step.message || "" }];
@@ -2561,10 +2567,10 @@ export default function WhatsAppInboxClient() {
         if (step.type === "Send Media" || step.type === "Send Image" || step.type === "Send Video") {
           const mediaItems = mediaItemsFromStep(step);
           if (mediaItems.length) {
-            for (const [index, item] of mediaItems.entries()) {
+            await Promise.all(mediaItems.map((item, index) => {
               const caption = personalizeFlowText(item.caption || (index === 0 ? step.message : ""), selected);
-              await sendFlowStep(caption, { type: item.type, url: item.url });
-            }
+              return sendFlowStep(caption, { type: item.type, url: item.url });
+            }));
           } else {
             const text = personalizeFlowText(step.message, selected);
             if (text) await sendFlowStep(text);
