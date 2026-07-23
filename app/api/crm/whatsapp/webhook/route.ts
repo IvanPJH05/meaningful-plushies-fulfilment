@@ -518,7 +518,7 @@ async function sendFlowStepFromWebhook(args: {
         const label = textValue(record.label).trim();
         const optionId = textValue(record.id) || `option_${optionIndex + 1}`;
         return {
-          id: `flow:${args.flowId}:${args.stepIndex}:${optionId}`,
+          id: `flow:${args.flowId}:${args.stepIndex}:${optionIndex}:${optionId}`,
           title: label,
         };
       })
@@ -658,13 +658,19 @@ async function handleFlowAutomationForInboundMessages(storedMessages: StoredWhat
   for (const item of inboundMessages) {
     const replyId = flowButtonReplyId(item.raw);
     if (replyId.startsWith("flow:")) {
-      const [, flowId, stepIndexText, optionId] = replyId.split(":");
+      const replyParts = replyId.split(":");
+      const [, flowId, stepIndexText] = replyParts;
+      const hasOptionIndex = replyParts.length >= 5;
+      const optionIndex = hasOptionIndex ? Number(replyParts[3]) : -1;
+      const optionId = hasOptionIndex ? replyParts.slice(4).join(":") : replyParts.slice(3).join(":");
       const flow = await prisma.whatsAppFlow.findFirst({
         where: { id: flowId, businessId: item.businessId, active: true },
       });
       const stepIndex = Number(stepIndexText);
       const steps = Array.isArray(flow?.messages) ? flow.messages.map((step) => objectValue(step) as FlowStep) : [];
-      const matchedOption = arrayValue(steps[stepIndex]?.options)
+      const stepOptions = arrayValue(steps[stepIndex]?.options).map(objectValue);
+      const matchedOption = (Number.isFinite(optionIndex) && optionIndex >= 0 ? stepOptions[optionIndex] : null)
+        || stepOptions
         .map(objectValue)
         .find((candidate) => (textValue(candidate.id) || "").trim() === optionId);
       const targetFlowId = textValue(matchedOption?.targetFlowId);

@@ -137,6 +137,21 @@ function makeSelectionOption(option?: Partial<SelectionOption>): SelectionOption
   };
 }
 
+function makeUniqueSelectionOptions(options: Partial<SelectionOption>[]) {
+  const seen = new Set<string>();
+  return options.map((option) => {
+    const next = makeSelectionOption(option);
+    const id = next.id || makeSelectionKey();
+    if (seen.has(id)) {
+      next.id = makeSelectionKey();
+    } else {
+      next.id = id;
+    }
+    seen.add(next.id || "");
+    return next;
+  });
+}
+
 function makeAction(action?: Partial<FlowAction>): FlowAction {
   const type = action?.type || "Send Message";
   return {
@@ -147,7 +162,7 @@ function makeAction(action?: Partial<FlowAction>): FlowAction {
     message: action?.message || "",
     mediaItems: action?.mediaItems?.length ? action.mediaItems.map(makeMediaItem) : (type === "Send Media" ? [makeMediaItem()] : []),
     options: action?.options?.length
-      ? action.options.slice(0, 4).map(makeSelectionOption)
+      ? makeUniqueSelectionOptions(action.options.slice(0, 4))
       : (type === "Ask Selection" ? [
         makeSelectionOption({ label: "English" }),
         makeSelectionOption({ label: "Malay" }),
@@ -1288,7 +1303,6 @@ export default function WhatsAppFlowsClient() {
                                       ...current,
                                       targetFlowId: event.target.value,
                                       targetFlowName: flows.find((flow) => flow.id === event.target.value)?.name || "",
-                                      id: flows.find((flow) => flow.id === event.target.value && normaliseTriggerType(flow.triggerType) === "selection_button")?.triggerButtonLabel || current.id,
                                     } : current
                                   )),
                                 })}
@@ -1304,7 +1318,7 @@ export default function WhatsAppFlowsClient() {
                               </select>
                               <small>
                                 {option.targetFlowId
-                                  ? `Linked by key ${option.id}. The target flow will use this key automatically.`
+                                  ? `Linked with option key ${option.id}.`
                                   : `Option key: ${option.id}. Choose a target flow to link this button.`}
                               </small>
                             </label>

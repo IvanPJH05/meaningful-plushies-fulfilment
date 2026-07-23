@@ -108,11 +108,15 @@ function normalizeTriggerType(value: unknown, label: string): TriggerType {
 
 function normalizeSelectionOptions(value: unknown): SelectionOption[] {
   const rows = Array.isArray(value) ? value : [];
+  const seen = new Set<string>();
   return rows.map((item, index) => {
     const record = recordValue(item);
     const label = stringValue(record.label ?? record.title ?? record.text ?? record.name);
+    const rawId = stringValue(record.id) || `option_${index + 1}`;
+    const id = seen.has(rawId) ? makeSelectionKey() : rawId;
+    seen.add(id);
     return {
-      id: stringValue(record.id) || `option_${index + 1}`,
+      id,
       label,
       followUpMessage: stringValue(record.followUpMessage ?? record.message ?? record.body ?? record.reply),
       targetFlowId: stringValue(record.targetFlowId ?? record.flowId ?? record.nextFlowId),

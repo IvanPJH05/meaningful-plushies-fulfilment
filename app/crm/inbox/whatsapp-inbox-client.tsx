@@ -2627,7 +2627,7 @@ export default function WhatsAppInboxClient() {
         if (step.type === "Ask Selection") {
           const options = Array.isArray(step.options) ? step.options
             .map((option, optionIndex) => ({
-              id: `flow:${flow.id}:${flow.steps.indexOf(step)}:${option.id || `option_${optionIndex + 1}`}`,
+              id: `flow:${flow.id}:${flow.steps.indexOf(step)}:${optionIndex}:${option.id || `option_${optionIndex + 1}`}`,
               title: option.label,
             }))
             .filter((option) => option.title.trim())
