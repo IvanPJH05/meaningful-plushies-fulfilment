@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { type DragEvent, useEffect, useMemo, useState } from "react";
 
 import styles from "./whatsapp-flows.module.css";
 
@@ -326,6 +326,7 @@ export default function WhatsAppFlowsClient() {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
   const [uploadingMediaId, setUploadingMediaId] = useState("");
+  const [draggingMediaId, setDraggingMediaId] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -552,7 +553,22 @@ export default function WhatsAppFlowsClient() {
       setNotice(error instanceof Error ? error.message : "Media could not be uploaded.");
     } finally {
       setUploadingMediaId("");
+      setDraggingMediaId("");
     }
+  }
+
+  function handleMediaDrag(event: DragEvent<HTMLLabelElement>, mediaId: string | undefined) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    setDraggingMediaId(mediaId || "");
+  }
+
+  function handleMediaDrop(event: DragEvent<HTMLLabelElement>, actionId: string, item: FlowMediaItem) {
+    event.preventDefault();
+    event.stopPropagation();
+    setDraggingMediaId("");
+    void uploadMediaFiles(actionId, item, event.dataTransfer.files);
   }
 
   function removeAction(actionId: string) {
@@ -764,7 +780,17 @@ export default function WhatsAppFlowsClient() {
                             </label>
                             <div className={styles.mediaUploadCell}>
                               <span>Media file</span>
-                              <label className={styles.fileUpload}>
+                              <label
+                                className={`${styles.fileUpload} ${draggingMediaId === item.id ? styles.fileUploadDragging : ""}`}
+                                onDragEnter={(event) => handleMediaDrag(event, item.id)}
+                                onDragOver={(event) => handleMediaDrag(event, item.id)}
+                                onDragLeave={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  setDraggingMediaId("");
+                                }}
+                                onDrop={(event) => handleMediaDrop(event, action.id, item)}
+                              >
                                 <input
                                   accept={item.type === "video" ? "video/*" : "image/*"}
                                   multiple
@@ -775,7 +801,7 @@ export default function WhatsAppFlowsClient() {
                                   }}
                                 />
                                 <strong>{uploadingMediaId === item.id ? "Uploading..." : item.url ? "Replace file" : "Upload file"}</strong>
-                                <small>{item.fileName || (item.url ? "Uploaded media ready" : `Choose ${item.type === "image" ? "one or more images" : "one or more videos"}`)}</small>
+                                <small>{item.fileName || (item.url ? "Drop to replace, or choose another file" : `Drop or choose ${item.type === "image" ? "one or more images" : "one or more videos"}`)}</small>
                               </label>
                               {(item.fileName || item.sizeBytes) && (
                                 <em>{[item.contentType, formatFileSize(item.sizeBytes)].filter(Boolean).join(" | ")}</em>
