@@ -476,6 +476,23 @@ function cloneTemplate(template: FlowForm): FlowForm {
   };
 }
 
+function duplicateFormWithFreshKeys(flow: WhatsAppFlow): FlowForm {
+  const source = formFromFlow(flow);
+  return {
+    ...source,
+    name: `${flow.name} Copy`,
+    status: "Draft",
+    triggerButtonLabel: source.triggerType === "selection_button" ? makeSelectionKey() : source.triggerButtonLabel,
+    actions: source.actions.map((action) => ({
+      ...makeAction(action),
+      options: action.options.map((option) => ({
+        ...makeSelectionOption(option),
+        id: makeSelectionKey(),
+      })),
+    })),
+  };
+}
+
 function actionPreview(action: FlowAction) {
   const delay = Math.max(0, Number(action.delayValue) || 0);
   return delay > 0 ? `${delay} ${action.delayUnit}` : "No delay";
@@ -739,11 +756,7 @@ export default function WhatsAppFlowsClient() {
     setSaving(true);
     setNotice("");
     try {
-      const duplicateForm = {
-        ...formFromFlow(flow),
-        name: `${flow.name} Copy`,
-        status: "Draft" as const,
-      };
+      const duplicateForm = duplicateFormWithFreshKeys(flow);
       const response = await fetch("/api/crm/flows", {
         method: "POST",
         headers: { "content-type": "application/json" },
