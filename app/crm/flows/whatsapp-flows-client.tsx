@@ -1855,10 +1855,10 @@ export default function WhatsAppFlowsClient() {
           <div className={styles.listHeader}>
             <div>
               <p className={styles.eyebrow}>Saved flows</p>
-              <h2>Flow folders</h2>
+              <h2>Automation library</h2>
             </div>
             <button className={styles.secondaryButton} disabled={saving} onClick={createFolder}>
-              New folder
+              Create group
             </button>
           </div>
 
