@@ -18,6 +18,10 @@ type FlowPayload = {
   trigger?: unknown;
   triggerWords?: unknown;
   description?: unknown;
+  groupName?: unknown;
+  group?: unknown;
+  subgroupName?: unknown;
+  subgroup?: unknown;
   notes?: unknown;
   status?: unknown;
   active?: unknown;
@@ -57,6 +61,11 @@ type FlowStep = {
   videoUrl?: string;
   mediaItems?: FlowMediaItem[];
   options?: SelectionOption[];
+};
+
+type FlowTriggerConfig = {
+  groupName: string;
+  subgroupName: string;
 };
 
 function json(status: number, body: Record<string, unknown>) {
@@ -269,18 +278,28 @@ function activeFromPayload(payload: FlowPayload) {
   return stringValue(payload.status).toLowerCase() === "active";
 }
 
+function normalizeTriggerConfig(value: unknown): FlowTriggerConfig {
+  const record = recordValue(value);
+  return {
+    groupName: stringValue(record.groupName ?? record.group ?? record.folder),
+    subgroupName: stringValue(record.subgroupName ?? record.subgroup ?? record.subflow),
+  };
+}
+
 function flowResponse(flow: {
   id: string;
   name: string;
   triggerType: string | null;
   triggerButtonLabel: string | null;
   triggerWords: string[];
+  triggerConfig?: unknown;
   notes: string | null;
   active: boolean;
   messages: unknown;
   updatedAt: Date;
 }) {
   const triggerType = normalizeTriggerType(flow.triggerType, flow.triggerButtonLabel || "");
+  const triggerConfig = normalizeTriggerConfig(flow.triggerConfig);
   const messages = Array.isArray(flow.messages)
     ? flow.messages.map(normalizeFlowStep).filter((step): step is FlowStep => Boolean(step))
     : [];
@@ -291,11 +310,30 @@ function flowResponse(flow: {
     triggerType,
     triggerButtonLabel: flow.triggerButtonLabel || "",
     trigger: flow.triggerWords.join(", "),
+    groupName: triggerConfig.groupName,
+    subgroupName: triggerConfig.subgroupName,
     description: flow.notes || "",
     status: flow.active ? "Active" : "Draft",
     steps: messages,
     updatedAt: flow.updatedAt.toISOString(),
   };
+}
+
+async function flowConfigMap(businessId: string) {
+  const rows = await prisma.$queryRaw<Array<{ id: string; trigger_config: unknown }>>`
+    select id, trigger_config
+    from public.crm_whatsapp_flows
+    where business_id = ${businessId}
+  `;
+  return new Map(rows.map((row) => [row.id, row.trigger_config]));
+}
+
+async function updateFlowTriggerConfig(flowId: string, triggerConfig: FlowTriggerConfig) {
+  await prisma.$executeRaw`
+    update public.crm_whatsapp_flows
+    set trigger_config = ${JSON.stringify(triggerConfig)}::jsonb
+    where id = ${flowId}
+  `;
 }
 
 function normalizePayload(payload: FlowPayload) {
@@ -304,6 +342,8 @@ function normalizePayload(payload: FlowPayload) {
   const triggerType = normalizeTriggerType(payload.triggerType ?? payload.triggerMode, triggerButtonLabel);
   const triggerWords = splitTriggerWords(payload.triggerWords ?? payload.trigger);
   const notes = stringValue(payload.notes ?? payload.description);
+  const groupName = stringValue(payload.groupName ?? payload.group);
+  const subgroupName = stringValue(payload.subgroupName ?? payload.subgroup);
   const messages = stepsFromValue(payload.messages ?? payload.steps);
   const active = activeFromPayload(payload);
 
@@ -314,6 +354,7 @@ function normalizePayload(payload: FlowPayload) {
       ? (triggerButtonLabel || makeSelectionKey())
       : triggerType === "click" ? (triggerButtonLabel || name) : "",
     triggerWords: triggerType === "keywords" ? triggerWords : [],
+    triggerConfig: { groupName, subgroupName },
     notes,
     messages,
     active,
@@ -348,7 +389,9 @@ export async function GET() {
       orderBy: [{ active: "desc" }, { updatedAt: "desc" }],
     });
 
-    return json(200, { ok: true, flows: flows.map(flowResponse) });
+    const configs = await flowConfigMap(business.id);
+
+    return json(200, { ok: true, flows: flows.map((flow) => flowResponse({ ...flow, triggerConfig: configs.get(flow.id) })) });
   } catch (error) {
     return json(500, {
       ok: false,
@@ -389,8 +432,9 @@ export async function POST(request: Request) {
         active: normalized.active,
       },
     });
+    await updateFlowTriggerConfig(flow.id, normalized.triggerConfig);
 
-    return json(201, { ok: true, flow: flowResponse(flow) });
+    return json(201, { ok: true, flow: flowResponse({ ...flow, triggerConfig: normalized.triggerConfig }) });
   } catch (error) {
     return json(500, {
       ok: false,
@@ -443,8 +487,9 @@ export async function PATCH(request: Request) {
         active: normalized.active,
       },
     });
+    await updateFlowTriggerConfig(flow.id, normalized.triggerConfig);
 
-    return json(200, { ok: true, flow: flowResponse(flow) });
+    return json(200, { ok: true, flow: flowResponse({ ...flow, triggerConfig: normalized.triggerConfig }) });
   } catch (error) {
     return json(500, {
       ok: false,

@@ -12,6 +12,8 @@ type WhatsAppFlow = {
   triggerType?: TriggerType;
   triggerButtonLabel?: string;
   trigger: string;
+  groupName?: string;
+  subgroupName?: string;
   description: string;
   status: "Draft" | "Active";
   steps: FlowStep[];
@@ -68,6 +70,8 @@ type FlowForm = {
   triggerType: TriggerType;
   triggerButtonLabel: string;
   trigger: string;
+  groupName: string;
+  subgroupName: string;
   description: string;
   status: "Draft" | "Active";
   actions: FlowAction[];
@@ -97,6 +101,15 @@ type SelectionFlowLink = {
   optionKey: string;
 };
 
+type FlowGroup = {
+  name: string;
+  flows: WhatsAppFlow[];
+  subgroups: Array<{
+    name: string;
+    flows: WhatsAppFlow[];
+  }>;
+};
+
 let flowBuilderMemoryCache: FlowBuilderCache | null = null;
 
 function makeId() {
@@ -113,6 +126,14 @@ function makeSelectionKey() {
 
 function isSelectionKey(value?: string) {
   return Boolean((value || "").trim().match(/^sel_[a-z0-9]+_[a-z0-9]+$/i));
+}
+
+function flowGroupName(flow: Pick<WhatsAppFlow, "groupName">) {
+  return (flow.groupName || "").trim() || "Ungrouped";
+}
+
+function flowSubgroupName(flow: Pick<WhatsAppFlow, "subgroupName">) {
+  return (flow.subgroupName || "").trim();
 }
 
 function makeMediaItem(media?: Partial<FlowMediaItem>): FlowMediaItem {
@@ -176,6 +197,8 @@ function emptyFlowForm(): FlowForm {
     triggerType: "click",
     triggerButtonLabel: "",
     trigger: "",
+    groupName: "",
+    subgroupName: "",
     description: "",
     status: "Draft",
     actions: [makeAction()],
@@ -215,6 +238,8 @@ function normalizeFlowForm(value: unknown): FlowForm | null {
     triggerType,
     triggerButtonLabel: typeof form.triggerButtonLabel === "string" ? form.triggerButtonLabel : "",
     trigger: typeof form.trigger === "string" ? form.trigger : "",
+    groupName: typeof form.groupName === "string" ? form.groupName : "",
+    subgroupName: typeof form.subgroupName === "string" ? form.subgroupName : "",
     description: typeof form.description === "string" ? form.description : "",
     status,
     actions: actions.length ? actions : [makeAction()],
@@ -265,6 +290,8 @@ const starterTemplates: FlowForm[] = [
     triggerType: "click",
     triggerButtonLabel: "Ask details",
     trigger: "interested, price, details",
+    groupName: "",
+    subgroupName: "",
     description: "Ask for plushie details after a customer shows interest.",
     status: "Draft",
     actions: [
@@ -293,6 +320,8 @@ const starterTemplates: FlowForm[] = [
     triggerType: "click",
     triggerButtonLabel: "Payment received",
     trigger: "paid, payment done, transfer",
+    groupName: "",
+    subgroupName: "",
     description: "Confirm payment and tell the customer the Shopify details link is coming.",
     status: "Draft",
     actions: [
@@ -307,6 +336,8 @@ const starterTemplates: FlowForm[] = [
     triggerType: "click",
     triggerButtonLabel: "Checking order",
     trigger: "tracking, order, update",
+    groupName: "",
+    subgroupName: "",
     description: "Use this when you need time to check an order.",
     status: "Draft",
     actions: [
@@ -422,6 +453,8 @@ function formFromFlow(flow: WhatsAppFlow): FlowForm {
     triggerType: normaliseTriggerType(flow.triggerType, "click"),
     triggerButtonLabel: flow.triggerButtonLabel || "",
     trigger: flow.trigger,
+    groupName: flow.groupName || "",
+    subgroupName: flow.subgroupName || "",
     description: flow.description,
     status: flow.status,
     actions: flow.steps.length ? flow.steps.map(actionFromStep) : [makeAction()],
@@ -478,6 +511,8 @@ function flowPayloadFromForm(form: FlowForm, id?: string) {
     triggerType: form.triggerType,
     triggerButtonLabel: form.triggerButtonLabel.trim(),
     trigger: form.trigger.trim(),
+    groupName: form.groupName.trim(),
+    subgroupName: form.subgroupName.trim(),
     description: form.description.trim(),
     status: form.status,
     steps: form.actions.map(formatActionStep).filter((step): step is FlowStep => Boolean(step)),
@@ -491,11 +526,13 @@ function cloneTemplate(template: FlowForm): FlowForm {
   };
 }
 
-function duplicateFormWithFreshKeys(flow: WhatsAppFlow): FlowForm {
+function duplicateFormWithFreshKeys(flow: WhatsAppFlow, overrides: Partial<Pick<FlowForm, "name" | "groupName" | "subgroupName">> = {}): FlowForm {
   const source = formFromFlow(flow);
   return {
     ...source,
-    name: `${flow.name} Copy`,
+    name: overrides.name ?? `${flow.name} Copy`,
+    groupName: overrides.groupName ?? source.groupName,
+    subgroupName: overrides.subgroupName ?? source.subgroupName,
     status: "Draft",
     triggerButtonLabel: source.triggerType === "selection_button" ? makeSelectionKey() : source.triggerButtonLabel,
     actions: source.actions.map((action) => ({
@@ -506,6 +543,27 @@ function duplicateFormWithFreshKeys(flow: WhatsAppFlow): FlowForm {
       })),
     })),
   };
+}
+
+function groupedFlowLibrary(flows: WhatsAppFlow[]): FlowGroup[] {
+  const groupMap = new Map<string, Map<string, WhatsAppFlow[]>>();
+  for (const flow of flows) {
+    const groupName = flowGroupName(flow);
+    const subgroupName = flowSubgroupName(flow);
+    if (!groupMap.has(groupName)) groupMap.set(groupName, new Map());
+    const subgroupMap = groupMap.get(groupName);
+    if (!subgroupMap) continue;
+    if (!subgroupMap.has(subgroupName)) subgroupMap.set(subgroupName, []);
+    subgroupMap.get(subgroupName)?.push(flow);
+  }
+
+  return Array.from(groupMap.entries()).map(([name, subgroupMap]) => {
+    const directFlows = subgroupMap.get("") || [];
+    const subgroups = Array.from(subgroupMap.entries())
+      .filter(([subgroupName]) => subgroupName)
+      .map(([subgroupName, subgroupFlows]) => ({ name: subgroupName, flows: subgroupFlows }));
+    return { name, flows: directFlows, subgroups };
+  });
 }
 
 function actionPreview(action: FlowAction) {
@@ -704,6 +762,7 @@ export default function WhatsAppFlowsClient() {
   }, [editingId, flows, form]);
 
   const activeCount = useMemo(() => flows.filter((flow) => flow.status === "Active").length, [flows]);
+  const flowGroups = useMemo(() => groupedFlowLibrary(flows), [flows]);
   const selectionLinks = useMemo(() => {
     const savedLinks = flows.flatMap(selectionLinksFromFlow);
     const draftLinks = selectionLinksFromDraft(form, editingId);
@@ -788,6 +847,94 @@ export default function WhatsAppFlowsClient() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function duplicateFlowSet(sourceFlows: WhatsAppFlow[], label: string, overridesForFlow: (flow: WhatsAppFlow) => Partial<Pick<FlowForm, "groupName" | "subgroupName">>) {
+    if (!sourceFlows.length) return;
+    setSaving(true);
+    setNotice("");
+    const createdPairs: Array<{ source: WhatsAppFlow; created: WhatsAppFlow }> = [];
+    try {
+      for (const sourceFlow of sourceFlows) {
+        const duplicateForm = duplicateFormWithFreshKeys(sourceFlow, {
+          name: `${sourceFlow.name} Copy`,
+          ...overridesForFlow(sourceFlow),
+        });
+        const response = await fetch("/api/crm/flows", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(flowPayloadFromForm(duplicateForm)),
+        });
+        const result = (await response.json()) as { ok?: boolean; flow?: WhatsAppFlow; error?: string };
+        if (!response.ok || !result.ok || !result.flow) throw new Error(result.error || `Could not duplicate ${sourceFlow.name}.`);
+        createdPairs.push({ source: sourceFlow, created: result.flow });
+      }
+
+      const idMap = new Map(createdPairs.map((pair) => [pair.source.id, pair.created.id]));
+      const nameMap = new Map(createdPairs.map((pair) => [pair.source.id, pair.created.name]));
+      const patchedFlows: WhatsAppFlow[] = [];
+      for (const pair of createdPairs) {
+        const remappedForm = formFromFlow(pair.created);
+        let changed = false;
+        remappedForm.actions = remappedForm.actions.map((action) => ({
+          ...action,
+          options: action.options.map((option) => {
+            const mappedTargetId = option.targetFlowId ? idMap.get(option.targetFlowId) : "";
+            if (!mappedTargetId) return option;
+            changed = true;
+            return {
+              ...option,
+              targetFlowId: mappedTargetId,
+              targetFlowName: nameMap.get(option.targetFlowId || "") || option.targetFlowName,
+            };
+          }),
+        }));
+        if (!changed) {
+          patchedFlows.push(pair.created);
+          continue;
+        }
+        const response = await fetch("/api/crm/flows", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(flowPayloadFromForm(remappedForm, pair.created.id)),
+        });
+        const result = (await response.json()) as { ok?: boolean; flow?: WhatsAppFlow; error?: string };
+        if (!response.ok || !result.ok || !result.flow) throw new Error(result.error || `Could not reconnect ${pair.created.name}.`);
+        patchedFlows.push(result.flow);
+      }
+
+      setFlows((current) => [...patchedFlows, ...current]);
+      if (patchedFlows[0]) {
+        setEditingId(patchedFlows[0].id);
+        setForm(formFromFlow(patchedFlows[0]));
+      }
+      setNotice(`Duplicated ${label}.`);
+    } catch (error) {
+      const createdIds = createdPairs.map((pair) => pair.created.id);
+      if (createdIds.length) {
+        setFlows((current) => current.filter((flow) => !createdIds.includes(flow.id)));
+      }
+      setNotice(error instanceof Error ? error.message : `${label} could not be duplicated.`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function duplicateGroup(group: FlowGroup) {
+    const nextGroupName = group.name === "Ungrouped" ? "Ungrouped Copy" : `${group.name} Copy`;
+    const sourceFlows = [...group.flows, ...group.subgroups.flatMap((subgroup) => subgroup.flows)];
+    return duplicateFlowSet(sourceFlows, `group "${group.name}"`, (flow) => ({
+      groupName: nextGroupName,
+      subgroupName: flow.subgroupName || "",
+    }));
+  }
+
+  function duplicateSubgroup(groupName: string, subgroup: FlowGroup["subgroups"][number]) {
+    const nextSubgroupName = `${subgroup.name} Copy`;
+    return duplicateFlowSet(subgroup.flows, `subflow "${subgroup.name}"`, () => ({
+      groupName: groupName === "Ungrouped" ? "" : groupName,
+      subgroupName: nextSubgroupName,
+    }));
   }
 
   async function deleteFlow(flowIdToDelete: string) {
@@ -1047,6 +1194,67 @@ export default function WhatsAppFlowsClient() {
     setForm(cloneTemplate(template));
   }
 
+  function renderFlowCard(flow: WhatsAppFlow) {
+    return (
+      <article className={styles.flowCard} key={flow.id}>
+        <div className={styles.flowTopline}>
+          <div>
+            <h3>{flow.name}</h3>
+            <p>{flow.description || "No notes yet."}</p>
+          </div>
+          <span className={flow.status === "Active" ? styles.activeBadge : styles.draftBadge}>{flow.status}</span>
+        </div>
+
+        <div className={styles.flowMeta}>
+          <span>{triggerSummary(flow)}</span>
+          <strong>{flow.steps.length} actions</strong>
+        </div>
+
+        {normaliseTriggerType(flow.triggerType) === "selection_button" && (
+          <div className={styles.linkedFlowSummary}>
+            {selectionLinks.filter((link) => link.targetFlowId === flow.id).length ? (
+              selectionLinks
+                .filter((link) => link.targetFlowId === flow.id)
+                .map((link) => (
+                  <span key={`${flow.id}-${link.sourceFlowId}-${link.optionKey}`}>
+                    Linked from {link.sourceFlowName} / {link.optionLabel}
+                  </span>
+                ))
+            ) : (
+              <span>Not linked yet. Select this flow inside an Ask Selection option.</span>
+            )}
+          </div>
+        )}
+
+        <div className={styles.actionTimeline}>
+          {flow.steps.map((step, index) => {
+            const parsed = actionFromStep(step);
+            return (
+              <div className={styles.previewAction} key={`${flow.id}-${index}`}>
+                <span>{actionPreview(parsed)}</span>
+                <div>
+                  <strong>{parsed.type}</strong>
+                  <p>{actionSummary(parsed)}</p>
+                  {parsed.type === "Send Media" && parsed.message && <p>{parsed.message}</p>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className={styles.cardActions}>
+          <button onClick={() => editFlow(flow)}>Edit</button>
+          <button disabled={saving} onClick={() => void duplicateFlow(flow)}>
+            Duplicate
+          </button>
+          <button disabled={saving} onClick={() => void deleteFlow(flow.id)}>
+            Delete
+          </button>
+        </div>
+      </article>
+    );
+  }
+
   return (
     <main className={styles.page}>
       <section className={styles.layout}>
@@ -1103,6 +1311,26 @@ export default function WhatsAppFlowsClient() {
                     <option>Draft</option>
                     <option>Active</option>
                   </select>
+                </label>
+              </div>
+
+              <div className={styles.formGrid}>
+                <label>
+                  Group
+                  <input
+                    value={form.groupName}
+                    onChange={(event) => setForm((current) => ({ ...current, groupName: event.target.value }))}
+                    placeholder="Example: Intro flows"
+                  />
+                </label>
+
+                <label>
+                  Subflow
+                  <input
+                    value={form.subgroupName}
+                    onChange={(event) => setForm((current) => ({ ...current, subgroupName: event.target.value }))}
+                    placeholder="Example: English path"
+                  />
                 </label>
               </div>
 
@@ -1475,63 +1703,35 @@ export default function WhatsAppFlowsClient() {
             </div>
           </div>
 
-          {flows.map((flow) => (
-            <article className={styles.flowCard} key={flow.id}>
-              <div className={styles.flowTopline}>
+          {flowGroups.map((group) => (
+            <section className={styles.flowGroup} key={group.name}>
+              <div className={styles.groupHeader}>
                 <div>
-                  <h3>{flow.name}</h3>
-                  <p>{flow.description || "No notes yet."}</p>
+                  <p className={styles.eyebrow}>Group</p>
+                  <h3>{group.name}</h3>
                 </div>
-                <span className={flow.status === "Active" ? styles.activeBadge : styles.draftBadge}>{flow.status}</span>
+                <button disabled={saving} onClick={() => void duplicateGroup(group)}>
+                  Duplicate group
+                </button>
               </div>
 
-              <div className={styles.flowMeta}>
-                <span>{triggerSummary(flow)}</span>
-                <strong>{flow.steps.length} actions</strong>
-              </div>
+              {group.flows.map((flow) => renderFlowCard(flow))}
 
-              {normaliseTriggerType(flow.triggerType) === "selection_button" && (
-                <div className={styles.linkedFlowSummary}>
-                  {selectionLinks.filter((link) => link.targetFlowId === flow.id).length ? (
-                    selectionLinks
-                      .filter((link) => link.targetFlowId === flow.id)
-                      .map((link) => (
-                        <span key={`${flow.id}-${link.sourceFlowId}-${link.optionKey}`}>
-                          Linked from {link.sourceFlowName} / {link.optionLabel}
-                        </span>
-                      ))
-                  ) : (
-                    <span>Not linked yet. Select this flow inside an Ask Selection option.</span>
-                  )}
-                </div>
-              )}
-
-              <div className={styles.actionTimeline}>
-                {flow.steps.map((step, index) => {
-                  const parsed = actionFromStep(step);
-                  return (
-                    <div className={styles.previewAction} key={`${flow.id}-${index}`}>
-                      <span>{actionPreview(parsed)}</span>
-                      <div>
-                        <strong>{parsed.type}</strong>
-                        <p>{actionSummary(parsed)}</p>
-                        {parsed.type === "Send Media" && parsed.message && <p>{parsed.message}</p>}
-                      </div>
+              {group.subgroups.map((subgroup) => (
+                <section className={styles.subflowGroup} key={`${group.name}-${subgroup.name}`}>
+                  <div className={styles.subgroupHeader}>
+                    <div>
+                      <p className={styles.eyebrow}>Subflow</p>
+                      <h4>{subgroup.name}</h4>
                     </div>
-                  );
-                })}
-              </div>
-
-              <div className={styles.cardActions}>
-                <button onClick={() => editFlow(flow)}>Edit</button>
-                <button disabled={saving} onClick={() => void duplicateFlow(flow)}>
-                  Duplicate
-                </button>
-                <button disabled={saving} onClick={() => void deleteFlow(flow.id)}>
-                  Delete
-                </button>
-              </div>
-            </article>
+                    <button disabled={saving} onClick={() => void duplicateSubgroup(group.name, subgroup)}>
+                      Duplicate subflow
+                    </button>
+                  </div>
+                  {subgroup.flows.map((flow) => renderFlowCard(flow))}
+                </section>
+              ))}
+            </section>
           ))}
 
           {loading && (

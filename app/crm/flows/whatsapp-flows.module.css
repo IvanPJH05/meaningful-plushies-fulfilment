@@ -556,11 +556,59 @@
 }
 
 .flowCard,
-.emptyState {
+.emptyState,
+.flowGroup,
+.subflowGroup {
   background: #ffffff;
   border: 1px solid #dbe6f3;
   border-radius: 8px;
   padding: 18px;
+}
+
+.flowGroup {
+  display: grid;
+  gap: 12px;
+}
+
+.subflowGroup {
+  background: #f8fbff;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.groupHeader,
+.subgroupHeader {
+  align-items: center;
+  border-bottom: 1px solid #e1eaf5;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding-bottom: 12px;
+}
+
+.groupHeader h3,
+.subgroupHeader h4 {
+  margin: 0;
+}
+
+.groupHeader button,
+.subgroupHeader button {
+  background: #ffffff;
+  border: 1px solid #c6d8ee;
+  border-radius: 12px;
+  color: #06428a;
+  cursor: pointer;
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 10px 14px;
+}
+
+.groupHeader button:disabled,
+.subgroupHeader button:disabled {
+  color: #8aa7c9;
+  cursor: not-allowed;
 }
 
 .flowTopline h3 {
