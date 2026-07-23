@@ -68,6 +68,8 @@ type FlowTriggerConfig = {
   subgroupName: string;
 };
 
+const flowMetaPattern = /\n?\n?<!--crm-flow-meta:([\s\S]*?)-->\s*$/;
+
 function json(status: number, body: Record<string, unknown>) {
   return NextResponse.json(body, { status });
 }
@@ -286,6 +288,30 @@ function normalizeTriggerConfig(value: unknown): FlowTriggerConfig {
   };
 }
 
+function splitNotesAndTriggerConfig(notes: string | null | undefined) {
+  const value = notes || "";
+  const match = value.match(flowMetaPattern);
+  if (!match) {
+    return { notes: value, triggerConfig: normalizeTriggerConfig(null) };
+  }
+  try {
+    return {
+      notes: value.slice(0, match.index).trimEnd(),
+      triggerConfig: normalizeTriggerConfig(JSON.parse(match[1] || "{}")),
+    };
+  } catch {
+    return { notes: value.replace(flowMetaPattern, "").trimEnd(), triggerConfig: normalizeTriggerConfig(null) };
+  }
+}
+
+function notesWithTriggerConfig(notes: string, triggerConfig: FlowTriggerConfig) {
+  const cleanedNotes = splitNotesAndTriggerConfig(notes).notes;
+  const hasMeta = Boolean(triggerConfig.groupName || triggerConfig.subgroupName);
+  return hasMeta
+    ? `${cleanedNotes}${cleanedNotes ? "\n\n" : ""}<!--crm-flow-meta:${JSON.stringify(triggerConfig)}-->`
+    : cleanedNotes;
+}
+
 function flowResponse(flow: {
   id: string;
   name: string;
@@ -299,7 +325,8 @@ function flowResponse(flow: {
   updatedAt: Date;
 }) {
   const triggerType = normalizeTriggerType(flow.triggerType, flow.triggerButtonLabel || "");
-  const triggerConfig = normalizeTriggerConfig(flow.triggerConfig);
+  const notesMeta = splitNotesAndTriggerConfig(flow.notes);
+  const triggerConfig = normalizeTriggerConfig(flow.triggerConfig ?? notesMeta.triggerConfig);
   const messages = Array.isArray(flow.messages)
     ? flow.messages.map(normalizeFlowStep).filter((step): step is FlowStep => Boolean(step))
     : [];
@@ -312,28 +339,11 @@ function flowResponse(flow: {
     trigger: flow.triggerWords.join(", "),
     groupName: triggerConfig.groupName,
     subgroupName: triggerConfig.subgroupName,
-    description: flow.notes || "",
+    description: notesMeta.notes,
     status: flow.active ? "Active" : "Draft",
     steps: messages,
     updatedAt: flow.updatedAt.toISOString(),
   };
-}
-
-async function flowConfigMap(businessId: string) {
-  const rows = await prisma.$queryRaw<Array<{ id: string; trigger_config: unknown }>>`
-    select id, trigger_config
-    from public.crm_whatsapp_flows
-    where business_id = ${businessId}
-  `;
-  return new Map(rows.map((row) => [row.id, row.trigger_config]));
-}
-
-async function updateFlowTriggerConfig(flowId: string, triggerConfig: FlowTriggerConfig) {
-  await prisma.$executeRaw`
-    update public.crm_whatsapp_flows
-    set trigger_config = ${JSON.stringify(triggerConfig)}::jsonb
-    where id = ${flowId}
-  `;
 }
 
 function normalizePayload(payload: FlowPayload) {
@@ -355,7 +365,7 @@ function normalizePayload(payload: FlowPayload) {
       : triggerType === "click" ? (triggerButtonLabel || name) : "",
     triggerWords: triggerType === "keywords" ? triggerWords : [],
     triggerConfig: { groupName, subgroupName },
-    notes,
+    notes: notesWithTriggerConfig(notes, { groupName, subgroupName }),
     messages,
     active,
   };
@@ -389,9 +399,7 @@ export async function GET() {
       orderBy: [{ active: "desc" }, { updatedAt: "desc" }],
     });
 
-    const configs = await flowConfigMap(business.id);
-
-    return json(200, { ok: true, flows: flows.map((flow) => flowResponse({ ...flow, triggerConfig: configs.get(flow.id) })) });
+    return json(200, { ok: true, flows: flows.map(flowResponse) });
   } catch (error) {
     return json(500, {
       ok: false,
@@ -432,8 +440,6 @@ export async function POST(request: Request) {
         active: normalized.active,
       },
     });
-    await updateFlowTriggerConfig(flow.id, normalized.triggerConfig);
-
     return json(201, { ok: true, flow: flowResponse({ ...flow, triggerConfig: normalized.triggerConfig }) });
   } catch (error) {
     return json(500, {
@@ -487,8 +493,6 @@ export async function PATCH(request: Request) {
         active: normalized.active,
       },
     });
-    await updateFlowTriggerConfig(flow.id, normalized.triggerConfig);
-
     return json(200, { ok: true, flow: flowResponse({ ...flow, triggerConfig: normalized.triggerConfig }) });
   } catch (error) {
     return json(500, {
