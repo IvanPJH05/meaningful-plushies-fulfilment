@@ -528,9 +528,7 @@ async function findFlowTriggeredBySelection(args: {
   businessId: string;
   sourceFlowId: string;
   optionId: string;
-  optionLabel: string;
   targetFlowId: string;
-  targetFlowName: string;
 }) {
   if (args.targetFlowId) {
     const flow = await prisma.whatsAppFlow.findFirst({
@@ -539,7 +537,6 @@ async function findFlowTriggeredBySelection(args: {
     if (flow) return flow;
   }
 
-  const label = args.optionLabel.trim();
   const candidates = await prisma.whatsAppFlow.findMany({
     where: {
       businessId: args.businessId,
@@ -548,15 +545,10 @@ async function findFlowTriggeredBySelection(args: {
     },
     orderBy: { updatedAt: "desc" },
   });
-  const normalizedLabel = label.toLowerCase();
-  const normalizedTargetName = args.targetFlowName.trim().toLowerCase();
+  const normalizedOptionId = args.optionId.trim().toLowerCase();
   return candidates.find((flow) => (
     flow.id !== args.sourceFlowId
-    && (
-      (flow.triggerButtonLabel || "").trim().toLowerCase() === normalizedLabel
-      || (normalizedTargetName && flow.name.trim().toLowerCase() === normalizedTargetName)
-      || (flow.triggerButtonLabel || "").trim().toLowerCase() === args.optionId.trim().toLowerCase()
-    )
+    && (flow.triggerButtonLabel || "").trim().toLowerCase() === normalizedOptionId
   )) || null;
 }
 
@@ -582,16 +574,12 @@ async function handleFlowAutomationForInboundMessages(storedMessages: StoredWhat
       const matchedOption = arrayValue(steps[stepIndex]?.options)
         .map(objectValue)
         .find((candidate) => (textValue(candidate.id) || "").trim() === optionId);
-      const optionLabel = textValue(matchedOption?.label);
       const targetFlowId = textValue(matchedOption?.targetFlowId);
-      const targetFlowName = textValue(matchedOption?.targetFlowName);
       const targetFlow = await findFlowTriggeredBySelection({
         businessId: item.businessId,
         sourceFlowId: flowId,
         optionId,
-        optionLabel,
         targetFlowId,
-        targetFlowName,
       });
       if (targetFlow) {
         await runWebhookFlow({ item, flow: targetFlow });

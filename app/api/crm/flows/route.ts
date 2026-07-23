@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 
 import { prisma } from "@/src/infrastructure/database/prisma";
 import { ensureCrmWritePolicies, isRlsPolicyError } from "@/src/modules/crm/write-policies";
@@ -64,6 +65,10 @@ function json(status: number, body: Record<string, unknown>) {
 
 function stringValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function makeSelectionKey() {
+  return `sel_${Date.now().toString(36)}_${randomUUID().replace(/-/g, "").slice(0, 8)}`;
 }
 
 function recordValue(value: unknown): Record<string, unknown> {
@@ -295,12 +300,33 @@ function normalizePayload(payload: FlowPayload) {
   return {
     name,
     triggerType,
-    triggerButtonLabel: triggerType === "click" || triggerType === "selection_button" ? (triggerButtonLabel || name) : "",
+    triggerButtonLabel: triggerType === "selection_button"
+      ? (triggerButtonLabel || makeSelectionKey())
+      : triggerType === "click" ? (triggerButtonLabel || name) : "",
     triggerWords: triggerType === "keywords" ? triggerWords : [],
     notes,
     messages,
     active,
   };
+}
+
+async function activeSelectionKeyConflict(args: {
+  businessId: string;
+  key: string;
+  excludeId?: string;
+}) {
+  const key = args.key.trim();
+  if (!key) return null;
+  return prisma.whatsAppFlow.findFirst({
+    where: {
+      businessId: args.businessId,
+      active: true,
+      triggerType: "selection_button",
+      triggerButtonLabel: { equals: key, mode: "insensitive" },
+      ...(args.excludeId ? { id: { not: args.excludeId } } : {}),
+    },
+    select: { id: true, name: true },
+  });
 }
 
 export async function GET() {
@@ -330,6 +356,15 @@ export async function POST(request: Request) {
 
     if (!normalized.name || !normalized.messages.length) {
       return json(400, { ok: false, error: "Flow name and at least one message are required." });
+    }
+    if (normalized.active && normalized.triggerType === "selection_button") {
+      const conflict = await activeSelectionKeyConflict({
+        businessId: business.id,
+        key: normalized.triggerButtonLabel,
+      });
+      if (conflict) {
+        return json(409, { ok: false, error: `Selection key "${normalized.triggerButtonLabel}" is already active on "${conflict.name}". Generate a new key before saving.` });
+      }
     }
 
     const flow = await prisma.whatsAppFlow.create({
@@ -375,6 +410,16 @@ export async function PATCH(request: Request) {
     });
 
     if (!existingFlow) return json(404, { ok: false, error: "Flow could not be found." });
+    if (normalized.active && normalized.triggerType === "selection_button") {
+      const conflict = await activeSelectionKeyConflict({
+        businessId: business.id,
+        key: normalized.triggerButtonLabel,
+        excludeId: existingFlow.id,
+      });
+      if (conflict) {
+        return json(409, { ok: false, error: `Selection key "${normalized.triggerButtonLabel}" is already active on "${conflict.name}". Generate a new key before saving.` });
+      }
+    }
 
     const flow = await prisma.whatsAppFlow.update({
       where: { id: existingFlow.id },

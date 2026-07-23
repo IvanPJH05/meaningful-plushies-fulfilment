@@ -92,6 +92,17 @@ function makeId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+function makeSelectionKey() {
+  const randomValue = typeof crypto !== "undefined" && "getRandomValues" in crypto
+    ? crypto.getRandomValues(new Uint32Array(1))[0].toString(36)
+    : Math.random().toString(36).slice(2);
+  return `sel_${Date.now().toString(36)}_${randomValue.slice(0, 6)}`;
+}
+
+function isSelectionKey(value?: string) {
+  return Boolean((value || "").trim().match(/^sel_[a-z0-9]+_[a-z0-9]+$/i));
+}
+
 function makeMediaItem(media?: Partial<FlowMediaItem>): FlowMediaItem {
   return {
     id: makeId(),
@@ -106,7 +117,7 @@ function makeMediaItem(media?: Partial<FlowMediaItem>): FlowMediaItem {
 
 function makeSelectionOption(option?: Partial<SelectionOption>): SelectionOption {
   return {
-    id: option?.id || makeId(),
+    id: isSelectionKey(option?.id) ? option?.id : makeSelectionKey(),
     label: option?.label || "",
     followUpMessage: option?.followUpMessage || "",
     targetFlowId: option?.targetFlowId || "",
@@ -142,6 +153,17 @@ function emptyFlowForm(): FlowForm {
     status: "Draft",
     actions: [makeAction()],
   };
+}
+
+function formWithTriggerType(form: FlowForm, triggerType: TriggerType): FlowForm {
+  if (triggerType === "selection_button") {
+    return {
+      ...form,
+      triggerType,
+      triggerButtonLabel: isSelectionKey(form.triggerButtonLabel) ? form.triggerButtonLabel : makeSelectionKey(),
+    };
+  }
+  return { ...form, triggerType };
 }
 
 function normalizeFlowForm(value: unknown): FlowForm | null {
@@ -448,7 +470,7 @@ function triggerSummary(flow: Pick<WhatsAppFlow, "name" | "triggerType" | "trigg
   const triggerType = normaliseTriggerType(flow.triggerType);
   if (triggerType === "click") return `Button: ${flow.triggerButtonLabel || flow.name}`;
   if (triggerType === "first_message") return "First customer message";
-  if (triggerType === "selection_button") return `Selection button: ${flow.triggerButtonLabel || flow.name}`;
+  if (triggerType === "selection_button") return `Selection key: ${flow.triggerButtonLabel || flow.name}`;
   return `Trigger: ${flow.trigger || "Keywords"}`;
 }
 
@@ -575,6 +597,21 @@ export default function WhatsAppFlowsClient() {
 
   async function saveFlow() {
     if (!form.name.trim() || !hasUsableAction) return;
+    if (form.status === "Active" && form.triggerType === "selection_button") {
+      const key = form.triggerButtonLabel.trim().toLowerCase();
+      const duplicate = flows.find((flow) => (
+        flow.id !== editingId
+        && flow.status === "Active"
+        && normaliseTriggerType(flow.triggerType) === "selection_button"
+        && (flow.triggerButtonLabel || "").trim().toLowerCase() === key
+      ));
+      if (duplicate) {
+        const message = `Selection key "${form.triggerButtonLabel}" is already active on "${duplicate.name}". Generate a new key before saving.`;
+        window.alert(message);
+        setNotice(message);
+        return;
+      }
+    }
     setSaving(true);
     setNotice("");
     try {
@@ -893,7 +930,7 @@ export default function WhatsAppFlowsClient() {
                   Trigger
                   <select
                     value={form.triggerType}
-                    onChange={(event) => setForm((current) => ({ ...current, triggerType: event.target.value as TriggerType }))}
+                    onChange={(event) => setForm((current) => formWithTriggerType(current, event.target.value as TriggerType))}
                   >
                     <option value="click">Click button</option>
                     <option value="keywords">Trigger words</option>
@@ -908,14 +945,19 @@ export default function WhatsAppFlowsClient() {
                     <input value="A customer sends their first message" disabled />
                   </label>
                 ) : form.triggerType === "selection_button" ? (
-                  <label>
-                    Button pressed
-                    <input
-                      value={form.triggerButtonLabel}
-                      onChange={(event) => setForm((current) => ({ ...current, triggerButtonLabel: event.target.value }))}
-                      placeholder="Example: English"
-                    />
-                  </label>
+                  <div className={styles.keyField}>
+                    <label>
+                      Trigger key
+                      <input value={form.triggerButtonLabel} readOnly />
+                    </label>
+                    <button
+                      className={styles.secondaryButton}
+                      type="button"
+                      onClick={() => setForm((current) => ({ ...current, triggerButtonLabel: makeSelectionKey() }))}
+                    >
+                      Generate new key
+                    </button>
+                  </div>
                 ) : form.triggerType === "click" ? (
                   <label>
                     Button name
@@ -943,7 +985,7 @@ export default function WhatsAppFlowsClient() {
                   : form.triggerType === "first_message"
                     ? "This flow runs automatically when a customer sends their first message in a new chat."
                   : form.triggerType === "selection_button"
-                    ? "This flow runs when a customer taps a matching selection button from another flow."
+                    ? "This flow runs when a customer taps a selection button with this generated key. Active selection keys must be unique."
                   : "The flow can run when a WhatsApp message contains one of these words."}
               </p>
 
@@ -1081,11 +1123,12 @@ export default function WhatsAppFlowsClient() {
                                       ...current,
                                       targetFlowId: event.target.value,
                                       targetFlowName: flows.find((flow) => flow.id === event.target.value)?.name || "",
+                                      id: flows.find((flow) => flow.id === event.target.value && normaliseTriggerType(flow.triggerType) === "selection_button")?.triggerButtonLabel || current.id,
                                     } : current
                                   )),
                                 })}
                               >
-                                <option value="">Use a flow triggered by this button label</option>
+                                <option value="">Use a flow triggered by this option key</option>
                                 {flows
                                   .filter((flow) => flow.id !== editingId)
                                   .map((flow) => (
@@ -1095,7 +1138,7 @@ export default function WhatsAppFlowsClient() {
                                   ))}
                               </select>
                               <small>
-                                Or create a flow with trigger "Selection button press" and button name "{option.label.trim() || "this button"}".
+                                Option key: {option.id}. This is what the trigger reads, not the visible button text.
                               </small>
                             </label>
                             <button

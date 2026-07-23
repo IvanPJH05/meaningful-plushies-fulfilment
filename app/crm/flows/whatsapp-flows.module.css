@@ -114,6 +114,17 @@
   justify-content: flex-end;
 }
 
+.keyField {
+  align-items: end;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.keyField input {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}
+
 .builderHeader h1 {
   font-size: 27px;
   letter-spacing: -0.03em;
