@@ -110,7 +110,13 @@ type FlowGroup = {
   }>;
 };
 
+type FlowFolder = {
+  name: string;
+  subfolders: string[];
+};
+
 let flowBuilderMemoryCache: FlowBuilderCache | null = null;
+const FLOW_FOLDER_STORAGE_KEY = "crm-whatsapp-flow-folders-v1";
 
 function makeId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -281,6 +287,44 @@ function writeFlowBuilderCache(cache: FlowBuilderCache) {
     window.localStorage.setItem(FLOW_BUILDER_CACHE_KEY, JSON.stringify(cache));
   } catch {
     // The in-memory cache still keeps the current tab fast if storage is full.
+  }
+}
+
+function normalizeFlowFolders(value: unknown): FlowFolder[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  return value
+    .map((folder) => {
+      const record = folder && typeof folder === "object" && !Array.isArray(folder) ? folder as Partial<FlowFolder> : {};
+      const name = typeof record.name === "string" ? record.name.trim() : "";
+      const subfolders = Array.isArray(record.subfolders)
+        ? Array.from(new Set(record.subfolders.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean)))
+        : [];
+      return { name, subfolders };
+    })
+    .filter((folder) => {
+      if (!folder.name || seen.has(folder.name.toLowerCase())) return false;
+      seen.add(folder.name.toLowerCase());
+      return true;
+    });
+}
+
+function readFlowFolders() {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(FLOW_FOLDER_STORAGE_KEY);
+    return normalizeFlowFolders(raw ? JSON.parse(raw) : []);
+  } catch {
+    return [];
+  }
+}
+
+function writeFlowFolders(folders: FlowFolder[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(FLOW_FOLDER_STORAGE_KEY, JSON.stringify(folders));
+  } catch {
+    // Folder creation is still reflected in memory even if local storage is full.
   }
 }
 
@@ -545,8 +589,21 @@ function duplicateFormWithFreshKeys(flow: WhatsAppFlow, overrides: Partial<Pick<
   };
 }
 
-function groupedFlowLibrary(flows: WhatsAppFlow[]): FlowGroup[] {
+function groupedFlowLibrary(flows: WhatsAppFlow[], folders: FlowFolder[]): FlowGroup[] {
   const groupMap = new Map<string, Map<string, WhatsAppFlow[]>>();
+  for (const folder of folders) {
+    const groupName = folder.name.trim();
+    if (!groupName) continue;
+    if (!groupMap.has(groupName)) groupMap.set(groupName, new Map());
+    const subgroupMap = groupMap.get(groupName);
+    if (!subgroupMap) continue;
+    if (!subgroupMap.has("")) subgroupMap.set("", []);
+    for (const subfolder of folder.subfolders) {
+      const subgroupName = subfolder.trim();
+      if (subgroupName && !subgroupMap.has(subgroupName)) subgroupMap.set(subgroupName, []);
+    }
+  }
+
   for (const flow of flows) {
     const groupName = flowGroupName(flow);
     const subgroupName = flowSubgroupName(flow);
@@ -725,6 +782,7 @@ export default function WhatsAppFlowsClient() {
   const [loading, setLoading] = useState(() => !initialCache);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
+  const [folders, setFolders] = useState<FlowFolder[]>(() => readFlowFolders());
   const [uploadingMediaId, setUploadingMediaId] = useState("");
   const [draggingMediaId, setDraggingMediaId] = useState("");
   const [draggingFlowId, setDraggingFlowId] = useState("");
@@ -764,7 +822,7 @@ export default function WhatsAppFlowsClient() {
   }, [editingId, flows, form]);
 
   const activeCount = useMemo(() => flows.filter((flow) => flow.status === "Active").length, [flows]);
-  const flowGroups = useMemo(() => groupedFlowLibrary(flows), [flows]);
+  const flowGroups = useMemo(() => groupedFlowLibrary(flows, folders), [flows, folders]);
   const selectionLinks = useMemo(() => {
     const savedLinks = flows.flatMap(selectionLinksFromFlow);
     const draftLinks = selectionLinksFromDraft(form, editingId);
@@ -964,6 +1022,43 @@ export default function WhatsAppFlowsClient() {
       if (editingId === flowId) setForm(formFromFlow(flow));
       setNotice(error instanceof Error ? error.message : "Flow could not be moved.");
     }
+  }
+
+  function saveFolders(nextFolders: FlowFolder[]) {
+    setFolders(nextFolders);
+    writeFlowFolders(nextFolders);
+  }
+
+  function createFolder() {
+    const name = window.prompt("Folder name");
+    const trimmed = name?.trim();
+    if (!trimmed) return;
+    if (folders.some((folder) => folder.name.toLowerCase() === trimmed.toLowerCase())) {
+      setNotice(`Folder "${trimmed}" already exists.`);
+      return;
+    }
+    saveFolders([...folders, { name: trimmed, subfolders: [] }]);
+    setNotice(`Created folder "${trimmed}".`);
+  }
+
+  function createSubfolder(groupName: string) {
+    const name = window.prompt(`Subfolder name for ${groupName}`);
+    const trimmed = name?.trim();
+    if (!trimmed) return;
+    const nextFolders = [...folders];
+    const existingIndex = nextFolders.findIndex((folder) => folder.name.toLowerCase() === groupName.toLowerCase());
+    const folder = existingIndex >= 0
+      ? nextFolders[existingIndex]
+      : { name: groupName, subfolders: [] };
+    if (folder.subfolders.some((subfolder) => subfolder.toLowerCase() === trimmed.toLowerCase())) {
+      setNotice(`Subfolder "${trimmed}" already exists in "${groupName}".`);
+      return;
+    }
+    const nextFolder = { ...folder, subfolders: [...folder.subfolders, trimmed] };
+    if (existingIndex >= 0) nextFolders[existingIndex] = nextFolder;
+    else nextFolders.push(nextFolder);
+    saveFolders(nextFolders);
+    setNotice(`Created subfolder "${trimmed}".`);
   }
 
   async function deleteFlow(flowIdToDelete: string) {
@@ -1760,48 +1855,59 @@ export default function WhatsAppFlowsClient() {
           <div className={styles.listHeader}>
             <div>
               <p className={styles.eyebrow}>Saved flows</p>
-              <h2>Automation library</h2>
+              <h2>Flow folders</h2>
             </div>
+            <button className={styles.secondaryButton} disabled={saving} onClick={createFolder}>
+              New folder
+            </button>
           </div>
 
           {flowGroups.map((group) => (
             <section
-              className={`${styles.flowGroup} ${dropTargetKey === `group:${group.name}` ? styles.dropReady : ""}`}
+              className={`${styles.folderNode} ${dropTargetKey === `group:${group.name}` ? styles.dropReady : ""}`}
               key={group.name}
               {...dropZoneHandlers(`group:${group.name}`, group.name)}
             >
-              <div className={styles.groupHeader}>
+              <div className={styles.folderRow}>
                 <div>
-                  <p className={styles.eyebrow}>Group</p>
-                  <h3>{group.name}</h3>
+                  <strong>Folder: {group.name}</strong>
+                  <span>{group.flows.length + group.subgroups.reduce((total, subgroup) => total + subgroup.flows.length, 0)} flows</span>
                 </div>
-                <button disabled={saving} onClick={() => void duplicateGroup(group)}>
-                  Duplicate group
-                </button>
+                <div className={styles.folderActions}>
+                  <button disabled={saving} onClick={() => createSubfolder(group.name)}>
+                    New subfolder
+                  </button>
+                  <button disabled={saving} onClick={() => void duplicateGroup(group)}>
+                    Duplicate folder
+                  </button>
+                </div>
               </div>
-              <p className={styles.dropHint}>Drop a flow here to move it into this group.</p>
+              <p className={styles.dropHint}>Drop a flow here to move it into this folder.</p>
+              <div className={styles.folderChildren}>
+                {group.flows.map((flow) => renderFlowCard(flow))}
 
-              {group.flows.map((flow) => renderFlowCard(flow))}
-
-              {group.subgroups.map((subgroup) => (
-                <section
-                  className={`${styles.subflowGroup} ${dropTargetKey === `subgroup:${group.name}:${subgroup.name}` ? styles.dropReady : ""}`}
-                  key={`${group.name}-${subgroup.name}`}
-                  {...dropZoneHandlers(`subgroup:${group.name}:${subgroup.name}`, group.name, subgroup.name)}
-                >
-                  <div className={styles.subgroupHeader}>
-                    <div>
-                      <p className={styles.eyebrow}>Subflow</p>
-                      <h4>{subgroup.name}</h4>
+                {group.subgroups.map((subgroup) => (
+                  <section
+                    className={`${styles.subfolderNode} ${dropTargetKey === `subgroup:${group.name}:${subgroup.name}` ? styles.dropReady : ""}`}
+                    key={`${group.name}-${subgroup.name}`}
+                    {...dropZoneHandlers(`subgroup:${group.name}:${subgroup.name}`, group.name, subgroup.name)}
+                  >
+                    <div className={styles.folderRow}>
+                      <div>
+                        <strong>Subfolder: {subgroup.name}</strong>
+                        <span>{subgroup.flows.length} flows</span>
+                      </div>
+                      <button disabled={saving} onClick={() => void duplicateSubgroup(group.name, subgroup)}>
+                        Duplicate subfolder
+                      </button>
                     </div>
-                    <button disabled={saving} onClick={() => void duplicateSubgroup(group.name, subgroup)}>
-                      Duplicate subflow
-                    </button>
-                  </div>
-                  <p className={styles.dropHint}>Drop a flow here to move it into this subflow.</p>
-                  {subgroup.flows.map((flow) => renderFlowCard(flow))}
-                </section>
-              ))}
+                    <p className={styles.dropHint}>Drop a flow here to move it into this subfolder.</p>
+                    <div className={styles.folderChildren}>
+                      {subgroup.flows.map((flow) => renderFlowCard(flow))}
+                    </div>
+                  </section>
+                ))}
+              </div>
             </section>
           ))}
 

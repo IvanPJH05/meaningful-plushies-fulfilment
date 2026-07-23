@@ -557,21 +557,22 @@
 
 .flowCard,
 .emptyState,
-.flowGroup,
-.subflowGroup {
+.folderNode,
+.subfolderNode {
   background: #ffffff;
   border: 1px solid #dbe6f3;
   border-radius: 8px;
   padding: 18px;
 }
 
-.flowGroup {
+.folderNode {
   display: grid;
   gap: 12px;
 }
 
-.subflowGroup {
+.subfolderNode {
   background: #f8fbff;
+  border-style: dashed;
   display: grid;
   gap: 12px;
   margin-left: 16px;
@@ -594,8 +595,7 @@
   opacity: 0.58;
 }
 
-.groupHeader,
-.subgroupHeader {
+.folderRow {
   align-items: center;
   border-bottom: 1px solid #e1eaf5;
   display: flex;
@@ -604,13 +604,28 @@
   padding-bottom: 12px;
 }
 
-.groupHeader h3,
-.subgroupHeader h4 {
-  margin: 0;
+.folderRow strong {
+  color: #102033;
+  display: block;
+  font-size: 15px;
+  margin-bottom: 3px;
 }
 
-.groupHeader button,
-.subgroupHeader button {
+.folderRow span {
+  color: #6b7f98;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.folderActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.folderActions button,
+.folderRow > button {
   background: #ffffff;
   border: 1px solid #c6d8ee;
   border-radius: 12px;
@@ -622,10 +637,15 @@
   padding: 10px 14px;
 }
 
-.groupHeader button:disabled,
-.subgroupHeader button:disabled {
+.folderActions button:disabled,
+.folderRow > button:disabled {
   color: #8aa7c9;
   cursor: not-allowed;
+}
+
+.folderChildren {
+  display: grid;
+  gap: 10px;
 }
 
 .flowTopline h3 {
