@@ -27,6 +27,9 @@ type FlowMediaItem = {
   type: MediaType;
   url: string;
   caption?: string;
+  fileName?: string;
+  contentType?: string;
+  sizeBytes?: number;
 };
 
 type FlowStep = {
@@ -72,6 +75,9 @@ function makeMediaItem(media?: Partial<FlowMediaItem>): FlowMediaItem {
     type: media?.type === "video" ? "video" : "image",
     url: media?.url || "",
     caption: media?.caption || "",
+    fileName: media?.fileName || "",
+    contentType: media?.contentType || "",
+    sizeBytes: media?.sizeBytes,
   };
 }
 
@@ -188,6 +194,9 @@ function mediaItemsFromStep(step: FlowStep): FlowMediaItem[] {
       type: item.type,
       url: item.url || "",
       caption: item.caption || "",
+      fileName: item.fileName || "",
+      contentType: item.contentType || "",
+      sizeBytes: item.sizeBytes,
     }))
     .filter((item) => item.url.trim());
 
@@ -253,6 +262,9 @@ function formatActionStep(action: FlowAction): FlowStep | null {
       type: item.type,
       url: item.url.trim(),
       caption: (item.caption || "").trim(),
+      fileName: (item.fileName || "").trim(),
+      contentType: (item.contentType || "").trim(),
+      sizeBytes: item.sizeBytes,
     }))
     .filter((item) => item.url);
 
@@ -300,6 +312,12 @@ function actionSummary(action: FlowAction) {
   return action.message || "No message yet";
 }
 
+function formatFileSize(sizeBytes?: number) {
+  if (!sizeBytes) return "";
+  if (sizeBytes < 1024 * 1024) return `${Math.max(1, Math.round(sizeBytes / 1024))} KB`;
+  return `${(sizeBytes / 1024 / 1024).toFixed(sizeBytes >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
+}
+
 export default function WhatsAppFlowsClient() {
   const [flows, setFlows] = useState<WhatsAppFlow[]>([]);
   const [form, setForm] = useState<FlowForm>(() => emptyFlowForm());
@@ -307,6 +325,7 @@ export default function WhatsAppFlowsClient() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
+  const [uploadingMediaId, setUploadingMediaId] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -434,6 +453,47 @@ export default function WhatsAppFlowsClient() {
         return { ...action, mediaItems: mediaItems.length ? mediaItems : [makeMediaItem()] };
       }),
     }));
+  }
+
+  async function uploadMediaFile(actionId: string, item: FlowMediaItem, file: File | null) {
+    if (!file) return;
+    if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
+      setNotice("Choose an image or video file for this media item.");
+      return;
+    }
+
+    const mediaId = item.id || "";
+    setUploadingMediaId(mediaId);
+    setNotice("");
+    try {
+      const data = new FormData();
+      data.append("file", file);
+      const response = await fetch("/api/crm/media-assets", {
+        method: "POST",
+        body: data,
+      });
+      const result = (await response.json()) as {
+        ok?: boolean;
+        asset?: { originalUrl?: string; fileName?: string; contentType?: string; sizeBytes?: number; mediaType?: string };
+        error?: string;
+      };
+      if (!response.ok || !result.ok || !result.asset?.originalUrl) {
+        throw new Error(result.error || "Media could not be uploaded.");
+      }
+
+      updateMediaItem(actionId, mediaId, {
+        type: result.asset.mediaType === "video" ? "video" : "image",
+        url: result.asset.originalUrl,
+        fileName: result.asset.fileName || file.name,
+        contentType: result.asset.contentType || file.type,
+        sizeBytes: result.asset.sizeBytes || file.size,
+      });
+      setNotice("Media uploaded.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Media could not be uploaded.");
+    } finally {
+      setUploadingMediaId("");
+    }
   }
 
   function removeAction(actionId: string) {
@@ -643,20 +703,27 @@ export default function WhatsAppFlowsClient() {
                                 <option value="video">Video</option>
                               </select>
                             </label>
-                            <label>
-                              Media URL
-                              <input
-                                value={item.url}
-                                onChange={(event) => updateMediaItem(action.id, item.id, { url: event.target.value })}
-                                placeholder={item.type === "video" ? "Paste a public video URL" : "Paste a public image URL"}
-                              />
-                            </label>
+                            <div className={styles.mediaUploadCell}>
+                              <span>Media file</span>
+                              <label className={styles.fileUpload}>
+                                <input
+                                  accept={item.type === "video" ? "video/*" : "image/*"}
+                                  type="file"
+                                  onChange={(event) => void uploadMediaFile(action.id, item, event.target.files?.[0] || null)}
+                                />
+                                <strong>{uploadingMediaId === item.id ? "Uploading..." : item.url ? "Replace file" : "Upload file"}</strong>
+                                <small>{item.fileName || (item.url ? "Uploaded media ready" : `Choose ${item.type === "image" ? "an image" : "a video"} file`)}</small>
+                              </label>
+                              {(item.fileName || item.sizeBytes) && (
+                                <em>{[item.contentType, formatFileSize(item.sizeBytes)].filter(Boolean).join(" | ")}</em>
+                              )}
+                            </div>
                             <label>
                               Caption
                               <input
                                 value={item.caption || ""}
                                 onChange={(event) => updateMediaItem(action.id, item.id, { caption: event.target.value })}
-                                placeholder={itemIndex === 0 ? "Optional. Uses action caption if blank." : "Optional caption"}
+                                placeholder={itemIndex === 0 ? "Optional caption" : "Optional caption"}
                               />
                             </label>
                             <button className={styles.textButton} type="button" onClick={() => removeMediaItem(action.id, item.id)}>

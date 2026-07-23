@@ -33,6 +33,9 @@ type FlowMediaItem = {
   type: typeof mediaTypes[number];
   url: string;
   caption?: string;
+  fileName?: string;
+  contentType?: string;
+  sizeBytes?: number;
 };
 
 type FlowStep = {
@@ -107,6 +110,15 @@ function normalizeMediaItems(value: unknown, step: Record<string, unknown>, step
       url,
       ...(stringValue(record.caption ?? record.message ?? record.text) ? {
         caption: stringValue(record.caption ?? record.message ?? record.text),
+      } : {}),
+      ...(stringValue(record.fileName ?? record.filename ?? record.name) ? {
+        fileName: stringValue(record.fileName ?? record.filename ?? record.name),
+      } : {}),
+      ...(stringValue(record.contentType ?? record.mimeType) ? {
+        contentType: stringValue(record.contentType ?? record.mimeType),
+      } : {}),
+      ...(typeof record.sizeBytes === "number" && Number.isFinite(record.sizeBytes) ? {
+        sizeBytes: Math.max(0, Math.round(record.sizeBytes)),
       } : {}),
     });
   };
