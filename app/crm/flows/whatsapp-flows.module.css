@@ -481,6 +481,17 @@
   padding: 12px;
 }
 
+.optionItemError {
+  background: #fff5f5;
+  border-color: #ef4444;
+  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.12);
+}
+
+.optionWarning {
+  color: #b91c1c;
+  font-weight: 900;
+}
+
 .workflowPreview {
   background: #f7fbff;
   border: 1px dashed #cbd8e8;

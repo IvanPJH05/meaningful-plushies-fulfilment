@@ -695,6 +695,19 @@ function selectionLinksFromDraft(form: FlowForm, editingId: string): SelectionFl
   });
 }
 
+function selectionPairingIssue(option: SelectionOption, flows: WhatsAppFlow[]) {
+  if (!option.targetFlowId) return "";
+  const targetFlow = flows.find((flow) => flow.id === option.targetFlowId);
+  if (!targetFlow) return "Target flow could not be found.";
+  if (normaliseTriggerType(targetFlow.triggerType) !== "selection_button") {
+    return "Target flow must use the Selection button press trigger.";
+  }
+  const targetKey = (targetFlow.triggerButtonLabel || "").trim();
+  if (!targetKey) return "Target flow does not have a selection key.";
+  if (targetKey !== option.id) return `Key mismatch. Target flow uses ${targetKey}.`;
+  return "";
+}
+
 function formatFileSize(sizeBytes?: number) {
   if (!sizeBytes) return "";
   if (sizeBytes < 1024 * 1024) return `${Math.max(1, Math.round(sizeBytes / 1024))} KB`;
@@ -947,16 +960,21 @@ export default function WhatsAppFlowsClient() {
 
       const idMap = new Map(createdPairs.map((pair) => [pair.source.id, pair.created.id]));
       const nameMap = new Map(createdPairs.map((pair) => [pair.source.id, pair.created.name]));
-      const patchedFlows: WhatsAppFlow[] = [];
-      for (const pair of createdPairs) {
-        const remappedForm = formFromFlow(pair.created);
-        let changed = false;
-        remappedForm.actions = remappedForm.actions.map((action) => ({
+      const formsToPatch = createdPairs.map((pair) => ({
+        pair,
+        form: formFromFlow(pair.created),
+        changed: false,
+      }));
+      const desiredTriggerKeyByFlowId = new Map<string, string>();
+
+      for (const item of formsToPatch) {
+        item.form.actions = item.form.actions.map((action) => ({
           ...action,
           options: action.options.map((option) => {
             const mappedTargetId = option.targetFlowId ? idMap.get(option.targetFlowId) : "";
             if (!mappedTargetId) return option;
-            changed = true;
+            item.changed = true;
+            if (option.id) desiredTriggerKeyByFlowId.set(mappedTargetId, option.id);
             return {
               ...option,
               targetFlowId: mappedTargetId,
@@ -964,17 +982,29 @@ export default function WhatsAppFlowsClient() {
             };
           }),
         }));
-        if (!changed) {
-          patchedFlows.push(pair.created);
+      }
+
+      for (const item of formsToPatch) {
+        const desiredTriggerKey = desiredTriggerKeyByFlowId.get(item.pair.created.id);
+        if (desiredTriggerKey && item.form.triggerType === "selection_button" && item.form.triggerButtonLabel !== desiredTriggerKey) {
+          item.form.triggerButtonLabel = desiredTriggerKey;
+          item.changed = true;
+        }
+      }
+
+      const patchedFlows: WhatsAppFlow[] = [];
+      for (const item of formsToPatch) {
+        if (!item.changed) {
+          patchedFlows.push(item.pair.created);
           continue;
         }
         const response = await fetch("/api/crm/flows", {
           method: "PATCH",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(flowPayloadFromForm(remappedForm, pair.created.id)),
+          body: JSON.stringify(flowPayloadFromForm(item.form, item.pair.created.id)),
         });
         const result = (await response.json()) as { ok?: boolean; flow?: WhatsAppFlow; error?: string };
-        if (!response.ok || !result.ok || !result.flow) throw new Error(result.error || `Could not reconnect ${pair.created.name}.`);
+        if (!response.ok || !result.ok || !result.flow) throw new Error(result.error || `Could not reconnect ${item.pair.created.name}.`);
         patchedFlows.push(result.flow);
       }
 
@@ -1730,59 +1760,62 @@ export default function WhatsAppFlowsClient() {
                         />
                       </label>
                       <div className={styles.optionList}>
-                        {action.options.map((option, optionIndex) => (
-                          <div className={styles.optionItem} key={option.id || `${action.id}-option-${optionIndex}`}>
-                            <label>
-                              Button {optionIndex + 1}
-                              <input
-                                value={option.label}
-                                onChange={(event) => updateAction(action.id, {
-                                  options: action.options.map((current) => (
-                                    current.id === option.id ? { ...current, label: event.target.value } : current
-                                  )),
-                                })}
-                                placeholder="Example: English"
-                              />
-                            </label>
-                            <label>
-                              Flow to trigger
-                              <select
-                                value={option.targetFlowId || ""}
-                                onChange={(event) => updateAction(action.id, {
-                                  options: action.options.map((current) => (
-                                    current.id === option.id ? {
-                                      ...current,
-                                      targetFlowId: event.target.value,
-                                      targetFlowName: flows.find((flow) => flow.id === event.target.value)?.name || "",
-                                    } : current
-                                  )),
-                                })}
+                        {action.options.map((option, optionIndex) => {
+                          const pairingIssue = selectionPairingIssue(option, flows);
+                          return (
+                            <div className={`${styles.optionItem} ${pairingIssue ? styles.optionItemError : ""}`} key={option.id || `${action.id}-option-${optionIndex}`}>
+                              <label>
+                                Button {optionIndex + 1}
+                                <input
+                                  value={option.label}
+                                  onChange={(event) => updateAction(action.id, {
+                                    options: action.options.map((current) => (
+                                      current.id === option.id ? { ...current, label: event.target.value } : current
+                                    )),
+                                  })}
+                                  placeholder="Example: English"
+                                />
+                              </label>
+                              <label>
+                                Flow to trigger
+                                <select
+                                  value={option.targetFlowId || ""}
+                                  onChange={(event) => updateAction(action.id, {
+                                    options: action.options.map((current) => (
+                                      current.id === option.id ? {
+                                        ...current,
+                                        targetFlowId: event.target.value,
+                                        targetFlowName: flows.find((flow) => flow.id === event.target.value)?.name || "",
+                                      } : current
+                                    )),
+                                  })}
+                                >
+                                  <option value="">Use a flow triggered by this option key</option>
+                                  {flows
+                                    .filter((flow) => flow.id !== editingId)
+                                    .map((flow) => (
+                                      <option key={flow.id} value={flow.id}>
+                                        {flow.name} ({flow.status})
+                                      </option>
+                                    ))}
+                                </select>
+                                <small className={pairingIssue ? styles.optionWarning : undefined}>
+                                  {pairingIssue || (option.targetFlowId
+                                    ? `Linked with option key ${option.id}.`
+                                    : `Option key: ${option.id}. Choose a target flow to link this button.`)}
+                                </small>
+                              </label>
+                              <button
+                                className={styles.textButton}
+                                disabled={action.options.length <= 1}
+                                onClick={() => updateAction(action.id, { options: action.options.filter((current) => current.id !== option.id) })}
+                                type="button"
                               >
-                                <option value="">Use a flow triggered by this option key</option>
-                                {flows
-                                  .filter((flow) => flow.id !== editingId)
-                                  .map((flow) => (
-                                    <option key={flow.id} value={flow.id}>
-                                      {flow.name} ({flow.status})
-                                    </option>
-                                  ))}
-                              </select>
-                              <small>
-                                {option.targetFlowId
-                                  ? `Linked with option key ${option.id}.`
-                                  : `Option key: ${option.id}. Choose a target flow to link this button.`}
-                              </small>
-                            </label>
-                            <button
-                              className={styles.textButton}
-                              disabled={action.options.length <= 1}
-                              onClick={() => updateAction(action.id, { options: action.options.filter((current) => current.id !== option.id) })}
-                              type="button"
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        ))}
+                                Remove
+                              </button>
+                            </div>
+                          );
+                        })}
                         <button
                           className={styles.secondaryButton}
                           disabled={action.options.length >= 4}
