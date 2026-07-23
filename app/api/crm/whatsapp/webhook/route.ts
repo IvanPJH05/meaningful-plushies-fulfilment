@@ -377,6 +377,16 @@ function flowButtonReplyId(raw: Record<string, unknown>) {
   return textValue(buttonReply.id);
 }
 
+function normalizeTriggerPhrase(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function flowMatchesExactTriggerPhrase(flow: { triggerWords: string[] }, inboundText: string) {
+  const normalizedInboundText = normalizeTriggerPhrase(inboundText);
+  if (!normalizedInboundText) return false;
+  return flow.triggerWords.some((phrase) => normalizeTriggerPhrase(phrase) === normalizedInboundText);
+}
+
 function flowDelayMsFromStep(step: FlowStep) {
   const value = Math.max(0, Number(step.delayValue || 0) || 0);
   const unit = textValue(step.delayUnit).toLowerCase();
@@ -663,6 +673,21 @@ async function handleFlowAutomationForInboundMessages(storedMessages: StoredWhat
         });
         scheduled += 1;
       }
+      continue;
+    }
+
+    const exactPhraseFlows = await prisma.whatsAppFlow.findMany({
+      where: {
+        businessId: item.businessId,
+        active: true,
+        triggerType: "keywords",
+      },
+      orderBy: { updatedAt: "desc" },
+    });
+    const exactPhraseFlow = exactPhraseFlows.find((flow) => flowMatchesExactTriggerPhrase(flow, item.text));
+    if (exactPhraseFlow) {
+      await runWebhookFlow({ item, flow: exactPhraseFlow });
+      scheduled += 1;
       continue;
     }
 

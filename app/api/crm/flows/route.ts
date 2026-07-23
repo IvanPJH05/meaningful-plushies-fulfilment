@@ -80,7 +80,7 @@ function splitTriggerWords(value: unknown) {
     return value.map((item) => stringValue(item)).filter(Boolean);
   }
   return stringValue(value)
-    .split(",")
+    .split(/\r?\n|,/)
     .map((item) => item.trim())
     .filter(Boolean);
 }

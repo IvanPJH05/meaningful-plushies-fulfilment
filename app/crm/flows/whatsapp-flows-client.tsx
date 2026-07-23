@@ -1121,11 +1121,11 @@ export default function WhatsAppFlowsClient() {
                   </label>
                 ) : (
                   <label>
-                    Trigger words
-                    <input
+                    Exact trigger phrases
+                    <textarea
                       value={form.trigger}
                       onChange={(event) => setForm((current) => ({ ...current, trigger: event.target.value }))}
-                      placeholder="Example: price, interested, details"
+                      placeholder="Example: I want to customise a plushie, I want a plushie"
                     />
                   </label>
                 )}
@@ -1138,7 +1138,7 @@ export default function WhatsAppFlowsClient() {
                     ? "This flow runs automatically when a customer sends their first message in a new chat."
                   : form.triggerType === "selection_button"
                     ? "This flow runs when it is selected in another flow's Ask Selection action. The button key is handled automatically."
-                  : "The flow can run when a WhatsApp message contains one of these words."}
+                  : "This flow runs only when a WhatsApp message exactly matches one of these phrases. Separate phrases with commas or new lines."}
               </p>
 
               <label>
