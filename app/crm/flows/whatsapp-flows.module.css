@@ -106,6 +106,14 @@
   margin: 0;
 }
 
+.actionControls {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .builderHeader h1 {
   font-size: 27px;
   letter-spacing: -0.03em;

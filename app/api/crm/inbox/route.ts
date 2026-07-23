@@ -25,6 +25,7 @@ import {
 } from "@/src/modules/whatsapp/media-assets";
 import {
   sendWhatsAppButtonMessage,
+  sendWhatsAppDocumentMessage,
   sendWhatsAppImageMessage,
   sendWhatsAppReactionMessage,
   sendWhatsAppTextMessage,
@@ -1096,8 +1097,9 @@ export async function POST(request: Request) {
       : [];
     const sendingImage = mediaType === "image" && Boolean(mediaUrl);
     const sendingVideo = mediaType === "video" && Boolean(mediaUrl);
+    const sendingDocument = (mediaType === "pdf" || mediaType === "document") && Boolean(mediaUrl);
     const sendingButtons = buttonOptions.length > 0;
-    const sendingMedia = sendingImage || sendingVideo;
+    const sendingMedia = sendingImage || sendingVideo || sendingDocument;
     const messageBody = (body.body || existingMessage?.body || "").trim();
     if (!messageBody && !sendingMedia && !sendingButtons) {
       return json(400, { ok: false, error: "Message body or media is required." });
@@ -1106,9 +1108,9 @@ export async function POST(request: Request) {
     let delivery: unknown = null;
     let deliveryError = "";
     let status: MessageStatus = MessageStatus.QUEUED;
-    const outboundMessageType = sendingImage ? MessageType.IMAGE : sendingVideo ? MessageType.VIDEO : MessageType.TEXT;
-    const mediaContentType = sendingVideo ? "video/mp4" : "image/jpeg";
-    const mediaFilename = sendingVideo ? "Flow video" : "Flow image";
+    const outboundMessageType = sendingImage ? MessageType.IMAGE : sendingVideo ? MessageType.VIDEO : sendingDocument ? MessageType.DOCUMENT : MessageType.TEXT;
+    const mediaContentType = sendingVideo ? "video/mp4" : sendingDocument ? "application/pdf" : "image/jpeg";
+    const mediaFilename = sendingVideo ? "Flow HD video" : sendingDocument ? "Flow PDF" : "Flow image";
 
     try {
       delivery = sendingImage
@@ -1125,6 +1127,14 @@ export async function POST(request: Request) {
             caption: messageBody || undefined,
             contextMessageId: replyContextMessageId,
           })
+          : sendingDocument
+            ? await sendWhatsAppDocumentMessage({
+              to: recipient,
+              documentUrl: mediaUrl,
+              caption: messageBody || undefined,
+              filename: mediaFilename,
+              contextMessageId: replyContextMessageId,
+            })
           : sendingButtons
             ? await sendWhatsAppButtonMessage({
               to: recipient,

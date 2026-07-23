@@ -19,6 +19,14 @@ export type WhatsAppVideoPayloadInput = {
   contextMessageId?: string;
 };
 
+export type WhatsAppDocumentPayloadInput = {
+  to: string;
+  documentUrl: string;
+  caption?: string;
+  filename?: string;
+  contextMessageId?: string;
+};
+
 export type WhatsAppButtonPayloadInput = {
   to: string;
   body: string;
@@ -67,6 +75,21 @@ export function buildWhatsAppVideoPayload(input: WhatsAppVideoPayloadInput) {
     video: {
       link: input.videoUrl,
       ...(input.caption?.trim() ? { caption: input.caption.trim() } : {}),
+    },
+  };
+}
+
+export function buildWhatsAppDocumentPayload(input: WhatsAppDocumentPayloadInput) {
+  return {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to: input.to.replace(/\D/g, ""),
+    ...(input.contextMessageId ? { context: { message_id: input.contextMessageId } } : {}),
+    type: "document",
+    document: {
+      link: input.documentUrl,
+      ...(input.caption?.trim() ? { caption: input.caption.trim() } : {}),
+      ...(input.filename?.trim() ? { filename: input.filename.trim() } : {}),
     },
   };
 }
@@ -158,6 +181,11 @@ export async function sendWhatsAppImageMessage(input: WhatsAppImagePayloadInput)
 
 export async function sendWhatsAppVideoMessage(input: WhatsAppVideoPayloadInput) {
   const payload = buildWhatsAppVideoPayload(input);
+  return sendWhatsAppPayload(payload);
+}
+
+export async function sendWhatsAppDocumentMessage(input: WhatsAppDocumentPayloadInput) {
+  const payload = buildWhatsAppDocumentPayload(input);
   return sendWhatsAppPayload(payload);
 }
 

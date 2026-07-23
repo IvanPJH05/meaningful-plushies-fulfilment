@@ -29,6 +29,7 @@ import {
 import { fallbackWhatsAppMediaContentType } from "@/src/modules/whatsapp/media-metadata";
 import {
   sendWhatsAppButtonMessage,
+  sendWhatsAppDocumentMessage,
   sendWhatsAppImageMessage,
   sendWhatsAppTextMessage,
   sendWhatsAppVideoMessage,
@@ -354,7 +355,7 @@ type FlowStep = {
   message?: string;
   imageUrl?: string;
   videoUrl?: string;
-  mediaItems?: Array<{ type?: string; url?: string; caption?: string }>;
+  mediaItems?: Array<{ type?: string; url?: string; caption?: string; fileName?: string }>;
   options?: Array<{
     id?: string;
     label?: string;
@@ -421,9 +422,10 @@ function flowMediaItems(step: FlowStep) {
   const items = Array.isArray(step.mediaItems) ? step.mediaItems : [];
   const normalised = items
     .map((item) => ({
-      type: item.type === "video" ? "video" as const : "image" as const,
+      type: item.type === "video" ? "video" as const : item.type === "pdf" || item.type === "document" ? "pdf" as const : "image" as const,
       url: textValue(item.url).trim(),
       caption: textValue(item.caption).trim(),
+      fileName: textValue(item.fileName).trim(),
     }))
     .filter((item) => item.url);
   if (normalised.length) return normalised;
@@ -474,12 +476,14 @@ async function sendFlowStepFromWebhook(args: {
       const caption = media.caption || body;
       const delivery = media.type === "video"
         ? await sendWhatsAppVideoMessage({ to: args.item.waId, videoUrl: media.url, caption: caption || undefined })
-        : await sendWhatsAppImageMessage({ to: args.item.waId, imageUrl: media.url, caption: caption || undefined });
+        : media.type === "pdf"
+          ? await sendWhatsAppDocumentMessage({ to: args.item.waId, documentUrl: media.url, caption: caption || undefined, filename: media.fileName || "Flow PDF" })
+          : await sendWhatsAppImageMessage({ to: args.item.waId, imageUrl: media.url, caption: caption || undefined });
       await recordFlowOutbound({
         businessId: args.item.businessId,
         conversationId: args.item.conversationId,
-        body: caption || (media.type === "video" ? "Video" : "Photo"),
-        messageType: media.type === "video" ? MessageType.VIDEO : MessageType.IMAGE,
+        body: caption || (media.type === "video" ? "Video" : media.type === "pdf" ? "PDF" : "Photo"),
+        messageType: media.type === "video" ? MessageType.VIDEO : media.type === "pdf" ? MessageType.DOCUMENT : MessageType.IMAGE,
         metadata: { flowId: args.flowId, stepIndex: args.stepIndex, media, delivery },
         delivery,
       });

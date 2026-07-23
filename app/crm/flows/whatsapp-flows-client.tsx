@@ -17,7 +17,7 @@ type WhatsAppFlow = {
 };
 
 type TriggerType = "keywords" | "click" | "first_message" | "selection_button";
-type MediaType = "image" | "video";
+type MediaType = "image" | "video" | "pdf";
 type ActionType = "Send Message" | "Send Media" | "Ask Selection" | "AI Reply" | "Update Status" | "Add Note";
 type StoredActionType = ActionType | "Send Image" | "Send Video";
 type DelayUnit = "seconds" | "minutes" | "hours" | "days";
@@ -74,7 +74,8 @@ type FlowForm = {
 const actionTypes: ActionType[] = ["Send Message", "Send Media", "Ask Selection", "AI Reply", "Update Status", "Add Note"];
 const delayUnits: DelayUnit[] = ["seconds", "minutes", "hours", "days"];
 const FLOW_BUILDER_CACHE_KEY = "crm-whatsapp-flow-builder-cache-v1";
-const MAX_BROWSER_UPLOAD_BYTES = 3.8 * 1024 * 1024;
+const MAX_BROWSER_IMAGE_BYTES = 3.8 * 1024 * 1024;
+const MAX_BROWSER_MEDIA_BYTES = 15 * 1024 * 1024;
 const MAX_FLOW_IMAGE_EDGE = 1800;
 
 type FlowBuilderCache = {
@@ -464,7 +465,7 @@ async function canvasToBlob(canvas: HTMLCanvasElement, quality: number) {
 }
 
 async function compressImageForUpload(file: File) {
-  if (!file.type.startsWith("image/") || file.size <= MAX_BROWSER_UPLOAD_BYTES) return file;
+  if (!file.type.startsWith("image/") || file.size <= MAX_BROWSER_IMAGE_BYTES) return file;
 
   const imageUrl = URL.createObjectURL(file);
   try {
@@ -490,7 +491,7 @@ async function compressImageForUpload(file: File) {
     for (const quality of [0.82, 0.72, 0.62, 0.52]) {
       const blob = await canvasToBlob(canvas, quality);
       if (!blob) continue;
-      if (blob.size <= MAX_BROWSER_UPLOAD_BYTES || quality === 0.52) {
+      if (blob.size <= MAX_BROWSER_IMAGE_BYTES || quality === 0.52) {
         const baseName = file.name.replace(/\.[^.]+$/, "") || "flow-image";
         return new File([blob], `${baseName}.jpg`, {
           type: "image/jpeg",
@@ -508,14 +509,14 @@ async function compressImageForUpload(file: File) {
 async function prepareMediaFileForUpload(file: File) {
   if (file.type.startsWith("image/")) {
     const preparedFile = await compressImageForUpload(file);
-    if (preparedFile.size > MAX_BROWSER_UPLOAD_BYTES) {
+    if (preparedFile.size > MAX_BROWSER_IMAGE_BYTES) {
       throw new Error(`${file.name} is too large. Try a smaller image.`);
     }
     return preparedFile;
   }
 
-  if (file.size > MAX_BROWSER_UPLOAD_BYTES) {
-    throw new Error(`${file.name} is too large for browser upload. Use a shorter video or compress it first.`);
+  if (file.size > MAX_BROWSER_MEDIA_BYTES) {
+    throw new Error(`${file.name} is too large for flow upload. Keep videos and PDFs under ${Math.floor(MAX_BROWSER_MEDIA_BYTES / 1024 / 1024)} MB.`);
   }
 
   return file;
@@ -719,7 +720,7 @@ export default function WhatsAppFlowsClient() {
       }
 
       return makeMediaItem({
-        type: result.asset.mediaType === "video" ? "video" : "image",
+        type: result.asset.mediaType === "video" ? "video" : result.asset.mediaType === "pdf" ? "pdf" : "image",
         url: result.asset.originalUrl,
         fileName: result.asset.fileName || uploadFile.name || file.name,
         contentType: result.asset.contentType || uploadFile.type || file.type,
@@ -738,9 +739,9 @@ export default function WhatsAppFlowsClient() {
   async function uploadMediaFiles(actionId: string, item: FlowMediaItem, files: FileList | File[] | null) {
     const selectedFiles = Array.from(files || []);
     if (!selectedFiles.length) return;
-    const invalidFile = selectedFiles.find((file) => !file.type.startsWith("image/") && !file.type.startsWith("video/"));
+    const invalidFile = selectedFiles.find((file) => !file.type.startsWith("image/") && !file.type.startsWith("video/") && file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf"));
     if (invalidFile) {
-      setNotice("Choose an image or video file for this media item.");
+      setNotice("Choose an image, video, or PDF file for this media item.");
       return;
     }
 
@@ -788,10 +789,34 @@ export default function WhatsAppFlowsClient() {
     void uploadMediaFiles(actionId, item, event.dataTransfer.files);
   }
 
+  function mediaAcceptForType(type: MediaType) {
+    if (type === "video") return "video/*";
+    if (type === "pdf") return "application/pdf,.pdf";
+    return "image/*";
+  }
+
+  function mediaDropText(type: MediaType) {
+    if (type === "video") return "one or more HD videos";
+    if (type === "pdf") return "one or more PDFs";
+    return "one or more images";
+  }
+
   function removeAction(actionId: string) {
     setForm((current) => {
       if (current.actions.length === 1) return current;
       return { ...current, actions: current.actions.filter((action) => action.id !== actionId) };
+    });
+  }
+
+  function moveAction(actionId: string, direction: -1 | 1) {
+    setForm((current) => {
+      const index = current.actions.findIndex((action) => action.id === actionId);
+      const nextIndex = index + direction;
+      if (index < 0 || nextIndex < 0 || nextIndex >= current.actions.length) return current;
+      const actions = [...current.actions];
+      const [action] = actions.splice(index, 1);
+      actions.splice(nextIndex, 0, action);
+      return { ...current, actions };
     });
   }
 
@@ -959,9 +984,17 @@ export default function WhatsAppFlowsClient() {
                       <span className={styles.nodeBadge}>Action {index + 1}</span>
                       <h3>{action.type}</h3>
                     </div>
-                    <button className={styles.textButton} type="button" onClick={() => removeAction(action.id)} disabled={form.actions.length === 1}>
-                      Remove
-                    </button>
+                    <div className={styles.actionControls}>
+                      <button className={styles.textButton} type="button" onClick={() => moveAction(action.id, -1)} disabled={index === 0}>
+                        Move up
+                      </button>
+                      <button className={styles.textButton} type="button" onClick={() => moveAction(action.id, 1)} disabled={index === form.actions.length - 1}>
+                        Move down
+                      </button>
+                      <button className={styles.textButton} type="button" onClick={() => removeAction(action.id)} disabled={form.actions.length === 1}>
+                        Remove
+                      </button>
+                    </div>
                   </div>
 
                   <div className={styles.delayGrid}>
@@ -1108,6 +1141,7 @@ export default function WhatsAppFlowsClient() {
                               >
                                 <option value="image">Image</option>
                                 <option value="video">Video</option>
+                                <option value="pdf">PDF</option>
                               </select>
                             </label>
                             <div className={styles.mediaUploadCell}>
@@ -1124,7 +1158,7 @@ export default function WhatsAppFlowsClient() {
                                 onDrop={(event) => handleMediaDrop(event, action.id, item)}
                               >
                                 <input
-                                  accept={item.type === "video" ? "video/*" : "image/*"}
+                                  accept={mediaAcceptForType(item.type)}
                                   multiple
                                   type="file"
                                   onChange={(event) => {
@@ -1133,7 +1167,7 @@ export default function WhatsAppFlowsClient() {
                                   }}
                                 />
                                 <strong>{uploadingMediaId === item.id ? "Uploading..." : item.url ? "Replace file" : "Upload file"}</strong>
-                                <small>{item.fileName || (item.url ? "Drop to replace, or choose another file" : `Drop or choose ${item.type === "image" ? "one or more images" : "one or more videos"}`)}</small>
+                                <small>{item.fileName || (item.url ? "Drop to replace, or choose another file" : `Drop or choose ${mediaDropText(item.type)}`)}</small>
                               </label>
                               {(item.fileName || item.sizeBytes) && (
                                 <em>{[item.contentType, formatFileSize(item.sizeBytes)].filter(Boolean).join(" | ")}</em>
@@ -1143,7 +1177,7 @@ export default function WhatsAppFlowsClient() {
                                   className={styles.mediaPreview}
                                   style={item.type === "image" ? { backgroundImage: `url("${item.url}")` } : undefined}
                                 >
-                                  {item.type === "video" ? "Video ready" : ""}
+                                  {item.type === "video" ? "HD video ready" : item.type === "pdf" ? "PDF ready" : ""}
                                 </span>
                               )}
                             </div>
@@ -1166,6 +1200,9 @@ export default function WhatsAppFlowsClient() {
                           </button>
                           <button className={styles.secondaryButton} type="button" onClick={() => addMediaItem(action.id, "video")}>
                             Add video
+                          </button>
+                          <button className={styles.secondaryButton} type="button" onClick={() => addMediaItem(action.id, "pdf")}>
+                            Add PDF
                           </button>
                         </div>
                       </div>

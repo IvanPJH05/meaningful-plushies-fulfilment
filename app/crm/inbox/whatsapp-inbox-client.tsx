@@ -161,7 +161,7 @@ type PreloadMediaAsset = {
 };
 
 type FlowTriggerType = "keywords" | "click" | "first_message" | "selection_button";
-type FlowMediaType = "image" | "video";
+type FlowMediaType = "image" | "video" | "pdf";
 type FlowActionType = "Send Message" | "Send Media" | "Send Image" | "Send Video" | "Ask Selection" | "AI Reply" | "Update Status" | "Add Note";
 type FlowDelayUnit = "seconds" | "minutes" | "hours" | "days";
 
@@ -2300,7 +2300,7 @@ export default function WhatsAppInboxClient() {
     const seen = new Set<string>();
     const normalised = mediaItems
       .map((item) => ({
-        type: item.type === "video" ? "video" as const : "image" as const,
+        type: item.type === "video" ? "video" as const : item.type === "pdf" ? "pdf" as const : "image" as const,
         url: (item.url || "").trim(),
         caption: (item.caption || "").trim(),
       }))

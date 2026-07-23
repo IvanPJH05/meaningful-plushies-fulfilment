@@ -26,7 +26,7 @@ type FlowPayload = {
 
 const actionTypes = ["Send Message", "Send Media", "Send Image", "Send Video", "Ask Selection", "AI Reply", "Update Status", "Add Note"] as const;
 const delayUnits = ["seconds", "minutes", "hours", "days"] as const;
-const mediaTypes = ["image", "video"] as const;
+const mediaTypes = ["image", "video", "pdf"] as const;
 
 type TriggerType = "keywords" | "click" | "first_message" | "selection_button";
 
@@ -117,6 +117,7 @@ function normalizeSelectionOptions(value: unknown): SelectionOption[] {
 
 function inferMediaTypeFromUrl(url: string): FlowMediaItem["type"] {
   const cleanUrl = url.split("?")[0].toLowerCase();
+  if (cleanUrl.endsWith(".pdf")) return "pdf";
   return cleanUrl.endsWith(".mp4") || cleanUrl.endsWith(".mov") || cleanUrl.endsWith(".webm") ? "video" : "image";
 }
 

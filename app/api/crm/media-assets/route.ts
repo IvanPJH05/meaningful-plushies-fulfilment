@@ -25,13 +25,13 @@ export async function POST(request: Request) {
     const file = formData.get("file");
 
     if (!(file instanceof File)) {
-      return json(400, { ok: false, error: "Choose an image or video file to upload." });
+      return json(400, { ok: false, error: "Choose an image, video, or PDF file to upload." });
     }
 
-    const contentType = normalizeMediaContentType(file.type);
+    const contentType = normalizeMediaContentType(file.type || (file.name.toLowerCase().endsWith(".pdf") ? "application/pdf" : ""));
     const mediaType = mediaTypeFromContentType(contentType);
-    if (mediaType !== "image" && mediaType !== "video") {
-      return json(400, { ok: false, error: "Only image and video files can be used in flows." });
+    if (mediaType !== "image" && mediaType !== "video" && mediaType !== "pdf") {
+      return json(400, { ok: false, error: "Only image, video, and PDF files can be used in flows." });
     }
 
     if (file.size > MAX_UPLOAD_BYTES) {
