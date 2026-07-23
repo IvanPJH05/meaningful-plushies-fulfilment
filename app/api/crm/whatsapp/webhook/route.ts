@@ -482,7 +482,8 @@ async function sendFlowStepFromWebhook(args: {
   }
 
   if (type === "Send Media" || type === "Send Image" || type === "Send Video") {
-    for (const media of flowMediaItems(args.step)) {
+    const mediaItems = flowMediaItems(args.step);
+    for (const [index, media] of mediaItems.entries()) {
       const caption = media.caption || body;
       const delivery = media.type === "video"
         ? await sendWhatsAppVideoMessage({ to: args.item.waId, videoUrl: media.url, caption: caption || undefined })
@@ -497,7 +498,11 @@ async function sendFlowStepFromWebhook(args: {
         metadata: { flowId: args.flowId, stepIndex: args.stepIndex, media, delivery },
         delivery,
       });
+      if (index < mediaItems.length - 1) {
+        await wait(600);
+      }
     }
+    if (mediaItems.length) await wait(600);
     return "continue";
   }
 

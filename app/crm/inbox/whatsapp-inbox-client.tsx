@@ -2582,10 +2582,9 @@ export default function WhatsAppInboxClient() {
     async function sendFlowStep(
       body: string,
       media?: { type: FlowMediaType; url: string },
-      options?: { batchMedia?: boolean; buttonOptions?: Array<{ id: string; title: string }> },
+      options?: { buttonOptions?: Array<{ id: string; title: string }> },
     ) {
       const sent = await sendMessage(undefined, body, media, {
-        bypassSendingLock: options?.batchMedia,
         buttonOptions: options?.buttonOptions,
       });
       if (!sent) {
@@ -2611,13 +2610,12 @@ export default function WhatsAppInboxClient() {
         if (step.type === "Send Media" || step.type === "Send Image" || step.type === "Send Video") {
           const mediaItems = mediaItemsFromStep(step);
           if (mediaItems.length) {
-            const results = await Promise.allSettled(mediaItems.map((item, index) => {
+            for (const [index, item] of mediaItems.entries()) {
               const caption = personalizeFlowText(item.caption || (index === 0 ? step.message : ""), selected);
-              return sendFlowStep(caption, { type: item.type, url: item.url }, { batchMedia: mediaItems.length > 1 });
-            }));
-            const failedCount = results.filter((result) => result.status === "rejected").length;
-            if (failedCount) {
-              throw new Error(`${failedCount} media item${failedCount === 1 ? "" : "s"} could not be sent through WhatsApp.`);
+              await sendFlowStep(caption, { type: item.type, url: item.url });
+              if (index < mediaItems.length - 1) {
+                await wait(600);
+              }
             }
           } else {
             const text = personalizeFlowText(step.message, selected);
