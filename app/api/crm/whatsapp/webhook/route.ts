@@ -409,7 +409,6 @@ async function waitForOutboundMessageConfirmation(args: {
   if (!args.messageId && !args.externalMessageId) return;
 
   const deadline = Date.now() + (args.timeoutMs || 20_000);
-  let lastStatus: MessageStatus | null = null;
   while (Date.now() < deadline) {
     const message = await prisma.message.findFirst({
       where: {
@@ -421,14 +420,16 @@ async function waitForOutboundMessageConfirmation(args: {
       select: { status: true, failedReason: true },
     });
     if (!message) return;
-    lastStatus = message.status;
     if (message.status === MessageStatus.FAILED) {
       throw new Error(message.failedReason || "WhatsApp reported that the previous flow message failed.");
     }
-    if (message.status === MessageStatus.DELIVERED || message.status === MessageStatus.READ) return;
+    if (
+      message.status === MessageStatus.SENT
+      || message.status === MessageStatus.DELIVERED
+      || message.status === MessageStatus.READ
+    ) return;
     await wait(700);
   }
-  if (lastStatus === MessageStatus.SENT) return;
   throw new Error("WhatsApp did not confirm the previous flow message before the next action.");
 }
 

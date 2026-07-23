@@ -195,7 +195,11 @@ async function waitForOutboundMessageConfirmation(args: {
     if (message.status === MessageStatus.FAILED) {
       return { confirmed: false, status: message.status, error: message.failedReason || "WhatsApp reported that the message failed." };
     }
-    if (message.status === MessageStatus.DELIVERED || message.status === MessageStatus.READ) {
+    if (
+      message.status === MessageStatus.SENT
+      || message.status === MessageStatus.DELIVERED
+      || message.status === MessageStatus.READ
+    ) {
       return { confirmed: true, status: message.status };
     }
     await wait(700);
