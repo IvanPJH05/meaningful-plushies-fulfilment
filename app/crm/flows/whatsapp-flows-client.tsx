@@ -887,6 +887,34 @@ export default function WhatsAppFlowsClient() {
       : action.type === "AI Reply" || action.message.trim()
   )), [form.actions]);
 
+  async function repairSelectionTargetKeys(sourceForm: FlowForm) {
+    const desiredKeyByTargetId = new Map<string, string>();
+    for (const action of sourceForm.actions) {
+      if (action.type !== "Ask Selection") continue;
+      for (const option of action.options) {
+        if (!option.targetFlowId || !option.id) continue;
+        const existingKey = desiredKeyByTargetId.get(option.targetFlowId);
+        if (existingKey && existingKey !== option.id) {
+          throw new Error(`"${option.targetFlowName || "A target flow"}" is linked to more than one option key. Choose separate target flows for those buttons.`);
+        }
+        desiredKeyByTargetId.set(option.targetFlowId, option.id);
+      }
+    }
+
+    const patchedFlows: WhatsAppFlow[] = [];
+    for (const [targetFlowId, optionKey] of desiredKeyByTargetId.entries()) {
+      const targetFlow = flows.find((candidate) => candidate.id === targetFlowId);
+      if (!targetFlow) continue;
+      if (normaliseTriggerType(targetFlow.triggerType) === "selection_button" && targetFlow.triggerButtonLabel === optionKey) continue;
+      patchedFlows.push(await saveFlowPatch({
+        ...targetFlow,
+        triggerType: "selection_button",
+        triggerButtonLabel: optionKey,
+      }));
+    }
+    return patchedFlows;
+  }
+
   async function saveFlow() {
     if (!form.name.trim() || !hasUsableAction) return;
     if (form.status === "Active" && form.triggerType === "selection_button") {
@@ -914,9 +942,13 @@ export default function WhatsAppFlowsClient() {
       });
       const result = (await response.json()) as { ok?: boolean; flow?: WhatsAppFlow; error?: string };
       if (!response.ok || !result.ok || !result.flow) throw new Error(result.error || "Flow could not be saved.");
+      const repairedFlows = await repairSelectionTargetKeys(form);
+      const repairedFlowMap = new Map(repairedFlows.map((flow) => [flow.id, flow]));
       setFlows((current) => {
-        if (editingId) return current.map((flow) => (flow.id === editingId ? (result.flow as WhatsAppFlow) : flow));
-        return [result.flow as WhatsAppFlow, ...current];
+        const withSource = editingId
+          ? current.map((flow) => (flow.id === editingId ? (result.flow as WhatsAppFlow) : flow))
+          : [result.flow as WhatsAppFlow, ...current];
+        return withSource.map((flow) => repairedFlowMap.get(flow.id) || flow);
       });
       setForm(emptyFlowForm());
       setEditingId("");
