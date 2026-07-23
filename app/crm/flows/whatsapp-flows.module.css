@@ -1,8 +1,9 @@
 .page {
   background: #edf2f7;
   color: #102033;
-  min-height: 100vh;
-  padding: 8px;
+  height: 100vh;
+  overflow: hidden;
+  padding: 0;
 }
 
 .eyebrow {
@@ -16,12 +17,12 @@
 
 .layout {
   background: #ffffff;
-  border: 1px solid #d7e3f2;
-  border-radius: 8px;
+  border: 0;
+  border-radius: 0;
   display: grid;
   grid-template-columns: 76px minmax(520px, 58%) minmax(320px, 1fr);
-  height: calc(100vh - 16px);
-  min-height: 680px;
+  height: 100vh;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -569,7 +570,8 @@
   .layout {
     grid-template-columns: 70px 1fr;
     height: auto;
-    min-height: calc(100vh - 16px);
+    min-height: 100vh;
+    overflow: visible;
   }
 
   .flowList {
