@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { prisma } from "@/src/infrastructure/database/prisma";
+import { ensureCrmWritePolicies, isRlsPolicyError } from "@/src/modules/crm/write-policies";
 import { ensureDefaultBusiness } from "@/src/modules/businesses/default-business";
 
 export const runtime = "nodejs";
@@ -267,6 +268,7 @@ function normalizePayload(payload: FlowPayload) {
 
 export async function GET() {
   try {
+    await ensureCrmWritePolicies();
     const business = await ensureDefaultBusiness();
     const flows = await prisma.whatsAppFlow.findMany({
       where: { businessId: business.id },
@@ -284,6 +286,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    await ensureCrmWritePolicies();
     const business = await ensureDefaultBusiness();
     const payload = (await request.json().catch(() => ({}))) as FlowPayload;
     const normalized = normalizePayload(payload);
@@ -309,13 +312,16 @@ export async function POST(request: Request) {
   } catch (error) {
     return json(500, {
       ok: false,
-      error: error instanceof Error ? error.message : "WhatsApp flow could not be saved.",
+      error: isRlsPolicyError(error)
+        ? "WhatsApp flow could not be saved because Supabase is blocking CRM flow writes. Run the latest schema setup or check the crm_whatsapp_flows RLS policies."
+        : error instanceof Error ? error.message : "WhatsApp flow could not be saved.",
     });
   }
 }
 
 export async function PATCH(request: Request) {
   try {
+    await ensureCrmWritePolicies();
     const business = await ensureDefaultBusiness();
     const payload = (await request.json().catch(() => ({}))) as FlowPayload;
     const id = stringValue(payload.id);
@@ -350,13 +356,16 @@ export async function PATCH(request: Request) {
   } catch (error) {
     return json(500, {
       ok: false,
-      error: error instanceof Error ? error.message : "WhatsApp flow could not be updated.",
+      error: isRlsPolicyError(error)
+        ? "WhatsApp flow could not be updated because Supabase is blocking CRM flow writes. Run the latest schema setup or check the crm_whatsapp_flows RLS policies."
+        : error instanceof Error ? error.message : "WhatsApp flow could not be updated.",
     });
   }
 }
 
 export async function DELETE(request: Request) {
   try {
+    await ensureCrmWritePolicies();
     const business = await ensureDefaultBusiness();
     const payload = (await request.json().catch(() => ({}))) as FlowPayload;
     const id = stringValue(payload.id);
@@ -378,7 +387,9 @@ export async function DELETE(request: Request) {
   } catch (error) {
     return json(500, {
       ok: false,
-      error: error instanceof Error ? error.message : "WhatsApp flow could not be deleted.",
+      error: isRlsPolicyError(error)
+        ? "WhatsApp flow could not be deleted because Supabase is blocking CRM flow writes. Run the latest schema setup or check the crm_whatsapp_flows RLS policies."
+        : error instanceof Error ? error.message : "WhatsApp flow could not be deleted.",
     });
   }
 }

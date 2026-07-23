@@ -383,6 +383,24 @@
   white-space: nowrap;
 }
 
+.mediaPreview {
+  align-items: center;
+  aspect-ratio: 16 / 9;
+  background: #edf5ff center / cover no-repeat;
+  border: 1px solid #c9d9eb;
+  border-radius: 8px;
+  color: #174d8f;
+  display: flex;
+  font-size: 12px;
+  font-weight: 900;
+  justify-content: center;
+  letter-spacing: 0;
+  max-width: 160px;
+  min-height: 56px;
+  overflow: hidden;
+  text-transform: none;
+}
+
 .mediaButtons {
   display: flex;
   flex-wrap: wrap;

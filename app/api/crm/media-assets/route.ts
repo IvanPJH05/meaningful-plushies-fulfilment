@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { ensureDefaultBusiness } from "@/src/modules/businesses/default-business";
+import { ensureCrmWritePolicies, isRlsPolicyError } from "@/src/modules/crm/write-policies";
 import {
   createOrReuseMediaAssetFromBytes,
   mediaAssetPublicUrls,
@@ -18,6 +19,7 @@ function json(status: number, body: Record<string, unknown>) {
 
 export async function POST(request: Request) {
   try {
+    await ensureCrmWritePolicies();
     const formData = await request.formData();
     const file = formData.get("file");
 
@@ -65,7 +67,9 @@ export async function POST(request: Request) {
   } catch (error) {
     return json(500, {
       ok: false,
-      error: error instanceof Error ? error.message : "Media could not be uploaded.",
+      error: isRlsPolicyError(error)
+        ? "Media could not be uploaded because Supabase is blocking CRM media writes. Run the latest schema setup or check the crm_media_assets RLS policies."
+        : error instanceof Error ? error.message : "Media could not be uploaded.",
     });
   }
 }

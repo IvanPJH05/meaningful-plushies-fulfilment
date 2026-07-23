@@ -433,6 +433,23 @@ export default function WhatsAppFlowsClient() {
     }));
   }
 
+  function applyUploadedMediaItems(actionId: string, mediaId: string | undefined, uploadedItems: FlowMediaItem[]) {
+    if (!uploadedItems.length) return;
+    setForm((current) => ({
+      ...current,
+      actions: current.actions.map((action) => {
+        if (action.id !== actionId) return action;
+        const targetIndex = action.mediaItems.findIndex((item) => item.id === mediaId);
+        if (targetIndex < 0) return { ...action, mediaItems: [...action.mediaItems, ...uploadedItems] };
+
+        const nextItems = [...action.mediaItems];
+        const currentItem = nextItems[targetIndex];
+        nextItems.splice(targetIndex, 1, { ...uploadedItems[0], caption: currentItem.caption || uploadedItems[0].caption }, ...uploadedItems.slice(1));
+        return { ...action, mediaItems: nextItems };
+      }),
+    }));
+  }
+
   function addMediaItem(actionId: string, type: MediaType) {
     setForm((current) => ({
       ...current,
@@ -455,9 +472,11 @@ export default function WhatsAppFlowsClient() {
     }));
   }
 
-  async function uploadMediaFile(actionId: string, item: FlowMediaItem, file: File | null) {
-    if (!file) return;
-    if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
+  async function uploadMediaFiles(actionId: string, item: FlowMediaItem, files: FileList | File[] | null) {
+    const selectedFiles = Array.from(files || []);
+    if (!selectedFiles.length) return;
+    const invalidFile = selectedFiles.find((file) => !file.type.startsWith("image/") && !file.type.startsWith("video/"));
+    if (invalidFile) {
       setNotice("Choose an image or video file for this media item.");
       return;
     }
@@ -466,29 +485,32 @@ export default function WhatsAppFlowsClient() {
     setUploadingMediaId(mediaId);
     setNotice("");
     try {
-      const data = new FormData();
-      data.append("file", file);
-      const response = await fetch("/api/crm/media-assets", {
-        method: "POST",
-        body: data,
-      });
-      const result = (await response.json()) as {
-        ok?: boolean;
-        asset?: { originalUrl?: string; fileName?: string; contentType?: string; sizeBytes?: number; mediaType?: string };
-        error?: string;
-      };
-      if (!response.ok || !result.ok || !result.asset?.originalUrl) {
-        throw new Error(result.error || "Media could not be uploaded.");
-      }
+      const uploadedItems = await Promise.all(selectedFiles.map(async (file) => {
+        const data = new FormData();
+        data.append("file", file);
+        const response = await fetch("/api/crm/media-assets", {
+          method: "POST",
+          body: data,
+        });
+        const result = (await response.json()) as {
+          ok?: boolean;
+          asset?: { originalUrl?: string; fileName?: string; contentType?: string; sizeBytes?: number; mediaType?: string };
+          error?: string;
+        };
+        if (!response.ok || !result.ok || !result.asset?.originalUrl) {
+          throw new Error(result.error || "Media could not be uploaded.");
+        }
+        return makeMediaItem({
+          type: result.asset.mediaType === "video" ? "video" : "image",
+          url: result.asset.originalUrl,
+          fileName: result.asset.fileName || file.name,
+          contentType: result.asset.contentType || file.type,
+          sizeBytes: result.asset.sizeBytes || file.size,
+        });
+      }));
 
-      updateMediaItem(actionId, mediaId, {
-        type: result.asset.mediaType === "video" ? "video" : "image",
-        url: result.asset.originalUrl,
-        fileName: result.asset.fileName || file.name,
-        contentType: result.asset.contentType || file.type,
-        sizeBytes: result.asset.sizeBytes || file.size,
-      });
-      setNotice("Media uploaded.");
+      applyUploadedMediaItems(actionId, mediaId, uploadedItems);
+      setNotice(`${uploadedItems.length} media ${uploadedItems.length === 1 ? "file" : "files"} uploaded.`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Media could not be uploaded.");
     } finally {
@@ -708,14 +730,26 @@ export default function WhatsAppFlowsClient() {
                               <label className={styles.fileUpload}>
                                 <input
                                   accept={item.type === "video" ? "video/*" : "image/*"}
+                                  multiple
                                   type="file"
-                                  onChange={(event) => void uploadMediaFile(action.id, item, event.target.files?.[0] || null)}
+                                  onChange={(event) => {
+                                    void uploadMediaFiles(action.id, item, event.target.files);
+                                    event.currentTarget.value = "";
+                                  }}
                                 />
                                 <strong>{uploadingMediaId === item.id ? "Uploading..." : item.url ? "Replace file" : "Upload file"}</strong>
-                                <small>{item.fileName || (item.url ? "Uploaded media ready" : `Choose ${item.type === "image" ? "an image" : "a video"} file`)}</small>
+                                <small>{item.fileName || (item.url ? "Uploaded media ready" : `Choose ${item.type === "image" ? "one or more images" : "one or more videos"}`)}</small>
                               </label>
                               {(item.fileName || item.sizeBytes) && (
                                 <em>{[item.contentType, formatFileSize(item.sizeBytes)].filter(Boolean).join(" | ")}</em>
+                              )}
+                              {item.url && (
+                                <span
+                                  className={styles.mediaPreview}
+                                  style={item.type === "image" ? { backgroundImage: `url("${item.url}")` } : undefined}
+                                >
+                                  {item.type === "video" ? "Video ready" : ""}
+                                </span>
                               )}
                             </div>
                             <label>
