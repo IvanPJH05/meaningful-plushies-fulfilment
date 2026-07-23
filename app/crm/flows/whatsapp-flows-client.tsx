@@ -601,6 +601,25 @@ function duplicateFormWithFreshKeys(flow: WhatsAppFlow, overrides: Partial<Pick<
   };
 }
 
+function uniqueCopyName(name: string, usedNames: Set<string>) {
+  const baseName = `${name} Copy`;
+  let candidate = baseName;
+  let suffix = 2;
+  while (usedNames.has(candidate.trim().toLowerCase())) {
+    candidate = `${baseName} ${suffix}`;
+    suffix += 1;
+  }
+  usedNames.add(candidate.trim().toLowerCase());
+  return candidate;
+}
+
+function flattenSubfolderPaths(subfolders: FlowSubfolder[]): string[] {
+  return subfolders.flatMap((subfolder) => [
+    subfolder.path,
+    ...flattenSubfolderPaths(subfolder.subgroups),
+  ]);
+}
+
 function subfolderTreeFromMap(subgroupMap: Map<string, WhatsAppFlow[]>): FlowSubfolder[] {
   const roots: FlowSubfolder[] = [];
   const nodeMap = new Map<string, FlowSubfolder>();
@@ -918,7 +937,10 @@ export default function WhatsAppFlowsClient() {
     setSaving(true);
     setNotice("");
     try {
-      const duplicateForm = duplicateFormWithFreshKeys(flow);
+      const usedNames = new Set(flows.map((candidate) => candidate.name.trim().toLowerCase()));
+      const duplicateForm = duplicateFormWithFreshKeys(flow, {
+        name: uniqueCopyName(flow.name, usedNames),
+      });
       const response = await fetch("/api/crm/flows", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -943,9 +965,10 @@ export default function WhatsAppFlowsClient() {
     setNotice("");
     const createdPairs: Array<{ source: WhatsAppFlow; created: WhatsAppFlow }> = [];
     try {
+      const usedNames = new Set(flows.map((flow) => flow.name.trim().toLowerCase()));
       for (const sourceFlow of sourceFlows) {
         const duplicateForm = duplicateFormWithFreshKeys(sourceFlow, {
-          name: `${sourceFlow.name} Copy`,
+          name: uniqueCopyName(sourceFlow.name, usedNames),
           ...overridesForFlow(sourceFlow),
         });
         const response = await fetch("/api/crm/flows", {
@@ -1026,7 +1049,8 @@ export default function WhatsAppFlowsClient() {
   }
 
   function duplicateGroup(group: FlowGroup) {
-    const nextGroupName = group.name === "Ungrouped" ? "Ungrouped Copy" : `${group.name} Copy`;
+    const usedGroupNames = new Set(flowGroups.map((candidate) => candidate.name.trim().toLowerCase()));
+    const nextGroupName = uniqueCopyName(group.name, usedGroupNames);
     const sourceFlows = [...group.flows, ...group.subgroups.flatMap(subfolderFlows)];
     return duplicateFlowSet(sourceFlows, `group "${group.name}"`, (flow) => ({
       groupName: nextGroupName,
@@ -1039,8 +1063,15 @@ export default function WhatsAppFlowsClient() {
   }
 
   function duplicateSubgroup(groupName: string, subgroup: FlowSubfolder) {
-    const nextSubgroupName = `${subgroup.name} Copy`;
+    const group = flowGroups.find((candidate) => candidate.name === groupName);
+    const usedSubfolderPaths = new Set((group ? flattenSubfolderPaths(group.subgroups) : []).map((path) => path.trim().toLowerCase()));
     const parentPath = folderPathParts(subgroup.path).slice(0, -1).join("/");
+    const nextSubgroupName = uniqueCopyName(subgroup.name, new Set(
+      Array.from(usedSubfolderPaths)
+        .filter((path) => folderPathParts(path).slice(0, -1).join("/").toLowerCase() === parentPath.toLowerCase())
+        .map((path) => folderPathParts(path).at(-1)?.toLowerCase() || "")
+        .filter(Boolean)
+    ));
     const nextRootPath = childFolderPath(parentPath, nextSubgroupName);
     return duplicateFlowSet(subfolderFlows(subgroup), `subfolder "${subgroup.name}"`, (flow) => ({
       groupName: groupName === "Ungrouped" ? "" : groupName,
