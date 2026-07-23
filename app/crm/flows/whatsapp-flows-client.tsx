@@ -16,7 +16,7 @@ type WhatsAppFlow = {
   updatedAt: string;
 };
 
-type TriggerType = "keywords" | "click" | "first_message";
+type TriggerType = "keywords" | "click" | "first_message" | "selection_button";
 type MediaType = "image" | "video";
 type ActionType = "Send Message" | "Send Media" | "Ask Selection" | "AI Reply" | "Update Status" | "Add Note";
 type StoredActionType = ActionType | "Send Image" | "Send Video";
@@ -26,6 +26,8 @@ type SelectionOption = {
   id?: string;
   label: string;
   followUpMessage: string;
+  targetFlowId?: string;
+  targetFlowName?: string;
 };
 
 type FlowMediaItem = {
@@ -106,6 +108,8 @@ function makeSelectionOption(option?: Partial<SelectionOption>): SelectionOption
     id: option?.id || makeId(),
     label: option?.label || "",
     followUpMessage: option?.followUpMessage || "",
+    targetFlowId: option?.targetFlowId || "",
+    targetFlowName: option?.targetFlowName || "",
   };
 }
 
@@ -143,7 +147,7 @@ function normalizeFlowForm(value: unknown): FlowForm | null {
   const form = value as Partial<FlowForm> | null;
   if (!form || typeof form !== "object") return null;
 
-  const triggerType = form.triggerType === "keywords" ? "keywords" : "click";
+  const triggerType = normaliseTriggerType(form.triggerType, "click");
   const status = form.status === "Active" ? "Active" : "Draft";
   const actions = Array.isArray(form.actions)
     ? form.actions.map((action) => makeAction(action as Partial<FlowAction>)).filter(Boolean)
@@ -267,6 +271,7 @@ function normaliseTriggerType(value?: string, fallback: TriggerType = "click"): 
   const normalised = (value || "").trim().toLowerCase();
   if (normalised === "click" || normalised === "button") return "click";
   if (normalised === "first_message" || normalised === "first message" || normalised === "first-message") return "first_message";
+  if (normalised === "selection_button" || normalised === "selection button" || normalised === "button press") return "selection_button";
   if (normalised === "keywords" || normalised === "words") return "keywords";
   return fallback;
 }
@@ -381,6 +386,8 @@ function formatActionStep(action: FlowAction): FlowStep | null {
       id: option.id || makeId(),
       label: option.label.trim(),
       followUpMessage: option.followUpMessage.trim(),
+      targetFlowId: (option.targetFlowId || "").trim(),
+      targetFlowName: (option.targetFlowName || "").trim(),
     }))
     .filter((option) => option.label)
     .slice(0, 3);
@@ -430,9 +437,18 @@ function actionSummary(action: FlowAction) {
   }
   if (action.type === "Ask Selection") {
     const optionCount = action.options.filter((option) => option.label.trim()).length;
-    return optionCount ? `${optionCount} customer option${optionCount === 1 ? "" : "s"}` : "No options yet";
+    const linkedCount = action.options.filter((option) => option.label.trim() && (option.targetFlowId || option.targetFlowName)).length;
+    return optionCount ? `${optionCount} option${optionCount === 1 ? "" : "s"} | ${linkedCount} linked flow${linkedCount === 1 ? "" : "s"}` : "No options yet";
   }
   return action.message || "No message yet";
+}
+
+function triggerSummary(flow: Pick<WhatsAppFlow, "name" | "triggerType" | "triggerButtonLabel" | "trigger">) {
+  const triggerType = normaliseTriggerType(flow.triggerType);
+  if (triggerType === "click") return `Button: ${flow.triggerButtonLabel || flow.name}`;
+  if (triggerType === "first_message") return "First customer message";
+  if (triggerType === "selection_button") return `Selection button: ${flow.triggerButtonLabel || flow.name}`;
+  return `Trigger: ${flow.trigger || "Keywords"}`;
 }
 
 function formatFileSize(sizeBytes?: number) {
@@ -857,6 +873,7 @@ export default function WhatsAppFlowsClient() {
                     <option value="click">Click button</option>
                     <option value="keywords">Trigger words</option>
                     <option value="first_message">First customer message</option>
+                    <option value="selection_button">Selection button press</option>
                   </select>
                 </label>
 
@@ -864,6 +881,15 @@ export default function WhatsAppFlowsClient() {
                   <label>
                     Starts when
                     <input value="A customer sends their first message" disabled />
+                  </label>
+                ) : form.triggerType === "selection_button" ? (
+                  <label>
+                    Button pressed
+                    <input
+                      value={form.triggerButtonLabel}
+                      onChange={(event) => setForm((current) => ({ ...current, triggerButtonLabel: event.target.value }))}
+                      placeholder="Example: English"
+                    />
                   </label>
                 ) : form.triggerType === "click" ? (
                   <label>
@@ -891,6 +917,8 @@ export default function WhatsAppFlowsClient() {
                   ? "This flow appears as a quick button in the inbox. Click it to send the message sequence."
                   : form.triggerType === "first_message"
                     ? "This flow runs automatically when a customer sends their first message in a new chat."
+                  : form.triggerType === "selection_button"
+                    ? "This flow runs when a customer taps a matching selection button from another flow."
                   : "The flow can run when a WhatsApp message contains one of these words."}
               </p>
 
@@ -907,12 +935,15 @@ export default function WhatsAppFlowsClient() {
             <section className={styles.workflowPreview}>
               <strong>Workflow preview</strong>
               <div className={styles.branchList}>
-                <span>{form.triggerType === "first_message" ? "First message" : form.triggerType === "click" ? "Inbox button" : "Trigger words"}</span>
+                <span>{form.triggerType === "first_message" ? "First message" : form.triggerType === "selection_button" ? "Selection button" : form.triggerType === "click" ? "Inbox button" : "Trigger words"}</span>
                 {form.actions.map((action, index) => (
                   <span key={`preview-${action.id}`}>
                     {index + 1}. {action.type}
                     {action.type === "Ask Selection"
-                      ? ` -> ${action.options.filter((option) => option.label.trim()).map((option) => option.label.trim()).join(" / ") || "Options"}`
+                      ? ` -> ${action.options.filter((option) => option.label.trim()).map((option) => {
+                        const target = option.targetFlowName || flows.find((flow) => flow.id === option.targetFlowId)?.name || "";
+                        return `${option.label.trim()}${target ? ` -> ${target}` : ""}`;
+                      }).join(" / ") || "Options"}`
                       : ""}
                   </span>
                 ))}
@@ -1008,17 +1039,31 @@ export default function WhatsAppFlowsClient() {
                               />
                             </label>
                             <label>
-                              Next message after tap
-                              <textarea
-                                value={option.followUpMessage}
+                              Flow to trigger
+                              <select
+                                value={option.targetFlowId || ""}
                                 onChange={(event) => updateAction(action.id, {
                                   options: action.options.map((current) => (
-                                    current.id === option.id ? { ...current, followUpMessage: event.target.value } : current
+                                    current.id === option.id ? {
+                                      ...current,
+                                      targetFlowId: event.target.value,
+                                      targetFlowName: flows.find((flow) => flow.id === event.target.value)?.name || "",
+                                    } : current
                                   )),
                                 })}
-                                placeholder="Message to send after the customer taps this option."
-                                rows={3}
-                              />
+                              >
+                                <option value="">Use a flow triggered by this button label</option>
+                                {flows
+                                  .filter((flow) => flow.id !== editingId)
+                                  .map((flow) => (
+                                    <option key={flow.id} value={flow.id}>
+                                      {flow.name} ({flow.status})
+                                    </option>
+                                  ))}
+                              </select>
+                              <small>
+                                Or create a flow with trigger "Selection button press" and button name "{option.label.trim() || "this button"}".
+                              </small>
                             </label>
                             <button
                               className={styles.textButton}
@@ -1180,11 +1225,7 @@ export default function WhatsAppFlowsClient() {
               </div>
 
               <div className={styles.flowMeta}>
-                <span>
-                  {normaliseTriggerType(flow.triggerType) === "click"
-                    ? `Button: ${flow.triggerButtonLabel || flow.name}`
-                    : `Trigger: ${flow.trigger || "Manual only"}`}
-                </span>
+                <span>{triggerSummary(flow)}</span>
                 <strong>{flow.steps.length} actions</strong>
               </div>
 

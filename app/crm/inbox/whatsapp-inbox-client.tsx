@@ -160,7 +160,7 @@ type PreloadMediaAsset = {
   originalUrl: string;
 };
 
-type FlowTriggerType = "keywords" | "click" | "first_message";
+type FlowTriggerType = "keywords" | "click" | "first_message" | "selection_button";
 type FlowMediaType = "image" | "video";
 type FlowActionType = "Send Message" | "Send Media" | "Send Image" | "Send Video" | "Ask Selection" | "AI Reply" | "Update Status" | "Add Note";
 type FlowDelayUnit = "seconds" | "minutes" | "hours" | "days";
@@ -175,6 +175,8 @@ type FlowSelectionOption = {
   id?: string;
   label: string;
   followUpMessage?: string;
+  targetFlowId?: string;
+  targetFlowName?: string;
 };
 
 type WhatsAppFlowStep = {

@@ -28,7 +28,7 @@ const actionTypes = ["Send Message", "Send Media", "Send Image", "Send Video", "
 const delayUnits = ["seconds", "minutes", "hours", "days"] as const;
 const mediaTypes = ["image", "video"] as const;
 
-type TriggerType = "keywords" | "click" | "first_message";
+type TriggerType = "keywords" | "click" | "first_message" | "selection_button";
 
 type FlowMediaItem = {
   type: typeof mediaTypes[number];
@@ -43,6 +43,8 @@ type SelectionOption = {
   id: string;
   label: string;
   followUpMessage: string;
+  targetFlowId: string;
+  targetFlowName: string;
 };
 
 type FlowStep = {
@@ -93,6 +95,7 @@ function normalizeDelayUnit(value: unknown): FlowStep["delayUnit"] {
 function normalizeTriggerType(value: unknown, label: string): TriggerType {
   const text = stringValue(value).toLowerCase();
   if (text.includes("first")) return "first_message";
+  if (text.includes("selection") || text.includes("press")) return "selection_button";
   if (text.includes("click") || text.includes("button") || label) return "click";
   return "keywords";
 }
@@ -106,6 +109,8 @@ function normalizeSelectionOptions(value: unknown): SelectionOption[] {
       id: stringValue(record.id) || `option_${index + 1}`,
       label,
       followUpMessage: stringValue(record.followUpMessage ?? record.message ?? record.body ?? record.reply),
+      targetFlowId: stringValue(record.targetFlowId ?? record.flowId ?? record.nextFlowId),
+      targetFlowName: stringValue(record.targetFlowName ?? record.flowName ?? record.nextFlowName),
     };
   }).filter((option) => option.label).slice(0, 3);
 }
@@ -289,7 +294,7 @@ function normalizePayload(payload: FlowPayload) {
   return {
     name,
     triggerType,
-    triggerButtonLabel: triggerType === "click" ? (triggerButtonLabel || name) : "",
+    triggerButtonLabel: triggerType === "click" || triggerType === "selection_button" ? (triggerButtonLabel || name) : "",
     triggerWords: triggerType === "keywords" ? triggerWords : [],
     notes,
     messages,
