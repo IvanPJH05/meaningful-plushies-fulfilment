@@ -404,8 +404,17 @@ async function wait(ms: number) {
 async function waitForOutboundMessageConfirmation(args: {
   messageId?: string;
   externalMessageId?: string;
+  status?: MessageStatus;
   timeoutMs?: number;
 }) {
+  if (args.status === MessageStatus.FAILED) {
+    throw new Error("WhatsApp reported that the previous flow message failed.");
+  }
+  if (
+    args.status === MessageStatus.SENT
+    || args.status === MessageStatus.DELIVERED
+    || args.status === MessageStatus.READ
+  ) return;
   if (!args.messageId && !args.externalMessageId) return;
 
   const deadline = Date.now() + (args.timeoutMs || 20_000);
@@ -1168,6 +1177,7 @@ export async function POST(request: Request) {
     }
 
     const storedMessages = await storeWhatsAppMessages(payload);
+    const flowMessageCount = await handleFlowAutomationForInboundMessages(storedMessages);
     const statusResult = await applyWhatsAppStatuses(payload);
     await recordRawWhatsAppWebhook({
       rawBody,
@@ -1179,7 +1189,6 @@ export async function POST(request: Request) {
     });
     const aiMessageCount = scheduleAiForStoredMessages(storedMessages);
     const mediaMessageCount = scheduleMediaForStoredMessages(storedMessages);
-    const flowMessageCount = await handleFlowAutomationForInboundMessages(storedMessages);
 
     return json(200, {
       ok: true,
