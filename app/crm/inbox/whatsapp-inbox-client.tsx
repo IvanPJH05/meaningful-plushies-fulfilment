@@ -2337,12 +2337,18 @@ export default function WhatsAppInboxClient() {
     await loadConversation(conversationId);
   }
 
-  async function sendMessage(messageId?: string, bodyOverride?: string, media?: { type: FlowMediaType; url: string }): Promise<boolean> {
+  async function sendMessage(
+    messageId?: string,
+    bodyOverride?: string,
+    media?: { type: FlowMediaType; url: string },
+    options?: { bypassSendingLock?: boolean },
+  ): Promise<boolean> {
     const body = (bodyOverride !== undefined ? bodyOverride : draft).trim();
     const mediaUrl = media?.url.trim() || "";
     const sendingMedia = (media?.type === "image" || media?.type === "video") && Boolean(mediaUrl);
     if (!selectedId || (!body && !sendingMedia)) return false;
-    if (sendingRef.current) return false;
+    const useSendingLock = !options?.bypassSendingLock;
+    if (useSendingLock && sendingRef.current) return false;
 
     const conversationId = selectedId;
     const activeReplyTarget = bodyOverride === undefined && !messageId ? replyTarget : null;
@@ -2368,8 +2374,10 @@ export default function WhatsAppInboxClient() {
       }
     }
 
-    sendingRef.current = true;
-    setSending(true);
+    if (useSendingLock) {
+      sendingRef.current = true;
+      setSending(true);
+    }
     setNotice("");
     try {
       const response = await fetch("/api/crm/inbox", {
@@ -2434,8 +2442,10 @@ export default function WhatsAppInboxClient() {
       setNotice(error instanceof Error ? error.message : "WhatsApp message could not be sent.");
       return false;
     } finally {
-      sendingRef.current = false;
-      setSending(false);
+      if (useSendingLock) {
+        sendingRef.current = false;
+        setSending(false);
+      }
     }
   }
 
@@ -2542,8 +2552,8 @@ export default function WhatsAppInboxClient() {
   async function runFlow(flow: WhatsAppFlow) {
     if (!selectedId || runningFlowId) return;
 
-    async function sendFlowStep(body: string, media?: { type: FlowMediaType; url: string }) {
-      const sent = await sendMessage(undefined, body, media);
+    async function sendFlowStep(body: string, media?: { type: FlowMediaType; url: string }, options?: { batchMedia?: boolean }) {
+      const sent = await sendMessage(undefined, body, media, { bypassSendingLock: options?.batchMedia });
       if (!sent) {
         throw new Error("WhatsApp did not accept one of the flow messages.");
       }
@@ -2567,10 +2577,14 @@ export default function WhatsAppInboxClient() {
         if (step.type === "Send Media" || step.type === "Send Image" || step.type === "Send Video") {
           const mediaItems = mediaItemsFromStep(step);
           if (mediaItems.length) {
-            await Promise.all(mediaItems.map((item, index) => {
+            const results = await Promise.allSettled(mediaItems.map((item, index) => {
               const caption = personalizeFlowText(item.caption || (index === 0 ? step.message : ""), selected);
-              return sendFlowStep(caption, { type: item.type, url: item.url });
+              return sendFlowStep(caption, { type: item.type, url: item.url }, { batchMedia: mediaItems.length > 1 });
             }));
+            const failedCount = results.filter((result) => result.status === "rejected").length;
+            if (failedCount) {
+              throw new Error(`${failedCount} media item${failedCount === 1 ? "" : "s"} could not be sent through WhatsApp.`);
+            }
           } else {
             const text = personalizeFlowText(step.message, selected);
             if (text) await sendFlowStep(text);
