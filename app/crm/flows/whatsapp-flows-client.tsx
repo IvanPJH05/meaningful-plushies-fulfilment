@@ -64,6 +64,8 @@ type FlowForm = {
 const actionTypes: ActionType[] = ["Send Message", "Send Media", "AI Reply", "Update Status", "Add Note"];
 const delayUnits: DelayUnit[] = ["seconds", "minutes", "hours", "days"];
 const FLOW_BUILDER_CACHE_KEY = "crm-whatsapp-flow-builder-cache-v1";
+const MAX_BROWSER_UPLOAD_BYTES = 3.8 * 1024 * 1024;
+const MAX_FLOW_IMAGE_EDGE = 1800;
 
 type FlowBuilderCache = {
   flows: WhatsAppFlow[];
@@ -387,6 +389,70 @@ function formatFileSize(sizeBytes?: number) {
   return `${(sizeBytes / 1024 / 1024).toFixed(sizeBytes >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
 }
 
+async function canvasToBlob(canvas: HTMLCanvasElement, quality: number) {
+  return new Promise<Blob | null>((resolve) => {
+    canvas.toBlob(resolve, "image/jpeg", quality);
+  });
+}
+
+async function compressImageForUpload(file: File) {
+  if (!file.type.startsWith("image/") || file.size <= MAX_BROWSER_UPLOAD_BYTES) return file;
+
+  const imageUrl = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    image.decoding = "async";
+    const loaded = new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error(`${file.name} could not be prepared for upload.`));
+    });
+    image.src = imageUrl;
+    await loaded;
+
+    const scale = Math.min(1, MAX_FLOW_IMAGE_EDGE / Math.max(image.naturalWidth, image.naturalHeight));
+    const width = Math.max(1, Math.round(image.naturalWidth * scale));
+    const height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) return file;
+    context.drawImage(image, 0, 0, width, height);
+
+    for (const quality of [0.82, 0.72, 0.62, 0.52]) {
+      const blob = await canvasToBlob(canvas, quality);
+      if (!blob) continue;
+      if (blob.size <= MAX_BROWSER_UPLOAD_BYTES || quality === 0.52) {
+        const baseName = file.name.replace(/\.[^.]+$/, "") || "flow-image";
+        return new File([blob], `${baseName}.jpg`, {
+          type: "image/jpeg",
+          lastModified: Date.now(),
+        });
+      }
+    }
+
+    return file;
+  } finally {
+    URL.revokeObjectURL(imageUrl);
+  }
+}
+
+async function prepareMediaFileForUpload(file: File) {
+  if (file.type.startsWith("image/")) {
+    const preparedFile = await compressImageForUpload(file);
+    if (preparedFile.size > MAX_BROWSER_UPLOAD_BYTES) {
+      throw new Error(`${file.name} is too large. Try a smaller image.`);
+    }
+    return preparedFile;
+  }
+
+  if (file.size > MAX_BROWSER_UPLOAD_BYTES) {
+    throw new Error(`${file.name} is too large for browser upload. Use a shorter video or compress it first.`);
+  }
+
+  return file;
+}
+
 export default function WhatsAppFlowsClient() {
   const [initialCache] = useState(() => readFlowBuilderCache());
   const [flows, setFlows] = useState<WhatsAppFlow[]>(() => initialCache?.flows || []);
@@ -557,8 +623,9 @@ export default function WhatsAppFlowsClient() {
     const timeoutId = window.setTimeout(() => controller.abort(), 60_000);
 
     try {
+      const uploadFile = await prepareMediaFileForUpload(file);
       const data = new FormData();
-      data.append("file", file);
+      data.append("file", uploadFile);
       const response = await fetch("/api/crm/media-assets", {
         method: "POST",
         body: data,
@@ -577,15 +644,18 @@ export default function WhatsAppFlowsClient() {
       }
 
       if (!response.ok || !result.ok || !result.asset?.originalUrl) {
+        if (response.status === 413) {
+          throw new Error(`${file.name} is too large to upload here. Try a smaller file.`);
+        }
         throw new Error(result.error || `Media could not be uploaded. (${response.status})`);
       }
 
       return makeMediaItem({
         type: result.asset.mediaType === "video" ? "video" : "image",
         url: result.asset.originalUrl,
-        fileName: result.asset.fileName || file.name,
-        contentType: result.asset.contentType || file.type,
-        sizeBytes: result.asset.sizeBytes || file.size,
+        fileName: result.asset.fileName || uploadFile.name || file.name,
+        contentType: result.asset.contentType || uploadFile.type || file.type,
+        sizeBytes: result.asset.sizeBytes || uploadFile.size || file.size,
       });
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
