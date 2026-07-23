@@ -173,9 +173,16 @@ function formWithTriggerType(form: FlowForm, triggerType: TriggerType): FlowForm
       ...form,
       triggerType,
       triggerButtonLabel: isSelectionKey(form.triggerButtonLabel) ? form.triggerButtonLabel : makeSelectionKey(),
+      trigger: "",
     };
   }
-  return { ...form, triggerType };
+  if (triggerType === "click") {
+    return { ...form, triggerType, trigger: "" };
+  }
+  if (triggerType === "keywords") {
+    return { ...form, triggerType, triggerButtonLabel: "" };
+  }
+  return { ...form, triggerType, triggerButtonLabel: "", trigger: "" };
 }
 
 function normalizeFlowForm(value: unknown): FlowForm | null {

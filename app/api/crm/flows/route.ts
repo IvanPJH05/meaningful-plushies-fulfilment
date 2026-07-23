@@ -101,7 +101,8 @@ function normalizeTriggerType(value: unknown, label: string): TriggerType {
   const text = stringValue(value).toLowerCase();
   if (text.includes("first")) return "first_message";
   if (text.includes("selection") || text.includes("press")) return "selection_button";
-  if (text.includes("click") || text.includes("button") || label) return "click";
+  if (text.includes("click") || text.includes("button")) return "click";
+  if (!text && label) return "click";
   return "keywords";
 }
 
