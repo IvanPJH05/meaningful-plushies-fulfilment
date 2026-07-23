@@ -665,7 +665,7 @@
   border-radius: 8px;
   display: grid;
   gap: 10px;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   padding: 10px 12px;
   transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
@@ -674,6 +674,25 @@
   border-color: #a9c9f5;
   box-shadow: 0 8px 18px rgba(16, 32, 51, 0.08);
   transform: translateY(-1px);
+}
+
+.selectedFlow {
+  background: #eef6ff;
+  border-color: #1f6feb;
+}
+
+.flowSelect {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+}
+
+.flowSelect input {
+  accent-color: #1f6feb;
+  cursor: pointer;
+  height: 16px;
+  margin: 0;
+  width: 16px;
 }
 
 .flowFileName {
@@ -716,6 +735,14 @@
 .fileActions button:disabled {
   color: #8aa7c9;
   cursor: not-allowed;
+}
+
+.selectionStatus {
+  color: #1f6feb;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 900;
+  margin-top: 4px;
 }
 
 .flowTopline h3 {

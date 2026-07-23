@@ -801,6 +801,7 @@ export default function WhatsAppFlowsClient() {
   const [draggingMediaId, setDraggingMediaId] = useState("");
   const [draggingFlowId, setDraggingFlowId] = useState("");
   const [dropTargetKey, setDropTargetKey] = useState("");
+  const [selectedFlowIds, setSelectedFlowIds] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1019,30 +1020,43 @@ export default function WhatsAppFlowsClient() {
     }));
   }
 
-  async function moveFlowToFolder(flowId: string, groupName: string, subgroupName = "") {
-    const flow = flows.find((candidate) => candidate.id === flowId);
-    if (!flow) return;
+  async function moveFlowsToFolder(flowIds: string[], groupName: string, subgroupName = "") {
+    const uniqueFlowIds = Array.from(new Set(flowIds)).filter(Boolean);
+    const movingFlows = flows.filter((candidate) => uniqueFlowIds.includes(candidate.id));
+    if (!movingFlows.length) return;
     const nextGroupName = groupName === "Ungrouped" ? "" : groupName;
     const previous = flows;
-    const nextFlow = { ...flow, groupName: nextGroupName, subgroupName };
-    setFlows((current) => current.map((candidate) => (candidate.id === flowId ? nextFlow : candidate)));
-    if (editingId === flowId) {
+    const movingIdSet = new Set(movingFlows.map((flow) => flow.id));
+    const nextFlows = movingFlows.map((flow) => ({ ...flow, groupName: nextGroupName, subgroupName }));
+    const nextFlowMap = new Map(nextFlows.map((flow) => [flow.id, flow]));
+    setFlows((current) => current.map((candidate) => nextFlowMap.get(candidate.id) || candidate));
+    if (editingId && movingIdSet.has(editingId)) {
       setForm((current) => ({ ...current, groupName: nextGroupName, subgroupName }));
     }
-    setNotice(`Moved "${flow.name}" to ${subgroupName ? `${nextGroupName || "Ungrouped"} / ${subgroupName}` : (nextGroupName || "Ungrouped")}.`);
+    const targetName = subgroupName ? `${nextGroupName || "Ungrouped"} / ${subgroupName}` : (nextGroupName || "Ungrouped");
+    setNotice(`Moved ${movingFlows.length} flow${movingFlows.length === 1 ? "" : "s"} to ${targetName}.`);
+    setSaving(true);
     try {
-      const response = await fetch("/api/crm/flows", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(flowPayloadFromForm(formFromFlow(nextFlow), flowId)),
-      });
-      const result = (await response.json()) as { ok?: boolean; flow?: WhatsAppFlow; error?: string };
-      if (!response.ok || !result.ok || !result.flow) throw new Error(result.error || "Flow could not be moved.");
-      setFlows((current) => current.map((candidate) => (candidate.id === flowId ? (result.flow as WhatsAppFlow) : candidate)));
+      const savedFlows = await Promise.all(nextFlows.map(async (nextFlow) => {
+        const response = await fetch("/api/crm/flows", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(flowPayloadFromForm(formFromFlow(nextFlow), nextFlow.id)),
+        });
+        const result = (await response.json()) as { ok?: boolean; flow?: WhatsAppFlow; error?: string };
+        if (!response.ok || !result.ok || !result.flow) throw new Error(result.error || "Flow could not be moved.");
+        return result.flow;
+      }));
+      const savedFlowMap = new Map(savedFlows.map((flow) => [flow.id, flow]));
+      setFlows((current) => current.map((candidate) => savedFlowMap.get(candidate.id) || candidate));
+      setSelectedFlowIds((current) => current.filter((flowId) => !movingIdSet.has(flowId)));
     } catch (error) {
       setFlows(previous);
-      if (editingId === flowId) setForm(formFromFlow(flow));
-      setNotice(error instanceof Error ? error.message : "Flow could not be moved.");
+      const editedPreviousFlow = previous.find((flow) => flow.id === editingId);
+      if (editedPreviousFlow) setForm(formFromFlow(editedPreviousFlow));
+      setNotice(error instanceof Error ? error.message : "Flows could not be moved.");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -1341,6 +1355,14 @@ export default function WhatsAppFlowsClient() {
     setForm(cloneTemplate(template));
   }
 
+  function toggleFlowSelection(flowId: string) {
+    setSelectedFlowIds((current) => (
+      current.includes(flowId)
+        ? current.filter((selectedId) => selectedId !== flowId)
+        : [...current, flowId]
+    ));
+  }
+
   function dropZoneHandlers(targetKey: string, groupName: string, subgroupName = "") {
     return {
       onDragOver: (event: DragEvent<HTMLElement>) => {
@@ -1356,23 +1378,34 @@ export default function WhatsAppFlowsClient() {
       },
       onDrop: (event: DragEvent<HTMLElement>) => {
         event.preventDefault();
-        const flowId = event.dataTransfer.getData("text/plain") || draggingFlowId;
+        const rawFlowIds = event.dataTransfer.getData("application/json");
+        const fallbackFlowId = event.dataTransfer.getData("text/plain") || draggingFlowId;
+        let flowIds = fallbackFlowId ? [fallbackFlowId] : [];
+        try {
+          const parsed = rawFlowIds ? JSON.parse(rawFlowIds) : [];
+          if (Array.isArray(parsed)) flowIds = parsed.filter((item): item is string => typeof item === "string");
+        } catch {
+          flowIds = fallbackFlowId ? [fallbackFlowId] : [];
+        }
         setDropTargetKey("");
         setDraggingFlowId("");
-        if (flowId) void moveFlowToFolder(flowId, groupName, subgroupName);
+        if (flowIds.length) void moveFlowsToFolder(flowIds, groupName, subgroupName);
       },
     };
   }
 
   function renderFlowCard(flow: WhatsAppFlow) {
+    const isSelected = selectedFlowIds.includes(flow.id);
     return (
       <div
-        className={`${styles.flowFile} ${draggingFlowId === flow.id ? styles.draggingFlow : ""}`}
+        className={`${styles.flowFile} ${isSelected ? styles.selectedFlow : ""} ${draggingFlowId === flow.id ? styles.draggingFlow : ""}`}
         draggable
         key={flow.id}
         onDragStart={(event) => {
+          const draggingIds = isSelected ? selectedFlowIds : [flow.id];
           event.dataTransfer.effectAllowed = "move";
           event.dataTransfer.setData("text/plain", flow.id);
+          event.dataTransfer.setData("application/json", JSON.stringify(draggingIds));
           setDraggingFlowId(flow.id);
         }}
         onDragEnd={() => {
@@ -1380,6 +1413,14 @@ export default function WhatsAppFlowsClient() {
           setDropTargetKey("");
         }}
       >
+        <label className={styles.flowSelect}>
+          <input
+            aria-label={`Select ${flow.name}`}
+            checked={isSelected}
+            onChange={() => toggleFlowSelection(flow.id)}
+            type="checkbox"
+          />
+        </label>
         <button className={styles.flowFileName} onClick={() => editFlow(flow)} type="button">
           {flow.name}
         </button>
@@ -1879,6 +1920,9 @@ export default function WhatsAppFlowsClient() {
             <div>
               <p className={styles.eyebrow}>Saved flows</p>
               <h2>Automation library</h2>
+              {selectedFlowIds.length > 0 && (
+                <span className={styles.selectionStatus}>{selectedFlowIds.length} selected</span>
+              )}
             </div>
             <button className={styles.secondaryButton} disabled={saving} onClick={createFolder}>
               Create group
