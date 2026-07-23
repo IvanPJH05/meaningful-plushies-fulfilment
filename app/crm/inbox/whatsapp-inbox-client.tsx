@@ -2366,11 +2366,12 @@ export default function WhatsAppInboxClient() {
     options?: {
       bypassSendingLock?: boolean;
       buttonOptions?: Array<{ id: string; title: string }>;
+      waitForConfirmation?: boolean;
     },
   ): Promise<boolean> {
     const body = (bodyOverride !== undefined ? bodyOverride : draft).trim();
     const mediaUrl = media?.url.trim() || "";
-    const sendingMedia = (media?.type === "image" || media?.type === "video") && Boolean(mediaUrl);
+    const sendingMedia = (media?.type === "image" || media?.type === "video" || media?.type === "pdf") && Boolean(mediaUrl);
     const sendingButtons = Boolean(options?.buttonOptions?.length);
     if (!selectedId || (!body && !sendingMedia && !sendingButtons)) return false;
     const useSendingLock = !options?.bypassSendingLock;
@@ -2383,13 +2384,13 @@ export default function WhatsAppInboxClient() {
     messageShouldStickToBottomRef.current = true;
     if (optimisticId) {
       const optimisticAttachments = sendingMedia && media ? [optimisticMediaAttachment(optimisticId, { type: media.type, url: mediaUrl })] : [];
-      const fallbackBody = media?.type === "video" ? "Video" : "Photo";
+      const fallbackBody = media?.type === "video" ? "Video" : media?.type === "pdf" ? "Document" : "Photo";
       patchConversationMessages(conversationId, (messages) => [
         ...messages,
         optimisticOutboundMessage(
           optimisticId,
           body || fallbackBody,
-          media?.type === "video" ? "VIDEO" : media?.type === "image" ? "IMAGE" : "TEXT",
+          media?.type === "video" ? "VIDEO" : media?.type === "pdf" ? "DOCUMENT" : media?.type === "image" ? "IMAGE" : "TEXT",
           optimisticAttachments,
           optimisticReplyTo,
         ),
@@ -2416,6 +2417,7 @@ export default function WhatsAppInboxClient() {
           replyToMessageId: activeReplyTarget?.id,
           ...(sendingMedia && media ? { mediaType: media.type, mediaUrl } : {}),
           ...(sendingButtons ? { buttonOptions: options?.buttonOptions } : {}),
+          ...(options?.waitForConfirmation ? { waitForConfirmation: true } : {}),
         }),
       });
       const data = await response.json();
@@ -2586,6 +2588,7 @@ export default function WhatsAppInboxClient() {
     ) {
       const sent = await sendMessage(undefined, body, media, {
         buttonOptions: options?.buttonOptions,
+        waitForConfirmation: true,
       });
       if (!sent) {
         throw new Error("WhatsApp did not accept one of the flow messages.");

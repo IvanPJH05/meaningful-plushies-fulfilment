@@ -391,6 +391,37 @@ async function wait(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, Math.min(ms, 30_000)));
 }
 
+async function waitForOutboundMessageConfirmation(args: {
+  messageId?: string;
+  externalMessageId?: string;
+  timeoutMs?: number;
+}) {
+  if (!args.messageId && !args.externalMessageId) return;
+
+  const deadline = Date.now() + (args.timeoutMs || 20_000);
+  let lastStatus: MessageStatus | null = null;
+  while (Date.now() < deadline) {
+    const message = await prisma.message.findFirst({
+      where: {
+        OR: [
+          ...(args.messageId ? [{ id: args.messageId }] : []),
+          ...(args.externalMessageId ? [{ externalMessageId: args.externalMessageId }] : []),
+        ],
+      },
+      select: { status: true, failedReason: true },
+    });
+    if (!message) return;
+    lastStatus = message.status;
+    if (message.status === MessageStatus.FAILED) {
+      throw new Error(message.failedReason || "WhatsApp reported that the previous flow message failed.");
+    }
+    if (message.status === MessageStatus.DELIVERED || message.status === MessageStatus.READ) return;
+    await wait(700);
+  }
+  if (lastStatus === MessageStatus.SENT) return;
+  throw new Error("WhatsApp did not confirm the previous flow message before the next action.");
+}
+
 async function recordFlowOutbound(args: {
   businessId: string;
   conversationId: string;
@@ -401,7 +432,7 @@ async function recordFlowOutbound(args: {
   deliveryError?: string;
 }) {
   const sent = Boolean(objectValue(args.delivery).sent);
-  await prisma.message.create({
+  const message = await prisma.message.create({
     data: {
       businessId: args.businessId,
       conversationId: args.conversationId,
@@ -416,6 +447,12 @@ async function recordFlowOutbound(args: {
       failedReason: args.deliveryError || undefined,
     },
   });
+  return {
+    id: message.id,
+    messageId: message.id,
+    externalMessageId: message.externalMessageId || "",
+    status: message.status,
+  };
 }
 
 function flowMediaItems(step: FlowStep) {
@@ -471,13 +508,17 @@ async function sendFlowStepFromWebhook(args: {
       body,
       buttons,
     });
-    await recordFlowOutbound({
+    const message = await recordFlowOutbound({
       businessId: args.item.businessId,
       conversationId: args.item.conversationId,
       body,
       metadata: { flowId: args.flowId, stepIndex: args.stepIndex, interactive: { type: "button", buttons }, delivery },
       delivery,
     });
+    if (message.status === MessageStatus.FAILED) {
+      throw new Error("WhatsApp did not accept the selection message.");
+    }
+    await waitForOutboundMessageConfirmation(message);
     return "pause";
   }
 
@@ -490,7 +531,7 @@ async function sendFlowStepFromWebhook(args: {
         : media.type === "pdf"
           ? await sendWhatsAppDocumentMessage({ to: args.item.waId, documentUrl: media.url, caption: caption || undefined, filename: media.fileName || "Flow PDF" })
           : await sendWhatsAppImageMessage({ to: args.item.waId, imageUrl: media.url, caption: caption || undefined });
-      await recordFlowOutbound({
+      const message = await recordFlowOutbound({
         businessId: args.item.businessId,
         conversationId: args.item.conversationId,
         body: caption || (media.type === "video" ? "Video" : media.type === "pdf" ? "PDF" : "Photo"),
@@ -498,6 +539,10 @@ async function sendFlowStepFromWebhook(args: {
         metadata: { flowId: args.flowId, stepIndex: args.stepIndex, media, delivery },
         delivery,
       });
+      if (message.status === MessageStatus.FAILED) {
+        throw new Error("WhatsApp did not accept the previous flow media.");
+      }
+      await waitForOutboundMessageConfirmation(message);
       if (index < mediaItems.length - 1) {
         await wait(600);
       }
@@ -508,13 +553,17 @@ async function sendFlowStepFromWebhook(args: {
 
   if (type === "Send Message" && body) {
     const delivery = await sendWhatsAppTextMessage({ to: args.item.waId, body });
-    await recordFlowOutbound({
+    const message = await recordFlowOutbound({
       businessId: args.item.businessId,
       conversationId: args.item.conversationId,
       body,
       metadata: { flowId: args.flowId, stepIndex: args.stepIndex, delivery },
       delivery,
     });
+    if (message.status === MessageStatus.FAILED) {
+      throw new Error("WhatsApp did not accept the previous flow message.");
+    }
+    await waitForOutboundMessageConfirmation(message);
   }
   return "continue";
 }

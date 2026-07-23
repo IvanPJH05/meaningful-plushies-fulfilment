@@ -175,6 +175,34 @@ function deliveryFailureReason(delivery: unknown, fallback: string) {
   return fallback;
 }
 
+async function wait(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForOutboundMessageConfirmation(args: {
+  messageId: string;
+  timeoutMs?: number;
+}) {
+  const deadline = Date.now() + (args.timeoutMs || 20_000);
+  let lastStatus: MessageStatus | null = null;
+  while (Date.now() < deadline) {
+    const message = await prisma.message.findUnique({
+      where: { id: args.messageId },
+      select: { status: true, failedReason: true },
+    });
+    if (!message) return { confirmed: false, status: "missing" };
+    lastStatus = message.status;
+    if (message.status === MessageStatus.FAILED) {
+      return { confirmed: false, status: message.status, error: message.failedReason || "WhatsApp reported that the message failed." };
+    }
+    if (message.status === MessageStatus.DELIVERED || message.status === MessageStatus.READ) {
+      return { confirmed: true, status: message.status };
+    }
+    await wait(700);
+  }
+  return { confirmed: lastStatus === MessageStatus.SENT, status: lastStatus || "timeout" };
+}
+
 function rawWhatsAppDisplayText(metadata: unknown) {
   const raw = rawWhatsAppMessageFromMetadata(metadata);
   return raw ? whatsAppDisplayTextFromMessage(raw) : "";
@@ -848,6 +876,7 @@ export async function POST(request: Request) {
       mediaType?: string;
       mediaUrl?: string;
       buttonOptions?: Array<{ id?: unknown; title?: unknown; label?: unknown }>;
+      waitForConfirmation?: boolean;
       action?: "send" | "suggest" | "react";
     };
 
@@ -1210,11 +1239,15 @@ export async function POST(request: Request) {
       },
     });
 
-    const ok = status === MessageStatus.SENT;
+    const confirmation = body.waitForConfirmation && status === MessageStatus.SENT
+      ? await waitForOutboundMessageConfirmation({ messageId: message.id })
+      : null;
+    const ok = status === MessageStatus.SENT && !confirmation?.error;
     return json(ok ? 200 : 502, {
       ok,
       delivery,
-      error: deliveryError || undefined,
+      confirmation,
+      error: deliveryError || confirmation?.error || undefined,
       message: {
         id: message.id,
         direction: message.direction,
