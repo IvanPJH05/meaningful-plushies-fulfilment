@@ -104,10 +104,14 @@ type SelectionFlowLink = {
 type FlowGroup = {
   name: string;
   flows: WhatsAppFlow[];
-  subgroups: Array<{
-    name: string;
-    flows: WhatsAppFlow[];
-  }>;
+  subgroups: FlowSubfolder[];
+};
+
+type FlowSubfolder = {
+  name: string;
+  path: string;
+  flows: WhatsAppFlow[];
+  subgroups: FlowSubfolder[];
 };
 
 type FlowFolder = {
@@ -140,6 +144,14 @@ function flowGroupName(flow: Pick<WhatsAppFlow, "groupName">) {
 
 function flowSubgroupName(flow: Pick<WhatsAppFlow, "subgroupName">) {
   return (flow.subgroupName || "").trim();
+}
+
+function folderPathParts(path: string) {
+  return path.split("/").map((part) => part.trim()).filter(Boolean);
+}
+
+function childFolderPath(parentPath: string, name: string) {
+  return [...folderPathParts(parentPath), name.trim()].filter(Boolean).join("/");
 }
 
 function makeMediaItem(media?: Partial<FlowMediaItem>): FlowMediaItem {
@@ -589,6 +601,36 @@ function duplicateFormWithFreshKeys(flow: WhatsAppFlow, overrides: Partial<Pick<
   };
 }
 
+function subfolderTreeFromMap(subgroupMap: Map<string, WhatsAppFlow[]>): FlowSubfolder[] {
+  const roots: FlowSubfolder[] = [];
+  const nodeMap = new Map<string, FlowSubfolder>();
+  const paths = Array.from(subgroupMap.keys()).filter(Boolean).sort((a, b) => a.localeCompare(b));
+
+  for (const path of paths) {
+    const parts = folderPathParts(path);
+    let currentPath = "";
+    let siblings = roots;
+    for (const part of parts) {
+      currentPath = childFolderPath(currentPath, part);
+      let node = nodeMap.get(currentPath);
+      if (!node) {
+        node = { name: part, path: currentPath, flows: [], subgroups: [] };
+        nodeMap.set(currentPath, node);
+        siblings.push(node);
+      }
+      siblings = node.subgroups;
+    }
+  }
+
+  for (const [path, subgroupFlows] of subgroupMap.entries()) {
+    if (!path) continue;
+    const node = nodeMap.get(path);
+    if (node) node.flows = subgroupFlows;
+  }
+
+  return roots;
+}
+
 function groupedFlowLibrary(flows: WhatsAppFlow[], folders: FlowFolder[]): FlowGroup[] {
   const groupMap = new Map<string, Map<string, WhatsAppFlow[]>>();
   for (const folder of folders) {
@@ -616,37 +658,9 @@ function groupedFlowLibrary(flows: WhatsAppFlow[], folders: FlowFolder[]): FlowG
 
   return Array.from(groupMap.entries()).map(([name, subgroupMap]) => {
     const directFlows = subgroupMap.get("") || [];
-    const subgroups = Array.from(subgroupMap.entries())
-      .filter(([subgroupName]) => subgroupName)
-      .map(([subgroupName, subgroupFlows]) => ({ name: subgroupName, flows: subgroupFlows }));
+    const subgroups = subfolderTreeFromMap(subgroupMap);
     return { name, flows: directFlows, subgroups };
   });
-}
-
-function actionPreview(action: FlowAction) {
-  const delay = Math.max(0, Number(action.delayValue) || 0);
-  return delay > 0 ? `${delay} ${action.delayUnit}` : "No delay";
-}
-
-function actionSummary(action: FlowAction) {
-  if (action.type === "Send Media") {
-    const mediaCount = action.mediaItems.filter((item) => item.url.trim()).length;
-    return mediaCount ? `${mediaCount} media item${mediaCount === 1 ? "" : "s"}` : "No media added yet";
-  }
-  if (action.type === "Ask Selection") {
-    const optionCount = action.options.filter((option) => option.label.trim()).length;
-    const linkedCount = action.options.filter((option) => option.label.trim() && (option.targetFlowId || option.targetFlowName)).length;
-    return optionCount ? `${optionCount} option${optionCount === 1 ? "" : "s"} | ${linkedCount} linked flow${linkedCount === 1 ? "" : "s"}` : "No options yet";
-  }
-  return action.message || "No message yet";
-}
-
-function triggerSummary(flow: Pick<WhatsAppFlow, "name" | "triggerType" | "triggerButtonLabel" | "trigger">) {
-  const triggerType = normaliseTriggerType(flow.triggerType);
-  if (triggerType === "click") return `Button: ${flow.triggerButtonLabel || flow.name}`;
-  if (triggerType === "first_message") return "First customer message";
-  if (triggerType === "selection_button") return "Selection button press";
-  return `Trigger: ${flow.trigger || "Keywords"}`;
 }
 
 function selectionLinksFromFlow(flow: Pick<WhatsAppFlow, "id" | "name" | "steps">): SelectionFlowLink[] {
@@ -982,18 +996,26 @@ export default function WhatsAppFlowsClient() {
 
   function duplicateGroup(group: FlowGroup) {
     const nextGroupName = group.name === "Ungrouped" ? "Ungrouped Copy" : `${group.name} Copy`;
-    const sourceFlows = [...group.flows, ...group.subgroups.flatMap((subgroup) => subgroup.flows)];
+    const sourceFlows = [...group.flows, ...group.subgroups.flatMap(subfolderFlows)];
     return duplicateFlowSet(sourceFlows, `group "${group.name}"`, (flow) => ({
       groupName: nextGroupName,
       subgroupName: flow.subgroupName || "",
     }));
   }
 
-  function duplicateSubgroup(groupName: string, subgroup: FlowGroup["subgroups"][number]) {
+  function subfolderFlows(subfolder: FlowSubfolder): WhatsAppFlow[] {
+    return [...subfolder.flows, ...subfolder.subgroups.flatMap(subfolderFlows)];
+  }
+
+  function duplicateSubgroup(groupName: string, subgroup: FlowSubfolder) {
     const nextSubgroupName = `${subgroup.name} Copy`;
-    return duplicateFlowSet(subgroup.flows, `subflow "${subgroup.name}"`, () => ({
+    const parentPath = folderPathParts(subgroup.path).slice(0, -1).join("/");
+    const nextRootPath = childFolderPath(parentPath, nextSubgroupName);
+    return duplicateFlowSet(subfolderFlows(subgroup), `subfolder "${subgroup.name}"`, (flow) => ({
       groupName: groupName === "Ungrouped" ? "" : groupName,
-      subgroupName: nextSubgroupName,
+      subgroupName: flow.subgroupName === subgroup.path || flow.subgroupName?.startsWith(`${subgroup.path}/`)
+        ? `${nextRootPath}${flow.subgroupName.slice(subgroup.path.length)}`
+        : nextRootPath,
     }));
   }
 
@@ -1041,24 +1063,25 @@ export default function WhatsAppFlowsClient() {
     setNotice(`Created folder "${trimmed}".`);
   }
 
-  function createSubfolder(groupName: string) {
-    const name = window.prompt(`Subfolder name for ${groupName}`);
+  function createSubfolder(groupName: string, parentPath = "") {
+    const name = window.prompt(`Subfolder name for ${parentPath || groupName}`);
     const trimmed = name?.trim();
     if (!trimmed) return;
+    const nextPath = childFolderPath(parentPath, trimmed);
     const nextFolders = [...folders];
     const existingIndex = nextFolders.findIndex((folder) => folder.name.toLowerCase() === groupName.toLowerCase());
     const folder = existingIndex >= 0
       ? nextFolders[existingIndex]
       : { name: groupName, subfolders: [] };
-    if (folder.subfolders.some((subfolder) => subfolder.toLowerCase() === trimmed.toLowerCase())) {
-      setNotice(`Subfolder "${trimmed}" already exists in "${groupName}".`);
+    if (folder.subfolders.some((subfolder) => subfolder.toLowerCase() === nextPath.toLowerCase())) {
+      setNotice(`Subfolder "${nextPath}" already exists in "${groupName}".`);
       return;
     }
-    const nextFolder = { ...folder, subfolders: [...folder.subfolders, trimmed] };
+    const nextFolder = { ...folder, subfolders: [...folder.subfolders, nextPath] };
     if (existingIndex >= 0) nextFolders[existingIndex] = nextFolder;
     else nextFolders.push(nextFolder);
     saveFolders(nextFolders);
-    setNotice(`Created subfolder "${trimmed}".`);
+    setNotice(`Created subfolder "${nextPath}".`);
   }
 
   async function deleteFlow(flowIdToDelete: string) {
@@ -1326,7 +1349,11 @@ export default function WhatsAppFlowsClient() {
         event.dataTransfer.dropEffect = "move";
         setDropTargetKey(targetKey);
       },
-      onDragLeave: () => setDropTargetKey((current) => (current === targetKey ? "" : current)),
+      onDragLeave: (event: DragEvent<HTMLElement>) => {
+        const nextTarget = event.relatedTarget instanceof Node ? event.relatedTarget : null;
+        if (nextTarget && event.currentTarget.contains(nextTarget)) return;
+        setDropTargetKey((current) => (current === targetKey ? "" : current));
+      },
       onDrop: (event: DragEvent<HTMLElement>) => {
         event.preventDefault();
         const flowId = event.dataTransfer.getData("text/plain") || draggingFlowId;
@@ -1339,8 +1366,8 @@ export default function WhatsAppFlowsClient() {
 
   function renderFlowCard(flow: WhatsAppFlow) {
     return (
-      <article
-        className={`${styles.flowCard} ${draggingFlowId === flow.id ? styles.draggingFlow : ""}`}
+      <div
+        className={`${styles.flowFile} ${draggingFlowId === flow.id ? styles.draggingFlow : ""}`}
         draggable
         key={flow.id}
         onDragStart={(event) => {
@@ -1353,52 +1380,11 @@ export default function WhatsAppFlowsClient() {
           setDropTargetKey("");
         }}
       >
-        <div className={styles.flowTopline}>
-          <div>
-            <h3>{flow.name}</h3>
-            <p>{flow.description || "No notes yet."}</p>
-          </div>
-          <span className={flow.status === "Active" ? styles.activeBadge : styles.draftBadge}>{flow.status}</span>
-        </div>
-
-        <div className={styles.flowMeta}>
-          <span>{triggerSummary(flow)}</span>
-          <strong>{flow.steps.length} actions</strong>
-        </div>
-
-        {normaliseTriggerType(flow.triggerType) === "selection_button" && (
-          <div className={styles.linkedFlowSummary}>
-            {selectionLinks.filter((link) => link.targetFlowId === flow.id).length ? (
-              selectionLinks
-                .filter((link) => link.targetFlowId === flow.id)
-                .map((link) => (
-                  <span key={`${flow.id}-${link.sourceFlowId}-${link.optionKey}`}>
-                    Linked from {link.sourceFlowName} / {link.optionLabel}
-                  </span>
-                ))
-            ) : (
-              <span>Not linked yet. Select this flow inside an Ask Selection option.</span>
-            )}
-          </div>
-        )}
-
-        <div className={styles.actionTimeline}>
-          {flow.steps.map((step, index) => {
-            const parsed = actionFromStep(step);
-            return (
-              <div className={styles.previewAction} key={`${flow.id}-${index}`}>
-                <span>{actionPreview(parsed)}</span>
-                <div>
-                  <strong>{parsed.type}</strong>
-                  <p>{actionSummary(parsed)}</p>
-                  {parsed.type === "Send Media" && parsed.message && <p>{parsed.message}</p>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className={styles.cardActions}>
+        <button className={styles.flowFileName} onClick={() => editFlow(flow)} type="button">
+          {flow.name}
+        </button>
+        <span className={flow.status === "Active" ? styles.activeBadge : styles.draftBadge}>{flow.status}</span>
+        <div className={styles.fileActions}>
           <button onClick={() => editFlow(flow)}>Edit</button>
           <button disabled={saving} onClick={() => void duplicateFlow(flow)}>
             Duplicate
@@ -1407,7 +1393,44 @@ export default function WhatsAppFlowsClient() {
             Delete
           </button>
         </div>
-      </article>
+      </div>
+    );
+  }
+
+  function renderSubfolder(groupName: string, subfolder: FlowSubfolder, depth = 0) {
+    const targetKey = `subgroup:${groupName}:${subfolder.path}`;
+    const handlers = dropZoneHandlers(targetKey, groupName, subfolder.path);
+    const totalFlows = subfolderFlows(subfolder).length;
+
+    return (
+      <section
+        className={`${styles.subfolderNode} ${dropTargetKey === targetKey ? styles.dropReady : ""}`}
+        key={`${groupName}-${subfolder.path}`}
+        style={{ marginLeft: Math.min(depth * 14 + 14, 42) }}
+        {...handlers}
+      >
+        <div className={styles.folderRow}>
+          <div>
+            <strong>{subfolder.name}</strong>
+            <span>{totalFlows} flows</span>
+          </div>
+          <div className={styles.folderActions}>
+            <button disabled={saving} onClick={() => createSubfolder(groupName, subfolder.path)}>
+              New subfolder
+            </button>
+            <button disabled={saving} onClick={() => void duplicateSubgroup(groupName, subfolder)}>
+              Duplicate
+            </button>
+          </div>
+        </div>
+        <div className={styles.folderDropPad} {...handlers}>
+          Drop flow here
+        </div>
+        <div className={styles.folderChildren}>
+          {subfolder.flows.map((flow) => renderFlowCard(flow))}
+          {subfolder.subgroups.map((child) => renderSubfolder(groupName, child, depth + 1))}
+        </div>
+      </section>
     );
   }
 
@@ -1870,43 +1893,26 @@ export default function WhatsAppFlowsClient() {
             >
               <div className={styles.folderRow}>
                 <div>
-                  <strong>Folder: {group.name}</strong>
-                  <span>{group.flows.length + group.subgroups.reduce((total, subgroup) => total + subgroup.flows.length, 0)} flows</span>
+                  <strong>{group.name}</strong>
+                  <span>
+                    {group.flows.length + group.subgroups.reduce((total, subgroup) => total + subfolderFlows(subgroup).length, 0)} flows
+                  </span>
                 </div>
                 <div className={styles.folderActions}>
                   <button disabled={saving} onClick={() => createSubfolder(group.name)}>
                     New subfolder
                   </button>
                   <button disabled={saving} onClick={() => void duplicateGroup(group)}>
-                    Duplicate folder
+                    Duplicate
                   </button>
                 </div>
               </div>
-              <p className={styles.dropHint}>Drop a flow here to move it into this folder.</p>
+              <div className={styles.folderDropPad} {...dropZoneHandlers(`group:${group.name}`, group.name)}>
+                Drop flow here
+              </div>
               <div className={styles.folderChildren}>
                 {group.flows.map((flow) => renderFlowCard(flow))}
-
-                {group.subgroups.map((subgroup) => (
-                  <section
-                    className={`${styles.subfolderNode} ${dropTargetKey === `subgroup:${group.name}:${subgroup.name}` ? styles.dropReady : ""}`}
-                    key={`${group.name}-${subgroup.name}`}
-                    {...dropZoneHandlers(`subgroup:${group.name}:${subgroup.name}`, group.name, subgroup.name)}
-                  >
-                    <div className={styles.folderRow}>
-                      <div>
-                        <strong>Subfolder: {subgroup.name}</strong>
-                        <span>{subgroup.flows.length} flows</span>
-                      </div>
-                      <button disabled={saving} onClick={() => void duplicateSubgroup(group.name, subgroup)}>
-                        Duplicate subfolder
-                      </button>
-                    </div>
-                    <p className={styles.dropHint}>Drop a flow here to move it into this subfolder.</p>
-                    <div className={styles.folderChildren}>
-                      {subgroup.flows.map((flow) => renderFlowCard(flow))}
-                    </div>
-                  </section>
-                ))}
+                {group.subgroups.map((subgroup) => renderSubfolder(group.name, subgroup))}
               </div>
             </section>
           ))}
