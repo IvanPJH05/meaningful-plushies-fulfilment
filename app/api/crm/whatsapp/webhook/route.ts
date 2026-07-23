@@ -534,7 +534,7 @@ async function sendFlowStepFromWebhook(args: {
 
   if (type === "Send Media" || type === "Send Image" || type === "Send Video") {
     const mediaItems = flowMediaItems(args.step);
-    for (const [index, media] of mediaItems.entries()) {
+    for (const media of mediaItems) {
       const caption = media.caption || body;
       const delivery = media.type === "video"
         ? await sendWhatsAppVideoMessage({ to: args.item.waId, videoUrl: media.url, caption: caption || undefined })
@@ -553,11 +553,7 @@ async function sendFlowStepFromWebhook(args: {
         throw new Error("WhatsApp did not accept the previous flow media.");
       }
       await waitForOutboundMessageConfirmation(message);
-      if (index < mediaItems.length - 1) {
-        await wait(600);
-      }
     }
-    if (mediaItems.length) await wait(600);
     return "continue";
   }
 

@@ -2616,9 +2616,6 @@ export default function WhatsAppInboxClient() {
             for (const [index, item] of mediaItems.entries()) {
               const caption = personalizeFlowText(item.caption || (index === 0 ? step.message : ""), selected);
               await sendFlowStep(caption, { type: item.type, url: item.url });
-              if (index < mediaItems.length - 1) {
-                await wait(600);
-              }
             }
           } else {
             const text = personalizeFlowText(step.message, selected);
