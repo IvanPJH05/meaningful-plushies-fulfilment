@@ -687,18 +687,17 @@ async function findFlowTriggeredBySelection(args: {
   )) || null;
 }
 
-async function handleFlowAutomationForInboundMessages(storedMessages: StoredWhatsAppMessage[]) {
-  const inboundMessages = storedMessages.filter((message) => (
+async function handleFlowAutomationForStoredMessages(storedMessages: StoredWhatsAppMessage[]) {
+  const automationMessages = storedMessages.filter((message) => (
     message.created
-    && message.direction === "inbound"
     && message.source !== "history"
     && message.source !== "provider_history"
   ));
-  if (!inboundMessages.length) return 0;
+  if (!automationMessages.length) return 0;
 
   let scheduled = 0;
-  for (const item of inboundMessages) {
-    const replyId = flowButtonReplyId(item.raw);
+  for (const item of automationMessages) {
+    const replyId = item.direction === "inbound" ? flowButtonReplyId(item.raw) : "";
     if (replyId.startsWith("flow:")) {
       const replyParts = replyId.split(":");
       const [, flowId, stepIndexText] = replyParts;
@@ -753,12 +752,15 @@ async function handleFlowAutomationForInboundMessages(storedMessages: StoredWhat
       },
       orderBy: { updatedAt: "desc" },
     });
-    const exactPhraseFlow = exactPhraseFlows.find((flow) => flowMatchesExactTriggerEvent(flow, item.text, "message_received"));
+    const triggerEvent = item.direction === "outbound" ? "message_sent" : "message_received";
+    const exactPhraseFlow = exactPhraseFlows.find((flow) => flowMatchesExactTriggerEvent(flow, item.text, triggerEvent));
     if (exactPhraseFlow) {
       await runWebhookFlow({ item, flow: exactPhraseFlow });
       scheduled += 1;
       continue;
     }
+
+    if (item.direction !== "inbound") continue;
 
     const inboundCount = await prisma.message.count({
       where: {
@@ -1240,7 +1242,7 @@ export async function POST(request: Request) {
     }
 
     const storedMessages = await storeWhatsAppMessages(payload);
-    const flowMessageCount = await handleFlowAutomationForInboundMessages(storedMessages);
+    const flowMessageCount = await handleFlowAutomationForStoredMessages(storedMessages);
     const statusResult = await applyWhatsAppStatuses(payload);
     await recordRawWhatsAppWebhook({
       rawBody,
