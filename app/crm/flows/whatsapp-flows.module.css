@@ -1467,7 +1467,7 @@
   align-items: center;
   display: grid;
   gap: 14px;
-  grid-template-columns: minmax(260px, 1.4fr) 90px minmax(170px, 1fr) minmax(140px, 0.9fr) 90px minmax(150px, 0.9fr) minmax(230px, auto);
+  grid-template-columns: 28px minmax(260px, 1.4fr) 90px minmax(170px, 1fr) minmax(140px, 0.9fr) 90px minmax(150px, 0.9fr) minmax(230px, auto);
   padding: 12px 14px;
 }
 
@@ -1488,6 +1488,45 @@
 
 .workflowTableRow:hover {
   background: #f7fbff;
+}
+
+.workflowTableRowSelected {
+  background: #edf5ff;
+}
+
+.bulkGroupBar {
+  align-items: center;
+  background: #edf5ff;
+  border: 1px solid #c6dcf7;
+  border-radius: 12px;
+  color: #21496f;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin: 12px 0;
+  padding: 10px 12px;
+}
+
+.bulkGroupBar strong {
+  color: #0d4f96;
+}
+
+.bulkGroupBar select,
+.bulkGroupBar button {
+  border: 1px solid #bdd3ed;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  min-height: 34px;
+  padding: 0 9px;
+}
+
+.bulkGroupBar button {
+  background: #1769e0;
+  border-color: #1769e0;
+  color: #fff;
+  cursor: pointer;
 }
 
 .workflowTableRow > button {

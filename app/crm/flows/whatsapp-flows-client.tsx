@@ -1179,6 +1179,7 @@ export default function WhatsAppFlowsClient() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [triggerFilter, setTriggerFilter] = useState("all");
   const [groupFilter, setGroupFilter] = useState("all");
+  const [selectedGroupTarget, setSelectedGroupTarget] = useState("Ungrouped");
   const [needsAttentionOnly, setNeedsAttentionOnly] = useState(false);
   const [expandedFlowIds, setExpandedFlowIds] = useState<string[]>([]);
   const [expandedFolderKeys, setExpandedFolderKeys] = useState<string[]>([]);
@@ -3232,8 +3233,22 @@ export default function WhatsAppFlowsClient() {
             </label>
           </section>
 
+          {selectedFlowIds.length > 0 && (
+            <div className={styles.bulkGroupBar}>
+              <strong>{selectedFlowIds.length} selected</strong>
+              <span>Move selected workflows to</span>
+              <select onChange={(event) => setSelectedGroupTarget(event.target.value)} value={selectedGroupTarget}>
+                <option value="Ungrouped">Ungrouped</option>
+                {groupOptions.map((group) => <option key={group} value={group}>{group}</option>)}
+              </select>
+              <button disabled={saving} onClick={() => void moveFlowsToFolder(selectedFlowIds, selectedGroupTarget)} type="button">Move to group</button>
+              <button className={styles.textButton} onClick={() => setSelectedFlowIds([])} type="button">Clear</button>
+            </div>
+          )}
+
           <div className={styles.workflowTable}>
             <div className={styles.workflowTableHead}>
+              <span />
               <span>Workflow</span>
               <span>Status</span>
               <span>Trigger</span>
@@ -3246,7 +3261,10 @@ export default function WhatsAppFlowsClient() {
               const analysis = flowAnalysis.get(flow.id);
               if (!analysis) return null;
               return (
-                <div className={styles.workflowTableRow} key={`workflow-row-${flow.id}`}>
+                <div className={`${styles.workflowTableRow} ${selectedFlowIds.includes(flow.id) ? styles.workflowTableRowSelected : ""}`} key={`workflow-row-${flow.id}`}>
+                  <label className={styles.flowSelect}>
+                    <input aria-label={`Select ${flow.name}`} checked={selectedFlowIds.includes(flow.id)} onChange={() => toggleFlowSelection(flow.id)} type="checkbox" />
+                  </label>
                   <button onClick={() => editFlow(flow)} type="button">
                     <strong>{analysis.displayName}</strong>
                     <span>{flow.description || analysis.suggestedName}</span>
