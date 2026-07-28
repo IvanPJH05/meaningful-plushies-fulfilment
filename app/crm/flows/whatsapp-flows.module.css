@@ -673,6 +673,9 @@
 
 .triggerCanvasNode {
   border-top: 4px solid #1769e0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .canvasAddButton {

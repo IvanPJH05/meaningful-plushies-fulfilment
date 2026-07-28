@@ -2572,6 +2572,10 @@ export default function WhatsAppFlowsClient() {
   }
 
   function renderCurrentWorkflowBoard() {
+    const triggerPhraseRowCount = form.triggerType === "keywords" ? triggerRuleRows().length : 0;
+    const triggerNodeMinHeight = form.triggerType === "keywords"
+      ? Math.max(250, 160 + triggerPhraseRowCount * 62)
+      : undefined;
     return (
       <section className={styles.workflowStudio}>
         <div className={styles.workflowBoard}>
@@ -2603,6 +2607,7 @@ export default function WhatsAppFlowsClient() {
             <div
               className={`${styles.canvasNode} ${styles.triggerCanvasNode} ${selectedCanvasNodeId === "trigger" ? styles.canvasNodeSelected : ""}`}
               onClick={() => setSelectedCanvasNodeId("trigger")}
+              style={triggerNodeMinHeight ? { minHeight: triggerNodeMinHeight } : undefined}
             >
               <span>Trigger</span>
               <select
