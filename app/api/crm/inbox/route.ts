@@ -57,6 +57,30 @@ function normalizedMessageText(body: string | null | undefined) {
   return (body || "").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
+function normalizeTriggerPhrase(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function flowMatchesExactTriggerPhrase(flow: { triggerWords: string[] }, messageText: string) {
+  const normalizedText = normalizeTriggerPhrase(messageText);
+  if (!normalizedText) return false;
+  return flow.triggerWords.some((phrase) => normalizeTriggerPhrase(phrase) === normalizedText);
+}
+
+const flowMetaPattern = /\n?\n?<!--crm-flow-meta:([\s\S]*?)-->\s*$/;
+
+function flowTriggerEvent(notes: string | null | undefined) {
+  const match = (notes || "").match(flowMetaPattern);
+  if (!match) return "message_received";
+  try {
+    const meta = JSON.parse(match[1] || "{}") as { triggerEvent?: unknown; event?: unknown };
+    const value = stringValue(meta.triggerEvent ?? meta.event).toLowerCase();
+    return value === "message_sent" || value === "message sent" || value === "sent" ? "message_sent" : "message_received";
+  } catch {
+    return "message_received";
+  }
+}
+
 function isNonContentWhatsAppPlaceholder(body: string | null | undefined) {
   const text = normalizedMessageText(body);
   return text === "unsupported whatsapp message"
@@ -206,6 +230,183 @@ async function waitForOutboundMessageConfirmation(args: {
     await wait(700);
   }
   return { confirmed: lastStatus === MessageStatus.SENT, status: lastStatus || "timeout" };
+}
+
+type FlowStep = {
+  type?: string;
+  delayValue?: string;
+  delayUnit?: string;
+  message?: string;
+  mediaItems?: Array<{
+    type?: string;
+    url?: string;
+    caption?: string;
+    fileName?: string;
+    contentType?: string;
+  }>;
+  options?: Array<{
+    id?: string;
+    label?: string;
+  }>;
+};
+
+function flowDelayMs(step: FlowStep) {
+  const value = Math.max(0, Number(step.delayValue || 0) || 0);
+  const unit = stringValue(step.delayUnit).toLowerCase();
+  if (unit === "days") return value * 24 * 60 * 60 * 1000;
+  if (unit === "hours") return value * 60 * 60 * 1000;
+  if (unit === "seconds") return value * 1000;
+  return value * 60 * 1000;
+}
+
+function flowMediaType(item: { type?: string; url?: string; fileName?: string; contentType?: string }) {
+  const type = stringValue(item.type).toLowerCase();
+  const contentType = stringValue(item.contentType).toLowerCase();
+  const fileName = stringValue(item.fileName).toLowerCase();
+  const url = decodeURIComponent(stringValue(item.url).toLowerCase());
+  if (type === "pdf" || type === "document" || contentType.includes("pdf") || fileName.endsWith(".pdf") || url.includes(".pdf")) return "pdf" as const;
+  if (type === "video" || contentType.startsWith("video/")) return "video" as const;
+  return "image" as const;
+}
+
+function flowMediaItems(step: FlowStep) {
+  return (Array.isArray(step.mediaItems) ? step.mediaItems : [])
+    .map((item) => ({
+      type: flowMediaType(item),
+      url: stringValue(item.url),
+      caption: stringValue(item.caption),
+      fileName: stringValue(item.fileName),
+    }))
+    .filter((item) => item.url);
+}
+
+async function recordTriggeredFlowOutbound(args: {
+  businessId: string;
+  conversationId: string;
+  body: string;
+  messageType?: MessageType;
+  metadata: Record<string, unknown>;
+  delivery: unknown;
+  deliveryError?: string;
+}) {
+  const sent = deliveryAccepted(args.delivery);
+  return prisma.message.create({
+    data: {
+      businessId: args.businessId,
+      conversationId: args.conversationId,
+      direction: MessageDirection.OUTBOUND,
+      senderType: MessageSenderType.SYSTEM,
+      messageType: args.messageType || MessageType.TEXT,
+      body: args.body,
+      status: sent ? MessageStatus.SENT : MessageStatus.FAILED,
+      externalMessageId: deliveryMessageId(args.delivery) || undefined,
+      metadata: jsonValue(args.metadata),
+      sentAt: sent ? new Date() : undefined,
+      failedReason: args.deliveryError || undefined,
+    },
+  });
+}
+
+async function runMessageSentTriggeredFlow(args: {
+  businessId: string;
+  conversationId: string;
+  recipient: string;
+  flow: { id: string; messages: unknown };
+}) {
+  const steps = Array.isArray(args.flow.messages) ? args.flow.messages.map((step) => recordValue(step) as FlowStep) : [];
+  for (let index = 0; index < steps.length; index += 1) {
+    const step = steps[index];
+    await wait(Math.min(flowDelayMs(step), 30_000));
+    const type = stringValue(step.type) || "Send Message";
+    const body = stringValue(step.message);
+
+    if (type === "Ask Selection") {
+      const buttons = (Array.isArray(step.options) ? step.options : [])
+        .map((option, optionIndex) => {
+          const label = stringValue(option.label);
+          const optionId = stringValue(option.id) || `option_${optionIndex + 1}`;
+          return { id: `flow:${args.flow.id}:${index}:${optionIndex}:${optionId}`, title: label };
+        })
+        .filter((option) => option.title)
+        .slice(0, 4);
+      if (!body || !buttons.length) return;
+      const delivery = buttons.length > 3
+        ? await sendWhatsAppListMessage({ to: args.recipient, body, buttonText: "Choose", options: buttons })
+        : await sendWhatsAppButtonMessage({ to: args.recipient, body, buttons });
+      const message = await recordTriggeredFlowOutbound({
+        businessId: args.businessId,
+        conversationId: args.conversationId,
+        body,
+        metadata: { flowId: args.flow.id, stepIndex: index, triggerEvent: "message_sent", interactive: { type: buttons.length > 3 ? "list" : "button", buttons }, delivery },
+        delivery,
+      });
+      if (message.status !== MessageStatus.SENT) return;
+      await waitForOutboundMessageConfirmation({ messageId: message.id });
+      return;
+    }
+
+    if (type === "Send Media" || type === "Send Image" || type === "Send Video") {
+      for (const media of flowMediaItems(step)) {
+        const caption = media.caption || body;
+        const delivery = media.type === "video"
+          ? await sendWhatsAppVideoMessage({ to: args.recipient, videoUrl: media.url, caption: caption || undefined })
+          : media.type === "pdf"
+            ? await sendWhatsAppDocumentMessage({ to: args.recipient, documentUrl: media.url, caption: caption || undefined, filename: media.fileName || "Flow PDF" })
+            : await sendWhatsAppImageMessage({ to: args.recipient, imageUrl: media.url, caption: caption || undefined });
+        const message = await recordTriggeredFlowOutbound({
+          businessId: args.businessId,
+          conversationId: args.conversationId,
+          body: caption || (media.type === "video" ? "Video" : media.type === "pdf" ? "PDF" : "Photo"),
+          messageType: media.type === "video" ? MessageType.VIDEO : media.type === "pdf" ? MessageType.DOCUMENT : MessageType.IMAGE,
+          metadata: { flowId: args.flow.id, stepIndex: index, triggerEvent: "message_sent", media, delivery },
+          delivery,
+        });
+        if (message.status !== MessageStatus.SENT) return;
+        await waitForOutboundMessageConfirmation({ messageId: message.id });
+      }
+      continue;
+    }
+
+    if (type === "Send Message" && body) {
+      const delivery = await sendWhatsAppTextMessage({ to: args.recipient, body });
+      const message = await recordTriggeredFlowOutbound({
+        businessId: args.businessId,
+        conversationId: args.conversationId,
+        body,
+        metadata: { flowId: args.flow.id, stepIndex: index, triggerEvent: "message_sent", delivery },
+        delivery,
+      });
+      if (message.status !== MessageStatus.SENT) return;
+      await waitForOutboundMessageConfirmation({ messageId: message.id });
+    }
+  }
+}
+
+async function runMessageSentExactPhraseFlows(args: {
+  businessId: string;
+  conversationId: string;
+  recipient: string;
+  messageText: string;
+}) {
+  const flows = await prisma.whatsAppFlow.findMany({
+    where: {
+      businessId: args.businessId,
+      active: true,
+      triggerType: "keywords",
+    },
+    orderBy: { updatedAt: "desc" },
+  });
+  const flow = flows.find((candidate) => (
+    flowTriggerEvent(candidate.notes) === "message_sent"
+    && flowMatchesExactTriggerPhrase(candidate, args.messageText)
+  ));
+  if (!flow) return;
+  await runMessageSentTriggeredFlow({
+    businessId: args.businessId,
+    conversationId: args.conversationId,
+    recipient: args.recipient,
+    flow,
+  });
 }
 
 function rawWhatsAppDisplayText(metadata: unknown) {
@@ -1256,6 +1457,14 @@ export async function POST(request: Request) {
       ? await waitForOutboundMessageConfirmation({ messageId: message.id })
       : null;
     const ok = status === MessageStatus.SENT && !confirmation?.error;
+    if (ok && messageBody) {
+      await runMessageSentExactPhraseFlows({
+        businessId: business.id,
+        conversationId: conversation.id,
+        recipient,
+        messageText: messageBody,
+      });
+    }
     return json(ok ? 200 : 502, {
       ok,
       delivery,

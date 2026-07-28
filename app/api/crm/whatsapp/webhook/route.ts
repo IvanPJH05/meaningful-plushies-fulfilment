@@ -389,6 +389,20 @@ function flowMatchesExactTriggerPhrase(flow: { triggerWords: string[] }, inbound
   return flow.triggerWords.some((phrase) => normalizeTriggerPhrase(phrase) === normalizedInboundText);
 }
 
+const flowMetaPattern = /\n?\n?<!--crm-flow-meta:([\s\S]*?)-->\s*$/;
+
+function flowTriggerEvent(notes: string | null | undefined) {
+  const match = (notes || "").match(flowMetaPattern);
+  if (!match) return "message_received";
+  try {
+    const meta = JSON.parse(match[1] || "{}") as { triggerEvent?: unknown; event?: unknown };
+    const value = textValue(meta.triggerEvent ?? meta.event).toLowerCase();
+    return value === "message_sent" || value === "message sent" || value === "sent" ? "message_sent" : "message_received";
+  } catch {
+    return "message_received";
+  }
+}
+
 function flowDelayMsFromStep(step: FlowStep) {
   const value = Math.max(0, Number(step.delayValue || 0) || 0);
   const unit = textValue(step.delayUnit).toLowerCase();
@@ -705,7 +719,10 @@ async function handleFlowAutomationForInboundMessages(storedMessages: StoredWhat
       },
       orderBy: { updatedAt: "desc" },
     });
-    const exactPhraseFlow = exactPhraseFlows.find((flow) => flowMatchesExactTriggerPhrase(flow, item.text));
+    const exactPhraseFlow = exactPhraseFlows.find((flow) => (
+      flowTriggerEvent(flow.notes) === "message_received"
+      && flowMatchesExactTriggerPhrase(flow, item.text)
+    ));
     if (exactPhraseFlow) {
       await runWebhookFlow({ item, flow: exactPhraseFlow });
       scheduled += 1;

@@ -15,6 +15,9 @@ type FlowPayload = {
   triggerButtonLabel?: unknown;
   buttonLabel?: unknown;
   buttonName?: unknown;
+  triggerEvent?: unknown;
+  triggerCategory?: unknown;
+  category?: unknown;
   trigger?: unknown;
   triggerWords?: unknown;
   description?: unknown;
@@ -34,6 +37,7 @@ const delayUnits = ["seconds", "minutes", "hours", "days"] as const;
 const mediaTypes = ["image", "video", "pdf"] as const;
 
 type TriggerType = "keywords" | "click" | "first_message" | "selection_button";
+type TriggerEvent = "message_received" | "message_sent";
 
 type FlowMediaItem = {
   type: typeof mediaTypes[number];
@@ -66,6 +70,8 @@ type FlowStep = {
 type FlowTriggerConfig = {
   groupName: string;
   subgroupName: string;
+  triggerEvent: TriggerEvent;
+  triggerCategory: string;
 };
 
 const flowMetaPattern = /\n?\n?<!--crm-flow-meta:([\s\S]*?)-->\s*$/;
@@ -115,6 +121,11 @@ function normalizeTriggerType(value: unknown, label: string): TriggerType {
   if (text.includes("click") || text.includes("button")) return "click";
   if (!text && label) return "click";
   return "keywords";
+}
+
+function normalizeTriggerEvent(value: unknown): TriggerEvent {
+  const text = stringValue(value).toLowerCase();
+  return text === "message_sent" || text === "message sent" || text === "sent" ? "message_sent" : "message_received";
 }
 
 function normalizeSelectionOptions(value: unknown): SelectionOption[] {
@@ -285,6 +296,8 @@ function normalizeTriggerConfig(value: unknown): FlowTriggerConfig {
   return {
     groupName: stringValue(record.groupName ?? record.group ?? record.folder),
     subgroupName: stringValue(record.subgroupName ?? record.subgroup ?? record.subflow),
+    triggerEvent: normalizeTriggerEvent(record.triggerEvent ?? record.event),
+    triggerCategory: stringValue(record.triggerCategory ?? record.category),
   };
 }
 
@@ -306,7 +319,12 @@ function splitNotesAndTriggerConfig(notes: string | null | undefined) {
 
 function notesWithTriggerConfig(notes: string, triggerConfig: FlowTriggerConfig) {
   const cleanedNotes = splitNotesAndTriggerConfig(notes).notes;
-  const hasMeta = Boolean(triggerConfig.groupName || triggerConfig.subgroupName);
+  const hasMeta = Boolean(
+    triggerConfig.groupName
+    || triggerConfig.subgroupName
+    || triggerConfig.triggerCategory
+    || triggerConfig.triggerEvent !== "message_received"
+  );
   return hasMeta
     ? `${cleanedNotes}${cleanedNotes ? "\n\n" : ""}<!--crm-flow-meta:${JSON.stringify(triggerConfig)}-->`
     : cleanedNotes;
@@ -339,6 +357,8 @@ function flowResponse(flow: {
     trigger: flow.triggerWords.join(", "),
     groupName: triggerConfig.groupName,
     subgroupName: triggerConfig.subgroupName,
+    triggerEvent: triggerConfig.triggerEvent,
+    triggerCategory: triggerConfig.triggerCategory,
     description: notesMeta.notes,
     status: flow.active ? "Active" : "Draft",
     steps: messages,
@@ -354,6 +374,8 @@ function normalizePayload(payload: FlowPayload) {
   const notes = stringValue(payload.notes ?? payload.description);
   const groupName = stringValue(payload.groupName ?? payload.group);
   const subgroupName = stringValue(payload.subgroupName ?? payload.subgroup);
+  const triggerEvent = normalizeTriggerEvent(payload.triggerEvent);
+  const triggerCategory = stringValue(payload.triggerCategory ?? payload.category);
   const messages = stepsFromValue(payload.messages ?? payload.steps);
   const active = activeFromPayload(payload);
 
@@ -364,8 +386,8 @@ function normalizePayload(payload: FlowPayload) {
       ? (triggerButtonLabel || makeSelectionKey())
       : triggerType === "click" ? (triggerButtonLabel || name) : "",
     triggerWords: triggerType === "keywords" ? triggerWords : [],
-    triggerConfig: { groupName, subgroupName },
-    notes: notesWithTriggerConfig(notes, { groupName, subgroupName }),
+    triggerConfig: { groupName, subgroupName, triggerEvent, triggerCategory },
+    notes: notesWithTriggerConfig(notes, { groupName, subgroupName, triggerEvent, triggerCategory }),
     messages,
     active,
   };

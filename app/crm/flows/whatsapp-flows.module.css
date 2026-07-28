@@ -209,6 +209,34 @@
   margin-top: 10px;
 }
 
+.exactPhraseEditor {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.exactPhraseMetaGrid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(135px, 0.45fr) minmax(180px, 1fr);
+}
+
+.phraseRows {
+  display: grid;
+  gap: 7px;
+}
+
+.phraseRow {
+  align-items: center;
+  display: grid;
+  gap: 7px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.phraseRow input {
+  min-width: 0;
+}
+
 .builderHeader h1 {
   font-size: 27px;
   letter-spacing: -0.03em;

@@ -11,6 +11,8 @@ type WhatsAppFlow = {
   name: string;
   triggerType?: TriggerType;
   triggerButtonLabel?: string;
+  triggerEvent?: TriggerEvent;
+  triggerCategory?: string;
   trigger: string;
   groupName?: string;
   subgroupName?: string;
@@ -21,6 +23,7 @@ type WhatsAppFlow = {
 };
 
 type TriggerType = "keywords" | "click" | "first_message" | "selection_button";
+type TriggerEvent = "message_received" | "message_sent";
 type MediaType = "image" | "video" | "pdf";
 type ActionType = "Send Message" | "Send Media" | "Ask Selection" | "AI Reply" | "Update Status" | "Add Note";
 type StoredActionType = ActionType | "Send Image" | "Send Video";
@@ -69,6 +72,8 @@ type FlowForm = {
   name: string;
   triggerType: TriggerType;
   triggerButtonLabel: string;
+  triggerEvent: TriggerEvent;
+  triggerCategory: string;
   trigger: string;
   groupName: string;
   subgroupName: string;
@@ -200,6 +205,30 @@ function makeSelectionOption(option?: Partial<SelectionOption>): SelectionOption
   };
 }
 
+function triggerPhrasesFromText(value: string) {
+  return value
+    .split(/\r?\n|,/)
+    .map((phrase) => phrase.trim())
+    .filter(Boolean);
+}
+
+function triggerPhraseRowsFromText(value: string) {
+  if (!value.trim()) return [];
+  const parts = value.includes("\n") ? value.split(/\r?\n/) : value.split(",");
+  return parts.map((phrase) => phrase.trim());
+}
+
+function triggerTextFromPhrases(phrases: string[]) {
+  return phrases.join("\n");
+}
+
+function normaliseTriggerEvent(value?: string): TriggerEvent {
+  const normalised = (value || "").trim().toLowerCase();
+  return normalised === "message_sent" || normalised === "sent" || normalised === "message sent"
+    ? "message_sent"
+    : "message_received";
+}
+
 function makeUniqueSelectionOptions(options: Partial<SelectionOption>[]) {
   const seen = new Set<string>();
   return options.map((option) => {
@@ -238,6 +267,8 @@ function emptyFlowForm(): FlowForm {
     name: "",
     triggerType: "click",
     triggerButtonLabel: "",
+    triggerEvent: "message_received",
+    triggerCategory: "",
     trigger: "",
     groupName: "",
     subgroupName: "",
@@ -253,16 +284,17 @@ function formWithTriggerType(form: FlowForm, triggerType: TriggerType): FlowForm
       ...form,
       triggerType,
       triggerButtonLabel: isSelectionKey(form.triggerButtonLabel) ? form.triggerButtonLabel : makeSelectionKey(),
+      triggerEvent: "message_received",
       trigger: "",
     };
   }
   if (triggerType === "click") {
-    return { ...form, triggerType, trigger: "" };
+    return { ...form, triggerType, triggerEvent: "message_received", trigger: "" };
   }
   if (triggerType === "keywords") {
-    return { ...form, triggerType, triggerButtonLabel: "" };
+    return { ...form, triggerType, triggerButtonLabel: "", triggerEvent: form.triggerEvent || "message_received" };
   }
-  return { ...form, triggerType, triggerButtonLabel: "", trigger: "" };
+  return { ...form, triggerType, triggerButtonLabel: "", triggerEvent: "message_received", trigger: "" };
 }
 
 function normalizeFlowForm(value: unknown): FlowForm | null {
@@ -279,6 +311,8 @@ function normalizeFlowForm(value: unknown): FlowForm | null {
     name: typeof form.name === "string" ? form.name : "",
     triggerType,
     triggerButtonLabel: typeof form.triggerButtonLabel === "string" ? form.triggerButtonLabel : "",
+    triggerEvent: normaliseTriggerEvent(form.triggerEvent),
+    triggerCategory: typeof form.triggerCategory === "string" ? form.triggerCategory : "",
     trigger: typeof form.trigger === "string" ? form.trigger : "",
     groupName: typeof form.groupName === "string" ? form.groupName : "",
     subgroupName: typeof form.subgroupName === "string" ? form.subgroupName : "",
@@ -369,6 +403,8 @@ const starterTemplates: FlowForm[] = [
     name: "New customer details",
     triggerType: "click",
     triggerButtonLabel: "Ask details",
+    triggerEvent: "message_received",
+    triggerCategory: "",
     trigger: "interested, price, details",
     groupName: "",
     subgroupName: "",
@@ -399,6 +435,8 @@ const starterTemplates: FlowForm[] = [
     name: "Payment received",
     triggerType: "click",
     triggerButtonLabel: "Payment received",
+    triggerEvent: "message_received",
+    triggerCategory: "",
     trigger: "paid, payment done, transfer",
     groupName: "",
     subgroupName: "",
@@ -415,6 +453,8 @@ const starterTemplates: FlowForm[] = [
     name: "Checking order",
     triggerType: "click",
     triggerButtonLabel: "Checking order",
+    triggerEvent: "message_received",
+    triggerCategory: "",
     trigger: "tracking, order, update",
     groupName: "",
     subgroupName: "",
@@ -532,6 +572,8 @@ function formFromFlow(flow: WhatsAppFlow): FlowForm {
     name: flow.name,
     triggerType: normaliseTriggerType(flow.triggerType, "click"),
     triggerButtonLabel: flow.triggerButtonLabel || "",
+    triggerEvent: normaliseTriggerEvent(flow.triggerEvent),
+    triggerCategory: flow.triggerCategory || "",
     trigger: flow.trigger,
     groupName: flow.groupName || "",
     subgroupName: flow.subgroupName || "",
@@ -590,6 +632,8 @@ function flowPayloadFromForm(form: FlowForm, id?: string) {
     name: form.name.trim(),
     triggerType: form.triggerType,
     triggerButtonLabel: form.triggerButtonLabel.trim(),
+    triggerEvent: form.triggerEvent,
+    triggerCategory: form.triggerCategory.trim(),
     trigger: form.trigger.trim(),
     groupName: form.groupName.trim(),
     subgroupName: form.subgroupName.trim(),
@@ -794,8 +838,10 @@ function triggerSummary(flow: WhatsAppFlow) {
   if (triggerType === "first_message") return "First customer message";
   if (triggerType === "selection_button") return "Selection button press";
   if (triggerType === "click") return `Inbox button: ${flow.triggerButtonLabel || flow.name}`;
-  const phrases = flow.trigger.split(",").map((phrase) => phrase.trim()).filter(Boolean);
-  return phrases.length ? `${phrases.length} exact phrase${phrases.length === 1 ? "" : "s"}` : "No trigger phrase";
+  const phrases = triggerPhrasesFromText(flow.trigger);
+  const eventLabel = normaliseTriggerEvent(flow.triggerEvent) === "message_sent" ? "sent" : "received";
+  const category = flow.triggerCategory ? ` - ${flow.triggerCategory}` : "";
+  return phrases.length ? `${phrases.length} exact phrase${phrases.length === 1 ? "" : "s"} on message ${eventLabel}${category}` : "No trigger phrase";
 }
 
 function actionTypeSummary(flow: WhatsAppFlow) {
@@ -2158,6 +2204,73 @@ export default function WhatsAppFlowsClient() {
     return option.targetFlowId ? flows.find((flow) => flow.id === option.targetFlowId) || null : null;
   }
 
+  function updateTriggerPhrase(index: number, value: string) {
+    const phrases = triggerPhraseRowsFromText(form.trigger);
+    phrases[index] = value;
+    setForm((current) => ({ ...current, trigger: triggerTextFromPhrases(phrases) }));
+  }
+
+  function addTriggerPhrase() {
+    const phrases = triggerPhraseRowsFromText(form.trigger);
+    setForm((current) => ({ ...current, trigger: triggerTextFromPhrases([...phrases, ""]) }));
+  }
+
+  function removeTriggerPhrase(index: number) {
+    const phrases = triggerPhraseRowsFromText(form.trigger).filter((_, phraseIndex) => phraseIndex !== index);
+    setForm((current) => ({ ...current, trigger: triggerTextFromPhrases(phrases) }));
+  }
+
+  function renderExactPhraseTriggerEditor() {
+    const phrases = triggerPhraseRowsFromText(form.trigger);
+    const phraseRows = phrases.length ? phrases : [""];
+    return (
+      <div className={styles.exactPhraseEditor}>
+        <div className={styles.exactPhraseMetaGrid}>
+          <label>
+            Trigger event
+            <select
+              value={form.triggerEvent}
+              onChange={(event) => setForm((current) => ({ ...current, triggerEvent: event.target.value as TriggerEvent }))}
+            >
+              <option value="message_received">Message received</option>
+              <option value="message_sent">Message sent</option>
+            </select>
+          </label>
+          <label>
+            Category
+            <input
+              value={form.triggerCategory}
+              onChange={(event) => setForm((current) => ({ ...current, triggerCategory: event.target.value }))}
+              placeholder="Example: Price questions"
+            />
+          </label>
+        </div>
+        <div className={styles.phraseRows}>
+          {phraseRows.map((phrase, index) => (
+            <div className={styles.phraseRow} key={`trigger-phrase-${index}`}>
+              <input
+                value={phrase}
+                onChange={(event) => updateTriggerPhrase(index, event.target.value)}
+                placeholder={`Exact phrase ${index + 1}`}
+              />
+              <button
+                className={styles.textButton}
+                disabled={!phrases.length}
+                onClick={() => removeTriggerPhrase(index)}
+                type="button"
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+        <button className={styles.secondaryButton} onClick={addTriggerPhrase} type="button">
+          Add phrase
+        </button>
+      </div>
+    );
+  }
+
   function triggerCanvasSummary() {
     if (form.triggerType === "first_message") return "Customer sends first message";
     if (form.triggerType === "selection_button") {
@@ -2165,7 +2278,11 @@ export default function WhatsAppFlowsClient() {
         ? editingSelectionLinks.map((link) => `${link.sourceFlowName} / ${link.optionLabel}`).join(", ")
         : "Linked from another selection";
     }
-    if (form.triggerType === "keywords") return form.trigger || "No exact phrases yet";
+    if (form.triggerType === "keywords") {
+      const count = triggerPhrasesFromText(form.trigger).length;
+      const eventLabel = form.triggerEvent === "message_sent" ? "sent" : "received";
+      return count ? `${count} exact phrase${count === 1 ? "" : "s"} when message is ${eventLabel}` : "No exact phrases yet";
+    }
     return form.triggerButtonLabel || form.name || "Inbox button";
   }
 
@@ -2217,16 +2334,14 @@ export default function WhatsAppFlowsClient() {
                 <small>Customer sends their first message</small>
               ) : form.triggerType === "selection_button" ? (
                 <small>{triggerCanvasSummary()}</small>
+              ) : form.triggerType === "keywords" ? (
+                renderExactPhraseTriggerEditor()
               ) : (
                 <input
                   className={styles.canvasNodeInput}
-                  onChange={(event) => setForm((current) => (
-                    form.triggerType === "keywords"
-                      ? { ...current, trigger: event.target.value }
-                      : { ...current, triggerButtonLabel: event.target.value }
-                  ))}
-                  placeholder={form.triggerType === "keywords" ? "Add exact trigger phrases" : "Inbox button"}
-                  value={form.triggerType === "keywords" ? form.trigger : form.triggerButtonLabel}
+                  onChange={(event) => setForm((current) => ({ ...current, triggerButtonLabel: event.target.value }))}
+                  placeholder="Inbox button"
+                  value={form.triggerButtonLabel}
                 />
               )}
             </div>
@@ -2913,14 +3028,7 @@ export default function WhatsAppFlowsClient() {
                     />
                   </label>
                 ) : (
-                  <label>
-                    Exact trigger phrases
-                    <textarea
-                      value={form.trigger}
-                      onChange={(event) => setForm((current) => ({ ...current, trigger: event.target.value }))}
-                      placeholder="Example: I want to customise a plushie, I want a plushie"
-                    />
-                  </label>
+                  renderExactPhraseTriggerEditor()
                 )}
               </div>
 
@@ -2931,7 +3039,7 @@ export default function WhatsAppFlowsClient() {
                     ? "This flow runs automatically when a customer sends their first message in a new chat."
                   : form.triggerType === "selection_button"
                     ? "This flow runs when it is selected in another flow's Ask Selection action. The button key is handled automatically."
-                  : "This flow runs only when a WhatsApp message exactly matches one of these phrases. Separate phrases with commas or new lines."}
+                  : "This flow runs only when a WhatsApp message exactly matches one of these phrases. Choose whether it watches customer messages received or team messages sent."}
               </p>
 
               <label>
