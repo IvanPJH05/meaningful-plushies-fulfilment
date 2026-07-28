@@ -81,6 +81,33 @@ function flowTriggerEvent(notes: string | null | undefined) {
   }
 }
 
+function flowTriggerRules(notes: string | null | undefined) {
+  const match = (notes || "").match(flowMetaPattern);
+  if (!match) return [];
+  try {
+    const meta = JSON.parse(match[1] || "{}") as { triggerRules?: unknown; rules?: unknown };
+    const rows = Array.isArray(meta.triggerRules) ? meta.triggerRules : Array.isArray(meta.rules) ? meta.rules : [];
+    return rows
+      .map((item) => recordValue(item))
+      .map((item) => ({
+        event: flowTriggerEvent(`<!--crm-flow-meta:${JSON.stringify({ triggerEvent: item.event ?? item.triggerEvent })}-->`),
+        phrase: stringValue(item.phrase ?? item.text ?? item.value),
+      }))
+      .filter((rule) => rule.phrase);
+  } catch {
+    return [];
+  }
+}
+
+function flowMatchesExactTriggerEvent(flow: { triggerWords: string[]; notes: string | null }, messageText: string, event: "message_received" | "message_sent") {
+  const rules = flowTriggerRules(flow.notes);
+  if (rules.length) {
+    const normalizedText = normalizeTriggerPhrase(messageText);
+    return rules.some((rule) => rule.event === event && normalizeTriggerPhrase(rule.phrase) === normalizedText);
+  }
+  return flowTriggerEvent(flow.notes) === event && flowMatchesExactTriggerPhrase(flow, messageText);
+}
+
 function isNonContentWhatsAppPlaceholder(body: string | null | undefined) {
   const text = normalizedMessageText(body);
   return text === "unsupported whatsapp message"
@@ -328,7 +355,7 @@ async function runMessageSentTriggeredFlow(args: {
           return { id: `flow:${args.flow.id}:${index}:${optionIndex}:${optionId}`, title: label };
         })
         .filter((option) => option.title)
-        .slice(0, 4);
+        .slice(0, 3);
       if (!body || !buttons.length) return;
       const delivery = buttons.length > 3
         ? await sendWhatsAppListMessage({ to: args.recipient, body, buttonText: "Choose", options: buttons })
@@ -396,10 +423,7 @@ async function runMessageSentExactPhraseFlows(args: {
     },
     orderBy: { updatedAt: "desc" },
   });
-  const flow = flows.find((candidate) => (
-    flowTriggerEvent(candidate.notes) === "message_sent"
-    && flowMatchesExactTriggerPhrase(candidate, args.messageText)
-  ));
+  const flow = flows.find((candidate) => flowMatchesExactTriggerEvent(candidate, args.messageText, "message_sent"));
   if (!flow) return;
   await runMessageSentTriggeredFlow({
     businessId: args.businessId,
@@ -1328,7 +1352,7 @@ export async function POST(request: Request) {
           id: stringValue(record.id),
           title: stringValue(record.title ?? record.label),
         };
-      }).filter((option) => option.id && option.title).slice(0, 4)
+      }).filter((option) => option.id && option.title).slice(0, 3)
       : [];
     const sendingImage = mediaType === "image" && Boolean(mediaUrl);
     const sendingVideo = mediaType === "video" && Boolean(mediaUrl);

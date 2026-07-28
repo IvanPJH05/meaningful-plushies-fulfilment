@@ -213,6 +213,8 @@
   display: grid;
   gap: 8px;
   min-width: 0;
+  position: relative;
+  z-index: 2;
 }
 
 .exactPhraseMetaGrid {
@@ -230,11 +232,33 @@
   align-items: center;
   display: grid;
   gap: 7px;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(132px, 0.58fr) minmax(96px, 0.42fr) minmax(160px, 1fr) auto;
 }
 
-.phraseRow input {
+.phraseRow input,
+.phraseRow select {
   min-width: 0;
+}
+
+.branchActionHeader {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.branchMediaList,
+.branchMediaItem {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.branchMediaItem {
+  background: #f7fbff;
+  border: 1px solid #d7e6f8;
+  border-radius: 8px;
+  padding: 8px;
 }
 
 .builderHeader h1 {
@@ -546,6 +570,10 @@
   min-height: 102px;
   padding: 16px 18px;
   width: min(454px, calc(100vw - 260px));
+}
+
+.builderMode .triggerCanvasNode {
+  width: min(620px, calc(100vw - 280px));
 }
 
 .canvasNode span {
@@ -2072,6 +2100,10 @@
   .workflowBoardToolbar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .phraseRow {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .mediaItem {

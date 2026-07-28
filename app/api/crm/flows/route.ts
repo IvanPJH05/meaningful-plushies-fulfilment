@@ -17,6 +17,7 @@ type FlowPayload = {
   buttonName?: unknown;
   triggerEvent?: unknown;
   triggerCategory?: unknown;
+  triggerRules?: unknown;
   category?: unknown;
   trigger?: unknown;
   triggerWords?: unknown;
@@ -38,6 +39,12 @@ const mediaTypes = ["image", "video", "pdf"] as const;
 
 type TriggerType = "keywords" | "click" | "first_message" | "selection_button";
 type TriggerEvent = "message_received" | "message_sent";
+type TriggerRule = {
+  id: string;
+  event: TriggerEvent;
+  category: string;
+  phrase: string;
+};
 
 type FlowMediaItem = {
   type: typeof mediaTypes[number];
@@ -54,6 +61,7 @@ type SelectionOption = {
   followUpMessage: string;
   targetFlowId: string;
   targetFlowName: string;
+  actions?: FlowStep[];
 };
 
 type FlowStep = {
@@ -72,6 +80,7 @@ type FlowTriggerConfig = {
   subgroupName: string;
   triggerEvent: TriggerEvent;
   triggerCategory: string;
+  triggerRules: TriggerRule[];
 };
 
 const flowMetaPattern = /\n?\n?<!--crm-flow-meta:([\s\S]*?)-->\s*$/;
@@ -128,6 +137,26 @@ function normalizeTriggerEvent(value: unknown): TriggerEvent {
   return text === "message_sent" || text === "message sent" || text === "sent" ? "message_sent" : "message_received";
 }
 
+function normalizeTriggerRules(value: unknown, fallbackWords: string[], fallbackEvent: TriggerEvent, fallbackCategory: string): TriggerRule[] {
+  const rows = Array.isArray(value) ? value : [];
+  const rules = rows.map((item, index) => {
+    const record = recordValue(item);
+    return {
+      id: stringValue(record.id) || `phrase_${index + 1}`,
+      event: normalizeTriggerEvent(record.event ?? record.triggerEvent),
+      category: stringValue(record.category ?? record.triggerCategory),
+      phrase: stringValue(record.phrase ?? record.text ?? record.value),
+    };
+  }).filter((rule) => rule.phrase);
+  if (rules.length) return rules;
+  return fallbackWords.map((phrase, index) => ({
+    id: `phrase_${index + 1}`,
+    event: fallbackEvent,
+    category: fallbackCategory,
+    phrase,
+  }));
+}
+
 function normalizeSelectionOptions(value: unknown): SelectionOption[] {
   const rows = Array.isArray(value) ? value : [];
   const seen = new Set<string>();
@@ -143,8 +172,9 @@ function normalizeSelectionOptions(value: unknown): SelectionOption[] {
       followUpMessage: stringValue(record.followUpMessage ?? record.message ?? record.body ?? record.reply),
       targetFlowId: stringValue(record.targetFlowId ?? record.flowId ?? record.nextFlowId),
       targetFlowName: stringValue(record.targetFlowName ?? record.flowName ?? record.nextFlowName),
+      actions: stepsFromValue(record.actions ?? record.steps),
     };
-  }).filter((option) => option.label).slice(0, 4);
+  }).filter((option) => option.label).slice(0, 3);
 }
 
 function inferMediaTypeFromUrl(url: string): FlowMediaItem["type"] {
@@ -293,11 +323,14 @@ function activeFromPayload(payload: FlowPayload) {
 
 function normalizeTriggerConfig(value: unknown): FlowTriggerConfig {
   const record = recordValue(value);
+  const triggerEvent = normalizeTriggerEvent(record.triggerEvent ?? record.event);
+  const triggerCategory = stringValue(record.triggerCategory ?? record.category);
   return {
     groupName: stringValue(record.groupName ?? record.group ?? record.folder),
     subgroupName: stringValue(record.subgroupName ?? record.subgroup ?? record.subflow),
-    triggerEvent: normalizeTriggerEvent(record.triggerEvent ?? record.event),
-    triggerCategory: stringValue(record.triggerCategory ?? record.category),
+    triggerEvent,
+    triggerCategory,
+    triggerRules: normalizeTriggerRules(record.triggerRules ?? record.rules, [], triggerEvent, triggerCategory),
   };
 }
 
@@ -324,6 +357,7 @@ function notesWithTriggerConfig(notes: string, triggerConfig: FlowTriggerConfig)
     || triggerConfig.subgroupName
     || triggerConfig.triggerCategory
     || triggerConfig.triggerEvent !== "message_received"
+    || triggerConfig.triggerRules.length
   );
   return hasMeta
     ? `${cleanedNotes}${cleanedNotes ? "\n\n" : ""}<!--crm-flow-meta:${JSON.stringify(triggerConfig)}-->`
@@ -345,6 +379,9 @@ function flowResponse(flow: {
   const triggerType = normalizeTriggerType(flow.triggerType, flow.triggerButtonLabel || "");
   const notesMeta = splitNotesAndTriggerConfig(flow.notes);
   const triggerConfig = normalizeTriggerConfig(flow.triggerConfig ?? notesMeta.triggerConfig);
+  const triggerRules = triggerConfig.triggerRules.length
+    ? triggerConfig.triggerRules
+    : normalizeTriggerRules(null, flow.triggerWords, triggerConfig.triggerEvent, triggerConfig.triggerCategory);
   const messages = Array.isArray(flow.messages)
     ? flow.messages.map(normalizeFlowStep).filter((step): step is FlowStep => Boolean(step))
     : [];
@@ -359,6 +396,7 @@ function flowResponse(flow: {
     subgroupName: triggerConfig.subgroupName,
     triggerEvent: triggerConfig.triggerEvent,
     triggerCategory: triggerConfig.triggerCategory,
+    triggerRules,
     description: notesMeta.notes,
     status: flow.active ? "Active" : "Draft",
     steps: messages,
@@ -376,6 +414,7 @@ function normalizePayload(payload: FlowPayload) {
   const subgroupName = stringValue(payload.subgroupName ?? payload.subgroup);
   const triggerEvent = normalizeTriggerEvent(payload.triggerEvent);
   const triggerCategory = stringValue(payload.triggerCategory ?? payload.category);
+  const triggerRules = normalizeTriggerRules(payload.triggerRules, triggerWords, triggerEvent, triggerCategory);
   const messages = stepsFromValue(payload.messages ?? payload.steps);
   const active = activeFromPayload(payload);
 
@@ -385,9 +424,9 @@ function normalizePayload(payload: FlowPayload) {
     triggerButtonLabel: triggerType === "selection_button"
       ? (triggerButtonLabel || makeSelectionKey())
       : triggerType === "click" ? (triggerButtonLabel || name) : "",
-    triggerWords: triggerType === "keywords" ? triggerWords : [],
-    triggerConfig: { groupName, subgroupName, triggerEvent, triggerCategory },
-    notes: notesWithTriggerConfig(notes, { groupName, subgroupName, triggerEvent, triggerCategory }),
+    triggerWords: triggerType === "keywords" ? (triggerRules.length ? triggerRules.map((rule) => rule.phrase) : triggerWords) : [],
+    triggerConfig: { groupName, subgroupName, triggerEvent, triggerCategory, triggerRules },
+    notes: notesWithTriggerConfig(notes, { groupName, subgroupName, triggerEvent, triggerCategory, triggerRules }),
     messages,
     active,
   };

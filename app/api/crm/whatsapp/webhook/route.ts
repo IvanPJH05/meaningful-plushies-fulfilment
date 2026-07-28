@@ -363,6 +363,7 @@ type FlowStep = {
     followUpMessage?: string;
     targetFlowId?: string;
     targetFlowName?: string;
+    actions?: FlowStep[];
   }>;
 };
 
@@ -401,6 +402,33 @@ function flowTriggerEvent(notes: string | null | undefined) {
   } catch {
     return "message_received";
   }
+}
+
+function flowTriggerRules(notes: string | null | undefined) {
+  const match = (notes || "").match(flowMetaPattern);
+  if (!match) return [];
+  try {
+    const meta = JSON.parse(match[1] || "{}") as { triggerRules?: unknown; rules?: unknown };
+    const rows = Array.isArray(meta.triggerRules) ? meta.triggerRules : Array.isArray(meta.rules) ? meta.rules : [];
+    return rows
+      .map((item) => objectValue(item))
+      .map((item) => ({
+        event: flowTriggerEvent(`<!--crm-flow-meta:${JSON.stringify({ triggerEvent: item.event ?? item.triggerEvent })}-->`),
+        phrase: textValue(item.phrase ?? item.text ?? item.value),
+      }))
+      .filter((rule) => rule.phrase);
+  } catch {
+    return [];
+  }
+}
+
+function flowMatchesExactTriggerEvent(flow: { triggerWords: string[]; notes: string | null }, text: string, event: "message_received" | "message_sent") {
+  const rules = flowTriggerRules(flow.notes);
+  if (rules.length) {
+    const normalizedText = normalizeTriggerPhrase(text);
+    return rules.some((rule) => rule.event === event && normalizeTriggerPhrase(rule.phrase) === normalizedText);
+  }
+  return flowTriggerEvent(flow.notes) === event && flowMatchesExactTriggerPhrase(flow, text);
 }
 
 function flowDelayMsFromStep(step: FlowStep) {
@@ -537,7 +565,7 @@ async function sendFlowStepFromWebhook(args: {
         };
       })
       .filter((option) => option.title)
-      .slice(0, 4);
+      .slice(0, 3);
     if (!body || !buttons.length) return "pause";
     const delivery = buttons.length > 3
       ? await sendWhatsAppListMessage({
@@ -687,6 +715,12 @@ async function handleFlowAutomationForInboundMessages(storedMessages: StoredWhat
         || stepOptions
         .map(objectValue)
         .find((candidate) => (textValue(candidate.id) || "").trim() === optionId);
+      const inlineActions = arrayValue(matchedOption?.actions).map((step) => objectValue(step) as FlowStep);
+      if (flow && inlineActions.length) {
+        await runWebhookFlow({ item, flow, onlySteps: inlineActions, skipFirstDelay: true });
+        scheduled += 1;
+        continue;
+      }
       const targetFlowId = textValue(matchedOption?.targetFlowId);
       const targetFlow = await findFlowTriggeredBySelection({
         businessId: item.businessId,
@@ -719,10 +753,7 @@ async function handleFlowAutomationForInboundMessages(storedMessages: StoredWhat
       },
       orderBy: { updatedAt: "desc" },
     });
-    const exactPhraseFlow = exactPhraseFlows.find((flow) => (
-      flowTriggerEvent(flow.notes) === "message_received"
-      && flowMatchesExactTriggerPhrase(flow, item.text)
-    ));
+    const exactPhraseFlow = exactPhraseFlows.find((flow) => flowMatchesExactTriggerEvent(flow, item.text, "message_received"));
     if (exactPhraseFlow) {
       await runWebhookFlow({ item, flow: exactPhraseFlow });
       scheduled += 1;

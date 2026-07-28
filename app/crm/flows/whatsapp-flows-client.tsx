@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
 
@@ -13,6 +13,7 @@ type WhatsAppFlow = {
   triggerButtonLabel?: string;
   triggerEvent?: TriggerEvent;
   triggerCategory?: string;
+  triggerRules?: TriggerRule[];
   trigger: string;
   groupName?: string;
   subgroupName?: string;
@@ -24,6 +25,12 @@ type WhatsAppFlow = {
 
 type TriggerType = "keywords" | "click" | "first_message" | "selection_button";
 type TriggerEvent = "message_received" | "message_sent";
+type TriggerRule = {
+  id?: string;
+  event: TriggerEvent;
+  category: string;
+  phrase: string;
+};
 type MediaType = "image" | "video" | "pdf";
 type ActionType = "Send Message" | "Send Media" | "Ask Selection" | "AI Reply" | "Update Status" | "Add Note";
 type StoredActionType = ActionType | "Send Image" | "Send Video";
@@ -35,6 +42,7 @@ type SelectionOption = {
   followUpMessage: string;
   targetFlowId?: string;
   targetFlowName?: string;
+  actions?: FlowAction[];
 };
 
 type FlowMediaItem = {
@@ -55,7 +63,14 @@ type FlowStep = {
   imageUrl?: string;
   videoUrl?: string;
   mediaItems?: FlowMediaItem[];
-  options?: SelectionOption[];
+  options?: Array<{
+    id?: string;
+    label: string;
+    followUpMessage: string;
+    targetFlowId?: string;
+    targetFlowName?: string;
+    actions?: FlowStep[];
+  }>;
 };
 
 type FlowAction = {
@@ -74,6 +89,7 @@ type FlowForm = {
   triggerButtonLabel: string;
   triggerEvent: TriggerEvent;
   triggerCategory: string;
+  triggerRules: TriggerRule[];
   trigger: string;
   groupName: string;
   subgroupName: string;
@@ -202,6 +218,7 @@ function makeSelectionOption(option?: Partial<SelectionOption>): SelectionOption
     followUpMessage: option?.followUpMessage || "",
     targetFlowId: option?.targetFlowId || "",
     targetFlowName: option?.targetFlowName || "",
+    actions: Array.isArray(option?.actions) ? option.actions.map((action) => makeAction(action)) : [],
   };
 }
 
@@ -212,21 +229,35 @@ function triggerPhrasesFromText(value: string) {
     .filter(Boolean);
 }
 
-function triggerPhraseRowsFromText(value: string) {
-  if (!value.trim()) return [];
-  const parts = value.includes("\n") ? value.split(/\r?\n/) : value.split(",");
-  return parts.map((phrase) => phrase.trim());
-}
-
-function triggerTextFromPhrases(phrases: string[]) {
-  return phrases.join("\n");
-}
-
 function normaliseTriggerEvent(value?: string): TriggerEvent {
   const normalised = (value || "").trim().toLowerCase();
   return normalised === "message_sent" || normalised === "sent" || normalised === "message sent"
     ? "message_sent"
     : "message_received";
+}
+
+function makeTriggerRule(rule?: Partial<TriggerRule>): TriggerRule {
+  return {
+    id: rule?.id || makeId(),
+    event: normaliseTriggerEvent(rule?.event),
+    category: rule?.category || "",
+    phrase: rule?.phrase || "",
+  };
+}
+
+function triggerRulesFromLegacy(trigger: string, triggerEvent: TriggerEvent, triggerCategory: string) {
+  return triggerPhrasesFromText(trigger).map((phrase) => makeTriggerRule({
+    event: triggerEvent,
+    category: triggerCategory,
+    phrase,
+  }));
+}
+
+function usableTriggerRules(form: Pick<FlowForm, "trigger" | "triggerEvent" | "triggerCategory" | "triggerRules">) {
+  const rules = form.triggerRules.length
+    ? form.triggerRules
+    : triggerRulesFromLegacy(form.trigger, form.triggerEvent, form.triggerCategory);
+  return rules.map(makeTriggerRule).filter((rule) => rule.phrase.trim());
 }
 
 function makeUniqueSelectionOptions(options: Partial<SelectionOption>[]) {
@@ -254,7 +285,7 @@ function makeAction(action?: Partial<FlowAction>): FlowAction {
     message: action?.message || "",
     mediaItems: action?.mediaItems?.length ? action.mediaItems.map(makeMediaItem) : (type === "Send Media" ? [makeMediaItem()] : []),
     options: action?.options?.length
-      ? makeUniqueSelectionOptions(action.options.slice(0, 4))
+      ? makeUniqueSelectionOptions(action.options.slice(0, 3))
       : (type === "Ask Selection" ? [
         makeSelectionOption({ label: "English" }),
         makeSelectionOption({ label: "Malay" }),
@@ -269,6 +300,7 @@ function emptyFlowForm(): FlowForm {
     triggerButtonLabel: "",
     triggerEvent: "message_received",
     triggerCategory: "",
+    triggerRules: [],
     trigger: "",
     groupName: "",
     subgroupName: "",
@@ -313,6 +345,7 @@ function normalizeFlowForm(value: unknown): FlowForm | null {
     triggerButtonLabel: typeof form.triggerButtonLabel === "string" ? form.triggerButtonLabel : "",
     triggerEvent: normaliseTriggerEvent(form.triggerEvent),
     triggerCategory: typeof form.triggerCategory === "string" ? form.triggerCategory : "",
+    triggerRules: Array.isArray(form.triggerRules) ? form.triggerRules.map((rule) => makeTriggerRule(rule as Partial<TriggerRule>)) : [],
     trigger: typeof form.trigger === "string" ? form.trigger : "",
     groupName: typeof form.groupName === "string" ? form.groupName : "",
     subgroupName: typeof form.subgroupName === "string" ? form.subgroupName : "",
@@ -405,6 +438,7 @@ const starterTemplates: FlowForm[] = [
     triggerButtonLabel: "Ask details",
     triggerEvent: "message_received",
     triggerCategory: "",
+    triggerRules: [],
     trigger: "interested, price, details",
     groupName: "",
     subgroupName: "",
@@ -437,6 +471,7 @@ const starterTemplates: FlowForm[] = [
     triggerButtonLabel: "Payment received",
     triggerEvent: "message_received",
     triggerCategory: "",
+    triggerRules: [],
     trigger: "paid, payment done, transfer",
     groupName: "",
     subgroupName: "",
@@ -455,6 +490,7 @@ const starterTemplates: FlowForm[] = [
     triggerButtonLabel: "Checking order",
     triggerEvent: "message_received",
     triggerCategory: "",
+    triggerRules: [],
     trigger: "tracking, order, update",
     groupName: "",
     subgroupName: "",
@@ -538,7 +574,12 @@ function actionFromStep(step: FlowStep | string): FlowAction {
       delayUnit: normaliseDelayUnit(step.delayUnit),
       message: step.message || "",
       mediaItems: type === "Send Media" ? mediaItemsFromStep(step) : [],
-      options: type === "Ask Selection" && Array.isArray(step.options) ? step.options.map(makeSelectionOption) : [],
+      options: type === "Ask Selection" && Array.isArray(step.options)
+        ? step.options.map((option) => makeSelectionOption({
+          ...option,
+          actions: Array.isArray(option.actions) ? option.actions.map(actionFromStep) : [],
+        }))
+        : [],
     });
   }
 
@@ -574,6 +615,9 @@ function formFromFlow(flow: WhatsAppFlow): FlowForm {
     triggerButtonLabel: flow.triggerButtonLabel || "",
     triggerEvent: normaliseTriggerEvent(flow.triggerEvent),
     triggerCategory: flow.triggerCategory || "",
+    triggerRules: Array.isArray(flow.triggerRules) && flow.triggerRules.length
+      ? flow.triggerRules.map(makeTriggerRule)
+      : triggerRulesFromLegacy(flow.trigger, normaliseTriggerEvent(flow.triggerEvent), flow.triggerCategory || ""),
     trigger: flow.trigger,
     groupName: flow.groupName || "",
     subgroupName: flow.subgroupName || "",
@@ -609,9 +653,10 @@ function formatActionStep(action: FlowAction): FlowStep | null {
       followUpMessage: option.followUpMessage.trim(),
       targetFlowId: (option.targetFlowId || "").trim(),
       targetFlowName: (option.targetFlowName || "").trim(),
+      actions: (option.actions || []).map(formatActionStep).filter((step): step is FlowStep => Boolean(step)),
     }))
     .filter((option) => option.label)
-    .slice(0, 4);
+    .slice(0, 3);
 
   if (action.type === "Ask Selection" && (!message || !options.length)) return null;
   if (action.type === "Send Media" && !mediaItems.length) return null;
@@ -627,14 +672,21 @@ function formatActionStep(action: FlowAction): FlowStep | null {
 }
 
 function flowPayloadFromForm(form: FlowForm, id?: string) {
+  const triggerRules = usableTriggerRules(form);
   return {
     id,
     name: form.name.trim(),
     triggerType: form.triggerType,
     triggerButtonLabel: form.triggerButtonLabel.trim(),
-    triggerEvent: form.triggerEvent,
-    triggerCategory: form.triggerCategory.trim(),
-    trigger: form.trigger.trim(),
+    triggerEvent: triggerRules[0]?.event || form.triggerEvent,
+    triggerCategory: triggerRules[0]?.category.trim() || form.triggerCategory.trim(),
+    triggerRules: triggerRules.map((rule) => ({
+      id: rule.id,
+      event: rule.event,
+      category: rule.category.trim(),
+      phrase: rule.phrase.trim(),
+    })),
+    trigger: triggerRules.length ? triggerRules.map((rule) => rule.phrase.trim()).join("\n") : form.trigger.trim(),
     groupName: form.groupName.trim(),
     subgroupName: form.subgroupName.trim(),
     description: form.description.trim(),
@@ -826,7 +878,7 @@ function detectVariant(flow: WhatsAppFlow) {
   const text = `${flow.name} ${flow.subgroupName || ""}`.toUpperCase();
   const variants = [text.match(/\b(5S|10S|20S)\b/)?.[1], text.match(/\b(EM|WM)\b/)?.[1]]
     .filter(Boolean);
-  return variants.join(" · ");
+  return variants.join(" Â· ");
 }
 
 function flowBreadcrumb(flow: WhatsAppFlow) {
@@ -851,7 +903,7 @@ function actionTypeSummary(flow: WhatsAppFlow) {
     return memo;
   }, {});
   const parts = Object.entries(counts).map(([type, count]) => `${count} ${type.replace("Send ", "")}`);
-  return parts.length ? parts.join(" · ") : "No actions";
+  return parts.length ? parts.join(" Â· ") : "No actions";
 }
 
 function findBranchDestination(option: SelectionOption, flows: WhatsAppFlow[]): FlowBranch {
@@ -885,7 +937,7 @@ function flowBranches(flow: WhatsAppFlow, flows: WhatsAppFlow[]) {
 }
 
 function suggestedFlowName(flow: WhatsAppFlow, language: FlowAnalysis["language"], stage: string, purpose: string, variant: string) {
-  return [language, stage, purpose, variant].filter(Boolean).join(" · ");
+  return [language, stage, purpose, variant].filter(Boolean).join(" Â· ");
 }
 
 function normalisedDisplayName(flow: WhatsAppFlow) {
@@ -1812,6 +1864,91 @@ export default function WhatsAppFlowsClient() {
     }));
   }
 
+  function updateBranchOptionActions(actionId: string, optionId: string | undefined, updater: (actions: FlowAction[]) => FlowAction[]) {
+    setForm((current) => ({
+      ...current,
+      actions: current.actions.map((action) => {
+        if (action.id !== actionId) return action;
+        return {
+          ...action,
+          options: action.options.map((option) => (
+            option.id === optionId ? { ...option, actions: updater(option.actions || []) } : option
+          )),
+        };
+      }),
+    }));
+  }
+
+  function addActionBelowOption(actionId: string, option: SelectionOption) {
+    updateBranchOptionActions(actionId, option.id, (actions) => [
+      ...actions,
+      makeAction({
+        delayValue: actions.length ? "5" : "0",
+        delayUnit: "seconds",
+        message: "New action. Replace this message before publishing.",
+      }),
+    ]);
+  }
+
+  function updateBranchAction(actionId: string, optionId: string | undefined, branchActionId: string, patch: Partial<FlowAction>) {
+    updateBranchOptionActions(actionId, optionId, (actions) => actions.map((branchAction) => {
+      if (branchAction.id !== branchActionId) return branchAction;
+      const nextType = patch.type || branchAction.type;
+      return {
+        ...branchAction,
+        ...patch,
+        mediaItems: nextType === "Send Media" && !branchAction.mediaItems.length ? [makeMediaItem()] : (patch.mediaItems || branchAction.mediaItems),
+        options: nextType === "Ask Selection" && !branchAction.options.length ? [
+          makeSelectionOption({ label: "Option 1" }),
+          makeSelectionOption({ label: "Option 2" }),
+        ] : (patch.options || branchAction.options),
+      };
+    }));
+  }
+
+  function removeBranchAction(actionId: string, optionId: string | undefined, branchActionId: string) {
+    updateBranchOptionActions(actionId, optionId, (actions) => actions.filter((branchAction) => branchAction.id !== branchActionId));
+  }
+
+  function updateBranchMediaItem(actionId: string, optionId: string | undefined, branchActionId: string, mediaId: string | undefined, patch: Partial<FlowMediaItem>) {
+    updateBranchAction(actionId, optionId, branchActionId, {
+      mediaItems: ((form.actions
+        .find((action) => action.id === actionId)?.options
+        .find((option) => option.id === optionId)?.actions || [])
+        .find((branchAction) => branchAction.id === branchActionId)?.mediaItems || [])
+        .map((item) => (item.id === mediaId ? { ...item, ...patch } : item)),
+    });
+  }
+
+  function applyUploadedBranchMediaItems(actionId: string, optionId: string | undefined, branchActionId: string, mediaId: string | undefined, uploadedItems: FlowMediaItem[]) {
+    if (!uploadedItems.length) return;
+    updateBranchOptionActions(actionId, optionId, (actions) => actions.map((branchAction) => {
+      if (branchAction.id !== branchActionId) return branchAction;
+      const targetIndex = branchAction.mediaItems.findIndex((item) => item.id === mediaId);
+      if (targetIndex < 0) return { ...branchAction, mediaItems: [...branchAction.mediaItems, ...uploadedItems] };
+      const nextItems = [...branchAction.mediaItems];
+      const currentItem = nextItems[targetIndex];
+      nextItems.splice(targetIndex, 1, { ...uploadedItems[0], caption: currentItem.caption || uploadedItems[0].caption }, ...uploadedItems.slice(1));
+      return { ...branchAction, mediaItems: nextItems };
+    }));
+  }
+
+  function addBranchMediaItem(actionId: string, optionId: string | undefined, branchActionId: string, type: MediaType) {
+    updateBranchOptionActions(actionId, optionId, (actions) => actions.map((branchAction) => (
+      branchAction.id === branchActionId
+        ? { ...branchAction, mediaItems: [...branchAction.mediaItems, makeMediaItem({ type })] }
+        : branchAction
+    )));
+  }
+
+  function removeBranchMediaItem(actionId: string, optionId: string | undefined, branchActionId: string, mediaId: string | undefined) {
+    updateBranchOptionActions(actionId, optionId, (actions) => actions.map((branchAction) => {
+      if (branchAction.id !== branchActionId) return branchAction;
+      const mediaItems = branchAction.mediaItems.filter((item) => item.id !== mediaId);
+      return { ...branchAction, mediaItems: mediaItems.length ? mediaItems : [makeMediaItem()] };
+    }));
+  }
+
   async function uploadMediaFileDirectly(file: File) {
     if (!supabase) {
       throw new Error("Direct media upload is not configured.");
@@ -1934,6 +2071,45 @@ export default function WhatsAppFlowsClient() {
     }
   }
 
+  async function uploadBranchMediaFiles(actionId: string, optionId: string | undefined, branchActionId: string, item: FlowMediaItem, files: FileList | File[] | null) {
+    const selectedFiles = Array.from(files || []);
+    if (!selectedFiles.length) return;
+    const invalidFile = selectedFiles.find((file) => !file.type.startsWith("image/") && !file.type.startsWith("video/") && file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf"));
+    if (invalidFile) {
+      setNotice("Choose an image, video, or PDF file for this media item.");
+      return;
+    }
+
+    const mediaId = item.id || "";
+    setUploadingMediaId(mediaId);
+    setNotice("");
+    try {
+      const uploadedItems: FlowMediaItem[] = [];
+      const failures: string[] = [];
+      for (const file of selectedFiles) {
+        try {
+          const uploadedItem = await uploadSingleMediaFile(file);
+          uploadedItems.push(uploadedItem);
+          applyUploadedBranchMediaItems(actionId, optionId, branchActionId, uploadedItems.length === 1 ? mediaId : undefined, [uploadedItem]);
+        } catch (error) {
+          failures.push(error instanceof Error ? error.message : `${file.name} could not be uploaded.`);
+        }
+      }
+
+      if (!uploadedItems.length) {
+        throw new Error(failures[0] || "Media could not be uploaded.");
+      }
+      setNotice(failures.length
+        ? `${uploadedItems.length} uploaded. ${failures[0]}`
+        : `${uploadedItems.length} media ${uploadedItems.length === 1 ? "file" : "files"} uploaded.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Media could not be uploaded.");
+    } finally {
+      setUploadingMediaId("");
+      setDraggingMediaId("");
+    }
+  }
+
   function handleMediaDrag(event: DragEvent<HTMLLabelElement>, mediaId: string | undefined) {
     event.preventDefault();
     event.stopPropagation();
@@ -1946,6 +2122,13 @@ export default function WhatsAppFlowsClient() {
     event.stopPropagation();
     setDraggingMediaId("");
     void uploadMediaFiles(actionId, item, event.dataTransfer.files);
+  }
+
+  function handleBranchMediaDrop(event: DragEvent<HTMLLabelElement>, actionId: string, optionId: string | undefined, branchActionId: string, item: FlowMediaItem) {
+    event.preventDefault();
+    event.stopPropagation();
+    setDraggingMediaId("");
+    void uploadBranchMediaFiles(actionId, optionId, branchActionId, item, event.dataTransfer.files);
   }
 
   function mediaAccept() {
@@ -1979,131 +2162,6 @@ export default function WhatsAppFlowsClient() {
 
   function addAction() {
     setForm((current) => ({ ...current, actions: [...current.actions, makeAction({ delayValue: "5" })] }));
-  }
-
-  async function addActionBelowOption(actionId: string, option: SelectionOption) {
-    const optionLabel = option.label.trim() || "Option";
-    const targetFlow = option.targetFlowId ? flows.find((flow) => flow.id === option.targetFlowId) : null;
-
-    if (targetFlow) {
-      const targetForm = formFromFlow(targetFlow);
-      const nextForm = {
-        ...targetForm,
-        actions: [...targetForm.actions, makeAction({
-          delayValue: "5",
-          message: "New action. Replace this message before activating.",
-        })],
-      };
-      setSaving(true);
-      setNotice("");
-      try {
-        const response = await fetch("/api/crm/flows", {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(flowPayloadFromForm(nextForm, targetFlow.id)),
-        });
-        const result = (await response.json()) as { ok?: boolean; flow?: WhatsAppFlow; error?: string };
-        if (!response.ok || !result.ok || !result.flow) throw new Error(result.error || "Action could not be added to this subflow.");
-        setFlows((current) => current.map((flow) => (flow.id === result.flow?.id ? result.flow as WhatsAppFlow : flow)));
-        setNotice(`Added an action below ${optionLabel}.`);
-      } catch (error) {
-        setNotice(error instanceof Error ? error.message : "Action could not be added below this option.");
-      } finally {
-        setSaving(false);
-      }
-      return;
-    }
-
-    const usedNames = new Set(flows.map((flow) => flow.name.trim().toLowerCase()));
-    const baseName = `${form.name || "Workflow"} / ${optionLabel}`;
-    const subflowForm: FlowForm = {
-      ...emptyFlowForm(),
-      name: uniqueCopyName(baseName, usedNames),
-      triggerType: "selection_button",
-      triggerButtonLabel: option.id || makeSelectionKey(),
-      groupName: form.groupName,
-      subgroupName: childFolderPath(form.subgroupName, optionLabel),
-      description: `Subflow for ${optionLabel} from ${form.name || "this workflow"}.`,
-      status: "Draft",
-      actions: [makeAction({
-        delayValue: "0",
-        delayUnit: "seconds",
-        message: "New action. Replace this message before activating.",
-      })],
-    };
-
-    setSaving(true);
-    setNotice("");
-    try {
-      const response = await fetch("/api/crm/flows", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(flowPayloadFromForm(subflowForm)),
-      });
-      const result = (await response.json()) as { ok?: boolean; flow?: WhatsAppFlow; error?: string };
-      if (!response.ok || !result.ok || !result.flow) throw new Error(result.error || "Subflow could not be created.");
-      setFlows((current) => [result.flow as WhatsAppFlow, ...current]);
-      setForm((current) => ({
-        ...current,
-        actions: current.actions.map((action) => (
-          action.id === actionId ? {
-            ...action,
-            options: action.options.map((currentOption) => (
-              currentOption.id === option.id ? {
-                ...currentOption,
-                targetFlowId: result.flow?.id || "",
-                targetFlowName: result.flow?.name || "",
-              } : currentOption
-            )),
-          } : action
-        )),
-      }));
-      setNotice(`Created a subflow and added an action below ${optionLabel}.`);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Subflow could not be created.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function patchSubflowAction(targetFlowId: string, actionIndex: number, patch: Partial<FlowAction>) {
-    const targetFlow = flows.find((flow) => flow.id === targetFlowId);
-    if (!targetFlow) return;
-    const targetForm = formFromFlow(targetFlow);
-    const currentAction = targetForm.actions[actionIndex];
-    if (!currentAction) return;
-    const nextType = patch.type || currentAction.type;
-    const nextAction = {
-      ...currentAction,
-      ...patch,
-      mediaItems: nextType === "Send Media" && !currentAction.mediaItems.length ? [makeMediaItem()] : (patch.mediaItems || currentAction.mediaItems),
-      options: nextType === "Ask Selection" && !currentAction.options.length ? [
-        makeSelectionOption({ label: "Option 1" }),
-        makeSelectionOption({ label: "Option 2" }),
-      ] : (patch.options || currentAction.options),
-    };
-    const nextForm = {
-      ...targetForm,
-      actions: targetForm.actions.map((action, index) => (index === actionIndex ? nextAction : action)),
-    };
-
-    setSaving(true);
-    setNotice("");
-    try {
-      const response = await fetch("/api/crm/flows", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(flowPayloadFromForm(nextForm, targetFlow.id)),
-      });
-      const result = (await response.json()) as { ok?: boolean; flow?: WhatsAppFlow; error?: string };
-      if (!response.ok || !result.ok || !result.flow) throw new Error(result.error || "Subflow action could not be saved.");
-      setFlows((current) => current.map((flow) => (flow.id === result.flow?.id ? result.flow as WhatsAppFlow : flow)));
-      setNotice("Subflow action saved.");
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Subflow action could not be saved.");
-    } finally {
-      setSaving(false);
-    }
   }
 
   function createWorkflow() {
@@ -2196,67 +2254,78 @@ export default function WhatsAppFlowsClient() {
     return action.message || "No message yet";
   }
 
-  function selectionDestinationLabel(option: SelectionOption) {
-    return option.targetFlowName || flows.find((flow) => flow.id === option.targetFlowId)?.name || "Unlinked";
+  function triggerRuleRows() {
+    const rules = form.triggerRules.length
+      ? form.triggerRules
+      : triggerRulesFromLegacy(form.trigger, form.triggerEvent, form.triggerCategory);
+    return rules.length ? rules : [makeTriggerRule({ event: "message_received" })];
   }
 
-  function targetFlowForOption(option: SelectionOption) {
-    return option.targetFlowId ? flows.find((flow) => flow.id === option.targetFlowId) || null : null;
-  }
-
-  function updateTriggerPhrase(index: number, value: string) {
-    const phrases = triggerPhraseRowsFromText(form.trigger);
-    phrases[index] = value;
-    setForm((current) => ({ ...current, trigger: triggerTextFromPhrases(phrases) }));
+  function updateTriggerRule(ruleId: string | undefined, patch: Partial<TriggerRule>) {
+    setForm((current) => {
+      const currentRules = current.triggerRules.length
+        ? current.triggerRules
+        : triggerRulesFromLegacy(current.trigger, current.triggerEvent, current.triggerCategory);
+      const rules = currentRules.length ? currentRules : [makeTriggerRule({ event: "message_received" })];
+      const nextRules = rules.map((rule) => (rule.id === ruleId ? makeTriggerRule({ ...rule, ...patch }) : rule));
+      return {
+        ...current,
+        triggerRules: nextRules,
+        trigger: nextRules.map((rule) => rule.phrase).join("\n"),
+        triggerEvent: nextRules[0]?.event || current.triggerEvent,
+        triggerCategory: nextRules[0]?.category || current.triggerCategory,
+      };
+    });
   }
 
   function addTriggerPhrase() {
-    const phrases = triggerPhraseRowsFromText(form.trigger);
-    setForm((current) => ({ ...current, trigger: triggerTextFromPhrases([...phrases, ""]) }));
+    setForm((current) => {
+      const currentRules = current.triggerRules.length
+        ? current.triggerRules
+        : triggerRulesFromLegacy(current.trigger, current.triggerEvent, current.triggerCategory);
+      const nextRules = [...currentRules, makeTriggerRule({ event: "message_received" })];
+      return { ...current, triggerRules: nextRules, trigger: nextRules.map((rule) => rule.phrase).join("\n") };
+    });
   }
 
-  function removeTriggerPhrase(index: number) {
-    const phrases = triggerPhraseRowsFromText(form.trigger).filter((_, phraseIndex) => phraseIndex !== index);
-    setForm((current) => ({ ...current, trigger: triggerTextFromPhrases(phrases) }));
+  function removeTriggerRule(ruleId: string | undefined) {
+    setForm((current) => {
+      const currentRules = current.triggerRules.length
+        ? current.triggerRules
+        : triggerRulesFromLegacy(current.trigger, current.triggerEvent, current.triggerCategory);
+      const nextRules = currentRules.filter((rule) => rule.id !== ruleId);
+      return { ...current, triggerRules: nextRules, trigger: nextRules.map((rule) => rule.phrase).join("\n") };
+    });
   }
 
   function renderExactPhraseTriggerEditor() {
-    const phrases = triggerPhraseRowsFromText(form.trigger);
-    const phraseRows = phrases.length ? phrases : [""];
+    const phraseRows = triggerRuleRows();
     return (
       <div className={styles.exactPhraseEditor}>
-        <div className={styles.exactPhraseMetaGrid}>
-          <label>
-            Trigger event
-            <select
-              value={form.triggerEvent}
-              onChange={(event) => setForm((current) => ({ ...current, triggerEvent: event.target.value as TriggerEvent }))}
-            >
-              <option value="message_received">Message received</option>
-              <option value="message_sent">Message sent</option>
-            </select>
-          </label>
-          <label>
-            Category
-            <input
-              value={form.triggerCategory}
-              onChange={(event) => setForm((current) => ({ ...current, triggerCategory: event.target.value }))}
-              placeholder="Example: Price questions"
-            />
-          </label>
-        </div>
         <div className={styles.phraseRows}>
-          {phraseRows.map((phrase, index) => (
-            <div className={styles.phraseRow} key={`trigger-phrase-${index}`}>
+          {phraseRows.map((rule, index) => (
+            <div className={styles.phraseRow} key={rule.id || `trigger-phrase-${index}`}>
+              <select
+                value={rule.event}
+                onChange={(event) => updateTriggerRule(rule.id, { event: event.target.value as TriggerEvent })}
+              >
+                <option value="message_received">Message received</option>
+                <option value="message_sent">Message sent</option>
+              </select>
               <input
-                value={phrase}
-                onChange={(event) => updateTriggerPhrase(index, event.target.value)}
+                value={rule.category}
+                onChange={(event) => updateTriggerRule(rule.id, { category: event.target.value })}
+                placeholder="Category"
+              />
+              <input
+                value={rule.phrase}
+                onChange={(event) => updateTriggerRule(rule.id, { phrase: event.target.value })}
                 placeholder={`Exact phrase ${index + 1}`}
               />
               <button
                 className={styles.textButton}
-                disabled={!phrases.length}
-                onClick={() => removeTriggerPhrase(index)}
+                disabled={phraseRows.length <= 1}
+                onClick={() => removeTriggerRule(rule.id)}
                 type="button"
               >
                 Remove
@@ -2286,6 +2355,123 @@ export default function WhatsAppFlowsClient() {
     return form.triggerButtonLabel || form.name || "Inbox button";
   }
 
+  function renderBranchActionCard(action: FlowAction, option: SelectionOption, branchAction: FlowAction, branchIndex: number) {
+    return (
+      <div className={styles.outcomeSubflowAction} key={`${option.id}-${branchAction.id}`}>
+        <div className={styles.branchActionHeader}>
+          <span>Action {branchIndex + 1} Â· {actionDelayLabel(branchAction)}</span>
+          <button
+            className={styles.textButton}
+            onClick={() => removeBranchAction(action.id, option.id, branchAction.id)}
+            type="button"
+          >
+            Remove
+          </button>
+        </div>
+        <select
+          className={styles.canvasNodeSelect}
+          value={branchAction.type}
+          onChange={(event) => {
+            const nextType = event.target.value as ActionType;
+            updateBranchAction(action.id, option.id, branchAction.id, {
+              type: nextType,
+              mediaItems: nextType === "Send Media" && !branchAction.mediaItems.length ? [makeMediaItem()] : branchAction.mediaItems,
+            });
+          }}
+        >
+          {actionTypes.map((type) => (
+            <option key={`${option.id}-${branchAction.id}-${type}`} value={type}>
+              {type}
+            </option>
+          ))}
+        </select>
+        {branchAction.type === "Send Media" ? (
+          <div className={styles.branchMediaList}>
+            <textarea
+              className={styles.canvasNodeInput}
+              value={branchAction.message}
+              onChange={(event) => updateBranchAction(action.id, option.id, branchAction.id, { message: event.target.value })}
+              placeholder="Optional caption or instruction"
+              rows={2}
+            />
+            {branchAction.mediaItems.map((item, mediaIndex) => (
+              <div className={styles.branchMediaItem} key={item.id || `${branchAction.id}-${mediaIndex}`}>
+                <select
+                  className={styles.canvasNodeSelect}
+                  value={item.type}
+                  onChange={(event) => updateBranchMediaItem(action.id, option.id, branchAction.id, item.id, { type: event.target.value as MediaType })}
+                >
+                  <option value="image">Image</option>
+                  <option value="video">Video</option>
+                  <option value="pdf">PDF</option>
+                </select>
+                <label
+                  className={`${styles.fileUpload} ${draggingMediaId === item.id ? styles.fileUploadDragging : ""}`}
+                  onDragEnter={(event) => handleMediaDrag(event, item.id)}
+                  onDragOver={(event) => handleMediaDrag(event, item.id)}
+                  onDragLeave={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setDraggingMediaId("");
+                  }}
+                  onDrop={(event) => handleBranchMediaDrop(event, action.id, option.id, branchAction.id, item)}
+                >
+                  <input
+                    accept={mediaAccept()}
+                    multiple
+                    type="file"
+                    onChange={(event) => {
+                      void uploadBranchMediaFiles(action.id, option.id, branchAction.id, item, event.target.files);
+                      event.currentTarget.value = "";
+                    }}
+                  />
+                  <strong>{uploadingMediaId === item.id ? "Uploading..." : item.url ? "Replace file" : "Upload media"}</strong>
+                  <small>{item.fileName || (item.url ? "Drop to replace, or choose another file" : `Drop or choose ${mediaDropText(item.type)}`)}</small>
+                </label>
+                <input
+                  className={styles.canvasNodeInput}
+                  value={item.caption || ""}
+                  onChange={(event) => updateBranchMediaItem(action.id, option.id, branchAction.id, item.id, { caption: event.target.value })}
+                  placeholder="Optional caption"
+                />
+                {item.url && (
+                  <span
+                    className={styles.mediaPreview}
+                    style={item.type === "image" ? { backgroundImage: `url("${item.url}")` } : undefined}
+                  >
+                    {item.type === "video" ? "HD video ready" : item.type === "pdf" ? "PDF ready" : ""}
+                  </span>
+                )}
+                <button className={styles.textButton} type="button" onClick={() => removeBranchMediaItem(action.id, option.id, branchAction.id, item.id)}>
+                  Remove media
+                </button>
+              </div>
+            ))}
+            <div className={styles.mediaButtons}>
+              <button className={styles.secondaryButton} type="button" onClick={() => addBranchMediaItem(action.id, option.id, branchAction.id, "image")}>
+                Add image
+              </button>
+              <button className={styles.secondaryButton} type="button" onClick={() => addBranchMediaItem(action.id, option.id, branchAction.id, "video")}>
+                Add video
+              </button>
+              <button className={styles.secondaryButton} type="button" onClick={() => addBranchMediaItem(action.id, option.id, branchAction.id, "pdf")}>
+                Add PDF
+              </button>
+            </div>
+          </div>
+        ) : (
+          <textarea
+            className={styles.canvasNodeInput}
+            value={branchAction.message}
+            onChange={(event) => updateBranchAction(action.id, option.id, branchAction.id, { message: event.target.value })}
+            placeholder="No message yet"
+            rows={2}
+          />
+        )}
+      </div>
+    );
+  }
+
   function renderCurrentWorkflowBoard() {
     return (
       <section className={styles.workflowStudio}>
@@ -2299,7 +2485,7 @@ export default function WhatsAppFlowsClient() {
                 value={form.name}
                 placeholder="Untitled workflow"
               />
-              <span>{form.actions.length} actions · {form.actions.filter((action) => action.type === "Ask Selection").length} branch points</span>
+              <span>{form.actions.length} actions Â· {form.actions.filter((action) => action.type === "Ask Selection").length} branch points</span>
             </div>
             <div className={styles.workflowToolbarActions}>
               <button className={styles.secondaryButton} onClick={() => setScreenMode("library")} type="button">
@@ -2355,7 +2541,7 @@ export default function WhatsAppFlowsClient() {
                     className={`${styles.canvasNode} ${selectedCanvasNodeId === action.id ? styles.canvasNodeSelected : ""}`}
                     onClick={() => setSelectedCanvasNodeId(action.id)}
                   >
-                    <span>Action {index + 1} · {actionDelayLabel(action)}</span>
+                    <span>Action {index + 1} Â· {actionDelayLabel(action)}</span>
                     <select
                       className={styles.canvasNodeSelect}
                       onChange={(event) => {
@@ -2391,10 +2577,6 @@ export default function WhatsAppFlowsClient() {
                   {action.type === "Ask Selection" && (
                     <div className={styles.outcomeFan}>
                       {filledOptions.length ? filledOptions.map((option) => (
-                        (() => {
-                          const targetFlow = targetFlowForOption(option);
-                          const targetActions = targetFlow ? formFromFlow(targetFlow).actions : [];
-                          return (
                             <div className={styles.outcomeBranch} key={`${action.id}-${option.id || option.label}`}>
                               <div className={styles.outcomePath}>
                                 <input
@@ -2407,82 +2589,23 @@ export default function WhatsAppFlowsClient() {
                                   value={option.label}
                                   placeholder="Option label"
                                 />
-                                <strong>{selectionDestinationLabel(option)}</strong>
-                                <select
-                                  aria-label={`Choose next sub flow for ${option.label}`}
-                                  value={option.targetFlowId || ""}
-                                  onChange={(event) => {
-                                    const targetFlowId = event.target.value;
-                                    updateAction(action.id, {
-                                      options: action.options.map((current) => (
-                                        current.id === option.id ? {
-                                          ...current,
-                                          targetFlowId,
-                                          targetFlowName: flows.find((flow) => flow.id === targetFlowId)?.name || "",
-                                        } : current
-                                      )),
-                                    });
-                                  }}
-                                >
-                                  <option value="">Choose next sub flow</option>
-                                  {flows
-                                    .filter((flow) => flow.id !== editingId)
-                                    .map((flow) => (
-                                      <option key={`canvas-target-${option.id}-${flow.id}`} value={flow.id}>
-                                        {flow.name}
-                                      </option>
-                                    ))}
-                                </select>
+                                <strong>{(option.actions || []).length ? `${option.actions?.length} inline action${option.actions?.length === 1 ? "" : "s"}` : "No actions yet"}</strong>
                               </div>
                               <div className={styles.branchConnector} />
                               <button
                                 aria-label={`Add action below ${option.label || "option"}`}
                                 className={styles.outcomeAddButton}
-                                disabled={saving}
-                                onClick={() => void addActionBelowOption(action.id, option)}
+                                onClick={() => addActionBelowOption(action.id, option)}
                                 type="button"
                               >
                                 +
                               </button>
-                              {targetActions.length > 0 && (
+                              {(option.actions || []).length > 0 && (
                                 <div className={styles.outcomeSubflowActions}>
-                                  {targetActions.slice(0, 4).map((targetAction, targetIndex) => (
-                                    <div className={styles.outcomeSubflowAction} key={`${option.id}-${targetFlow?.id}-${targetIndex}`}>
-                                      <span>Action {targetIndex + 1} · {actionDelayLabel(targetAction)}</span>
-                                      <select
-                                        className={styles.canvasNodeSelect}
-                                        defaultValue={targetAction.type}
-                                        disabled={saving}
-                                        onChange={(event) => void patchSubflowAction(option.targetFlowId || "", targetIndex, { type: event.target.value as ActionType })}
-                                      >
-                                        {actionTypes.map((type) => (
-                                          <option key={`${option.id}-${targetIndex}-${type}`} value={type}>
-                                            {type}
-                                          </option>
-                                        ))}
-                                      </select>
-                                      {targetAction.type === "Send Message" ? (
-                                        <input
-                                          className={styles.canvasNodeInput}
-                                          defaultValue={targetAction.message}
-                                          disabled={saving}
-                                          onBlur={(event) => {
-                                            if (event.target.value !== targetAction.message) {
-                                              void patchSubflowAction(option.targetFlowId || "", targetIndex, { message: event.target.value });
-                                            }
-                                          }}
-                                          placeholder="No message yet"
-                                        />
-                                      ) : (
-                                        <small>{actionNodeSummary(targetAction)}</small>
-                                      )}
-                                    </div>
-                                  ))}
+                                  {(option.actions || []).map((branchAction, branchIndex) => renderBranchActionCard(action, option, branchAction, branchIndex))}
                                 </div>
                               )}
                             </div>
-                          );
-                        })()
                       )) : (
                         <div className={styles.outcomePath}>
                           <span>No options</span>
@@ -2588,7 +2711,7 @@ export default function WhatsAppFlowsClient() {
           </label>
           <button onClick={() => editFlow(flow)} type="button">
             <strong>{analysis.displayName}</strong>
-            <span>{analysis.stage} · {analysis.language} · {flow.status}</span>
+            <span>{analysis.stage} Â· {analysis.language} Â· {flow.status}</span>
           </button>
         </div>
         <div className={styles.chartNodeMeta}>
@@ -2636,7 +2759,7 @@ export default function WhatsAppFlowsClient() {
         <div className={styles.groupChartHeader}>
           <div>
             <strong>{title} flow chart</strong>
-            <span>{chartFlows.length} flows · {branchCount} linked paths</span>
+            <span>{chartFlows.length} flows Â· {branchCount} linked paths</span>
           </div>
           <p>Drag flows onto this workspace to place them in this group.</p>
         </div>
@@ -2765,7 +2888,7 @@ export default function WhatsAppFlowsClient() {
         <div className={styles.folderRow}>
           <div>
             <button className={styles.folderTitleButton} onClick={() => toggleFolder(targetKey)} type="button">
-              {isOpen ? "▾" : "▸"} {titleCaseLabel(cleanCopySuffix(subfolder.name))}
+              {isOpen ? "â–¾" : "â–¸"} {titleCaseLabel(cleanCopySuffix(subfolder.name))}
             </button>
             <span>{visibleTotal === totalFlows ? totalFlows : `${visibleTotal} of ${totalFlows}`} flows</span>
           </div>
@@ -3197,7 +3320,7 @@ export default function WhatsAppFlowsClient() {
                         })}
                         <button
                           className={styles.secondaryButton}
-                          disabled={action.options.length >= 4}
+                          disabled={action.options.length >= 3}
                           onClick={() => updateAction(action.id, { options: [...action.options, makeSelectionOption()] })}
                           type="button"
                         >
@@ -3445,7 +3568,7 @@ export default function WhatsAppFlowsClient() {
                 <div className={styles.folderRow}>
                   <div>
                     <button className={styles.folderTitleButton} onClick={() => toggleFolder(groupKey)} type="button">
-                      {isOpen ? "▾" : "▸"} {titleCaseLabel(cleanCopySuffix(group.name))}
+                      {isOpen ? "â–¾" : "â–¸"} {titleCaseLabel(cleanCopySuffix(group.name))}
                     </button>
                     <span>
                       {visibleTotal === totalFlows ? totalFlows : `${visibleTotal} of ${totalFlows}`} flows
