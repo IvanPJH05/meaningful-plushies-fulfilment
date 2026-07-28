@@ -448,7 +448,10 @@ export async function createManualOrderDiscounts(input: ManualOrderCreateInput):
     productDiscountShopifyId,
     shippingDiscountCode: noShippingDiscountCode,
     shippingDiscountShopifyId: "",
-    customerLink: buildManualOrderCustomerLink(productCode, resolvedProduct.productPath || product.productPath),
+    customerLink: buildManualOrderCustomerLink(
+      productCode,
+      manualOrderProductPathForSelection(input.character, product) || resolvedProduct.productPath || product.productPath,
+    ),
     status: "active",
     shopifyOrderId: "",
     shopifyOrderName: "",
