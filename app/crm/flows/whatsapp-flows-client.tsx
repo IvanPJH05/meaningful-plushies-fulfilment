@@ -1311,11 +1311,11 @@ export default function WhatsAppFlowsClient() {
     return patchedFlows;
   }
 
-  async function persistFlow(options: { publish?: boolean; exitToLibrary?: boolean } = {}) {
+  async function persistFlow(options: { publish?: boolean; status?: FlowForm["status"]; exitToLibrary?: boolean } = {}) {
     if (!form.name.trim() || (options.publish && !hasUsableAction)) return null;
     const sourceForm: FlowForm = {
       ...form,
-      status: options.publish ? "Active" : "Draft",
+      status: options.publish ? "Active" : (options.status || form.status),
     };
     if (sourceForm.status === "Active" && sourceForm.triggerType === "selection_button") {
       const key = form.triggerButtonLabel.trim().toLowerCase();
@@ -1368,7 +1368,7 @@ export default function WhatsAppFlowsClient() {
   }
 
   async function saveFlow() {
-    return persistFlow({ exitToLibrary: true });
+    return persistFlow({ status: "Draft", exitToLibrary: true });
   }
 
   async function publishFlow() {
@@ -2631,7 +2631,7 @@ export default function WhatsAppFlowsClient() {
               <span className={styles.autoSaveStatus}>
                 {form.status === "Active" ? "Published" : "Draft"}
               </span>
-              <button className={styles.primaryButton} onClick={() => void publishFlow()} disabled={saving || !form.name.trim() || !hasUsableAction}>
+              <button className={styles.primaryButton} onClick={() => void publishFlow()} disabled={saving || !form.name.trim() || !hasUsableAction} type="button">
                 {saving ? "Publishing..." : "Publish"}
               </button>
             </div>
@@ -3229,7 +3229,7 @@ export default function WhatsAppFlowsClient() {
               <span className={styles.autoSaveStatus}>
                 {form.status === "Active" ? "Published" : "Draft"}
               </span>
-              <button className={styles.primaryButton} onClick={() => void publishFlow()} disabled={saving || !form.name.trim() || !hasUsableAction}>
+              <button className={styles.primaryButton} onClick={() => void publishFlow()} disabled={saving || !form.name.trim() || !hasUsableAction} type="button">
                 {saving ? "Publishing..." : "Publish"}
               </button>
             </div>
