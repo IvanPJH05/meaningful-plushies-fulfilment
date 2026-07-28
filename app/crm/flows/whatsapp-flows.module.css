@@ -6,6 +6,12 @@
   padding: 0;
 }
 
+.page *,
+.page *::before,
+.page *::after {
+  box-sizing: border-box;
+}
+
 .eyebrow {
   color: #1d5ca8;
   font-size: 10px;
@@ -226,18 +232,30 @@
 .phraseRows {
   display: grid;
   gap: 7px;
+  min-width: 0;
+  width: 100%;
 }
 
 .phraseRow {
   align-items: center;
   display: grid;
   gap: 7px;
-  grid-template-columns: minmax(150px, 0.5fr) minmax(220px, 1fr) auto;
+  grid-template-columns: minmax(0, 0.62fr) minmax(0, 1fr) minmax(86px, auto);
+  min-width: 0;
+  width: 100%;
 }
 
 .phraseRow input,
 .phraseRow select {
   min-width: 0;
+  width: 100%;
+}
+
+.phraseRow button {
+  min-width: 0;
+  padding-left: 10px;
+  padding-right: 10px;
+  width: 100%;
 }
 
 .branchActionHeader {
@@ -252,6 +270,7 @@
   display: grid;
   gap: 8px;
   min-width: 0;
+  width: 100%;
 }
 
 .branchMediaItem {
@@ -468,13 +487,17 @@
   display: flex;
   gap: 12px;
   justify-content: space-between;
+  min-width: 0;
   padding: 12px 14px;
 }
 
 .workflowToolbarActions {
   align-items: center;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 .autoSaveStatus {
@@ -506,8 +529,10 @@
   font-size: 15px;
   font-weight: 950;
   margin: 0 0 2px -8px;
-  min-width: min(360px, 60vw);
+  max-width: 100%;
+  min-width: 0;
   padding: 5px 7px;
+  width: min(360px, 60vw);
 }
 
 .workflowTitleInput:focus {
@@ -543,6 +568,8 @@
   display: flex;
   flex-direction: column;
   gap: 0;
+  min-width: 0;
+  width: 100%;
 }
 
 .canvasConnector {
@@ -560,7 +587,9 @@
   cursor: pointer;
   display: grid;
   gap: 5px;
+  max-width: 100%;
   min-height: 82px;
+  min-width: 0;
   padding: 11px 13px;
   text-align: left;
   width: min(360px, 76vw);
@@ -569,11 +598,11 @@
 .builderMode .canvasNode {
   min-height: 102px;
   padding: 16px 18px;
-  width: min(454px, calc(100vw - 260px));
+  width: min(560px, calc(100vw - 44px));
 }
 
 .builderMode .triggerCanvasNode {
-  width: min(620px, calc(100vw - 280px));
+  width: min(760px, calc(100vw - 44px));
 }
 
 .canvasNode span {
@@ -612,6 +641,11 @@
   min-width: 0;
   padding: 6px 7px;
   width: 100%;
+}
+
+.canvasNode textarea.canvasNodeInput {
+  max-width: 100%;
+  resize: vertical;
 }
 
 .canvasNodeInput {
@@ -1006,7 +1040,9 @@
   display: grid;
   gap: 2px;
   min-height: 48px;
+  min-width: 0;
   padding: 9px 11px;
+  width: 100%;
 }
 
 .fileUpload:hover,
@@ -1067,7 +1103,7 @@
   font-weight: 900;
   justify-content: center;
   letter-spacing: 0;
-  max-width: 160px;
+  max-width: 100%;
   min-height: 56px;
   overflow: hidden;
   text-transform: none;

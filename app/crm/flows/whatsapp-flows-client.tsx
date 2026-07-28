@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { type DragEvent, useEffect, useMemo, useState } from "react";
 
@@ -32,6 +32,7 @@ type TriggerRule = {
 };
 type MediaType = "image" | "video" | "pdf";
 type ActionType = "Send Message" | "Send Media" | "Ask Selection" | "AI Reply" | "Update Status" | "Add Note";
+type ActionSelectValue = ActionType | "Ask Selection (2)" | "Ask Selection (3)";
 type StoredActionType = ActionType | "Send Image" | "Send Video";
 type DelayUnit = "seconds" | "minutes" | "hours" | "days";
 
@@ -98,6 +99,15 @@ type FlowForm = {
 };
 
 const actionTypes: ActionType[] = ["Send Message", "Send Media", "Ask Selection", "AI Reply", "Update Status", "Add Note"];
+const actionSelectOptions: { label: string; value: ActionSelectValue }[] = [
+  { label: "Send Message", value: "Send Message" },
+  { label: "Send Media", value: "Send Media" },
+  { label: "Ask Selection (2)", value: "Ask Selection (2)" },
+  { label: "Ask Selection (3)", value: "Ask Selection (3)" },
+  { label: "AI Reply", value: "AI Reply" },
+  { label: "Update Status", value: "Update Status" },
+  { label: "Add Note", value: "Add Note" },
+];
 const delayUnits: DelayUnit[] = ["seconds", "minutes", "hours", "days"];
 const FLOW_BUILDER_CACHE_KEY = "crm-whatsapp-flow-builder-cache-v1";
 const MAX_BROWSER_IMAGE_BYTES = 3.8 * 1024 * 1024;
@@ -270,6 +280,34 @@ function makeUniqueSelectionOptions(options: Partial<SelectionOption>[]) {
     seen.add(next.id || "");
     return next;
   });
+}
+
+function selectionOptionsForCount(options: SelectionOption[], count: 2 | 3) {
+  const defaultLabels = ["English", "Malay", "Option 3"];
+  return Array.from({ length: count }, (_, index) => makeSelectionOption({
+    ...(options[index] || {}),
+    label: options[index]?.label || defaultLabels[index],
+  }));
+}
+
+function actionSelectValue(action: Pick<FlowAction, "type" | "options">): ActionSelectValue {
+  if (action.type === "Ask Selection") return action.options.length >= 3 ? "Ask Selection (3)" : "Ask Selection (2)";
+  return action.type;
+}
+
+function actionPatchFromSelect(action: FlowAction, value: ActionSelectValue): Partial<FlowAction> {
+  if (value === "Ask Selection (2)" || value === "Ask Selection (3)") {
+    return {
+      type: "Ask Selection",
+      options: selectionOptionsForCount(action.options, value === "Ask Selection (3)" ? 3 : 2),
+    };
+  }
+
+  return {
+    type: value,
+    mediaItems: value === "Send Media" && !action.mediaItems.length ? [makeMediaItem()] : action.mediaItems,
+    options: action.options,
+  };
 }
 
 function makeAction(action?: Partial<FlowAction>): FlowAction {
@@ -875,7 +913,7 @@ function detectVariant(flow: WhatsAppFlow) {
   const text = `${flow.name} ${flow.subgroupName || ""}`.toUpperCase();
   const variants = [text.match(/\b(5S|10S|20S)\b/)?.[1], text.match(/\b(EM|WM)\b/)?.[1]]
     .filter(Boolean);
-  return variants.join(" Â· ");
+  return variants.join(" - ");
 }
 
 function flowBreadcrumb(flow: WhatsAppFlow) {
@@ -899,7 +937,7 @@ function actionTypeSummary(flow: WhatsAppFlow) {
     return memo;
   }, {});
   const parts = Object.entries(counts).map(([type, count]) => `${count} ${type.replace("Send ", "")}`);
-  return parts.length ? parts.join(" Â· ") : "No actions";
+  return parts.length ? parts.join(" - ") : "No actions";
 }
 
 function findBranchDestination(option: SelectionOption, flows: WhatsAppFlow[]): FlowBranch {
@@ -933,7 +971,7 @@ function flowBranches(flow: WhatsAppFlow, flows: WhatsAppFlow[]) {
 }
 
 function suggestedFlowName(flow: WhatsAppFlow, language: FlowAnalysis["language"], stage: string, purpose: string, variant: string) {
-  return [language, stage, purpose, variant].filter(Boolean).join(" Â· ");
+  return [language, stage, purpose, variant].filter(Boolean).join(" - ");
 }
 
 function normalisedDisplayName(flow: WhatsAppFlow) {
@@ -2340,7 +2378,7 @@ export default function WhatsAppFlowsClient() {
     return (
       <div className={styles.outcomeSubflowAction} key={`${option.id}-${branchAction.id}`}>
         <div className={styles.branchActionHeader}>
-          <span>Action {branchIndex + 1} Â· {actionDelayLabel(branchAction)}</span>
+          <span>Action {branchIndex + 1} - {actionDelayLabel(branchAction)}</span>
           <button
             className={styles.textButton}
             onClick={() => removeBranchAction(action.id, option.id, branchAction.id)}
@@ -2351,18 +2389,12 @@ export default function WhatsAppFlowsClient() {
         </div>
         <select
           className={styles.canvasNodeSelect}
-          value={branchAction.type}
-          onChange={(event) => {
-            const nextType = event.target.value as ActionType;
-            updateBranchAction(action.id, option.id, branchAction.id, {
-              type: nextType,
-              mediaItems: nextType === "Send Media" && !branchAction.mediaItems.length ? [makeMediaItem()] : branchAction.mediaItems,
-            });
-          }}
+          value={actionSelectValue(branchAction)}
+          onChange={(event) => updateBranchAction(action.id, option.id, branchAction.id, actionPatchFromSelect(branchAction, event.target.value as ActionSelectValue))}
         >
-          {actionTypes.map((type) => (
-            <option key={`${option.id}-${branchAction.id}-${type}`} value={type}>
-              {type}
+          {actionSelectOptions.map((choice) => (
+            <option key={`${option.id}-${branchAction.id}-${choice.value}`} value={choice.value}>
+              {choice.label}
             </option>
           ))}
         </select>
@@ -2552,7 +2584,7 @@ export default function WhatsAppFlowsClient() {
                 value={form.name}
                 placeholder="Untitled workflow"
               />
-              <span>{form.actions.length} actions Â· {form.actions.filter((action) => action.type === "Ask Selection").length} branch points</span>
+              <span>{form.actions.length} actions - {form.actions.filter((action) => action.type === "Ask Selection").length} branch points</span>
             </div>
             <div className={styles.workflowToolbarActions}>
               <button className={styles.secondaryButton} onClick={() => void exitBuilder()} disabled={saving} type="button">
@@ -2608,25 +2640,15 @@ export default function WhatsAppFlowsClient() {
                     className={`${styles.canvasNode} ${selectedCanvasNodeId === action.id ? styles.canvasNodeSelected : ""}`}
                     onClick={() => setSelectedCanvasNodeId(action.id)}
                   >
-                    <span>Action {index + 1} Â· {actionDelayLabel(action)}</span>
+                    <span>Action {index + 1} - {actionDelayLabel(action)}</span>
                     <select
                       className={styles.canvasNodeSelect}
-                      onChange={(event) => {
-                        const nextType = event.target.value as ActionType;
-                        updateAction(action.id, {
-                          type: nextType,
-                          mediaItems: nextType === "Send Media" && !action.mediaItems.length ? [makeMediaItem()] : action.mediaItems,
-                          options: nextType === "Ask Selection" && !action.options.length ? [
-                            makeSelectionOption({ label: "English" }),
-                            makeSelectionOption({ label: "Malay" }),
-                          ] : action.options,
-                        });
-                      }}
-                      value={action.type}
+                      onChange={(event) => updateAction(action.id, actionPatchFromSelect(action, event.target.value as ActionSelectValue))}
+                      value={actionSelectValue(action)}
                     >
-                      {actionTypes.map((type) => (
-                        <option key={`canvas-${action.id}-${type}`} value={type}>
-                          {type}
+                      {actionSelectOptions.map((choice) => (
+                        <option key={`canvas-${action.id}-${choice.value}`} value={choice.value}>
+                          {choice.label}
                         </option>
                       ))}
                     </select>
@@ -2780,7 +2802,7 @@ export default function WhatsAppFlowsClient() {
           </label>
           <button onClick={() => editFlow(flow)} type="button">
             <strong>{analysis.displayName}</strong>
-            <span>{analysis.stage} Â· {analysis.language} Â· {flow.status}</span>
+            <span>{analysis.stage} - {analysis.language} - {flow.status}</span>
           </button>
         </div>
         <div className={styles.chartNodeMeta}>
@@ -2828,7 +2850,7 @@ export default function WhatsAppFlowsClient() {
         <div className={styles.groupChartHeader}>
           <div>
             <strong>{title} flow chart</strong>
-            <span>{chartFlows.length} flows Â· {branchCount} linked paths</span>
+            <span>{chartFlows.length} flows - {branchCount} linked paths</span>
           </div>
           <p>Drag flows onto this workspace to place them in this group.</p>
         </div>
@@ -2957,7 +2979,7 @@ export default function WhatsAppFlowsClient() {
         <div className={styles.folderRow}>
           <div>
             <button className={styles.folderTitleButton} onClick={() => toggleFolder(targetKey)} type="button">
-              {isOpen ? "â–¾" : "â–¸"} {titleCaseLabel(cleanCopySuffix(subfolder.name))}
+              {isOpen ? "v" : ">"} {titleCaseLabel(cleanCopySuffix(subfolder.name))}
             </button>
             <span>{visibleTotal === totalFlows ? totalFlows : `${visibleTotal} of ${totalFlows}`} flows</span>
           </div>
@@ -3294,22 +3316,12 @@ export default function WhatsAppFlowsClient() {
                     <label>
                       Action
                       <select
-                        value={action.type}
-                        onChange={(event) => {
-                          const nextType = event.target.value as ActionType;
-                    updateAction(action.id, {
-                      type: nextType,
-                      mediaItems: nextType === "Send Media" && !action.mediaItems.length ? [makeMediaItem()] : action.mediaItems,
-                      options: nextType === "Ask Selection" && !action.options.length ? [
-                        makeSelectionOption({ label: "English" }),
-                        makeSelectionOption({ label: "Malay" }),
-                      ] : action.options,
-                    });
-                  }}
+                        value={actionSelectValue(action)}
+                        onChange={(event) => updateAction(action.id, actionPatchFromSelect(action, event.target.value as ActionSelectValue))}
                 >
-                        {actionTypes.map((type) => (
-                          <option key={type} value={type}>
-                            {type}
+                        {actionSelectOptions.map((choice) => (
+                          <option key={choice.value} value={choice.value}>
+                            {choice.label}
                           </option>
                         ))}
                       </select>
@@ -3637,7 +3649,7 @@ export default function WhatsAppFlowsClient() {
                 <div className={styles.folderRow}>
                   <div>
                     <button className={styles.folderTitleButton} onClick={() => toggleFolder(groupKey)} type="button">
-                      {isOpen ? "â–¾" : "â–¸"} {titleCaseLabel(cleanCopySuffix(group.name))}
+                      {isOpen ? "v" : ">"} {titleCaseLabel(cleanCopySuffix(group.name))}
                     </button>
                     <span>
                       {visibleTotal === totalFlows ? totalFlows : `${visibleTotal} of ${totalFlows}`} flows
