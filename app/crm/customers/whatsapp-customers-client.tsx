@@ -5,33 +5,24 @@ import Link from "next/link";
 
 import styles from "./whatsapp-customers.module.css";
 
+type CustomerStatus = "Cold" | "Warm" | "Unpaid" | "Paid";
+
 type Customer = {
   id: string;
   conversationId: string;
   displayName: string;
   phone: string | null;
   waId: string | null;
-  email: string | null;
-  source: string;
-  tags: string[];
-  status: string;
-  aiMode: string;
-  unreadCount: number;
+  customerStatus: CustomerStatus;
   notes: string;
-  leadStage: string | null;
-  leadTemperature: string | null;
-  requestedCharacter: string | null;
-  requestedVoice: string | null;
-  paymentStatus: string | null;
   messageCount: number;
-  lastMessage: {
-    preview: string;
-    direction: string;
-    senderType: string;
-    status: string;
-    createdAt: string | null;
-  } | null;
   lastMessageAt: string | null;
+  nextScheduledMessage: {
+    id: string;
+    scheduledAt: string | null;
+    messageBody: string;
+    status: string;
+  } | null;
 };
 
 type FlowMediaType = "image" | "video" | "pdf";
@@ -42,8 +33,6 @@ type FlowMediaItem = {
   type: FlowMediaType;
   url: string;
   caption?: string;
-  fileName?: string;
-  contentType?: string;
 };
 
 type FlowSelectionOption = {
@@ -65,40 +54,38 @@ type WhatsAppFlowStep = {
 type WhatsAppFlow = {
   id: string;
   name: string;
-  triggerType?: string;
-  triggerButtonLabel?: string;
-  trigger: string;
-  description: string;
   status: "Draft" | "Active";
   steps: WhatsAppFlowStep[];
 };
 
-function formatLabel(value: string | null | undefined) {
-  return (value || "")
-    .toLowerCase()
-    .split("_")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ") || "None";
-}
+type RowDraft = {
+  name: string;
+  status: CustomerStatus;
+  notes: string;
+  flowId: string;
+  scheduledAt: string;
+  scheduledMessage: string;
+};
 
-function formatTime(value: string | null | undefined) {
-  if (!value) return "No messages yet";
-  return new Intl.DateTimeFormat("en-MY", {
-    day: "2-digit",
-    month: "short",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(value));
+const customerStatuses: CustomerStatus[] = ["Cold", "Warm", "Unpaid", "Paid"];
+
+function emptyDraft(customer: Customer): RowDraft {
+  return {
+    name: customer.displayName || "",
+    status: customer.customerStatus || "Warm",
+    notes: customer.notes || "",
+    flowId: "",
+    scheduledAt: "",
+    scheduledMessage: "",
+  };
 }
 
 function delayMs(step: WhatsAppFlowStep) {
   const value = Number(step.delayValue || 0);
   if (!Number.isFinite(value) || value <= 0) return 0;
-  const unit = step.delayUnit;
-  if (unit === "minutes") return value * 60_000;
-  if (unit === "hours") return value * 3_600_000;
-  if (unit === "days") return value * 86_400_000;
+  if (step.delayUnit === "minutes") return value * 60_000;
+  if (step.delayUnit === "hours") return value * 3_600_000;
+  if (step.delayUnit === "days") return value * 86_400_000;
   return value * 1000;
 }
 
@@ -112,42 +99,37 @@ function flowStepMediaItems(step: WhatsAppFlowStep): FlowMediaItem[] {
   return step.mediaItems?.filter((item) => item.url) || [];
 }
 
+function localDateTimeLabel(value: string | null | undefined) {
+  if (!value) return "";
+  return new Intl.DateTimeFormat("en-MY", {
+    day: "2-digit",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
 export default function WhatsAppCustomersClient() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [flows, setFlows] = useState<WhatsAppFlow[]>([]);
-  const [selectedId, setSelectedId] = useState("");
+  const [drafts, setDrafts] = useState<Record<string, RowDraft>>({});
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [notesDraft, setNotesDraft] = useState("");
-  const [nameDraft, setNameDraft] = useState("");
-  const [selectedFlowId, setSelectedFlowId] = useState("");
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [sending, setSending] = useState(false);
+  const [busyRowId, setBusyRowId] = useState("");
   const [notice, setNotice] = useState("");
 
-  const selected = useMemo(
-    () => customers.find((customer) => customer.conversationId === selectedId) || customers[0] || null,
-    [customers, selectedId],
-  );
   const activeFlows = useMemo(() => flows.filter((flow) => flow.status === "Active"), [flows]);
-  const selectedFlow = useMemo(
-    () => activeFlows.find((flow) => flow.id === selectedFlowId) || null,
-    [activeFlows, selectedFlowId],
-  );
-
   const filteredCustomers = useMemo(() => {
     const search = query.trim().toLowerCase();
-    return customers.filter((customer) => {
-      const matchesSearch = !search
-        || customer.displayName.toLowerCase().includes(search)
-        || (customer.phone || "").toLowerCase().includes(search)
-        || (customer.waId || "").toLowerCase().includes(search)
-        || customer.notes.toLowerCase().includes(search);
-      const matchesStatus = statusFilter === "all" || customer.status === statusFilter;
-      return matchesSearch && matchesStatus;
-    });
-  }, [customers, query, statusFilter]);
+    if (!search) return customers;
+    return customers.filter((customer) => (
+      customer.displayName.toLowerCase().includes(search)
+      || (customer.phone || "").toLowerCase().includes(search)
+      || (customer.waId || "").toLowerCase().includes(search)
+      || customer.notes.toLowerCase().includes(search)
+      || customer.customerStatus.toLowerCase().includes(search)
+    ));
+  }, [customers, query]);
 
   useEffect(() => {
     async function loadData() {
@@ -161,9 +143,10 @@ export default function WhatsAppCustomersClient() {
         const flowsResult = await flowsResponse.json() as { ok?: boolean; flows?: WhatsAppFlow[]; error?: string };
         if (!customersResponse.ok || !customersResult.ok) throw new Error(customersResult.error || "Customer list could not be loaded.");
         if (!flowsResponse.ok || !flowsResult.ok) throw new Error(flowsResult.error || "Flows could not be loaded.");
-        setCustomers(customersResult.customers || []);
+        const loadedCustomers = customersResult.customers || [];
+        setCustomers(loadedCustomers);
         setFlows(flowsResult.flows || []);
-        setSelectedId((current) => current || customersResult.customers?.[0]?.conversationId || "");
+        setDrafts(Object.fromEntries(loadedCustomers.map((customer) => [customer.conversationId, emptyDraft(customer)])));
       } catch (error) {
         setNotice(error instanceof Error ? error.message : "Customer data could not be loaded.");
       } finally {
@@ -174,36 +157,57 @@ export default function WhatsAppCustomersClient() {
     void loadData();
   }, []);
 
-  useEffect(() => {
-    if (!selected) return;
-    setNotesDraft(selected.notes || "");
-    setNameDraft(selected.displayName || "");
-  }, [selected]);
+  function updateDraft(conversationId: string, patch: Partial<RowDraft>) {
+    setDrafts((current) => ({
+      ...current,
+      [conversationId]: {
+        ...(current[conversationId] || {
+          name: "",
+          status: "Warm",
+          notes: "",
+          flowId: "",
+          scheduledAt: "",
+          scheduledMessage: "",
+        }),
+        ...patch,
+      },
+    }));
+  }
 
-  async function saveCustomer() {
-    if (!selected) return;
-    setSaving(true);
+  async function saveCustomer(customer: Customer) {
+    const draft = drafts[customer.conversationId] || emptyDraft(customer);
+    setBusyRowId(customer.conversationId);
     setNotice("");
     try {
       const response = await fetch("/api/crm/customers", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          conversationId: selected.conversationId,
-          displayName: nameDraft,
-          notes: notesDraft,
+          conversationId: customer.conversationId,
+          displayName: draft.name,
+          customerStatus: draft.status,
+          notes: draft.notes,
         }),
       });
       const result = await response.json() as { ok?: boolean; customer?: Customer; error?: string };
-      if (!response.ok || !result.ok || !result.customer) throw new Error(result.error || "Customer notes could not be saved.");
-      setCustomers((current) => current.map((customer) => (
-        customer.conversationId === result.customer?.conversationId ? result.customer : customer
+      if (!response.ok || !result.ok || !result.customer) throw new Error(result.error || "Customer row could not be saved.");
+      setCustomers((current) => current.map((item) => (
+        item.conversationId === result.customer?.conversationId ? result.customer : item
       )));
-      setNotice("Customer notes saved.");
+      setDrafts((current) => ({
+        ...current,
+        [result.customer!.conversationId]: {
+          ...emptyDraft(result.customer!),
+          flowId: current[result.customer!.conversationId]?.flowId || "",
+          scheduledAt: current[result.customer!.conversationId]?.scheduledAt || "",
+          scheduledMessage: current[result.customer!.conversationId]?.scheduledMessage || "",
+        },
+      }));
+      setNotice("Customer row saved.");
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Customer notes could not be saved.");
+      setNotice(error instanceof Error ? error.message : "Customer row could not be saved.");
     } finally {
-      setSaving(false);
+      setBusyRowId("");
     }
   }
 
@@ -227,37 +231,84 @@ export default function WhatsAppCustomersClient() {
     if (!response.ok || !result.ok) throw new Error(result.error || "WhatsApp did not accept one of the messages.");
   }
 
-  async function sendSelectedFlow() {
-    if (!selected || !selectedFlow || sending) return;
-    setSending(true);
+  async function sendFlow(customer: Customer) {
+    const draft = drafts[customer.conversationId] || emptyDraft(customer);
+    const flow = activeFlows.find((item) => item.id === draft.flowId);
+    if (!flow) {
+      setNotice("Choose a message flow first.");
+      return;
+    }
+
+    setBusyRowId(customer.conversationId);
     setNotice("");
     try {
-      for (const step of selectedFlow.steps) {
+      await saveCustomer(customer);
+      for (const step of flow.steps) {
         const wait = delayMs(step);
         if (wait) await sleep(wait);
 
         if (step.type === "Send Media" || step.type === "Send Image" || step.type === "Send Video") {
           const mediaItems = flowStepMediaItems(step);
           for (const [index, item] of mediaItems.entries()) {
-            await sendFlowStep(selected, step, item.caption || (index === 0 ? step.message : ""), item);
+            await sendFlowStep(customer, step, item.caption || (index === 0 ? step.message : ""), item);
           }
-          if (!mediaItems.length && step.message.trim()) await sendFlowStep(selected, step, step.message);
+          if (!mediaItems.length && step.message.trim()) await sendFlowStep(customer, step, step.message);
           continue;
         }
 
         if (step.type === "Ask Selection") {
           const options = (step.options || []).filter((option) => option.label).slice(0, 3);
-          if (step.message.trim() || options.length) await sendFlowStep(selected, step, step.message, undefined, options);
+          if (step.message.trim() || options.length) await sendFlowStep(customer, step, step.message, undefined, options);
           continue;
         }
 
-        if (step.message.trim()) await sendFlowStep(selected, step, step.message);
+        if (step.message.trim()) await sendFlowStep(customer, step, step.message);
       }
-      setNotice(`Flow "${selectedFlow.name}" sent to ${selected.displayName}.`);
+      setNotice(`Flow "${flow.name}" sent.`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Flow could not be sent.");
     } finally {
-      setSending(false);
+      setBusyRowId("");
+    }
+  }
+
+  async function scheduleMessage(customer: Customer) {
+    const draft = drafts[customer.conversationId] || emptyDraft(customer);
+    setBusyRowId(customer.conversationId);
+    setNotice("");
+    try {
+      const response = await fetch("/api/crm/customers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "schedule_message",
+          conversationId: customer.conversationId,
+          displayName: draft.name,
+          customerStatus: draft.status,
+          notes: draft.notes,
+          scheduledAt: new Date(draft.scheduledAt).toISOString(),
+          messageBody: draft.scheduledMessage,
+        }),
+      });
+      const result = await response.json() as { ok?: boolean; customer?: Customer; error?: string };
+      if (!response.ok || !result.ok || !result.customer) throw new Error(result.error || "Scheduled message could not be saved.");
+      setCustomers((current) => current.map((item) => (
+        item.conversationId === result.customer?.conversationId ? result.customer : item
+      )));
+      setDrafts((current) => ({
+        ...current,
+        [result.customer!.conversationId]: {
+          ...emptyDraft(result.customer!),
+          flowId: current[result.customer!.conversationId]?.flowId || "",
+          scheduledAt: "",
+          scheduledMessage: "",
+        },
+      }));
+      setNotice("Scheduled message saved.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Scheduled message could not be saved.");
+    } finally {
+      setBusyRowId("");
     }
   }
 
@@ -273,137 +324,131 @@ export default function WhatsAppCustomersClient() {
           <Link href="/crm/setup">Setup</Link>
         </aside>
 
-        <section className={styles.customerList}>
-          <div className={styles.listHeader}>
+        <section className={styles.sheetPanel}>
+          <header className={styles.sheetHeader}>
             <div>
               <p className={styles.eyebrow}>Customers</p>
               <h1>Customer data</h1>
               <span>{filteredCustomers.length} shown from {customers.length}</span>
             </div>
-            <Link className={styles.secondaryButton} href="/crm/inbox">Open inbox</Link>
-          </div>
+            <div className={styles.headerActions}>
+              <input
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search customer"
+                value={query}
+              />
+              <Link className={styles.secondaryButton} href="/crm/inbox">Open inbox</Link>
+            </div>
+          </header>
 
-          <div className={styles.filters}>
-            <input
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search name, phone, or notes"
-              value={query}
-            />
-            <select onChange={(event) => setStatusFilter(event.target.value)} value={statusFilter}>
-              <option value="all">All statuses</option>
-              <option value="OPEN">Open</option>
-              <option value="WAITING_TEAM">Waiting team</option>
-              <option value="WAITING_CUSTOMER">Waiting customer</option>
-              <option value="RESOLVED">Resolved</option>
-            </select>
-          </div>
-
-          <div className={styles.customerRows}>
-            {loading ? (
-              <div className={styles.emptyState}>Loading customers...</div>
-            ) : filteredCustomers.length ? (
-              filteredCustomers.map((customer) => (
-                <button
-                  className={`${styles.customerRow} ${selected?.conversationId === customer.conversationId ? styles.selectedRow : ""}`}
-                  key={customer.conversationId}
-                  onClick={() => setSelectedId(customer.conversationId)}
-                  type="button"
-                >
-                  <span className={styles.avatar}>{customer.displayName.charAt(0).toUpperCase()}</span>
-                  <span className={styles.rowText}>
-                    <strong>{customer.displayName}</strong>
-                    <small>{customer.phone || customer.waId || "No phone"}</small>
-                    <em>{customer.lastMessage?.preview || "No message preview"}</em>
-                  </span>
-                  <span className={styles.rowMeta}>
-                    <small>{formatTime(customer.lastMessageAt)}</small>
-                    {customer.unreadCount > 0 && <b>{customer.unreadCount}</b>}
-                  </span>
-                </button>
-              ))
-            ) : (
-              <div className={styles.emptyState}>No customers match this search.</div>
-            )}
-          </div>
-        </section>
-
-        <section className={styles.customerDetail}>
           {notice && <div className={styles.notice}>{notice}</div>}
-          {selected ? (
-            <>
-              <div className={styles.detailHeader}>
-                <span className={styles.largeAvatar}>{selected.displayName.charAt(0).toUpperCase()}</span>
-                <div>
-                  <p className={styles.eyebrow}>Customer profile</p>
-                  <input
-                    className={styles.nameInput}
-                    onChange={(event) => setNameDraft(event.target.value)}
-                    value={nameDraft}
-                  />
-                  <p>{selected.phone || selected.waId || "No phone number"}</p>
-                </div>
-                <Link className={styles.secondaryButton} href={`/crm/inbox?conversationId=${encodeURIComponent(selected.conversationId)}`}>
-                  Open chat
-                </Link>
-              </div>
 
-              <div className={styles.summaryGrid}>
-                <span><strong>{formatLabel(selected.status)}</strong><small>Status</small></span>
-                <span><strong>{selected.messageCount}</strong><small>Messages</small></span>
-                <span><strong>{formatLabel(selected.paymentStatus)}</strong><small>Payment</small></span>
-                <span><strong>{formatLabel(selected.leadStage)}</strong><small>Lead</small></span>
-              </div>
-
-              <section className={styles.card}>
-                <div className={styles.cardHeader}>
-                  <div>
-                    <p className={styles.eyebrow}>Notes</p>
-                    <h2>Team notes for this customer</h2>
-                  </div>
-                  <button className={styles.primaryButton} disabled={saving} onClick={() => void saveCustomer()} type="button">
-                    {saving ? "Saving..." : "Save notes"}
-                  </button>
-                </div>
-                <textarea
-                  onChange={(event) => setNotesDraft(event.target.value)}
-                  placeholder="Add sizing details, preferred plushie, payment context, reminders, or anything the team should know."
-                  value={notesDraft}
-                />
-              </section>
-
-              <section className={styles.card}>
-                <div className={styles.cardHeader}>
-                  <div>
-                    <p className={styles.eyebrow}>Message flows</p>
-                    <h2>Send an existing flow</h2>
-                  </div>
-                  <Link className={styles.secondaryButton} href="/crm/flows">Create flow</Link>
-                </div>
-                <div className={styles.flowSender}>
-                  <select onChange={(event) => setSelectedFlowId(event.target.value)} value={selectedFlowId}>
-                    <option value="">Choose a flow</option>
-                    {activeFlows.map((flow) => (
-                      <option key={flow.id} value={flow.id}>{flow.name}</option>
-                    ))}
-                  </select>
-                  <button className={styles.primaryButton} disabled={!selectedFlow || sending} onClick={() => void sendSelectedFlow()} type="button">
-                    {sending ? "Sending..." : "Send flow"}
-                  </button>
-                </div>
-                {selectedFlow ? (
-                  <div className={styles.flowPreview}>
-                    <strong>{selectedFlow.name}</strong>
-                    <span>{selectedFlow.steps.length} actions</span>
-                    <p>{selectedFlow.description || selectedFlow.trigger || "No description yet."}</p>
-                  </div>
+          <div className={styles.sheetScroll}>
+            <table className={styles.customerSheet}>
+              <thead>
+                <tr>
+                  <th>Phone</th>
+                  <th>Name</th>
+                  <th>Status</th>
+                  <th>Note</th>
+                  <th>Message Flow</th>
+                  <th>Schedule</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr>
+                    <td className={styles.emptyCell} colSpan={6}>Loading customers...</td>
+                  </tr>
+                ) : filteredCustomers.length ? (
+                  filteredCustomers.map((customer) => {
+                    const draft = drafts[customer.conversationId] || emptyDraft(customer);
+                    const rowBusy = busyRowId === customer.conversationId;
+                    return (
+                      <tr key={customer.conversationId}>
+                        <td>
+                          <div className={styles.phoneCell}>
+                            <strong>{customer.phone || customer.waId || "No phone"}</strong>
+                            <Link href={`/crm/inbox?conversationId=${encodeURIComponent(customer.conversationId)}`}>Open chat</Link>
+                          </div>
+                        </td>
+                        <td>
+                          <input
+                            onChange={(event) => updateDraft(customer.conversationId, { name: event.target.value })}
+                            value={draft.name}
+                          />
+                        </td>
+                        <td>
+                          <select
+                            onChange={(event) => updateDraft(customer.conversationId, { status: event.target.value as CustomerStatus })}
+                            value={draft.status}
+                          >
+                            {customerStatuses.map((status) => (
+                              <option key={status} value={status}>{status}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td>
+                          <textarea
+                            onBlur={() => void saveCustomer(customer)}
+                            onChange={(event) => updateDraft(customer.conversationId, { notes: event.target.value })}
+                            placeholder="Add note"
+                            value={draft.notes}
+                          />
+                        </td>
+                        <td>
+                          <div className={styles.flowCell}>
+                            <select
+                              onChange={(event) => updateDraft(customer.conversationId, { flowId: event.target.value })}
+                              value={draft.flowId}
+                            >
+                              <option value="">Choose flow</option>
+                              {activeFlows.map((flow) => (
+                                <option key={flow.id} value={flow.id}>{flow.name}</option>
+                              ))}
+                            </select>
+                            <button disabled={rowBusy || !draft.flowId} onClick={() => void sendFlow(customer)} type="button">
+                              {rowBusy ? "Working..." : "Send"}
+                            </button>
+                          </div>
+                        </td>
+                        <td>
+                          <div className={styles.scheduleCell}>
+                            {customer.nextScheduledMessage && (
+                              <small>
+                                Next: {localDateTimeLabel(customer.nextScheduledMessage.scheduledAt)}
+                              </small>
+                            )}
+                            <input
+                              onChange={(event) => updateDraft(customer.conversationId, { scheduledAt: event.target.value })}
+                              type="datetime-local"
+                              value={draft.scheduledAt}
+                            />
+                            <textarea
+                              onChange={(event) => updateDraft(customer.conversationId, { scheduledMessage: event.target.value })}
+                              placeholder="Message to send"
+                              value={draft.scheduledMessage}
+                            />
+                            <button
+                              disabled={rowBusy || !draft.scheduledAt || !draft.scheduledMessage.trim()}
+                              onClick={() => void scheduleMessage(customer)}
+                              type="button"
+                            >
+                              Schedule
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 ) : (
-                  <p className={styles.muted}>Pick a saved active flow to send messages from this customer profile.</p>
+                  <tr>
+                    <td className={styles.emptyCell} colSpan={6}>No customers match this search.</td>
+                  </tr>
                 )}
-              </section>
-            </>
-          ) : (
-            <div className={styles.emptyDetail}>Select a customer to add notes or send a flow.</div>
-          )}
+              </tbody>
+            </table>
+          </div>
         </section>
       </section>
     </main>

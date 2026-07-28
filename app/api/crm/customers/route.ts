@@ -1,4 +1,9 @@
 import { NextResponse } from "next/server";
+import {
+  LeadStage,
+  LeadTemperature,
+  PaymentStatus,
+} from "@prisma/client";
 
 import { prisma } from "@/src/infrastructure/database/prisma";
 import { ensureDefaultBusiness } from "@/src/modules/businesses/default-business";
@@ -15,6 +20,113 @@ function serializeDate(value: Date | null | undefined) {
 
 function stringValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeCustomerStatus(value: unknown) {
+  const text = stringValue(value).toLowerCase();
+  if (text === "cold") return "Cold";
+  if (text === "warm") return "Warm";
+  if (text === "paid") return "Paid";
+  if (text === "unpaid") return "Unpaid";
+  return "";
+}
+
+function customerStatusFromLead(lead: {
+  temperature?: LeadTemperature | null;
+  paymentStatus?: PaymentStatus | null;
+  stage?: LeadStage | null;
+} | null) {
+  if (!lead) return "Warm";
+  if (lead.paymentStatus === PaymentStatus.PAID || lead.stage === LeadStage.PAID) return "Paid";
+  if (lead.paymentStatus === PaymentStatus.UNPAID && lead.temperature !== LeadTemperature.COLD) return "Unpaid";
+  if (lead.temperature === LeadTemperature.COLD) return "Cold";
+  return "Warm";
+}
+
+function statusPatch(customerStatus: string) {
+  if (customerStatus === "Paid") {
+    return {
+      temperature: LeadTemperature.HOT,
+      paymentStatus: PaymentStatus.PAID,
+      stage: LeadStage.PAID,
+    };
+  }
+  if (customerStatus === "Unpaid") {
+    return {
+      temperature: LeadTemperature.WARM,
+      paymentStatus: PaymentStatus.UNPAID,
+      stage: LeadStage.READY_TO_ORDER,
+    };
+  }
+  if (customerStatus === "Cold") {
+    return {
+      temperature: LeadTemperature.COLD,
+      paymentStatus: PaymentStatus.UNPAID,
+      stage: LeadStage.LOST,
+    };
+  }
+  if (customerStatus === "Warm") {
+    return {
+      temperature: LeadTemperature.WARM,
+      paymentStatus: PaymentStatus.UNPAID,
+      stage: LeadStage.QUALIFYING,
+    };
+  }
+  return {};
+}
+
+async function ensureCustomerLead(args: {
+  businessId: string;
+  conversationId: string;
+  displayName?: string;
+  notes?: string;
+  customerStatus?: string;
+}) {
+  const conversation = await prisma.conversation.findFirst({
+    where: { businessId: args.businessId, id: args.conversationId },
+    include: { contact: true },
+  });
+  if (!conversation) return null;
+
+  const existingLead = await prisma.lead.findFirst({
+    where: {
+      businessId: args.businessId,
+      OR: [
+        { conversationId: conversation.id },
+        { contactId: conversation.contactId },
+      ],
+    },
+    orderBy: { updatedAt: "desc" },
+    select: { id: true },
+  });
+
+  const displayName = args.displayName
+    || conversation.contact.displayName
+    || conversation.contact.phone
+    || conversation.contact.waId
+    || "WhatsApp customer";
+  const sharedData = {
+    customerName: displayName,
+    phone: conversation.contact.phone || conversation.contact.waId,
+    conversationId: conversation.id,
+    contactId: conversation.contactId,
+    ...(args.notes !== undefined ? { notes: args.notes } : {}),
+    ...statusPatch(args.customerStatus || ""),
+  };
+
+  if (existingLead) {
+    return prisma.lead.update({
+      where: { id: existingLead.id },
+      data: sharedData,
+    });
+  }
+
+  return prisma.lead.create({
+    data: {
+      businessId: args.businessId,
+      ...sharedData,
+    },
+  });
 }
 
 async function customerResponse(businessId: string, conversationId?: string) {
@@ -59,6 +171,17 @@ async function customerResponse(businessId: string, conversationId?: string) {
           requestedVoice: true,
           paymentStatus: true,
           updatedAt: true,
+          followUps: {
+            where: { status: "SCHEDULED" },
+            orderBy: { scheduledAt: "asc" },
+            select: {
+              id: true,
+              scheduledAt: true,
+              messageBody: true,
+              status: true,
+            },
+            take: 1,
+          },
         },
         take: 5,
       },
@@ -102,6 +225,7 @@ async function customerResponse(businessId: string, conversationId?: string) {
       aiMode: conversation.aiMode,
       unreadCount: conversation.unreadCount,
       notes: latestLead?.notes || "",
+      customerStatus: customerStatusFromLead(latestLead),
       leadId: latestLead?.id || null,
       leadStage: latestLead?.stage || null,
       leadTemperature: latestLead?.temperature || null,
@@ -109,6 +233,14 @@ async function customerResponse(businessId: string, conversationId?: string) {
       requestedVoice: latestLead?.requestedVoice || null,
       paymentStatus: latestLead?.paymentStatus || null,
       messageCount: conversation._count.messages,
+      nextScheduledMessage: latestLead?.followUps[0]
+        ? {
+          id: latestLead.followUps[0].id,
+          scheduledAt: serializeDate(latestLead.followUps[0].scheduledAt),
+          messageBody: latestLead.followUps[0].messageBody,
+          status: latestLead.followUps[0].status,
+        }
+        : null,
       lastMessage: lastMessage
         ? {
           id: lastMessage.id,
@@ -132,6 +264,14 @@ async function customerResponse(businessId: string, conversationId?: string) {
         requestedCharacter: lead.requestedCharacter,
         requestedVoice: lead.requestedVoice,
         paymentStatus: lead.paymentStatus,
+        nextScheduledMessage: lead.followUps[0]
+          ? {
+            id: lead.followUps[0].id,
+            scheduledAt: serializeDate(lead.followUps[0].scheduledAt),
+            messageBody: lead.followUps[0].messageBody,
+            status: lead.followUps[0].status,
+          }
+          : null,
         updatedAt: serializeDate(lead.updatedAt),
       })),
     };
@@ -157,6 +297,7 @@ export async function PATCH(request: Request) {
       conversationId?: unknown;
       displayName?: unknown;
       notes?: unknown;
+      customerStatus?: unknown;
     };
     const conversationId = stringValue(body.conversationId);
 
@@ -176,43 +317,15 @@ export async function PATCH(request: Request) {
       });
     }
 
-    if (typeof body.notes === "string") {
-      const notes = body.notes.trim();
-      const existingLead = await prisma.lead.findFirst({
-        where: {
-          businessId: business.id,
-          OR: [
-            { conversationId: conversation.id },
-            { contactId: conversation.contactId },
-          ],
-        },
-        orderBy: { updatedAt: "desc" },
-        select: { id: true },
+    const customerStatus = normalizeCustomerStatus(body.customerStatus);
+    if (typeof body.notes === "string" || customerStatus) {
+      await ensureCustomerLead({
+        businessId: business.id,
+        conversationId: conversation.id,
+        displayName,
+        notes: typeof body.notes === "string" ? body.notes.trim() : undefined,
+        customerStatus,
       });
-
-      if (existingLead) {
-        await prisma.lead.update({
-          where: { id: existingLead.id },
-          data: {
-            notes,
-            customerName: displayName || conversation.contact.displayName || conversation.contact.phone || conversation.contact.waId,
-            phone: conversation.contact.phone || conversation.contact.waId,
-            conversationId: conversation.id,
-            contactId: conversation.contactId,
-          },
-        });
-      } else {
-        await prisma.lead.create({
-          data: {
-            businessId: business.id,
-            contactId: conversation.contactId,
-            conversationId: conversation.id,
-            customerName: displayName || conversation.contact.displayName || conversation.contact.phone || conversation.contact.waId,
-            phone: conversation.contact.phone || conversation.contact.waId,
-            notes,
-          },
-        });
-      }
     }
 
     const customers = await customerResponse(business.id, conversation.id);
@@ -221,6 +334,60 @@ export async function PATCH(request: Request) {
     return json(500, {
       ok: false,
       error: error instanceof Error ? error.message : "Customer data could not be saved.",
+    });
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const business = await ensureDefaultBusiness();
+    const body = await request.json().catch(() => ({})) as {
+      action?: unknown;
+      conversationId?: unknown;
+      displayName?: unknown;
+      notes?: unknown;
+      customerStatus?: unknown;
+      scheduledAt?: unknown;
+      messageBody?: unknown;
+    };
+    const action = stringValue(body.action).toLowerCase();
+    const conversationId = stringValue(body.conversationId);
+    const messageBody = stringValue(body.messageBody);
+    const scheduledAtText = stringValue(body.scheduledAt);
+    const scheduledAt = scheduledAtText ? new Date(scheduledAtText) : null;
+
+    if (action !== "schedule_message") return json(400, { ok: false, error: "Choose a valid customer action." });
+    if (!conversationId) return json(400, { ok: false, error: "conversationId is required." });
+    if (!messageBody) return json(400, { ok: false, error: "Type the scheduled message first." });
+    if (!scheduledAt || Number.isNaN(scheduledAt.getTime()) || scheduledAt.getTime() <= Date.now()) {
+      return json(400, { ok: false, error: "Choose a future date and time." });
+    }
+
+    const lead = await ensureCustomerLead({
+      businessId: business.id,
+      conversationId,
+      displayName: stringValue(body.displayName),
+      notes: typeof body.notes === "string" ? body.notes.trim() : undefined,
+      customerStatus: normalizeCustomerStatus(body.customerStatus),
+    });
+    if (!lead) return json(404, { ok: false, error: "Customer conversation was not found." });
+
+    await prisma.followUp.create({
+      data: {
+        businessId: business.id,
+        leadId: lead.id,
+        scheduledAt,
+        messageBody,
+        templateKey: "crm_customer_row",
+      },
+    });
+
+    const customers = await customerResponse(business.id, conversationId);
+    return json(201, { ok: true, customer: customers[0] || null });
+  } catch (error) {
+    return json(500, {
+      ok: false,
+      error: error instanceof Error ? error.message : "Scheduled message could not be saved.",
     });
   }
 }
