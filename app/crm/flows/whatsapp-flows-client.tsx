@@ -108,7 +108,6 @@ const actionSelectOptions: { label: string; value: ActionSelectValue }[] = [
   { label: "Update Status", value: "Update Status" },
   { label: "Add Note", value: "Add Note" },
 ];
-const delayUnits: DelayUnit[] = ["seconds", "minutes", "hours", "days"];
 const FLOW_BUILDER_CACHE_KEY = "crm-whatsapp-flow-builder-cache-v1";
 const MAX_BROWSER_IMAGE_BYTES = 3.8 * 1024 * 1024;
 const MAX_WHATSAPP_VIDEO_BYTES = 16 * 1024 * 1024;
@@ -315,8 +314,8 @@ function makeAction(action?: Partial<FlowAction>): FlowAction {
   return {
     id: makeId(),
     type,
-    delayValue: action?.delayValue ?? "0",
-    delayUnit: action?.delayUnit || "minutes",
+    delayValue: delayValueInSeconds(action?.delayValue, action?.delayUnit),
+    delayUnit: "seconds",
     message: action?.message || "",
     mediaItems: action?.mediaItems?.length ? action.mediaItems.map(makeMediaItem) : (type === "Send Media" ? [makeMediaItem()] : []),
     options: action?.options?.length
@@ -563,7 +562,18 @@ function normaliseActionType(value: string): ActionType {
 }
 
 function normaliseDelayUnit(value: string): DelayUnit {
-  return delayUnits.find((unit) => unit === value.toLowerCase()) || "minutes";
+  return (["seconds", "minutes", "hours", "days"] as DelayUnit[]).find((unit) => unit === value.toLowerCase()) || "seconds";
+}
+
+function delayValueInSeconds(value?: string, unit?: DelayUnit) {
+  const amount = Math.max(0, Number(value) || 0);
+  const multiplier: Record<DelayUnit, number> = {
+    seconds: 1,
+    minutes: 60,
+    hours: 60 * 60,
+    days: 24 * 60 * 60,
+  };
+  return `${amount * multiplier[unit || "seconds"]}`;
 }
 
 function mediaItemsFromStep(step: FlowStep): FlowMediaItem[] {
@@ -2395,31 +2405,17 @@ export default function WhatsAppFlowsClient() {
     return (
       <div className={styles.outcomeSubflowAction} key={`${option.id}-${branchAction.id}`}>
         <div className={styles.branchActionHeader}>
-          <span>Action {branchIndex + 1}</span>
-          <div className={styles.inlineDelayControls}>
-            <label>
-              Delay
-              <input
-                min="0"
-                onChange={(event) => updateBranchAction(action.id, option.id, branchAction.id, { delayValue: event.target.value })}
-                type="number"
-                value={branchAction.delayValue}
-              />
-            </label>
-            <label>
-              Time
-              <select
-                onChange={(event) => updateBranchAction(action.id, option.id, branchAction.id, { delayUnit: event.target.value as DelayUnit })}
-                value={branchAction.delayUnit}
-              >
-                {delayUnits.map((unit) => (
-                  <option key={`${option.id}-${branchAction.id}-delay-${unit}`} value={unit}>
-                    {unit}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+          <span className={styles.compactActionDelay}>
+            Action {branchIndex + 1} (Delay
+            <input
+              aria-label={`Delay for branch action ${branchIndex + 1} in seconds`}
+              min="0"
+              onChange={(event) => updateBranchAction(action.id, option.id, branchAction.id, { delayValue: event.target.value, delayUnit: "seconds" })}
+              type="number"
+              value={branchAction.delayValue}
+            />
+            seconds)
+          </span>
           <button
             className={styles.textButton}
             onClick={() => removeBranchAction(action.id, option.id, branchAction.id)}
@@ -2684,31 +2680,17 @@ export default function WhatsAppFlowsClient() {
                     onClick={() => setSelectedCanvasNodeId(action.id)}
                   >
                     <div className={styles.canvasActionHeader}>
-                      <span>Action {index + 1}</span>
-                      <div className={styles.inlineDelayControls}>
-                        <label>
-                          Delay
-                          <input
-                            min="0"
-                            onChange={(event) => updateAction(action.id, { delayValue: event.target.value })}
-                            type="number"
-                            value={action.delayValue}
-                          />
-                        </label>
-                        <label>
-                          Time
-                          <select
-                            onChange={(event) => updateAction(action.id, { delayUnit: event.target.value as DelayUnit })}
-                            value={action.delayUnit}
-                          >
-                            {delayUnits.map((unit) => (
-                              <option key={`canvas-delay-${action.id}-${unit}`} value={unit}>
-                                {unit}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      </div>
+                      <span className={styles.compactActionDelay}>
+                        Action {index + 1} (Delay
+                        <input
+                          aria-label={`Delay for action ${index + 1} in seconds`}
+                          min="0"
+                          onChange={(event) => updateAction(action.id, { delayValue: event.target.value, delayUnit: "seconds" })}
+                          type="number"
+                          value={action.delayValue}
+                        />
+                        seconds)
+                      </span>
                     </div>
                     <select
                       className={styles.canvasNodeSelect}
@@ -3365,7 +3347,17 @@ export default function WhatsAppFlowsClient() {
                 <section className={styles.actionNode}>
                   <div className={styles.actionHeader}>
                     <div>
-                      <span className={styles.nodeBadge}>Action {index + 1}</span>
+                      <span className={`${styles.nodeBadge} ${styles.compactActionDelay}`}>
+                        Action {index + 1} (Delay
+                        <input
+                          aria-label={`Delay for action ${index + 1} in seconds`}
+                          min="0"
+                          onChange={(event) => updateAction(action.id, { delayValue: event.target.value, delayUnit: "seconds" })}
+                          type="number"
+                          value={action.delayValue}
+                        />
+                        seconds)
+                      </span>
                       <h3>{action.type}</h3>
                     </div>
                     <div className={styles.actionControls}>
@@ -3381,35 +3373,13 @@ export default function WhatsAppFlowsClient() {
                     </div>
                   </div>
 
-                  <div className={styles.delayGrid}>
-                    <label>
-                      Delay
-                      <input
-                        min="0"
-                        type="number"
-                        value={action.delayValue}
-                        onChange={(event) => updateAction(action.id, { delayValue: event.target.value })}
-                      />
-                    </label>
-                    <label>
-                      Time
-                      <select
-                        value={action.delayUnit}
-                        onChange={(event) => updateAction(action.id, { delayUnit: event.target.value as DelayUnit })}
-                      >
-                        {delayUnits.map((unit) => (
-                          <option key={unit} value={unit}>
-                            {unit}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                  <div className={styles.actionTypeRow}>
                     <label>
                       Action
                       <select
                         value={actionSelectValue(action)}
                         onChange={(event) => updateAction(action.id, actionPatchFromSelect(action, event.target.value as ActionSelectValue))}
-                >
+                      >
                         {actionSelectOptions.map((choice) => (
                           <option key={choice.value} value={choice.value}>
                             {choice.label}

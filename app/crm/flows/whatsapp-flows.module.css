@@ -259,10 +259,10 @@
 }
 
 .branchActionHeader {
-  align-items: end;
+  align-items: center;
   display: grid;
   gap: 10px;
-  grid-template-columns: auto minmax(220px, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   width: 100%;
 }
 
@@ -646,10 +646,8 @@
 }
 
 .canvasActionHeader {
-  align-items: end;
-  display: grid;
-  gap: 12px;
-  grid-template-columns: auto minmax(240px, 1fr);
+  align-items: center;
+  display: flex;
   width: 100%;
 }
 
@@ -683,41 +681,27 @@
   width: 100%;
 }
 
-.inlineDelayControls {
-  background: #f5f9ff;
-  border: 1px solid #d7e6fb;
-  border-radius: 8px;
-  display: grid;
-  gap: 8px;
-  grid-template-columns: minmax(0, 92px) minmax(0, 1fr);
-  min-width: 0;
-  padding: 8px;
-  width: 100%;
+.compactActionDelay {
+  align-items: center;
+  color: #174d8f;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 900;
+  gap: 6px;
+  letter-spacing: 0.02em;
+  text-transform: none;
 }
 
-.inlineDelayControls label {
-  color: #344c67;
-  display: grid;
-  font-size: 10px;
-  font-weight: 950;
-  gap: 4px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.inlineDelayControls input,
-.inlineDelayControls select {
+.compactActionDelay input {
   background: #ffffff;
   border: 1px solid #cbd8e8;
   border-radius: 7px;
   color: #102033;
   font-size: 13px;
   font-weight: 850;
-  height: 36px;
-  min-width: 0;
-  padding: 0 9px;
-  text-transform: none;
-  width: 100%;
+  height: 30px;
+  padding: 0 7px;
+  width: 58px;
 }
 
 .canvasNode textarea.canvasNodeInput {
@@ -732,8 +716,7 @@
 
 .canvasNodeInput:focus,
 .canvasNodeSelect:focus,
-.inlineDelayControls input:focus,
-.inlineDelayControls select:focus {
+.compactActionDelay input:focus {
   border-color: #bdd4f0;
   outline: none;
 }
@@ -1068,8 +1051,8 @@
 }
 
 .formGrid,
-.delayGrid,
-.triggerModeGrid {
+.triggerModeGrid,
+.actionTypeRow {
   display: grid;
   gap: 12px;
 }
@@ -1082,8 +1065,8 @@
   grid-template-columns: 150px minmax(0, 1fr);
 }
 
-.delayGrid {
-  grid-template-columns: 90px 130px minmax(0, 1fr);
+.actionTypeRow {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .helperText {
