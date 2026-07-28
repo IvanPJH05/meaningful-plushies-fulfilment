@@ -39,7 +39,7 @@ function customerStatusFromLead(lead: {
   if (!lead) return "Cold";
   if (lead.paymentStatus === PaymentStatus.PAID || lead.stage === LeadStage.PAID) return "Paid";
   if (lead.stage === LeadStage.NEW || lead.temperature === LeadTemperature.COLD) return "Cold";
-  if (lead.paymentStatus === PaymentStatus.UNPAID && lead.temperature !== LeadTemperature.COLD) return "Unpaid";
+  if (lead.paymentStatus === PaymentStatus.UNPAID) return "Unpaid";
   return "Warm";
 }
 
