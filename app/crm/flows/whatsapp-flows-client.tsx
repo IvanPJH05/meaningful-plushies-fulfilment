@@ -2768,10 +2768,12 @@ export default function WhatsAppFlowsClient() {
                         value={action.message}
                       />
                     ) : action.type === "Send Message" ? (
-                      <input
+                      <textarea
+                        aria-label={`Message for action ${index + 1}`}
                         className={styles.canvasNodeInput}
                         onChange={(event) => updateAction(action.id, { message: event.target.value })}
                         placeholder="No message yet"
+                        rows={3}
                         value={action.message}
                       />
                     ) : action.type === "Send Media" ? (
