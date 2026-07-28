@@ -2453,6 +2453,92 @@ export default function WhatsAppFlowsClient() {
     );
   }
 
+  function renderCanvasMediaEditor(action: FlowAction) {
+    const mediaItems = action.mediaItems.length ? action.mediaItems : [makeMediaItem()];
+    return (
+      <div className={styles.branchMediaList}>
+        <textarea
+          className={styles.canvasNodeInput}
+          value={action.message}
+          onChange={(event) => updateAction(action.id, { message: event.target.value })}
+          placeholder="Optional caption or instruction"
+          rows={2}
+        />
+        {mediaItems.map((item, mediaIndex) => (
+          <div className={styles.branchMediaItem} key={item.id || `${action.id}-${mediaIndex}`}>
+            <select
+              className={styles.canvasNodeSelect}
+              value={item.type}
+              onChange={(event) => {
+                if (item.id) updateMediaItem(action.id, item.id, { type: event.target.value as MediaType });
+                else addMediaItem(action.id, event.target.value as MediaType);
+              }}
+            >
+              <option value="image">Image</option>
+              <option value="video">Video</option>
+              <option value="pdf">PDF</option>
+            </select>
+            <label
+              className={`${styles.fileUpload} ${draggingMediaId === item.id ? styles.fileUploadDragging : ""}`}
+              onDragEnter={(event) => handleMediaDrag(event, item.id)}
+              onDragOver={(event) => handleMediaDrag(event, item.id)}
+              onDragLeave={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setDraggingMediaId("");
+              }}
+              onDrop={(event) => handleMediaDrop(event, action.id, item)}
+            >
+              <input
+                accept={mediaAccept()}
+                multiple
+                type="file"
+                onChange={(event) => {
+                  void uploadMediaFiles(action.id, item, event.target.files);
+                  event.currentTarget.value = "";
+                }}
+              />
+              <strong>{uploadingMediaId === item.id ? "Uploading..." : item.url ? "Add more files" : "Upload media"}</strong>
+              <small>{item.fileName || (item.url ? "Drop or choose more files" : `Drop or choose ${mediaDropText(item.type)}`)}</small>
+            </label>
+            {item.id && (
+              <input
+                className={styles.canvasNodeInput}
+                value={item.caption || ""}
+                onChange={(event) => updateMediaItem(action.id, item.id, { caption: event.target.value })}
+                placeholder="Optional caption"
+              />
+            )}
+            {item.url && (
+              <span
+                className={styles.mediaPreview}
+                style={item.type === "image" ? { backgroundImage: `url("${item.url}")` } : undefined}
+              >
+                {item.type === "video" ? "HD video ready" : item.type === "pdf" ? "PDF ready" : ""}
+              </span>
+            )}
+            {item.id && (
+              <button className={styles.textButton} type="button" onClick={() => removeMediaItem(action.id, item.id)}>
+                Remove media
+              </button>
+            )}
+          </div>
+        ))}
+        <div className={styles.mediaButtons}>
+          <button className={styles.secondaryButton} type="button" onClick={() => addMediaItem(action.id, "image")}>
+            Add image
+          </button>
+          <button className={styles.secondaryButton} type="button" onClick={() => addMediaItem(action.id, "video")}>
+            Add video
+          </button>
+          <button className={styles.secondaryButton} type="button" onClick={() => addMediaItem(action.id, "pdf")}>
+            Add PDF
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   function renderCurrentWorkflowBoard() {
     return (
       <section className={styles.workflowStudio}>
@@ -2551,6 +2637,8 @@ export default function WhatsAppFlowsClient() {
                         placeholder="No message yet"
                         value={action.message}
                       />
+                    ) : action.type === "Send Media" ? (
+                      renderCanvasMediaEditor(action)
                     ) : (
                       <small>{actionNodeSummary(action)}</small>
                     )}
