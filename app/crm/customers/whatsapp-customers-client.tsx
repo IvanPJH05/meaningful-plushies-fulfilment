@@ -549,10 +549,21 @@ export default function WhatsAppCustomersClient() {
                           />
                         </td>
                         <td>
-                          <span className={`${styles.statusBadge} ${styles[statusClass(customer.customerStatus)]}`}>
-                            {customer.customerStatus}
-                          </span>
-                          <small className={styles.statusHelp}>Updated by flow</small>
+                          <div className={styles.statusEditor}>
+                            <select
+                              aria-label={`Status for ${customer.displayName || customer.phone || "customer"}`}
+                              disabled={rowBusy}
+                              onChange={(event) => {
+                                const nextStatus = event.target.value as CustomerStatus;
+                                updateDraft(customer.conversationId, { status: nextStatus });
+                                void saveCustomer(customer, nextStatus);
+                              }}
+                              value={draft.status}
+                            >
+                              {customerStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
+                            </select>
+                            <small className={styles.statusHelp}>Change manually or by flow</small>
+                          </div>
                         </td>
                         <td>
                           <div className={styles.dateCell}>

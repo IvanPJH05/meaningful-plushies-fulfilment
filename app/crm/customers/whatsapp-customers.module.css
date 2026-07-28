@@ -361,6 +361,15 @@
   padding: 7px 10px;
 }
 
+.statusEditor {
+  display: grid;
+  gap: 5px;
+}
+
+.statusEditor select {
+  min-width: 112px;
+}
+
 .statusHelp {
   color: #70829a;
   display: block;
