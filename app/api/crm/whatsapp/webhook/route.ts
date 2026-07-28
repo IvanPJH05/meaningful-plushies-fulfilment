@@ -12,7 +12,10 @@ import {
 } from "@prisma/client";
 
 import { prisma } from "@/src/infrastructure/database/prisma";
+import { createManualOrderDiscounts } from "@/lib/manual-orders";
+import { saveManualOrder } from "@/lib/supabase";
 import { ensureDefaultBusiness } from "@/src/modules/businesses/default-business";
+import { buildManualOrderReadyWhatsAppMessage } from "@/src/modules/sales/paid-manual-order-flow";
 import {
   createWhatsAppAssistantReply,
   crmAiAutoReplyEnabled,
@@ -553,6 +556,34 @@ async function sendFlowStepFromWebhook(args: {
 }) {
   const type = textValue(args.step.type) || "Send Message";
   const body = textValue(args.step.message);
+  if (type === "Create Manual Order Link") {
+    const [character = "Billy", rawSpeaker = "5"] = body.split("|");
+    const speaker = ["5", "10", "20"].includes(rawSpeaker) ? rawSpeaker : "5";
+    const manualOrder = await createManualOrderDiscounts({
+      customerName: args.item.customerName || args.item.waId,
+      phone: args.item.waId,
+      character,
+      productKey: `plushie_${speaker}s`,
+      shippingRegion: "WEST",
+    });
+    await saveManualOrder(manualOrder);
+    const linkMessage = buildManualOrderReadyWhatsAppMessage({
+      customerName: manualOrder.customerName,
+      checkoutUrl: manualOrder.customerLink,
+      discountCode: manualOrder.productDiscountCode,
+    });
+    const delivery = await sendWhatsAppTextMessage({ to: args.item.waId, body: linkMessage });
+    const message = await recordFlowOutbound({
+      businessId: args.item.businessId,
+      conversationId: args.item.conversationId,
+      body: linkMessage,
+      metadata: { flowId: args.flowId, stepIndex: args.stepIndex, manualOrderId: manualOrder.id, delivery },
+      delivery,
+    });
+    if (message.status === MessageStatus.FAILED) throw new Error("WhatsApp did not accept the manual order link.");
+    await waitForOutboundMessageConfirmation(message);
+    return "continue";
+  }
   if (type === "Ask Selection") {
     const buttons = arrayValue(args.step.options)
       .map((option, optionIndex) => {

@@ -325,6 +325,7 @@ function actionPatchFromSelect(action: FlowAction, value: ActionSelectValue): Pa
 
   return {
     type: value,
+    message: value === "Create Manual Order Link" ? (action.message || "Billy|5") : action.message,
     mediaItems: value === "Send Media" && !action.mediaItems.length ? [makeMediaItem()] : action.mediaItems,
     options: action.options,
   };
@@ -337,7 +338,7 @@ function makeAction(action?: Partial<FlowAction>): FlowAction {
     type,
     delayValue: delayValueInSeconds(action?.delayValue, action?.delayUnit),
     delayUnit: "seconds",
-    message: action?.message || (type === "Ask Selection" ? "Which option would you like?" : ""),
+    message: action?.message || (type === "Ask Selection" ? "Which option would you like?" : type === "Create Manual Order Link" ? "Billy|5" : ""),
     mediaItems: action?.mediaItems?.length ? action.mediaItems.map(makeMediaItem) : (type === "Send Media" ? [makeMediaItem()] : []),
     options: action?.options?.length
       ? makeUniqueSelectionOptions(action.options.slice(0, 3))
