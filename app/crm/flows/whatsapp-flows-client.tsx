@@ -1130,6 +1130,11 @@ export default function WhatsAppFlowsClient() {
       ? action.mediaItems.some((item) => item.url.trim())
       : action.type === "AI Reply" || action.message.trim()
   )), [form.actions]);
+  const flowEndsWithBranch = useMemo(() => {
+    const lastAction = form.actions.at(-1);
+    return Boolean(lastAction?.type === "Ask Selection" && lastAction.options.some((option) => option.label.trim()));
+  }, [form.actions]);
+
   useEffect(() => {
     if (selectedCanvasNodeId === "trigger") return;
     if (!form.actions.some((action) => action.id === selectedCanvasNodeId)) setSelectedCanvasNodeId("trigger");
@@ -2260,10 +2265,14 @@ export default function WhatsAppFlowsClient() {
                 </div>
               );
             })}
-            <div className={styles.canvasConnector} />
-            <button className={styles.canvasAddButton} onClick={addAction} type="button" aria-label="Add action">
-              +
-            </button>
+            {!flowEndsWithBranch && (
+              <>
+                <div className={styles.canvasConnector} />
+                <button className={styles.canvasAddButton} onClick={addAction} type="button" aria-label="Add action">
+                  +
+                </button>
+              </>
+            )}
           </div>
         </div>
       </section>
