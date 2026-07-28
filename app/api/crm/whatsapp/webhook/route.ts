@@ -4,10 +4,13 @@ import {
   AiCommandStatus,
   AiCommandType,
   ConversationStatus,
+  LeadStage,
+  LeadTemperature,
   MessageDirection,
   MessageSenderType,
   MessageStatus,
   MessageType,
+  PaymentStatus,
   WebhookEventStatus,
 } from "@prisma/client";
 
@@ -556,6 +559,33 @@ async function sendFlowStepFromWebhook(args: {
 }) {
   const type = textValue(args.step.type) || "Send Message";
   const body = textValue(args.step.message);
+  if (type === "Update Status") {
+    const status = body.toLowerCase();
+    const patch = status === "paid"
+      ? { temperature: LeadTemperature.HOT, paymentStatus: PaymentStatus.PAID, stage: LeadStage.PAID }
+      : status === "unpaid"
+        ? { temperature: LeadTemperature.WARM, paymentStatus: PaymentStatus.UNPAID, stage: LeadStage.READY_TO_ORDER }
+        : status === "warm"
+          ? { temperature: LeadTemperature.WARM, paymentStatus: PaymentStatus.UNPAID, stage: LeadStage.QUALIFYING }
+          : { temperature: LeadTemperature.COLD, paymentStatus: PaymentStatus.UNPAID, stage: LeadStage.NEW };
+    const lead = await prisma.lead.findFirst({
+      where: {
+        businessId: args.item.businessId,
+        OR: [{ conversationId: args.item.conversationId }, { contactId: args.item.contactId }],
+      },
+      orderBy: { updatedAt: "desc" },
+    });
+    const data = {
+      ...patch,
+      customerName: args.item.customerName || args.item.waId,
+      phone: args.item.waId,
+      conversationId: args.item.conversationId,
+      contactId: args.item.contactId,
+    };
+    if (lead) await prisma.lead.update({ where: { id: lead.id }, data });
+    else await prisma.lead.create({ data: { businessId: args.item.businessId, ...data } });
+    return "continue";
+  }
   if (type === "Create Manual Order Link") {
     const [character = "Billy", rawSpeaker = "5"] = body.split("|");
     const speaker = ["5", "10", "20"].includes(rawSpeaker) ? rawSpeaker : "5";

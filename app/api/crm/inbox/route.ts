@@ -6,6 +6,9 @@ import {
   MessageSenderType,
   MessageStatus,
   MessageType,
+  LeadStage,
+  LeadTemperature,
+  PaymentStatus,
 } from "@prisma/client";
 
 import { prisma } from "@/src/infrastructure/database/prisma";
@@ -349,6 +352,36 @@ async function runMessageSentTriggeredFlow(args: {
     await wait(Math.min(flowDelayMs(step), 30_000));
     const type = stringValue(step.type) || "Send Message";
     const body = stringValue(step.message);
+
+    if (type === "Update Status") {
+      const status = body.toLowerCase();
+      const patch = status === "paid"
+        ? { temperature: LeadTemperature.HOT, paymentStatus: PaymentStatus.PAID, stage: LeadStage.PAID }
+        : status === "unpaid"
+          ? { temperature: LeadTemperature.WARM, paymentStatus: PaymentStatus.UNPAID, stage: LeadStage.READY_TO_ORDER }
+          : status === "warm"
+            ? { temperature: LeadTemperature.WARM, paymentStatus: PaymentStatus.UNPAID, stage: LeadStage.QUALIFYING }
+            : { temperature: LeadTemperature.COLD, paymentStatus: PaymentStatus.UNPAID, stage: LeadStage.NEW };
+      const conversation = await prisma.conversation.findFirst({
+        where: { id: args.conversationId, businessId: args.businessId },
+        include: { contact: true },
+      });
+      if (!conversation) return;
+      const lead = await prisma.lead.findFirst({
+        where: { businessId: args.businessId, OR: [{ conversationId: conversation.id }, { contactId: conversation.contactId }] },
+        orderBy: { updatedAt: "desc" },
+      });
+      const data = {
+        ...patch,
+        customerName: conversation.contact.displayName || conversation.contact.phone || conversation.contact.waId || "WhatsApp customer",
+        phone: conversation.contact.phone || conversation.contact.waId,
+        conversationId: conversation.id,
+        contactId: conversation.contactId,
+      };
+      if (lead) await prisma.lead.update({ where: { id: lead.id }, data });
+      else await prisma.lead.create({ data: { businessId: args.businessId, ...data } });
+      continue;
+    }
 
     if (type === "Create Manual Order Link") {
       const [character = "Billy", rawSpeaker = "5"] = body.split("|");
