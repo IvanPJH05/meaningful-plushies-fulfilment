@@ -207,7 +207,7 @@
 
 .customerSheet th:nth-child(5),
 .customerSheet td:nth-child(5) {
-  width: 260px;
+  width: 340px;
 }
 
 .customerSheet th:nth-child(6),
@@ -273,6 +273,16 @@
 
 .flowCell {
   grid-template-columns: minmax(0, 1fr) 76px;
+}
+
+.flowCell > select {
+  grid-column: 1 / -1;
+}
+
+.flowDelayControls {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 84px minmax(0, 1fr);
 }
 
 .scheduleCell {

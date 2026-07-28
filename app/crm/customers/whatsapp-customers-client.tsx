@@ -63,6 +63,8 @@ type RowDraft = {
   status: CustomerStatus;
   notes: string;
   flowId: string;
+  flowDelayValue: string;
+  flowDelayUnit: FlowDelayUnit;
   scheduledAt: string;
   scheduledMessage: string;
 };
@@ -75,9 +77,20 @@ function emptyDraft(customer: Customer): RowDraft {
     status: customer.customerStatus || "Warm",
     notes: customer.notes || "",
     flowId: "",
+    flowDelayValue: "0",
+    flowDelayUnit: "seconds",
     scheduledAt: "",
     scheduledMessage: "",
   };
+}
+
+function customDelayMs(value: string, unit: FlowDelayUnit) {
+  const parsed = Number(value || 0);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  if (unit === "minutes") return parsed * 60_000;
+  if (unit === "hours") return parsed * 3_600_000;
+  if (unit === "days") return parsed * 86_400_000;
+  return parsed * 1000;
 }
 
 function delayMs(step: WhatsAppFlowStep) {
@@ -166,6 +179,8 @@ export default function WhatsAppCustomersClient() {
           status: "Warm",
           notes: "",
           flowId: "",
+          flowDelayValue: "0",
+          flowDelayUnit: "seconds",
           scheduledAt: "",
           scheduledMessage: "",
         }),
@@ -199,6 +214,8 @@ export default function WhatsAppCustomersClient() {
         [result.customer!.conversationId]: {
           ...emptyDraft(result.customer!),
           flowId: current[result.customer!.conversationId]?.flowId || "",
+          flowDelayValue: current[result.customer!.conversationId]?.flowDelayValue || "0",
+          flowDelayUnit: current[result.customer!.conversationId]?.flowDelayUnit || "seconds",
           scheduledAt: current[result.customer!.conversationId]?.scheduledAt || "",
           scheduledMessage: current[result.customer!.conversationId]?.scheduledMessage || "",
         },
@@ -243,6 +260,8 @@ export default function WhatsAppCustomersClient() {
     setNotice("");
     try {
       await saveCustomer(customer);
+      const startDelay = customDelayMs(draft.flowDelayValue, draft.flowDelayUnit);
+      if (startDelay) await sleep(startDelay);
       for (const step of flow.steps) {
         const wait = delayMs(step);
         if (wait) await sleep(wait);
@@ -300,6 +319,8 @@ export default function WhatsAppCustomersClient() {
         [result.customer!.conversationId]: {
           ...emptyDraft(result.customer!),
           flowId: current[result.customer!.conversationId]?.flowId || "",
+          flowDelayValue: current[result.customer!.conversationId]?.flowDelayValue || "0",
+          flowDelayUnit: current[result.customer!.conversationId]?.flowDelayUnit || "seconds",
           scheduledAt: "",
           scheduledMessage: "",
         },
@@ -407,6 +428,23 @@ export default function WhatsAppCustomersClient() {
                                 <option key={flow.id} value={flow.id}>{flow.name}</option>
                               ))}
                             </select>
+                            <div className={styles.flowDelayControls}>
+                              <input
+                                min="0"
+                                onChange={(event) => updateDraft(customer.conversationId, { flowDelayValue: event.target.value })}
+                                type="number"
+                                value={draft.flowDelayValue}
+                              />
+                              <select
+                                onChange={(event) => updateDraft(customer.conversationId, { flowDelayUnit: event.target.value as FlowDelayUnit })}
+                                value={draft.flowDelayUnit}
+                              >
+                                <option value="seconds">seconds</option>
+                                <option value="minutes">minutes</option>
+                                <option value="hours">hours</option>
+                                <option value="days">days</option>
+                              </select>
+                            </div>
                             <button disabled={rowBusy || !draft.flowId} onClick={() => void sendFlow(customer)} type="button">
                               {rowBusy ? "Working..." : "Send"}
                             </button>
