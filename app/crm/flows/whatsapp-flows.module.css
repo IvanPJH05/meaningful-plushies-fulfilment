@@ -31,6 +31,15 @@
   grid-template-columns: 88px minmax(0, 1fr);
 }
 
+.builderMode {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.builderMode .workspaceRail,
+.builderMode .builderHeader {
+  display: none;
+}
+
 .workspaceRail {
   align-items: stretch;
   background: #102033;
@@ -106,7 +115,8 @@
 }
 
 .builderTitleRow,
-.workflowHomeActions {
+.workflowHomeActions,
+.builderHeaderActions {
   align-items: center;
   display: flex;
   gap: 12px;
@@ -121,6 +131,32 @@
   font-size: 12px;
   font-weight: 900;
   padding: 9px 11px;
+}
+
+.builderMode .builder {
+  background: #fbfdff;
+  gap: 0;
+  grid-column: 1;
+  padding: 0;
+}
+
+.builderMode .builderHeader {
+  background: #ffffff;
+  border-bottom: 1px solid #d7e3f2;
+  padding: 8px 20px;
+}
+
+.builderMode .templateRow,
+.builderMode .nodeCard,
+.builderMode .actionWrap,
+.builderMode .flowCanvas > .addActionButton,
+.builderMode .formActions {
+  display: none;
+}
+
+.builderMode .flowCanvas {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .builderHeader h1,
@@ -242,6 +278,17 @@
   overflow: hidden;
 }
 
+.builderMode .workflowStudio {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  flex: 1 1 auto;
+  grid-template-columns: minmax(0, 1fr);
+  height: 100%;
+  margin: 0;
+  min-height: 0;
+}
+
 .workflowInspector {
   background: #ffffff;
   border-right: 1px solid #d7e3f2;
@@ -358,6 +405,10 @@
   min-width: 0;
 }
 
+.builderMode .workflowBoard {
+  min-height: 0;
+}
+
 .workflowBoardToolbar {
   align-items: center;
   background: rgba(255, 255, 255, 0.92);
@@ -368,14 +419,38 @@
   padding: 12px 14px;
 }
 
-.workflowBoardToolbar strong,
+.workflowToolbarActions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.builderMode .workflowBoardToolbar {
+  background: #ffffff;
+  min-height: 68px;
+  padding: 8px 20px;
+}
+
 .workflowBoardToolbar span {
   display: block;
 }
 
-.workflowBoardToolbar strong {
+.workflowTitleInput {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
   color: #102033;
   font-size: 15px;
+  font-weight: 950;
+  margin: 0 0 2px -8px;
+  min-width: min(360px, 60vw);
+  padding: 5px 7px;
+}
+
+.workflowTitleInput:focus {
+  background: #ffffff;
+  border-color: #c6d8ee;
+  outline: none;
 }
 
 .workflowBoardToolbar span {
@@ -393,6 +468,11 @@
   min-height: 450px;
   overflow: auto;
   padding: 56px 26px 72px;
+}
+
+.builderMode .workflowTrack {
+  min-height: 0;
+  padding: 68px 28px 96px;
 }
 
 .canvasStep {
@@ -423,6 +503,12 @@
   width: min(360px, 76vw);
 }
 
+.builderMode .canvasNode {
+  min-height: 102px;
+  padding: 16px 18px;
+  width: min(454px, calc(100vw - 260px));
+}
+
 .canvasNode span {
   color: #52677f;
   font-size: 11px;
@@ -448,8 +534,55 @@
   -webkit-line-clamp: 2;
 }
 
+.canvasNodeInput,
+.canvasNodeSelect {
+  background: #ffffff;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: #102033;
+  font-size: 14px;
+  font-weight: 850;
+  min-width: 0;
+  padding: 6px 7px;
+  width: 100%;
+}
+
+.canvasNodeInput {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.canvasNodeInput:focus,
+.canvasNodeSelect:focus {
+  border-color: #bdd4f0;
+  outline: none;
+}
+
 .triggerCanvasNode {
   border-top: 4px solid #1769e0;
+}
+
+.canvasAddButton {
+  align-items: center;
+  background: #102033;
+  border: 1px solid #102033;
+  border-radius: 999px;
+  box-shadow: 0 8px 18px rgba(16, 32, 51, 0.18);
+  color: #ffffff;
+  cursor: pointer;
+  display: flex;
+  font-size: 24px;
+  font-weight: 850;
+  height: 34px;
+  justify-content: center;
+  line-height: 1;
+  padding: 0 0 2px;
+  width: 34px;
+}
+
+.canvasAddButton:hover {
+  background: #1769e0;
+  border-color: #1769e0;
 }
 
 .canvasNodeSelected {
@@ -494,6 +627,25 @@
   color: #174d8f;
   font-size: 11px;
   font-weight: 950;
+}
+
+.outcomeLabelInput {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: #174d8f;
+  font-size: 12px;
+  font-weight: 950;
+  min-width: 0;
+  padding: 5px 6px;
+  text-align: center;
+  width: 100%;
+}
+
+.outcomeLabelInput:focus {
+  background: #ffffff;
+  border-color: #bdd4f0;
+  outline: none;
 }
 
 .outcomePath strong {

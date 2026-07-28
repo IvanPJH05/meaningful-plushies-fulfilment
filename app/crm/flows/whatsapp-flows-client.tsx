@@ -1130,10 +1130,6 @@ export default function WhatsAppFlowsClient() {
       ? action.mediaItems.some((item) => item.url.trim())
       : action.type === "AI Reply" || action.message.trim()
   )), [form.actions]);
-  const selectedCanvasAction = useMemo(() => (
-    form.actions.find((action) => action.id === selectedCanvasNodeId)
-  ), [form.actions, selectedCanvasNodeId]);
-
   useEffect(() => {
     if (selectedCanvasNodeId === "trigger") return;
     if (!form.actions.some((action) => action.id === selectedCanvasNodeId)) setSelectedCanvasNodeId("trigger");
@@ -1890,7 +1886,7 @@ export default function WhatsAppFlowsClient() {
 
   function createWorkflow() {
     setEditingId("");
-    setForm(emptyFlowForm());
+    setForm({ ...emptyFlowForm(), name: "Untitled workflow", triggerButtonLabel: "Inbox button" });
     setSelectedCanvasNodeId("trigger");
     setScreenMode("builder");
   }
@@ -1996,98 +1992,118 @@ export default function WhatsAppFlowsClient() {
   function renderCurrentWorkflowBoard() {
     return (
       <section className={styles.workflowStudio}>
-        <aside className={styles.workflowInspector}>
-          <div className={styles.flowSidebarTitle}>
-            <p className={styles.eyebrow}>Flow</p>
-            <h2>{form.name || "Message flow"}</h2>
-            <span>{form.actions.length} actions · {form.actions.filter((action) => action.type === "Ask Selection").length} outcomes</span>
-          </div>
-          <div className={styles.flowOutline}>
-            <button
-              className={selectedCanvasNodeId === "trigger" ? styles.flowOutlineActive : ""}
-              onClick={() => setSelectedCanvasNodeId("trigger")}
-              type="button"
-            >
-              <strong>Start trigger</strong>
-              <span>{triggerCanvasSummary()}</span>
-            </button>
-            {form.actions.map((action, index) => (
-              <button
-                className={selectedCanvasNodeId === action.id ? styles.flowOutlineActive : ""}
-                key={`outline-${action.id}`}
-                onClick={() => setSelectedCanvasNodeId(action.id)}
-                type="button"
-              >
-                <strong>{index + 1}. {action.type}</strong>
-                <span>{actionNodeSummary(action)}</span>
-              </button>
-            ))}
-          </div>
-          <div>
-            <p className={styles.eyebrow}>Selected node</p>
-            <h2>{selectedCanvasNodeId === "trigger" ? "Trigger" : selectedCanvasAction?.type || "Action"}</h2>
-          </div>
-          {selectedCanvasNodeId === "trigger" ? (
-            <div className={styles.inspectorDetails}>
-              <span><strong>Starts when</strong>{form.triggerType.replace("_", " ")}</span>
-              <span><strong>Summary</strong>{triggerCanvasSummary()}</span>
-              <span><strong>Flow</strong>{form.name || "Untitled flow"}</span>
-            </div>
-          ) : selectedCanvasAction ? (
-            <div className={styles.inspectorDetails}>
-              <span><strong>Delay</strong>{actionDelayLabel(selectedCanvasAction)}</span>
-              <span><strong>Action</strong>{selectedCanvasAction.type}</span>
-              <span><strong>Summary</strong>{actionNodeSummary(selectedCanvasAction)}</span>
-            </div>
-          ) : (
-            <p className={styles.helperText}>Select a trigger or action on the chart.</p>
-          )}
-          <p className={styles.inspectorHint}>
-            Use the chart to understand the customer path. Edit the selected action in the cards below.
-          </p>
-        </aside>
-
         <div className={styles.workflowBoard}>
           <div className={styles.workflowBoardToolbar}>
             <div>
-              <strong>{form.name || "Untitled workflow"}</strong>
+              <input
+                aria-label="Workflow name"
+                className={styles.workflowTitleInput}
+                onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+                value={form.name}
+                placeholder="Untitled workflow"
+              />
               <span>{form.actions.length} actions · {form.actions.filter((action) => action.type === "Ask Selection").length} branch points</span>
             </div>
-            <button className={styles.secondaryButton} onClick={addAction} type="button">
-              Add action
-            </button>
+            <div className={styles.workflowToolbarActions}>
+              <button className={styles.secondaryButton} onClick={() => setScreenMode("library")} type="button">
+                Back
+              </button>
+              <button className={styles.primaryButton} onClick={saveFlow} disabled={saving || !form.name.trim() || !hasUsableAction}>
+                {saving ? "Saving..." : "Save"}
+              </button>
+            </div>
           </div>
 
           <div className={styles.workflowTrack}>
-            <button
+            <div
               className={`${styles.canvasNode} ${styles.triggerCanvasNode} ${selectedCanvasNodeId === "trigger" ? styles.canvasNodeSelected : ""}`}
               onClick={() => setSelectedCanvasNodeId("trigger")}
-              type="button"
             >
               <span>Trigger</span>
-              <strong>{form.triggerType === "keywords" ? "Exact phrases" : form.triggerType === "first_message" ? "First message" : form.triggerType === "selection_button" ? "Selection press" : "Inbox button"}</strong>
-              <small>{triggerCanvasSummary()}</small>
-            </button>
+              <select
+                className={styles.canvasNodeSelect}
+                onChange={(event) => setForm((current) => formWithTriggerType(current, event.target.value as TriggerType))}
+                value={form.triggerType}
+              >
+                <option value="click">Inbox button</option>
+                <option value="keywords">Exact phrases</option>
+                <option value="first_message">First customer message</option>
+                <option value="selection_button">Selection button press</option>
+              </select>
+              {form.triggerType === "first_message" ? (
+                <small>Customer sends their first message</small>
+              ) : form.triggerType === "selection_button" ? (
+                <small>{triggerCanvasSummary()}</small>
+              ) : (
+                <input
+                  className={styles.canvasNodeInput}
+                  onChange={(event) => setForm((current) => (
+                    form.triggerType === "keywords"
+                      ? { ...current, trigger: event.target.value }
+                      : { ...current, triggerButtonLabel: event.target.value }
+                  ))}
+                  placeholder={form.triggerType === "keywords" ? "Add exact trigger phrases" : "Inbox button"}
+                  value={form.triggerType === "keywords" ? form.trigger : form.triggerButtonLabel}
+                />
+              )}
+            </div>
 
             {form.actions.map((action, index) => {
               const filledOptions = action.options.filter((option) => option.label.trim());
               return (
                 <div className={styles.canvasStep} key={`canvas-${action.id}`}>
                   <div className={styles.canvasConnector} />
-                  <button
+                  <div
                     className={`${styles.canvasNode} ${selectedCanvasNodeId === action.id ? styles.canvasNodeSelected : ""}`}
                     onClick={() => setSelectedCanvasNodeId(action.id)}
-                    type="button"
                   >
                     <span>Action {index + 1} · {actionDelayLabel(action)}</span>
-                    <strong>{action.type}</strong>
-                    <small>{actionNodeSummary(action)}</small>
-                  </button>
+                    <select
+                      className={styles.canvasNodeSelect}
+                      onChange={(event) => {
+                        const nextType = event.target.value as ActionType;
+                        updateAction(action.id, {
+                          type: nextType,
+                          mediaItems: nextType === "Send Media" && !action.mediaItems.length ? [makeMediaItem()] : action.mediaItems,
+                          options: nextType === "Ask Selection" && !action.options.length ? [
+                            makeSelectionOption({ label: "English" }),
+                            makeSelectionOption({ label: "Malay" }),
+                          ] : action.options,
+                        });
+                      }}
+                      value={action.type}
+                    >
+                      {actionTypes.map((type) => (
+                        <option key={`canvas-${action.id}-${type}`} value={type}>
+                          {type}
+                        </option>
+                      ))}
+                    </select>
+                    {action.type === "Send Message" ? (
+                      <input
+                        className={styles.canvasNodeInput}
+                        onChange={(event) => updateAction(action.id, { message: event.target.value })}
+                        placeholder="No message yet"
+                        value={action.message}
+                      />
+                    ) : (
+                      <small>{actionNodeSummary(action)}</small>
+                    )}
+                  </div>
                   {action.type === "Ask Selection" && (
                     <div className={styles.outcomeFan}>
                       {filledOptions.length ? filledOptions.map((option) => (
                         <div className={styles.outcomePath} key={`${action.id}-${option.id || option.label}`}>
-                          <span>{option.label}</span>
+                          <input
+                            className={styles.outcomeLabelInput}
+                            onChange={(event) => updateAction(action.id, {
+                              options: action.options.map((current) => (
+                                current.id === option.id ? { ...current, label: event.target.value } : current
+                              )),
+                            })}
+                            value={option.label}
+                            placeholder="Option label"
+                          />
                           <strong>{selectionDestinationLabel(option)}</strong>
                           <select
                             aria-label={`Choose next sub flow for ${option.label}`}
@@ -2126,6 +2142,10 @@ export default function WhatsAppFlowsClient() {
                 </div>
               );
             })}
+            <div className={styles.canvasConnector} />
+            <button className={styles.canvasAddButton} onClick={addAction} type="button" aria-label="Add action">
+              +
+            </button>
           </div>
         </div>
       </section>
@@ -2540,7 +2560,12 @@ export default function WhatsAppFlowsClient() {
                 <h1>{form.name || (editingId ? "Edit workflow" : "Create workflow")}</h1>
               </div>
             </div>
-            <span>{loading ? "Loading..." : `${flows.length} flows | ${activeCount} active`}</span>
+            <div className={styles.builderHeaderActions}>
+              <span>{loading ? "Loading..." : `${flows.length} flows | ${activeCount} active`}</span>
+              <button className={styles.primaryButton} onClick={saveFlow} disabled={saving || !form.name.trim() || !hasUsableAction}>
+                {saving ? "Saving..." : "Save"}
+              </button>
+            </div>
           </div>
 
           {notice && <div className={styles.notice}>{notice}</div>}
