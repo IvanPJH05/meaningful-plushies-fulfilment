@@ -1884,6 +1884,54 @@ export default function WhatsAppFlowsClient() {
     setForm((current) => ({ ...current, actions: [...current.actions, makeAction({ delayValue: "5" })] }));
   }
 
+  async function createSubflowFromOption(actionId: string, option: SelectionOption) {
+    const optionLabel = option.label.trim() || "Option";
+    const usedNames = new Set(flows.map((flow) => flow.name.trim().toLowerCase()));
+    const baseName = `${form.name || "Workflow"} / ${optionLabel}`;
+    const subflowForm: FlowForm = {
+      ...emptyFlowForm(),
+      name: uniqueCopyName(baseName, usedNames),
+      triggerType: "selection_button",
+      triggerButtonLabel: option.id || makeSelectionKey(),
+      groupName: form.groupName,
+      subgroupName: childFolderPath(form.subgroupName, optionLabel),
+      description: `Subflow for ${optionLabel} from ${form.name || "this workflow"}.`,
+      status: "Draft",
+      actions: [makeAction({
+        delayValue: "0",
+        delayUnit: "seconds",
+        message: "Draft subflow. Replace this message before activating.",
+      })],
+    };
+
+    setSaving(true);
+    setNotice("");
+    try {
+      const response = await fetch("/api/crm/flows", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(flowPayloadFromForm(subflowForm)),
+      });
+      const result = (await response.json()) as { ok?: boolean; flow?: WhatsAppFlow; error?: string };
+      if (!response.ok || !result.ok || !result.flow) throw new Error(result.error || "Subflow could not be created.");
+      setFlows((current) => [result.flow as WhatsAppFlow, ...current]);
+      updateAction(actionId, {
+        options: form.actions.find((action) => action.id === actionId)?.options.map((current) => (
+          current.id === option.id ? {
+            ...current,
+            targetFlowId: result.flow?.id || "",
+            targetFlowName: result.flow?.name || "",
+          } : current
+        )) || [],
+      });
+      setNotice(`Created subflow "${result.flow.name}" for ${optionLabel}.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Subflow could not be created.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function createWorkflow() {
     setEditingId("");
     setForm({ ...emptyFlowForm(), name: "Untitled workflow", triggerButtonLabel: "Inbox button" });
@@ -2130,6 +2178,15 @@ export default function WhatsAppFlowsClient() {
                                 </option>
                               ))}
                           </select>
+                          <button
+                            aria-label={`Create subflow for ${option.label || "option"}`}
+                            className={styles.outcomeAddButton}
+                            disabled={saving}
+                            onClick={() => void createSubflowFromOption(action.id, option)}
+                            type="button"
+                          >
+                            +
+                          </button>
                         </div>
                       )) : (
                         <div className={styles.outcomePath}>
