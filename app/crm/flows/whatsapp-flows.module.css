@@ -773,12 +773,14 @@
 
 .outcomeFan {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 18px;
   justify-content: center;
-  max-width: 960px;
+  max-width: 100%;
+  overflow-x: auto;
   padding: 18px 0 34px;
   position: relative;
+  width: 100%;
 }
 
 .outcomeFan::before {
