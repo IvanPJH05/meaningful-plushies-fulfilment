@@ -806,6 +806,24 @@
   font-weight: 800;
 }
 
+.manualOrderActionFields {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.manualOrderActionFields select {
+  background: #ffffff;
+  border: 1px solid #cbd8e8;
+  border-radius: 8px;
+  color: #102033;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  min-height: 38px;
+  padding: 0 9px;
+}
+
 .canvasNodeInput:focus,
 .canvasNodeSelect:focus,
 .compactActionDelay input:focus {

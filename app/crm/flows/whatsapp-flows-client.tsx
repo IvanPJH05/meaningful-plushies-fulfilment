@@ -31,7 +31,7 @@ type TriggerRule = {
   phrase: string;
 };
 type MediaType = "image" | "video" | "pdf";
-type ActionType = "Send Message" | "Send Media" | "Ask Selection" | "AI Reply" | "Update Status" | "Add Note";
+type ActionType = "Send Message" | "Send Media" | "Ask Selection" | "AI Reply" | "Update Status" | "Add Note" | "Create Manual Order Link";
 type ActionSelectValue = ActionType | "Ask Selection (2)" | "Ask Selection (3)";
 type StoredActionType = ActionType | "Send Image" | "Send Video";
 type DelayUnit = "seconds" | "minutes" | "hours" | "days";
@@ -98,7 +98,7 @@ type FlowForm = {
   actions: FlowAction[];
 };
 
-const actionTypes: ActionType[] = ["Send Message", "Send Media", "Ask Selection", "AI Reply", "Update Status", "Add Note"];
+const actionTypes: ActionType[] = ["Send Message", "Send Media", "Ask Selection", "AI Reply", "Update Status", "Add Note", "Create Manual Order Link"];
 const customerStatuses = ["Cold", "Warm", "Unpaid", "Paid"] as const;
 const actionSelectOptions: { label: string; value: ActionSelectValue }[] = [
   { label: "Send Message", value: "Send Message" },
@@ -108,7 +108,22 @@ const actionSelectOptions: { label: string; value: ActionSelectValue }[] = [
   { label: "AI Reply", value: "AI Reply" },
   { label: "Update Status", value: "Update Status" },
   { label: "Add Note", value: "Add Note" },
+  { label: "Create Manual Order Link", value: "Create Manual Order Link" },
 ];
+const manualOrderCharacters = ["Billy", "Tootsie", "Hunnie", "Dragon Warrior"] as const;
+const manualOrderSpeakers = ["5", "10", "20"] as const;
+
+function manualOrderSettings(value: string) {
+  const [character = "Billy", speaker = "5"] = value.split("|");
+  return {
+    character: manualOrderCharacters.includes(character as typeof manualOrderCharacters[number]) ? character : "Billy",
+    speaker: manualOrderSpeakers.includes(speaker as typeof manualOrderSpeakers[number]) ? speaker : "5",
+  };
+}
+
+function manualOrderSettingsValue(character: string, speaker: string) {
+  return `${character}|${speaker}`;
+}
 const FLOW_BUILDER_CACHE_KEY = "crm-whatsapp-flow-builder-cache-v1";
 const MAX_BROWSER_IMAGE_BYTES = 3.8 * 1024 * 1024;
 const MAX_WHATSAPP_VIDEO_BYTES = 16 * 1024 * 1024;
@@ -711,7 +726,7 @@ function formatActionStep(action: FlowAction): FlowStep | null {
 
   if (action.type === "Ask Selection" && (!message || !options.length)) return null;
   if (action.type === "Send Media" && !mediaItems.length) return null;
-  if (action.type !== "Send Media" && action.type !== "AI Reply" && !message) return null;
+  if (action.type !== "Send Media" && action.type !== "AI Reply" && action.type !== "Create Manual Order Link" && !message) return null;
   return {
     type: action.type,
     delayValue: `${Math.max(0, Number(action.delayValue) || 0)}`,
@@ -2788,6 +2803,15 @@ export default function WhatsAppFlowsClient() {
                         <option value="">Choose status</option>
                         {customerStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
                       </select>
+                    ) : action.type === "Create Manual Order Link" ? (
+                      <div className={styles.manualOrderActionFields}>
+                        <select value={manualOrderSettings(action.message).character} onChange={(event) => updateAction(action.id, { message: manualOrderSettingsValue(event.target.value, manualOrderSettings(action.message).speaker) })}>
+                          {manualOrderCharacters.map((character) => <option key={character} value={character}>{character}</option>)}
+                        </select>
+                        <select value={manualOrderSettings(action.message).speaker} onChange={(event) => updateAction(action.id, { message: manualOrderSettingsValue(manualOrderSettings(action.message).character, event.target.value) })}>
+                          {manualOrderSpeakers.map((speaker) => <option key={speaker} value={speaker}>{speaker}s speaker</option>)}
+                        </select>
+                      </div>
                     ) : (
                       <small>{actionNodeSummary(action)}</small>
                     )}

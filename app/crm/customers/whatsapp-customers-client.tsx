@@ -28,7 +28,7 @@ type Customer = {
 };
 
 type FlowMediaType = "image" | "video" | "pdf";
-type FlowActionType = "Send Message" | "Send Media" | "Send Image" | "Send Video" | "Ask Selection" | "AI Reply" | "Update Status" | "Add Note";
+type FlowActionType = "Send Message" | "Send Media" | "Send Image" | "Send Video" | "Ask Selection" | "AI Reply" | "Update Status" | "Add Note" | "Create Manual Order Link";
 type FlowDelayUnit = "seconds" | "minutes" | "hours" | "days";
 
 type FlowMediaItem = {
@@ -114,6 +114,11 @@ function localDateTimeLabel(value: string | null | undefined) {
 
 function statusClass(status: CustomerStatus) {
   return status.toLowerCase();
+}
+
+function manualOrderSettings(value: string) {
+  const [character = "Billy", speaker = "5"] = value.split("|");
+  return { character, productKey: `plushie_${["5", "10", "20"].includes(speaker) ? speaker : "5"}s` };
 }
 
 export default function WhatsAppCustomersClient() {
@@ -297,6 +302,25 @@ export default function WhatsAppCustomersClient() {
             if (!response.ok || !result.ok || !result.customer) throw new Error(result.error || "Customer note could not be saved.");
             setCustomers((current) => current.map((item) => item.conversationId === result.customer?.conversationId ? result.customer : item));
           }
+          continue;
+        }
+
+        if (step.type === "Create Manual Order Link") {
+          const settings = manualOrderSettings(step.message);
+          const response = await fetch("/api/manual-orders", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              customerName: draft.name || customer.displayName || "Customer",
+              phone: customer.phone || customer.waId || "",
+              character: settings.character,
+              productKey: settings.productKey,
+              shippingRegion: "WEST",
+            }),
+          });
+          const result = await response.json() as { ok?: boolean; manualOrder?: { customerLink?: string }; error?: string };
+          if (!response.ok || !result.ok || !result.manualOrder?.customerLink) throw new Error(result.error || "Manual order link could not be created.");
+          await sendFlowStep(customer, step, `Here is your Meaningful Plushies order link:\n${result.manualOrder.customerLink}`);
           continue;
         }
 

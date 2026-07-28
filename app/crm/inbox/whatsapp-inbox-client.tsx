@@ -162,7 +162,7 @@ type PreloadMediaAsset = {
 
 type FlowTriggerType = "keywords" | "click" | "first_message" | "selection_button";
 type FlowMediaType = "image" | "video" | "pdf";
-type FlowActionType = "Send Message" | "Send Media" | "Send Image" | "Send Video" | "Ask Selection" | "AI Reply" | "Update Status" | "Add Note";
+type FlowActionType = "Send Message" | "Send Media" | "Send Image" | "Send Video" | "Ask Selection" | "AI Reply" | "Update Status" | "Add Note" | "Create Manual Order Link";
 type FlowDelayUnit = "seconds" | "minutes" | "hours" | "days";
 
 type FlowMediaItem = {
@@ -2611,6 +2611,25 @@ export default function WhatsAppInboxClient() {
       if (!response.ok || !result.ok) throw new Error(result.error || "Customer status could not be updated.");
     }
 
+    async function createAndSendManualOrderLink(settingsText: string) {
+      const [character = "Billy", rawSpeaker = "5"] = settingsText.split("|");
+      const speaker = ["5", "10", "20"].includes(rawSpeaker) ? rawSpeaker : "5";
+      const response = await fetch("/api/manual-orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerName: selected?.contact.displayName || selected?.contact.phone || "Customer",
+          phone: selected?.contact.phone || selected?.contact.waId || "",
+          character,
+          productKey: `plushie_${speaker}s`,
+          shippingRegion: "WEST",
+        }),
+      });
+      const result = await response.json().catch(() => ({})) as { ok?: boolean; manualOrder?: { customerLink?: string }; error?: string };
+      if (!response.ok || !result.ok || !result.manualOrder?.customerLink) throw new Error(result.error || "Manual order link could not be created.");
+      await sendFlowStep(`Here is your Meaningful Plushies order link:\n${result.manualOrder.customerLink}`);
+    }
+
     setRunningFlowId(flow.id);
     setNotice("");
     try {
@@ -2656,6 +2675,11 @@ export default function WhatsAppInboxClient() {
 
         if (step.type === "Update Status") {
           await updateCustomerStatus(step.message);
+          continue;
+        }
+
+        if (step.type === "Create Manual Order Link") {
+          await createAndSendManualOrderLink(step.message);
           continue;
         }
 

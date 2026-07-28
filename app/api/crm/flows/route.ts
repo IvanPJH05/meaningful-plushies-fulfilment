@@ -33,7 +33,7 @@ type FlowPayload = {
   messages?: unknown;
 };
 
-const actionTypes = ["Send Message", "Send Media", "Send Image", "Send Video", "Ask Selection", "AI Reply", "Update Status", "Add Note"] as const;
+const actionTypes = ["Send Message", "Send Media", "Send Image", "Send Video", "Ask Selection", "AI Reply", "Update Status", "Add Note", "Create Manual Order Link"] as const;
 const delayUnits = ["seconds", "minutes", "hours", "days"] as const;
 const mediaTypes = ["image", "video", "pdf"] as const;
 
@@ -313,7 +313,7 @@ function normalizeFlowStep(value: unknown): FlowStep | null {
 
   if (mediaAction && !mediaItems.length) return null;
   if (type === "Ask Selection" && (!message || !options.length)) return null;
-  if (!mediaAction && type !== "AI Reply" && !message) return null;
+  if (!mediaAction && type !== "AI Reply" && type !== "Create Manual Order Link" && !message) return null;
 
   return {
     type,
