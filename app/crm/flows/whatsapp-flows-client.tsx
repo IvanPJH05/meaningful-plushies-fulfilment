@@ -3153,6 +3153,7 @@ export default function WhatsAppFlowsClient() {
           <div className={styles.railLogo}>MP</div>
           <a href="/crm/inbox">Inbox</a>
           <a className={styles.railActive} href="/crm/flows">Flow</a>
+          <a href="/crm/customers">Customers</a>
           <a href="/crm/test-ai">Test AI</a>
           <a href="/crm/setup">Setup</a>
         </aside>

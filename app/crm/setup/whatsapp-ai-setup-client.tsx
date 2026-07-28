@@ -164,6 +164,7 @@ export default function WhatsAppAiSetupClient() {
           <div className={styles.railLogo}>MP</div>
           <Link href="/crm/inbox">Inbox</Link>
           <Link href="/crm/flows">Flows</Link>
+          <Link href="/crm/customers">Customers</Link>
           <Link href="/crm/test-ai">Test AI</Link>
           <Link className={styles.railActive} href="/crm/setup">Setup</Link>
         </aside>
