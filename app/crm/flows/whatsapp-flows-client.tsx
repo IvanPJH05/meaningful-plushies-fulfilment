@@ -1981,6 +1981,32 @@ export default function WhatsAppFlowsClient() {
     return (
       <section className={styles.workflowStudio}>
         <aside className={styles.workflowInspector}>
+          <div className={styles.flowSidebarTitle}>
+            <p className={styles.eyebrow}>Flow</p>
+            <h2>{form.name || "Message flow"}</h2>
+            <span>{form.actions.length} actions · {form.actions.filter((action) => action.type === "Ask Selection").length} outcomes</span>
+          </div>
+          <div className={styles.flowOutline}>
+            <button
+              className={selectedCanvasNodeId === "trigger" ? styles.flowOutlineActive : ""}
+              onClick={() => setSelectedCanvasNodeId("trigger")}
+              type="button"
+            >
+              <strong>Start trigger</strong>
+              <span>{triggerCanvasSummary()}</span>
+            </button>
+            {form.actions.map((action, index) => (
+              <button
+                className={selectedCanvasNodeId === action.id ? styles.flowOutlineActive : ""}
+                key={`outline-${action.id}`}
+                onClick={() => setSelectedCanvasNodeId(action.id)}
+                type="button"
+              >
+                <strong>{index + 1}. {action.type}</strong>
+                <span>{actionNodeSummary(action)}</span>
+              </button>
+            ))}
+          </div>
           <div>
             <p className={styles.eyebrow}>Selected node</p>
             <h2>{selectedCanvasNodeId === "trigger" ? "Trigger" : selectedCanvasAction?.type || "Action"}</h2>
@@ -2047,6 +2073,31 @@ export default function WhatsAppFlowsClient() {
                         <div className={styles.outcomePath} key={`${action.id}-${option.id || option.label}`}>
                           <span>{option.label}</span>
                           <strong>{selectionDestinationLabel(option)}</strong>
+                          <select
+                            aria-label={`Choose next sub flow for ${option.label}`}
+                            value={option.targetFlowId || ""}
+                            onChange={(event) => {
+                              const targetFlowId = event.target.value;
+                              updateAction(action.id, {
+                                options: action.options.map((current) => (
+                                  current.id === option.id ? {
+                                    ...current,
+                                    targetFlowId,
+                                    targetFlowName: flows.find((flow) => flow.id === targetFlowId)?.name || "",
+                                  } : current
+                                )),
+                              });
+                            }}
+                          >
+                            <option value="">Choose next sub flow</option>
+                            {flows
+                              .filter((flow) => flow.id !== editingId)
+                              .map((flow) => (
+                                <option key={`canvas-target-${option.id}-${flow.id}`} value={flow.id}>
+                                  {flow.name}
+                                </option>
+                              ))}
+                          </select>
                         </div>
                       )) : (
                         <div className={styles.outcomePath}>
@@ -2356,7 +2407,7 @@ export default function WhatsAppFlowsClient() {
         <aside className={styles.workspaceRail}>
           <div className={styles.railLogo}>MP</div>
           <a href="/crm/inbox">Inbox</a>
-          <a className={styles.railActive} href="/crm/flows">Flows</a>
+          <a className={styles.railActive} href="/crm/flows">Flow</a>
           <a href="/crm/test-ai">Test AI</a>
           <a href="/crm/setup">Setup</a>
         </aside>
