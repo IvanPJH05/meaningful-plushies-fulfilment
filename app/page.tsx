@@ -1632,6 +1632,31 @@ export default function Home() {
   }, [loadChangedSharedData, loadSharedData]);
 
   useEffect(() => {
+    if (!supabaseConfigured) return;
+    let cancelled = false;
+    const refreshManualOrders = async () => {
+      try {
+        const sharedManualOrders = await fetchManualOrders();
+        if (!cancelled) setManualOrders(sharedManualOrders);
+      } catch {
+        // The primary shared-data loader already reports connection problems.
+      }
+    };
+    const refreshWhenVisible = () => {
+      if (!document.hidden) void refreshManualOrders();
+    };
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    const refreshInterval = window.setInterval(refreshManualOrders, 30_000);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      window.clearInterval(refreshInterval);
+    };
+  }, []);
+
+  useEffect(() => {
     if (session) writeJson(sessionStorageKey, session);
     else removeStored(sessionStorageKey);
   }, [session]);
