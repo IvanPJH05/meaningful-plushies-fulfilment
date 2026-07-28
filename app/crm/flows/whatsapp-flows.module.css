@@ -259,10 +259,11 @@
 }
 
 .branchActionHeader {
-  align-items: center;
-  display: flex;
-  gap: 8px;
-  justify-content: space-between;
+  align-items: end;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(220px, 1fr) auto;
+  width: 100%;
 }
 
 .branchMediaList,
@@ -644,6 +645,14 @@
   text-transform: uppercase;
 }
 
+.canvasActionHeader {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: auto minmax(240px, 1fr);
+  width: 100%;
+}
+
 .canvasNode strong {
   color: #102033;
   font-size: 14px;
@@ -674,25 +683,19 @@
   width: 100%;
 }
 
-.canvasDelayControls {
+.inlineDelayControls {
   background: #f5f9ff;
   border: 1px solid #d7e6fb;
   border-radius: 8px;
   display: grid;
   gap: 8px;
-  grid-template-columns: minmax(0, 110px) minmax(0, 1fr);
-  padding: 10px;
+  grid-template-columns: minmax(0, 92px) minmax(0, 1fr);
+  min-width: 0;
+  padding: 8px;
   width: 100%;
 }
 
-.canvasDelayControls strong {
-  color: #0c4f96;
-  font-size: 12px;
-  font-weight: 950;
-  grid-column: 1 / -1;
-}
-
-.canvasDelayControls label {
+.inlineDelayControls label {
   color: #344c67;
   display: grid;
   font-size: 10px;
@@ -702,8 +705,8 @@
   text-transform: uppercase;
 }
 
-.canvasDelayControls input,
-.canvasDelayControls select {
+.inlineDelayControls input,
+.inlineDelayControls select {
   background: #ffffff;
   border: 1px solid #cbd8e8;
   border-radius: 7px;
@@ -729,8 +732,8 @@
 
 .canvasNodeInput:focus,
 .canvasNodeSelect:focus,
-.canvasDelayControls input:focus,
-.canvasDelayControls select:focus {
+.inlineDelayControls input:focus,
+.inlineDelayControls select:focus {
   border-color: #bdd4f0;
   outline: none;
 }
@@ -2235,6 +2238,12 @@
   }
 
   .phraseRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .canvasActionHeader,
+  .branchActionHeader {
+    align-items: stretch;
     grid-template-columns: minmax(0, 1fr);
   }
 

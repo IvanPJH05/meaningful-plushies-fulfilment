@@ -2396,6 +2396,30 @@ export default function WhatsAppFlowsClient() {
       <div className={styles.outcomeSubflowAction} key={`${option.id}-${branchAction.id}`}>
         <div className={styles.branchActionHeader}>
           <span>Action {branchIndex + 1}</span>
+          <div className={styles.inlineDelayControls}>
+            <label>
+              Delay
+              <input
+                min="0"
+                onChange={(event) => updateBranchAction(action.id, option.id, branchAction.id, { delayValue: event.target.value })}
+                type="number"
+                value={branchAction.delayValue}
+              />
+            </label>
+            <label>
+              Time
+              <select
+                onChange={(event) => updateBranchAction(action.id, option.id, branchAction.id, { delayUnit: event.target.value as DelayUnit })}
+                value={branchAction.delayUnit}
+              >
+                {delayUnits.map((unit) => (
+                  <option key={`${option.id}-${branchAction.id}-delay-${unit}`} value={unit}>
+                    {unit}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
           <button
             className={styles.textButton}
             onClick={() => removeBranchAction(action.id, option.id, branchAction.id)}
@@ -2403,31 +2427,6 @@ export default function WhatsAppFlowsClient() {
           >
             Remove
           </button>
-        </div>
-        <div className={styles.canvasDelayControls}>
-          <strong>Wait before this action</strong>
-          <label>
-            Delay
-            <input
-              min="0"
-              onChange={(event) => updateBranchAction(action.id, option.id, branchAction.id, { delayValue: event.target.value })}
-              type="number"
-              value={branchAction.delayValue}
-            />
-          </label>
-          <label>
-            Time
-            <select
-              onChange={(event) => updateBranchAction(action.id, option.id, branchAction.id, { delayUnit: event.target.value as DelayUnit })}
-              value={branchAction.delayUnit}
-            >
-              {delayUnits.map((unit) => (
-                <option key={`${option.id}-${branchAction.id}-delay-${unit}`} value={unit}>
-                  {unit}
-                </option>
-              ))}
-            </select>
-          </label>
         </div>
         <select
           className={styles.canvasNodeSelect}
@@ -2684,31 +2683,32 @@ export default function WhatsAppFlowsClient() {
                     className={`${styles.canvasNode} ${selectedCanvasNodeId === action.id ? styles.canvasNodeSelected : ""}`}
                     onClick={() => setSelectedCanvasNodeId(action.id)}
                   >
-                    <span>Action {index + 1}</span>
-                    <div className={styles.canvasDelayControls}>
-                      <strong>Wait before this action</strong>
-                      <label>
-                        Delay
-                        <input
-                          min="0"
-                          onChange={(event) => updateAction(action.id, { delayValue: event.target.value })}
-                          type="number"
-                          value={action.delayValue}
-                        />
-                      </label>
-                      <label>
-                        Time
-                        <select
-                          onChange={(event) => updateAction(action.id, { delayUnit: event.target.value as DelayUnit })}
-                          value={action.delayUnit}
-                        >
-                          {delayUnits.map((unit) => (
-                            <option key={`canvas-delay-${action.id}-${unit}`} value={unit}>
-                              {unit}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                    <div className={styles.canvasActionHeader}>
+                      <span>Action {index + 1}</span>
+                      <div className={styles.inlineDelayControls}>
+                        <label>
+                          Delay
+                          <input
+                            min="0"
+                            onChange={(event) => updateAction(action.id, { delayValue: event.target.value })}
+                            type="number"
+                            value={action.delayValue}
+                          />
+                        </label>
+                        <label>
+                          Time
+                          <select
+                            onChange={(event) => updateAction(action.id, { delayUnit: event.target.value as DelayUnit })}
+                            value={action.delayUnit}
+                          >
+                            {delayUnits.map((unit) => (
+                              <option key={`canvas-delay-${action.id}-${unit}`} value={unit}>
+                                {unit}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
                     </div>
                     <select
                       className={styles.canvasNodeSelect}
