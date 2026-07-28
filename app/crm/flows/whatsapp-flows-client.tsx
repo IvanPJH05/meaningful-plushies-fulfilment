@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type DragEvent, useEffect, useMemo, useState } from "react";
 
 import { supabase } from "@/lib/supabase";
 
@@ -1097,7 +1097,6 @@ export default function WhatsAppFlowsClient() {
   const [editingId, setEditingId] = useState<string>(() => initialCache?.editingId || "");
   const [loading, setLoading] = useState(() => !initialCache);
   const [saving, setSaving] = useState(false);
-  const [autoSaveStatus, setAutoSaveStatus] = useState("");
   const [notice, setNotice] = useState("");
   const [folders, setFolders] = useState<FlowFolder[]>(() => readFlowFolders());
   const [uploadingMediaId, setUploadingMediaId] = useState("");
@@ -1116,7 +1115,6 @@ export default function WhatsAppFlowsClient() {
   const [expandedFolderKeys, setExpandedFolderKeys] = useState<string[]>([]);
   const [selectedCanvasNodeId, setSelectedCanvasNodeId] = useState("trigger");
   const [screenMode, setScreenMode] = useState<FlowScreenMode>(() => initialCache?.editingId ? "builder" : "library");
-  const lastAutoSavePayloadRef = useRef("");
 
   useEffect(() => {
     let cancelled = false;
@@ -1264,7 +1262,7 @@ export default function WhatsAppFlowsClient() {
     return patchedFlows;
   }
 
-  async function persistFlow(options: { publish?: boolean; exitToLibrary?: boolean; silent?: boolean } = {}) {
+  async function persistFlow(options: { publish?: boolean; exitToLibrary?: boolean } = {}) {
     if (!form.name.trim() || (options.publish && !hasUsableAction)) return null;
     const sourceForm: FlowForm = {
       ...form,
@@ -1285,11 +1283,8 @@ export default function WhatsAppFlowsClient() {
         return null;
       }
     }
-    if (options.silent) setAutoSaveStatus("Saving draft...");
-    else {
-      setSaving(true);
-      setNotice("");
-    }
+    setSaving(true);
+    setNotice("");
     try {
       const response = await fetch("/api/crm/flows", {
         method: editingId ? "PATCH" : "POST",
@@ -1298,7 +1293,6 @@ export default function WhatsAppFlowsClient() {
       });
       const result = (await response.json()) as { ok?: boolean; flow?: WhatsAppFlow; error?: string };
       if (!response.ok || !result.ok || !result.flow) throw new Error(result.error || "Flow could not be saved.");
-      lastAutoSavePayloadRef.current = JSON.stringify(flowPayloadFromForm({ ...sourceForm, status: "Draft" }, result.flow.id));
       const repairedFlows = await repairSelectionTargetKeys(sourceForm);
       const repairedFlowMap = new Map(repairedFlows.map((flow) => [flow.id, flow]));
       setFlows((current) => {
@@ -1314,19 +1308,13 @@ export default function WhatsAppFlowsClient() {
         setEditingId("");
         setScreenMode("library");
       }
-      if (options.silent) setAutoSaveStatus("Draft saved");
-      else setNotice(options.publish ? "Workflow published." : "Draft saved.");
+      setNotice(options.publish ? "Workflow published." : "Draft saved.");
       return result.flow;
     } catch (error) {
-      if (options.silent) setAutoSaveStatus("Draft not saved");
       setNotice(error instanceof Error ? error.message : "Flow could not be saved.");
       return null;
     } finally {
-      if (options.silent) {
-        window.setTimeout(() => setAutoSaveStatus(""), 1800);
-      } else {
-        setSaving(false);
-      }
+      setSaving(false);
     }
   }
 
@@ -1338,21 +1326,13 @@ export default function WhatsAppFlowsClient() {
     return persistFlow({ publish: true });
   }
 
-  useEffect(() => {
-    if (screenMode !== "builder" || saving || !form.name.trim()) return;
-    const draftForm: FlowForm = { ...form, status: "Draft" };
-    const draftPayload = JSON.stringify(flowPayloadFromForm(draftForm, editingId || undefined));
-    if (draftPayload === lastAutoSavePayloadRef.current) return;
-
-    const timeoutId = window.setTimeout(() => {
-      lastAutoSavePayloadRef.current = draftPayload;
-      void persistFlow({ silent: true });
-    }, 1200);
-
-    return () => window.clearTimeout(timeoutId);
-    // persistFlow intentionally reads the latest builder state when the debounce fires.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editingId, form, saving, screenMode]);
+  async function exitBuilder() {
+    if (!form.name.trim()) {
+      setNotice("Add a workflow name before leaving so this draft can be saved.");
+      return;
+    }
+    await persistFlow({ exitToLibrary: true });
+  }
 
   function editFlow(flow: WhatsAppFlow) {
     setEditingId(flow.id);
@@ -1821,6 +1801,10 @@ export default function WhatsAppFlowsClient() {
     }));
   }
 
+  function isEmptyMediaSlot(item?: FlowMediaItem) {
+    return Boolean(item && !item.url.trim() && !(item.fileName || "").trim());
+  }
+
   function applyUploadedMediaItems(actionId: string, mediaId: string | undefined, uploadedItems: FlowMediaItem[]) {
     if (!uploadedItems.length) return;
     setForm((current) => ({
@@ -1832,6 +1816,9 @@ export default function WhatsAppFlowsClient() {
 
         const nextItems = [...action.mediaItems];
         const currentItem = nextItems[targetIndex];
+        if (!isEmptyMediaSlot(currentItem)) {
+          return { ...action, mediaItems: [...nextItems, ...uploadedItems] };
+        }
         nextItems.splice(targetIndex, 1, { ...uploadedItems[0], caption: currentItem.caption || uploadedItems[0].caption }, ...uploadedItems.slice(1));
         return { ...action, mediaItems: nextItems };
       }),
@@ -1924,6 +1911,9 @@ export default function WhatsAppFlowsClient() {
       if (targetIndex < 0) return { ...branchAction, mediaItems: [...branchAction.mediaItems, ...uploadedItems] };
       const nextItems = [...branchAction.mediaItems];
       const currentItem = nextItems[targetIndex];
+      if (!isEmptyMediaSlot(currentItem)) {
+        return { ...branchAction, mediaItems: [...nextItems, ...uploadedItems] };
+      }
       nextItems.splice(targetIndex, 1, { ...uploadedItems[0], caption: currentItem.caption || uploadedItems[0].caption }, ...uploadedItems.slice(1));
       return { ...branchAction, mediaItems: nextItems };
     }));
@@ -2047,7 +2037,6 @@ export default function WhatsAppFlowsClient() {
         try {
           const uploadedItem = await uploadSingleMediaFile(file);
           uploadedItems.push(uploadedItem);
-          applyUploadedMediaItems(actionId, uploadedItems.length === 1 ? mediaId : undefined, [uploadedItem]);
         } catch (error) {
           failures.push(error instanceof Error ? error.message : `${file.name} could not be uploaded.`);
         }
@@ -2056,6 +2045,7 @@ export default function WhatsAppFlowsClient() {
       if (!uploadedItems.length) {
         throw new Error(failures[0] || "Media could not be uploaded.");
       }
+      applyUploadedMediaItems(actionId, mediaId, uploadedItems);
       setNotice(failures.length
         ? `${uploadedItems.length} uploaded. ${failures[0]}`
         : `${uploadedItems.length} media ${uploadedItems.length === 1 ? "file" : "files"} uploaded.`);
@@ -2086,7 +2076,6 @@ export default function WhatsAppFlowsClient() {
         try {
           const uploadedItem = await uploadSingleMediaFile(file);
           uploadedItems.push(uploadedItem);
-          applyUploadedBranchMediaItems(actionId, optionId, branchActionId, uploadedItems.length === 1 ? mediaId : undefined, [uploadedItem]);
         } catch (error) {
           failures.push(error instanceof Error ? error.message : `${file.name} could not be uploaded.`);
         }
@@ -2095,6 +2084,7 @@ export default function WhatsAppFlowsClient() {
       if (!uploadedItems.length) {
         throw new Error(failures[0] || "Media could not be uploaded.");
       }
+      applyUploadedBranchMediaItems(actionId, optionId, branchActionId, mediaId, uploadedItems);
       setNotice(failures.length
         ? `${uploadedItems.length} uploaded. ${failures[0]}`
         : `${uploadedItems.length} media ${uploadedItems.length === 1 ? "file" : "files"} uploaded.`);
@@ -2416,8 +2406,8 @@ export default function WhatsAppFlowsClient() {
                       event.currentTarget.value = "";
                     }}
                   />
-                  <strong>{uploadingMediaId === item.id ? "Uploading..." : item.url ? "Replace file" : "Upload media"}</strong>
-                  <small>{item.fileName || (item.url ? "Drop to replace, or choose another file" : `Drop or choose ${mediaDropText(item.type)}`)}</small>
+                  <strong>{uploadingMediaId === item.id ? "Uploading..." : item.url ? "Add more files" : "Upload media"}</strong>
+                  <small>{item.fileName || (item.url ? "Drop or choose more files" : `Drop or choose ${mediaDropText(item.type)}`)}</small>
                 </label>
                 <input
                   className={styles.canvasNodeInput}
@@ -2479,11 +2469,11 @@ export default function WhatsAppFlowsClient() {
               <span>{form.actions.length} actions Â· {form.actions.filter((action) => action.type === "Ask Selection").length} branch points</span>
             </div>
             <div className={styles.workflowToolbarActions}>
-              <button className={styles.secondaryButton} onClick={() => setScreenMode("library")} type="button">
-                Back
+              <button className={styles.secondaryButton} onClick={() => void exitBuilder()} disabled={saving} type="button">
+                Save and exit
               </button>
               <span className={styles.autoSaveStatus}>
-                {autoSaveStatus || (form.status === "Active" ? "Published" : "Draft")}
+                {form.status === "Active" ? "Published" : "Draft"}
               </span>
               <button className={styles.primaryButton} onClick={() => void publishFlow()} disabled={saving || !form.name.trim() || !hasUsableAction}>
                 {saving ? "Publishing..." : "Publish"}
@@ -3024,7 +3014,7 @@ export default function WhatsAppFlowsClient() {
         <section className={styles.builder}>
           <div className={styles.builderHeader}>
             <div className={styles.builderTitleRow}>
-              <button className={styles.backButton} onClick={() => setScreenMode("library")} type="button">Back</button>
+              <button className={styles.backButton} onClick={() => void exitBuilder()} disabled={saving} type="button">Save and exit</button>
               <div>
                 <p className={styles.eyebrow}>Workflow builder</p>
                 <h1>{form.name || (editingId ? "Edit workflow" : "Create workflow")}</h1>
@@ -3033,7 +3023,7 @@ export default function WhatsAppFlowsClient() {
             <div className={styles.builderHeaderActions}>
               <span>{loading ? "Loading..." : `${flows.length} flows | ${activeCount} active`}</span>
               <span className={styles.autoSaveStatus}>
-                {autoSaveStatus || (form.status === "Active" ? "Published" : "Draft")}
+                {form.status === "Active" ? "Published" : "Draft"}
               </span>
               <button className={styles.primaryButton} onClick={() => void publishFlow()} disabled={saving || !form.name.trim() || !hasUsableAction}>
                 {saving ? "Publishing..." : "Publish"}
@@ -3367,8 +3357,8 @@ export default function WhatsAppFlowsClient() {
                                     event.currentTarget.value = "";
                                   }}
                                 />
-                                <strong>{uploadingMediaId === item.id ? "Uploading..." : item.url ? "Replace file" : "Upload file"}</strong>
-                                <small>{item.fileName || (item.url ? "Drop to replace, or choose another file" : `Drop or choose ${mediaDropText(item.type)}`)}</small>
+                                <strong>{uploadingMediaId === item.id ? "Uploading..." : item.url ? "Add more files" : "Upload file"}</strong>
+                                <small>{item.fileName || (item.url ? "Drop or choose more files" : `Drop or choose ${mediaDropText(item.type)}`)}</small>
                               </label>
                               {(item.fileName || item.sizeBytes) && (
                                 <em>{[item.contentType, formatFileSize(item.sizeBytes)].filter(Boolean).join(" | ")}</em>
