@@ -16,6 +16,8 @@ type Customer = {
   customerStatus: CustomerStatus;
   notes: string;
   messageCount: number;
+  firstMessageAt: string | null;
+  lastTextedAt: string | null;
   lastMessageAt: string | null;
   nextScheduledMessage: {
     id: string;
@@ -54,6 +56,7 @@ type WhatsAppFlowStep = {
 type WhatsAppFlow = {
   id: string;
   name: string;
+  triggerType?: "keywords" | "click" | "first_message" | "selection_button";
   status: "Draft" | "Active";
   steps: WhatsAppFlowStep[];
 };
@@ -72,7 +75,7 @@ const customerStatuses: CustomerStatus[] = ["Cold", "Warm", "Unpaid", "Paid"];
 function emptyDraft(customer: Customer): RowDraft {
   return {
     name: customer.displayName || "",
-    status: customer.customerStatus || "Warm",
+    status: customer.customerStatus || "Cold",
     notes: customer.notes || "",
     flowId: "",
     scheduledAt: "",
@@ -109,6 +112,10 @@ function localDateTimeLabel(value: string | null | undefined) {
   }).format(new Date(value));
 }
 
+function statusClass(status: CustomerStatus) {
+  return status.toLowerCase();
+}
+
 export default function WhatsAppCustomersClient() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [flows, setFlows] = useState<WhatsAppFlow[]>([]);
@@ -118,7 +125,13 @@ export default function WhatsAppCustomersClient() {
   const [busyRowId, setBusyRowId] = useState("");
   const [notice, setNotice] = useState("");
 
-  const activeFlows = useMemo(() => flows.filter((flow) => flow.status === "Active"), [flows]);
+  const inboxFlows = useMemo(() => (
+    flows.filter((flow) => flow.status === "Active" && (flow.triggerType || "click") === "click")
+  ), [flows]);
+  const statusCounts = useMemo(() => customerStatuses.map((status) => ({
+    status,
+    count: customers.filter((customer) => customer.customerStatus === status).length,
+  })), [customers]);
   const filteredCustomers = useMemo(() => {
     const search = query.trim().toLowerCase();
     if (!search) return customers;
@@ -163,7 +176,7 @@ export default function WhatsAppCustomersClient() {
       [conversationId]: {
         ...(current[conversationId] || {
           name: "",
-          status: "Warm",
+          status: "Cold",
           notes: "",
           flowId: "",
           scheduledAt: "",
@@ -174,7 +187,7 @@ export default function WhatsAppCustomersClient() {
     }));
   }
 
-  async function saveCustomer(customer: Customer) {
+  async function saveCustomer(customer: Customer, statusOverride?: CustomerStatus) {
     const draft = drafts[customer.conversationId] || emptyDraft(customer);
     setBusyRowId(customer.conversationId);
     setNotice("");
@@ -185,7 +198,7 @@ export default function WhatsAppCustomersClient() {
         body: JSON.stringify({
           conversationId: customer.conversationId,
           displayName: draft.name,
-          customerStatus: draft.status,
+          customerStatus: statusOverride || draft.status,
           notes: draft.notes,
         }),
       });
@@ -233,7 +246,7 @@ export default function WhatsAppCustomersClient() {
 
   async function sendFlow(customer: Customer) {
     const draft = drafts[customer.conversationId] || emptyDraft(customer);
-    const flow = activeFlows.find((item) => item.id === draft.flowId);
+    const flow = inboxFlows.find((item) => item.id === draft.flowId);
     if (!flow) {
       setNotice("Choose a message flow first.");
       return;
@@ -246,6 +259,36 @@ export default function WhatsAppCustomersClient() {
       for (const step of flow.steps) {
         const wait = delayMs(step);
         if (wait) await sleep(wait);
+
+        if (step.type === "Update Status") {
+          const nextStatus = customerStatuses.find((status) => status.toLowerCase() === step.message.trim().toLowerCase());
+          if (!nextStatus) throw new Error(`The Update Status action in "${flow.name}" must be Cold, Warm, Unpaid, or Paid.`);
+          updateDraft(customer.conversationId, { status: nextStatus });
+          await saveCustomer(customer, nextStatus);
+          continue;
+        }
+
+        if (step.type === "Add Note") {
+          const note = step.message.trim();
+          if (note) {
+            const updatedNotes = [draft.notes.trim(), note].filter(Boolean).join(draft.notes.trim() ? "\n" : "");
+            updateDraft(customer.conversationId, { notes: updatedNotes });
+            const response = await fetch("/api/crm/customers", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                conversationId: customer.conversationId,
+                displayName: draft.name,
+                customerStatus: draft.status,
+                notes: updatedNotes,
+              }),
+            });
+            const result = await response.json() as { ok?: boolean; customer?: Customer; error?: string };
+            if (!response.ok || !result.ok || !result.customer) throw new Error(result.error || "Customer note could not be saved.");
+            setCustomers((current) => current.map((item) => item.conversationId === result.customer?.conversationId ? result.customer : item));
+          }
+          continue;
+        }
 
         if (step.type === "Send Media" || step.type === "Send Image" || step.type === "Send Video") {
           const mediaItems = flowStepMediaItems(step);
@@ -329,7 +372,7 @@ export default function WhatsAppCustomersClient() {
             <div>
               <p className={styles.eyebrow}>Customers</p>
               <h1>Customer data</h1>
-              <span>{filteredCustomers.length} shown from {customers.length}</span>
+              <span>{filteredCustomers.length} shown from {customers.length} · Status is updated by Inbox flows</span>
             </div>
             <div className={styles.headerActions}>
               <input
@@ -343,22 +386,33 @@ export default function WhatsAppCustomersClient() {
 
           {notice && <div className={styles.notice}>{notice}</div>}
 
+          <div className={styles.statusSummary}>
+            {statusCounts.map(({ status, count }) => (
+              <div className={`${styles.statusMetric} ${styles[statusClass(status)]}`} key={status}>
+                <span>{status}</span>
+                <strong>{count}</strong>
+              </div>
+            ))}
+          </div>
+
           <div className={styles.sheetScroll}>
             <table className={styles.customerSheet}>
               <thead>
                 <tr>
                   <th>Phone</th>
-                  <th>Name</th>
+                  <th>Customer</th>
                   <th>Status</th>
+                  <th>First message</th>
+                  <th>Last texted</th>
                   <th>Note</th>
-                  <th>Message Flow</th>
+                  <th>Inbox flow</th>
                   <th>Schedule</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td className={styles.emptyCell} colSpan={6}>Loading customers...</td>
+                    <td className={styles.emptyCell} colSpan={8}>Loading customers...</td>
                   </tr>
                 ) : filteredCustomers.length ? (
                   filteredCustomers.map((customer) => {
@@ -379,14 +433,22 @@ export default function WhatsAppCustomersClient() {
                           />
                         </td>
                         <td>
-                          <select
-                            onChange={(event) => updateDraft(customer.conversationId, { status: event.target.value as CustomerStatus })}
-                            value={draft.status}
-                          >
-                            {customerStatuses.map((status) => (
-                              <option key={status} value={status}>{status}</option>
-                            ))}
-                          </select>
+                          <span className={`${styles.statusBadge} ${styles[statusClass(customer.customerStatus)]}`}>
+                            {customer.customerStatus}
+                          </span>
+                          <small className={styles.statusHelp}>Updated by flow</small>
+                        </td>
+                        <td>
+                          <div className={styles.dateCell}>
+                            <strong>{localDateTimeLabel(customer.firstMessageAt) || "No messages"}</strong>
+                            <span>First message</span>
+                          </div>
+                        </td>
+                        <td>
+                          <div className={styles.dateCell}>
+                            <strong>{localDateTimeLabel(customer.lastTextedAt) || "Not texted yet"}</strong>
+                            <span>Last outbound text</span>
+                          </div>
                         </td>
                         <td>
                           <textarea
@@ -403,7 +465,7 @@ export default function WhatsAppCustomersClient() {
                               value={draft.flowId}
                             >
                               <option value="">Choose flow</option>
-                              {activeFlows.map((flow) => (
+                              {inboxFlows.map((flow) => (
                                 <option key={flow.id} value={flow.id}>{flow.name}</option>
                               ))}
                             </select>
@@ -443,7 +505,7 @@ export default function WhatsAppCustomersClient() {
                   })
                 ) : (
                   <tr>
-                    <td className={styles.emptyCell} colSpan={6}>No customers match this search.</td>
+                    <td className={styles.emptyCell} colSpan={8}>No customers match this search.</td>
                   </tr>
                 )}
               </tbody>

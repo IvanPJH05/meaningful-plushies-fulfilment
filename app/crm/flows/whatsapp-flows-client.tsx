@@ -99,6 +99,7 @@ type FlowForm = {
 };
 
 const actionTypes: ActionType[] = ["Send Message", "Send Media", "Ask Selection", "AI Reply", "Update Status", "Add Note"];
+const customerStatuses = ["Cold", "Warm", "Unpaid", "Paid"] as const;
 const actionSelectOptions: { label: string; value: ActionSelectValue }[] = [
   { label: "Send Message", value: "Send Message" },
   { label: "Send Media", value: "Send Media" },
@@ -2326,6 +2327,7 @@ export default function WhatsAppFlowsClient() {
   }
 
   function actionNodeSummary(action: FlowAction) {
+    if (action.type === "Update Status") return action.message ? `Set status to ${action.message}` : "Choose a customer status";
     if (action.type === "Send Media") {
       const count = action.mediaItems.filter((item) => item.url.trim()).length;
       return `${count} media item${count === 1 ? "" : "s"}`;
@@ -2541,6 +2543,16 @@ export default function WhatsAppFlowsClient() {
               </button>
             </div>
           </div>
+        ) : branchAction.type === "Update Status" ? (
+          <select
+            aria-label={`Customer status for branch action ${branchIndex + 1}`}
+            className={styles.canvasNodeSelect}
+            value={customerStatuses.includes(branchAction.message as typeof customerStatuses[number]) ? branchAction.message : ""}
+            onChange={(event) => updateBranchAction(action.id, option.id, branchAction.id, { message: event.target.value })}
+          >
+            <option value="">Choose status</option>
+            {customerStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
+          </select>
         ) : (
           <textarea
             className={styles.canvasNodeInput}
@@ -2764,6 +2776,16 @@ export default function WhatsAppFlowsClient() {
                       />
                     ) : action.type === "Send Media" ? (
                       renderCanvasMediaEditor(action)
+                    ) : action.type === "Update Status" ? (
+                      <select
+                        aria-label={`Customer status for action ${index + 1}`}
+                        className={styles.canvasNodeSelect}
+                        onChange={(event) => updateAction(action.id, { message: event.target.value })}
+                        value={customerStatuses.includes(action.message as typeof customerStatuses[number]) ? action.message : ""}
+                      >
+                        <option value="">Choose status</option>
+                        {customerStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
+                      </select>
                     ) : (
                       <small>{actionNodeSummary(action)}</small>
                     )}
@@ -3611,6 +3633,14 @@ export default function WhatsAppFlowsClient() {
                         </div>
                       </div>
                     </>
+                  ) : action.type === "Update Status" ? (
+                    <label>
+                      Customer status
+                      <select value={customerStatuses.includes(action.message as typeof customerStatuses[number]) ? action.message : ""} onChange={(event) => updateAction(action.id, { message: event.target.value })}>
+                        <option value="">Choose status</option>
+                        {customerStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
+                      </select>
+                    </label>
                   ) : (
                     <label>
                       Message or instruction

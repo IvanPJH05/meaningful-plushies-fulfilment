@@ -2595,6 +2595,22 @@ export default function WhatsAppInboxClient() {
       }
     }
 
+    async function updateCustomerStatus(status: string) {
+      const normalizedStatus = ["Cold", "Warm", "Unpaid", "Paid"].find((value) => value.toLowerCase() === status.trim().toLowerCase());
+      if (!normalizedStatus) throw new Error(`The Update Status action in "${flow.name}" must have a valid customer status.`);
+      const response = await fetch("/api/crm/customers", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationId: selectedId,
+          displayName: selected?.contact.displayName || "",
+          customerStatus: normalizedStatus,
+        }),
+      });
+      const result = await response.json().catch(() => ({})) as { ok?: boolean; error?: string };
+      if (!response.ok || !result.ok) throw new Error(result.error || "Customer status could not be updated.");
+    }
+
     setRunningFlowId(flow.id);
     setNotice("");
     try {
@@ -2635,6 +2651,11 @@ export default function WhatsAppInboxClient() {
           if (options.length) {
             await sendFlowStep(personalizeFlowText(step.message, selected), undefined, { buttonOptions: options });
           }
+          continue;
+        }
+
+        if (step.type === "Update Status") {
+          await updateCustomerStatus(step.message);
           continue;
         }
 

@@ -36,10 +36,10 @@ function customerStatusFromLead(lead: {
   paymentStatus?: PaymentStatus | null;
   stage?: LeadStage | null;
 } | null) {
-  if (!lead) return "Warm";
+  if (!lead) return "Cold";
   if (lead.paymentStatus === PaymentStatus.PAID || lead.stage === LeadStage.PAID) return "Paid";
+  if (lead.stage === LeadStage.NEW || lead.temperature === LeadTemperature.COLD) return "Cold";
   if (lead.paymentStatus === PaymentStatus.UNPAID && lead.temperature !== LeadTemperature.COLD) return "Unpaid";
-  if (lead.temperature === LeadTemperature.COLD) return "Cold";
   return "Warm";
 }
 
@@ -62,7 +62,7 @@ function statusPatch(customerStatus: string) {
     return {
       temperature: LeadTemperature.COLD,
       paymentStatus: PaymentStatus.UNPAID,
-      stage: LeadStage.LOST,
+      stage: LeadStage.NEW,
     };
   }
   if (customerStatus === "Warm") {
@@ -111,7 +111,7 @@ async function ensureCustomerLead(args: {
     conversationId: conversation.id,
     contactId: conversation.contactId,
     ...(args.notes !== undefined ? { notes: args.notes } : {}),
-    ...statusPatch(args.customerStatus || ""),
+    ...statusPatch(args.customerStatus || "Cold"),
   };
 
   if (existingLead) {
@@ -203,6 +203,24 @@ async function customerResponse(businessId: string, conversationId?: string) {
     },
   });
 
+  const conversationIds = conversations.map((conversation) => conversation.id);
+  const [firstMessages, lastTextedMessages] = conversationIds.length
+    ? await Promise.all([
+      prisma.message.groupBy({
+        by: ["conversationId"],
+        where: { businessId, conversationId: { in: conversationIds } },
+        _min: { createdAt: true },
+      }),
+      prisma.message.groupBy({
+        by: ["conversationId"],
+        where: { businessId, conversationId: { in: conversationIds }, direction: "OUTBOUND" },
+        _max: { createdAt: true },
+      }),
+    ])
+    : [[], []];
+  const firstMessageAtByConversation = new Map(firstMessages.map((message) => [message.conversationId, message._min.createdAt]));
+  const lastTextedAtByConversation = new Map(lastTextedMessages.map((message) => [message.conversationId, message._max.createdAt]));
+
   return conversations.map((conversation) => {
     const latestLead = conversation.leads[0] || null;
     const lastMessage = conversation.messages[0] || null;
@@ -233,6 +251,8 @@ async function customerResponse(businessId: string, conversationId?: string) {
       requestedVoice: latestLead?.requestedVoice || null,
       paymentStatus: latestLead?.paymentStatus || null,
       messageCount: conversation._count.messages,
+      firstMessageAt: serializeDate(firstMessageAtByConversation.get(conversation.id)),
+      lastTextedAt: serializeDate(lastTextedAtByConversation.get(conversation.id)),
       nextScheduledMessage: latestLead?.followUps[0]
         ? {
           id: latestLead.followUps[0].id,

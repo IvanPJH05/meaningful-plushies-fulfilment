@@ -422,7 +422,7 @@ model Lead {
   contactId          String?
   conversationId     String?
   stage              LeadStage       @default(NEW)
-  temperature        LeadTemperature @default(WARM)
+  temperature        LeadTemperature @default(COLD)
   customerName       String?
   phone              String?
   requestedCharacter String?
