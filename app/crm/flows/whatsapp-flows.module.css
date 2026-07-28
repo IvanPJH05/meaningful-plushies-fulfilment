@@ -593,10 +593,10 @@
 .outcomeFan {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 18px;
   justify-content: center;
-  max-width: 760px;
-  padding: 18px 0 32px;
+  max-width: 960px;
+  padding: 18px 0 34px;
   position: relative;
 }
 
@@ -611,6 +611,13 @@
   width: 2px;
 }
 
+.outcomeBranch {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  min-width: 230px;
+}
+
 .outcomePath {
   background: #eef6ff;
   border: 1px solid #cbdff7;
@@ -621,6 +628,7 @@
   padding: 9px 10px;
   position: relative;
   text-align: center;
+  width: 100%;
 }
 
 .outcomePath span {
@@ -682,8 +690,7 @@
   justify-content: center;
   justify-self: center;
   line-height: 1;
-  margin-bottom: -26px;
-  margin-top: 8px;
+  margin: 0;
   padding: 0 0 2px;
   width: 30px;
 }
@@ -697,6 +704,58 @@
   background: #8aa7c9;
   border-color: #8aa7c9;
   cursor: not-allowed;
+}
+
+.branchConnector {
+  border-left: 2px dashed #b9c8da;
+  height: 24px;
+  width: 2px;
+}
+
+.outcomeSubflowActions {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  padding-top: 10px;
+  width: 100%;
+}
+
+.outcomeSubflowAction {
+  background: #ffffff;
+  border: 1px solid #d7e3f2;
+  border-radius: 8px;
+  box-shadow: 0 8px 18px rgba(15, 43, 77, 0.08);
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.outcomeSubflowAction span {
+  color: #52677f;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.outcomeSubflowAction strong {
+  color: #102033;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.outcomeSubflowAction small {
+  color: #405972;
+  display: -webkit-box;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.35;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .nodeCard,

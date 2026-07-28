@@ -1884,8 +1884,39 @@ export default function WhatsAppFlowsClient() {
     setForm((current) => ({ ...current, actions: [...current.actions, makeAction({ delayValue: "5" })] }));
   }
 
-  async function createSubflowFromOption(actionId: string, option: SelectionOption) {
+  async function addActionBelowOption(actionId: string, option: SelectionOption) {
     const optionLabel = option.label.trim() || "Option";
+    const targetFlow = option.targetFlowId ? flows.find((flow) => flow.id === option.targetFlowId) : null;
+
+    if (targetFlow) {
+      const targetForm = formFromFlow(targetFlow);
+      const nextForm = {
+        ...targetForm,
+        actions: [...targetForm.actions, makeAction({
+          delayValue: "5",
+          message: "New action. Replace this message before activating.",
+        })],
+      };
+      setSaving(true);
+      setNotice("");
+      try {
+        const response = await fetch("/api/crm/flows", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(flowPayloadFromForm(nextForm, targetFlow.id)),
+        });
+        const result = (await response.json()) as { ok?: boolean; flow?: WhatsAppFlow; error?: string };
+        if (!response.ok || !result.ok || !result.flow) throw new Error(result.error || "Action could not be added to this subflow.");
+        setFlows((current) => current.map((flow) => (flow.id === result.flow?.id ? result.flow as WhatsAppFlow : flow)));
+        setNotice(`Added an action below ${optionLabel}.`);
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : "Action could not be added below this option.");
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
     const usedNames = new Set(flows.map((flow) => flow.name.trim().toLowerCase()));
     const baseName = `${form.name || "Workflow"} / ${optionLabel}`;
     const subflowForm: FlowForm = {
@@ -1900,7 +1931,7 @@ export default function WhatsAppFlowsClient() {
       actions: [makeAction({
         delayValue: "0",
         delayUnit: "seconds",
-        message: "Draft subflow. Replace this message before activating.",
+        message: "New action. Replace this message before activating.",
       })],
     };
 
@@ -1915,16 +1946,22 @@ export default function WhatsAppFlowsClient() {
       const result = (await response.json()) as { ok?: boolean; flow?: WhatsAppFlow; error?: string };
       if (!response.ok || !result.ok || !result.flow) throw new Error(result.error || "Subflow could not be created.");
       setFlows((current) => [result.flow as WhatsAppFlow, ...current]);
-      updateAction(actionId, {
-        options: form.actions.find((action) => action.id === actionId)?.options.map((current) => (
-          current.id === option.id ? {
-            ...current,
-            targetFlowId: result.flow?.id || "",
-            targetFlowName: result.flow?.name || "",
-          } : current
-        )) || [],
-      });
-      setNotice(`Created subflow "${result.flow.name}" for ${optionLabel}.`);
+      setForm((current) => ({
+        ...current,
+        actions: current.actions.map((action) => (
+          action.id === actionId ? {
+            ...action,
+            options: action.options.map((currentOption) => (
+              currentOption.id === option.id ? {
+                ...currentOption,
+                targetFlowId: result.flow?.id || "",
+                targetFlowName: result.flow?.name || "",
+              } : currentOption
+            )),
+          } : action
+        )),
+      }));
+      setNotice(`Created a subflow and added an action below ${optionLabel}.`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Subflow could not be created.");
     } finally {
@@ -2024,6 +2061,10 @@ export default function WhatsAppFlowsClient() {
 
   function selectionDestinationLabel(option: SelectionOption) {
     return option.targetFlowName || flows.find((flow) => flow.id === option.targetFlowId)?.name || "Unlinked";
+  }
+
+  function targetFlowForOption(option: SelectionOption) {
+    return option.targetFlowId ? flows.find((flow) => flow.id === option.targetFlowId) || null : null;
   }
 
   function triggerCanvasSummary() {
@@ -2141,53 +2182,73 @@ export default function WhatsAppFlowsClient() {
                   {action.type === "Ask Selection" && (
                     <div className={styles.outcomeFan}>
                       {filledOptions.length ? filledOptions.map((option) => (
-                        <div className={styles.outcomePath} key={`${action.id}-${option.id || option.label}`}>
-                          <input
-                            className={styles.outcomeLabelInput}
-                            onChange={(event) => updateAction(action.id, {
-                              options: action.options.map((current) => (
-                                current.id === option.id ? { ...current, label: event.target.value } : current
-                              )),
-                            })}
-                            value={option.label}
-                            placeholder="Option label"
-                          />
-                          <strong>{selectionDestinationLabel(option)}</strong>
-                          <select
-                            aria-label={`Choose next sub flow for ${option.label}`}
-                            value={option.targetFlowId || ""}
-                            onChange={(event) => {
-                              const targetFlowId = event.target.value;
-                              updateAction(action.id, {
-                                options: action.options.map((current) => (
-                                  current.id === option.id ? {
-                                    ...current,
-                                    targetFlowId,
-                                    targetFlowName: flows.find((flow) => flow.id === targetFlowId)?.name || "",
-                                  } : current
-                                )),
-                              });
-                            }}
-                          >
-                            <option value="">Choose next sub flow</option>
-                            {flows
-                              .filter((flow) => flow.id !== editingId)
-                              .map((flow) => (
-                                <option key={`canvas-target-${option.id}-${flow.id}`} value={flow.id}>
-                                  {flow.name}
-                                </option>
-                              ))}
-                          </select>
-                          <button
-                            aria-label={`Create subflow for ${option.label || "option"}`}
-                            className={styles.outcomeAddButton}
-                            disabled={saving}
-                            onClick={() => void createSubflowFromOption(action.id, option)}
-                            type="button"
-                          >
-                            +
-                          </button>
-                        </div>
+                        (() => {
+                          const targetFlow = targetFlowForOption(option);
+                          const targetActions = targetFlow ? formFromFlow(targetFlow).actions : [];
+                          return (
+                            <div className={styles.outcomeBranch} key={`${action.id}-${option.id || option.label}`}>
+                              <div className={styles.outcomePath}>
+                                <input
+                                  className={styles.outcomeLabelInput}
+                                  onChange={(event) => updateAction(action.id, {
+                                    options: action.options.map((current) => (
+                                      current.id === option.id ? { ...current, label: event.target.value } : current
+                                    )),
+                                  })}
+                                  value={option.label}
+                                  placeholder="Option label"
+                                />
+                                <strong>{selectionDestinationLabel(option)}</strong>
+                                <select
+                                  aria-label={`Choose next sub flow for ${option.label}`}
+                                  value={option.targetFlowId || ""}
+                                  onChange={(event) => {
+                                    const targetFlowId = event.target.value;
+                                    updateAction(action.id, {
+                                      options: action.options.map((current) => (
+                                        current.id === option.id ? {
+                                          ...current,
+                                          targetFlowId,
+                                          targetFlowName: flows.find((flow) => flow.id === targetFlowId)?.name || "",
+                                        } : current
+                                      )),
+                                    });
+                                  }}
+                                >
+                                  <option value="">Choose next sub flow</option>
+                                  {flows
+                                    .filter((flow) => flow.id !== editingId)
+                                    .map((flow) => (
+                                      <option key={`canvas-target-${option.id}-${flow.id}`} value={flow.id}>
+                                        {flow.name}
+                                      </option>
+                                    ))}
+                                </select>
+                              </div>
+                              <div className={styles.branchConnector} />
+                              <button
+                                aria-label={`Add action below ${option.label || "option"}`}
+                                className={styles.outcomeAddButton}
+                                disabled={saving}
+                                onClick={() => void addActionBelowOption(action.id, option)}
+                                type="button"
+                              >
+                                +
+                              </button>
+                              {targetActions.length > 0 && (
+                                <div className={styles.outcomeSubflowActions}>
+                                  {targetActions.slice(0, 4).map((targetAction, targetIndex) => (
+                                    <div className={styles.outcomeSubflowAction} key={`${option.id}-${targetAction.id}`}>
+                                      <span>Action {targetIndex + 1} · {actionDelayLabel(targetAction)}</span>
+                                      <strong>{targetAction.type}</strong>
+                                      <small>{actionNodeSummary(targetAction)}</small>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()
                       )) : (
                         <div className={styles.outcomePath}>
                           <span>No options</span>
