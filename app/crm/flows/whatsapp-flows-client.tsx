@@ -2725,7 +2725,7 @@ export default function WhatsAppFlowsClient() {
                       </span>
                       <button
                         className={styles.canvasActionRemove}
-                        disabled={form.actions.length === 1}
+                        disabled={form.actions.length === 1 && action.type !== "Ask Selection"}
                         onClick={(event) => {
                           event.stopPropagation();
                           removeAction(action.id);
@@ -3419,7 +3419,7 @@ export default function WhatsAppFlowsClient() {
                       <button className={styles.textButton} type="button" onClick={() => moveAction(action.id, 1)} disabled={index === form.actions.length - 1}>
                         Move down
                       </button>
-                      <button className={styles.textButton} type="button" onClick={() => removeAction(action.id)} disabled={form.actions.length === 1}>
+                      <button className={styles.textButton} type="button" onClick={() => removeAction(action.id)} disabled={form.actions.length === 1 && action.type !== "Ask Selection"}>
                         Remove
                       </button>
                     </div>
