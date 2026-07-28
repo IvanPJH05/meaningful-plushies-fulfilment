@@ -72,7 +72,6 @@ type RowDraft = {
 
 const customerStatuses: CustomerStatus[] = ["Cold", "Warm", "Unpaid", "Paid"];
 const CUSTOMER_CACHE_KEY = "meaningful-plushies.crm-customers.v1";
-const CUSTOMER_CACHE_MAX_AGE_MS = 60_000;
 
 type CustomerCache = {
   customers: Customer[];
@@ -208,10 +207,6 @@ export default function WhatsAppCustomersClient() {
   useEffect(() => {
     async function loadData() {
       const cached = readCustomerCache();
-      if (cached && Date.now() - cached.cachedAt < CUSTOMER_CACHE_MAX_AGE_MS) {
-        setLoading(false);
-        return;
-      }
       if (!cached) setLoading(true);
       try {
         const [customersResponse, flowsResponse] = await Promise.all([
