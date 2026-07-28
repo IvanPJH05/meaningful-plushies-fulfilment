@@ -2614,7 +2614,7 @@ export default function WhatsAppInboxClient() {
     async function createAndSendManualOrderLink(settingsText: string) {
       const [character = "Billy", rawSpeaker = "5"] = settingsText.split("|");
       const speaker = ["5", "10", "20"].includes(rawSpeaker) ? rawSpeaker : "5";
-      const response = await fetch("/api/manual-orders", {
+      const response = await fetch("/api/crm/ai/commands/manual-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -2623,11 +2623,12 @@ export default function WhatsAppInboxClient() {
           character,
           productKey: `plushie_${speaker}s`,
           shippingRegion: "WEST",
+          paymentConfirmed: true,
+          conversationId: selectedId,
         }),
       });
-      const result = await response.json().catch(() => ({})) as { ok?: boolean; manualOrder?: { customerLink?: string }; error?: string };
-      if (!response.ok || !result.ok || !result.manualOrder?.customerLink) throw new Error(result.error || "Manual order link could not be created.");
-      await sendFlowStep(`Here is your Meaningful Plushies order link:\n${result.manualOrder.customerLink}`);
+      const result = await response.json().catch(() => ({})) as { ok?: boolean; error?: string };
+      if (!response.ok || !result.ok) throw new Error(result.error || "Manual order link could not be created and sent.");
     }
 
     setRunningFlowId(flow.id);

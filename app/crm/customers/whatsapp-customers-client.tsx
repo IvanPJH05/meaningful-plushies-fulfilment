@@ -307,7 +307,7 @@ export default function WhatsAppCustomersClient() {
 
         if (step.type === "Create Manual Order Link") {
           const settings = manualOrderSettings(step.message);
-          const response = await fetch("/api/manual-orders", {
+          const response = await fetch("/api/crm/ai/commands/manual-order", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -316,11 +316,12 @@ export default function WhatsAppCustomersClient() {
               character: settings.character,
               productKey: settings.productKey,
               shippingRegion: "WEST",
+              paymentConfirmed: true,
+              conversationId: customer.conversationId,
             }),
           });
-          const result = await response.json() as { ok?: boolean; manualOrder?: { customerLink?: string }; error?: string };
-          if (!response.ok || !result.ok || !result.manualOrder?.customerLink) throw new Error(result.error || "Manual order link could not be created.");
-          await sendFlowStep(customer, step, `Here is your Meaningful Plushies order link:\n${result.manualOrder.customerLink}`);
+          const result = await response.json() as { ok?: boolean; error?: string };
+          if (!response.ok || !result.ok) throw new Error(result.error || "Manual order link could not be created and sent.");
           continue;
         }
 
