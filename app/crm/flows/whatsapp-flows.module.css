@@ -232,7 +232,7 @@
   align-items: center;
   display: grid;
   gap: 7px;
-  grid-template-columns: minmax(132px, 0.58fr) minmax(96px, 0.42fr) minmax(160px, 1fr) auto;
+  grid-template-columns: minmax(150px, 0.5fr) minmax(220px, 1fr) auto;
 }
 
 .phraseRow input,

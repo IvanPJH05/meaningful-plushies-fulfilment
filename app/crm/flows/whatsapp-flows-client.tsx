@@ -28,7 +28,6 @@ type TriggerEvent = "message_received" | "message_sent";
 type TriggerRule = {
   id?: string;
   event: TriggerEvent;
-  category: string;
   phrase: string;
 };
 type MediaType = "image" | "video" | "pdf";
@@ -240,15 +239,13 @@ function makeTriggerRule(rule?: Partial<TriggerRule>): TriggerRule {
   return {
     id: rule?.id || makeId(),
     event: normaliseTriggerEvent(rule?.event),
-    category: rule?.category || "",
     phrase: rule?.phrase || "",
   };
 }
 
-function triggerRulesFromLegacy(trigger: string, triggerEvent: TriggerEvent, triggerCategory: string) {
+function triggerRulesFromLegacy(trigger: string, triggerEvent: TriggerEvent) {
   return triggerPhrasesFromText(trigger).map((phrase) => makeTriggerRule({
     event: triggerEvent,
-    category: triggerCategory,
     phrase,
   }));
 }
@@ -256,7 +253,7 @@ function triggerRulesFromLegacy(trigger: string, triggerEvent: TriggerEvent, tri
 function usableTriggerRules(form: Pick<FlowForm, "trigger" | "triggerEvent" | "triggerCategory" | "triggerRules">) {
   const rules = form.triggerRules.length
     ? form.triggerRules
-    : triggerRulesFromLegacy(form.trigger, form.triggerEvent, form.triggerCategory);
+    : triggerRulesFromLegacy(form.trigger, form.triggerEvent);
   return rules.map(makeTriggerRule).filter((rule) => rule.phrase.trim());
 }
 
@@ -617,7 +614,7 @@ function formFromFlow(flow: WhatsAppFlow): FlowForm {
     triggerCategory: flow.triggerCategory || "",
     triggerRules: Array.isArray(flow.triggerRules) && flow.triggerRules.length
       ? flow.triggerRules.map(makeTriggerRule)
-      : triggerRulesFromLegacy(flow.trigger, normaliseTriggerEvent(flow.triggerEvent), flow.triggerCategory || ""),
+      : triggerRulesFromLegacy(flow.trigger, normaliseTriggerEvent(flow.triggerEvent)),
     trigger: flow.trigger,
     groupName: flow.groupName || "",
     subgroupName: flow.subgroupName || "",
@@ -679,11 +676,11 @@ function flowPayloadFromForm(form: FlowForm, id?: string) {
     triggerType: form.triggerType,
     triggerButtonLabel: form.triggerButtonLabel.trim(),
     triggerEvent: triggerRules[0]?.event || form.triggerEvent,
-    triggerCategory: triggerRules[0]?.category.trim() || form.triggerCategory.trim(),
+    triggerCategory: "",
     triggerRules: triggerRules.map((rule) => ({
       id: rule.id,
       event: rule.event,
-      category: rule.category.trim(),
+      category: "",
       phrase: rule.phrase.trim(),
     })),
     trigger: triggerRules.length ? triggerRules.map((rule) => rule.phrase.trim()).join("\n") : form.trigger.trim(),
@@ -892,8 +889,7 @@ function triggerSummary(flow: WhatsAppFlow) {
   if (triggerType === "click") return `Inbox button: ${flow.triggerButtonLabel || flow.name}`;
   const phrases = triggerPhrasesFromText(flow.trigger);
   const eventLabel = normaliseTriggerEvent(flow.triggerEvent) === "message_sent" ? "sent" : "received";
-  const category = flow.triggerCategory ? ` - ${flow.triggerCategory}` : "";
-  return phrases.length ? `${phrases.length} exact phrase${phrases.length === 1 ? "" : "s"} on message ${eventLabel}${category}` : "No trigger phrase";
+  return phrases.length ? `${phrases.length} exact phrase${phrases.length === 1 ? "" : "s"} on message ${eventLabel}` : "No trigger phrase";
 }
 
 function actionTypeSummary(flow: WhatsAppFlow) {
@@ -2257,7 +2253,7 @@ export default function WhatsAppFlowsClient() {
   function triggerRuleRows() {
     const rules = form.triggerRules.length
       ? form.triggerRules
-      : triggerRulesFromLegacy(form.trigger, form.triggerEvent, form.triggerCategory);
+      : triggerRulesFromLegacy(form.trigger, form.triggerEvent);
     return rules.length ? rules : [makeTriggerRule({ event: "message_received" })];
   }
 
@@ -2265,7 +2261,7 @@ export default function WhatsAppFlowsClient() {
     setForm((current) => {
       const currentRules = current.triggerRules.length
         ? current.triggerRules
-        : triggerRulesFromLegacy(current.trigger, current.triggerEvent, current.triggerCategory);
+        : triggerRulesFromLegacy(current.trigger, current.triggerEvent);
       const rules = currentRules.length ? currentRules : [makeTriggerRule({ event: "message_received" })];
       const nextRules = rules.map((rule) => (rule.id === ruleId ? makeTriggerRule({ ...rule, ...patch }) : rule));
       return {
@@ -2273,7 +2269,7 @@ export default function WhatsAppFlowsClient() {
         triggerRules: nextRules,
         trigger: nextRules.map((rule) => rule.phrase).join("\n"),
         triggerEvent: nextRules[0]?.event || current.triggerEvent,
-        triggerCategory: nextRules[0]?.category || current.triggerCategory,
+        triggerCategory: "",
       };
     });
   }
@@ -2282,7 +2278,7 @@ export default function WhatsAppFlowsClient() {
     setForm((current) => {
       const currentRules = current.triggerRules.length
         ? current.triggerRules
-        : triggerRulesFromLegacy(current.trigger, current.triggerEvent, current.triggerCategory);
+        : triggerRulesFromLegacy(current.trigger, current.triggerEvent);
       const nextRules = [...currentRules, makeTriggerRule({ event: "message_received" })];
       return { ...current, triggerRules: nextRules, trigger: nextRules.map((rule) => rule.phrase).join("\n") };
     });
@@ -2292,7 +2288,7 @@ export default function WhatsAppFlowsClient() {
     setForm((current) => {
       const currentRules = current.triggerRules.length
         ? current.triggerRules
-        : triggerRulesFromLegacy(current.trigger, current.triggerEvent, current.triggerCategory);
+        : triggerRulesFromLegacy(current.trigger, current.triggerEvent);
       const nextRules = currentRules.filter((rule) => rule.id !== ruleId);
       return { ...current, triggerRules: nextRules, trigger: nextRules.map((rule) => rule.phrase).join("\n") };
     });
@@ -2312,11 +2308,6 @@ export default function WhatsAppFlowsClient() {
                 <option value="message_received">Message received</option>
                 <option value="message_sent">Message sent</option>
               </select>
-              <input
-                value={rule.category}
-                onChange={(event) => updateTriggerRule(rule.id, { category: event.target.value })}
-                placeholder="Category"
-              />
               <input
                 value={rule.phrase}
                 onChange={(event) => updateTriggerRule(rule.id, { phrase: event.target.value })}
