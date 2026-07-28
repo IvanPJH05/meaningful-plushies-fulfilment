@@ -1494,6 +1494,48 @@
   background: #edf5ff;
 }
 
+.workflowGroupRow {
+  background: #f4f8ff;
+}
+
+.workflowGroupRow:hover {
+  background: #eaf3ff;
+}
+
+.workflowGroupIcon {
+  color: #1769e0;
+  font-size: 18px;
+  font-weight: 950;
+  text-align: center;
+}
+
+.workflowGroupBreadcrumb {
+  align-items: center;
+  background: #f4f8ff;
+  border-bottom: 1px solid #dbe6f3;
+  color: #52677f;
+  display: flex;
+  gap: 10px;
+  grid-column: 1 / -1;
+  padding: 10px 14px;
+}
+
+.workflowGroupBreadcrumb button {
+  background: #ffffff;
+  border: 1px solid #c6d8ee;
+  border-radius: 8px;
+  color: #06428a;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 7px 9px;
+}
+
+.workflowGroupBreadcrumb strong {
+  color: #102033;
+}
+
 .bulkGroupBar {
   align-items: center;
   background: #edf5ff;

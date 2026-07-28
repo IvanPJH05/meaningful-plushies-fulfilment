@@ -1180,6 +1180,7 @@ export default function WhatsAppFlowsClient() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [triggerFilter, setTriggerFilter] = useState("all");
   const [groupFilter, setGroupFilter] = useState("all");
+  const [openedGroupName, setOpenedGroupName] = useState("");
   const [selectedGroupTarget, setSelectedGroupTarget] = useState("Ungrouped");
   const [needsAttentionOnly, setNeedsAttentionOnly] = useState(false);
   const [expandedFlowIds, setExpandedFlowIds] = useState<string[]>([]);
@@ -1273,8 +1274,11 @@ export default function WhatsAppFlowsClient() {
     };
   }, [flowAnalysis, flows]);
   const groupOptions = useMemo(() => (
-    Array.from(new Set(flows.map((flow) => flowBreadcrumb(flow).split(" / ")[0] || "Ungrouped"))).sort()
-  ), [flows]);
+    Array.from(new Set([
+      ...flowGroups.map((group) => group.name),
+      ...flows.map((flow) => flowBreadcrumb(flow).split(" / ")[0] || "Ungrouped"),
+    ])).filter((group) => group !== "Ungrouped").sort()
+  ), [flowGroups, flows]);
 
   useEffect(() => {
     if (!flowGroups.length || expandedFolderKeys.length) return;
@@ -3182,6 +3186,24 @@ export default function WhatsAppFlowsClient() {
   }
 
   function renderWorkflowHome() {
+    const openedGroup = flowGroups.find((group) => group.name === openedGroupName);
+    const groupRows = openedGroup ? [] : flowGroups.filter((group) => (
+      group.name !== "Ungrouped"
+      && (groupFilter === "all" || group.name === groupFilter)
+      && (
+        !searchTerm.trim()
+        || group.name.toLowerCase().includes(searchTerm.trim().toLowerCase())
+        || group.flows.some((flow) => filteredFlowIds.has(flow.id))
+        || group.subgroups.some((subgroup) => (
+          subfolderFlows(subgroup).some((flow) => filteredFlowIds.has(flow.id))
+        ))
+      )
+    ));
+    const workflowRows = (openedGroup
+      ? filteredFlows.filter((flow) => flowGroupName(flow) === openedGroup.name)
+      : filteredFlows.filter((flow) => flowGroupName(flow) === "Ungrouped")
+    );
+
     return (
       <>
         <div className={styles.workflowHomeHeader}>
@@ -3224,7 +3246,15 @@ export default function WhatsAppFlowsClient() {
               <option value="first_message">First message</option>
               <option value="selection_button">Selection button</option>
             </select>
-            <select aria-label="Group filter" onChange={(event) => setGroupFilter(event.target.value)} value={groupFilter}>
+            <select
+              aria-label="Group filter"
+              onChange={(event) => {
+                const group = event.target.value;
+                setGroupFilter(group);
+                setOpenedGroupName(group === "all" ? "" : group);
+              }}
+              value={groupFilter}
+            >
               <option value="all">All groups</option>
               {groupOptions.map((group) => <option key={group} value={group}>{group}</option>)}
             </select>
@@ -3258,7 +3288,34 @@ export default function WhatsAppFlowsClient() {
               <span>Group</span>
               <span />
             </div>
-            {filteredFlows.map((flow) => {
+            {openedGroup && (
+              <div className={styles.workflowGroupBreadcrumb}>
+                <button onClick={() => { setOpenedGroupName(""); setGroupFilter("all"); }} type="button">← All workflows</button>
+                <strong>{openedGroup.name}</strong>
+                <span>{workflowRows.length} workflow{workflowRows.length === 1 ? "" : "s"}</span>
+              </div>
+            )}
+            {groupRows.map((group) => {
+              const groupTotal = group.flows.length + group.subgroups.reduce((total, subgroup) => total + subfolderFlows(subgroup).length, 0);
+              return (
+                <div className={`${styles.workflowTableRow} ${styles.workflowGroupRow}`} key={`group-row-${group.name}`}>
+                  <span className={styles.workflowGroupIcon}>▸</span>
+                  <button onClick={() => { setOpenedGroupName(group.name); setGroupFilter(group.name); }} type="button">
+                    <strong>{titleCaseLabel(cleanCopySuffix(group.name))}</strong>
+                    <span>Group · {groupTotal} workflow{groupTotal === 1 ? "" : "s"}</span>
+                  </button>
+                  <span>—</span>
+                  <span>Grouped workflows</span>
+                  <span>{groupTotal ? `${groupTotal} workflows` : "Empty group"}</span>
+                  <span>—</span>
+                  <span>Group</span>
+                  <div className={styles.workflowRowActions}>
+                    <button onClick={() => { setOpenedGroupName(group.name); setGroupFilter(group.name); }} type="button">Open</button>
+                  </div>
+                </div>
+              );
+            })}
+            {workflowRows.map((flow) => {
               const analysis = flowAnalysis.get(flow.id);
               if (!analysis) return null;
               return (
