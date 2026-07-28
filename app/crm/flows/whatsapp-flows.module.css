@@ -807,6 +807,26 @@
   width: 100%;
 }
 
+.copyBranchControl {
+  color: #52677f;
+  display: grid;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.copyBranchControl select {
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.copyBranchControl select:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .outcomeAddButton {
   align-items: center;
   background: #102033;

@@ -1911,6 +1911,24 @@ export default function WhatsAppFlowsClient() {
     ]);
   }
 
+  function copyOptionActions(actionId: string, sourceOption: SelectionOption, targetOptionId: string) {
+    if (!targetOptionId || sourceOption.id === targetOptionId) return;
+    setForm((current) => ({
+      ...current,
+      actions: current.actions.map((action) => {
+        if (action.id !== actionId) return action;
+        return {
+          ...action,
+          options: action.options.map((option) => (
+            option.id === targetOptionId ? { ...option, actions: (sourceOption.actions || []).map((sourceAction) => makeAction(sourceAction)) } : option
+          )),
+        };
+      }),
+    }));
+    const targetOption = form.actions.find((action) => action.id === actionId)?.options.find((option) => option.id === targetOptionId);
+    setNotice(`Copied actions from ${sourceOption.label || "this option"} to ${targetOption?.label || "the other option"}.`);
+  }
+
   function updateBranchAction(actionId: string, optionId: string | undefined, branchActionId: string, patch: Partial<FlowAction>) {
     updateBranchOptionActions(actionId, optionId, (actions) => actions.map((branchAction) => {
       if (branchAction.id !== branchActionId) return branchAction;
@@ -2683,6 +2701,27 @@ export default function WhatsAppFlowsClient() {
                                   placeholder="Option label"
                                 />
                                 <strong>{(option.actions || []).length ? `${option.actions?.length} inline action${option.actions?.length === 1 ? "" : "s"}` : "No actions yet"}</strong>
+                                {action.options.filter((candidate) => candidate.id !== option.id).length > 0 && (
+                                  <label className={styles.copyBranchControl}>
+                                    Copy actions to
+                                    <select
+                                      aria-label={`Copy actions from ${option.label || "this option"}`}
+                                      defaultValue=""
+                                      disabled={!(option.actions || []).length}
+                                      onChange={(event) => {
+                                        copyOptionActions(action.id, option, event.target.value);
+                                        event.currentTarget.value = "";
+                                      }}
+                                    >
+                                      <option value="">Choose option</option>
+                                      {action.options.filter((candidate) => candidate.id !== option.id).map((candidate) => (
+                                        <option key={`${option.id}-copy-${candidate.id}`} value={candidate.id}>
+                                          {candidate.label || "Unnamed option"}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                )}
                               </div>
                               <div className={styles.branchConnector} />
                               <button
