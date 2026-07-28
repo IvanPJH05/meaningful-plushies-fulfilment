@@ -2405,6 +2405,30 @@ export default function WhatsAppFlowsClient() {
             Remove
           </button>
         </div>
+        <div className={styles.canvasDelayControls}>
+          <label>
+            Delay
+            <input
+              min="0"
+              onChange={(event) => updateBranchAction(action.id, option.id, branchAction.id, { delayValue: event.target.value })}
+              type="number"
+              value={branchAction.delayValue}
+            />
+          </label>
+          <label>
+            Time
+            <select
+              onChange={(event) => updateBranchAction(action.id, option.id, branchAction.id, { delayUnit: event.target.value as DelayUnit })}
+              value={branchAction.delayUnit}
+            >
+              {delayUnits.map((unit) => (
+                <option key={`${option.id}-${branchAction.id}-delay-${unit}`} value={unit}>
+                  {unit}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <select
           className={styles.canvasNodeSelect}
           value={actionSelectValue(branchAction)}
@@ -2661,6 +2685,30 @@ export default function WhatsAppFlowsClient() {
                     onClick={() => setSelectedCanvasNodeId(action.id)}
                   >
                     <span>Action {index + 1} - {actionDelayLabel(action)}</span>
+                    <div className={styles.canvasDelayControls}>
+                      <label>
+                        Delay
+                        <input
+                          min="0"
+                          onChange={(event) => updateAction(action.id, { delayValue: event.target.value })}
+                          type="number"
+                          value={action.delayValue}
+                        />
+                      </label>
+                      <label>
+                        Time
+                        <select
+                          onChange={(event) => updateAction(action.id, { delayUnit: event.target.value as DelayUnit })}
+                          value={action.delayUnit}
+                        >
+                          {delayUnits.map((unit) => (
+                            <option key={`canvas-delay-${action.id}-${unit}`} value={unit}>
+                              {unit}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
                     <select
                       className={styles.canvasNodeSelect}
                       onChange={(event) => updateAction(action.id, actionPatchFromSelect(action, event.target.value as ActionSelectValue))}

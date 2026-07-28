@@ -674,6 +674,38 @@
   width: 100%;
 }
 
+.canvasDelayControls {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 110px) minmax(0, 1fr);
+  width: 100%;
+}
+
+.canvasDelayControls label {
+  color: #344c67;
+  display: grid;
+  font-size: 10px;
+  font-weight: 950;
+  gap: 4px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.canvasDelayControls input,
+.canvasDelayControls select {
+  background: #ffffff;
+  border: 1px solid #cbd8e8;
+  border-radius: 7px;
+  color: #102033;
+  font-size: 13px;
+  font-weight: 850;
+  height: 36px;
+  min-width: 0;
+  padding: 0 9px;
+  text-transform: none;
+  width: 100%;
+}
+
 .canvasNode textarea.canvasNodeInput {
   max-width: 100%;
   resize: vertical;
@@ -685,7 +717,9 @@
 }
 
 .canvasNodeInput:focus,
-.canvasNodeSelect:focus {
+.canvasNodeSelect:focus,
+.canvasDelayControls input:focus,
+.canvasDelayControls select:focus {
   border-color: #bdd4f0;
   outline: none;
 }
