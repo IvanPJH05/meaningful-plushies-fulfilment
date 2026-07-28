@@ -85,6 +85,7 @@ const MAX_WHATSAPP_VIDEO_BYTES = 16 * 1024 * 1024;
 const MAX_WHATSAPP_DOCUMENT_BYTES = 100 * 1024 * 1024;
 const MAX_FLOW_IMAGE_EDGE = 1800;
 const WHATSAPP_MEDIA_BUCKET = "whatsapp-media";
+const JOURNEY_STAGES = ["Start", "Intro", "Product choices", "Speaker", "Shipping", "Order summary", "Follow-up"];
 
 type FlowBuilderCache = {
   flows: WhatsAppFlow[];
@@ -117,6 +118,28 @@ type FlowSubfolder = {
 type FlowFolder = {
   name: string;
   subfolders: string[];
+};
+
+type LibraryView = "tree" | "list";
+type FlowBranch = {
+  label: string;
+  destinationId: string;
+  destinationName: string;
+  status: "linked" | "unlinked" | "missing";
+};
+type FlowAnalysis = {
+  displayName: string;
+  suggestedName: string;
+  language: "EN" | "MS" | "Any";
+  stage: string;
+  purpose: string;
+  variant: string;
+  triggerSummary: string;
+  breadcrumb: string;
+  actionsSummary: string;
+  branches: FlowBranch[];
+  counterpartId: string;
+  flags: string[];
 };
 
 let flowBuilderMemoryCache: FlowBuilderCache | null = null;
@@ -722,6 +745,163 @@ function selectionPairingIssue(option: SelectionOption, flows: WhatsAppFlow[]) {
   return "";
 }
 
+function cleanCopySuffix(value: string) {
+  return value.replace(/\s+copy(?:\s+\d+)?$/i, "").trim();
+}
+
+function titleCaseLabel(value: string) {
+  return value
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function detectLanguage(flow: WhatsAppFlow): FlowAnalysis["language"] {
+  const haystack = `${flow.name} ${flow.groupName || ""} ${flow.subgroupName || ""}`.toLowerCase();
+  if (/\b(ms|bm|malay|melayu)\b/.test(haystack)) return "MS";
+  if (/\b(en|eng|english)\b/.test(haystack)) return "EN";
+  return "Any";
+}
+
+function detectStage(flow: WhatsAppFlow) {
+  const text = `${flow.name} ${flow.groupName || ""} ${flow.subgroupName || ""} ${flow.description || ""}`.toLowerCase();
+  const hasSelection = flow.steps.some((step) => normaliseActionType(step.type) === "Ask Selection");
+  if (flow.name.toLowerCase().includes("language selection")) return { stage: "Start", purpose: "Language selection" };
+  if (text.includes("intro") || text.includes("welcome")) return { stage: "Intro", purpose: "Welcome" };
+  if (text.includes("shipping")) return { stage: "Shipping", purpose: "Choose quantity" };
+  if (text.includes("order summary")) return { stage: "Order summary", purpose: "Summary" };
+  if (text.includes("speaker")) return { stage: "Speaker", purpose: "Choose speaker" };
+  if (text.includes("plushie") || text.includes("character")) return { stage: "Product choices", purpose: "Choose character" };
+  if (text.includes("buy later") || text.includes("follow")) return { stage: "Follow-up", purpose: "Buy later" };
+  if (hasSelection) return { stage: "Decision", purpose: "Ask selection" };
+  return { stage: "Message", purpose: "Automation" };
+}
+
+function detectVariant(flow: WhatsAppFlow) {
+  const text = `${flow.name} ${flow.subgroupName || ""}`.toUpperCase();
+  const variants = [text.match(/\b(5S|10S|20S)\b/)?.[1], text.match(/\b(EM|WM)\b/)?.[1]]
+    .filter(Boolean);
+  return variants.join(" · ");
+}
+
+function flowBreadcrumb(flow: WhatsAppFlow) {
+  return [flow.groupName?.trim() || "Ungrouped", flow.subgroupName?.trim()].filter(Boolean).join(" / ");
+}
+
+function triggerSummary(flow: WhatsAppFlow) {
+  const triggerType = normaliseTriggerType(flow.triggerType);
+  if (triggerType === "first_message") return "First customer message";
+  if (triggerType === "selection_button") return "Selection button press";
+  if (triggerType === "click") return `Inbox button: ${flow.triggerButtonLabel || flow.name}`;
+  const phrases = flow.trigger.split(",").map((phrase) => phrase.trim()).filter(Boolean);
+  return phrases.length ? `${phrases.length} exact phrase${phrases.length === 1 ? "" : "s"}` : "No trigger phrase";
+}
+
+function actionTypeSummary(flow: WhatsAppFlow) {
+  const counts = flow.steps.reduce<Record<string, number>>((memo, step) => {
+    const type = normaliseActionType(step.type);
+    memo[type] = (memo[type] || 0) + 1;
+    return memo;
+  }, {});
+  const parts = Object.entries(counts).map(([type, count]) => `${count} ${type.replace("Send ", "")}`);
+  return parts.length ? parts.join(" · ") : "No actions";
+}
+
+function findBranchDestination(option: SelectionOption, flows: WhatsAppFlow[]): FlowBranch {
+  const destination = option.targetFlowId
+    ? flows.find((flow) => flow.id === option.targetFlowId)
+    : flows.find((flow) => normaliseTriggerType(flow.triggerType) === "selection_button" && flow.triggerButtonLabel === option.id);
+  if (destination) {
+    return {
+      label: option.label || "Option",
+      destinationId: destination.id,
+      destinationName: destination.name,
+      status: "linked",
+    };
+  }
+  return {
+    label: option.label || "Option",
+    destinationId: option.targetFlowId || "",
+    destinationName: option.targetFlowName || "",
+    status: option.targetFlowId ? "missing" : "unlinked",
+  };
+}
+
+function flowBranches(flow: WhatsAppFlow, flows: WhatsAppFlow[]) {
+  return flow.steps.flatMap((step) => {
+    const action = actionFromStep(step);
+    if (action.type !== "Ask Selection") return [];
+    return action.options
+      .filter((option) => option.label.trim())
+      .map((option) => findBranchDestination(option, flows));
+  });
+}
+
+function suggestedFlowName(flow: WhatsAppFlow, language: FlowAnalysis["language"], stage: string, purpose: string, variant: string) {
+  return [language, stage, purpose, variant].filter(Boolean).join(" · ");
+}
+
+function normalisedDisplayName(flow: WhatsAppFlow) {
+  return cleanCopySuffix(flow.name).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function analyseFlows(flows: WhatsAppFlow[]) {
+  const duplicateNameCounts = flows.reduce<Record<string, number>>((memo, flow) => {
+    const key = normalisedDisplayName(flow);
+    memo[key] = (memo[key] || 0) + 1;
+    return memo;
+  }, {});
+  const analyses = new Map<string, FlowAnalysis>();
+
+  for (const flow of flows) {
+    const language = detectLanguage(flow);
+    const { stage, purpose } = detectStage(flow);
+    const variant = detectVariant(flow);
+    const displayName = titleCaseLabel(cleanCopySuffix(flow.name));
+    const suggestedName = suggestedFlowName(flow, language, stage, purpose, variant);
+    const branches = flowBranches(flow, flows);
+    const flags = [
+      !flow.description.trim() ? "No notes" : "",
+      flow.name.toLowerCase().includes("copy") ? "Copied name" : "",
+      duplicateNameCounts[normalisedDisplayName(flow)] > 1 ? "Duplicate candidate" : "",
+      branches.some((branch) => branch.status === "missing") ? "Missing destination" : "",
+      branches.some((branch) => branch.status === "unlinked") ? "Unlinked option" : "",
+    ].filter(Boolean);
+
+    analyses.set(flow.id, {
+      displayName,
+      suggestedName,
+      language,
+      stage,
+      purpose,
+      variant,
+      triggerSummary: triggerSummary(flow),
+      breadcrumb: flowBreadcrumb(flow),
+      actionsSummary: actionTypeSummary(flow),
+      branches,
+      counterpartId: "",
+      flags,
+    });
+  }
+
+  for (const flow of flows) {
+    const current = analyses.get(flow.id);
+    if (!current || current.language === "Any") continue;
+    const counterpartLanguage = current.language === "EN" ? "MS" : "EN";
+    const counterpart = flows.find((candidate) => {
+      const candidateAnalysis = analyses.get(candidate.id);
+      return candidate.id !== flow.id
+        && candidateAnalysis?.language === counterpartLanguage
+        && candidateAnalysis.stage === current.stage
+        && candidateAnalysis.purpose === current.purpose
+        && candidateAnalysis.variant === current.variant;
+    });
+    if (counterpart) current.counterpartId = counterpart.id;
+  }
+
+  return analyses;
+}
+
 function formatFileSize(sizeBytes?: number) {
   if (!sizeBytes) return "";
   if (sizeBytes < 1024 * 1024) return `${Math.max(1, Math.round(sizeBytes / 1024))} KB`;
@@ -829,6 +1009,15 @@ export default function WhatsAppFlowsClient() {
   const [draggingFlowId, setDraggingFlowId] = useState("");
   const [dropTargetKey, setDropTargetKey] = useState("");
   const [selectedFlowIds, setSelectedFlowIds] = useState<string[]>([]);
+  const [libraryView, setLibraryView] = useState<LibraryView>("tree");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [languageFilter, setLanguageFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [triggerFilter, setTriggerFilter] = useState("all");
+  const [groupFilter, setGroupFilter] = useState("all");
+  const [needsAttentionOnly, setNeedsAttentionOnly] = useState(false);
+  const [expandedFlowIds, setExpandedFlowIds] = useState<string[]>([]);
+  const [expandedFolderKeys, setExpandedFolderKeys] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -865,6 +1054,63 @@ export default function WhatsAppFlowsClient() {
 
   const activeCount = useMemo(() => flows.filter((flow) => flow.status === "Active").length, [flows]);
   const flowGroups = useMemo(() => groupedFlowLibrary(flows, folders), [flows, folders]);
+  const flowAnalysis = useMemo(() => analyseFlows(flows), [flows]);
+  const filteredFlows = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    return flows.filter((flow) => {
+      const analysis = flowAnalysis.get(flow.id);
+      if (!analysis) return false;
+      const haystack = [
+        flow.name,
+        analysis.displayName,
+        analysis.suggestedName,
+        analysis.breadcrumb,
+        analysis.triggerSummary,
+        analysis.stage,
+        analysis.purpose,
+        ...analysis.branches.map((branch) => `${branch.label} ${branch.destinationName}`),
+        ...analysis.flags,
+      ].join(" ").toLowerCase();
+      return (!query || haystack.includes(query))
+        && (languageFilter === "all" || analysis.language === languageFilter)
+        && (statusFilter === "all" || flow.status === statusFilter)
+        && (triggerFilter === "all" || normaliseTriggerType(flow.triggerType) === triggerFilter)
+        && (groupFilter === "all" || flowBreadcrumb(flow).startsWith(groupFilter))
+        && (!needsAttentionOnly || analysis.flags.length > 0);
+    });
+  }, [flowAnalysis, flows, groupFilter, languageFilter, needsAttentionOnly, searchTerm, statusFilter, triggerFilter]);
+  const filteredFlowIds = useMemo(() => new Set(filteredFlows.map((flow) => flow.id)), [filteredFlows]);
+  const healthSummary = useMemo(() => {
+    let unlinked = 0;
+    let duplicateCandidates = 0;
+    let withoutNotes = 0;
+    let missingDestination = 0;
+    for (const flow of flows) {
+      const analysis = flowAnalysis.get(flow.id);
+      if (!analysis) continue;
+      if (analysis.flags.includes("Unlinked option")) unlinked += 1;
+      if (analysis.flags.includes("Duplicate candidate") || analysis.flags.includes("Copied name")) duplicateCandidates += 1;
+      if (analysis.flags.includes("No notes")) withoutNotes += 1;
+      if (analysis.flags.includes("Missing destination")) missingDestination += 1;
+    }
+    return {
+      total: flows.length,
+      active: flows.filter((flow) => flow.status === "Active").length,
+      draft: flows.filter((flow) => flow.status !== "Active").length,
+      unlinked,
+      duplicateCandidates,
+      withoutNotes,
+      missingDestination,
+    };
+  }, [flowAnalysis, flows]);
+  const groupOptions = useMemo(() => (
+    Array.from(new Set(flows.map((flow) => flowBreadcrumb(flow).split(" / ")[0] || "Ungrouped"))).sort()
+  ), [flows]);
+
+  useEffect(() => {
+    if (!flowGroups.length || expandedFolderKeys.length) return;
+    setExpandedFolderKeys(flowGroups.map((group) => `group:${group.name}`));
+  }, [expandedFolderKeys.length, flowGroups]);
   const selectionLinks = useMemo(() => {
     const savedLinks = flows.flatMap(selectionLinksFromFlow);
     const draftLinks = selectionLinksFromDraft(form, editingId);
@@ -1639,6 +1885,22 @@ export default function WhatsAppFlowsClient() {
     ));
   }
 
+  function toggleExpandedFlow(flowId: string) {
+    setExpandedFlowIds((current) => (
+      current.includes(flowId)
+        ? current.filter((selectedId) => selectedId !== flowId)
+        : [...current, flowId]
+    ));
+  }
+
+  function toggleFolder(folderKey: string) {
+    setExpandedFolderKeys((current) => (
+      current.includes(folderKey)
+        ? current.filter((selectedKey) => selectedKey !== folderKey)
+        : [...current, folderKey]
+    ));
+  }
+
   function dropZoneHandlers(targetKey: string, groupName: string, subgroupName = "") {
     return {
       onDragOver: (event: DragEvent<HTMLElement>) => {
@@ -1675,9 +1937,12 @@ export default function WhatsAppFlowsClient() {
 
   function renderFlowCard(flow: WhatsAppFlow) {
     const isSelected = selectedFlowIds.includes(flow.id);
+    const analysis = flowAnalysis.get(flow.id);
+    const isExpanded = expandedFlowIds.includes(flow.id);
+    if (!analysis) return null;
     return (
       <div
-        className={`${styles.flowFile} ${isSelected ? styles.selectedFlow : ""} ${draggingFlowId === flow.id ? styles.draggingFlow : ""}`}
+        className={`${styles.flowFile} ${analysis.flags.length ? styles.needsAttentionFlow : ""} ${isSelected ? styles.selectedFlow : ""} ${draggingFlowId === flow.id ? styles.draggingFlow : ""}`}
         draggable
         key={flow.id}
         onDragStart={(event) => {
@@ -1700,10 +1965,14 @@ export default function WhatsAppFlowsClient() {
             type="checkbox"
           />
         </label>
-        <button className={styles.flowFileName} onClick={() => editFlow(flow)} type="button">
-          {flow.name}
+        <button className={styles.flowFileMain} onClick={() => toggleExpandedFlow(flow.id)} type="button">
+          <span className={styles.flowFileName}>{analysis.displayName}</span>
+          <span className={styles.flowSubline}>{analysis.breadcrumb}</span>
         </button>
-        <span className={flow.status === "Active" ? styles.activeBadge : styles.draftBadge}>{flow.status}</span>
+        <div className={styles.flowBadgeRow}>
+          <span className={flow.status === "Active" ? styles.activeBadge : styles.draftBadge}>{flow.status}</span>
+          <span className={styles.languageBadge}>{analysis.language}</span>
+        </div>
         <div className={styles.fileActions}>
           <button onClick={() => editFlow(flow)}>Edit</button>
           <button disabled={saving} onClick={() => void renameFlow(flow)}>
@@ -1716,6 +1985,35 @@ export default function WhatsAppFlowsClient() {
             Delete
           </button>
         </div>
+        <div className={styles.flowCardBody}>
+          <div className={styles.flowMetaGrid}>
+            <span><strong>Stage</strong>{analysis.stage}</span>
+            <span><strong>Trigger</strong>{analysis.triggerSummary}</span>
+            <span><strong>Actions</strong>{analysis.actionsSummary}</span>
+            {analysis.counterpartId && (
+              <span><strong>Pair</strong>{flowAnalysis.get(analysis.counterpartId)?.displayName || "Language variant"}</span>
+            )}
+          </div>
+          {analysis.suggestedName !== flow.name && (
+            <div className={styles.suggestedName}>
+              Suggested name: <strong>{analysis.suggestedName}</strong>
+            </div>
+          )}
+          {analysis.flags.length > 0 && (
+            <div className={styles.flowFlags}>
+              {analysis.flags.map((flag) => <span key={`${flow.id}-${flag}`}>{flag}</span>)}
+            </div>
+          )}
+          {(isExpanded || analysis.branches.length > 0) && (
+            <div className={styles.branchPreview}>
+              {analysis.branches.length ? analysis.branches.map((branch) => (
+                <span className={branch.status === "linked" ? styles.branchLinked : styles.branchWarning} key={`${flow.id}-${branch.label}-${branch.destinationId}`}>
+                  {branch.label} {"->"} {branch.destinationName || (branch.status === "missing" ? "Missing flow" : "No destination")}
+                </span>
+              )) : <span>No outgoing branches</span>}
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -1723,7 +2021,13 @@ export default function WhatsAppFlowsClient() {
   function renderSubfolder(groupName: string, subfolder: FlowSubfolder, depth = 0) {
     const targetKey = `subgroup:${groupName}:${subfolder.path}`;
     const handlers = dropZoneHandlers(targetKey, groupName, subfolder.path);
-    const totalFlows = subfolderFlows(subfolder).length;
+    const allFlows = subfolderFlows(subfolder);
+    const visibleDirectFlows = subfolder.flows.filter((flow) => filteredFlowIds.has(flow.id));
+    const visibleChildren = subfolder.subgroups.filter((child) => subfolderFlows(child).some((flow) => filteredFlowIds.has(flow.id)));
+    const totalFlows = allFlows.length;
+    const visibleTotal = allFlows.filter((flow) => filteredFlowIds.has(flow.id)).length;
+    const isOpen = expandedFolderKeys.includes(targetKey) || searchTerm || needsAttentionOnly || visibleTotal !== totalFlows;
+    if (!visibleTotal && filteredFlows.length !== flows.length) return null;
 
     return (
       <section
@@ -1734,8 +2038,10 @@ export default function WhatsAppFlowsClient() {
       >
         <div className={styles.folderRow}>
           <div>
-            <strong>{subfolder.name}</strong>
-            <span>{totalFlows} flows</span>
+            <button className={styles.folderTitleButton} onClick={() => toggleFolder(targetKey)} type="button">
+              {isOpen ? "▾" : "▸"} {titleCaseLabel(cleanCopySuffix(subfolder.name))}
+            </button>
+            <span>{visibleTotal === totalFlows ? totalFlows : `${visibleTotal} of ${totalFlows}`} flows</span>
           </div>
           <div className={styles.folderActions}>
             <button disabled={saving} onClick={() => void renameSubfolder(groupName, subfolder)}>
@@ -1752,10 +2058,12 @@ export default function WhatsAppFlowsClient() {
         <div className={styles.folderDropPad} {...handlers}>
           Drop flow here
         </div>
-        <div className={styles.folderChildren}>
-          {subfolder.flows.map((flow) => renderFlowCard(flow))}
-          {subfolder.subgroups.map((child) => renderSubfolder(groupName, child, depth + 1))}
-        </div>
+        {isOpen && (
+          <div className={styles.folderChildren}>
+            {visibleDirectFlows.map((flow) => renderFlowCard(flow))}
+            {visibleChildren.map((child) => renderSubfolder(groupName, child, depth + 1))}
+          </div>
+        )}
       </section>
     );
   }
@@ -1914,18 +2222,29 @@ export default function WhatsAppFlowsClient() {
 
             <section className={styles.workflowPreview}>
               <strong>Workflow preview</strong>
-              <div className={styles.branchList}>
-                <span>{form.triggerType === "first_message" ? "First message" : form.triggerType === "selection_button" ? "Selection button" : form.triggerType === "click" ? "Inbox button" : "Trigger words"}</span>
+              <div className={styles.workflowDiagram}>
+                <div className={styles.workflowNode}>
+                  <strong>{form.triggerType === "first_message" ? "First message" : form.triggerType === "selection_button" ? "Selection button" : form.triggerType === "click" ? "Inbox button" : "Trigger phrases"}</strong>
+                  <span>{form.triggerType === "keywords" ? form.trigger || "No phrases yet" : form.triggerButtonLabel || form.name || "New flow"}</span>
+                </div>
                 {form.actions.map((action, index) => (
-                  <span key={`preview-${action.id}`}>
-                    {index + 1}. {action.type}
-                    {action.type === "Ask Selection"
-                      ? ` -> ${action.options.filter((option) => option.label.trim()).map((option) => {
-                        const target = option.targetFlowName || flows.find((flow) => flow.id === option.targetFlowId)?.name || "";
-                        return `${option.label.trim()}${target ? ` -> ${target}` : ""}`;
-                      }).join(" / ") || "Options"}`
-                      : ""}
-                  </span>
+                  <div className={styles.workflowNode} key={`preview-${action.id}`}>
+                    <strong>{index + 1}. {action.type}</strong>
+                    {action.type === "Ask Selection" ? (
+                      <div className={styles.workflowBranches}>
+                        {action.options.filter((option) => option.label.trim()).map((option) => {
+                          const target = option.targetFlowName || flows.find((flow) => flow.id === option.targetFlowId)?.name || "";
+                          return (
+                            <span key={`${action.id}-${option.id || option.label}`}>
+                              {option.label.trim()} {"->"} {target || "Unlinked"}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <span>{action.type === "Send Media" ? `${action.mediaItems.filter((item) => item.url.trim()).length} media item(s)` : (action.message || "No message yet")}</span>
+                    )}
+                  </div>
                 ))}
               </div>
             </section>
@@ -2220,40 +2539,140 @@ export default function WhatsAppFlowsClient() {
             </button>
           </div>
 
-          {flowGroups.map((group) => (
-            <section
-              className={`${styles.folderNode} ${dropTargetKey === `group:${group.name}` ? styles.dropReady : ""}`}
-              key={group.name}
-              {...dropZoneHandlers(`group:${group.name}`, group.name)}
-            >
-              <div className={styles.folderRow}>
-                <div>
-                  <strong>{group.name}</strong>
-                  <span>
-                    {group.flows.length + group.subgroups.reduce((total, subgroup) => total + subfolderFlows(subgroup).length, 0)} flows
-                  </span>
-                </div>
-                <div className={styles.folderActions}>
-                  <button disabled={saving} onClick={() => void renameGroup(group)}>
-                    Rename
-                  </button>
-                  <button disabled={saving} onClick={() => createSubfolder(group.name)}>
-                    New subfolder
-                  </button>
-                  <button disabled={saving} onClick={() => void duplicateGroup(group)}>
-                    Duplicate
-                  </button>
-                </div>
+          <section className={styles.healthPanel}>
+            {[
+              ["Total", healthSummary.total],
+              ["Active", healthSummary.active],
+              ["Draft", healthSummary.draft],
+              ["Unlinked", healthSummary.unlinked],
+              ["Duplicate names", healthSummary.duplicateCandidates],
+              ["No notes", healthSummary.withoutNotes],
+            ].map(([label, value]) => (
+              <div className={styles.healthMetric} key={label}>
+                <strong>{value}</strong>
+                <span>{label}</span>
               </div>
-              <div className={styles.folderDropPad} {...dropZoneHandlers(`group:${group.name}`, group.name)}>
-                Drop flow here
-              </div>
-              <div className={styles.folderChildren}>
-                {group.flows.map((flow) => renderFlowCard(flow))}
-                {group.subgroups.map((subgroup) => renderSubfolder(group.name, subgroup))}
-              </div>
+            ))}
+          </section>
+
+          <section className={styles.journeyMap}>
+            <div className={styles.journeyHeader}>
+              <strong>Customer journey map</strong>
+              <span>Language selection {"->"} English / Malay {"->"} Intro {"->"} Product choices {"->"} Shipping {"->"} Order summary {"->"} Follow-up</span>
+            </div>
+            <div className={styles.journeySteps}>
+              {JOURNEY_STAGES.map((stage) => {
+                const stageFlows = flows.filter((flow) => flowAnalysis.get(flow.id)?.stage === stage);
+                return (
+                  <div className={styles.journeyStep} key={stage}>
+                    <strong>{stage}</strong>
+                    <span>{stageFlows.length} flows</span>
+                    <small>
+                      {stageFlows.slice(0, 3).map((flow) => flowAnalysis.get(flow.id)?.displayName || flow.name).join(" / ") || "No flow"}
+                    </small>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className={styles.libraryControls}>
+            <input
+              aria-label="Search flows"
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Search flow, branch, trigger, folder..."
+              value={searchTerm}
+            />
+            <select aria-label="Language filter" onChange={(event) => setLanguageFilter(event.target.value)} value={languageFilter}>
+              <option value="all">All languages</option>
+              <option value="EN">English</option>
+              <option value="MS">Malay</option>
+              <option value="Any">Any language</option>
+            </select>
+            <select aria-label="Status filter" onChange={(event) => setStatusFilter(event.target.value)} value={statusFilter}>
+              <option value="all">All statuses</option>
+              <option value="Active">Active</option>
+              <option value="Draft">Draft</option>
+            </select>
+            <select aria-label="Trigger filter" onChange={(event) => setTriggerFilter(event.target.value)} value={triggerFilter}>
+              <option value="all">All triggers</option>
+              <option value="keywords">Trigger phrases</option>
+              <option value="click">Inbox button</option>
+              <option value="first_message">First message</option>
+              <option value="selection_button">Selection button</option>
+            </select>
+            <select aria-label="Group filter" onChange={(event) => setGroupFilter(event.target.value)} value={groupFilter}>
+              <option value="all">All groups</option>
+              {groupOptions.map((group) => <option key={group} value={group}>{group}</option>)}
+            </select>
+            <label className={styles.attentionToggle}>
+              <input checked={needsAttentionOnly} onChange={(event) => setNeedsAttentionOnly(event.target.checked)} type="checkbox" />
+              Needs attention
+            </label>
+            <div className={styles.viewToggle}>
+              <button className={libraryView === "tree" ? styles.toggleActive : ""} onClick={() => setLibraryView("tree")} type="button">Tree</button>
+              <button className={libraryView === "list" ? styles.toggleActive : ""} onClick={() => setLibraryView("list")} type="button">List</button>
+            </div>
+          </section>
+
+          {libraryView === "list" ? (
+            <section className={styles.flatList}>
+              {filteredFlows.map((flow) => renderFlowCard(flow))}
             </section>
-          ))}
+          ) : flowGroups.map((group) => {
+            const groupKey = `group:${group.name}`;
+            const directFlows = group.flows.filter((flow) => filteredFlowIds.has(flow.id));
+            const visibleSubgroups = group.subgroups.filter((subgroup) => subfolderFlows(subgroup).some((flow) => filteredFlowIds.has(flow.id)));
+            const totalFlows = group.flows.length + group.subgroups.reduce((total, subgroup) => total + subfolderFlows(subgroup).length, 0);
+            const visibleTotal = directFlows.length + visibleSubgroups.reduce((total, subgroup) => total + subfolderFlows(subgroup).filter((flow) => filteredFlowIds.has(flow.id)).length, 0);
+            const isOpen = expandedFolderKeys.includes(groupKey) || searchTerm || needsAttentionOnly || visibleTotal !== totalFlows;
+            if (!visibleTotal && filteredFlows.length !== flows.length) return null;
+            return (
+              <section
+                className={`${styles.folderNode} ${dropTargetKey === groupKey ? styles.dropReady : ""}`}
+                key={group.name}
+                {...dropZoneHandlers(groupKey, group.name)}
+              >
+                <div className={styles.folderRow}>
+                  <div>
+                    <button className={styles.folderTitleButton} onClick={() => toggleFolder(groupKey)} type="button">
+                      {isOpen ? "▾" : "▸"} {titleCaseLabel(cleanCopySuffix(group.name))}
+                    </button>
+                    <span>
+                      {visibleTotal === totalFlows ? totalFlows : `${visibleTotal} of ${totalFlows}`} flows
+                    </span>
+                  </div>
+                  <div className={styles.folderActions}>
+                    <button disabled={saving} onClick={() => void renameGroup(group)}>
+                      Rename
+                    </button>
+                    <button disabled={saving} onClick={() => createSubfolder(group.name)}>
+                      New subfolder
+                    </button>
+                    <button disabled={saving} onClick={() => void duplicateGroup(group)}>
+                      Duplicate
+                    </button>
+                  </div>
+                </div>
+                <div className={styles.folderDropPad} {...dropZoneHandlers(groupKey, group.name)}>
+                  Drop flow here
+                </div>
+                {isOpen && (
+                  <div className={styles.folderChildren}>
+                    {directFlows.map((flow) => renderFlowCard(flow))}
+                    {visibleSubgroups.map((subgroup) => renderSubfolder(group.name, subgroup))}
+                  </div>
+                )}
+              </section>
+            );
+          })}
+
+          {!loading && flows.length > 0 && filteredFlows.length === 0 && (
+            <div className={styles.emptyState}>
+              <h3>No matching flows</h3>
+              <p>Adjust the filters to see more of the automation library.</p>
+            </div>
+          )}
 
           {loading && (
             <div className={styles.emptyState}>

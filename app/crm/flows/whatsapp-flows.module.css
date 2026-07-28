@@ -566,6 +566,138 @@
   gap: 14px;
 }
 
+.healthPanel {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.healthMetric {
+  background: #ffffff;
+  border: 1px solid #dbe6f3;
+  border-radius: 8px;
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+}
+
+.healthMetric strong {
+  color: #0f4c91;
+  font-size: 19px;
+}
+
+.healthMetric span {
+  color: #5f7188;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.journeyMap,
+.libraryControls,
+.flatList {
+  background: #ffffff;
+  border: 1px solid #dbe6f3;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.journeyHeader {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 10px;
+}
+
+.journeyHeader strong {
+  color: #102033;
+  font-size: 14px;
+}
+
+.journeyHeader span {
+  color: #52677f;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.journeySteps {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(7, minmax(120px, 1fr));
+  overflow-x: auto;
+}
+
+.journeyStep {
+  background: #f7fbff;
+  border: 1px solid #dce8f7;
+  border-radius: 8px;
+  display: grid;
+  gap: 5px;
+  min-height: 104px;
+  padding: 10px;
+}
+
+.journeyStep strong {
+  color: #0f2b4d;
+  font-size: 13px;
+}
+
+.journeyStep span,
+.journeyStep small {
+  color: #52677f;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.libraryControls {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(170px, 1.3fr) repeat(4, minmax(116px, 1fr)) auto auto;
+}
+
+.libraryControls input,
+.libraryControls select {
+  background: #ffffff;
+  border: 1px solid #c9d9eb;
+  border-radius: 8px;
+  color: #102033;
+  font-size: 13px;
+  font-weight: 800;
+  min-width: 0;
+  padding: 10px;
+}
+
+.attentionToggle {
+  align-items: center;
+  color: #174d8f;
+  display: flex;
+  font-size: 12px;
+  font-weight: 900;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.viewToggle {
+  display: flex;
+  gap: 4px;
+}
+
+.viewToggle button {
+  background: #ffffff;
+  border: 1px solid #c6d8ee;
+  border-radius: 8px;
+  color: #06428a;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 9px 10px;
+}
+
+.viewToggle .toggleActive {
+  background: #1769e0;
+  border-color: #1769e0;
+  color: #ffffff;
+}
+
 .flowCard,
 .emptyState,
 .folderNode,
@@ -618,6 +750,19 @@
   color: #6b7f98;
   font-size: 12px;
   font-weight: 800;
+}
+
+.folderTitleButton {
+  background: transparent;
+  border: 0;
+  color: #102033;
+  cursor: pointer;
+  display: block;
+  font-size: 15px;
+  font-weight: 950;
+  margin: 0 0 3px;
+  padding: 0;
+  text-align: left;
 }
 
 .folderActions {
@@ -687,6 +832,10 @@
   transform: translateY(-1px);
 }
 
+.needsAttentionFlow {
+  border-color: #f3b4b4;
+}
+
 .selectedFlow {
   background: #eef6ff;
   border-color: #1f6feb;
@@ -707,22 +856,128 @@
 }
 
 .flowFileName {
-  background: transparent;
-  border: 0;
   color: #102033;
-  cursor: grab;
+  display: block;
   font-size: 14px;
   font-weight: 900;
   min-width: 0;
   overflow: hidden;
-  padding: 0;
-  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.flowFileName:active {
-  cursor: grabbing;
+.flowFileMain {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+}
+
+.flowSubline {
+  color: #6b7f98;
+  display: block;
+  font-size: 11px;
+  font-weight: 850;
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flowBadgeRow {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+
+.languageBadge {
+  background: #f1f7ff;
+  border-radius: 999px;
+  color: #174d8f;
+  font-size: 11px;
+  font-weight: 950;
+  padding: 7px 9px;
+}
+
+.flowCardBody {
+  display: grid;
+  gap: 8px;
+  grid-column: 2 / -1;
+}
+
+.flowMetaGrid {
+  display: grid;
+  gap: 7px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.flowMetaGrid span {
+  background: #f7fbff;
+  border: 1px solid #e1eaf5;
+  border-radius: 8px;
+  color: #334b68;
+  display: grid;
+  font-size: 12px;
+  font-weight: 800;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px;
+}
+
+.flowMetaGrid strong {
+  color: #0f2b4d;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.suggestedName {
+  color: #52677f;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.suggestedName strong {
+  color: #0f4c91;
+}
+
+.flowFlags,
+.branchPreview,
+.workflowBranches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.flowFlags span {
+  background: #fff5f5;
+  border: 1px solid #fecaca;
+  border-radius: 999px;
+  color: #b91c1c;
+  font-size: 11px;
+  font-weight: 950;
+  padding: 5px 8px;
+}
+
+.branchPreview span,
+.workflowBranches span {
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 6px 8px;
+}
+
+.branchLinked,
+.workflowBranches span {
+  background: #eef6ff;
+  color: #174d8f;
+}
+
+.branchWarning {
+  background: #fff5f5;
+  color: #b91c1c;
 }
 
 .fileActions {
@@ -754,6 +1009,34 @@
   font-size: 12px;
   font-weight: 900;
   margin-top: 4px;
+}
+
+.workflowDiagram {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.workflowNode {
+  background: #ffffff;
+  border: 1px solid #dbe6f3;
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  min-width: 160px;
+  padding: 10px;
+}
+
+.workflowNode strong {
+  color: #102033;
+  font-size: 12px;
+}
+
+.workflowNode span {
+  color: #52677f;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
 }
 
 .flowTopline h3 {
@@ -865,6 +1148,18 @@
 
   .flowList {
     grid-column: 2;
+  }
+
+  .healthPanel {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .libraryControls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .flowMetaGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .mediaItem {
