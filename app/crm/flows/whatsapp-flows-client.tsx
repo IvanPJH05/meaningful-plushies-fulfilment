@@ -2615,20 +2615,22 @@ export default function WhatsAppFlowsClient() {
                 <option value="first_message">First customer message</option>
                 <option value="selection_button">Selection button press</option>
               </select>
-              {form.triggerType === "first_message" ? (
-                <small>Customer sends their first message</small>
-              ) : form.triggerType === "selection_button" ? (
-                <small>{triggerCanvasSummary()}</small>
-              ) : form.triggerType === "keywords" ? (
-                renderExactPhraseTriggerEditor()
-              ) : (
-                <input
-                  className={styles.canvasNodeInput}
-                  onChange={(event) => setForm((current) => ({ ...current, triggerButtonLabel: event.target.value }))}
-                  placeholder="Inbox button"
-                  value={form.triggerButtonLabel}
-                />
-              )}
+              <div className={styles.triggerNodeBody}>
+                {form.triggerType === "first_message" ? (
+                  <small>Customer sends their first message</small>
+                ) : form.triggerType === "selection_button" ? (
+                  <small>{triggerCanvasSummary()}</small>
+                ) : form.triggerType === "keywords" ? (
+                  renderExactPhraseTriggerEditor()
+                ) : (
+                  <input
+                    className={styles.canvasNodeInput}
+                    onChange={(event) => setForm((current) => ({ ...current, triggerButtonLabel: event.target.value }))}
+                    placeholder="Inbox button"
+                    value={form.triggerButtonLabel}
+                  />
+                )}
+              </div>
             </div>
 
             {form.actions.map((action, index) => {

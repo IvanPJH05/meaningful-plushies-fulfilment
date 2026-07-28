@@ -609,6 +609,14 @@
   width: min(760px, calc(100vw - 44px));
 }
 
+.triggerNodeBody {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  overflow: visible;
+  width: 100%;
+}
+
 .canvasNode span {
   color: #52677f;
   font-size: 11px;
