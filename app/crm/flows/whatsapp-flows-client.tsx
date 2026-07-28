@@ -171,6 +171,10 @@ type FlowAnalysis = {
   counterpartId: string;
   flags: string[];
 };
+type PendingSelectionRemoval = {
+  actionId: string;
+  options: SelectionOption[];
+};
 
 let flowBuilderMemoryCache: FlowBuilderCache | null = null;
 const FLOW_FOLDER_STORAGE_KEY = "crm-whatsapp-flow-folders-v1";
@@ -1164,6 +1168,7 @@ export default function WhatsAppFlowsClient() {
   const [expandedFolderKeys, setExpandedFolderKeys] = useState<string[]>([]);
   const [selectedCanvasNodeId, setSelectedCanvasNodeId] = useState("trigger");
   const [screenMode, setScreenMode] = useState<FlowScreenMode>(() => initialCache?.editingId ? "builder" : "library");
+  const [pendingSelectionRemoval, setPendingSelectionRemoval] = useState<PendingSelectionRemoval | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -2195,10 +2200,36 @@ export default function WhatsAppFlowsClient() {
   }
 
   function removeAction(actionId: string) {
+    const action = form.actions.find((candidate) => candidate.id === actionId);
+    if (action?.type === "Ask Selection" && action.options.length) {
+      setPendingSelectionRemoval({ actionId, options: action.options });
+      return;
+    }
     setForm((current) => {
       if (current.actions.length === 1) return current;
       return { ...current, actions: current.actions.filter((action) => action.id !== actionId) };
     });
+  }
+
+  function preserveSelectionOption(optionId: string) {
+    const pending = pendingSelectionRemoval;
+    if (!pending) return;
+    const option = pending.options.find((candidate) => candidate.id === optionId);
+    const preservedActions = (option?.actions || []).map((action) => makeAction(action));
+    if (!preservedActions.length) {
+      setNotice(`"${option?.label || "This option"}" has no inline actions to preserve.`);
+      return;
+    }
+    setForm((current) => {
+      const index = current.actions.findIndex((action) => action.id === pending.actionId);
+      if (index < 0) return current;
+      const actions = [...current.actions];
+      actions.splice(index, 1, ...preservedActions);
+      return { ...current, actions };
+    });
+    setSelectedCanvasNodeId(preservedActions[0].id);
+    setPendingSelectionRemoval(null);
+    setNotice(`Removed Ask Selection and kept the ${option?.label || "selected"} path.`);
   }
 
   function moveAction(actionId: string, direction: -1 | 1) {
@@ -3784,6 +3815,31 @@ export default function WhatsAppFlowsClient() {
         </section>
         )}
       </section>
+      {pendingSelectionRemoval && (
+        <div className={styles.selectionPreserveOverlay} role="presentation">
+          <section aria-labelledby="preserve-selection-title" className={styles.selectionPreserveDialog} role="dialog" aria-modal="true">
+            <h2 id="preserve-selection-title">Keep one option’s actions</h2>
+            <p>Removing this Ask Selection will replace it with the inline actions from the option you keep.</p>
+            <div className={styles.selectionPreserveChoices}>
+              {pendingSelectionRemoval.options.map((option) => {
+                const actionCount = (option.actions || []).length;
+                return (
+                  <button
+                    disabled={!actionCount}
+                    key={option.id}
+                    onClick={() => preserveSelectionOption(option.id || "")}
+                    type="button"
+                  >
+                    <strong>{option.label || "Unnamed option"}</strong>
+                    <span>{actionCount ? `Keep ${actionCount} inline action${actionCount === 1 ? "" : "s"}` : "No inline actions to keep"}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <button className={styles.secondaryButton} onClick={() => setPendingSelectionRemoval(null)} type="button">Cancel</button>
+          </section>
+        </div>
+      )}
     </main>
   );
 }
