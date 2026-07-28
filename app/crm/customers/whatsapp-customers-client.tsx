@@ -71,6 +71,51 @@ type RowDraft = {
 };
 
 const customerStatuses: CustomerStatus[] = ["Cold", "Warm", "Unpaid", "Paid"];
+const CUSTOMER_CACHE_KEY = "meaningful-plushies.crm-customers.v1";
+const CUSTOMER_CACHE_MAX_AGE_MS = 60_000;
+
+type CustomerCache = {
+  customers: Customer[];
+  flows: WhatsAppFlow[];
+  drafts: Record<string, RowDraft>;
+  query: string;
+  visibleStatuses: CustomerStatus[];
+  cachedAt: number;
+};
+
+let customerCache: CustomerCache | null = null;
+
+function readCustomerCache() {
+  if (customerCache) return customerCache;
+  if (typeof window === "undefined") return null;
+  try {
+    const saved = JSON.parse(window.sessionStorage.getItem(CUSTOMER_CACHE_KEY) || "null") as Partial<CustomerCache> | null;
+    if (!saved || !Array.isArray(saved.customers) || !Array.isArray(saved.flows) || !saved.drafts || typeof saved.cachedAt !== "number") return null;
+    customerCache = {
+      customers: saved.customers,
+      flows: saved.flows,
+      drafts: saved.drafts,
+      query: typeof saved.query === "string" ? saved.query : "",
+      visibleStatuses: Array.isArray(saved.visibleStatuses) && saved.visibleStatuses.length
+        ? saved.visibleStatuses.filter((status): status is CustomerStatus => customerStatuses.includes(status as CustomerStatus))
+        : customerStatuses,
+      cachedAt: saved.cachedAt,
+    };
+    return customerCache;
+  } catch {
+    return null;
+  }
+}
+
+function saveCustomerCache(cache: CustomerCache) {
+  customerCache = cache;
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(CUSTOMER_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // The page still works if browser storage is unavailable.
+  }
+}
 
 function emptyDraft(customer: Customer): RowDraft {
   return {
@@ -122,12 +167,13 @@ function manualOrderSettings(value: string) {
 }
 
 export default function WhatsAppCustomersClient() {
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [flows, setFlows] = useState<WhatsAppFlow[]>([]);
-  const [drafts, setDrafts] = useState<Record<string, RowDraft>>({});
-  const [query, setQuery] = useState("");
-  const [visibleStatuses, setVisibleStatuses] = useState<CustomerStatus[]>(customerStatuses);
-  const [loading, setLoading] = useState(true);
+  const initialCache = readCustomerCache();
+  const [customers, setCustomers] = useState<Customer[]>(() => initialCache?.customers || []);
+  const [flows, setFlows] = useState<WhatsAppFlow[]>(() => initialCache?.flows || []);
+  const [drafts, setDrafts] = useState<Record<string, RowDraft>>(() => initialCache?.drafts || {});
+  const [query, setQuery] = useState(() => initialCache?.query || "");
+  const [visibleStatuses, setVisibleStatuses] = useState<CustomerStatus[]>(() => initialCache?.visibleStatuses || customerStatuses);
+  const [loading, setLoading] = useState(() => !initialCache);
   const [busyRowId, setBusyRowId] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -161,7 +207,12 @@ export default function WhatsAppCustomersClient() {
 
   useEffect(() => {
     async function loadData() {
-      setLoading(true);
+      const cached = readCustomerCache();
+      if (cached && Date.now() - cached.cachedAt < CUSTOMER_CACHE_MAX_AGE_MS) {
+        setLoading(false);
+        return;
+      }
+      if (!cached) setLoading(true);
       try {
         const [customersResponse, flowsResponse] = await Promise.all([
           fetch("/api/crm/customers", { cache: "no-store" }),
@@ -172,18 +223,39 @@ export default function WhatsAppCustomersClient() {
         if (!customersResponse.ok || !customersResult.ok) throw new Error(customersResult.error || "Customer list could not be loaded.");
         if (!flowsResponse.ok || !flowsResult.ok) throw new Error(flowsResult.error || "Flows could not be loaded.");
         const loadedCustomers = customersResult.customers || [];
+        const loadedDrafts = Object.fromEntries(loadedCustomers.map((customer) => [customer.conversationId, emptyDraft(customer)]));
+        saveCustomerCache({
+          customers: loadedCustomers,
+          flows: flowsResult.flows || [],
+          drafts: loadedDrafts,
+          query: cached?.query || "",
+          visibleStatuses: cached?.visibleStatuses || customerStatuses,
+          cachedAt: Date.now(),
+        });
         setCustomers(loadedCustomers);
         setFlows(flowsResult.flows || []);
-        setDrafts(Object.fromEntries(loadedCustomers.map((customer) => [customer.conversationId, emptyDraft(customer)])));
+        setDrafts(loadedDrafts);
       } catch (error) {
         setNotice(error instanceof Error ? error.message : "Customer data could not be loaded.");
       } finally {
-        setLoading(false);
+        if (!cached) setLoading(false);
       }
     }
 
     void loadData();
   }, []);
+
+  useEffect(() => {
+    if (loading) return;
+    saveCustomerCache({
+      customers,
+      flows,
+      drafts,
+      query,
+      visibleStatuses,
+      cachedAt: customerCache?.cachedAt || Date.now(),
+    });
+  }, [customers, drafts, flows, loading, query, visibleStatuses]);
 
   function updateDraft(conversationId: string, patch: Partial<RowDraft>) {
     setDrafts((current) => ({
