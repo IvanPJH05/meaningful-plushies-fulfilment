@@ -97,6 +97,27 @@ function makeSelectionKey() {
   return `sel_${Date.now().toString(36)}_${randomUUID().replace(/-/g, "").slice(0, 8)}`;
 }
 
+async function uniqueFlowName(businessId: string, requestedName: string, excludeId?: string) {
+  const baseName = requestedName.trim() || "Untitled workflow";
+  const existingFlows = await prisma.whatsAppFlow.findMany({
+    where: {
+      businessId,
+      name: { startsWith: baseName, mode: "insensitive" },
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+    },
+    select: { name: true },
+  });
+  const usedNames = new Set(existingFlows.map((flow) => flow.name.trim().toLowerCase()));
+  if (!usedNames.has(baseName.toLowerCase())) return baseName;
+
+  for (let index = 2; index < 10_000; index += 1) {
+    const candidate = `${baseName} ${index}`;
+    if (!usedNames.has(candidate.toLowerCase())) return candidate;
+  }
+
+  return `${baseName} ${Date.now()}`;
+}
+
 function recordValue(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
@@ -489,10 +510,11 @@ export async function POST(request: Request) {
       }
     }
 
+    const name = await uniqueFlowName(business.id, normalized.name);
     const flow = await prisma.whatsAppFlow.create({
       data: {
         businessId: business.id,
-        name: normalized.name,
+        name,
         triggerType: normalized.triggerType,
         triggerButtonLabel: normalized.triggerButtonLabel,
         triggerWords: normalized.triggerWords,

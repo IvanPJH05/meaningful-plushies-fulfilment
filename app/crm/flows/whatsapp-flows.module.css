@@ -675,10 +675,21 @@
 }
 
 .canvasDelayControls {
+  background: #f5f9ff;
+  border: 1px solid #d7e6fb;
+  border-radius: 8px;
   display: grid;
   gap: 8px;
   grid-template-columns: minmax(0, 110px) minmax(0, 1fr);
+  padding: 10px;
   width: 100%;
+}
+
+.canvasDelayControls strong {
+  color: #0c4f96;
+  font-size: 12px;
+  font-weight: 950;
+  grid-column: 1 / -1;
 }
 
 .canvasDelayControls label {

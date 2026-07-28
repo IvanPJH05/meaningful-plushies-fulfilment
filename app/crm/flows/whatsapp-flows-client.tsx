@@ -2208,7 +2208,12 @@ export default function WhatsAppFlowsClient() {
 
   function createWorkflow() {
     setEditingId("");
-    setForm({ ...emptyFlowForm(), name: "Untitled workflow", triggerButtonLabel: "Inbox button" });
+    const usedNames = new Set(flows.map((flow) => flow.name.trim().toLowerCase()));
+    let name = "Untitled workflow";
+    for (let index = 2; usedNames.has(name.toLowerCase()); index += 1) {
+      name = `Untitled workflow ${index}`;
+    }
+    setForm({ ...emptyFlowForm(), name, triggerButtonLabel: "Inbox button" });
     setSelectedCanvasNodeId("trigger");
     setScreenMode("builder");
   }
@@ -2276,12 +2281,6 @@ export default function WhatsAppFlowsClient() {
         if (flowIds.length) void moveFlowsToFolder(flowIds, groupName, subgroupName);
       },
     };
-  }
-
-  function actionDelayLabel(action: Pick<FlowAction, "delayValue" | "delayUnit">) {
-    const value = Number(action.delayValue || "0");
-    if (!value) return "No delay";
-    return `${action.delayValue} ${action.delayUnit}`;
   }
 
   function actionNodeSummary(action: FlowAction) {
@@ -2396,7 +2395,7 @@ export default function WhatsAppFlowsClient() {
     return (
       <div className={styles.outcomeSubflowAction} key={`${option.id}-${branchAction.id}`}>
         <div className={styles.branchActionHeader}>
-          <span>Action {branchIndex + 1} - {actionDelayLabel(branchAction)}</span>
+          <span>Action {branchIndex + 1}</span>
           <button
             className={styles.textButton}
             onClick={() => removeBranchAction(action.id, option.id, branchAction.id)}
@@ -2406,6 +2405,7 @@ export default function WhatsAppFlowsClient() {
           </button>
         </div>
         <div className={styles.canvasDelayControls}>
+          <strong>Wait before this action</strong>
           <label>
             Delay
             <input
@@ -2684,8 +2684,9 @@ export default function WhatsAppFlowsClient() {
                     className={`${styles.canvasNode} ${selectedCanvasNodeId === action.id ? styles.canvasNodeSelected : ""}`}
                     onClick={() => setSelectedCanvasNodeId(action.id)}
                   >
-                    <span>Action {index + 1} - {actionDelayLabel(action)}</span>
+                    <span>Action {index + 1}</span>
                     <div className={styles.canvasDelayControls}>
+                      <strong>Wait before this action</strong>
                       <label>
                         Delay
                         <input
