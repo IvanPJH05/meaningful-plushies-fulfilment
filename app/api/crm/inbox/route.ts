@@ -33,6 +33,9 @@ import {
   sendWhatsAppVideoMessage,
 } from "@/src/modules/whatsapp/outbound";
 import { whatsAppDisplayTextFromMessage } from "@/src/modules/whatsapp/webhook-normalizer";
+import { createManualOrderDiscounts } from "@/lib/manual-orders";
+import { saveManualOrder } from "@/lib/supabase";
+import { buildManualOrderReadyWhatsAppMessage } from "@/src/modules/sales/paid-manual-order-flow";
 
 export const runtime = "nodejs";
 
@@ -346,6 +349,41 @@ async function runMessageSentTriggeredFlow(args: {
     await wait(Math.min(flowDelayMs(step), 30_000));
     const type = stringValue(step.type) || "Send Message";
     const body = stringValue(step.message);
+
+    if (type === "Create Manual Order Link") {
+      const [character = "Billy", rawSpeaker = "5"] = body.split("|");
+      const speaker = ["5", "10", "20"].includes(rawSpeaker) ? rawSpeaker : "5";
+      const conversation = await prisma.conversation.findFirst({
+        where: { id: args.conversationId, businessId: args.businessId },
+        include: { contact: true },
+      });
+      if (!conversation) return;
+      const customerName = conversation.contact.displayName || conversation.contact.phone || conversation.contact.waId || "Customer";
+      const manualOrder = await createManualOrderDiscounts({
+        customerName,
+        phone: conversation.contact.phone || conversation.contact.waId || args.recipient,
+        character,
+        productKey: `plushie_${speaker}s`,
+        shippingRegion: "WEST",
+      });
+      await saveManualOrder(manualOrder);
+      const linkMessage = buildManualOrderReadyWhatsAppMessage({
+        customerName: manualOrder.customerName,
+        checkoutUrl: manualOrder.customerLink,
+        discountCode: manualOrder.productDiscountCode,
+      });
+      const delivery = await sendWhatsAppTextMessage({ to: args.recipient, body: linkMessage });
+      const message = await recordTriggeredFlowOutbound({
+        businessId: args.businessId,
+        conversationId: args.conversationId,
+        body: linkMessage,
+        metadata: { flowId: args.flow.id, stepIndex: index, manualOrderId: manualOrder.id, delivery },
+        delivery,
+      });
+      if (message.status !== MessageStatus.SENT) return;
+      await waitForOutboundMessageConfirmation({ messageId: message.id });
+      continue;
+    }
 
     if (type === "Ask Selection") {
       const buttons = (Array.isArray(step.options) ? step.options : [])
