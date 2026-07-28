@@ -121,6 +121,7 @@ export default function WhatsAppCustomersClient() {
   const [flows, setFlows] = useState<WhatsAppFlow[]>([]);
   const [drafts, setDrafts] = useState<Record<string, RowDraft>>({});
   const [query, setQuery] = useState("");
+  const [visibleStatuses, setVisibleStatuses] = useState<CustomerStatus[]>(customerStatuses);
   const [loading, setLoading] = useState(true);
   const [busyRowId, setBusyRowId] = useState("");
   const [notice, setNotice] = useState("");
@@ -134,15 +135,24 @@ export default function WhatsAppCustomersClient() {
   })), [customers]);
   const filteredCustomers = useMemo(() => {
     const search = query.trim().toLowerCase();
-    if (!search) return customers;
     return customers.filter((customer) => (
-      customer.displayName.toLowerCase().includes(search)
-      || (customer.phone || "").toLowerCase().includes(search)
-      || (customer.waId || "").toLowerCase().includes(search)
-      || customer.notes.toLowerCase().includes(search)
-      || customer.customerStatus.toLowerCase().includes(search)
+      visibleStatuses.includes(customer.customerStatus)
+      && (!search
+        || customer.displayName.toLowerCase().includes(search)
+        || (customer.phone || "").toLowerCase().includes(search)
+        || (customer.waId || "").toLowerCase().includes(search)
+        || customer.notes.toLowerCase().includes(search)
+        || customer.customerStatus.toLowerCase().includes(search))
     ));
-  }, [customers, query]);
+  }, [customers, query, visibleStatuses]);
+
+  function toggleStatusFilter(status: CustomerStatus) {
+    setVisibleStatuses((current) => (
+      current.includes(status)
+        ? current.filter((item) => item !== status)
+        : [...current, status]
+    ));
+  }
 
   useEffect(() => {
     async function loadData() {
@@ -388,11 +398,20 @@ export default function WhatsAppCustomersClient() {
 
           <div className={styles.statusSummary}>
             {statusCounts.map(({ status, count }) => (
-              <div className={`${styles.statusMetric} ${styles[statusClass(status)]}`} key={status}>
+              <button
+                aria-pressed={visibleStatuses.includes(status)}
+                className={`${styles.statusMetric} ${styles[statusClass(status)]} ${visibleStatuses.includes(status) ? styles.statusMetricActive : styles.statusMetricMuted}`}
+                key={status}
+                onClick={() => toggleStatusFilter(status)}
+                type="button"
+              >
                 <span>{status}</span>
                 <strong>{count}</strong>
-              </div>
+              </button>
             ))}
+            <button className={styles.clearFiltersButton} onClick={() => setVisibleStatuses(customerStatuses)} type="button">
+              Show all
+            </button>
           </div>
 
           <div className={styles.sheetScroll}>
@@ -419,7 +438,7 @@ export default function WhatsAppCustomersClient() {
                     const draft = drafts[customer.conversationId] || emptyDraft(customer);
                     const rowBusy = busyRowId === customer.conversationId;
                     return (
-                      <tr key={customer.conversationId}>
+                      <tr className={styles[`row${customer.customerStatus}`]} key={customer.conversationId}>
                         <td>
                           <div className={styles.phoneCell}>
                             <strong>{customer.phone || customer.waId || "No phone"}</strong>

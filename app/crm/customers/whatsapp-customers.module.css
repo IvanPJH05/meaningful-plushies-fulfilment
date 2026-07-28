@@ -160,6 +160,32 @@
   gap: 10px;
   min-width: 105px;
   padding: 8px 11px;
+  text-align: left;
+}
+
+.statusSummary button {
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.statusMetricActive {
+  box-shadow: 0 3px 8px rgba(25, 59, 100, 0.12);
+}
+
+.statusMetricMuted {
+  filter: grayscale(0.65);
+  opacity: 0.5;
+}
+
+.clearFiltersButton {
+  align-self: center;
+  background: transparent;
+  border: 0;
+  color: #315c88;
+  font-size: 12px;
+  font-weight: 900;
+  margin-left: 4px;
+  padding: 8px;
 }
 
 .statusMetric span {
@@ -213,8 +239,28 @@
   padding: 8px;
 }
 
+.customerSheet .rowCold td {
+  background: #f0f6fd;
+  border-color: #cadbeb;
+}
+
+.customerSheet .rowWarm td {
+  background: #fff8ed;
+  border-color: #f1d9b1;
+}
+
+.customerSheet .rowUnpaid td {
+  background: #fff3f4;
+  border-color: #f2cad1;
+}
+
+.customerSheet .rowPaid td {
+  background: #effaf3;
+  border-color: #c1e7d0;
+}
+
 .customerSheet tr:hover td {
-  background: #f7fbff;
+  filter: brightness(0.98);
 }
 
 .customerSheet th:nth-child(1),
@@ -260,7 +306,7 @@
 .customerSheet input,
 .customerSheet select,
 .customerSheet textarea {
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.78);
   border: 1px solid #cbd8e8;
   border-radius: 8px;
   color: #102033;
