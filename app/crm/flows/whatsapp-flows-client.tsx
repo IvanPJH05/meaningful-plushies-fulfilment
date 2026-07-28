@@ -1974,6 +1974,46 @@ export default function WhatsAppFlowsClient() {
     }
   }
 
+  async function patchSubflowAction(targetFlowId: string, actionIndex: number, patch: Partial<FlowAction>) {
+    const targetFlow = flows.find((flow) => flow.id === targetFlowId);
+    if (!targetFlow) return;
+    const targetForm = formFromFlow(targetFlow);
+    const currentAction = targetForm.actions[actionIndex];
+    if (!currentAction) return;
+    const nextType = patch.type || currentAction.type;
+    const nextAction = {
+      ...currentAction,
+      ...patch,
+      mediaItems: nextType === "Send Media" && !currentAction.mediaItems.length ? [makeMediaItem()] : (patch.mediaItems || currentAction.mediaItems),
+      options: nextType === "Ask Selection" && !currentAction.options.length ? [
+        makeSelectionOption({ label: "Option 1" }),
+        makeSelectionOption({ label: "Option 2" }),
+      ] : (patch.options || currentAction.options),
+    };
+    const nextForm = {
+      ...targetForm,
+      actions: targetForm.actions.map((action, index) => (index === actionIndex ? nextAction : action)),
+    };
+
+    setSaving(true);
+    setNotice("");
+    try {
+      const response = await fetch("/api/crm/flows", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(flowPayloadFromForm(nextForm, targetFlow.id)),
+      });
+      const result = (await response.json()) as { ok?: boolean; flow?: WhatsAppFlow; error?: string };
+      if (!response.ok || !result.ok || !result.flow) throw new Error(result.error || "Subflow action could not be saved.");
+      setFlows((current) => current.map((flow) => (flow.id === result.flow?.id ? result.flow as WhatsAppFlow : flow)));
+      setNotice("Subflow action saved.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Subflow action could not be saved.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function createWorkflow() {
     setEditingId("");
     setForm({ ...emptyFlowForm(), name: "Untitled workflow", triggerButtonLabel: "Inbox button" });
@@ -2243,10 +2283,35 @@ export default function WhatsAppFlowsClient() {
                               {targetActions.length > 0 && (
                                 <div className={styles.outcomeSubflowActions}>
                                   {targetActions.slice(0, 4).map((targetAction, targetIndex) => (
-                                    <div className={styles.outcomeSubflowAction} key={`${option.id}-${targetAction.id}`}>
+                                    <div className={styles.outcomeSubflowAction} key={`${option.id}-${targetFlow?.id}-${targetIndex}`}>
                                       <span>Action {targetIndex + 1} · {actionDelayLabel(targetAction)}</span>
-                                      <strong>{targetAction.type}</strong>
-                                      <small>{actionNodeSummary(targetAction)}</small>
+                                      <select
+                                        className={styles.canvasNodeSelect}
+                                        defaultValue={targetAction.type}
+                                        disabled={saving}
+                                        onChange={(event) => void patchSubflowAction(option.targetFlowId || "", targetIndex, { type: event.target.value as ActionType })}
+                                      >
+                                        {actionTypes.map((type) => (
+                                          <option key={`${option.id}-${targetIndex}-${type}`} value={type}>
+                                            {type}
+                                          </option>
+                                        ))}
+                                      </select>
+                                      {targetAction.type === "Send Message" ? (
+                                        <input
+                                          className={styles.canvasNodeInput}
+                                          defaultValue={targetAction.message}
+                                          disabled={saving}
+                                          onBlur={(event) => {
+                                            if (event.target.value !== targetAction.message) {
+                                              void patchSubflowAction(option.targetFlowId || "", targetIndex, { message: event.target.value });
+                                            }
+                                          }}
+                                          placeholder="No message yet"
+                                        />
+                                      ) : (
+                                        <small>{actionNodeSummary(targetAction)}</small>
+                                      )}
                                     </div>
                                   ))}
                                 </div>
