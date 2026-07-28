@@ -1018,6 +1018,7 @@ export default function WhatsAppFlowsClient() {
   const [needsAttentionOnly, setNeedsAttentionOnly] = useState(false);
   const [expandedFlowIds, setExpandedFlowIds] = useState<string[]>([]);
   const [expandedFolderKeys, setExpandedFolderKeys] = useState<string[]>([]);
+  const [selectedCanvasNodeId, setSelectedCanvasNodeId] = useState("trigger");
 
   useEffect(() => {
     let cancelled = false;
@@ -1127,6 +1128,14 @@ export default function WhatsAppFlowsClient() {
       ? action.mediaItems.some((item) => item.url.trim())
       : action.type === "AI Reply" || action.message.trim()
   )), [form.actions]);
+  const selectedCanvasAction = useMemo(() => (
+    form.actions.find((action) => action.id === selectedCanvasNodeId)
+  ), [form.actions, selectedCanvasNodeId]);
+
+  useEffect(() => {
+    if (selectedCanvasNodeId === "trigger") return;
+    if (!form.actions.some((action) => action.id === selectedCanvasNodeId)) setSelectedCanvasNodeId("trigger");
+  }, [form.actions, selectedCanvasNodeId]);
 
   async function repairSelectionTargetKeys(sourceForm: FlowForm) {
     const desiredKeysByTargetId = new Map<string, Set<string>>();
@@ -1935,6 +1944,127 @@ export default function WhatsAppFlowsClient() {
     };
   }
 
+  function actionDelayLabel(action: Pick<FlowAction, "delayValue" | "delayUnit">) {
+    const value = Number(action.delayValue || "0");
+    if (!value) return "No delay";
+    return `${action.delayValue} ${action.delayUnit}`;
+  }
+
+  function actionNodeSummary(action: FlowAction) {
+    if (action.type === "Send Media") {
+      const count = action.mediaItems.filter((item) => item.url.trim()).length;
+      return `${count} media item${count === 1 ? "" : "s"}`;
+    }
+    if (action.type === "Ask Selection") {
+      const count = action.options.filter((option) => option.label.trim()).length;
+      return `${count} outcome${count === 1 ? "" : "s"}`;
+    }
+    return action.message || "No message yet";
+  }
+
+  function selectionDestinationLabel(option: SelectionOption) {
+    return option.targetFlowName || flows.find((flow) => flow.id === option.targetFlowId)?.name || "Unlinked";
+  }
+
+  function triggerCanvasSummary() {
+    if (form.triggerType === "first_message") return "Customer sends first message";
+    if (form.triggerType === "selection_button") {
+      return editingSelectionLinks.length
+        ? editingSelectionLinks.map((link) => `${link.sourceFlowName} / ${link.optionLabel}`).join(", ")
+        : "Linked from another selection";
+    }
+    if (form.triggerType === "keywords") return form.trigger || "No exact phrases yet";
+    return form.triggerButtonLabel || form.name || "Inbox button";
+  }
+
+  function renderCurrentWorkflowBoard() {
+    return (
+      <section className={styles.workflowStudio}>
+        <aside className={styles.workflowInspector}>
+          <div>
+            <p className={styles.eyebrow}>Selected node</p>
+            <h2>{selectedCanvasNodeId === "trigger" ? "Trigger" : selectedCanvasAction?.type || "Action"}</h2>
+          </div>
+          {selectedCanvasNodeId === "trigger" ? (
+            <div className={styles.inspectorDetails}>
+              <span><strong>Starts when</strong>{form.triggerType.replace("_", " ")}</span>
+              <span><strong>Summary</strong>{triggerCanvasSummary()}</span>
+              <span><strong>Flow</strong>{form.name || "Untitled flow"}</span>
+            </div>
+          ) : selectedCanvasAction ? (
+            <div className={styles.inspectorDetails}>
+              <span><strong>Delay</strong>{actionDelayLabel(selectedCanvasAction)}</span>
+              <span><strong>Action</strong>{selectedCanvasAction.type}</span>
+              <span><strong>Summary</strong>{actionNodeSummary(selectedCanvasAction)}</span>
+            </div>
+          ) : (
+            <p className={styles.helperText}>Select a trigger or action on the chart.</p>
+          )}
+          <p className={styles.inspectorHint}>
+            Use the chart to understand the customer path. Edit the selected action in the cards below.
+          </p>
+        </aside>
+
+        <div className={styles.workflowBoard}>
+          <div className={styles.workflowBoardToolbar}>
+            <div>
+              <strong>{form.name || "Untitled workflow"}</strong>
+              <span>{form.actions.length} actions · {form.actions.filter((action) => action.type === "Ask Selection").length} branch points</span>
+            </div>
+            <button className={styles.secondaryButton} onClick={addAction} type="button">
+              Add action
+            </button>
+          </div>
+
+          <div className={styles.workflowTrack}>
+            <button
+              className={`${styles.canvasNode} ${styles.triggerCanvasNode} ${selectedCanvasNodeId === "trigger" ? styles.canvasNodeSelected : ""}`}
+              onClick={() => setSelectedCanvasNodeId("trigger")}
+              type="button"
+            >
+              <span>Trigger</span>
+              <strong>{form.triggerType === "keywords" ? "Exact phrases" : form.triggerType === "first_message" ? "First message" : form.triggerType === "selection_button" ? "Selection press" : "Inbox button"}</strong>
+              <small>{triggerCanvasSummary()}</small>
+            </button>
+
+            {form.actions.map((action, index) => {
+              const filledOptions = action.options.filter((option) => option.label.trim());
+              return (
+                <div className={styles.canvasStep} key={`canvas-${action.id}`}>
+                  <div className={styles.canvasConnector} />
+                  <button
+                    className={`${styles.canvasNode} ${selectedCanvasNodeId === action.id ? styles.canvasNodeSelected : ""}`}
+                    onClick={() => setSelectedCanvasNodeId(action.id)}
+                    type="button"
+                  >
+                    <span>Action {index + 1} · {actionDelayLabel(action)}</span>
+                    <strong>{action.type}</strong>
+                    <small>{actionNodeSummary(action)}</small>
+                  </button>
+                  {action.type === "Ask Selection" && (
+                    <div className={styles.outcomeFan}>
+                      {filledOptions.length ? filledOptions.map((option) => (
+                        <div className={styles.outcomePath} key={`${action.id}-${option.id || option.label}`}>
+                          <span>{option.label}</span>
+                          <strong>{selectionDestinationLabel(option)}</strong>
+                        </div>
+                      )) : (
+                        <div className={styles.outcomePath}>
+                          <span>No options</span>
+                          <strong>Add a button outcome</strong>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   function chartLevels(chartFlows: WhatsAppFlow[]) {
     const flowIds = new Set(chartFlows.map((flow) => flow.id));
     const incomingIds = new Set<string>();
@@ -2372,34 +2502,7 @@ export default function WhatsAppFlowsClient() {
               </label>
             </section>
 
-            <section className={styles.workflowPreview}>
-              <strong>Workflow preview</strong>
-              <div className={styles.workflowDiagram}>
-                <div className={styles.workflowNode}>
-                  <strong>{form.triggerType === "first_message" ? "First message" : form.triggerType === "selection_button" ? "Selection button" : form.triggerType === "click" ? "Inbox button" : "Trigger phrases"}</strong>
-                  <span>{form.triggerType === "keywords" ? form.trigger || "No phrases yet" : form.triggerButtonLabel || form.name || "New flow"}</span>
-                </div>
-                {form.actions.map((action, index) => (
-                  <div className={styles.workflowNode} key={`preview-${action.id}`}>
-                    <strong>{index + 1}. {action.type}</strong>
-                    {action.type === "Ask Selection" ? (
-                      <div className={styles.workflowBranches}>
-                        {action.options.filter((option) => option.label.trim()).map((option) => {
-                          const target = option.targetFlowName || flows.find((flow) => flow.id === option.targetFlowId)?.name || "";
-                          return (
-                            <span key={`${action.id}-${option.id || option.label}`}>
-                              {option.label.trim()} {"->"} {target || "Unlinked"}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <span>{action.type === "Send Media" ? `${action.mediaItems.filter((item) => item.url.trim()).length} media item(s)` : (action.message || "No message yet")}</span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </section>
+            {renderCurrentWorkflowBoard()}
 
             {form.actions.map((action, index) => (
               <div className={styles.actionWrap} key={action.id}>
