@@ -415,8 +415,8 @@ export async function POST(request: Request) {
     const payload = (await request.json().catch(() => ({}))) as FlowPayload;
     const normalized = normalizePayload(payload);
 
-    if (!normalized.name || !normalized.messages.length) {
-      return json(400, { ok: false, error: "Flow name and at least one message are required." });
+    if (!normalized.name || (normalized.active && !normalized.messages.length)) {
+      return json(400, { ok: false, error: normalized.active ? "Publish needs at least one action." : "Flow name is required." });
     }
     if (normalized.active && normalized.triggerType === "selection_button") {
       const conflict = await activeSelectionKeyConflict({
@@ -460,8 +460,8 @@ export async function PATCH(request: Request) {
     const normalized = normalizePayload(payload);
 
     if (!id) return json(400, { ok: false, error: "Flow ID is required." });
-    if (!normalized.name || !normalized.messages.length) {
-      return json(400, { ok: false, error: "Flow name and at least one message are required." });
+    if (!normalized.name || (normalized.active && !normalized.messages.length)) {
+      return json(400, { ok: false, error: normalized.active ? "Publish needs at least one action." : "Flow name is required." });
     }
 
     const existingFlow = await prisma.whatsAppFlow.findFirst({

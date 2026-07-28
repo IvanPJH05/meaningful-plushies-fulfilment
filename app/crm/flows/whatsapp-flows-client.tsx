@@ -1,6 +1,6 @@
 "use client";
 
-import { type DragEvent, useEffect, useMemo, useState } from "react";
+import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { supabase } from "@/lib/supabase";
 
@@ -1003,6 +1003,7 @@ export default function WhatsAppFlowsClient() {
   const [editingId, setEditingId] = useState<string>(() => initialCache?.editingId || "");
   const [loading, setLoading] = useState(() => !initialCache);
   const [saving, setSaving] = useState(false);
+  const [autoSaveStatus, setAutoSaveStatus] = useState("");
   const [notice, setNotice] = useState("");
   const [folders, setFolders] = useState<FlowFolder[]>(() => readFlowFolders());
   const [uploadingMediaId, setUploadingMediaId] = useState("");
@@ -1021,6 +1022,7 @@ export default function WhatsAppFlowsClient() {
   const [expandedFolderKeys, setExpandedFolderKeys] = useState<string[]>([]);
   const [selectedCanvasNodeId, setSelectedCanvasNodeId] = useState("trigger");
   const [screenMode, setScreenMode] = useState<FlowScreenMode>(() => initialCache?.editingId ? "builder" : "library");
+  const lastAutoSavePayloadRef = useRef("");
 
   useEffect(() => {
     let cancelled = false;
@@ -1168,9 +1170,13 @@ export default function WhatsAppFlowsClient() {
     return patchedFlows;
   }
 
-  async function saveFlow() {
-    if (!form.name.trim() || !hasUsableAction) return;
-    if (form.status === "Active" && form.triggerType === "selection_button") {
+  async function persistFlow(options: { publish?: boolean; exitToLibrary?: boolean; silent?: boolean } = {}) {
+    if (!form.name.trim() || (options.publish && !hasUsableAction)) return null;
+    const sourceForm: FlowForm = {
+      ...form,
+      status: options.publish ? "Active" : "Draft",
+    };
+    if (sourceForm.status === "Active" && sourceForm.triggerType === "selection_button") {
       const key = form.triggerButtonLabel.trim().toLowerCase();
       const duplicate = flows.find((flow) => (
         flow.id !== editingId
@@ -1182,20 +1188,24 @@ export default function WhatsAppFlowsClient() {
         const message = `Selection key "${form.triggerButtonLabel}" is already active on "${duplicate.name}". Generate a new key before saving.`;
         window.alert(message);
         setNotice(message);
-        return;
+        return null;
       }
     }
-    setSaving(true);
-    setNotice("");
+    if (options.silent) setAutoSaveStatus("Saving draft...");
+    else {
+      setSaving(true);
+      setNotice("");
+    }
     try {
       const response = await fetch("/api/crm/flows", {
         method: editingId ? "PATCH" : "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(flowPayloadFromForm(form, editingId || undefined)),
+        body: JSON.stringify(flowPayloadFromForm(sourceForm, editingId || undefined)),
       });
       const result = (await response.json()) as { ok?: boolean; flow?: WhatsAppFlow; error?: string };
       if (!response.ok || !result.ok || !result.flow) throw new Error(result.error || "Flow could not be saved.");
-      const repairedFlows = await repairSelectionTargetKeys(form);
+      lastAutoSavePayloadRef.current = JSON.stringify(flowPayloadFromForm({ ...sourceForm, status: "Draft" }, result.flow.id));
+      const repairedFlows = await repairSelectionTargetKeys(sourceForm);
       const repairedFlowMap = new Map(repairedFlows.map((flow) => [flow.id, flow]));
       setFlows((current) => {
         const withSource = editingId
@@ -1203,16 +1213,52 @@ export default function WhatsAppFlowsClient() {
           : [result.flow as WhatsAppFlow, ...current];
         return withSource.map((flow) => repairedFlowMap.get(flow.id) || flow);
       });
-      setForm(emptyFlowForm());
-      setEditingId("");
-      setScreenMode("library");
-      setNotice("Flow saved.");
+      setEditingId(result.flow.id);
+      setForm((current) => ({ ...current, status: result.flow?.status || sourceForm.status }));
+      if (options.exitToLibrary) {
+        setForm(emptyFlowForm());
+        setEditingId("");
+        setScreenMode("library");
+      }
+      if (options.silent) setAutoSaveStatus("Draft saved");
+      else setNotice(options.publish ? "Workflow published." : "Draft saved.");
+      return result.flow;
     } catch (error) {
+      if (options.silent) setAutoSaveStatus("Draft not saved");
       setNotice(error instanceof Error ? error.message : "Flow could not be saved.");
+      return null;
     } finally {
-      setSaving(false);
+      if (options.silent) {
+        window.setTimeout(() => setAutoSaveStatus(""), 1800);
+      } else {
+        setSaving(false);
+      }
     }
   }
+
+  async function saveFlow() {
+    return persistFlow({ exitToLibrary: true });
+  }
+
+  async function publishFlow() {
+    return persistFlow({ publish: true });
+  }
+
+  useEffect(() => {
+    if (screenMode !== "builder" || saving || !form.name.trim()) return;
+    const draftForm: FlowForm = { ...form, status: "Draft" };
+    const draftPayload = JSON.stringify(flowPayloadFromForm(draftForm, editingId || undefined));
+    if (draftPayload === lastAutoSavePayloadRef.current) return;
+
+    const timeoutId = window.setTimeout(() => {
+      lastAutoSavePayloadRef.current = draftPayload;
+      void persistFlow({ silent: true });
+    }, 1200);
+
+    return () => window.clearTimeout(timeoutId);
+    // persistFlow intentionally reads the latest builder state when the debounce fires.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingId, form, saving, screenMode]);
 
   function editFlow(flow: WhatsAppFlow) {
     setEditingId(flow.id);
@@ -2142,8 +2188,11 @@ export default function WhatsAppFlowsClient() {
               <button className={styles.secondaryButton} onClick={() => setScreenMode("library")} type="button">
                 Back
               </button>
-              <button className={styles.primaryButton} onClick={saveFlow} disabled={saving || !form.name.trim() || !hasUsableAction}>
-                {saving ? "Saving..." : "Save"}
+              <span className={styles.autoSaveStatus}>
+                {autoSaveStatus || (form.status === "Active" ? "Published" : "Draft")}
+              </span>
+              <button className={styles.primaryButton} onClick={() => void publishFlow()} disabled={saving || !form.name.trim() || !hasUsableAction}>
+                {saving ? "Publishing..." : "Publish"}
               </button>
             </div>
           </div>
@@ -2754,8 +2803,11 @@ export default function WhatsAppFlowsClient() {
             </div>
             <div className={styles.builderHeaderActions}>
               <span>{loading ? "Loading..." : `${flows.length} flows | ${activeCount} active`}</span>
-              <button className={styles.primaryButton} onClick={saveFlow} disabled={saving || !form.name.trim() || !hasUsableAction}>
-                {saving ? "Saving..." : "Save"}
+              <span className={styles.autoSaveStatus}>
+                {autoSaveStatus || (form.status === "Active" ? "Published" : "Draft")}
+              </span>
+              <button className={styles.primaryButton} onClick={() => void publishFlow()} disabled={saving || !form.name.trim() || !hasUsableAction}>
+                {saving ? "Publishing..." : "Publish"}
               </button>
             </div>
           </div>
@@ -3155,8 +3207,8 @@ export default function WhatsAppFlowsClient() {
           </div>
 
           <div className={styles.formActions}>
-            <button className={styles.primaryButton} onClick={saveFlow} disabled={saving || !form.name.trim() || !hasUsableAction}>
-              {saving ? "Saving..." : editingId ? "Save changes" : "Create workflow"}
+            <button className={styles.primaryButton} onClick={saveFlow} disabled={saving || !form.name.trim()}>
+              {saving ? "Saving..." : "Save draft"}
             </button>
             <button
               className={styles.secondaryButton}

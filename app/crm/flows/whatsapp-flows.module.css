@@ -425,6 +425,17 @@
   gap: 8px;
 }
 
+.autoSaveStatus {
+  background: #eef6ff;
+  border: 1px solid #cbdff7;
+  border-radius: 999px;
+  color: #174d8f;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 7px 10px;
+  white-space: nowrap;
+}
+
 .builderMode .workflowBoardToolbar {
   background: #ffffff;
   min-height: 68px;
