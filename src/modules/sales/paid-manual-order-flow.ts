@@ -87,11 +87,11 @@ export function buildManualOrderReadyWhatsAppMessage(input: {
   discountCode: string;
 }) {
   return [
-    `Hi ${input.customerName}, payment received.`,
-    "Here is your Meaningful Plushies checkout link:",
+    "Here is your Meaningful Plushies customisation link:",
     input.checkoutUrl,
     "",
-    `Discount code: ${input.discountCode}`,
-    "Please fill in your plushie details there so we can start your order.",
+    `Your checkout code is: ${input.discountCode}`,
+    "",
+    "The code should be applied automatically when you open the link. If it is not applied, please enter the code in the “Discount code” section during checkout. 😊",
   ].join("\n");
 }
