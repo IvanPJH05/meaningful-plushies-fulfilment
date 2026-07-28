@@ -218,9 +218,9 @@
 .exactPhraseEditor {
   display: grid;
   gap: 8px;
+  grid-auto-rows: max-content;
   min-width: 0;
-  position: relative;
-  z-index: 2;
+  width: 100%;
 }
 
 .exactPhraseMetaGrid {
@@ -587,6 +587,8 @@
   cursor: pointer;
   display: grid;
   gap: 5px;
+  grid-auto-rows: max-content;
+  height: auto;
   max-width: 100%;
   min-height: 82px;
   min-width: 0;
@@ -596,12 +598,14 @@
 }
 
 .builderMode .canvasNode {
+  height: auto;
   min-height: 102px;
   padding: 16px 18px;
   width: min(560px, calc(100vw - 44px));
 }
 
 .builderMode .triggerCanvasNode {
+  align-self: center;
   width: min(760px, calc(100vw - 44px));
 }
 
