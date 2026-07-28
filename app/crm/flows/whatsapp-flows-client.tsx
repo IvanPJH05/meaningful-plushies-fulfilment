@@ -298,6 +298,7 @@ function actionPatchFromSelect(action: FlowAction, value: ActionSelectValue): Pa
   if (value === "Ask Selection (2)" || value === "Ask Selection (3)") {
     return {
       type: "Ask Selection",
+      message: action.message || "Which option would you like?",
       options: selectionOptionsForCount(action.options, value === "Ask Selection (3)" ? 3 : 2),
     };
   }
@@ -316,7 +317,7 @@ function makeAction(action?: Partial<FlowAction>): FlowAction {
     type,
     delayValue: delayValueInSeconds(action?.delayValue, action?.delayUnit),
     delayUnit: "seconds",
-    message: action?.message || "",
+    message: action?.message || (type === "Ask Selection" ? "Which option would you like?" : ""),
     mediaItems: action?.mediaItems?.length ? action.mediaItems.map(makeMediaItem) : (type === "Send Media" ? [makeMediaItem()] : []),
     options: action?.options?.length
       ? makeUniqueSelectionOptions(action.options.slice(0, 3))
@@ -2714,7 +2715,16 @@ export default function WhatsAppFlowsClient() {
                         </option>
                       ))}
                     </select>
-                    {action.type === "Send Message" ? (
+                    {action.type === "Ask Selection" ? (
+                      <textarea
+                        aria-label={`Question for action ${index + 1}`}
+                        className={styles.canvasNodeInput}
+                        onChange={(event) => updateAction(action.id, { message: event.target.value })}
+                        placeholder="Ask the customer a question before showing the choices"
+                        rows={2}
+                        value={action.message}
+                      />
+                    ) : action.type === "Send Message" ? (
                       <input
                         className={styles.canvasNodeInput}
                         onChange={(event) => updateAction(action.id, { message: event.target.value })}
