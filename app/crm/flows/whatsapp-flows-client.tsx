@@ -120,7 +120,7 @@ type FlowFolder = {
   subfolders: string[];
 };
 
-type LibraryView = "tree" | "list";
+type LibraryView = "chart" | "list";
 type FlowBranch = {
   label: string;
   destinationId: string;
@@ -1009,7 +1009,7 @@ export default function WhatsAppFlowsClient() {
   const [draggingFlowId, setDraggingFlowId] = useState("");
   const [dropTargetKey, setDropTargetKey] = useState("");
   const [selectedFlowIds, setSelectedFlowIds] = useState<string[]>([]);
-  const [libraryView, setLibraryView] = useState<LibraryView>("tree");
+  const [libraryView, setLibraryView] = useState<LibraryView>("chart");
   const [searchTerm, setSearchTerm] = useState("");
   const [languageFilter, setLanguageFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -1935,6 +1935,159 @@ export default function WhatsAppFlowsClient() {
     };
   }
 
+  function chartLevels(chartFlows: WhatsAppFlow[]) {
+    const flowIds = new Set(chartFlows.map((flow) => flow.id));
+    const incomingIds = new Set<string>();
+    const childrenByFlowId = new Map<string, string[]>();
+
+    for (const flow of chartFlows) {
+      const analysis = flowAnalysis.get(flow.id);
+      const childIds = (analysis?.branches || [])
+        .map((branch) => branch.destinationId)
+        .filter((destinationId) => flowIds.has(destinationId));
+      childrenByFlowId.set(flow.id, childIds);
+      for (const childId of childIds) incomingIds.add(childId);
+    }
+
+    const roots = chartFlows.filter((flow) => (
+      !incomingIds.has(flow.id) || normaliseTriggerType(flow.triggerType) !== "selection_button"
+    ));
+    const orderedRoots = roots.length ? roots : chartFlows.slice(0, 1);
+    const depthByFlowId = new Map<string, number>();
+    const queue = orderedRoots.map((flow) => ({ flow, depth: 0 }));
+    let guard = 0;
+
+    while (queue.length && guard < chartFlows.length * chartFlows.length) {
+      guard += 1;
+      const item = queue.shift();
+      if (!item) continue;
+      const previousDepth = depthByFlowId.get(item.flow.id);
+      if (previousDepth !== undefined && previousDepth >= item.depth) continue;
+      depthByFlowId.set(item.flow.id, item.depth);
+      for (const childId of childrenByFlowId.get(item.flow.id) || []) {
+        const childFlow = chartFlows.find((flow) => flow.id === childId);
+        if (childFlow) queue.push({ flow: childFlow, depth: item.depth + 1 });
+      }
+    }
+
+    for (const flow of chartFlows) {
+      if (!depthByFlowId.has(flow.id)) depthByFlowId.set(flow.id, 0);
+    }
+
+    const maxDepth = Math.max(0, ...Array.from(depthByFlowId.values()));
+    return Array.from({ length: maxDepth + 1 }, (_, depth) => (
+      chartFlows.filter((flow) => depthByFlowId.get(flow.id) === depth)
+    ));
+  }
+
+  function renderChartFlowNode(flow: WhatsAppFlow, chartFlowIds: Set<string>) {
+    const analysis = flowAnalysis.get(flow.id);
+    if (!analysis) return null;
+    const linkedBranches = analysis.branches.filter((branch) => chartFlowIds.has(branch.destinationId));
+    const outsideBranches = analysis.branches.filter((branch) => branch.destinationId && !chartFlowIds.has(branch.destinationId));
+    const isSelected = selectedFlowIds.includes(flow.id);
+
+    return (
+      <article
+        className={`${styles.chartFlowNode} ${analysis.flags.length ? styles.needsAttentionFlow : ""} ${isSelected ? styles.selectedFlow : ""}`}
+        draggable
+        key={flow.id}
+        onDragStart={(event) => {
+          const draggingIds = isSelected ? selectedFlowIds : [flow.id];
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", flow.id);
+          event.dataTransfer.setData("application/json", JSON.stringify(draggingIds));
+          setDraggingFlowId(flow.id);
+        }}
+        onDragEnd={() => {
+          setDraggingFlowId("");
+          setDropTargetKey("");
+        }}
+      >
+        <div className={styles.chartNodeHeader}>
+          <label className={styles.flowSelect}>
+            <input
+              aria-label={`Select ${flow.name}`}
+              checked={isSelected}
+              onChange={() => toggleFlowSelection(flow.id)}
+              type="checkbox"
+            />
+          </label>
+          <button onClick={() => editFlow(flow)} type="button">
+            <strong>{analysis.displayName}</strong>
+            <span>{analysis.stage} · {analysis.language} · {flow.status}</span>
+          </button>
+        </div>
+        <div className={styles.chartNodeMeta}>
+          <span>{analysis.triggerSummary}</span>
+          <span>{analysis.actionsSummary}</span>
+        </div>
+        {analysis.flags.length > 0 && (
+          <div className={styles.flowFlags}>
+            {analysis.flags.map((flag) => <span key={`${flow.id}-chart-${flag}`}>{flag}</span>)}
+          </div>
+        )}
+        {(linkedBranches.length > 0 || outsideBranches.length > 0) && (
+          <div className={styles.chartBranches}>
+            {linkedBranches.map((branch) => (
+              <span className={styles.branchLinked} key={`${flow.id}-chart-${branch.label}-${branch.destinationId}`}>
+                {branch.label} {"->"} {branch.destinationName}
+              </span>
+            ))}
+            {outsideBranches.map((branch) => (
+              <span className={styles.branchOutside} key={`${flow.id}-outside-${branch.label}-${branch.destinationId}`}>
+                {branch.label} {"->"} outside group
+              </span>
+            ))}
+          </div>
+        )}
+        <div className={styles.chartNodeActions}>
+          <button onClick={() => editFlow(flow)} type="button">Edit</button>
+          <button disabled={saving} onClick={() => void duplicateFlow(flow)} type="button">Duplicate</button>
+          <button disabled={saving} onClick={() => void deleteFlow(flow.id)} type="button">Delete</button>
+        </div>
+      </article>
+    );
+  }
+
+  function renderFlowChartWorkspace(title: string, chartFlows: WhatsAppFlow[], handlers: ReturnType<typeof dropZoneHandlers>) {
+    const chartFlowIds = new Set(chartFlows.map((flow) => flow.id));
+    const levels = chartLevels(chartFlows);
+    const branchCount = chartFlows.reduce((total, flow) => {
+      const analysis = flowAnalysis.get(flow.id);
+      return total + (analysis?.branches.filter((branch) => chartFlowIds.has(branch.destinationId)).length || 0);
+    }, 0);
+
+    return (
+      <div className={styles.groupChartWorkspace} {...handlers}>
+        <div className={styles.groupChartHeader}>
+          <div>
+            <strong>{title} flow chart</strong>
+            <span>{chartFlows.length} flows · {branchCount} linked paths</span>
+          </div>
+          <p>Drag flows onto this workspace to place them in this group.</p>
+        </div>
+        <div className={styles.folderDropPad} {...handlers}>
+          Drop flow here
+        </div>
+        {chartFlows.length ? (
+          <div className={styles.groupChartCanvas}>
+            {levels.map((levelFlows, index) => (
+              <div className={styles.chartColumn} key={`${title}-level-${index}`}>
+                <span className={styles.chartColumnLabel}>{index === 0 ? "Entry" : `Step ${index}`}</span>
+                {levelFlows.map((flow) => renderChartFlowNode(flow, chartFlowIds))}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className={styles.emptyChart}>
+            Create or drag flows into this group to build its chart.
+          </div>
+        )}
+      </div>
+    );
+  }
+
   function renderFlowCard(flow: WhatsAppFlow) {
     const isSelected = selectedFlowIds.includes(flow.id);
     const analysis = flowAnalysis.get(flow.id);
@@ -2055,12 +2208,11 @@ export default function WhatsAppFlowsClient() {
             </button>
           </div>
         </div>
-        <div className={styles.folderDropPad} {...handlers}>
-          Drop flow here
-        </div>
         {isOpen && (
           <div className={styles.folderChildren}>
-            {visibleDirectFlows.map((flow) => renderFlowCard(flow))}
+            {libraryView === "chart"
+              ? renderFlowChartWorkspace(titleCaseLabel(cleanCopySuffix(subfolder.name)), visibleDirectFlows, handlers)
+              : visibleDirectFlows.map((flow) => renderFlowCard(flow))}
             {visibleChildren.map((child) => renderSubfolder(groupName, child, depth + 1))}
           </div>
         )}
@@ -2610,7 +2762,7 @@ export default function WhatsAppFlowsClient() {
               Needs attention
             </label>
             <div className={styles.viewToggle}>
-              <button className={libraryView === "tree" ? styles.toggleActive : ""} onClick={() => setLibraryView("tree")} type="button">Tree</button>
+              <button className={libraryView === "chart" ? styles.toggleActive : ""} onClick={() => setLibraryView("chart")} type="button">Flow chart</button>
               <button className={libraryView === "list" ? styles.toggleActive : ""} onClick={() => setLibraryView("list")} type="button">List</button>
             </div>
           </section>
@@ -2654,12 +2806,11 @@ export default function WhatsAppFlowsClient() {
                     </button>
                   </div>
                 </div>
-                <div className={styles.folderDropPad} {...dropZoneHandlers(groupKey, group.name)}>
-                  Drop flow here
-                </div>
                 {isOpen && (
                   <div className={styles.folderChildren}>
-                    {directFlows.map((flow) => renderFlowCard(flow))}
+                    {libraryView === "chart"
+                      ? renderFlowChartWorkspace(titleCaseLabel(cleanCopySuffix(group.name)), directFlows, dropZoneHandlers(groupKey, group.name))
+                      : directFlows.map((flow) => renderFlowCard(flow))}
                     {visibleSubgroups.map((subgroup) => renderSubfolder(group.name, subgroup))}
                   </div>
                 )}

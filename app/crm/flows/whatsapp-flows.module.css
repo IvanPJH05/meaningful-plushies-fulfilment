@@ -814,6 +814,184 @@
   gap: 10px;
 }
 
+.groupChartWorkspace {
+  background: #f7fbff;
+  border: 1px solid #dbe6f3;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.groupChartHeader {
+  align-items: start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.groupChartHeader strong {
+  color: #102033;
+  display: block;
+  font-size: 14px;
+}
+
+.groupChartHeader span,
+.groupChartHeader p {
+  color: #52677f;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.35;
+  margin: 0;
+}
+
+.groupChartCanvas {
+  align-items: stretch;
+  display: grid;
+  gap: 12px;
+  grid-auto-columns: minmax(230px, 1fr);
+  grid-auto-flow: column;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.chartColumn {
+  background: #ffffff;
+  border: 1px solid #e1eaf5;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 230px;
+  padding: 10px;
+}
+
+.chartColumnLabel {
+  color: #5f7188;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.chartFlowNode {
+  background: #ffffff;
+  border: 1px solid #cfe0f4;
+  border-radius: 8px;
+  box-shadow: 0 8px 18px rgba(16, 32, 51, 0.05);
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.chartFlowNode:hover {
+  border-color: #9ec2f1;
+}
+
+.chartNodeHeader {
+  align-items: start;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.chartNodeHeader button {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+}
+
+.chartNodeHeader strong,
+.chartNodeHeader span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chartNodeHeader strong {
+  color: #102033;
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.chartNodeHeader span {
+  color: #52677f;
+  font-size: 11px;
+  font-weight: 850;
+  margin-top: 3px;
+}
+
+.chartNodeMeta {
+  display: grid;
+  gap: 5px;
+}
+
+.chartNodeMeta span {
+  background: #f7fbff;
+  border: 1px solid #e1eaf5;
+  border-radius: 7px;
+  color: #334b68;
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1.35;
+  padding: 6px 7px;
+}
+
+.chartBranches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chartBranches span {
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 6px 8px;
+}
+
+.branchOutside {
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.chartNodeActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chartNodeActions button {
+  background: #ffffff;
+  border: 1px solid #c6d8ee;
+  border-radius: 9px;
+  color: #06428a;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 7px 8px;
+}
+
+.chartNodeActions button:disabled {
+  color: #8aa7c9;
+  cursor: not-allowed;
+}
+
+.emptyChart {
+  background: #ffffff;
+  border: 1px dashed #a9c9f5;
+  border-radius: 8px;
+  color: #52677f;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 18px;
+  text-align: center;
+}
+
 .flowFile {
   align-items: center;
   background: #ffffff;
