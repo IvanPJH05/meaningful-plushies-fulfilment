@@ -26,6 +26,11 @@
   overflow: hidden;
 }
 
+.libraryMode,
+.builderMode {
+  grid-template-columns: 88px minmax(0, 1fr);
+}
+
 .workspaceRail {
   align-items: stretch;
   background: #102033;
@@ -87,6 +92,7 @@
 
 .builderHeader,
 .listHeader,
+.workflowHomeHeader,
 .flowTopline,
 .formActions,
 .cardActions,
@@ -99,8 +105,27 @@
   justify-content: space-between;
 }
 
+.builderTitleRow,
+.workflowHomeActions {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+}
+
+.backButton {
+  background: #ffffff;
+  border: 1px solid #c6d8ee;
+  border-radius: 10px;
+  color: #06428a;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 9px 11px;
+}
+
 .builderHeader h1,
 .listHeader h2,
+.workflowHomeHeader h1,
 .actionHeader h3,
 .flowTopline h3 {
   margin: 0;
@@ -849,6 +874,134 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.workflowHomeHeader {
+  background: #ffffff;
+  border: 1px solid #dbe6f3;
+  border-radius: 8px;
+  padding: 18px;
+}
+
+.workflowListPanel {
+  background: #ffffff;
+  border: 1px solid #dbe6f3;
+  border-radius: 8px;
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+}
+
+.workflowTabs {
+  align-items: center;
+  border-bottom: 1px solid #e1eaf5;
+  display: flex;
+  gap: 8px;
+  padding: 10px 14px;
+}
+
+.workflowTabs button {
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: #334b68;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 900;
+  padding: 9px 12px;
+}
+
+.workflowTabs .workflowTabActive {
+  background: #eef2f6;
+  color: #102033;
+}
+
+.workflowTable {
+  display: grid;
+  min-width: 980px;
+  overflow-x: auto;
+}
+
+.workflowTableHead,
+.workflowTableRow {
+  align-items: center;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(260px, 1.4fr) 90px minmax(170px, 1fr) minmax(140px, 0.9fr) 90px minmax(150px, 0.9fr) minmax(230px, auto);
+  padding: 12px 14px;
+}
+
+.workflowTableHead {
+  background: #fbfdff;
+  border-bottom: 1px solid #e1eaf5;
+  color: #52677f;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.workflowTableRow {
+  border-bottom: 1px solid #e8eef7;
+  color: #334b68;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.workflowTableRow:hover {
+  background: #f7fbff;
+}
+
+.workflowTableRow > button {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+}
+
+.workflowTableRow strong,
+.workflowTableRow span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workflowTableRow strong {
+  color: #102033;
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.workflowTableRow > button span {
+  color: #52677f;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.workflowRowActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.workflowRowActions button {
+  background: #ffffff;
+  border: 1px solid #c6d8ee;
+  border-radius: 9px;
+  color: #06428a;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 8px 9px;
+}
+
+.workflowRowActions button:disabled {
+  color: #8aa7c9;
+  cursor: not-allowed;
 }
 
 .healthPanel {

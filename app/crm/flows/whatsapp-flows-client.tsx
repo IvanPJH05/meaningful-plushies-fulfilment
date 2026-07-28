@@ -121,6 +121,7 @@ type FlowFolder = {
 };
 
 type LibraryView = "chart" | "list";
+type FlowScreenMode = "library" | "builder";
 type FlowBranch = {
   label: string;
   destinationId: string;
@@ -1019,6 +1020,7 @@ export default function WhatsAppFlowsClient() {
   const [expandedFlowIds, setExpandedFlowIds] = useState<string[]>([]);
   const [expandedFolderKeys, setExpandedFolderKeys] = useState<string[]>([]);
   const [selectedCanvasNodeId, setSelectedCanvasNodeId] = useState("trigger");
+  const [screenMode, setScreenMode] = useState<FlowScreenMode>(() => initialCache?.editingId ? "builder" : "library");
 
   useEffect(() => {
     let cancelled = false;
@@ -1202,6 +1204,7 @@ export default function WhatsAppFlowsClient() {
       });
       setForm(emptyFlowForm());
       setEditingId("");
+      setScreenMode("library");
       setNotice("Flow saved.");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Flow could not be saved.");
@@ -1213,6 +1216,8 @@ export default function WhatsAppFlowsClient() {
   function editFlow(flow: WhatsAppFlow) {
     setEditingId(flow.id);
     setForm(formFromFlow(flow));
+    setSelectedCanvasNodeId("trigger");
+    setScreenMode("builder");
   }
 
   async function duplicateFlow(flow: WhatsAppFlow) {
@@ -1233,6 +1238,8 @@ export default function WhatsAppFlowsClient() {
       setFlows((current) => [result.flow as WhatsAppFlow, ...current]);
       setEditingId(result.flow.id);
       setForm(formFromFlow(result.flow));
+      setSelectedCanvasNodeId("trigger");
+      setScreenMode("builder");
       setNotice(`Duplicated "${flow.name}" as ${result.flow.status.toLowerCase()}.`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Flow could not be duplicated.");
@@ -1881,9 +1888,18 @@ export default function WhatsAppFlowsClient() {
     setForm((current) => ({ ...current, actions: [...current.actions, makeAction({ delayValue: "5" })] }));
   }
 
+  function createWorkflow() {
+    setEditingId("");
+    setForm(emptyFlowForm());
+    setSelectedCanvasNodeId("trigger");
+    setScreenMode("builder");
+  }
+
   function loadTemplate(template: FlowForm) {
     setEditingId("");
     setForm(cloneTemplate(template));
+    setSelectedCanvasNodeId("trigger");
+    setScreenMode("builder");
   }
 
   function toggleFlowSelection(flowId: string) {
@@ -2401,9 +2417,107 @@ export default function WhatsAppFlowsClient() {
     );
   }
 
+  function renderWorkflowHome() {
+    return (
+      <>
+        <div className={styles.workflowHomeHeader}>
+          <div>
+            <p className={styles.eyebrow}>Flow</p>
+            <h1>Workflows</h1>
+          </div>
+          <div className={styles.workflowHomeActions}>
+            <button className={styles.secondaryButton} onClick={createFolder} type="button">Create group</button>
+            <button className={styles.primaryButton} onClick={createWorkflow} type="button">Create workflow</button>
+          </div>
+        </div>
+
+        {notice && <div className={styles.notice}>{notice}</div>}
+
+        <section className={styles.workflowListPanel}>
+          <div className={styles.workflowTabs}>
+            <button className={statusFilter === "all" ? styles.workflowTabActive : ""} onClick={() => setStatusFilter("all")} type="button">All</button>
+            <button className={statusFilter === "Active" ? styles.workflowTabActive : ""} onClick={() => setStatusFilter("Active")} type="button">Active</button>
+            <button className={statusFilter === "Draft" ? styles.workflowTabActive : ""} onClick={() => setStatusFilter("Draft")} type="button">Draft</button>
+          </div>
+
+          <section className={styles.libraryControls}>
+            <input
+              aria-label="Search workflows"
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Search workflow, branch, trigger, group..."
+              value={searchTerm}
+            />
+            <select aria-label="Language filter" onChange={(event) => setLanguageFilter(event.target.value)} value={languageFilter}>
+              <option value="all">All languages</option>
+              <option value="EN">English</option>
+              <option value="MS">Malay</option>
+              <option value="Any">Any language</option>
+            </select>
+            <select aria-label="Trigger filter" onChange={(event) => setTriggerFilter(event.target.value)} value={triggerFilter}>
+              <option value="all">All triggers</option>
+              <option value="keywords">Trigger phrases</option>
+              <option value="click">Inbox button</option>
+              <option value="first_message">First message</option>
+              <option value="selection_button">Selection button</option>
+            </select>
+            <select aria-label="Group filter" onChange={(event) => setGroupFilter(event.target.value)} value={groupFilter}>
+              <option value="all">All groups</option>
+              {groupOptions.map((group) => <option key={group} value={group}>{group}</option>)}
+            </select>
+            <label className={styles.attentionToggle}>
+              <input checked={needsAttentionOnly} onChange={(event) => setNeedsAttentionOnly(event.target.checked)} type="checkbox" />
+              Needs attention
+            </label>
+          </section>
+
+          <div className={styles.workflowTable}>
+            <div className={styles.workflowTableHead}>
+              <span>Workflow</span>
+              <span>Status</span>
+              <span>Trigger</span>
+              <span>Actions</span>
+              <span>Branches</span>
+              <span>Group</span>
+              <span />
+            </div>
+            {filteredFlows.map((flow) => {
+              const analysis = flowAnalysis.get(flow.id);
+              if (!analysis) return null;
+              return (
+                <div className={styles.workflowTableRow} key={`workflow-row-${flow.id}`}>
+                  <button onClick={() => editFlow(flow)} type="button">
+                    <strong>{analysis.displayName}</strong>
+                    <span>{flow.description || analysis.suggestedName}</span>
+                  </button>
+                  <span className={flow.status === "Active" ? styles.activeBadge : styles.draftBadge}>{flow.status}</span>
+                  <span>{analysis.triggerSummary}</span>
+                  <span>{analysis.actionsSummary}</span>
+                  <span>{analysis.branches.length ? `${analysis.branches.length} outcomes` : "None"}</span>
+                  <span>{analysis.breadcrumb}</span>
+                  <div className={styles.workflowRowActions}>
+                    <button onClick={() => editFlow(flow)} type="button">Open</button>
+                    <button disabled={saving} onClick={() => void duplicateFlow(flow)} type="button">Duplicate</button>
+                    <button disabled={saving} onClick={() => void deleteFlow(flow.id)} type="button">Delete</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {!loading && filteredFlows.length === 0 && (
+            <div className={styles.emptyState}>
+              <h3>No matching workflows</h3>
+              <p>Adjust the filters or create a new workflow.</p>
+            </div>
+          )}
+        </section>
+      </>
+    );
+  }
+
   return (
     <main className={styles.page}>
-      <section className={styles.layout}>
+      <section className={`${styles.layout} ${screenMode === "library" ? styles.libraryMode : styles.builderMode}`}>
         <aside className={styles.workspaceRail}>
           <div className={styles.railLogo}>MP</div>
           <a href="/crm/inbox">Inbox</a>
@@ -2412,11 +2526,19 @@ export default function WhatsAppFlowsClient() {
           <a href="/crm/setup">Setup</a>
         </aside>
 
+        {screenMode === "library" ? (
+          <section className={styles.flowList}>
+            {renderWorkflowHome()}
+          </section>
+        ) : (
         <section className={styles.builder}>
           <div className={styles.builderHeader}>
-            <div>
-              <p className={styles.eyebrow}>Flow Builder</p>
-              <h1>{editingId ? "Edit flow" : "Create flow"}</h1>
+            <div className={styles.builderTitleRow}>
+              <button className={styles.backButton} onClick={() => setScreenMode("library")} type="button">Back</button>
+              <div>
+                <p className={styles.eyebrow}>Workflow builder</p>
+                <h1>{form.name || (editingId ? "Edit workflow" : "Create workflow")}</h1>
+              </div>
             </div>
             <span>{loading ? "Loading..." : `${flows.length} flows | ${activeCount} active`}</span>
           </div>
@@ -2817,20 +2939,24 @@ export default function WhatsAppFlowsClient() {
 
           <div className={styles.formActions}>
             <button className={styles.primaryButton} onClick={saveFlow} disabled={saving || !form.name.trim() || !hasUsableAction}>
-              {saving ? "Saving..." : editingId ? "Save changes" : "Create flow"}
+              {saving ? "Saving..." : editingId ? "Save changes" : "Create workflow"}
             </button>
             <button
               className={styles.secondaryButton}
               onClick={() => {
                 setEditingId("");
                 setForm(emptyFlowForm());
+                setSelectedCanvasNodeId("trigger");
+                setScreenMode("library");
               }}
             >
               Clear
             </button>
           </div>
         </section>
+        )}
 
+        {screenMode === "builder" && false && (
         <section className={styles.flowList}>
           <div className={styles.listHeader}>
             <div>
@@ -2993,6 +3119,7 @@ export default function WhatsAppFlowsClient() {
             </div>
           )}
         </section>
+        )}
       </section>
     </main>
   );
