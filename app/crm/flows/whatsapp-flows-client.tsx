@@ -2691,6 +2691,17 @@ export default function WhatsAppFlowsClient() {
                         />
                         seconds)
                       </span>
+                      <button
+                        className={styles.canvasActionRemove}
+                        disabled={form.actions.length === 1}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          removeAction(action.id);
+                        }}
+                        type="button"
+                      >
+                        Remove
+                      </button>
                     </div>
                     <select
                       className={styles.canvasNodeSelect}

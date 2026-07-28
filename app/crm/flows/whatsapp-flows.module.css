@@ -648,7 +648,25 @@
 .canvasActionHeader {
   align-items: center;
   display: flex;
+  gap: 10px;
+  justify-content: space-between;
   width: 100%;
+}
+
+.canvasActionRemove {
+  background: #ffffff;
+  border: 1px solid #d7aeb4;
+  border-radius: 7px;
+  color: #9f2433;
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 850;
+  padding: 6px 9px;
+}
+
+.canvasActionRemove:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .canvasNode strong {
