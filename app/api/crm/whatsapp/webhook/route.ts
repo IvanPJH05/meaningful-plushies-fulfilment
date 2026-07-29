@@ -386,6 +386,41 @@ function flowButtonReplyId(raw: Record<string, unknown>) {
   return textValue(buttonReply.id) || textValue(listReply.id);
 }
 
+function flowSelectionPromptId(raw: Record<string, unknown>) {
+  return textValue(objectValue(raw.context).id);
+}
+
+async function claimFlowSelection(args: {
+  item: StoredWhatsAppMessage;
+  flowId: string;
+  stepIndex: number;
+  replyId: string;
+}) {
+  const promptId = flowSelectionPromptId(args.item.raw);
+  const selectionKey = promptId || `${args.item.conversationId}:${args.flowId}:${args.stepIndex}`;
+  try {
+    await prisma.webhookEvent.create({
+      data: {
+        businessId: args.item.businessId,
+        source: "crm_flow_selection",
+        externalEventId: selectionKey,
+        payload: jsonValue({
+          conversationId: args.item.conversationId,
+          promptId: promptId || null,
+          replyId: args.replyId,
+          inboundMessageId: args.item.messageId,
+        }),
+        status: WebhookEventStatus.PROCESSED,
+        processedAt: new Date(),
+      },
+    });
+    return true;
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "P2002") return false;
+    throw error;
+  }
+}
+
 function normalizeTriggerPhrase(value: string) {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
@@ -775,6 +810,9 @@ async function handleFlowAutomationForStoredMessages(storedMessages: StoredWhats
         || stepOptions
         .map(objectValue)
         .find((candidate) => (textValue(candidate.id) || "").trim() === optionId);
+      if (flow && !(await claimFlowSelection({ item, flowId, stepIndex, replyId }))) {
+        continue;
+      }
       const inlineActions = arrayValue(matchedOption?.actions).map((step) => objectValue(step) as FlowStep);
       if (flow && inlineActions.length) {
         await runWebhookFlow({ item, flow, onlySteps: inlineActions, skipFirstDelay: true });
