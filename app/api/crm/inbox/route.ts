@@ -64,7 +64,15 @@ function normalizedMessageText(body: string | null | undefined) {
 }
 
 function normalizeTriggerPhrase(value: string) {
-  return value.trim().replace(/\s+/g, " ").toLowerCase();
+  // Keep exact matching, but ignore invisible Unicode differences introduced
+  // by WhatsApp (for example emoji variation selectors and smart quotes).
+  return value
+    .normalize("NFKC")
+    .replace(/[\u200B-\u200D\uFEFF\uFE0E\uFE0F]/g, "")
+    .replace(/[\u2018\u2019]/g, "'")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
 }
 
 function flowMatchesExactTriggerPhrase(flow: { triggerWords: string[] }, messageText: string) {

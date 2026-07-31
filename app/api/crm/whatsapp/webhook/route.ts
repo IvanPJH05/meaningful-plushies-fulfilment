@@ -422,7 +422,45 @@ async function claimFlowSelection(args: {
 }
 
 function normalizeTriggerPhrase(value: string) {
-  return value.trim().replace(/\s+/g, " ").toLowerCase();
+  // WhatsApp can alter the Unicode form of emoji, quotes and invisible
+  // joiners while preserving the visible message. Treat those as the same
+  // phrase, while still requiring all visible words and punctuation to match.
+  return value
+    .normalize("NFKC")
+    .replace(/[\u200B-\u200D\uFEFF\uFE0E\uFE0F]/g, "")
+    .replace(/[\u2018\u2019]/g, "'")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
+
+async function claimExactPhraseFlowTrigger(args: {
+  item: StoredWhatsAppMessage;
+  flowId: string;
+}) {
+  try {
+    await prisma.webhookEvent.create({
+      data: {
+        businessId: args.item.businessId,
+        source: "crm_flow_exact_phrase",
+        externalEventId: `${args.item.messageId}:${args.flowId}`,
+        payload: jsonValue({
+          conversationId: args.item.conversationId,
+          messageId: args.item.messageId,
+          flowId: args.flowId,
+          direction: args.item.direction,
+          text: args.item.text,
+        }),
+        status: WebhookEventStatus.PROCESSED,
+        processedAt: new Date(),
+      },
+    });
+    return true;
+  } catch (error) {
+    // Meta can redeliver a webhook. Each message/flow pair must run once.
+    if (error && typeof error === "object" && "code" in error && error.code === "P2002") return false;
+    throw error;
+  }
 }
 
 function flowMatchesExactTriggerPhrase(flow: { triggerWords: string[] }, inboundText: string) {
@@ -785,7 +823,10 @@ async function findFlowTriggeredBySelection(args: {
 
 async function handleFlowAutomationForStoredMessages(storedMessages: StoredWhatsAppMessage[]) {
   const automationMessages = storedMessages.filter((message) => (
-    message.created
+    // Outbound messages are written before Meta echoes them back. Do not
+    // discard that echo: it is how "message sent" exact-phrase flows run.
+    // The claim below prevents a redelivery from running a flow twice.
+    (message.created || message.direction === "outbound")
     && message.source !== "history"
     && message.source !== "provider_history"
   ));
@@ -853,7 +894,7 @@ async function handleFlowAutomationForStoredMessages(storedMessages: StoredWhats
     });
     const triggerEvent = item.direction === "outbound" ? "message_sent" : "message_received";
     const exactPhraseFlow = exactPhraseFlows.find((flow) => flowMatchesExactTriggerEvent(flow, item.text, triggerEvent));
-    if (exactPhraseFlow) {
+    if (exactPhraseFlow && await claimExactPhraseFlowTrigger({ item, flowId: exactPhraseFlow.id })) {
       await runWebhookFlow({ item, flow: exactPhraseFlow });
       scheduled += 1;
       continue;
