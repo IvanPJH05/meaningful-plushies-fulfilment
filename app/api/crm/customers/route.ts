@@ -5,6 +5,7 @@ import {
   PaymentStatus,
 } from "@prisma/client";
 
+import { parseCsv } from "@/lib/importer";
 import { prisma } from "@/src/infrastructure/database/prisma";
 import { ensureDefaultBusiness } from "@/src/modules/businesses/default-business";
 
@@ -41,6 +42,23 @@ function customerStatusFromLead(lead: {
   if (lead.stage === LeadStage.NEW || lead.temperature === LeadTemperature.COLD) return "Cold";
   if (lead.paymentStatus === PaymentStatus.UNPAID) return "Unpaid";
   return "Warm";
+}
+
+function phoneKeys(value: unknown) {
+  const digits = stringValue(value).replace(/\D/g, "");
+  if (!digits) return [];
+  const keys = new Set([digits]);
+  if (digits.startsWith("60") && digits.length > 2) keys.add(`0${digits.slice(2)}`);
+  if (digits.startsWith("0") && digits.length > 1) keys.add(`60${digits.slice(1)}`);
+  return [...keys];
+}
+
+function csvValue(row: Record<string, string>, names: string[]) {
+  for (const name of names) {
+    const value = row[name];
+    if (value?.trim()) return value.trim();
+  }
+  return "";
 }
 
 function statusPatch(customerStatus: string) {
@@ -127,6 +145,73 @@ async function ensureCustomerLead(args: {
       ...sharedData,
     },
   });
+}
+
+async function importCustomerStatuses(businessId: string, csv: string) {
+  const parsed = parseCsv(csv.replace(/^\uFEFF/, ""));
+  const headers = parsed[0]?.map((header) => header.trim().toLowerCase()) || [];
+  const phoneColumn = headers.find((header) => ["phone", "phone number", "number", "whatsapp number", "whatsapp"].includes(header));
+  const statusColumn = headers.find((header) => ["status", "customer status"].includes(header));
+  if (!phoneColumn || !statusColumn) {
+    throw new Error("Your CSV needs a Phone and Status column.");
+  }
+
+  const rows = parsed.slice(1).map((values) => Object.fromEntries(headers.map((header, index) => [header, (values[index] || "").trim()])));
+  const requested = new Map<string, { phone: string; status: string }>();
+  const invalidRows: string[] = [];
+  for (const row of rows) {
+    const phone = csvValue(row, [phoneColumn]);
+    const status = normalizeCustomerStatus(csvValue(row, [statusColumn]));
+    const key = phoneKeys(phone)[0];
+    if (!phone || !key || !status) {
+      invalidRows.push(phone || "blank number");
+      continue;
+    }
+    requested.set(key, { phone, status });
+  }
+  if (!requested.size) throw new Error("No valid phone numbers and statuses were found in this CSV.");
+
+  const contacts = await prisma.contact.findMany({
+    where: { businessId },
+    select: {
+      id: true,
+      phone: true,
+      waId: true,
+      displayName: true,
+      conversations: {
+        where: { businessId },
+        orderBy: { updatedAt: "desc" },
+        take: 1,
+        select: { id: true },
+      },
+    },
+  });
+  const contactsByPhone = new Map<string, typeof contacts[number]>();
+  for (const contact of contacts) {
+    for (const key of [...phoneKeys(contact.phone), ...phoneKeys(contact.waId)]) {
+      if (!contactsByPhone.has(key)) contactsByPhone.set(key, contact);
+    }
+  }
+
+  let updated = 0;
+  const notFound: string[] = [];
+  for (const entry of requested.values()) {
+    const contact = phoneKeys(entry.phone).map((key) => contactsByPhone.get(key)).find(Boolean);
+    const conversation = contact?.conversations[0];
+    if (!contact || !conversation) {
+      notFound.push(entry.phone);
+      continue;
+    }
+    await ensureCustomerLead({
+      businessId,
+      conversationId: conversation.id,
+      displayName: contact.displayName || contact.phone || contact.waId || "WhatsApp customer",
+      customerStatus: entry.status,
+    });
+    updated += 1;
+  }
+
+  return { updated, notFound, invalidRows };
 }
 
 async function customerResponse(businessId: string, conversationId?: string) {
@@ -361,6 +446,22 @@ export async function PATCH(request: Request) {
 export async function POST(request: Request) {
   try {
     const business = await ensureDefaultBusiness();
+    if (request.headers.get("content-type")?.includes("multipart/form-data")) {
+      const formData = await request.formData();
+      if (stringValue(formData.get("action")) !== "import_statuses") {
+        return json(400, { ok: false, error: "Choose a valid customer import action." });
+      }
+      const file = formData.get("file");
+      if (!(file instanceof File) || !file.name.toLowerCase().endsWith(".csv")) {
+        return json(400, { ok: false, error: "Choose a CSV file first." });
+      }
+      const result = await importCustomerStatuses(business.id, await file.text());
+      return json(200, {
+        ok: true,
+        ...result,
+        customers: await customerResponse(business.id),
+      });
+    }
     const body = await request.json().catch(() => ({})) as {
       action?: unknown;
       conversationId?: unknown;

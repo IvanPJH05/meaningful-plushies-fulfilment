@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import styles from "./whatsapp-customers.module.css";
@@ -175,6 +175,8 @@ export default function WhatsAppCustomersClient() {
   const [loading, setLoading] = useState(() => !initialCache);
   const [busyRowId, setBusyRowId] = useState("");
   const [notice, setNotice] = useState("");
+  const [importingStatuses, setImportingStatuses] = useState(false);
+  const csvInputRef = useRef<HTMLInputElement | null>(null);
 
   const inboxFlows = useMemo(() => (
     flows.filter((flow) => flow.status === "Active" && (flow.triggerType || "click") === "click")
@@ -303,6 +305,42 @@ export default function WhatsAppCustomersClient() {
       setNotice(error instanceof Error ? error.message : "Customer row could not be saved.");
     } finally {
       setBusyRowId("");
+    }
+  }
+
+  async function importCustomerStatuses(file: File) {
+    setImportingStatuses(true);
+    setNotice("");
+    try {
+      const body = new FormData();
+      body.set("action", "import_statuses");
+      body.set("file", file);
+      const response = await fetch("/api/crm/customers", { method: "POST", body });
+      const result = await response.json() as {
+        ok?: boolean;
+        customers?: Customer[];
+        updated?: number;
+        notFound?: string[];
+        invalidRows?: string[];
+        error?: string;
+      };
+      if (!response.ok || !result.ok || !result.customers) throw new Error(result.error || "Customer statuses could not be imported.");
+      const nextCustomers = result.customers;
+      setCustomers(nextCustomers);
+      setDrafts((current) => Object.fromEntries(nextCustomers.map((customer) => [
+        customer.conversationId,
+        { ...emptyDraft(customer), flowId: current[customer.conversationId]?.flowId || "" },
+      ])));
+      const details = [
+        `${result.updated || 0} customer status${result.updated === 1 ? "" : "es"} updated`,
+        result.notFound?.length ? `${result.notFound.length} number${result.notFound.length === 1 ? "" : "s"} not found` : "",
+        result.invalidRows?.length ? `${result.invalidRows.length} invalid row${result.invalidRows.length === 1 ? "" : "s"} skipped` : "",
+      ].filter(Boolean);
+      setNotice(`${details.join(". ")}.`);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Customer statuses could not be imported.");
+    } finally {
+      setImportingStatuses(false);
     }
   }
 
@@ -482,9 +520,30 @@ export default function WhatsAppCustomersClient() {
                 placeholder="Search customer"
                 value={query}
               />
+              <input
+                accept=".csv,text/csv"
+                className={styles.hiddenFileInput}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  if (file) void importCustomerStatuses(file);
+                }}
+                ref={csvInputRef}
+                type="file"
+              />
+              <button
+                className={styles.secondaryButton}
+                disabled={importingStatuses}
+                onClick={() => csvInputRef.current?.click()}
+                type="button"
+              >
+                {importingStatuses ? "Importing..." : "Import statuses CSV"}
+              </button>
               <Link className={styles.secondaryButton} href="/crm/inbox">Open inbox</Link>
             </div>
           </header>
+
+          <p className={styles.importHint}>CSV columns: <strong>Phone, Status</strong>. Status can be Cold, Warm, Unpaid, or Paid.</p>
 
           {notice && <div className={styles.notice}>{notice}</div>}
 

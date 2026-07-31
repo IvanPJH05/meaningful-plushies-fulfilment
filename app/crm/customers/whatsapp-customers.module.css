@@ -134,6 +134,33 @@
   text-decoration: none;
 }
 
+button.secondaryButton {
+  cursor: pointer;
+  font-family: inherit;
+}
+
+button.secondaryButton:disabled {
+  cursor: not-allowed;
+  opacity: .6;
+}
+
+.hiddenFileInput {
+  display: none;
+}
+
+.importHint {
+  background: #f5f9ff;
+  border-bottom: 1px solid #d7e3f2;
+  color: #60738c;
+  font-size: 12px;
+  margin: 0;
+  padding: 8px 18px;
+}
+
+.importHint strong {
+  color: #174d8f;
+}
+
 .notice {
   background: #eaf3ff;
   border-bottom: 1px solid #bed8ff;
