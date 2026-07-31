@@ -268,7 +268,7 @@ export async function fetchShopifyOrdersCreatedSince(date: string, request?: Req
       }
     }
   `, {
-    query: `created_at:>=${date}`,
+    query: `status:any created_at:>=${date}`,
     uploadLiftKey: UPLOAD_LIFT_KEY,
     uploadLiftNamespace: UPLOAD_LIFT_NAMESPACE,
   });
