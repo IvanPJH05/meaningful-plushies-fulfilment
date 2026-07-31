@@ -117,7 +117,8 @@ export async function GET() {
     }
 
     const bytes = await pdf.save();
-    return new Response(bytes, {
+    const fileBody = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    return new Response(fileBody, {
       headers: {
         "content-type": "application/pdf",
         "content-disposition": 'attachment; filename="meaningful-plushies-chats.pdf"',
