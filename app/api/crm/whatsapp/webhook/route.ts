@@ -434,35 +434,6 @@ function normalizeTriggerPhrase(value: string) {
     .toLowerCase();
 }
 
-async function claimExactPhraseFlowTrigger(args: {
-  item: StoredWhatsAppMessage;
-  flowId: string;
-}) {
-  try {
-    await prisma.webhookEvent.create({
-      data: {
-        businessId: args.item.businessId,
-        source: "crm_flow_exact_phrase",
-        externalEventId: `${args.item.messageId}:${args.flowId}`,
-        payload: jsonValue({
-          conversationId: args.item.conversationId,
-          messageId: args.item.messageId,
-          flowId: args.flowId,
-          direction: args.item.direction,
-          text: args.item.text,
-        }),
-        status: WebhookEventStatus.PROCESSED,
-        processedAt: new Date(),
-      },
-    });
-    return true;
-  } catch (error) {
-    // Meta can redeliver a webhook. Each message/flow pair must run once.
-    if (error && typeof error === "object" && "code" in error && error.code === "P2002") return false;
-    throw error;
-  }
-}
-
 function flowMatchesExactTriggerPhrase(flow: { triggerWords: string[] }, inboundText: string) {
   const normalizedInboundText = normalizeTriggerPhrase(inboundText);
   if (!normalizedInboundText) return false;
@@ -823,10 +794,7 @@ async function findFlowTriggeredBySelection(args: {
 
 async function handleFlowAutomationForStoredMessages(storedMessages: StoredWhatsAppMessage[]) {
   const automationMessages = storedMessages.filter((message) => (
-    // Outbound messages are written before Meta echoes them back. Do not
-    // discard that echo: it is how "message sent" exact-phrase flows run.
-    // The claim below prevents a redelivery from running a flow twice.
-    (message.created || message.direction === "outbound")
+    message.created
     && message.source !== "history"
     && message.source !== "provider_history"
   ));
@@ -894,7 +862,7 @@ async function handleFlowAutomationForStoredMessages(storedMessages: StoredWhats
     });
     const triggerEvent = item.direction === "outbound" ? "message_sent" : "message_received";
     const exactPhraseFlow = exactPhraseFlows.find((flow) => flowMatchesExactTriggerEvent(flow, item.text, triggerEvent));
-    if (exactPhraseFlow && await claimExactPhraseFlowTrigger({ item, flowId: exactPhraseFlow.id })) {
+    if (exactPhraseFlow) {
       await runWebhookFlow({ item, flow: exactPhraseFlow });
       scheduled += 1;
       continue;
