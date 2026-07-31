@@ -20,13 +20,6 @@ function comparableOrder(order: Order) {
 }
 
 async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], request: Request) {
-  const matchingExisting = existing.filter((order) => (
-    order.orderNumber === requestedOrderNumber && (order.salesChannel ?? "shopify") === "shopify"
-  ));
-  if (!matchingExisting.length) {
-    return { orderNumber: requestedOrderNumber, ok: false, error: `Shopify order #${requestedOrderNumber} is not saved in fulfilment yet.`, orders: [] as Order[], updated: 0 };
-  }
-
   const fullOrder = await fetchShopifyOrderByNumberWithMetafieldRetry(requestedOrderNumber, request);
   const syncedNumber = cleanShopifyOrderNumber(textValue(fullOrder?.name));
   if (!fullOrder || syncedNumber !== requestedOrderNumber) {
@@ -53,6 +46,7 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
   return {
     orderNumber: requestedOrderNumber,
     ok: true,
+    imported: !existing.some((order) => order.orderNumber === requestedOrderNumber && (order.salesChannel ?? "shopify") === "shopify"),
     changed: changedOrders.length > 0,
     updated: changedOrders.length,
     orders: importedOrders,
