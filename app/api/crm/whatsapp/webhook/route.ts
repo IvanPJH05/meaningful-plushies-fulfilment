@@ -29,11 +29,6 @@ import {
 } from "@/src/modules/openai/whatsapp-assistant";
 import { verifyMetaWebhookSignature } from "@/src/modules/whatsapp/meta-signature";
 import {
-  enqueueWhatsAppMediaJobsForMessages,
-  processDueWhatsAppMediaJobs,
-} from "@/src/modules/whatsapp/media-jobs";
-import { fallbackWhatsAppMediaContentType } from "@/src/modules/whatsapp/media-metadata";
-import {
   sendWhatsAppButtonMessage,
   sendWhatsAppDocumentMessage,
   sendWhatsAppImageMessage,
@@ -333,26 +328,6 @@ function scheduleAiForStoredMessages(storedMessages: StoredWhatsAppMessage[]) {
   }
 
   return aiMessages.length;
-}
-
-function mediaJobBatchLimit() {
-  return Math.max(1, Math.min(Number(process.env.WHATSAPP_MEDIA_JOBS_PER_WEBHOOK || 3), 10));
-}
-
-function scheduleMediaForStoredMessages(storedMessages: StoredWhatsAppMessage[]) {
-  const messageIds = Array.from(new Set(storedMessages.map((message) => message.messageId).filter(Boolean)));
-  if (!messageIds.length) return 0;
-
-  after(async () => {
-    try {
-      await enqueueWhatsAppMediaJobsForMessages(messageIds);
-      await processDueWhatsAppMediaJobs({ limit: mediaJobBatchLimit() });
-    } catch (error) {
-      console.error("WhatsApp media background task failed", error);
-    }
-  });
-
-  return messageIds.length;
 }
 
 type FlowStep = {
@@ -897,48 +872,6 @@ async function handleFlowAutomationForStoredMessages(storedMessages: StoredWhats
   return scheduled;
 }
 
-async function saveWhatsAppMediaAttachment(args: {
-  messageId: string;
-  media?: {
-    id: string;
-    mimeType: string;
-    filename: string;
-  };
-  messageType: string;
-}) {
-  if (!args.media?.id) return;
-
-  const storageKey = `whatsapp-media:${args.media.id}`;
-  const existing = await prisma.messageAttachment.findFirst({
-    where: { messageId: args.messageId, storageKey },
-  });
-
-  const contentType = args.media.mimeType || fallbackWhatsAppMediaContentType(args.messageType);
-  const data = {
-    storageKey,
-    contentType,
-    originalName: args.media.filename || `${args.messageType}-${args.media.id}`,
-    externalMediaId: args.media.id,
-    mediaMimeType: contentType,
-    processingStatus: existing?.originalStoragePath ? "ready" : "pending",
-  };
-
-  if (existing) {
-    await prisma.messageAttachment.update({
-      where: { id: existing.id },
-      data,
-    });
-    return;
-  }
-
-  await prisma.messageAttachment.create({
-    data: {
-      messageId: args.messageId,
-      ...data,
-    },
-  });
-}
-
 function assistantHistoryDirection(message: {
   direction: MessageDirection;
   senderType: MessageSenderType;
@@ -1220,12 +1153,6 @@ async function storeWhatsAppMessages(rawPayload: unknown) {
       },
     });
 
-    await saveWhatsAppMediaAttachment({
-      messageId: storedMessage.id,
-      media: message.media,
-      messageType: message.messageType,
-    });
-
     const previousLastMessageAt = conversation.lastMessageAt || conversation.updatedAt || new Date(0);
     const shouldMoveLastMessageAt = message.timestamp.getTime() >= previousLastMessageAt.getTime();
     const shouldChangeLiveState = !existingMessage && !isHistorySync;
@@ -1361,14 +1288,12 @@ export async function POST(request: Request) {
       updatedStatusCount: statusResult.updated,
     });
     const aiMessageCount = scheduleAiForStoredMessages(storedMessages);
-    const mediaMessageCount = scheduleMediaForStoredMessages(storedMessages);
-
     return json(200, {
       ok: true,
       stored: storedMessages.length,
       statuses: statusResult.updated,
       ai: aiMessageCount ? "scheduled" : "none",
-      media: mediaMessageCount ? "scheduled" : "none",
+      media: "text_only",
       flows: flowMessageCount ? "sent" : "none",
     });
   } catch (error) {

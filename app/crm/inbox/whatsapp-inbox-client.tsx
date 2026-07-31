@@ -3035,39 +3035,6 @@ export default function WhatsAppInboxClient() {
                         </div>
                       )}
                       {displayText && <p className={isFallbackText ? styles.messageFallback : undefined}>{displayText}</p>}
-                      {!!attachments.length && (
-                        <div
-                          className={`${styles.attachmentList} ${mediaOnly ? styles.mediaOnlyAttachments : ""}`}
-                          data-count={Math.min(attachments.length, 4)}
-                        >
-                          {shouldRenderMediaAlbum ? (
-                            <MediaAlbumGrid
-                              attachments={visualAttachments}
-                              onOpen={(attachmentIndex) => openMediaCarousel(visualAttachments, attachmentIndex)}
-                            />
-                          ) : (
-                            attachments.map((attachment) => {
-                              const visualIndex = visualAttachments.findIndex((candidate) => candidate.id === attachment.id);
-                              const isVisualAttachment = visualIndex >= 0;
-                              return (
-                                <div key={attachment.id}>
-                                  <AttachmentPreview
-                                    attachment={attachment}
-                                    onOpen={isVisualAttachment
-                                      ? () => openMediaCarousel(visualAttachments, visualIndex)
-                                      : undefined}
-                                  />
-                                </div>
-                              );
-                            })
-                          )}
-                          {shouldRenderMediaAlbum && nonVisualAttachments.map((attachment) => (
-                            <div key={attachment.id}>
-                              <AttachmentPreview attachment={attachment} />
-                            </div>
-                          ))}
-                        </div>
-                      )}
                       <div className={styles.messageFooter}>
                         {queuedAi && (
                           <button
