@@ -1244,11 +1244,6 @@ export async function POST(request: Request) {
         try {
           const storedMessages = await storeWhatsAppMessages(payload);
           const statusResult = await applyWhatsAppStatuses(payload);
-          const messageIds = Array.from(new Set(storedMessages.map((message) => message.messageId).filter(Boolean)));
-          if (messageIds.length) {
-            await enqueueWhatsAppMediaJobsForMessages(messageIds);
-            await processDueWhatsAppMediaJobs({ limit: mediaJobBatchLimit() });
-          }
           await recordRawWhatsAppWebhook({
             rawBody,
             payload,
