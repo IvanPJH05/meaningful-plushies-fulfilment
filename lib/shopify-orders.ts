@@ -255,6 +255,29 @@ export async function fetchShopifyOrderByNumber(orderNumber: string, request?: R
   return fetchShopifyOrderByNumberRest(cleanNumber, domain);
 }
 
+export async function fetchShopifyOrdersCreatedSince(date: string, request?: Request) {
+  const domain = shopDomain(request);
+  if (!domain || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return [];
+
+  const result = await shopifyGraphql<{ data?: { orders?: { nodes?: Record<string, unknown>[] } } }>(domain, `
+    query OrdersForFulfilmentCatchUp($query: String!, $uploadLiftKey: String!, $uploadLiftNamespace: String!) {
+      orders(first: 250, query: $query, sortKey: CREATED_AT, reverse: true) {
+        nodes {
+          ${ORDER_SELECTION}
+        }
+      }
+    }
+  `, {
+    query: `created_at:>=${date}`,
+    uploadLiftKey: UPLOAD_LIFT_KEY,
+    uploadLiftNamespace: UPLOAD_LIFT_NAMESPACE,
+  });
+
+  return Promise.all((result?.data?.orders?.nodes ?? []).map(async (order) => (
+    withRestMetafieldsIfMissing(domain, normalizeGraphqlOrder(order))
+  )));
+}
+
 export async function fetchShopifyOrderWithMetafieldRetry(payload: Record<string, unknown>, request?: Request) {
   let fullOrder = await fetchShopifyOrder(payload, request);
   if (shopifyMetafieldValue(fullOrder) || shopifyMetafieldValue(payload)) return fullOrder;
