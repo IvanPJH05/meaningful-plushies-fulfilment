@@ -1534,6 +1534,7 @@ export default function WhatsAppInboxClient() {
   const [flows, setFlows] = useState<WhatsAppFlow[]>([]);
   const [flowsLoading, setFlowsLoading] = useState(false);
   const [runningFlowId, setRunningFlowId] = useState("");
+  const [exportingChats, setExportingChats] = useState(false);
   const messageStreamRef = useRef<HTMLDivElement | null>(null);
   const conversationRowsRef = useRef<HTMLDivElement | null>(null);
   const conversationRowsScrollTopRef = useRef(0);
@@ -1890,6 +1891,32 @@ export default function WhatsAppInboxClient() {
     restoreConversationRowsAnchor(anchor);
     return data.inbox as InboxPayload;
   }, [captureConversationRowsAnchor, restoreConversationRowsAnchor]);
+
+  const exportChatsPdf = useCallback(async () => {
+    setExportingChats(true);
+    setNotice("");
+    try {
+      const response = await fetch("/api/crm/inbox/export", { cache: "no-store" });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(result.error || "Chats could not be exported.");
+      }
+      const file = await response.blob();
+      const url = URL.createObjectURL(file);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "meaningful-plushies-chats.pdf";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+      setNotice("Your chat PDF download has started.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Chats could not be exported.");
+    } finally {
+      setExportingChats(false);
+    }
+  }, []);
 
   const loadConversation = useCallback(async (conversationId: string, showSpinner = true) => {
     if (showSpinner) setConversationLoading(true);
@@ -2768,19 +2795,25 @@ export default function WhatsAppInboxClient() {
                 {backgroundLoading ? " | warming latest chats..." : ""}
               </p>
             </div>
-            <button
-              onClick={() => {
-                void loadConversationList();
-                if (selectedId) {
-                  void loadConversation(selectedId, false);
-                } else {
-                  void loadInbox();
-                }
-              }}
-              disabled={loading}
-            >
-              Sync
-            </button>
+            <div className={styles.listHeaderActions}>
+              <button disabled={exportingChats} onClick={() => void exportChatsPdf()} type="button">
+                {exportingChats ? "Preparing PDF..." : "Export chats"}
+              </button>
+              <button
+                onClick={() => {
+                  void loadConversationList();
+                  if (selectedId) {
+                    void loadConversation(selectedId, false);
+                  } else {
+                    void loadInbox();
+                  }
+                }}
+                disabled={loading}
+                type="button"
+              >
+                Sync
+              </button>
+            </div>
           </div>
 
           <div className={styles.searchBox}>

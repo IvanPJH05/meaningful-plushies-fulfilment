@@ -374,6 +374,11 @@
   margin: 4px 0 0;
 }
 
+.listHeaderActions {
+  display: flex;
+  gap: 7px;
+}
+
 .listHeader button {
   background: #ffffff;
   border: 1px solid #cbd8e8;
