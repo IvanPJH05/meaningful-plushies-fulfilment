@@ -390,6 +390,46 @@
   padding: 8px 12px;
 }
 
+.exportPanel {
+  align-items: end;
+  background: #f5f9ff;
+  border-bottom: 1px solid #d7e3f2;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 1fr;
+  padding: 10px 14px 12px;
+}
+
+.exportPanel label {
+  color: #50627a;
+  display: grid;
+  font-size: 10px;
+  font-weight: 900;
+  gap: 4px;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+.exportPanel input,
+.exportPanel select {
+  background: #fff;
+  border: 1px solid #cbd8e8;
+  border-radius: 7px;
+  color: #102033;
+  font-size: 12px;
+  height: 32px;
+  min-width: 0;
+  padding: 0 8px;
+}
+
+.exportPanel button {
+  background: #174d8f;
+  border-color: #174d8f;
+  color: #fff;
+  grid-column: 1 / -1;
+  justify-self: stretch;
+}
+
 .searchBox {
   padding: 0 14px 12px;
 }

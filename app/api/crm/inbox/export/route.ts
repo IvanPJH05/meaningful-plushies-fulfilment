@@ -5,6 +5,8 @@ import { ensureDefaultBusiness } from "@/src/modules/businesses/default-business
 
 export const runtime = "nodejs";
 
+type CustomerStatus = "Cold" | "Warm" | "Paid" | "Unpaid";
+
 const PAGE_WIDTH = 595.28;
 const PAGE_MIN_HEIGHT = 841.89;
 const MARGIN = 42;
@@ -64,13 +66,40 @@ function wrapText(text: string, width: number, font: PDFFont, size: number) {
   return lines;
 }
 
-export async function GET() {
+function dateRangeValue(value: string | null, endOfDay = false) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const parsed = new Date(`${value}T${endOfDay ? "23:59:59.999" : "00:00:00"}+08:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function customerStatus(lead: { stage: string; temperature: string; paymentStatus: string } | undefined): CustomerStatus {
+  if (!lead) return "Cold";
+  if (lead.paymentStatus === "PAID" || lead.stage === "PAID") return "Paid";
+  if (lead.stage === "NEW" || lead.temperature === "COLD") return "Cold";
+  if (lead.paymentStatus === "UNPAID") return "Unpaid";
+  return "Warm";
+}
+
+export async function GET(request: Request) {
   try {
     const business = await ensureDefaultBusiness();
+    const { searchParams } = new URL(request.url);
+    const dateField = searchParams.get("dateField") === "last_texted" ? "last_texted" : "first_message";
+    const from = dateRangeValue(searchParams.get("from"));
+    const to = dateRangeValue(searchParams.get("to"), true);
+    const requestedStatus = searchParams.get("status") as CustomerStatus | "all" | null;
+    const status = requestedStatus === "Cold" || requestedStatus === "Warm" || requestedStatus === "Paid" || requestedStatus === "Unpaid"
+      ? requestedStatus
+      : "all";
     const conversations = await prisma.conversation.findMany({
       where: { businessId: business.id },
       include: {
         contact: { select: { displayName: true, phone: true, waId: true } },
+        leads: {
+          orderBy: { updatedAt: "desc" },
+          take: 1,
+          select: { stage: true, temperature: true, paymentStatus: true },
+        },
         messages: {
           select: { body: true, direction: true, senderType: true, messageType: true, createdAt: true },
           orderBy: { createdAt: "asc" },
@@ -78,13 +107,27 @@ export async function GET() {
       },
       orderBy: [{ lastMessageAt: "desc" }, { createdAt: "desc" }],
     });
+    const selectedConversations = conversations.filter((conversation) => {
+      const matchingStatus = customerStatus(conversation.leads[0]);
+      if (status !== "all" && matchingStatus !== status) return false;
+      const datedMessages = dateField === "last_texted"
+        ? conversation.messages.filter((message) => message.direction === "OUTBOUND")
+        : conversation.messages;
+      const targetDate = dateField === "last_texted"
+        ? datedMessages.at(-1)?.createdAt
+        : datedMessages[0]?.createdAt;
+      if (!targetDate) return false;
+      if (from && targetDate < from) return false;
+      if (to && targetDate > to) return false;
+      return true;
+    });
 
     const pdf = await PDFDocument.create();
     const regular = await pdf.embedFont(StandardFonts.Helvetica);
     const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
     const exportLabel = dateLabel(new Date());
 
-    for (const conversation of conversations) {
+    for (const conversation of selectedConversations) {
       const chatLines = conversation.messages.flatMap((message) => {
         const sender = message.direction === "INBOUND"
           ? "Customer"
@@ -100,7 +143,7 @@ export async function GET() {
 
       page.drawText(title, { x: MARGIN, y: y - 16, size: 16, font: bold, color: rgb(0.06, 0.13, 0.2) });
       y -= 35;
-      page.drawText(`${phone}  |  ${conversation.messages.length} message${conversation.messages.length === 1 ? "" : "s"}`, { x: MARGIN, y, size: 9, font: regular, color: rgb(0.3, 0.4, 0.52) });
+      page.drawText(`${phone}  |  ${customerStatus(conversation.leads[0])}  |  ${conversation.messages.length} message${conversation.messages.length === 1 ? "" : "s"}`, { x: MARGIN, y, size: 9, font: regular, color: rgb(0.3, 0.4, 0.52) });
       y -= 18;
       page.drawLine({ start: { x: MARGIN, y }, end: { x: PAGE_WIDTH - MARGIN, y }, thickness: 0.7, color: rgb(0.78, 0.84, 0.92) });
       y -= 16;

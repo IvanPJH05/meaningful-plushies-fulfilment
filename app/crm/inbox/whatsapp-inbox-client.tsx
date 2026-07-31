@@ -164,6 +164,8 @@ type FlowTriggerType = "keywords" | "click" | "first_message" | "selection_butto
 type FlowMediaType = "image" | "video" | "pdf";
 type FlowActionType = "Send Message" | "Send Media" | "Send Image" | "Send Video" | "Ask Selection" | "AI Reply" | "Update Status" | "Add Note" | "Create Manual Order Link";
 type FlowDelayUnit = "seconds" | "minutes" | "hours" | "days";
+type ChatExportDateField = "first_message" | "last_texted";
+type ChatExportStatus = "all" | "Cold" | "Warm" | "Paid" | "Unpaid";
 
 type FlowMediaItem = {
   type: FlowMediaType;
@@ -1535,6 +1537,11 @@ export default function WhatsAppInboxClient() {
   const [flowsLoading, setFlowsLoading] = useState(false);
   const [runningFlowId, setRunningFlowId] = useState("");
   const [exportingChats, setExportingChats] = useState(false);
+  const [exportFiltersOpen, setExportFiltersOpen] = useState(false);
+  const [exportDateField, setExportDateField] = useState<ChatExportDateField>("first_message");
+  const [exportFrom, setExportFrom] = useState("");
+  const [exportTo, setExportTo] = useState("");
+  const [exportStatus, setExportStatus] = useState<ChatExportStatus>("all");
   const messageStreamRef = useRef<HTMLDivElement | null>(null);
   const conversationRowsRef = useRef<HTMLDivElement | null>(null);
   const conversationRowsScrollTopRef = useRef(0);
@@ -1896,7 +1903,11 @@ export default function WhatsAppInboxClient() {
     setExportingChats(true);
     setNotice("");
     try {
-      const response = await fetch("/api/crm/inbox/export", { cache: "no-store" });
+      const params = new URLSearchParams({ dateField: exportDateField });
+      if (exportFrom) params.set("from", exportFrom);
+      if (exportTo) params.set("to", exportTo);
+      if (exportStatus !== "all") params.set("status", exportStatus);
+      const response = await fetch(`/api/crm/inbox/export?${params.toString()}`, { cache: "no-store" });
       if (!response.ok) {
         const result = await response.json().catch(() => ({})) as { error?: string };
         throw new Error(result.error || "Chats could not be exported.");
@@ -1916,7 +1927,7 @@ export default function WhatsAppInboxClient() {
     } finally {
       setExportingChats(false);
     }
-  }, []);
+  }, [exportDateField, exportFrom, exportStatus, exportTo]);
 
   const loadConversation = useCallback(async (conversationId: string, showSpinner = true) => {
     if (showSpinner) setConversationLoading(true);
@@ -2796,8 +2807,8 @@ export default function WhatsAppInboxClient() {
               </p>
             </div>
             <div className={styles.listHeaderActions}>
-              <button disabled={exportingChats} onClick={() => void exportChatsPdf()} type="button">
-                {exportingChats ? "Preparing PDF..." : "Export chats"}
+              <button disabled={exportingChats} onClick={() => setExportFiltersOpen((open) => !open)} type="button">
+                Export PDF
               </button>
               <button
                 onClick={() => {
@@ -2815,6 +2826,39 @@ export default function WhatsAppInboxClient() {
               </button>
             </div>
           </div>
+
+          {exportFiltersOpen && (
+            <div className={styles.exportPanel}>
+              <label>
+                Date to use
+                <select value={exportDateField} onChange={(event) => setExportDateField(event.target.value as ChatExportDateField)}>
+                  <option value="first_message">First message</option>
+                  <option value="last_texted">Last texted</option>
+                </select>
+              </label>
+              <label>
+                From
+                <input type="date" value={exportFrom} onChange={(event) => setExportFrom(event.target.value)} />
+              </label>
+              <label>
+                To
+                <input type="date" value={exportTo} onChange={(event) => setExportTo(event.target.value)} />
+              </label>
+              <label>
+                Customer status
+                <select value={exportStatus} onChange={(event) => setExportStatus(event.target.value as ChatExportStatus)}>
+                  <option value="all">All statuses</option>
+                  <option value="Cold">Cold</option>
+                  <option value="Warm">Warm</option>
+                  <option value="Unpaid">Unpaid</option>
+                  <option value="Paid">Paid</option>
+                </select>
+              </label>
+              <button disabled={exportingChats} onClick={() => void exportChatsPdf()} type="button">
+                {exportingChats ? "Preparing PDF..." : "Download PDF"}
+              </button>
+            </div>
+          )}
 
           <div className={styles.searchBox}>
             <input
