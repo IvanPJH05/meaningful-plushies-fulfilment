@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { shopifyOrderToFulfilmentOrders } from "@/lib/importer";
-import { fetchShopifyOrdersCreatedSince, shopifyMetafieldValue } from "@/lib/shopify-orders";
+import { fetchShopifyOrdersCreatedSince, shopifyMetafieldValue, textValue } from "@/lib/shopify-orders";
 import { fetchSharedOrders, insertSharedActivity, syncCreatorCommissions, upsertSharedOrders } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -19,10 +19,15 @@ export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({})) as { date?: string };
     const date = /^\d{4}-\d{2}-\d{2}$/.test(body.date || "") ? body.date as string : malaysiaDate();
-    const [existing, shopifyOrders] = await Promise.all([
+    const [existing, recentShopifyOrders] = await Promise.all([
       fetchSharedOrders(),
       fetchShopifyOrdersCreatedSince(date, request),
     ]);
+    const startOfDay = Date.parse(`${date}T00:00:00+08:00`);
+    const shopifyOrders = recentShopifyOrders.filter((order) => {
+      const createdAt = Date.parse(textValue(order.createdAt));
+      return Number.isFinite(createdAt) && createdAt >= startOfDay;
+    });
     const imported = shopifyOrders.flatMap((order) => shopifyOrderToFulfilmentOrders(
       order,
       shopifyMetafieldValue(order),

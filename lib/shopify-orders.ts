@@ -268,7 +268,9 @@ export async function fetchShopifyOrdersCreatedSince(date: string, request?: Req
       }
     }
   `, {
-    query: `status:any created_at:>=${date}`,
+    // Fetch the recent set first. Shopify's date search can omit newly-created
+    // orders while indexes are catching up, so the caller filters createdAt.
+    query: "status:any",
     uploadLiftKey: UPLOAD_LIFT_KEY,
     uploadLiftNamespace: UPLOAD_LIFT_NAMESPACE,
   });
