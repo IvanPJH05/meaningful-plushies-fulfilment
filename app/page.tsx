@@ -2513,6 +2513,30 @@ export default function Home() {
     }
   }
 
+  async function exportManualOrders() {
+    setManualOrderBusy("export");
+    try {
+      const response = await fetch("/api/manual-orders?format=csv", { cache: "no-store" });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(result.error || "Manual orders could not be exported.");
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "meaningful-plushies-manual-orders.csv";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+      setNotice("Manual orders export started. Buyers are marked BOUGHT and linked to their Shopify order.");
+    } catch (error) {
+      setNotice(readableError(error, "Manual orders could not be exported."));
+    } finally {
+      setManualOrderBusy("");
+    }
+  }
+
   async function createManualOrder(event: FormEvent) {
     event.preventDefault();
     setManualOrderBusy("create");
@@ -5272,6 +5296,7 @@ export default function Home() {
         onCopy={copyManualOrderText}
         onCancel={cancelManualOrder}
         onRefresh={refreshManualOrderStatuses}
+        onExport={exportManualOrders}
         whatsAppLink={manualOrderWhatsAppLink}
       />}
 
@@ -7574,6 +7599,7 @@ function ManualOrdersWorkspacePage({
   onCopy,
   onCancel,
   onRefresh,
+  onExport,
   whatsAppLink,
 }: {
   manualOrders: ManualOrder[];
@@ -7587,6 +7613,7 @@ function ManualOrdersWorkspacePage({
   onCopy: (value: string, label: string) => Promise<void>;
   onCancel: (order: ManualOrder) => Promise<void>;
   onRefresh: () => Promise<void>;
+  onExport: () => Promise<void>;
   whatsAppLink: (order: ManualOrder) => string;
 }) {
   const normalizedQuery = query.trim().toLowerCase();
@@ -7682,6 +7709,7 @@ function ManualOrdersWorkspacePage({
         <div className="manual-order-search-actions">
           <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search manual orders..." />
           <button className="button secondary" type="button" onClick={() => void onRefresh()}>Refresh Status</button>
+          <button className="button secondary" disabled={busy === "export"} type="button" onClick={() => void onExport()}>{busy === "export" ? "Exporting..." : "Export manual orders"}</button>
         </div>
       </div>
       <div className="table-scroll">

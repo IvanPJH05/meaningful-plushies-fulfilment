@@ -19,9 +19,34 @@ function errorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
-export async function GET() {
+function csvCell(value: unknown) {
+  const text = value === null || value === undefined ? "" : String(value);
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function manualOrdersCsv(manualOrders: ManualOrder[]) {
+  const columns = ["buyer_status", "customer_name", "phone_number", "product", "shipping_region", "discount_code", "checkout_link", "manual_order_status", "shopify_order_id", "shopify_order_name", "created_at", "bought_at", "updated_at"] as const;
+  const rows = manualOrders.map((order) => [
+    order.status === "used" ? "BOUGHT" : "NOT_YET_BOUGHT", order.customerName, order.phoneNormalized || order.phoneOriginal, order.productDisplayName,
+    order.shippingRegion === "EAST" ? "East Malaysia" : "West Malaysia", order.productDiscountCode, order.customerLink, order.status,
+    order.shopifyOrderId, order.shopifyOrderName, order.createdAt, order.usedAt, order.updatedAt,
+  ].map(csvCell).join(","));
+  return `\uFEFF${[columns.join(","), ...rows].join("\r\n")}`;
+}
+
+export async function GET(request: Request) {
   try {
-    return json(200, { ok: true, manualOrders: await fetchManualOrders() });
+    const manualOrders = await fetchManualOrders();
+    if (new URL(request.url).searchParams.get("format") === "csv") {
+      return new Response(manualOrdersCsv(manualOrders), {
+        headers: {
+          "content-type": "text/csv; charset=utf-8",
+          "content-disposition": 'attachment; filename="meaningful-plushies-manual-orders.csv"',
+          "cache-control": "no-store",
+        },
+      });
+    }
+    return json(200, { ok: true, manualOrders });
   } catch (error) {
     return json(500, { ok: false, error: errorMessage(error, "Manual orders could not be loaded.") });
   }
