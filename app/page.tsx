@@ -86,7 +86,7 @@ type View =
   | "accounting_bank_reconciliation" | "accounting_product_profitability" | "accounting_marketing_profitability" | "accounting_cash_position"
   | "accounting_tax_reports" | "accounting_settings" | "accounting_files" | "accounting_general_journal" | "accounting_t_accounts" | "accounting_unit_costs" | "accounting_financial_reports"
   | "content_dashboard" | "content_plan" | "content_ideas"
-  | "ads_dashboard" | "manual_orders_dashboard" | "manual_orders_leads"
+  | "ads_dashboard" | "manual_orders_dashboard" | "manual_orders_preorders" | "manual_orders_leads"
   | "creator_dashboard" | "creator_accounts" | "creator_sales" | "creator_commissions" | "creator_payouts" | "creator_analytics" | "creator_free_samples";
 type Workspace = "fulfilment" | "manual_orders" | "accounting" | "formal_accounting" | "creator" | "inventory" | "reports" | "content" | "ads" | "settings";
 type SalesRange = "active" | "today" | "7d" | "30d" | "lifetime";
@@ -610,7 +610,7 @@ const accountingViews: readonly View[] = [
 const formalAccountingViews: readonly View[] = ["accounting_general_journal", "accounting_t_accounts", "accounting_unit_costs", "accounting_financial_reports"];
 const contentViews: readonly View[] = ["content_dashboard", "content_plan", "content_ideas"];
 const adsViews: readonly View[] = ["ads_dashboard"];
-const manualOrderViews: readonly View[] = ["manual_orders_dashboard", "manual_orders_leads"];
+const manualOrderViews: readonly View[] = ["manual_orders_dashboard", "manual_orders_preorders", "manual_orders_leads"];
 const manualOrderCharacters = ["Billy", "Tootsie", "Hunnie", "Dragon Warrior"] as const;
 const creatorViews: readonly View[] = ["creator_dashboard", "creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
 const creatorAdminViews: readonly View[] = ["creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
@@ -839,6 +839,7 @@ const adsNavItems: NavItem[] = [
 ];
 const manualOrderNavItems: NavItem[] = [
   { view: "manual_orders_dashboard", label: "Manual Orders", icon: "orders" },
+  { view: "manual_orders_preorders", label: "Preorders", icon: "cash" },
   { view: "manual_orders_leads", label: "Leads", icon: "report" },
 ];
 const settingsNavItems: NavItem[] = [
@@ -1275,6 +1276,7 @@ function viewTitle(view: View) {
     content_ideas: "Idea Brainstorming",
     ads_dashboard: "Ads Dashboard",
     manual_orders_dashboard: "Manual Orders",
+    manual_orders_preorders: "Preorders",
     manual_orders_leads: "Leads",
   };
   if (titleOverrides[view]) return titleOverrides[view]!;
@@ -5311,6 +5313,7 @@ export default function Home() {
         receiptFiles={manualOrderReceiptFiles}
         onReceiptFilesChange={setManualOrderReceiptFiles}
       />}
+      {workspace === "manual_orders" && view === "manual_orders_preorders" && session.role === "admin" && <PreordersWorkspacePage />}
 
       {workspace === "manual_orders" && view === "manual_orders_leads" && session.role === "admin" && <WhatsAppLeadsWorkspacePage
         leads={whatsAppLeads}
@@ -7758,6 +7761,18 @@ function ManualOrdersWorkspacePage({
       </div>
     </section>
   </section>;
+}
+
+function PreordersWorkspacePage() {
+  type Preorder = { id: string; customer_name: string; phone: string; character: string; product_key: string; shipping_region: "WEST" | "EAST"; total_amount: number; deposit_amount: number; balance_due_date: string | null; status: string; payment_receipts: { fileName: string; url: string }[] };
+  const [orders, setOrders] = useState<Preorder[]>([]); const [files, setFiles] = useState<File[]>([]); const [notice, setNotice] = useState("");
+  const [form, setForm] = useState({ customerName: "", phone: "", character: "Billy", productKey: manualOrderProducts[0]?.key ?? "", shippingRegion: "WEST", totalAmount: "", depositAmount: "", balanceDueDate: "" });
+  const balance = Math.max(0, Number(form.totalAmount || 0) - Number(form.depositAmount || 0));
+  const load = useCallback(async () => { const response = await fetch("/api/preorders"); const result = await response.json(); if (result.ok) setOrders(result.preorders); else setNotice(result.error || "Could not load preorders."); }, []);
+  useEffect(() => { void load(); }, [load]);
+  async function submit(event: FormEvent) { event.preventDefault(); try { const paymentReceipts: { fileName: string; url: string }[] = []; for (const file of files) { const data = new FormData(); data.append("file", file); const upload = await fetch("/api/crm/media-assets", { method: "POST", body: data }).then((r) => r.json()); if (!upload.ok) throw new Error(upload.error || `Could not upload ${file.name}.`); paymentReceipts.push({ fileName: file.name, url: upload.asset.originalUrl }); } const result = await fetch("/api/preorders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, paymentReceipts }) }).then((r) => r.json()); if (!result.ok) throw new Error(result.error); setFiles([]); setNotice("Preorder saved."); await load(); } catch (e) { setNotice(e instanceof Error ? e.message : "Could not save preorder."); } }
+  async function markPaid(preorder: Preorder) { const result = await fetch("/api/preorders", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preorder }) }).then((r) => r.json()); if (!result.ok) return setNotice(result.error || "Could not create Manual Order."); setNotice("Balance marked paid — Manual Order link created."); await load(); }
+  return <section className="manual-orders-workspace"><div className="manual-order-hero card"><div><p>PREORDERS</p><h2>Record a deposit, then create the order when fully paid</h2><span>Use the normal order price, enter the deposit received, and set the date the balance is due.</span></div><div className="accounting-status-pill">{orders.length} preorder{orders.length === 1 ? "" : "s"}</div></div>{notice && <div className="notice"><span>{notice}</span></div>}<div className="manual-order-grid"><form className="card manual-order-form" onSubmit={submit}><h3>Create preorder</h3><label>Customer name<input required value={form.customerName} onChange={(e) => setForm({ ...form, customerName: e.target.value })}/></label><label>Phone<input required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })}/></label><label>Character<input value={form.character} onChange={(e) => setForm({ ...form, character: e.target.value })}/></label><label>Speaker<select value={form.productKey} onChange={(e) => setForm({ ...form, productKey: e.target.value })}>{manualOrderProducts.map((product) => <option key={product.key} value={product.key}>{product.displayName}</option>)}</select></label><label>Normal order price (RM)<input required type="number" min="0" step="0.01" value={form.totalAmount} onChange={(e) => setForm({ ...form, totalAmount: e.target.value })}/></label><label>Deposit received (RM)<input required type="number" min="0" step="0.01" value={form.depositAmount} onChange={(e) => setForm({ ...form, depositAmount: e.target.value })}/></label><strong>Balance remaining: RM {balance.toFixed(2)}</strong><label>Balance payment date<input type="date" value={form.balanceDueDate} onChange={(e) => setForm({ ...form, balanceDueDate: e.target.value })}/></label><label className="file-drop-zone" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); setFiles(Array.from(e.dataTransfer.files)); }}>Drag payment PDFs/images here, or choose files<input type="file" multiple accept="application/pdf,image/png,image/jpeg,image/webp" onChange={(e) => setFiles(Array.from(e.target.files || []))}/></label>{files.length > 0 && <small>{files.map((file) => file.name).join(", ")}</small>}<button className="button primary large">Save preorder</button></form><section className="card manual-order-result"><h3>How it works</h3><p>Save deposit proof and a balance due date. When the customer finishes paying, choose <strong>Mark paid</strong> below; the same Manual Order checkout link is generated automatically.</p></section></div><section className="card accounting-table-card manual-order-table-card"><div className="manual-order-table-toolbar"><div><h3>Preorder records</h3><p>Payment receipts remain attached to the preorder and its generated Manual Order.</p></div></div><div className="table-scroll"><table><thead><tr><th>Customer</th><th>Deposit</th><th>Balance</th><th>Due</th><th>Receipts</th><th>Status</th><th /></tr></thead><tbody>{orders.map((order) => <tr key={order.id}><td><strong>{order.customer_name}</strong><small>{order.phone}</small></td><td>RM {Number(order.deposit_amount).toFixed(2)}</td><td>RM {(Number(order.total_amount) - Number(order.deposit_amount)).toFixed(2)}</td><td>{order.balance_due_date || "-"}</td><td>{(order.payment_receipts || []).map((receipt) => <a key={receipt.url} href={receipt.url} target="_blank" rel="noreferrer">{receipt.fileName} </a>)}</td><td>{order.status}</td><td>{order.status === "deposit_paid" && <button className="button primary small" onClick={() => void markPaid(order)}>Mark paid & create Manual Order</button>}</td></tr>)}{!orders.length && <tr><td colSpan={7}>No preorders yet.</td></tr>}</tbody></table></div></section></section>;
 }
 
 function FormalAccountingWorkspacePage({
