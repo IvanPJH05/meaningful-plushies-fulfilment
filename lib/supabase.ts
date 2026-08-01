@@ -112,6 +112,7 @@ function manualOrderFromRow(row: Record<string, unknown>): ManualOrder {
     createdAt: String(row.created_at ?? ""),
     updatedAt: String(row.updated_at ?? ""),
     usedAt: String(row.used_at ?? ""),
+    paymentReceipts: Array.isArray(row.payment_receipts) ? row.payment_receipts as ManualOrder["paymentReceipts"] : [],
   };
 }
 
@@ -139,6 +140,7 @@ function manualOrderToRow(order: ManualOrder) {
     created_at: order.createdAt,
     updated_at: order.updatedAt,
     used_at: order.usedAt || null,
+    payment_receipts: order.paymentReceipts || [],
   };
 }
 
@@ -183,6 +185,7 @@ export async function updateManualOrder(id: string, patch: Partial<ManualOrder>)
     createdAt: "created_at",
     updatedAt: "updated_at",
     usedAt: "used_at",
+    paymentReceipts: "payment_receipts",
   };
   for (const [key, value] of Object.entries(patch)) {
     const column = map[key as keyof ManualOrder];

@@ -458,6 +458,7 @@ export async function createManualOrderDiscounts(input: ManualOrderCreateInput):
     createdAt: now,
     updatedAt: now,
     usedAt: "",
+    paymentReceipts: [],
   };
 }
 

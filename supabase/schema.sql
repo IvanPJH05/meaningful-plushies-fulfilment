@@ -38,7 +38,8 @@ create table if not exists public.manual_orders (
   shopify_order_name text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  used_at timestamptz
+  used_at timestamptz,
+  payment_receipts jsonb not null default '[]'::jsonb
 );
 
 create index if not exists manual_orders_phone_idx
@@ -51,24 +52,6 @@ create index if not exists manual_orders_shopify_order_idx
 alter table public.manual_orders drop constraint if exists manual_orders_shipping_discount_code_key;
 alter table public.manual_orders alter column shipping_discount_code drop not null;
 
-create table if not exists public.preorders (
-  id text primary key,
-  customer_name text not null,
-  phone text not null,
-  character text not null,
-  product_key text not null,
-  shipping_region text not null check (shipping_region in ('WEST', 'EAST')),
-  total_amount numeric not null,
-  deposit_amount numeric not null default 0,
-  balance_due_date date,
-  status text not null default 'deposit_paid' check (status in ('deposit_paid','paid','cancelled')),
-  payment_receipts jsonb not null default '[]'::jsonb,
-  manual_order_id text,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  paid_at timestamptz
-);
-create index if not exists preorders_status_idx on public.preorders (status, balance_due_date);
 
 create table if not exists public.whatsapp_leads (
   id text primary key,
@@ -744,7 +727,6 @@ end $$;
 
 alter table public.fulfilment_orders enable row level security;
 alter table public.manual_orders enable row level security;
-alter table public.preorders enable row level security;
 alter table public.whatsapp_leads enable row level security;
 alter table public.activity_events enable row level security;
 alter table public.payment_processor_settings enable row level security;
@@ -777,12 +759,6 @@ create policy "shared dashboard reads manual orders" on public.manual_orders for
 create policy "shared dashboard inserts manual orders" on public.manual_orders for insert to anon, authenticated with check (true);
 create policy "shared dashboard updates manual orders" on public.manual_orders for update to anon, authenticated using (true) with check (true);
 create policy "shared dashboard deletes manual orders" on public.manual_orders for delete to anon, authenticated using (true);
-drop policy if exists "shared dashboard reads preorders" on public.preorders;
-drop policy if exists "shared dashboard inserts preorders" on public.preorders;
-drop policy if exists "shared dashboard updates preorders" on public.preorders;
-create policy "shared dashboard reads preorders" on public.preorders for select to anon, authenticated using (true);
-create policy "shared dashboard inserts preorders" on public.preorders for insert to anon, authenticated with check (true);
-create policy "shared dashboard updates preorders" on public.preorders for update to anon, authenticated using (true) with check (true);
 drop policy if exists "shared dashboard reads whatsapp leads" on public.whatsapp_leads;
 drop policy if exists "shared dashboard inserts whatsapp leads" on public.whatsapp_leads;
 drop policy if exists "shared dashboard updates whatsapp leads" on public.whatsapp_leads;
@@ -847,7 +823,6 @@ create policy "shared dashboard deletes sales mappings" on public.sales_consumpt
 
 grant select, insert, update, delete on public.fulfilment_orders to anon, authenticated;
 grant select, insert, update, delete on public.manual_orders to anon, authenticated;
-grant select, insert, update, delete on public.preorders to anon, authenticated;
 grant select, insert, update, delete on public.whatsapp_leads to anon, authenticated;
 grant select, insert on public.activity_events to anon, authenticated;
 grant select, insert, update on public.payment_processor_settings to anon, authenticated;

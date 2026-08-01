@@ -60,6 +60,7 @@ export async function POST(request: Request) {
       productKey?: string;
       character?: string;
       shippingRegion?: string;
+      paymentReceipts?: ManualOrder["paymentReceipts"];
     };
     const manualOrder = await createManualOrderDiscounts({
       customerName: body.customerName ?? "",
@@ -68,8 +69,9 @@ export async function POST(request: Request) {
       character: body.character ?? "",
       shippingRegion: body.shippingRegion === "EAST" ? "EAST" : "WEST",
     });
-    await saveManualOrder(manualOrder);
-    return json(200, { ok: true, manualOrder });
+    const orderWithReceipts = { ...manualOrder, paymentReceipts: Array.isArray(body.paymentReceipts) ? body.paymentReceipts : [] };
+    await saveManualOrder(orderWithReceipts);
+    return json(200, { ok: true, manualOrder: orderWithReceipts });
   } catch (error) {
     return json(500, { ok: false, error: errorMessage(error, "Manual order could not be created.") });
   }

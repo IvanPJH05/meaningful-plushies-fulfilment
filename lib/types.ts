@@ -407,6 +407,7 @@ export type Order = {
 };
 
 export type ManualOrderStatus = "active" | "used" | "expired" | "cancelled";
+export type ManualOrderReceipt = { fileName: string; url: string };
 
 export type ManualOrder = {
   id: string;
@@ -431,6 +432,7 @@ export type ManualOrder = {
   createdAt: string;
   updatedAt: string;
   usedAt: string;
+  paymentReceipts: ManualOrderReceipt[];
 };
 
 export type WhatsAppLeadStatus = "open" | "bought" | "not_bought" | "follow_up" | "lost";

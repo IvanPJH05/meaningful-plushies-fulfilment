@@ -1350,6 +1350,7 @@ export default function Home() {
   const [whatsAppLeadBusy, setWhatsAppLeadBusy] = useState("");
   const [whatsAppLeadNoteDrafts, setWhatsAppLeadNoteDrafts] = useState<Record<string, string>>({});
   const [manualOrderBusy, setManualOrderBusy] = useState("");
+  const [manualOrderReceiptFiles, setManualOrderReceiptFiles] = useState<File[]>([]);
   const [lastManualOrderId, setLastManualOrderId] = useState("");
   const [stockSettings, setStockSettings] = useState<StockSetting[]>([]);
   const [accounts, setAccounts] = useState<DashboardAccount[]>([]);
@@ -2541,16 +2542,25 @@ export default function Home() {
     event.preventDefault();
     setManualOrderBusy("create");
     try {
+      const paymentReceipts: { fileName: string; url: string }[] = [];
+      for (const file of manualOrderReceiptFiles) {
+        const uploadData = new FormData(); uploadData.append("file", file);
+        const uploadResponse = await fetch("/api/crm/media-assets", { method: "POST", body: uploadData });
+        const upload = await uploadResponse.json() as { ok?: boolean; asset?: { originalUrl: string }; error?: string };
+        if (!uploadResponse.ok || !upload.ok || !upload.asset) throw new Error(upload.error || `Could not upload ${file.name}.`);
+        paymentReceipts.push({ fileName: file.name, url: upload.asset.originalUrl });
+      }
       const response = await fetch("/api/manual-orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(manualOrderForm),
+        body: JSON.stringify({ ...manualOrderForm, paymentReceipts }),
       });
       const result = await response.json() as { ok?: boolean; manualOrder?: ManualOrder; error?: string };
       if (!response.ok || !result.ok || !result.manualOrder) throw new Error(result.error || "Manual order could not be created.");
       setManualOrders((current) => [result.manualOrder!, ...current.filter((item) => item.id !== result.manualOrder!.id)]);
       setLastManualOrderId(result.manualOrder.id);
       setManualOrderForm((current) => ({ ...current, customerName: "", phone: "" }));
+      setManualOrderReceiptFiles([]);
       setNotice("Manual order link created.");
       await logActivity("Manual order created", `${result.manualOrder.customerName} - ${result.manualOrder.productDiscountCode}.`);
     } catch (error) {
@@ -5298,6 +5308,8 @@ export default function Home() {
         onRefresh={refreshManualOrderStatuses}
         onExport={exportManualOrders}
         whatsAppLink={manualOrderWhatsAppLink}
+        receiptFiles={manualOrderReceiptFiles}
+        onReceiptFilesChange={setManualOrderReceiptFiles}
       />}
 
       {workspace === "manual_orders" && view === "manual_orders_leads" && session.role === "admin" && <WhatsAppLeadsWorkspacePage
@@ -7601,6 +7613,8 @@ function ManualOrdersWorkspacePage({
   onRefresh,
   onExport,
   whatsAppLink,
+  receiptFiles,
+  onReceiptFilesChange,
 }: {
   manualOrders: ManualOrder[];
   form: { customerName: string; phone: string; character: string; productKey: string; shippingRegion: "WEST" | "EAST" };
@@ -7615,6 +7629,8 @@ function ManualOrdersWorkspacePage({
   onRefresh: () => Promise<void>;
   onExport: () => Promise<void>;
   whatsAppLink: (order: ManualOrder) => string;
+  receiptFiles: File[];
+  onReceiptFilesChange: (files: File[]) => void;
 }) {
   const normalizedQuery = query.trim().toLowerCase();
   const visibleOrders = manualOrders.filter((order) => {
@@ -7670,6 +7686,8 @@ function ManualOrdersWorkspacePage({
           </div>
         </div>
         <label>Shipping region<select value={form.shippingRegion} onChange={(event) => onFormChange({ shippingRegion: event.target.value === "EAST" ? "EAST" : "WEST" })}><option value="WEST">West Malaysia</option><option value="EAST">East Malaysia</option></select></label>
+        <label>Payment receipt files (PDF or images)<input type="file" multiple accept="application/pdf,image/png,image/jpeg,image/webp" onChange={(event) => onReceiptFilesChange(Array.from(event.target.files || []))} /></label>
+        {receiptFiles.length > 0 && <small>{receiptFiles.length} file{receiptFiles.length === 1 ? "" : "s"} attached: {receiptFiles.map((file) => file.name).join(", ")}</small>}
         <button className="button primary large" disabled={busy === "create"} type="submit">{busy === "create" ? "Creating..." : "Generate Shopify link"}</button>
         <p className="manual-order-note">The app creates one 100% product discount. It expires after 14 days and can only be used once.</p>
       </form>
