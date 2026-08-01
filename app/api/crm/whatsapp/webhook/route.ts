@@ -305,36 +305,10 @@ type StoredWhatsAppMessage = {
   direction: "inbound" | "outbound";
   text: string;
   messageType: MessageType;
-  timestamp: Date;
   created: boolean;
   source: NormalizedWhatsAppMessageSource;
   raw: Record<string, unknown>;
 };
-
-const FLOW_AUTOMATION_START_EVENT = "live-messages-only-v1";
-
-async function flowAutomationStartedAt(businessId: string) {
-  const event = await prisma.webhookEvent.upsert({
-    where: {
-      businessId_source_externalEventId: {
-        businessId,
-        source: "crm_flow_automation",
-        externalEventId: FLOW_AUTOMATION_START_EVENT,
-      },
-    },
-    update: {},
-    create: {
-      businessId,
-      source: "crm_flow_automation",
-      externalEventId: FLOW_AUTOMATION_START_EVENT,
-      payload: jsonValue({ purpose: "Ignore messages received before live flow automation was enabled." }),
-      status: WebhookEventStatus.PROCESSED,
-      processedAt: new Date(),
-    },
-    select: { receivedAt: true },
-  });
-  return event.receivedAt;
-}
 
 function scheduleAiForStoredMessages(storedMessages: StoredWhatsAppMessage[]) {
   const aiMessages = storedMessages.filter((message) => (
@@ -794,14 +768,13 @@ async function findFlowTriggeredBySelection(args: {
 }
 
 async function handleFlowAutomationForStoredMessages(storedMessages: StoredWhatsAppMessage[]) {
-  const businessId = storedMessages[0]?.businessId;
-  if (!businessId) return 0;
-  const startedAt = await flowAutomationStartedAt(businessId);
   const automationMessages = storedMessages.filter((message) => (
     message.created
-    && message.source !== "history"
-    && message.source !== "provider_history"
-    && message.timestamp >= startedAt
+    // Only an actual, newly-received customer message may begin a flow.
+    // This deliberately excludes manual/outgoing message echoes and every
+    // history-sync record, even when WhatsApp sends it after a reconnect.
+    && message.direction === "inbound"
+    && message.source === "messages"
   ));
   if (!automationMessages.length) return 0;
 
@@ -1213,7 +1186,6 @@ async function storeWhatsAppMessages(rawPayload: unknown) {
       direction: message.direction,
       text: message.text,
       messageType: messageType(message.messageType),
-      timestamp: message.timestamp,
       created: !existingMessage,
       source: message.source,
       raw: message.raw,
