@@ -156,6 +156,11 @@ function localDateTimeLabel(value: string | null | undefined) {
   }).format(new Date(value));
 }
 
+function csvCell(value: string | null | undefined) {
+  const text = value || "";
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
 function statusClass(status: CustomerStatus) {
   return status.toLowerCase();
 }
@@ -342,6 +347,29 @@ export default function WhatsAppCustomersClient() {
     } finally {
       setImportingStatuses(false);
     }
+  }
+
+  function downloadCustomerStatusTemplate() {
+    const rows = [
+      ["Phone", "Customer", "Status", "First message", "Last texted"],
+      ...customers.map((customer) => [
+        customer.phone || customer.waId || "",
+        customer.displayName,
+        customer.customerStatus,
+        customer.firstMessageAt || "",
+        customer.lastTextedAt || "",
+      ]),
+    ];
+    const csv = `\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\r\n")}`;
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "meaningful-plushies-customer-statuses.csv";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+    setNotice(`${customers.length} customers exported. Edit the Status column, then import this file.`);
   }
 
   async function sendFlowStep(customer: Customer, step: WhatsAppFlowStep, body: string, media?: FlowMediaItem, options?: FlowSelectionOption[]) {
@@ -538,6 +566,9 @@ export default function WhatsAppCustomersClient() {
                 type="button"
               >
                 {importingStatuses ? "Importing..." : "Import statuses CSV"}
+              </button>
+              <button className={styles.secondaryButton} disabled={!customers.length} onClick={downloadCustomerStatusTemplate} type="button">
+                Download CSV template
               </button>
               <Link className={styles.secondaryButton} href="/crm/inbox">Open inbox</Link>
             </div>
