@@ -164,6 +164,9 @@ type FlowTriggerType = "keywords" | "click" | "first_message" | "selection_butto
 type FlowMediaType = "image" | "video" | "pdf";
 type FlowActionType = "Send Message" | "Send Media" | "Send Image" | "Send Video" | "Ask Selection" | "AI Reply" | "Update Status" | "Add Note" | "Create Manual Order Link";
 type FlowDelayUnit = "seconds" | "minutes" | "hours" | "days";
+type AiExportScope = "ALL" | "DATE_RANGE" | "CHANGED_SINCE_LAST_EXPORT";
+type AiExportDateMode = "ACTIVE_DURING_RANGE" | "CREATED_DURING_RANGE" | "UPDATED_DURING_RANGE" | "MESSAGES_DURING_RANGE";
+type AiExportHistoryEntry = { exportId: string; generatedAt: string; scope: AiExportScope; fileName: string };
 
 type FlowMediaItem = {
   type: FlowMediaType;
@@ -1536,8 +1539,17 @@ export default function WhatsAppInboxClient() {
   const [runningFlowId, setRunningFlowId] = useState("");
   const [exportingChats, setExportingChats] = useState(false);
   const [exportFiltersOpen, setExportFiltersOpen] = useState(false);
-  const [exportChangedSinceLast, setExportChangedSinceLast] = useState(false);
+  const [exportScope, setExportScope] = useState<AiExportScope>("ALL");
+  const [exportDateMode, setExportDateMode] = useState<AiExportDateMode>("ACTIVE_DURING_RANGE");
+  const [exportStartDate, setExportStartDate] = useState("");
+  const [exportEndDate, setExportEndDate] = useState("");
+  const [exportRangeMessagesOnly, setExportRangeMessagesOnly] = useState(false);
+  const [exportIncludeArchived, setExportIncludeArchived] = useState(true);
+  const [exportIncludeRawMetadata, setExportIncludeRawMetadata] = useState(true);
+  const [exportRedactSensitive, setExportRedactSensitive] = useState(false);
   const [lastAiExportAt, setLastAiExportAt] = useState("");
+  const [aiExportHistory, setAiExportHistory] = useState<AiExportHistoryEntry[]>([]);
+  const [comparisonExportId, setComparisonExportId] = useState("");
   const messageStreamRef = useRef<HTMLDivElement | null>(null);
   const conversationRowsRef = useRef<HTMLDivElement | null>(null);
   const conversationRowsScrollTopRef = useRef(0);
@@ -1897,19 +1909,24 @@ export default function WhatsAppInboxClient() {
 
   useEffect(() => {
     setLastAiExportAt(window.localStorage.getItem("meaningful-plushies.crm-ai-export-at") || "");
+    try { setAiExportHistory(JSON.parse(window.localStorage.getItem("meaningful-plushies.crm-ai-export-history") || "[]") as AiExportHistoryEntry[]); } catch { setAiExportHistory([]); }
   }, []);
 
   const exportChats = useCallback(async () => {
     setExportingChats(true);
     setNotice("");
     try {
-      const params = new URLSearchParams();
-      if (exportChangedSinceLast && lastAiExportAt) params.set("changed_since", lastAiExportAt.slice(0, 10));
-      const response = await fetch(`/api/crm/inbox/export?${params.toString()}`, { cache: "no-store" });
+      const params = new URLSearchParams({ scope: exportScope, timezone: "Asia/Kuala_Lumpur", include_archived: String(exportIncludeArchived), include_raw_metadata: String(exportIncludeRawMetadata), redact_sensitive: String(exportRedactSensitive) });
+      if (exportScope === "DATE_RANGE") { params.set("start_date", exportStartDate); params.set("end_date", exportEndDate); params.set("date_filter_mode", exportDateMode); params.set("message_history_mode", exportRangeMessagesOnly ? "DATE_RANGE_ONLY" : "COMPLETE_CONVERSATION"); }
+      if (exportScope === "CHANGED_SINCE_LAST_EXPORT" && lastAiExportAt) params.set("changed_since", lastAiExportAt);
+      if (comparisonExportId) params.set("comparison_export_id", comparisonExportId);
+      const response = await fetch(`/api/crm/inbox/ai-export?${params.toString()}`, { cache: "no-store" });
       if (!response.ok) {
         const result = await response.json().catch(() => ({})) as { error?: string };
         throw new Error(result.error || "Chats could not be exported.");
       }
+      const exportId = response.headers.get("x-ai-export-id") || crypto.randomUUID();
+      const generatedAt = response.headers.get("x-ai-export-generated-at") || new Date().toISOString();
       const file = await response.blob();
       const url = URL.createObjectURL(file);
       const link = document.createElement("a");
@@ -1920,16 +1937,19 @@ export default function WhatsAppInboxClient() {
       link.click();
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
-      const exportedAt = new Date().toISOString();
+      const exportedAt = generatedAt;
       window.localStorage.setItem("meaningful-plushies.crm-ai-export-at", exportedAt);
       setLastAiExportAt(exportedAt);
+      const nextHistory = [{ exportId, generatedAt, scope: exportScope, fileName: link.download }, ...aiExportHistory.filter((entry) => entry.exportId !== exportId)].slice(0, 20);
+      window.localStorage.setItem("meaningful-plushies.crm-ai-export-history", JSON.stringify(nextHistory));
+      setAiExportHistory(nextHistory);
       setNotice("Your complete AI conversation export has started.");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Chats could not be exported.");
     } finally {
       setExportingChats(false);
     }
-  }, [exportChangedSinceLast, lastAiExportAt]);
+  }, [aiExportHistory, comparisonExportId, exportDateMode, exportEndDate, exportIncludeArchived, exportIncludeRawMetadata, exportRangeMessagesOnly, exportRedactSensitive, exportScope, exportStartDate, lastAiExportAt]);
 
   const loadConversation = useCallback(async (conversationId: string, showSpinner = true) => {
     if (showSpinner) setConversationLoading(true);
@@ -2831,14 +2851,29 @@ export default function WhatsAppInboxClient() {
 
           {exportFiltersOpen && (
             <div className={styles.exportPanel}>
-              <p>Exports every raw message, attachment, factual event, and customer profile for ChatGPT. No lead scoring or automatic classification is included.</p>
+              <p>AI Export v3 sends raw messages, attachments, factual CRM events, and customer history to ChatGPT. It does not classify customers or infer sales status.</p>
               <label>
-                <input type="checkbox" checked={exportChangedSinceLast} disabled={!lastAiExportAt} onChange={(event) => setExportChangedSinceLast(event.target.checked)} />
-                Export only conversations changed since the last AI export
+                Export scope
+                <select value={exportScope} onChange={(event) => setExportScope(event.target.value as AiExportScope)}>
+                  <option value="ALL">All conversations</option>
+                  <option value="DATE_RANGE">Selected date range</option>
+                  <option value="CHANGED_SINCE_LAST_EXPORT" disabled={!lastAiExportAt}>Changed since last export</option>
+                </select>
               </label>
+              {exportScope === "DATE_RANGE" && <>
+                <label>Start date<input type="date" value={exportStartDate} onChange={(event) => setExportStartDate(event.target.value)} /></label>
+                <label>End date<input type="date" value={exportEndDate} onChange={(event) => setExportEndDate(event.target.value)} /></label>
+                <label>Timezone<input value="Asia/Kuala_Lumpur" disabled /></label>
+                <label>Date-filter mode<select value={exportDateMode} onChange={(event) => setExportDateMode(event.target.value as AiExportDateMode)}><option value="ACTIVE_DURING_RANGE">Conversations active during date range</option><option value="CREATED_DURING_RANGE">Conversations created during date range</option><option value="UPDATED_DURING_RANGE">Conversations updated during date range</option><option value="MESSAGES_DURING_RANGE">Messages sent during date range</option></select></label>
+                <label><input type="checkbox" checked={exportRangeMessagesOnly} onChange={(event) => setExportRangeMessagesOnly(event.target.checked)} /> Export only messages inside the date range</label>
+              </>}
+              {exportScope === "CHANGED_SINCE_LAST_EXPORT" && <label>Compare with<select value={comparisonExportId} onChange={(event) => { const entry = aiExportHistory.find((item) => item.exportId === event.target.value); setComparisonExportId(event.target.value); if (entry) setLastAiExportAt(entry.generatedAt); }}><option value="">Most recent AI export</option>{aiExportHistory.map((entry) => <option key={entry.exportId} value={entry.exportId}>{new Date(entry.generatedAt).toLocaleString()} — {entry.scope}</option>)}</select></label>}
+              <label><input type="checkbox" checked={exportIncludeArchived} onChange={(event) => setExportIncludeArchived(event.target.checked)} /> Include archived conversations</label>
+              <label><input type="checkbox" checked={exportIncludeRawMetadata} onChange={(event) => setExportIncludeRawMetadata(event.target.checked)} /> Include raw metadata (secrets are always removed)</label>
+              <label><input type="checkbox" checked={exportRedactSensitive} onChange={(event) => setExportRedactSensitive(event.target.checked)} /> Redact sensitive personal information</label>
               {lastAiExportAt && <p>Last AI export: {new Date(lastAiExportAt).toLocaleString()}</p>}
               <button disabled={exportingChats} onClick={() => void exportChats()} type="button">
-                {exportingChats ? "Preparing AI export..." : "Download AI JSON"}
+                {exportingChats ? "Preparing AI Export v3..." : "Download AI Export v3"}
               </button>
             </div>
           )}
