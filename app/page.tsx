@@ -146,6 +146,8 @@ type StoredUiPreferences = {
   sortDirection?: SortDirection;
   reportStartDate?: string;
   reportEndDate?: string;
+  fulfilmentStartDate?: string;
+  fulfilmentEndDate?: string;
   fulfilmentColumns?: FulfilmentColumn[];
 };
 type ActivityEvent = {
@@ -1312,6 +1314,8 @@ export default function Home() {
   const [reportSelectedOrders, setReportSelectedOrders] = useState<string[]>([]);
   const [reportStartDate, setReportStartDate] = useState(() => storedUi.reportStartDate ?? "");
   const [reportEndDate, setReportEndDate] = useState(() => storedUi.reportEndDate ?? "");
+  const [fulfilmentStartDate, setFulfilmentStartDate] = useState(() => storedUi.fulfilmentStartDate ?? "");
+  const [fulfilmentEndDate, setFulfilmentEndDate] = useState(() => storedUi.fulfilmentEndDate ?? "");
   const [processorSettings, setProcessorSettings] = useState<PaymentProcessorSetting[]>([]);
   const [salesFeeSettings, setSalesFeeSettings] = useState<SalesFeeSetting>({ shopifyPercentage: 0 });
   const [metaCapiSettings, setMetaCapiSettings] = useState<MetaCapiSettings>(defaultMetaCapiSettings);
@@ -1680,6 +1684,8 @@ export default function Home() {
       sortDirection,
       reportStartDate,
       reportEndDate,
+      fulfilmentStartDate,
+      fulfilmentEndDate,
       fulfilmentColumns,
     } satisfies StoredUiPreferences);
   }, [
@@ -1701,6 +1707,8 @@ export default function Home() {
     sortDirection,
     reportStartDate,
     reportEndDate,
+    fulfilmentStartDate,
+    fulfilmentEndDate,
     fulfilmentColumns,
   ]);
 
@@ -1796,10 +1804,34 @@ export default function Home() {
     const matching = source
       .filter((order) => orderSourceMatches(order, sourceFilter))
       .filter((order) => statusFilter === "all" || order.status === statusFilter)
+      .filter((order) => {
+        if (view !== "orders" || (!fulfilmentStartDate && !fulfilmentEndDate)) return true;
+        const date = dateKey(order.orderDate);
+        return (!fulfilmentStartDate || date >= fulfilmentStartDate) && (!fulfilmentEndDate || date <= fulfilmentEndDate);
+      })
       .filter((order) => !search || [order.orderNumber, order.customerName, order.phone, order.trackingNumber, order.plushName, order.product, order.character, order.shippingMethod]
         .join(" ").toLowerCase().includes(search));
     return sortOrderRecords(matching, sortKey, sortDirection);
-  }, [orders, query, sourceFilter, statusFilter, view, sortKey, sortDirection]);
+  }, [orders, query, sourceFilter, statusFilter, view, sortKey, sortDirection, fulfilmentStartDate, fulfilmentEndDate]);
+  const fulfilmentDateRangeSales = useMemo(() => {
+    const uniqueSales = new Map<string, Order>();
+    for (const order of orders) {
+      const date = dateKey(order.orderDate);
+      if ((fulfilmentStartDate && date < fulfilmentStartDate) || (fulfilmentEndDate && date > fulfilmentEndDate)) continue;
+      const channel = order.salesChannel === "tiktok" ? "tiktok" : "shopify";
+      const saleKey = `${channel}:${order.orderNumber}`;
+      if (!uniqueSales.has(saleKey)) uniqueSales.set(saleKey, order);
+    }
+    return [...uniqueSales.values()].reduce((summary, order) => {
+      const channel = order.salesChannel === "tiktok" ? "tiktok" : "shopify";
+      summary[channel].count += 1;
+      summary[channel].sales += order.totalAmount || 0;
+      return summary;
+    }, {
+      shopify: { count: 0, sales: 0 },
+      tiktok: { count: 0, sales: 0 },
+    });
+  }, [orders, fulfilmentStartDate, fulfilmentEndDate]);
   const selectedShopifyOrderCount = useMemo(() => new Set(orders
     .filter((order) => selectedOrders.includes(order.id) && (order.salesChannel ?? "shopify") === "shopify")
     .map((order) => order.orderNumber)).size, [orders, selectedOrders]);
@@ -5455,6 +5487,22 @@ export default function Home() {
           <Stat label="Sent for sewing" value={counts.production} color="blue" />
           <article className="stat green selectable-stat"><select aria-label="Choose fourth dashboard status" value={dashboardStatus} onChange={(event) => setDashboardStatus(event.target.value as OrderStatus | "total")}>{dashboardSelectableStatuses.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><strong>{counts.selected}</strong></article>
           <article className="stat red selectable-stat"><select aria-label="Choose fifth dashboard status" value={dashboardStatusTwo} onChange={(event) => setDashboardStatusTwo(event.target.value as OrderStatus | "total")}>{dashboardSelectableStatuses.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><strong>{counts.selectedTwo}</strong></article>
+        </section>}
+
+        {view === "orders" && <section className="card fulfilment-date-range">
+          <div className="fulfilment-date-range-heading">
+            <div><strong>Orders by date range</strong><span>Choose dates to filter the order list and compare sales channels.</span></div>
+            <div className="fulfilment-date-inputs">
+              <label>From<input type="date" value={fulfilmentStartDate} onChange={(event) => setFulfilmentStartDate(event.target.value)} /></label>
+              <label>To<input type="date" value={fulfilmentEndDate} onChange={(event) => setFulfilmentEndDate(event.target.value)} /></label>
+              <button className="button secondary" type="button" disabled={!fulfilmentStartDate && !fulfilmentEndDate} onClick={() => { setFulfilmentStartDate(""); setFulfilmentEndDate(""); }}>Clear</button>
+            </div>
+          </div>
+          <div className="fulfilment-channel-sales">
+            <article className="shopify"><span>Shopify</span><strong>{fulfilmentDateRangeSales.shopify.count} sales</strong><small>{formatMoney(fulfilmentDateRangeSales.shopify.sales)}</small></article>
+            <article className="tiktok"><span>TikTok Shop</span><strong>{fulfilmentDateRangeSales.tiktok.count} sales</strong><small>{formatMoney(fulfilmentDateRangeSales.tiktok.sales)}</small></article>
+            <article className="total"><span>Total</span><strong>{fulfilmentDateRangeSales.shopify.count + fulfilmentDateRangeSales.tiktok.count} sales</strong><small>{formatMoney(fulfilmentDateRangeSales.shopify.sales + fulfilmentDateRangeSales.tiktok.sales)}</small></article>
+          </div>
         </section>}
 
         {view === "orders" && session.role === "admin" && <>
