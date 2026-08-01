@@ -1,0 +1,90 @@
+[
+  {
+    "conversation_id": "sample_conversation_001",
+    "customer": {
+      "name": "Sample Customer",
+      "phone_number": "+60123456789",
+      "original_phone_number": "012-345 6789"
+    },
+    "metadata": {
+      "crm_status": "Warm",
+      "first_message_at": "2026-08-01T09:00:00.000Z",
+      "last_message_at": "2026-08-01T10:00:00.000Z",
+      "total_messages": 3,
+      "exported_at": "2026-08-02T00:00:00.000Z"
+    },
+    "summary": {
+      "order_stage": "DEPOSIT_PAID",
+      "status_reason": "Customer selected HUNNIE with 10 SECONDS.",
+      "payment_status": "PARTIALLY_PAID",
+      "payment_amount": 50,
+      "deposit_amount": 50,
+      "remaining_balance": 75,
+      "payment_date": "",
+      "payment_evidence_found": "YES",
+      "payment_evidence_type": "PAYMENT_DOCUMENT",
+      "payment_evidence_message_timestamp": "2026-08-01T10:00:00.000Z",
+      "payment_evidence_attachment": "deposit-receipt.pdf",
+      "payment_evidence_text": "Deposit receipt RM50",
+      "payment_confidence_score": 80,
+      "character": "HUNNIE",
+      "speaker_duration": "10_SECONDS",
+      "form_type": "FORM_TEMPLATE",
+      "form_sent": true,
+      "form_sent_at": "2026-08-01T09:05:00.000Z",
+      "form_completed": true,
+      "form_completed_at": "2026-08-01T10:00:00.000Z",
+      "voice_received": "NO",
+      "voice_type": "NONE",
+      "voice_received_at": "",
+      "voice_attachment_filename": "",
+      "shipping_details_received": false,
+      "shipping_region": "UNKNOWN",
+      "shipping_type": "UNKNOWN",
+      "ready_for_production": false,
+      "production_completed": false,
+      "tracking_sent": false,
+      "tracking_number": "",
+      "shipped": false,
+      "delivered": false,
+      "potential_score": 0,
+      "follow_up_required": true,
+      "suggested_next_action": "Request the remaining balance before production."
+    },
+    "messages": [
+      {
+        "timestamp": "2026-08-01T09:00:00.000Z",
+        "sender": "CUSTOMER",
+        "message_type": "TEXT",
+        "text": "I want Hunnie 10 seconds. How much?",
+        "attachment_filename": "",
+        "attachment_url": "",
+        "attachment_id": "",
+        "caption": "",
+        "status_marker": ""
+      },
+      {
+        "timestamp": "2026-08-01T09:05:00.000Z",
+        "sender": "TEAM",
+        "message_type": "TEXT",
+        "text": "Please complete this customization form and send RM50 deposit.",
+        "attachment_filename": "",
+        "attachment_url": "",
+        "attachment_id": "",
+        "caption": "",
+        "status_marker": ""
+      },
+      {
+        "timestamp": "2026-08-01T10:00:00.000Z",
+        "sender": "CUSTOMER",
+        "message_type": "DOCUMENT",
+        "text": "Deposit receipt RM50",
+        "attachment_filename": "deposit-receipt.pdf",
+        "attachment_url": "/api/crm/inbox/attachments/sample_receipt/original",
+        "attachment_id": "sample_receipt",
+        "caption": "Deposit receipt RM50",
+        "status_marker": ""
+      }
+    ]
+  }
+]

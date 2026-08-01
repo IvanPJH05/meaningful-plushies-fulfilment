@@ -1899,11 +1899,11 @@ export default function WhatsAppInboxClient() {
     return data.inbox as InboxPayload;
   }, [captureConversationRowsAnchor, restoreConversationRowsAnchor]);
 
-  const exportChatsPdf = useCallback(async () => {
+  const exportChats = useCallback(async (format: "pdf" | "csv" | "json") => {
     setExportingChats(true);
     setNotice("");
     try {
-      const params = new URLSearchParams({ dateField: exportDateField });
+      const params = new URLSearchParams({ dateField: exportDateField, format });
       if (exportFrom) params.set("from", exportFrom);
       if (exportTo) params.set("to", exportTo);
       if (exportStatus !== "all") params.set("status", exportStatus);
@@ -1916,12 +1916,16 @@ export default function WhatsAppInboxClient() {
       const url = URL.createObjectURL(file);
       const link = document.createElement("a");
       link.href = url;
-      link.download = "meaningful-plushies-chats.pdf";
+      link.download = format === "pdf"
+        ? "meaningful-plushies-conversations.pdf"
+        : format === "csv"
+          ? "meaningful-plushies-conversation-summary.csv"
+          : "meaningful-plushies-conversations.json";
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
-      setNotice("Your chat PDF download has started.");
+      setNotice(`Your chat ${format.toUpperCase()} download has started.`);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Chats could not be exported.");
     } finally {
@@ -2854,8 +2858,14 @@ export default function WhatsAppInboxClient() {
                   <option value="Paid">Paid</option>
                 </select>
               </label>
-              <button disabled={exportingChats} onClick={() => void exportChatsPdf()} type="button">
+              <button disabled={exportingChats} onClick={() => void exportChats("pdf")} type="button">
                 {exportingChats ? "Preparing PDF..." : "Download PDF"}
+              </button>
+              <button disabled={exportingChats} onClick={() => void exportChats("csv")} type="button">
+                Download CSV
+              </button>
+              <button disabled={exportingChats} onClick={() => void exportChats("json")} type="button">
+                Download JSON
               </button>
             </div>
           )}

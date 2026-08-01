@@ -52,16 +52,16 @@ test("paid manual order commands normalize customer and product details", () => 
   assert.equal(command.payment.reference, "bank transfer");
 });
 
-test("manual order WhatsApp message tells the customer payment was received", () => {
+test("manual order WhatsApp message gives the customer the customisation link and code", () => {
   const message = buildManualOrderReadyWhatsAppMessage({
     customerName: "Sarah",
     checkoutUrl: "https://meaningfulplushies.com/discount/1234",
     discountCode: "1234",
   });
 
-  assert.match(message, /payment received/i);
+  assert.match(message, /customisation link/i);
   assert.match(message, /https:\/\/meaningfulplushies\.com\/discount\/1234/);
-  assert.match(message, /Discount code: 1234/);
+  assert.match(message, /checkout code is: 1234/i);
 });
 
 test("phase 2 accepts Shopify client credentials when admin token is not present", () => {
