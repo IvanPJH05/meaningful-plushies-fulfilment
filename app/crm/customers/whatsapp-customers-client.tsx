@@ -181,6 +181,7 @@ export default function WhatsAppCustomersClient() {
   const [busyRowId, setBusyRowId] = useState("");
   const [notice, setNotice] = useState("");
   const [importingStatuses, setImportingStatuses] = useState(false);
+  const [exportingOrders, setExportingOrders] = useState(false);
   const csvInputRef = useRef<HTMLInputElement | null>(null);
 
   const inboxFlows = useMemo(() => (
@@ -370,6 +371,38 @@ export default function WhatsAppCustomersClient() {
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
     setNotice(`${customers.length} customers exported. Edit the Status column, then import this file.`);
+  }
+
+  function downloadConversationFacts() {
+    window.location.assign("/api/crm/inbox/ai-export?scope=ALL&timezone=Asia%2FKuala_Lumpur&include_archived=true");
+  }
+
+  async function downloadOrderFacts() {
+    setExportingOrders(true);
+    try {
+      const [manualResponse, preorderResponse] = await Promise.all([fetch("/api/manual-orders"), fetch("/api/preorders")]);
+      const [manual, preorders] = await Promise.all([manualResponse.json(), preorderResponse.json()]);
+      if (!manual.ok) throw new Error(manual.error || "Manual Orders could not be exported.");
+      if (!preorders.ok) throw new Error(preorders.error || "Pre-orders could not be exported.");
+      const exportData = {
+        generated_at: new Date().toISOString(),
+        export_type: "manual_orders_and_preorders_facts",
+        matching_key: "phone number",
+        note: "These are factual order records only. They do not prove whether a customer has paid unless the record itself includes a completed Shopify order.",
+        manual_orders: manual.manualOrders || [],
+        preorders: preorders.preorders || [],
+      };
+      const url = URL.createObjectURL(new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `manual-orders-and-preorders-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Order facts could not be exported.");
+    } finally {
+      setExportingOrders(false);
+    }
   }
 
   async function sendFlowStep(customer: Customer, step: WhatsAppFlowStep, body: string, media?: FlowMediaItem, options?: FlowSelectionOption[]) {
@@ -573,6 +606,14 @@ export default function WhatsAppCustomersClient() {
               <Link className={styles.secondaryButton} href="/crm/inbox">Open inbox</Link>
             </div>
           </header>
+
+          <section className={styles.aiExportPanel}>
+            <div><p className={styles.eyebrow}>ChatGPT exports</p><h2>Export facts for ChatGPT</h2><span>ChatGPT reads the full conversations and makes the sales decisions. This CRM does not guess who has paid or who needs follow-up.</span></div>
+            <div className={styles.aiExportActions}>
+              <button className={styles.primaryButton} onClick={downloadConversationFacts} type="button">Download conversation JSON</button>
+              <button className={styles.secondaryButton} disabled={exportingOrders} onClick={() => void downloadOrderFacts()} type="button">{exportingOrders ? "Preparing orders..." : "Download Manual Orders + Pre-orders"}</button>
+            </div>
+          </section>
 
           <p className={styles.importHint}>CSV columns: <strong>Phone, Status</strong>. Status can be Cold, Warm, Unpaid, or Paid.</p>
 
