@@ -7738,7 +7738,12 @@ function ManualOrdersWorkspacePage({
         <table>
           <thead><tr><th>Created</th><th>Customer</th><th>Phone</th><th>Product</th><th>Shipping</th><th>Discount</th><th>Status</th><th>Shopify Order</th><th>Actions</th></tr></thead>
           <tbody>
-            {visibleOrders.map((order) => <tr key={order.id}>
+            {visibleOrders.map((order) => {
+              const firstReceipt = (order.paymentReceipts || [])[0];
+              return <tr key={order.id} className={firstReceipt ? "has-source-document" : ""} onClick={(event) => {
+                if (!firstReceipt || (event.target as HTMLElement).closest("button,a,input")) return;
+                setReceiptPreview({ ...firstReceipt, customerName: order.customerName });
+              }}>
               <td>{formatDate(order.createdAt, true)}</td>
               <td><strong>{order.customerName}</strong></td>
               <td>{order.phoneNormalized}<small>{order.phoneOriginal}</small></td>
@@ -7756,7 +7761,8 @@ function ManualOrdersWorkspacePage({
                 {order.shopifyOrderId && <a className="button secondary small" href={`https://admin.shopify.com/store/${(process.env.NEXT_PUBLIC_SHOPIFY_ADMIN_STORE_HANDLE || "").trim()}/orders/${order.shopifyOrderId.replace(/\D/g, "")}`} target="_blank" rel="noreferrer">Shopify</a>}
                 {order.status === "active" && <button className="button danger small" type="button" disabled={busy === order.id} onClick={() => onCancel(order)}>{busy === order.id ? "Cancelling..." : "Cancel"}</button>}
               </div></td>
-            </tr>)}
+            </tr>;
+            })}
             {!visibleOrders.length && <tr><td colSpan={9}>No manual orders found.</td></tr>}
           </tbody>
         </table>
