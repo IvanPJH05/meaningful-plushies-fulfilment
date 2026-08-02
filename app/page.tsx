@@ -7735,7 +7735,7 @@ function ManualOrdersWorkspacePage({
         </div>
       </div>
       <div className="table-scroll">
-        <table>
+        <table className="orders-table manual-orders-records-table">
           <thead><tr><th>Created</th><th>Customer</th><th>Phone</th><th>Product</th><th>Shipping</th><th>Discount</th><th>Status</th><th>Shopify Order</th><th>Actions</th></tr></thead>
           <tbody>
             {visibleOrders.map((order) => {

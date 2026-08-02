@@ -1400,6 +1400,29 @@ body.print-sales-report .report-table th,
   margin-top: 3px;
 }
 
+.manual-orders-records-table tr.has-source-document td {
+  background: #f6faff;
+}
+
+.manual-orders-records-table tr.has-source-document:hover td {
+  background: #edf6ff;
+}
+
+.manual-orders-records-table tbody tr:not(:last-child) td {
+  border-bottom: 1px solid #e7eef6;
+}
+
+.manual-order-row-actions .source-document-pill {
+  margin-left: 0;
+  border: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.manual-order-row-actions .source-document-pill:hover {
+  background: #dcecff;
+}
+
 .whatsapp-lead-summary-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
