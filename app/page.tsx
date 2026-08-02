@@ -7751,6 +7751,7 @@ function ManualOrdersWorkspacePage({
                 <button className="button secondary small" type="button" onClick={() => onCopy(order.productDiscountCode, "Discount code")}>Copy Code</button>
                 <a className="button secondary small" href={whatsAppLink(order)} target="_blank" rel="noreferrer">WhatsApp</a>
                 <a className="button secondary small" href={order.customerLink} target="_blank" rel="noreferrer">Open</a>
+                {(order.paymentReceipts || []).map((receipt, index) => <a key={receipt.url} className="button secondary small" href={receipt.url} target="_blank" rel="noreferrer">{(order.paymentReceipts || []).length > 1 ? `Receipt ${index + 1}` : "Receipt"}</a>)}
                 {order.shopifyOrderId && <a className="button secondary small" href={`https://admin.shopify.com/store/${(process.env.NEXT_PUBLIC_SHOPIFY_ADMIN_STORE_HANDLE || "").trim()}/orders/${order.shopifyOrderId.replace(/\D/g, "")}`} target="_blank" rel="noreferrer">Shopify</a>}
                 {order.status === "active" && <button className="button danger small" type="button" disabled={busy === order.id} onClick={() => onCancel(order)}>{busy === order.id ? "Cancelling..." : "Cancel"}</button>}
               </div></td>
