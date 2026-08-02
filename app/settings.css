@@ -1400,6 +1400,21 @@ body.print-sales-report .report-table th,
   margin-top: 3px;
 }
 
+.manual-order-price-breakdown {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  padding: 12px;
+  border: 1px solid #cfdbeb;
+  border-radius: 10px;
+  background: #f5f9ff;
+}
+
+.manual-order-price-breakdown span { color: #46617f; font-size: 11px; font-weight: 800; }
+.manual-order-price-breakdown strong { color: #123c70; font-size: 13px; text-align: right; }
+.manual-order-price-breakdown small { grid-column: 1 / -1; color: #72829a; font-size: 10px; margin-bottom: 5px; }
+.manual-order-price-breakdown small:last-child { margin-bottom: 0; }
+
 .manual-orders-records-table tr.has-source-document td {
   background: #f6faff;
 }
