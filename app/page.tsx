@@ -7636,6 +7636,7 @@ function ManualOrdersWorkspacePage({
   onReceiptFilesChange: (files: File[]) => void;
 }) {
   const normalizedQuery = query.trim().toLowerCase();
+  const [receiptPreview, setReceiptPreview] = useState<{ fileName: string; url: string; customerName: string } | null>(null);
   const visibleOrders = manualOrders.filter((order) => {
     if (!normalizedQuery) return true;
     return [
@@ -7751,7 +7752,7 @@ function ManualOrdersWorkspacePage({
                 <button className="button secondary small" type="button" onClick={() => onCopy(order.productDiscountCode, "Discount code")}>Copy Code</button>
                 <a className="button secondary small" href={whatsAppLink(order)} target="_blank" rel="noreferrer">WhatsApp</a>
                 <a className="button secondary small" href={order.customerLink} target="_blank" rel="noreferrer">Open</a>
-                {(order.paymentReceipts || []).map((receipt, index) => <a key={receipt.url} className="button secondary small" href={receipt.url} target="_blank" rel="noreferrer">{(order.paymentReceipts || []).length > 1 ? `Receipt ${index + 1}` : "Receipt"}</a>)}
+                {(order.paymentReceipts || []).map((receipt, index) => <button key={receipt.url} className="source-document-pill" type="button" onClick={() => setReceiptPreview({ ...receipt, customerName: order.customerName })}>{(order.paymentReceipts || []).length > 1 ? `Source document ${index + 1}` : "Source document"}</button>)}
                 {order.shopifyOrderId && <a className="button secondary small" href={`https://admin.shopify.com/store/${(process.env.NEXT_PUBLIC_SHOPIFY_ADMIN_STORE_HANDLE || "").trim()}/orders/${order.shopifyOrderId.replace(/\D/g, "")}`} target="_blank" rel="noreferrer">Shopify</a>}
                 {order.status === "active" && <button className="button danger small" type="button" disabled={busy === order.id} onClick={() => onCancel(order)}>{busy === order.id ? "Cancelling..." : "Cancel"}</button>}
               </div></td>
@@ -7761,7 +7762,25 @@ function ManualOrdersWorkspacePage({
         </table>
       </div>
     </section>
+    {receiptPreview && <ReceiptPreviewModal receipt={receiptPreview} onClose={() => setReceiptPreview(null)} />}
   </section>;
+}
+
+function ReceiptPreviewModal({ receipt, onClose }: { receipt: { fileName: string; url: string; customerName: string }; onClose: () => void }) {
+  const isImage = /\.(png|jpe?g|webp)$/i.test(receipt.fileName);
+  const isPdf = /\.pdf$/i.test(receipt.fileName);
+  return <div className="document-preview-backdrop" role="dialog" aria-modal="true" aria-label={`Payment receipt for ${receipt.customerName}`} onClick={onClose}>
+    <section className="document-preview-modal" onClick={(event) => event.stopPropagation()}>
+      <header>
+        <div><p>SOURCE DOCUMENT</p><h2>Payment receipt — {receipt.customerName}</h2><span>{receipt.fileName}</span></div>
+        <button className="view-button" type="button" onClick={onClose}>Close</button>
+      </header>
+      {isImage && <img className="document-preview-image" src={receipt.url} alt={`Payment receipt for ${receipt.customerName}`} />}
+      {isPdf && <iframe className="document-preview-frame" src={receipt.url} title={`Payment receipt for ${receipt.customerName}`} />}
+      {!isImage && !isPdf && <div className="preview-empty"><strong>Preview not available for this file type</strong><p>You can still open the source document in a new tab.</p></div>}
+      <footer><a className="view-button document-link" href={receipt.url} target="_blank" rel="noreferrer">Open in new tab</a></footer>
+    </section>
+  </div>;
 }
 
 function PreordersWorkspacePage() {
