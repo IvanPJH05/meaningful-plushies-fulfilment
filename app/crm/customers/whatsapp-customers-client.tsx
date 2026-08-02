@@ -182,6 +182,10 @@ export default function WhatsAppCustomersClient() {
   const [notice, setNotice] = useState("");
   const [importingStatuses, setImportingStatuses] = useState(false);
   const [exportingOrders, setExportingOrders] = useState(false);
+  const [conversationExportScope, setConversationExportScope] = useState<"ALL" | "DATE_RANGE" | "CHANGED_SINCE_LAST_EXPORT">("ALL");
+  const [exportStartDate, setExportStartDate] = useState("");
+  const [exportEndDate, setExportEndDate] = useState("");
+  const [changedSince, setChangedSince] = useState("");
   const csvInputRef = useRef<HTMLInputElement | null>(null);
 
   const inboxFlows = useMemo(() => (
@@ -374,7 +378,16 @@ export default function WhatsAppCustomersClient() {
   }
 
   function downloadConversationFacts() {
-    window.location.assign("/api/crm/inbox/ai-export?scope=ALL&timezone=Asia%2FKuala_Lumpur&include_archived=true");
+    const params = new URLSearchParams({ scope: conversationExportScope, timezone: "Asia/Kuala_Lumpur", include_archived: "true" });
+    if (conversationExportScope === "DATE_RANGE") {
+      if (!exportStartDate || !exportEndDate) return setNotice("Choose both dates for the conversation export.");
+      params.set("start_date", exportStartDate); params.set("end_date", exportEndDate);
+    }
+    if (conversationExportScope === "CHANGED_SINCE_LAST_EXPORT") {
+      if (!changedSince) return setNotice("Choose the last export date and time.");
+      params.set("changed_since", new Date(changedSince).toISOString());
+    }
+    window.location.assign(`/api/crm/inbox/ai-export?${params.toString()}`);
   }
 
   async function downloadOrderFacts() {
@@ -610,6 +623,13 @@ export default function WhatsAppCustomersClient() {
           <section className={styles.aiExportPanel}>
             <div><p className={styles.eyebrow}>ChatGPT exports</p><h2>Export facts for ChatGPT</h2><span>ChatGPT reads the full conversations and makes the sales decisions. This CRM does not guess who has paid or who needs follow-up.</span></div>
             <div className={styles.aiExportActions}>
+              <select aria-label="Conversation export type" onChange={(event) => setConversationExportScope(event.target.value as "ALL" | "DATE_RANGE" | "CHANGED_SINCE_LAST_EXPORT")} value={conversationExportScope}>
+                <option value="ALL">Full data</option>
+                <option value="DATE_RANGE">Date range</option>
+                <option value="CHANGED_SINCE_LAST_EXPORT">Last updated</option>
+              </select>
+              {conversationExportScope === "DATE_RANGE" && <><input aria-label="Export start date" onChange={(event) => setExportStartDate(event.target.value)} type="date" value={exportStartDate} /><input aria-label="Export end date" onChange={(event) => setExportEndDate(event.target.value)} type="date" value={exportEndDate} /></>}
+              {conversationExportScope === "CHANGED_SINCE_LAST_EXPORT" && <input aria-label="Last export date and time" onChange={(event) => setChangedSince(event.target.value)} type="datetime-local" value={changedSince} />}
               <button className={styles.primaryButton} onClick={downloadConversationFacts} type="button">Download conversation JSON</button>
               <button className={styles.secondaryButton} disabled={exportingOrders} onClick={() => void downloadOrderFacts()} type="button">{exportingOrders ? "Preparing orders..." : "Download Manual Orders + Pre-orders"}</button>
             </div>

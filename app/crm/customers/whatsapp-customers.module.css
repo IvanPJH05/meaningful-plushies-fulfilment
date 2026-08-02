@@ -176,6 +176,19 @@ button.secondaryButton:disabled {
   justify-content: flex-end;
 }
 
+.aiExportActions select,
+.aiExportActions input {
+  background: #ffffff;
+  border: 1px solid #cbd8e8;
+  border-radius: 13px;
+  color: #102033;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  height: 42px;
+  padding: 0 12px;
+}
+
 .primaryButton {
   align-items: center;
   background: #1769e0;
