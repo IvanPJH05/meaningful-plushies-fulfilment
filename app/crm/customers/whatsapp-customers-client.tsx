@@ -72,6 +72,7 @@ type RowDraft = {
 
 const customerStatuses: CustomerStatus[] = ["Cold", "Warm", "Unpaid", "Paid"];
 const CUSTOMER_CACHE_KEY = "meaningful-plushies.crm-customers.v1";
+const LAST_CONVERSATION_EXPORT_KEY = "meaningful-plushies.crm-last-conversation-export.v1";
 
 type CustomerCache = {
   customers: Customer[];
@@ -185,7 +186,7 @@ export default function WhatsAppCustomersClient() {
   const [conversationExportScope, setConversationExportScope] = useState<"ALL" | "DATE_RANGE" | "CHANGED_SINCE_LAST_EXPORT">("ALL");
   const [exportStartDate, setExportStartDate] = useState("");
   const [exportEndDate, setExportEndDate] = useState("");
-  const [changedSince, setChangedSince] = useState("");
+  const [lastConversationExportAt, setLastConversationExportAt] = useState(() => typeof window === "undefined" ? "" : window.localStorage.getItem(LAST_CONVERSATION_EXPORT_KEY) || "");
   const csvInputRef = useRef<HTMLInputElement | null>(null);
 
   const inboxFlows = useMemo(() => (
@@ -384,9 +385,12 @@ export default function WhatsAppCustomersClient() {
       params.set("start_date", exportStartDate); params.set("end_date", exportEndDate);
     }
     if (conversationExportScope === "CHANGED_SINCE_LAST_EXPORT") {
-      if (!changedSince) return setNotice("Choose the last export date and time.");
-      params.set("changed_since", new Date(changedSince).toISOString());
+      if (!lastConversationExportAt) return setNotice("Download a full export first. The CRM will then remember the cutoff automatically.");
+      params.set("changed_since", lastConversationExportAt);
     }
+    const nextCutoff = new Date().toISOString();
+    window.localStorage.setItem(LAST_CONVERSATION_EXPORT_KEY, nextCutoff);
+    setLastConversationExportAt(nextCutoff);
     window.location.assign(`/api/crm/inbox/ai-export?${params.toString()}`);
   }
 
@@ -629,7 +633,7 @@ export default function WhatsAppCustomersClient() {
                 <option value="CHANGED_SINCE_LAST_EXPORT">Last updated</option>
               </select>
               {conversationExportScope === "DATE_RANGE" && <><input aria-label="Export start date" onChange={(event) => setExportStartDate(event.target.value)} type="date" value={exportStartDate} /><input aria-label="Export end date" onChange={(event) => setExportEndDate(event.target.value)} type="date" value={exportEndDate} /></>}
-              {conversationExportScope === "CHANGED_SINCE_LAST_EXPORT" && <input aria-label="Last export date and time" onChange={(event) => setChangedSince(event.target.value)} type="datetime-local" value={changedSince} />}
+              {conversationExportScope === "CHANGED_SINCE_LAST_EXPORT" && <span className={styles.lastExportNote}>{lastConversationExportAt ? `Since ${new Date(lastConversationExportAt).toLocaleString("en-MY")}` : "No previous export yet"}</span>}
               <button className={styles.primaryButton} onClick={downloadConversationFacts} type="button">Download conversation JSON</button>
               <button className={styles.secondaryButton} disabled={exportingOrders} onClick={() => void downloadOrderFacts()} type="button">{exportingOrders ? "Preparing orders..." : "Download Manual Orders + Pre-orders"}</button>
             </div>

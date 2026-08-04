@@ -189,6 +189,20 @@ button.secondaryButton:disabled {
   padding: 0 12px;
 }
 
+.lastExportNote {
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #cbd8e8;
+  border-radius: 13px;
+  color: #42617f;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 800;
+  height: 42px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
 .primaryButton {
   align-items: center;
   background: #1769e0;

@@ -42,7 +42,9 @@ export async function GET(request: Request) {
     const includeRawMetadata = params.get("include_raw_metadata") !== "false";
     const redactSensitive = params.get("redact_sensitive") === "true";
     const where: Record<string, unknown> = { businessId: business.id, ...(includeArchived ? {} : { status: { not: "ARCHIVED" } }), ...(includeEmpty ? {} : { messages: { some: {} } }) };
-    if (scope === "CHANGED_SINCE_LAST_EXPORT") where.updatedAt = { gt: changedSince };
+    // Only include conversations with an actual inbound or outbound message after the prior export.
+    // Contact edits and other record updates alone must not make a conversation appear again.
+    if (scope === "CHANGED_SINCE_LAST_EXPORT") where.messages = { some: { createdAt: { gt: changedSince! } } };
     if (scope === "DATE_RANGE") {
       if (dateFilterMode === "ACTIVE_DURING_RANGE" || dateFilterMode === "MESSAGES_DURING_RANGE") where.messages = { some: { createdAt: { gte: from!, lte: to! } } };
       if (dateFilterMode === "CREATED_DURING_RANGE") where.OR = [{ createdAt: { gte: from!, lte: to! } }, { contact: { is: { createdAt: { gte: from!, lte: to! } } } }];
