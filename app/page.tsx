@@ -5267,8 +5267,8 @@ export default function Home() {
   }
 
   const workspace = workspaceForView(view);
-  const availableWorkspaces: Workspace[] = session.role === "admin"
-    ? ["fulfilment", "manual_orders", "accounting", "formal_accounting", "creator", "inventory", "reports", "content", "ads", "settings"]
+  const availableWorkspaces: (Workspace | "crm")[] = session.role === "admin"
+    ? ["fulfilment", "manual_orders", "crm", "accounting", "formal_accounting", "creator", "inventory", "reports", "content", "ads", "settings"]
     : session.role === "creator" ? ["creator"] : ["fulfilment"];
   const sidebarNavItems = navItemsForWorkspace(workspace, session.role);
   const workspaceTitle = workspaceLabels[workspace];
@@ -5279,8 +5279,12 @@ export default function Home() {
         <div className="logo"><span>MP</span><div>Meaningful Plushies<small>{workspaceTitle}</small></div></div>
         <label>
           <span>Workspace</span>
-          <select value={workspace} onChange={(event) => setView(workspaceDefaultViews[event.target.value as Workspace])}>
-            {availableWorkspaces.map((item) => <option key={item} value={item}>{workspaceLabels[item]}</option>)}
+          <select value={workspace} onChange={(event) => {
+            const nextWorkspace = event.target.value as Workspace | "crm";
+            if (nextWorkspace === "crm") { window.location.assign("/crm/inbox"); return; }
+            setView(workspaceDefaultViews[nextWorkspace]);
+          }}>
+            {availableWorkspaces.map((item) => <option key={item} value={item}>{item === "crm" ? "WhatsApp CRM" : workspaceLabels[item]}</option>)}
           </select>
         </label>
       </div>
