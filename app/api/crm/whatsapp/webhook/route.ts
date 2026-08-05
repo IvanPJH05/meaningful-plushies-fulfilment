@@ -397,13 +397,13 @@ async function claimFlowSelection(args: {
 }
 
 function normalizeTriggerPhrase(value: string) {
-  // WhatsApp can alter the Unicode form of emoji, quotes and invisible
-  // joiners while preserving the visible message. Treat those as the same
-  // phrase, while still requiring all visible words and punctuation to match.
+  // WhatsApp can alter Unicode, punctuation, emoji and invisible joiners.
+  // Keep only the words so a configured phrase can be found inside a sentence.
   return value
     .normalize("NFKC")
     .replace(/[\u200B-\u200D\uFEFF\uFE0E\uFE0F]/g, "")
     .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim()
     .replace(/\s+/g, " ")
     .toLowerCase();
@@ -412,7 +412,10 @@ function normalizeTriggerPhrase(value: string) {
 function flowMatchesExactTriggerPhrase(flow: { triggerWords: string[] }, inboundText: string) {
   const normalizedInboundText = normalizeTriggerPhrase(inboundText);
   if (!normalizedInboundText) return false;
-  return flow.triggerWords.some((phrase) => normalizeTriggerPhrase(phrase) === normalizedInboundText);
+  return flow.triggerWords.some((phrase) => {
+    const normalizedPhrase = normalizeTriggerPhrase(phrase);
+    return normalizedPhrase && ` ${normalizedInboundText} `.includes(` ${normalizedPhrase} `);
+  });
 }
 
 const flowMetaPattern = /\n?\n?<!--crm-flow-meta:([\s\S]*?)-->\s*$/;

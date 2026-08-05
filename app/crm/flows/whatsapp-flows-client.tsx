@@ -3502,7 +3502,7 @@ export default function WhatsAppFlowsClient() {
                     ? "This flow runs automatically when a customer sends their first message in a new chat."
                   : form.triggerType === "selection_button"
                     ? "This flow runs when it is selected in another flow's Ask Selection action. The button key is handled automatically."
-                  : "This flow runs only when a WhatsApp message exactly matches one of these phrases. Choose whether it watches customer messages received or team messages sent."}
+                  : "This flow runs when a WhatsApp message contains one of these phrases. It ignores differences in case, punctuation, emoji, and extra words around the phrase. Choose whether it watches customer messages received or team messages sent."}
               </p>
 
               <label>

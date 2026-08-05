@@ -64,12 +64,13 @@ function normalizedMessageText(body: string | null | undefined) {
 }
 
 function normalizeTriggerPhrase(value: string) {
-  // Keep exact matching, but ignore invisible Unicode differences introduced
-  // by WhatsApp (for example emoji variation selectors and smart quotes).
+  // Ignore Unicode, punctuation and emoji differences so configured phrases
+  // can be found naturally inside longer WhatsApp messages.
   return value
     .normalize("NFKC")
     .replace(/[\u200B-\u200D\uFEFF\uFE0E\uFE0F]/g, "")
     .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim()
     .replace(/\s+/g, " ")
     .toLowerCase();
@@ -78,7 +79,10 @@ function normalizeTriggerPhrase(value: string) {
 function flowMatchesExactTriggerPhrase(flow: { triggerWords: string[] }, messageText: string) {
   const normalizedText = normalizeTriggerPhrase(messageText);
   if (!normalizedText) return false;
-  return flow.triggerWords.some((phrase) => normalizeTriggerPhrase(phrase) === normalizedText);
+  return flow.triggerWords.some((phrase) => {
+    const normalizedPhrase = normalizeTriggerPhrase(phrase);
+    return normalizedPhrase && ` ${normalizedText} `.includes(` ${normalizedPhrase} `);
+  });
 }
 
 const flowMetaPattern = /\n?\n?<!--crm-flow-meta:([\s\S]*?)-->\s*$/;
