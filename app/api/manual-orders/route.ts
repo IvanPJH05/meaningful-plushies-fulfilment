@@ -60,6 +60,7 @@ export async function POST(request: Request) {
       productKey?: string;
       character?: string;
       shippingRegion?: string;
+      isCod?: boolean;
       paymentReceipts?: ManualOrder["paymentReceipts"];
     };
     const manualOrder = await createManualOrderDiscounts({
@@ -68,6 +69,7 @@ export async function POST(request: Request) {
       productKey: body.productKey ?? "",
       character: body.character ?? "",
       shippingRegion: body.shippingRegion === "EAST" ? "EAST" : "WEST",
+      isCod: body.isCod === true,
     });
     const orderWithReceipts = { ...manualOrder, paymentReceipts: Array.isArray(body.paymentReceipts) ? body.paymentReceipts : [] };
     await saveManualOrder(orderWithReceipts);

@@ -1339,12 +1339,14 @@ export default function Home() {
     character: string;
     productKey: string;
     shippingRegion: "WEST" | "EAST";
+    isCod: boolean;
   }>({
     customerName: "",
     phone: "",
     character: manualOrderCharacters[0],
     productKey: manualOrderProducts[0]?.key ?? "",
     shippingRegion: "WEST" as "WEST" | "EAST",
+    isCod: false,
   });
   const [manualOrderQuery, setManualOrderQuery] = useState("");
   const [whatsAppLeadQuery, setWhatsAppLeadQuery] = useState("");
@@ -7624,11 +7626,11 @@ function ManualOrdersWorkspacePage({
   onReceiptFilesChange,
 }: {
   manualOrders: ManualOrder[];
-  form: { customerName: string; phone: string; character: string; productKey: string; shippingRegion: "WEST" | "EAST" };
+  form: { customerName: string; phone: string; character: string; productKey: string; shippingRegion: "WEST" | "EAST"; isCod: boolean };
   query: string;
   busy: string;
   lastManualOrderId: string;
-  onFormChange: (patch: Partial<{ customerName: string; phone: string; character: string; productKey: string; shippingRegion: "WEST" | "EAST" }>) => void;
+  onFormChange: (patch: Partial<{ customerName: string; phone: string; character: string; productKey: string; shippingRegion: "WEST" | "EAST"; isCod: boolean }>) => void;
   onQueryChange: (value: string) => void;
   onCreate: (event: FormEvent) => Promise<void>;
   onCopy: (value: string, label: string) => Promise<void>;
@@ -7694,6 +7696,7 @@ function ManualOrdersWorkspacePage({
           </div>
         </div>
         <label>Shipping region<select value={form.shippingRegion} onChange={(event) => onFormChange({ shippingRegion: event.target.value === "EAST" ? "EAST" : "WEST" })}><option value="WEST">West Malaysia</option><option value="EAST">East Malaysia</option></select></label>
+        <div className="manual-order-choice"><span>Cash on delivery</span><div className="manual-order-pill-group"><button type="button" className={!form.isCod ? "active" : ""} onClick={() => onFormChange({ isCod: false })}>No</button><button type="button" className={form.isCod ? "active" : ""} onClick={() => onFormChange({ isCod: true })}>COD — RM10 fee</button></div><small>Internal record only. The Shopify checkout link remains unchanged.</small></div>
         <label>Payment receipt files (PDF or images)<input type="file" multiple accept="application/pdf,image/png,image/jpeg,image/webp" onChange={(event) => onReceiptFilesChange(Array.from(event.target.files || []))} /></label>
         {receiptFiles.length > 0 && <small>{receiptFiles.length} file{receiptFiles.length === 1 ? "" : "s"} attached: {receiptFiles.map((file) => file.name).join(", ")}</small>}
         <button className="button primary large" disabled={busy === "create"} type="submit">{busy === "create" ? "Creating..." : "Generate Shopify link"}</button>
@@ -7754,7 +7757,7 @@ function ManualOrdersWorkspacePage({
               <td>{order.productDisplayName}</td>
               <td>{order.shippingRegion === "EAST" ? "East Malaysia" : "West Malaysia"}</td>
               <td><code>{order.productDiscountCode}</code></td>
-              <td><span className={`manual-order-status ${order.status}`}>{statusLabel(order.status)}</span></td>
+              <td><span className={`manual-order-status ${order.status}`}>{statusLabel(order.status)}</span>{order.isCod && <span className="shipping-badge">COD</span>}</td>
               <td>{order.shopifyOrderName ? <strong>{order.shopifyOrderName}</strong> : "-"}</td>
               <td><div className="manual-order-row-actions">
                 <button className="button secondary small" type="button" onClick={() => onCopy(order.customerLink, "Customer link")}>Copy Link</button>

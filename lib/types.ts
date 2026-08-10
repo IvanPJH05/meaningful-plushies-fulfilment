@@ -421,6 +421,7 @@ export type ManualOrder = {
   shopifyVariantId: string;
   productPath: string;
   shippingRegion: "WEST" | "EAST";
+  isCod: boolean;
   productDiscountCode: string;
   productDiscountShopifyId: string;
   shippingDiscountCode: string;

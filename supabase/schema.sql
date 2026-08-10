@@ -28,6 +28,7 @@ create table if not exists public.manual_orders (
   shopify_variant_id text not null default '',
   product_path text not null,
   shipping_region text not null check (shipping_region in ('WEST', 'EAST')),
+  is_cod boolean not null default false,
   product_discount_code text not null unique,
   product_discount_shopify_id text not null default '',
   shipping_discount_code text,

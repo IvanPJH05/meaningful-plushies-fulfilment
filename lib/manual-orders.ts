@@ -13,6 +13,7 @@ export type ManualOrderCreateInput = {
   productKey: string;
   character?: string;
   shippingRegion: "WEST" | "EAST";
+  isCod?: boolean;
 };
 
 type DiscountUserError = { field?: string[]; message?: string; code?: string };
@@ -388,7 +389,7 @@ async function createProductDiscount(
     }
   `, {
     basicCodeDiscount: {
-      title: `Manual Order - ${input.customerName.trim()} - ${normalizeManualOrderPhone(input.phone).normalized}`,
+      title: `${input.isCod ? "COD Manual Order" : "Manual Order"} - ${input.customerName.trim()} - ${normalizeManualOrderPhone(input.phone).normalized}`,
       code,
       startsAt: new Date().toISOString(),
       endsAt: expiresAt,
@@ -397,6 +398,8 @@ async function createProductDiscount(
       context: { all: "ALL" },
       combinesWith: { shippingDiscounts: true },
       customerGets: {
+        // COD is an internal RM10 fee marker. The Shopify checkout stays the
+        // same as every other Manual Order: the product is fully discounted.
         value: { percentage: 1 },
         items: variantId
           ? { products: { productVariantsToAdd: [variantId] } }
@@ -444,6 +447,7 @@ export async function createManualOrderDiscounts(input: ManualOrderCreateInput):
     shopifyVariantId: resolvedProduct.variantId || product.shopifyVariantId || "",
     productPath: resolvedProduct.productPath || product.productPath,
     shippingRegion: input.shippingRegion,
+    isCod: Boolean(input.isCod),
     productDiscountCode: productCode,
     productDiscountShopifyId,
     shippingDiscountCode: noShippingDiscountCode,
