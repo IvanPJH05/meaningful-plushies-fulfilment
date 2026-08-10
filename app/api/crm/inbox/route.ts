@@ -38,6 +38,7 @@ import {
 import { whatsAppDisplayTextFromMessage } from "@/src/modules/whatsapp/webhook-normalizer";
 import { createManualOrderDiscounts } from "@/lib/manual-orders";
 import { saveManualOrder } from "@/lib/supabase";
+import { crmFlowPhraseMatchesMessage } from "@/lib/crm-flow-trigger";
 import { buildManualOrderReadyWhatsAppMessage } from "@/src/modules/sales/paid-manual-order-flow";
 
 export const runtime = "nodejs";
@@ -63,26 +64,8 @@ function normalizedMessageText(body: string | null | undefined) {
   return (body || "").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
-function normalizeTriggerPhrase(value: string) {
-  // Ignore Unicode, punctuation and emoji differences so configured phrases
-  // can be found naturally inside longer WhatsApp messages.
-  return value
-    .normalize("NFKC")
-    .replace(/[\u200B-\u200D\uFEFF\uFE0E\uFE0F]/g, "")
-    .replace(/[\u2018\u2019]/g, "'")
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim()
-    .replace(/\s+/g, " ")
-    .toLowerCase();
-}
-
 function flowMatchesExactTriggerPhrase(flow: { triggerWords: string[] }, messageText: string) {
-  const normalizedText = normalizeTriggerPhrase(messageText);
-  if (!normalizedText) return false;
-  return flow.triggerWords.some((phrase) => {
-    const normalizedPhrase = normalizeTriggerPhrase(phrase);
-    return normalizedPhrase && ` ${normalizedText} `.includes(` ${normalizedPhrase} `);
-  });
+  return flow.triggerWords.some((phrase) => crmFlowPhraseMatchesMessage(phrase, messageText));
 }
 
 const flowMetaPattern = /\n?\n?<!--crm-flow-meta:([\s\S]*?)-->\s*$/;
@@ -120,8 +103,7 @@ function flowTriggerRules(notes: string | null | undefined) {
 function flowMatchesExactTriggerEvent(flow: { triggerWords: string[]; notes: string | null }, messageText: string, event: "message_received" | "message_sent") {
   const rules = flowTriggerRules(flow.notes);
   if (rules.length) {
-    const normalizedText = normalizeTriggerPhrase(messageText);
-    return rules.some((rule) => rule.event === event && normalizeTriggerPhrase(rule.phrase) === normalizedText);
+    return rules.some((rule) => rule.event === event && crmFlowPhraseMatchesMessage(rule.phrase, messageText));
   }
   return flowTriggerEvent(flow.notes) === event && flowMatchesExactTriggerPhrase(flow, messageText);
 }

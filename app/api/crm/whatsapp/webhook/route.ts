@@ -41,6 +41,7 @@ import {
   normalizeWhatsAppWebhookPayload,
   type NormalizedWhatsAppMessageSource,
 } from "@/src/modules/whatsapp/webhook-normalizer";
+import { crmFlowPhraseMatchesMessage } from "@/lib/crm-flow-trigger";
 
 export const runtime = "nodejs";
 
@@ -396,26 +397,8 @@ async function claimFlowSelection(args: {
   }
 }
 
-function normalizeTriggerPhrase(value: string) {
-  // WhatsApp can alter Unicode, punctuation, emoji and invisible joiners.
-  // Keep only the words so a configured phrase can be found inside a sentence.
-  return value
-    .normalize("NFKC")
-    .replace(/[\u200B-\u200D\uFEFF\uFE0E\uFE0F]/g, "")
-    .replace(/[\u2018\u2019]/g, "'")
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim()
-    .replace(/\s+/g, " ")
-    .toLowerCase();
-}
-
 function flowMatchesExactTriggerPhrase(flow: { triggerWords: string[] }, inboundText: string) {
-  const normalizedInboundText = normalizeTriggerPhrase(inboundText);
-  if (!normalizedInboundText) return false;
-  return flow.triggerWords.some((phrase) => {
-    const normalizedPhrase = normalizeTriggerPhrase(phrase);
-    return normalizedPhrase && ` ${normalizedInboundText} `.includes(` ${normalizedPhrase} `);
-  });
+  return flow.triggerWords.some((phrase) => crmFlowPhraseMatchesMessage(phrase, inboundText));
 }
 
 const flowMetaPattern = /\n?\n?<!--crm-flow-meta:([\s\S]*?)-->\s*$/;
@@ -453,8 +436,7 @@ function flowTriggerRules(notes: string | null | undefined) {
 function flowMatchesExactTriggerEvent(flow: { triggerWords: string[]; notes: string | null }, text: string, event: "message_received" | "message_sent") {
   const rules = flowTriggerRules(flow.notes);
   if (rules.length) {
-    const normalizedText = normalizeTriggerPhrase(text);
-    return rules.some((rule) => rule.event === event && normalizeTriggerPhrase(rule.phrase) === normalizedText);
+    return rules.some((rule) => rule.event === event && crmFlowPhraseMatchesMessage(rule.phrase, text));
   }
   return flowTriggerEvent(flow.notes) === event && flowMatchesExactTriggerPhrase(flow, text);
 }
