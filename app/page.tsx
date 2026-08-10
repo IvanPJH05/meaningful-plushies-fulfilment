@@ -8144,6 +8144,30 @@ function FormalAccountingWorkspacePage({
       lineIndex: index,
     })));
   const journalRows = [...manualJournalRows, ...generatedJournalRows, ...generatedCogsJournalRows].sort((a, b) => a.date.localeCompare(b.date) || a.reference.localeCompare(b.reference) || a.lineIndex - b.lineIndex || a.id.localeCompare(b.id));
+  function downloadGeneralJournalCsv() {
+    const csvCell = (value: string | number) => {
+      const text = String(value ?? "");
+      return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+    const headers = ["Date", "Reference", "Account", "Account section", "Description", "Debit (RM)", "Credit (RM)"];
+    const lines = journalRows.map((row) => [
+      row.date,
+      row.reference,
+      row.account,
+      row.accountNote,
+      row.description,
+      row.debit ? row.debit.toFixed(2) : "",
+      row.credit ? row.credit.toFixed(2) : "",
+    ].map(csvCell).join(","));
+    const csv = [headers.map(csvCell).join(","), ...lines].join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `meaningful-plushies-general-journal-${new Date().toISOString().slice(0, 10)}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
   function useThisMonthPeriod() {
     setAccountingPeriodMode("this_month");
     setAccountingStartDate(monthStartKey());
@@ -8442,6 +8466,7 @@ function FormalAccountingWorkspacePage({
       <MoneyStat label="Journal credits" value={totalCredits} tone="collected" />
       <MoneyStat label="Out of balance" value={Math.abs(totalDebits - totalCredits)} tone={Math.abs(totalDebits - totalCredits) > 0.01 ? "fees" : "transfer"} />
     </section>
+    <div className="ledger-export-actions no-print"><button className="button primary" disabled={!journalRows.length} onClick={downloadGeneralJournalCsv}>Download General Journal CSV</button></div>
     <section className="card accounting-table-card general-journal-card"><h3>Journal entries</h3><div className="table-scroll general-journal-scroll"><table className="orders-table general-journal-table"><colgroup><col className="journal-date-col" /><col className="journal-ref-col" /><col className="journal-account-col" /><col className="journal-description-col" /><col className="journal-money-col" /><col className="journal-money-col" /></colgroup><thead><tr><th>Date</th><th>Reference</th><th>Account</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead><tbody>{journalRows.map((row, index) => {
       const nextRow = journalRows[index + 1];
       const isGroupEnd = !nextRow || nextRow.reference !== row.reference || nextRow.date !== row.date;
