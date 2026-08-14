@@ -94,7 +94,7 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
 
   if (!supabaseConfigured) return <section className={styles.empty}><h1>Monthly Journal</h1><p>Connect Supabase before using this workspace.</p></section>;
 
-  return <section className={focused ? styles.workspaceFocus : styles.workspace}>
+  return <section className={styles.workspace}>
     <header className={styles.header}>
       <div><p className={styles.eyebrow}>SEPARATE ACCOUNTING WORKSPACE</p><h1>Monthly Journal</h1><p>Your new accounting workspace. It does not change Book Keeping or Accounting.</p></div>
       <div className={styles.headerActions}><button className={styles.refresh} type="button" onClick={toggleFocus}>{focused ? "Exit focus" : "Focus full screen"}</button><button className={styles.refresh} type="button" onClick={() => void loadData()}>{loading ? "Loading…" : "Refresh"}</button></div>
