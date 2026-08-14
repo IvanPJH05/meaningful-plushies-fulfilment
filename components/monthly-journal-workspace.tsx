@@ -49,6 +49,7 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
   useEffect(() => () => {
     document.querySelector<HTMLElement>(".side-nav")?.style.removeProperty("display");
     document.querySelector<HTMLElement>(".topbar")?.style.removeProperty("display");
+    document.querySelector<HTMLElement>(".app-shell")?.style.removeProperty("grid-template-columns");
   }, []);
 
   function toggleFocus() {
@@ -56,8 +57,10 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
     setFocused(next);
     const sidebar = document.querySelector<HTMLElement>(".side-nav");
     const topbar = document.querySelector<HTMLElement>(".topbar");
+    const shell = document.querySelector<HTMLElement>(".app-shell");
     if (sidebar) sidebar.style.display = next ? "none" : "";
     if (topbar) topbar.style.display = next ? "none" : "";
+    if (shell) shell.style.gridTemplateColumns = next ? "minmax(0, 1fr)" : "";
   }
 
   const accountById = useMemo(() => new Map(accounts.map((account) => [account.id, account])), [accounts]);
