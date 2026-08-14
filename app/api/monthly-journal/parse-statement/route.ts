@@ -81,8 +81,8 @@ function parseRows(text: string): ParsedRow[] {
   const year = statementDate(text)?.year ?? new Date().getFullYear();
   const rows: ParsedRow[] = [];
   for (const line of text.split(/\r?\n/).map((value) => value.replace(/\s+/g, " ").trim()).filter(Boolean)) {
-    const maybank = line.match(/^(\d{1,2}\/\d{1,2})\s+(.+?)\s+([\d,]+\.\d{2})\s*([+-])\s*([\d,]+\.\d{2})(?:\s*DR)?$/i);
-    if (maybank) { rows.push({ paidDate: dateFor(maybank[1], year), description: maybank[2], moneyIn: maybank[4] === "+" ? money(maybank[3]) : 0, moneyOut: maybank[4] === "-" ? money(maybank[3]) : 0, balance: money(maybank[5]) }); continue; }
+    const maybank = line.match(/^(\d{1,2}\/\d{1,2})\s*(.+?)([\d,]*\d?\.\d{2})\s*([+-])\s*([\d,]*\d?\.\d{2})(?:\s*DR)?$/i);
+    if (maybank) { const amount = money(maybank[3]); if (amount) rows.push({ paidDate: dateFor(maybank[1], year), description: maybank[2], moneyIn: maybank[4] === "+" ? amount : 0, moneyOut: maybank[4] === "-" ? amount : 0, balance: money(maybank[5]) }); continue; }
     const publicBank = line.match(/^(\d{1,2}\/\d{1,2})\s+(.+?)\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})(?:\s*DR)?$/i);
     if (publicBank && /\b(?:CR|DR)\b|^DEP-ECP\b/i.test(publicBank[2])) { const credit = /^DEP-ECP\b/i.test(publicBank[2]) || (/\bCR\b/i.test(publicBank[2]) && !/\bDR\b/i.test(publicBank[2])); rows.push({ paidDate: dateFor(publicBank[1], year), description: publicBank[2], moneyIn: credit ? money(publicBank[3]) : 0, moneyOut: credit ? 0 : money(publicBank[3]), balance: money(publicBank[4]) }); }
   }
