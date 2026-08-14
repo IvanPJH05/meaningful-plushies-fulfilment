@@ -26,6 +26,7 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
   const [accountName, setAccountName] = useState("");
   const [accountCode, setAccountCode] = useState("");
   const [classification, setClassification] = useState<Classification>("asset");
+  const [focused, setFocused] = useState(false);
   const [journalForm, setJournalForm] = useState({ paidDate: today(), accountingDate: today(), bank: "", note: "", description: "", debit: "", credit: "", amount: "" });
 
   async function loadData() {
@@ -45,6 +46,19 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
 
   useEffect(() => { void loadData(); }, []);
   useEffect(() => { setView(initialView); }, [initialView]);
+  useEffect(() => () => {
+    document.querySelector<HTMLElement>(".side-nav")?.style.removeProperty("display");
+    document.querySelector<HTMLElement>(".topbar")?.style.removeProperty("display");
+  }, []);
+
+  function toggleFocus() {
+    const next = !focused;
+    setFocused(next);
+    const sidebar = document.querySelector<HTMLElement>(".side-nav");
+    const topbar = document.querySelector<HTMLElement>(".topbar");
+    if (sidebar) sidebar.style.display = next ? "none" : "";
+    if (topbar) topbar.style.display = next ? "none" : "";
+  }
 
   const accountById = useMemo(() => new Map(accounts.map((account) => [account.id, account])), [accounts]);
   const accountsByType = useMemo(() => Object.keys(labels).map((type) => ({ type: type as Classification, accounts: accounts.filter((account) => account.classification === type) })), [accounts]);
@@ -80,10 +94,10 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
 
   if (!supabaseConfigured) return <section className={styles.empty}><h1>Monthly Journal</h1><p>Connect Supabase before using this workspace.</p></section>;
 
-  return <section className={styles.workspace}>
+  return <section className={focused ? styles.workspaceFocus : styles.workspace}>
     <header className={styles.header}>
       <div><p className={styles.eyebrow}>SEPARATE ACCOUNTING WORKSPACE</p><h1>Monthly Journal</h1><p>Your new accounting workspace. It does not change Book Keeping or Accounting.</p></div>
-      <div className={styles.headerActions}><button className={styles.refresh} type="button" onClick={() => void document.documentElement.requestFullscreen?.()}>Focus full screen</button><button className={styles.refresh} type="button" onClick={() => void loadData()}>{loading ? "Loading…" : "Refresh"}</button></div>
+      <div className={styles.headerActions}><button className={styles.refresh} type="button" onClick={toggleFocus}>{focused ? "Exit focus" : "Focus full screen"}</button><button className={styles.refresh} type="button" onClick={() => void loadData()}>{loading ? "Loading…" : "Refresh"}</button></div>
     </header>
     {message && <p className={styles.message}>{message}</p>}
 
