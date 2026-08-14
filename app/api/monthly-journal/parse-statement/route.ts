@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import pdf from "pdf-parse";
+import pdf from "pdf-parse/lib/pdf-parse.js";
 
 type ParsedRow = { paidDate: string; description: string; moneyIn: number; moneyOut: number; balance: number | null };
 const money = (value: string) => Number(value.replace(/,/g, ""));
@@ -8,7 +8,7 @@ const dateFor = (dayMonth: string, fallbackYear: number) => {
   return `${fallbackYear}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 };
 
-function parseRows(text: string, bank: string): ParsedRow[] {
+function parseRows(text: string): ParsedRow[] {
   const year = Number((text.match(/(?:statement date|tarikh penyata)[^\d]*(?:\d{1,2})[\s/]+(?:\d{1,2}|[a-z]{3,9})[\s/]+(20\d{2})/i) || [])[1] || new Date().getFullYear());
   const rows: ParsedRow[] = [];
   for (const line of text.split(/\r?\n/).map((value) => value.replace(/\s+/g, " ").trim()).filter(Boolean)) {
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     const text = (await pdf(Buffer.from(await file.arrayBuffer()))).text;
     const bank = requestedBank || (/maybank|malayan banking/i.test(text) ? "Maybank" : /public bank|penyata akaun/i.test(text) ? "Public Bank" : "");
     if (!bank) return NextResponse.json({ error: "This PDF is not recognised. Choose Maybank or Public Bank." }, { status: 400 });
-    const rows = parseRows(text, bank);
+    const rows = parseRows(text);
     if (!rows.length) return NextResponse.json({ error: "No transaction rows were found in this PDF." }, { status: 400 });
     return NextResponse.json({ bank, rows });
   } catch { return NextResponse.json({ error: "Could not read this PDF." }, { status: 400 }); }
