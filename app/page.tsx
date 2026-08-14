@@ -76,6 +76,7 @@ import {
 } from "../lib/supabase";
 import { manualOrderProducts } from "../lib/manual-order-products";
 import { orderStatuses, type AccountingBankStatementLine, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type AiAccountantReview, type CommissionStatus, type ContentIdeaItem, type ContentIdeaReference, type ContentPlanItem, type CreatorCommission, type CreatorPayout, type CreatorProfile, type CreatorStatus, type CreatorTier, type DashboardAccount, type EnvelopePrintSettings, type ManualOrder, type MetaAdsEnvironment, type MetaAdsInsight, type MetaAdsSummary, type MetaCapiLog, type MetaCapiSettings, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesConsumptionMapping, type SalesFeeSetting, type StockSetting, type UserRole, type WhatsAppLead, type WhatsAppLeadStatus } from "../lib/types";
+import { MonthlyJournalWorkspace } from "../components/monthly-journal-workspace";
 
 type Session = DashboardSession;
 type View =
@@ -85,10 +86,11 @@ type View =
   | "accounting_other_income"
   | "accounting_bank_reconciliation" | "accounting_product_profitability" | "accounting_marketing_profitability" | "accounting_cash_position"
   | "accounting_tax_reports" | "accounting_settings" | "accounting_files" | "accounting_general_journal" | "accounting_t_accounts" | "accounting_unit_costs" | "accounting_financial_reports"
+  | "monthly_journal"
   | "content_dashboard" | "content_plan" | "content_ideas"
   | "ads_dashboard" | "manual_orders_dashboard" | "manual_orders_preorders" | "manual_orders_leads"
   | "creator_dashboard" | "creator_accounts" | "creator_sales" | "creator_commissions" | "creator_payouts" | "creator_analytics" | "creator_free_samples";
-type Workspace = "fulfilment" | "manual_orders" | "accounting" | "formal_accounting" | "creator" | "inventory" | "reports" | "content" | "ads" | "settings";
+type Workspace = "fulfilment" | "manual_orders" | "accounting" | "formal_accounting" | "monthly_journal" | "creator" | "inventory" | "reports" | "content" | "ads" | "settings";
 type SalesRange = "active" | "today" | "7d" | "30d" | "lifetime";
 type SortKey = "orderNumber" | "importedAt" | "updatedAt";
 type SortDirection = "asc" | "desc";
@@ -608,19 +610,21 @@ const accountingViews: readonly View[] = [
   "accounting_settings",
 ];
 const formalAccountingViews: readonly View[] = ["accounting_general_journal", "accounting_t_accounts", "accounting_unit_costs", "accounting_financial_reports"];
+const monthlyJournalViews: readonly View[] = ["monthly_journal"];
 const contentViews: readonly View[] = ["content_dashboard", "content_plan", "content_ideas"];
 const adsViews: readonly View[] = ["ads_dashboard"];
 const manualOrderViews: readonly View[] = ["manual_orders_dashboard", "manual_orders_preorders", "manual_orders_leads"];
 const manualOrderCharacters = ["Billy", "Tootsie", "Hunnie", "Dragon Warrior"] as const;
 const creatorViews: readonly View[] = ["creator_dashboard", "creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
 const creatorAdminViews: readonly View[] = ["creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
-const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "meta_capi", "stock", "sales_report", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...contentViews, ...adsViews, ...creatorViews];
-const adminOnlyViews = new Set<View>(["history", "settings", "meta_capi", "stock", "sales_report", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...contentViews, ...adsViews, ...creatorAdminViews]);
+const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "meta_capi", "stock", "sales_report", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...adsViews, ...creatorViews];
+const adminOnlyViews = new Set<View>(["history", "settings", "meta_capi", "stock", "sales_report", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...adsViews, ...creatorAdminViews]);
 const workspaceDefaultViews: Record<Workspace, View> = {
   fulfilment: "orders",
   manual_orders: "manual_orders_dashboard",
   accounting: "accounting_dashboard",
   formal_accounting: "accounting_general_journal",
+  monthly_journal: "monthly_journal",
   creator: "creator_dashboard",
   inventory: "stock",
   reports: "sales_report",
@@ -633,6 +637,7 @@ const workspaceLabels: Record<Workspace, string> = {
   manual_orders: "Manual Orders",
   accounting: "Book Keeping",
   formal_accounting: "Accounting",
+  monthly_journal: "Monthly Journal",
   creator: "Creator Program",
   inventory: "Inventory",
   reports: "Reports",
@@ -812,6 +817,7 @@ const formalAccountingNavItems: NavItem[] = [
   { view: "accounting_unit_costs", label: "Unit Costs", icon: "stock" },
   { view: "accounting_financial_reports", label: "Financial Reports", icon: "report" },
 ];
+const monthlyJournalNavItems: NavItem[] = [{ view: "monthly_journal", label: "Monthly Journal", icon: "ledger" }];
 
 const creatorNavItems: NavItem[] = [
   { view: "creator_dashboard", label: "Creator Dashboard", icon: "creator" },
@@ -1241,6 +1247,7 @@ function workspaceForView(view: View): Workspace {
   if (contentViews.includes(view)) return "content";
   if (manualOrderViews.includes(view)) return "manual_orders";
   if (formalAccountingViews.includes(view)) return "formal_accounting";
+  if (monthlyJournalViews.includes(view)) return "monthly_journal";
   if (accountingViews.includes(view)) return "accounting";
   if (view === "stock") return "inventory";
   if (view === "sales_report") return "reports";
@@ -1253,6 +1260,7 @@ function navItemsForWorkspace(workspace: Workspace, role: UserRole): NavItem[] {
   if (role !== "admin") return fulfilmentNavItems;
   if (workspace === "accounting") return accountingNavItems;
   if (workspace === "formal_accounting") return formalAccountingNavItems;
+  if (workspace === "monthly_journal") return monthlyJournalNavItems;
   if (workspace === "creator") return creatorAdminNavItems;
   if (workspace === "inventory") return inventoryNavItems;
   if (workspace === "reports") return reportsNavItems;
@@ -1280,7 +1288,7 @@ function viewTitle(view: View) {
     manual_orders_leads: "Leads",
   };
   if (titleOverrides[view]) return titleOverrides[view]!;
-  const item = [...fulfilmentNavItems, ...fulfilmentAdminNavItems, ...manualOrderNavItems, ...accountingNavItems, ...formalAccountingNavItems, ...creatorAdminNavItems, ...inventoryNavItems, ...reportsNavItems, ...contentNavItems, ...adsNavItems, ...settingsNavItems]
+  const item = [...fulfilmentNavItems, ...fulfilmentAdminNavItems, ...manualOrderNavItems, ...accountingNavItems, ...formalAccountingNavItems, ...monthlyJournalNavItems, ...creatorAdminNavItems, ...inventoryNavItems, ...reportsNavItems, ...contentNavItems, ...adsNavItems, ...settingsNavItems]
     .find((navItem) => navItem.view === view);
   if (item) return item.label;
   return "Orders Dashboard";
@@ -5270,7 +5278,7 @@ export default function Home() {
 
   const workspace = workspaceForView(view);
   const availableWorkspaces: (Workspace | "crm")[] = session.role === "admin"
-    ? ["fulfilment", "manual_orders", "crm", "accounting", "formal_accounting", "creator", "inventory", "reports", "content", "ads", "settings"]
+    ? ["fulfilment", "manual_orders", "crm", "accounting", "formal_accounting", "monthly_journal", "creator", "inventory", "reports", "content", "ads", "settings"]
     : session.role === "creator" ? ["creator"] : ["fulfilment"];
   const sidebarNavItems = navItemsForWorkspace(workspace, session.role);
   const workspaceTitle = workspaceLabels[workspace];
@@ -5444,6 +5452,8 @@ export default function Home() {
         onRemoveSalesConsumptionRule={removeSalesConsumptionRule}
         categoryName={categoryName}
       />}
+
+      {workspace === "monthly_journal" && session.role === "admin" && <MonthlyJournalWorkspace />}
 
       {workspace === "creator" && (session.role === "admin" || session.role === "creator") && <CreatorProgramWorkspacePage
         view={view}
