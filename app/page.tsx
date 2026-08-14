@@ -86,7 +86,7 @@ type View =
   | "accounting_other_income"
   | "accounting_bank_reconciliation" | "accounting_product_profitability" | "accounting_marketing_profitability" | "accounting_cash_position"
   | "accounting_tax_reports" | "accounting_settings" | "accounting_files" | "accounting_general_journal" | "accounting_t_accounts" | "accounting_unit_costs" | "accounting_financial_reports"
-  | "monthly_journal"
+  | "monthly_journal_inbox" | "monthly_journal_import" | "monthly_journal_shopee" | "monthly_journal_shortcuts" | "monthly_journal_general_journal" | "monthly_journal_accounts"
   | "content_dashboard" | "content_plan" | "content_ideas"
   | "ads_dashboard" | "manual_orders_dashboard" | "manual_orders_preorders" | "manual_orders_leads"
   | "creator_dashboard" | "creator_accounts" | "creator_sales" | "creator_commissions" | "creator_payouts" | "creator_analytics" | "creator_free_samples";
@@ -610,7 +610,7 @@ const accountingViews: readonly View[] = [
   "accounting_settings",
 ];
 const formalAccountingViews: readonly View[] = ["accounting_general_journal", "accounting_t_accounts", "accounting_unit_costs", "accounting_financial_reports"];
-const monthlyJournalViews: readonly View[] = ["monthly_journal"];
+const monthlyJournalViews: readonly View[] = ["monthly_journal_inbox", "monthly_journal_import", "monthly_journal_shopee", "monthly_journal_shortcuts", "monthly_journal_general_journal", "monthly_journal_accounts"];
 const contentViews: readonly View[] = ["content_dashboard", "content_plan", "content_ideas"];
 const adsViews: readonly View[] = ["ads_dashboard"];
 const manualOrderViews: readonly View[] = ["manual_orders_dashboard", "manual_orders_preorders", "manual_orders_leads"];
@@ -624,7 +624,7 @@ const workspaceDefaultViews: Record<Workspace, View> = {
   manual_orders: "manual_orders_dashboard",
   accounting: "accounting_dashboard",
   formal_accounting: "accounting_general_journal",
-  monthly_journal: "monthly_journal",
+  monthly_journal: "monthly_journal_inbox",
   creator: "creator_dashboard",
   inventory: "stock",
   reports: "sales_report",
@@ -817,7 +817,14 @@ const formalAccountingNavItems: NavItem[] = [
   { view: "accounting_unit_costs", label: "Unit Costs", icon: "stock" },
   { view: "accounting_financial_reports", label: "Financial Reports", icon: "report" },
 ];
-const monthlyJournalNavItems: NavItem[] = [{ view: "monthly_journal", label: "Monthly Journal", icon: "ledger" }];
+const monthlyJournalNavItems: NavItem[] = [
+  { view: "monthly_journal_inbox", label: "Bank Statement Inbox", icon: "ledger" },
+  { view: "monthly_journal_import", label: "Import PDF Statement", icon: "import" },
+  { view: "monthly_journal_shopee", label: "Shopee PayLater", icon: "cash" },
+  { view: "monthly_journal_shortcuts", label: "Shortcuts", icon: "settings" },
+  { view: "monthly_journal_general_journal", label: "General Journal", icon: "ledger" },
+  { view: "monthly_journal_accounts", label: "Chart of Accounts", icon: "accounting" },
+];
 
 const creatorNavItems: NavItem[] = [
   { view: "creator_dashboard", label: "Creator Dashboard", icon: "creator" },
@@ -5453,7 +5460,7 @@ export default function Home() {
         categoryName={categoryName}
       />}
 
-      {workspace === "monthly_journal" && session.role === "admin" && <MonthlyJournalWorkspace />}
+      {workspace === "monthly_journal" && session.role === "admin" && <MonthlyJournalWorkspace initialView={view.replace("monthly_journal_", "") as "inbox" | "import" | "shopee" | "shortcuts" | "general_journal" | "accounts"} />}
 
       {workspace === "creator" && (session.role === "admin" || session.role === "creator") && <CreatorProgramWorkspacePage
         view={view}
