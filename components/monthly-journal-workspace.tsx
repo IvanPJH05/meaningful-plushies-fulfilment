@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { supabase, supabaseConfigured } from "../lib/supabase";
 import { MonthlyJournalInbox } from "./monthly-journal-inbox";
+import { MonthlyJournalImport } from "./monthly-journal-import";
 import styles from "./monthly-journal-workspace.module.css";
 
 type JournalView = "accounts" | "general_journal" | "inbox" | "import" | "shortcuts" | "shopee";
@@ -101,7 +102,7 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
     </div>}
 
     {view === "inbox" && <MonthlyJournalInbox />}
-    {view === "import" && <section className={styles.card}><p className={styles.eyebrow}>IMPORT PDF STATEMENT</p><h2>Import statements from the Journal Inbox</h2><p>Choose Bank Statement Inbox in the sidebar. Its import control reads Maybank and Public Bank PDF statements and skips exact duplicates.</p></section>}
+    {view === "import" && <section className={styles.card}><p className={styles.eyebrow}>IMPORT PDF STATEMENT</p><h2>Import a bank statement</h2><MonthlyJournalImport /></section>}
     {view === "shortcuts" && <section className={styles.card}><p className={styles.eyebrow}>POSTING SHORTCUTS</p><h2>Use the quick buttons in Bank Statement Inbox</h2><p>Credit sales and Shopify subscription – previous month are available above the imported rows.</p></section>}
     {view === "shopee" && <section className={styles.card}><p className={styles.eyebrow}>SHOPEE PAYLATER</p><h2>Shopee PayLater</h2><p>Use the existing Shopee PayLater account from your new Chart of Accounts for purchases and payments.</p></section>}
   </section>;
