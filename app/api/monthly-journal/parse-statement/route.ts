@@ -124,6 +124,12 @@ function parseTouchNGo(text: string): ParsedRow[] {
     const joined = current.details.join(" ").replace(/\s+/g, " ").trim();
     const amounts = [...joined.matchAll(/RM\s*([\d,]+\.\d{2})/gi)].map((match) => money(match[1]));
     if (!amounts.length) { current = null; return; }
+    // The first long number is the TNG transaction reference. It is useful for
+    // identifying otherwise identical wallet receipts and payments, so keep it
+    // in a readable form instead of discarding it with the technical metadata.
+    const reference = current.details
+      .map((line) => line.trim())
+      .find((line) => /^20\d{12,}[A-Z0-9]*$/i.test(line)) ?? "";
     const cleanedDetails = current.details.map((line) => line
       .replace(/\b20\d{6,}[A-Z0-9]*\b/gi, "")
       .replace(/\b(?:TNGOW\w*|MY\d{8,}|MDI[\w-]{16,})\b/gi, "")
@@ -131,12 +137,18 @@ function parseTouchNGo(text: string): ParsedRow[] {
       .replace(/^\d{8,}$/g, "")
       .replace(/\s+/g, " ").trim())
       .filter((line) => line && !/^\d+$/.test(line) && line.length < 150);
-    const transactionType = current.transactionType.replace(/[_-]+/g, " ").replace(/\d{8,}.*$/, "").replace(/\s+/g, " ").trim();
+    const transactionType = current.transactionType
+      .replace(/[_-]+/g, " ")
+      .replace(/receivefrom/gi, "receive from")
+      .replace(/transferto/gi, "transfer to")
+      .replace(/\d{8,}.*$/, "")
+      .replace(/\s+/g, " ").trim();
     const detail = cleanedDetails.filter((line) => line.toLowerCase() !== transactionType.toLowerCase()).join(" · ");
-    const description = [transactionType, detail].filter(Boolean).join(" — ").slice(0, 500);
+    const compactDescription = [transactionType, detail].filter(Boolean).join(" — ").slice(0, 500);
+    const description = [compactDescription, reference ? `Ref ${reference}` : ""].filter(Boolean).join(" · ").slice(0, 500);
     const moneyIn = /(?:auto reload|receive from wallet|duitnow[_\s-]*receive|refund|cashback|top.?up)/i.test(transactionType) ? amounts[amounts.length - 2] ?? amounts[0] : 0;
     const amount = amounts.length >= 2 ? amounts[amounts.length - 2] : amounts[0];
-    rows.push({ paidDate: current.paidDate, description, moneyIn, moneyOut: moneyIn ? 0 : amount, balance: amounts.length >= 2 ? amounts[amounts.length - 1] : null });
+    rows.push({ paidDate: current.paidDate, description, compactDescription, moneyIn, moneyOut: moneyIn ? 0 : amount, balance: amounts.length >= 2 ? amounts[amounts.length - 1] : null });
     current = null;
   };
 
