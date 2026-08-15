@@ -5,7 +5,8 @@ import { supabase } from "../lib/supabase";
 
 type Account = { id: string; name: string; classification: string };
 type Row = { id: string; bank: string; paid_date: string; accounting_date: string; description: string; money_in: number; money_out: number; status: string; note: string; receipt_path: string | null };
-type Shortcut = { id: string; name: string; transaction_direction: "money_in" | "money_out"; target_account_id: string | null; accounting_date_rule: "same_day" | "previous_month_end"; journal_note_template: string; description_template: string };
+type Shortcut = { id: string; name: string; transaction_direction: "money_in" | "money_out"; bank_filter: "any" | "Maybank" | "Public Bank"; accounting_date_rule: "same_day" | "previous_month_end"; journal_note_template: string; description_template: string; debit_source: "statement_bank" | "account"; debit_account_id: string | null; credit_source: "statement_bank" | "account"; credit_account_id: string | null };
+type PostingDetails = { account: string; classification: string; note: string; description: string; debitAccountId?: string; creditAccountId?: string };
 const money = (value: number) => `RM ${value.toLocaleString("en-MY", { minimumFractionDigits: 2 })}`;
 const monthEnd = (date: string) => { const day = new Date(`${date}T00:00:00`); return new Date(day.getFullYear(), day.getMonth(), 0).toISOString().slice(0, 10); };
 
@@ -27,7 +28,7 @@ export function MonthlyJournalInbox() {
     const [bankRows, accountRows, shortcutRows] = await Promise.all([
       supabase.from("monthly_journal_bank_rows").select("id,bank,paid_date,accounting_date,description,money_in,money_out,status,note,receipt_path").order("paid_date", { ascending: false }),
       supabase.from("monthly_journal_accounts").select("id,name,classification").eq("active", true).order("name"),
-      supabase.from("monthly_journal_shortcuts").select("id,name,transaction_direction,target_account_id,accounting_date_rule,journal_note_template,description_template").eq("active", true).order("created_at"),
+      supabase.from("monthly_journal_shortcuts").select("id,name,transaction_direction,bank_filter,accounting_date_rule,journal_note_template,description_template,debit_source,debit_account_id,credit_source,credit_account_id").eq("active", true).order("created_at"),
     ]);
     setRows((bankRows.data ?? []).map((row) => ({ ...row, money_in: Number(row.money_in), money_out: Number(row.money_out) })) as Row[]);
     setAccounts((accountRows.data ?? []) as Account[]);
@@ -70,12 +71,12 @@ export function MonthlyJournalInbox() {
     return path;
   }
 
-  async function post(row = active, details = form) {
+  async function post(row = active, details: PostingDetails = form) {
     if (!row || !supabase || !details.account) return setNotice("Choose a classification and account.");
     const amount = row.money_in || row.money_out;
     const bankId = bankAccount(row.bank);
-    const debit = row.money_in ? bankId : details.account;
-    const credit = row.money_in ? details.account : bankId;
+    const debit = details.debitAccountId ?? (row.money_in ? bankId : details.account);
+    const credit = details.creditAccountId ?? (row.money_in ? details.account : bankId);
     if (!debit || !credit) return setNotice(`Create Bank - ${row.bank} in Chart of Accounts first.`);
     let receiptPath: string | null = row.receipt_path;
     try { receiptPath = await uploadSource(row); } catch { return setNotice("Could not upload the source document."); }
@@ -91,14 +92,16 @@ export function MonthlyJournalInbox() {
   }
 
   async function applyCustomShortcut(shortcut: Shortcut) {
-    const selectedRows = rows.filter((row) => selected.includes(row.id) && row.status === "unposted" && (shortcut.transaction_direction === "money_in" ? row.money_in > 0 : row.money_out > 0));
-    const account = accounts.find((item) => item.id === shortcut.target_account_id);
+    const selectedRows = rows.filter((row) => selected.includes(row.id) && row.status === "unposted" && (shortcut.transaction_direction === "money_in" ? row.money_in > 0 : row.money_out > 0) && (shortcut.bank_filter === "any" || row.bank === shortcut.bank_filter));
     if (!selectedRows.length) return setNotice(`Select ${shortcut.transaction_direction === "money_in" ? "money-in" : "money-out"} rows for this shortcut.`);
-    if (!account) return setNotice("This shortcut's account no longer exists.");
     for (const row of selectedRows) {
       const accountingDate = shortcut.accounting_date_rule === "previous_month_end" ? monthEnd(row.paid_date) : row.paid_date;
       const replace = (template: string) => template.replaceAll("{month}", accountingDate.slice(0, 7)).replaceAll("{paid_date}", row.paid_date);
-      await post({ ...row, accounting_date: accountingDate }, { account: account.id, classification: account.classification, note: replace(shortcut.journal_note_template), description: replace(shortcut.description_template) || row.description });
+      const statementBankId = bankAccount(row.bank);
+      const debitAccountId = shortcut.debit_source === "statement_bank" ? statementBankId : shortcut.debit_account_id ?? "";
+      const creditAccountId = shortcut.credit_source === "statement_bank" ? statementBankId : shortcut.credit_account_id ?? "";
+      if (!debitAccountId || !creditAccountId || debitAccountId === creditAccountId) return setNotice("This shortcut needs two different valid accounts.");
+      await post({ ...row, accounting_date: accountingDate }, { account: debitAccountId, classification: "", note: replace(shortcut.journal_note_template), description: replace(shortcut.description_template) || row.description, debitAccountId, creditAccountId });
     }
     setNotice(`${selectedRows.length} row(s) posted with ${shortcut.name}.`);
   }
