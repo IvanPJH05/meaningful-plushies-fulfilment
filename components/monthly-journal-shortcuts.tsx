@@ -35,8 +35,9 @@ export function MonthlyJournalShortcuts({ accounts }: { accounts: Account[] }) {
 
   async function remove(shortcut: Shortcut) {
     if (!supabase) return;
-    const { error } = await supabase.from("monthly_journal_shortcuts").update({ active: false, updated_at: new Date().toISOString() }).eq("id", shortcut.id);
+    const { error } = await supabase.from("monthly_journal_shortcuts").delete().eq("id", shortcut.id);
     if (error) return setMessage(error.message);
+    setMessage(`${shortcut.name} was permanently removed.`);
     await load();
   }
 
