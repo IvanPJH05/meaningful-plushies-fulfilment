@@ -3,8 +3,12 @@
 import { ChangeEvent, DragEvent, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 
-const fingerprint = (row: { bank: string; paidDate: string; description: string; moneyIn: number; moneyOut: number; balance: number | null }) =>
-  `${row.bank}|${row.paidDate}|${row.description.toLowerCase().replace(/\s+/g, " ")}|${row.moneyIn}|${row.moneyOut}|${row.balance ?? ""}`;
+const fingerprint = (row: { bank: string; paidDate: string; description: string; moneyIn: number; moneyOut: number; balance: number | null }, occurrence = 1) => {
+  const base = `${row.bank}|${row.paidDate}|${row.description.toLowerCase().replace(/\s+/g, " ")}|${row.moneyIn}|${row.moneyOut}|${row.balance ?? ""}`;
+  // A statement can legitimately contain the exact same row more than once.
+  // Keep each occurrence, while still making re-importing that statement safe.
+  return occurrence === 1 ? base : `${base}|${occurrence}`;
+};
 
 export function MonthlyJournalImport() {
   const [message, setMessage] = useState("");
@@ -39,8 +43,13 @@ export function MonthlyJournalImport() {
     let upgraded = 0;
     let skipped = 0;
     const usedExisting = new Set<string>();
+    const seenFingerprints = new Map<string, number>();
     for (const row of result.rows) {
-      const fullFingerprint = fingerprint({ bank: result.bank, paidDate: row.paidDate, description: row.description, moneyIn: row.moneyIn, moneyOut: row.moneyOut, balance: row.balance });
+      const fingerprintRow = { bank: result.bank, paidDate: row.paidDate, description: row.description, moneyIn: row.moneyIn, moneyOut: row.moneyOut, balance: row.balance };
+      const baseFingerprint = fingerprint(fingerprintRow);
+      const occurrence = (seenFingerprints.get(baseFingerprint) ?? 0) + 1;
+      seenFingerprints.set(baseFingerprint, occurrence);
+      const fullFingerprint = fingerprint(fingerprintRow, occurrence);
       const compactDescription = (row.compactDescription || row.description).trim().toLowerCase();
       const matchingRows = (existingRows ?? []).filter((saved) => !usedExisting.has(saved.id) && saved.paid_date === row.paidDate && Number(saved.money_in) === row.moneyIn && Number(saved.money_out) === row.moneyOut && saved.description.trim().toLowerCase() === compactDescription);
       const savedWithSameBalance = matchingRows.find((saved) => Number(saved.balance) === Number(row.balance));
