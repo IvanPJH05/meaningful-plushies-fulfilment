@@ -22,6 +22,7 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
   const [view, setView] = useState<JournalView>(initialView);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [journalMonth, setJournalMonth] = useState("");
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [accountName, setAccountName] = useState("");
@@ -32,12 +33,29 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
   const [receiptPreview, setReceiptPreview] = useState<{ url: string; name: string } | null>(null);
   const [journalForm, setJournalForm] = useState({ paidDate: today(), accountingDate: today(), bank: "", note: "", description: "", debit: "", credit: "", amount: "" });
 
+  const loadAllEntries = async () => {
+    if (!supabase) return { data: [], error: null };
+    const data: Entry[] = [];
+    const pageSize = 1000;
+    for (let from = 0; ; from += pageSize) {
+      const response = await supabase
+        .from("monthly_journal_entries")
+        .select("id,paid_date,accounting_date,bank,bank_reference,journal_note,description,amount,debit_account_id,credit_account_id,receipt_path,created_at")
+        .order("accounting_date", { ascending: false })
+        .order("created_at", { ascending: false })
+        .range(from, from + pageSize - 1);
+      if (response.error || !response.data?.length) return { data, error: response.error };
+      data.push(...response.data as Entry[]);
+      if (response.data.length < pageSize) return { data, error: null };
+    }
+  };
+
   async function loadData() {
     if (!supabase) return;
     setLoading(true);
     const [accountsResult, entriesResult] = await Promise.all([
       supabase.from("monthly_journal_accounts").select("id,name,classification,account_code,active").eq("active", true).order("classification").order("name"),
-      supabase.from("monthly_journal_entries").select("id,paid_date,accounting_date,bank,bank_reference,journal_note,description,amount,debit_account_id,credit_account_id,receipt_path,created_at").order("accounting_date", { ascending: false }).order("created_at", { ascending: false }).limit(100),
+      loadAllEntries(),
     ]);
     if (accountsResult.error || entriesResult.error) setMessage(accountsResult.error?.message || entriesResult.error?.message || "Could not load Monthly Journal data.");
     else {
@@ -67,6 +85,8 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
   }
 
   const accountById = useMemo(() => new Map(accounts.map((account) => [account.id, account])), [accounts]);
+  const journalMonths = useMemo(() => [...new Set(entries.map((entry) => entry.accounting_date.slice(0, 7)))].sort().reverse(), [entries]);
+  const visibleJournalEntries = useMemo(() => entries.filter((entry) => !journalMonth || entry.accounting_date.startsWith(journalMonth)), [entries, journalMonth]);
   const accountsByType = useMemo(() => Object.keys(labels).map((type) => ({ type: type as Classification, accounts: accounts.filter((account) => account.classification === type) })), [accounts]);
   const selectedLedgerAccount = accountById.get(selectedLedgerAccountId) ?? accounts[0];
   const ledgerEntries = useMemo(() => selectedLedgerAccount ? entries.filter((entry) => entry.debit_account_id === selectedLedgerAccount.id || entry.credit_account_id === selectedLedgerAccount.id) : [], [entries, selectedLedgerAccount]);
@@ -124,7 +144,7 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
       <form className={styles.card} onSubmit={addAccount}><p className={styles.eyebrow}>NEW ACCOUNT</p><h2>Add an account</h2><label>Classification<select value={classification} onChange={(event) => setClassification(event.target.value as Classification)}>{Object.entries(labels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label><label>Account name<input value={accountName} onChange={(event) => setAccountName(event.target.value)} placeholder="Example: Software" required /></label><label>Account code <span className={styles.optional}>(optional)</span><input value={accountCode} onChange={(event) => setAccountCode(event.target.value)} placeholder="Example: 6100" /></label><button className={styles.primary} type="submit">Save account</button></form>
     </div>}
 
-    {view === "general_journal" && <section className={styles.card}><div className={styles.cardHeading}><div><p className={styles.eyebrow}>ACCOUNTING DATE DRIVES REPORTS</p><h2>General Journal</h2><p>Debits and credits always show their actual accounts; the description is shown below.</p></div><strong>{entries.length} posted entries</strong></div><div className={styles.journalList}>{entries.length ? entries.map((entry) => <article className={`${styles.journalEntry}${entry.receipt_path ? ` ${styles.receiptRow}` : ""}`} key={entry.id} onClick={() => void openReceipt(entry)}><div className={styles.entryDate}><b>{entry.accounting_date}</b><span>Paid {entry.paid_date}</span>{entry.receipt_path && <small>Receipt attached</small>}</div><div><p>Debit {accountById.get(entry.debit_account_id ?? "")?.name ?? "Deleted account"}<strong>RM {entry.amount.toFixed(2)}</strong></p><p className={styles.credit}>Credit {accountById.get(entry.credit_account_id ?? "")?.name ?? "Deleted account"}<strong>RM {entry.amount.toFixed(2)}</strong></p>{entry.description && <p className={styles.description}>{entry.description}</p>}</div></article>) : <p className={styles.muted}>Nothing posted yet. Start from the Bank Statement Inbox.</p>}</div></section>}
+    {view === "general_journal" && <section className={styles.card}><div className={styles.cardHeading}><div><p className={styles.eyebrow}>ACCOUNTING DATE DRIVES REPORTS</p><h2>General Journal</h2><p>Debits and credits always show their actual accounts; the description is shown below.</p></div><div className={styles.journalControls}><label>Accounting month<select value={journalMonth} onChange={(event) => setJournalMonth(event.target.value)}><option value="">All months</option>{journalMonths.map((month) => <option key={month} value={month}>{new Date(`${month}-01T00:00:00`).toLocaleDateString("en-MY", { month: "long", year: "numeric" })}</option>)}</select></label><strong>{visibleJournalEntries.length} posted entries</strong></div></div><div className={styles.journalList}>{visibleJournalEntries.length ? visibleJournalEntries.map((entry) => <article className={`${styles.journalEntry}${entry.receipt_path ? ` ${styles.receiptRow}` : ""}`} key={entry.id} onClick={() => void openReceipt(entry)}><div className={styles.entryDate}><b>{entry.accounting_date}</b><span>Paid {entry.paid_date}</span>{entry.receipt_path && <small>Receipt attached</small>}</div><div><p>Debit {accountById.get(entry.debit_account_id ?? "")?.name ?? "Deleted account"}<strong>RM {entry.amount.toFixed(2)}</strong></p><p className={styles.credit}>Credit {accountById.get(entry.credit_account_id ?? "")?.name ?? "Deleted account"}<strong>RM {entry.amount.toFixed(2)}</strong></p>{entry.description && <p className={styles.description}>{entry.description}</p>}</div></article>) : <p className={styles.muted}>No posted entries for this accounting month.</p>}</div></section>}
 
     {view === "account_activity" && <section className={styles.accountActivity}><aside className={styles.accountSelector}><p className={styles.eyebrow}>ACCOUNTS</p><h2>Select an account</h2><p className={styles.muted}>Choose an account to see every Monthly Journal transaction that affects it.</p><div className={styles.accountPicker}>{accounts.map((account) => <button className={selectedLedgerAccount?.id === account.id ? styles.selectedAccount : ""} type="button" key={account.id} onClick={() => setSelectedLedgerAccountId(account.id)}><span>{account.name}</span><small>{labels[account.classification]}</small></button>)}</div></aside><section className={styles.card}><div className={styles.cardHeading}><div><p className={styles.eyebrow}>ACCOUNT ACTIVITY</p><h2>{selectedLedgerAccount?.name ?? "Choose an account"}</h2><p>{selectedLedgerAccount ? `${labels[selectedLedgerAccount.classification]} · ${ledgerEntries.length} transaction${ledgerEntries.length === 1 ? "" : "s"}` : "No account selected."}</p></div></div>{selectedLedgerAccount && <><div className={styles.ledgerTotals}><span>Total debits <b>RM {ledgerTotals.debit.toFixed(2)}</b></span><span>Total credits <b>RM {ledgerTotals.credit.toFixed(2)}</b></span></div><div className={styles.ledgerTable}><table><thead><tr><th>Accounting date</th><th>Paid date</th><th>Other account</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead><tbody>{ledgerEntries.length ? ledgerEntries.map((entry) => { const isDebit = entry.debit_account_id === selectedLedgerAccount.id; const otherAccount = accountById.get(isDebit ? entry.credit_account_id ?? "" : entry.debit_account_id ?? "")?.name ?? "Deleted account"; return <tr className={entry.receipt_path ? styles.receiptRow : ""} key={entry.id} onClick={() => void openReceipt(entry)}><td>{entry.accounting_date}</td><td>{entry.paid_date}</td><td>{otherAccount}</td><td>{entry.description || entry.journal_note || "—"}{entry.receipt_path && <small className={styles.receiptAttached}>Receipt attached</small>}</td><td>{isDebit ? `RM ${entry.amount.toFixed(2)}` : "—"}</td><td>{isDebit ? "—" : `RM ${entry.amount.toFixed(2)}`}</td></tr>; }) : <tr><td colSpan={6}>No posted transactions for this account yet.</td></tr>}</tbody></table></div></>}</section></section>}
 
