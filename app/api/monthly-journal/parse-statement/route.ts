@@ -41,10 +41,13 @@ async function publicBankCoordinateText(page: PdfPage) {
     if (position >= 6800 || position <= 800) continue;
     const cells = row.sort((a, b) => a.transform[4] - b.transform[4]);
     const dateCell = cells.filter((item) => item.transform[4] < 80).map((item) => item.str).join(" ").trim();
-    const description = cells.filter((item) => item.transform[4] >= 80 && item.transform[4] < 320).map((item) => item.str).join(" ").trim();
-    const debit = cells.filter((item) => item.transform[4] >= 320 && item.transform[4] < 390).map((item) => item.str).find((item) => /^[\d,]+\.\d{2}$/.test(item)) ?? "";
-    const credit = cells.filter((item) => item.transform[4] >= 390 && item.transform[4] < 480).map((item) => item.str).find((item) => /^[\d,]+\.\d{2}$/.test(item)) ?? "";
-    const balance = cells.filter((item) => item.transform[4] >= 480).map((item) => item.str).find((item) => /^[\d,]+\.\d{2}$/.test(item)) ?? "";
+    // Some Public Bank PDFs position debit values at x=318 rather than x=320.
+    // Keep that column out of the description so a following transaction cannot
+    // be appended to the preceding one.
+    const description = cells.filter((item) => item.transform[4] >= 80 && item.transform[4] < 300).map((item) => item.str).join(" ").trim();
+    const debit = cells.filter((item) => item.transform[4] >= 300 && item.transform[4] < 385).map((item) => item.str).find((item) => /^[\d,]+\.\d{2}$/.test(item)) ?? "";
+    const credit = cells.filter((item) => item.transform[4] >= 385 && item.transform[4] < 475).map((item) => item.str).find((item) => /^[\d,]+\.\d{2}$/.test(item)) ?? "";
+    const balance = cells.filter((item) => item.transform[4] >= 475).map((item) => item.str).find((item) => /^[\d,]+\.\d{2}$/.test(item)) ?? "";
     if (dateCell || description || debit || credit || balance) output.push(`PBROW|${dateCell}|${description}|${debit}|${credit}|${balance}`);
   }
   return output.join("\n");
