@@ -70,6 +70,21 @@ export function MonthlyJournalInbox() {
   const choices = accounts.filter((account) => account.classification === form.classification.replaceAll(" ", "_"));
   const bankAccount = (bank: string) => accounts.find((account) => account.name === `Bank - ${bank}`)?.id ?? (bank === "Touch 'n Go eWallet" ? accounts.find((account) => account.name === "Touch 'n Go eWallet")?.id ?? "" : "");
   const statementAccountName = (bank: string) => bank === "Touch 'n Go eWallet" ? bank : `Bank - ${bank}`;
+  const statementBankForAccount = (accountId: string) => {
+    const name = accounts.find((account) => account.id === accountId)?.name ?? "";
+    if (name.startsWith("Bank - ")) return name.slice("Bank - ".length);
+    return name === "Touch 'n Go eWallet" ? name : "";
+  };
+  const dateDistance = (left: string, right: string) => Math.abs(new Date(`${left}T00:00:00`).getTime() - new Date(`${right}T00:00:00`).getTime()) / 86_400_000;
+  const findTransferCounterpart = (row: Row, debitAccountId: string, creditAccountId: string, amount: number) => {
+    const sourceAccountId = bankAccount(row.bank);
+    const otherAccountId = debitAccountId === sourceAccountId ? creditAccountId : creditAccountId === sourceAccountId ? debitAccountId : "";
+    const otherBank = statementBankForAccount(otherAccountId);
+    if (!otherBank || otherBank === row.bank) return null;
+    const candidates = rows.filter((candidate) => candidate.status === "unposted" && candidate.bank === otherBank && candidate.id !== row.id && Math.abs((candidate.money_in || candidate.money_out) - amount) < 0.005 && (row.money_in > 0 ? candidate.money_out > 0 : candidate.money_in > 0) && dateDistance(candidate.paid_date, row.paid_date) <= 3).sort((left, right) => dateDistance(left.paid_date, row.paid_date) - dateDistance(right.paid_date, row.paid_date));
+    const exactDate = candidates.filter((candidate) => candidate.paid_date === row.paid_date);
+    return exactDate.length === 1 ? exactDate[0] : candidates.length === 1 ? candidates[0] : null;
+  };
 
   function setDocument(file?: File) {
     if (!file) return;
@@ -90,39 +105,53 @@ export function MonthlyJournalInbox() {
     return path;
   }
 
-  async function post(row = active, details: PostingDetails = form) {
-    if (!row || !supabase || !details.account) return setNotice("Choose a classification and account.");
+  async function post(row = active, details: PostingDetails = form, reloadAfter = true): Promise<string | null> {
+    if (!row || !supabase || !details.account) { setNotice("Choose a classification and account."); return null; }
     const amount = row.money_in || row.money_out;
     const bankId = bankAccount(row.bank);
     const debit = details.debitAccountId ?? (row.money_in ? bankId : details.account);
     const credit = details.creditAccountId ?? (row.money_in ? details.account : bankId);
-    if (!debit || !credit) return setNotice(`Create Bank - ${row.bank} in Chart of Accounts first.`);
+    if (!debit || !credit) { setNotice(`Create Bank - ${row.bank} in Chart of Accounts first.`); return null; }
     let receiptPath: string | null = row.receipt_path;
-    try { receiptPath = await uploadSource(row); } catch { return setNotice("Could not upload the source document."); }
+    try { receiptPath = await uploadSource(row); } catch { setNotice("Could not upload the source document."); return null; }
     const { data, error } = await supabase.from("monthly_journal_entries").insert({
       paid_date: row.paid_date, accounting_date: row.accounting_date, bank: row.bank, bank_reference: "", journal_note: details.note,
       description: details.description, debit_account_id: debit, credit_account_id: credit, amount, source: "bank_statement", status: "posted",
       bank_row_id: row.id, receipt_path: receiptPath, entry_lines: [{ account_id: debit, debit: amount, credit: 0 }, { account_id: credit, debit: 0, credit: amount }],
     }).select("id").single();
-    if (error) return setNotice(error.message);
+    if (error) { setNotice(error.message); return null; }
     await supabase.from("monthly_journal_bank_rows").update({ status: "posted", journal_entry_id: data.id, note: details.note, accounting_date: row.accounting_date, receipt_path: receiptPath, updated_at: new Date().toISOString() }).eq("id", row.id);
-    setNotice("Posted to General Journal.");
-    setSelected([]); setActive(null); setSourceFile(null); await load();
+    const counterpart = findTransferCounterpart(row, debit, credit, amount);
+    if (counterpart) await supabase.from("monthly_journal_bank_rows").update({ status: "posted", journal_entry_id: data.id, note: details.note, accounting_date: row.accounting_date, updated_at: new Date().toISOString() }).eq("id", counterpart.id);
+    if (reloadAfter) {
+      setNotice(counterpart ? "Posted to General Journal and matched the other bank row." : "Posted to General Journal.");
+      setSelected([]); setActive(null); setSourceFile(null); await load();
+    }
+    return counterpart?.id ?? "";
   }
 
   async function applyCustomShortcut(shortcut: Shortcut) {
     const selectedRows = rows.filter((row) => selected.includes(row.id) && row.status === "unposted" && (shortcut.transaction_direction === "money_in" ? row.money_in > 0 : row.money_out > 0) && (shortcut.bank_filter === "any" || row.bank === shortcut.bank_filter));
     if (!selectedRows.length) return setNotice(`Select ${shortcut.transaction_direction === "money_in" ? "money-in" : "money-out"} rows for this shortcut.`);
+    const handled = new Set<string>();
+    let posted = 0;
+    let matched = 0;
     for (const row of selectedRows) {
+      if (handled.has(row.id)) continue;
       const accountingDate = shortcut.accounting_date_rule === "previous_month_end" ? monthEnd(row.paid_date) : row.paid_date;
       const replace = (template: string) => template.replaceAll("{month}", accountingDate.slice(0, 7)).replaceAll("{paid_date}", row.paid_date);
       const statementBankId = bankAccount(row.bank);
       const debitAccountId = shortcut.debit_source === "statement_bank" ? statementBankId : shortcut.debit_account_id ?? "";
       const creditAccountId = shortcut.credit_source === "statement_bank" ? statementBankId : shortcut.credit_account_id ?? "";
       if (!debitAccountId || !creditAccountId || debitAccountId === creditAccountId) return setNotice("This shortcut needs two different valid accounts.");
-      await post({ ...row, accounting_date: accountingDate }, { account: debitAccountId, classification: "", note: replace(shortcut.journal_note_template), description: replace(shortcut.description_template) || row.description, debitAccountId, creditAccountId });
+      const matchedRowId = await post({ ...row, accounting_date: accountingDate }, { account: debitAccountId, classification: "", note: replace(shortcut.journal_note_template), description: replace(shortcut.description_template) || row.description, debitAccountId, creditAccountId }, false);
+      if (matchedRowId === null) return;
+      handled.add(row.id);
+      if (matchedRowId) { handled.add(matchedRowId); matched++; }
+      posted++;
     }
-    setNotice(`${selectedRows.length} row(s) posted with ${shortcut.name}.`);
+    setSelected([]); setActive(null); setSourceFile(null); await load();
+    setNotice(`${posted} row(s) posted with ${shortcut.name}${matched ? `; ${matched} matching bank row(s) reconciled.` : ""}`);
   }
 
   return <div className="monthly-inbox">
