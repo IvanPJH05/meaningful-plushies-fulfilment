@@ -3,8 +3,8 @@
 import { ChangeEvent, DragEvent, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 
-const fingerprint = (row: { bank: string; paidDate: string; description: string; moneyIn: number; moneyOut: number }) =>
-  `${row.bank}|${row.paidDate}|${row.description.toLowerCase().replace(/\s+/g, " ")}|${row.moneyIn}|${row.moneyOut}`;
+const fingerprint = (row: { bank: string; paidDate: string; description: string; moneyIn: number; moneyOut: number; balance: number | null }) =>
+  `${row.bank}|${row.paidDate}|${row.description.toLowerCase().replace(/\s+/g, " ")}|${row.moneyIn}|${row.moneyOut}|${row.balance ?? ""}`;
 
 export function MonthlyJournalImport() {
   const [message, setMessage] = useState("");
@@ -29,7 +29,7 @@ export function MonthlyJournalImport() {
       setBusy(false);
       return;
     }
-    const { data: existingRows, error: existingError } = await supabase.from("monthly_journal_bank_rows").select("id,bank,paid_date,description,money_in,money_out").eq("bank", result.bank);
+    const { data: existingRows, error: existingError } = await supabase.from("monthly_journal_bank_rows").select("id,bank,paid_date,description,money_in,money_out,balance").eq("bank", result.bank);
     if (existingError) {
       setMessage(existingError.message);
       setBusy(false);
@@ -40,12 +40,15 @@ export function MonthlyJournalImport() {
     let skipped = 0;
     const usedExisting = new Set<string>();
     for (const row of result.rows) {
-      const fullFingerprint = fingerprint({ bank: result.bank, paidDate: row.paidDate, description: row.description, moneyIn: row.moneyIn, moneyOut: row.moneyOut });
+      const fullFingerprint = fingerprint({ bank: result.bank, paidDate: row.paidDate, description: row.description, moneyIn: row.moneyIn, moneyOut: row.moneyOut, balance: row.balance });
       const compactDescription = (row.compactDescription || row.description).trim().toLowerCase();
-      const existing = (existingRows ?? []).find((saved) => !usedExisting.has(saved.id) && saved.paid_date === row.paidDate && Number(saved.money_in) === row.moneyIn && Number(saved.money_out) === row.moneyOut && saved.description.trim().toLowerCase() === compactDescription && row.description.trim().length > saved.description.trim().length);
+      const matchingRows = (existingRows ?? []).filter((saved) => !usedExisting.has(saved.id) && saved.paid_date === row.paidDate && Number(saved.money_in) === row.moneyIn && Number(saved.money_out) === row.moneyOut && saved.description.trim().toLowerCase() === compactDescription);
+      const savedWithSameBalance = matchingRows.find((saved) => Number(saved.balance) === Number(row.balance));
+      const existing = savedWithSameBalance ?? (matchingRows.length === 1 && row.description.trim().length > matchingRows[0].description.trim().length ? matchingRows[0] : undefined);
       if (existing) {
-        const { error } = await supabase.from("monthly_journal_bank_rows").update({ fingerprint: fullFingerprint, description: row.description, balance: row.balance, updated_at: new Date().toISOString() }).eq("id", existing.id);
-        if (!error) { usedExisting.add(existing.id); upgraded++; continue; }
+        const needsUpgrade = row.description.trim().length > existing.description.trim().length;
+        const { error } = needsUpgrade ? await supabase.from("monthly_journal_bank_rows").update({ fingerprint: fullFingerprint, description: row.description, balance: row.balance, updated_at: new Date().toISOString() }).eq("id", existing.id) : { error: null };
+        if (!error) { usedExisting.add(existing.id); if (needsUpgrade) upgraded++; else skipped++; continue; }
       }
       const { error } = await supabase.from("monthly_journal_bank_rows").insert({
         fingerprint: fullFingerprint,

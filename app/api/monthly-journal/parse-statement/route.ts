@@ -58,7 +58,7 @@ function parsePublicBankCoordinates(text: string): ParsedRow[] {
   let statement: { month: number; year: number } | null = null;
   let lastPaidDate = "";
   let current: ParsedRow | null = null;
-  const pageNoise = /^(?:this is a computer|jln kelang|dilindungi|protected by|nombor akaun|tarikh penyata|muka surat|urus niaga|date transaction|penyata akaun|ringkasan|tegasan|closing balance|baki harian|terima kasih|daily and closing|thank you|anda boleh|you may view|perhatian|attention)/i;
+  const pageNoise = /^(?:this is a computer|jln kelang|dilindungi|protected by|nombor akaun|tarikh penyata|muka surat|urus niaga|date transaction|penyata akaun|highlights|transaction\b|ringkasan|tegasan|closing balance|baki harian|terima kasih|daily and closing|thank you|anda boleh|you may view|perhatian|attention)/i;
   const flush = () => { if (current && (current.moneyIn || current.moneyOut) && current.description) rows.push(current); current = null; };
   for (const line of text.split(/\r?\n/)) {
     const statementMatch = line.match(/^PBSTATEMENT\|(\d+)\|(20\d{2})$/);
