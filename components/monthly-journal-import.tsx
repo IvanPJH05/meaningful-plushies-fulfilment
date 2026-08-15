@@ -76,7 +76,7 @@ export function MonthlyJournalImport() {
   }
 
   return <section>
-    <p>Upload a Maybank or Public Bank statement. New transactions appear in Bank Statement Inbox for review before they are posted.</p>
+    <p>Upload a Maybank, Public Bank, or Touch 'n Go eWallet statement. New transactions appear in Bank Statement Inbox for review before they are posted.</p>
     <div
       className={`mj-import-drop${dragging ? " is-dragging" : ""}`}
       role="button"

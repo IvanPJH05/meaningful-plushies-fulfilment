@@ -110,6 +110,65 @@ function parseRows(text: string): ParsedRow[] {
   return rows;
 }
 
+function parseTouchNGo(text: string): ParsedRow[] {
+  type TngItem = { paidDate: string; transactionType: string; details: string[] };
+  const rows: ParsedRow[] = [];
+  let current: TngItem | null = null;
+  let pendingDate = "";
+  let awaitingTransactionType = false;
+  const flush = () => {
+    if (!current) return;
+    const joined = current.details.join(" ").replace(/\s+/g, " ").trim();
+    const amounts = [...joined.matchAll(/RM\s*([\d,]+\.\d{2})/gi)].map((match) => money(match[1]));
+    if (!amounts.length) { current = null; return; }
+    const cleanedDetails = current.details.map((line) => line
+      .replace(/\b20\d{6,}[A-Z0-9]*\b/gi, "")
+      .replace(/\b(?:TNGOW\w*|MY\d{8,}|MDI[\w-]{16,})\b/gi, "")
+      .replace(/RM\s*[\d,]+\.\d{2}/gi, "")
+      .replace(/^\d{8,}$/g, "")
+      .replace(/\s+/g, " ").trim())
+      .filter((line) => line && !/^\d+$/.test(line) && line.length < 150);
+    const transactionType = current.transactionType.replace(/[_-]+/g, " ").replace(/\d{8,}.*$/, "").replace(/\s+/g, " ").trim();
+    const detail = cleanedDetails.filter((line) => line.toLowerCase() !== transactionType.toLowerCase()).join(" · ");
+    const description = [transactionType, detail].filter(Boolean).join(" — ").slice(0, 500);
+    const moneyIn = /(?:auto reload|receive from wallet|duitnow[_\s-]*receive|refund|cashback|top.?up)/i.test(transactionType) ? amounts[amounts.length - 2] ?? amounts[0] : 0;
+    const amount = amounts.length >= 2 ? amounts[amounts.length - 2] : amounts[0];
+    rows.push({ paidDate: current.paidDate, description, moneyIn, moneyOut: moneyIn ? 0 : amount, balance: amounts.length >= 2 ? amounts[amounts.length - 1] : null });
+    current = null;
+  };
+
+  for (const line of text.split(/\r?\n/).map((value) => value.replace(/\s+/g, " ").trim()).filter(Boolean)) {
+    const start = line.match(/^(\d{1,2})\/(\d{1,2})\/(20\d{2})\s+(?:Success|Failed|Pending)\s+(.+)$/i);
+    if (start) { flush(); current = { paidDate: `${start[3]}-${start[2].padStart(2, "0")}-${start[1].padStart(2, "0")}`, transactionType: start[4], details: [] }; continue; }
+    const dateOnly = line.match(/^(\d{1,2})\/(\d{1,2})\/(20\d{2})$/);
+    if (dateOnly) {
+      flush();
+      pendingDate = `${dateOnly[3]}-${dateOnly[2].padStart(2, "0")}-${dateOnly[1].padStart(2, "0")}`;
+      awaitingTransactionType = false;
+      continue;
+    }
+    if (pendingDate && /^(?:Success|Failed|Pending)$/i.test(line)) {
+      awaitingTransactionType = true;
+      continue;
+    }
+    if (pendingDate && awaitingTransactionType) {
+      current = { paidDate: pendingDate, transactionType: line, details: [] };
+      pendingDate = "";
+      awaitingTransactionType = false;
+      continue;
+    }
+    if (!current) continue;
+    if (/^\*This is a system generated email/i.test(line)) {
+      flush();
+      continue;
+    }
+    if (/^(?:Date Status Transaction Type|TNG WALLET TRANSACTION HISTORY|Registered Name|Wallet ID|Account Status|Generated Date|Please do not reply|For further enquiry|Operating hours)/i.test(line)) continue;
+    current.details.push(line);
+  }
+  flush();
+  return rows;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.formData();
@@ -118,9 +177,9 @@ export async function POST(request: NextRequest) {
     if (file.size > 15 * 1024 * 1024) return NextResponse.json({ error: "Choose a PDF smaller than 15 MB." }, { status: 400 });
     const fileBuffer = Buffer.from(await file.arrayBuffer());
     const text = (await parsePdf(fileBuffer)).text;
-    const bank = requestedBank || (/maybank|malayan banking/i.test(text) ? "Maybank" : /public bank|penyata akaun/i.test(text) ? "Public Bank" : "");
-    if (!bank) return NextResponse.json({ error: "This PDF is not recognised. Choose Maybank or Public Bank." }, { status: 400 });
-    const rows = bank === "Public Bank" ? parsePublicBankCoordinates((await parsePdf(fileBuffer, { pagerender: publicBankCoordinateText })).text) : parseRows(text);
+    const bank = requestedBank || (/maybank|malayan banking/i.test(text) ? "Maybank" : /public bank|penyata akaun/i.test(text) ? "Public Bank" : /tng wallet transaction history|touch.?n.?go/i.test(text) ? "Touch 'n Go eWallet" : "");
+    if (!bank) return NextResponse.json({ error: "This PDF is not recognised. Upload a Maybank, Public Bank, or Touch 'n Go eWallet statement." }, { status: 400 });
+    const rows = bank === "Public Bank" ? parsePublicBankCoordinates((await parsePdf(fileBuffer, { pagerender: publicBankCoordinateText })).text) : bank === "Touch 'n Go eWallet" ? parseTouchNGo(text) : parseRows(text);
     if (!rows.length) return NextResponse.json({ error: "No transaction rows were found in this PDF." }, { status: 400 });
     return NextResponse.json({ bank, rows });
   } catch { return NextResponse.json({ error: "Could not read this PDF." }, { status: 400 }); }
