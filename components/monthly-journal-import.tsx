@@ -29,11 +29,26 @@ export function MonthlyJournalImport() {
       setBusy(false);
       return;
     }
+    const { data: existingRows, error: existingError } = await supabase.from("monthly_journal_bank_rows").select("id,bank,paid_date,description,money_in,money_out").eq("bank", result.bank);
+    if (existingError) {
+      setMessage(existingError.message);
+      setBusy(false);
+      return;
+    }
     let added = 0;
+    let upgraded = 0;
     let skipped = 0;
+    const usedExisting = new Set<string>();
     for (const row of result.rows) {
+      const fullFingerprint = fingerprint({ bank: result.bank, paidDate: row.paidDate, description: row.description, moneyIn: row.moneyIn, moneyOut: row.moneyOut });
+      const compactDescription = (row.compactDescription || row.description).trim().toLowerCase();
+      const existing = (existingRows ?? []).find((saved) => !usedExisting.has(saved.id) && saved.paid_date === row.paidDate && Number(saved.money_in) === row.moneyIn && Number(saved.money_out) === row.moneyOut && saved.description.trim().toLowerCase() === compactDescription && row.description.trim().length > saved.description.trim().length);
+      if (existing) {
+        const { error } = await supabase.from("monthly_journal_bank_rows").update({ fingerprint: fullFingerprint, description: row.description, balance: row.balance, updated_at: new Date().toISOString() }).eq("id", existing.id);
+        if (!error) { usedExisting.add(existing.id); upgraded++; continue; }
+      }
       const { error } = await supabase.from("monthly_journal_bank_rows").insert({
-        fingerprint: fingerprint({ bank: result.bank, paidDate: row.paidDate, description: row.description, moneyIn: row.moneyIn, moneyOut: row.moneyOut }),
+        fingerprint: fullFingerprint,
         bank: result.bank,
         paid_date: row.paidDate,
         accounting_date: row.paidDate,
@@ -45,7 +60,7 @@ export function MonthlyJournalImport() {
       if (error?.code === "23505") skipped++;
       else if (!error) added++;
     }
-    setMessage(`${added} transactions imported; ${skipped} duplicate transactions skipped.`);
+    setMessage(`${added} transactions imported; ${upgraded} short descriptions upgraded; ${skipped} duplicate transactions skipped.`);
     setBusy(false);
   }
 

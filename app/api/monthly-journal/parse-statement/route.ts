@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import pdf from "pdf-parse/lib/pdf-parse.js";
 
-type ParsedRow = { paidDate: string; description: string; moneyIn: number; moneyOut: number; balance: number | null };
+type ParsedRow = { paidDate: string; description: string; compactDescription?: string; moneyIn: number; moneyOut: number; balance: number | null };
 const money = (value: string) => Number(value.replace(/,/g, ""));
 const dateFor = (dayMonth: string, fallbackYear: number) => {
   const [day, month] = dayMonth.split("/").map(Number);
@@ -80,12 +80,33 @@ function parsePublicBankCoordinates(text: string): ParsedRow[] {
 function parseRows(text: string): ParsedRow[] {
   const year = statementDate(text)?.year ?? new Date().getFullYear();
   const rows: ParsedRow[] = [];
+  let current: ParsedRow | null = null;
+  let insidePageHeader = false;
+  const pageNoise = /^(?:urusniaga akaun|account transactions|tarikh masuk|entry date|beginning balance|malayan banking|pavilion bukit|mp gift shop|no \d|muka|tarikh penyata|statement date|nombor akaun|account number|protected by|perhatian|all items|wang yang|overdrawn|this is a computer|please refer|thank you|notice:|effective |for any further|kindly be|credit to multiple|starting \d|kini,|bermula |inward return|ending balance|ledger balance|total debit|total credit)/i;
+  const flush = () => { if (current && (current.moneyIn || current.moneyOut)) rows.push(current); current = null; };
+
   for (const line of text.split(/\r?\n/).map((value) => value.replace(/\s+/g, " ").trim()).filter(Boolean)) {
+    if (/^malayan banking/i.test(line)) { insidePageHeader = true; continue; }
+    if (/^entry date/i.test(line)) { insidePageHeader = false; continue; }
+    if (insidePageHeader) continue;
+    if (/^(?:ending balance|ledger balance|total debit|total credit)/i.test(line)) { flush(); continue; }
     const maybank = line.match(/^(\d{1,2}\/\d{1,2})\s*(.+?)([\d,]*\d?\.\d{2})\s*([+-])\s*([\d,]*\d?\.\d{2})(?:\s*DR)?$/i);
-    if (maybank) { const amount = money(maybank[3]); if (amount) rows.push({ paidDate: dateFor(maybank[1], year), description: maybank[2], moneyIn: maybank[4] === "+" ? amount : 0, moneyOut: maybank[4] === "-" ? amount : 0, balance: money(maybank[5]) }); continue; }
+    if (maybank) {
+      flush();
+      const amount = money(maybank[3]);
+      current = { paidDate: dateFor(maybank[1], year), description: maybank[2].trim(), compactDescription: maybank[2].trim(), moneyIn: maybank[4] === "+" ? amount : 0, moneyOut: maybank[4] === "-" ? amount : 0, balance: money(maybank[5]) };
+      continue;
+    }
     const publicBank = line.match(/^(\d{1,2}\/\d{1,2})\s+(.+?)\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})(?:\s*DR)?$/i);
-    if (publicBank && /\b(?:CR|DR)\b|^DEP-ECP\b/i.test(publicBank[2])) { const credit = /^DEP-ECP\b/i.test(publicBank[2]) || (/\bCR\b/i.test(publicBank[2]) && !/\bDR\b/i.test(publicBank[2])); rows.push({ paidDate: dateFor(publicBank[1], year), description: publicBank[2], moneyIn: credit ? money(publicBank[3]) : 0, moneyOut: credit ? 0 : money(publicBank[3]), balance: money(publicBank[4]) }); }
+    if (publicBank && /\b(?:CR|DR)\b|^DEP-ECP\b/i.test(publicBank[2])) {
+      flush();
+      const credit = /^DEP-ECP\b/i.test(publicBank[2]) || (/\bCR\b/i.test(publicBank[2]) && !/\bDR\b/i.test(publicBank[2]));
+      rows.push({ paidDate: dateFor(publicBank[1], year), description: publicBank[2], compactDescription: publicBank[2], moneyIn: credit ? money(publicBank[3]) : 0, moneyOut: credit ? 0 : money(publicBank[3]), balance: money(publicBank[4]) });
+      continue;
+    }
+    if (current && !pageNoise.test(line)) current.description = `${current.description} ${line}`.replace(/\s+/g, " ").trim();
   }
+  flush();
   return rows;
 }
 
