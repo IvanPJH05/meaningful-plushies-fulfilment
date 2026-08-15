@@ -20,6 +20,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialView?: JournalView }) {
   const [view, setView] = useState<JournalView>(initialView);
+  const [visitedViews, setVisitedViews] = useState<JournalView[]>([initialView]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [journalMonth, setJournalMonth] = useState("");
@@ -66,7 +67,10 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
   }
 
   useEffect(() => { void loadData(); }, []);
-  useEffect(() => { setView(initialView); }, [initialView]);
+  useEffect(() => {
+    setView(initialView);
+    setVisitedViews((current) => current.includes(initialView) ? current : [...current, initialView]);
+  }, [initialView]);
   useEffect(() => () => {
     document.querySelector<HTMLElement>(".side-nav")?.style.removeProperty("display");
     document.querySelector<HTMLElement>(".topbar")?.style.removeProperty("display");
@@ -153,9 +157,9 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
       <section className={styles.card}><p className={styles.eyebrow}>POSTED ENTRIES</p><h2>General Journal</h2><p className={styles.muted}>Accounting date drives reports. Paid date remains available for cash-flow tracking.</p><div className={styles.journalList}>{entries.length ? entries.map((entry) => <article className={styles.journalEntry} key={entry.id}><div className={styles.entryDate}><b>{entry.accounting_date}</b><span>Paid {entry.paid_date}</span></div><div><p>Debit {accountById.get(entry.debit_account_id ?? "")?.name ?? "Deleted account"}<strong>RM {entry.amount.toFixed(2)}</strong></p><p className={styles.credit}>Credit {accountById.get(entry.credit_account_id ?? "")?.name ?? "Deleted account"}<strong>RM {entry.amount.toFixed(2)}</strong></p>{entry.description && <p className={styles.description}>{entry.description}</p>}{entry.journal_note && <small>{entry.journal_note}</small>}</div></article>) : <p className={styles.muted}>No Monthly Journal entries yet.</p>}</div></section>
     </div>}
 
-    {view === "inbox" && <MonthlyJournalInbox />}
-    {view === "import" && <section className={styles.card}><p className={styles.eyebrow}>IMPORT PDF STATEMENT</p><h2>Import a bank statement</h2><MonthlyJournalImport /></section>}
-    {view === "shortcuts" && <MonthlyJournalShortcuts accounts={accounts} />}
+    {visitedViews.includes("inbox") && <div hidden={view !== "inbox"}><MonthlyJournalInbox /></div>}
+    {visitedViews.includes("import") && <div hidden={view !== "import"}><section className={styles.card}><p className={styles.eyebrow}>IMPORT PDF STATEMENT</p><h2>Import a bank statement</h2><MonthlyJournalImport /></section></div>}
+    {visitedViews.includes("shortcuts") && <div hidden={view !== "shortcuts"}><MonthlyJournalShortcuts accounts={accounts} /></div>}
     {view === "shopee" && <section className={styles.card}><p className={styles.eyebrow}>SHOPEE PAYLATER</p><h2>Shopee PayLater</h2><p>Use the existing Shopee PayLater account from your new Chart of Accounts for purchases and payments.</p></section>}
     {receiptPreview && <div className={styles.receiptBackdrop} role="dialog" aria-modal="true" aria-label="Source document" onClick={() => setReceiptPreview(null)}><section className={styles.receiptModal} onClick={(event) => event.stopPropagation()}><header><div><p className={styles.eyebrow}>SOURCE DOCUMENT</p><h2>{receiptPreview.name}</h2></div><button className={styles.refresh} type="button" onClick={() => setReceiptPreview(null)}>Close</button></header>{/\.pdf(?:$|\?)/i.test(receiptPreview.name) ? <iframe src={receiptPreview.url} title={receiptPreview.name} /> : <img src={receiptPreview.url} alt={receiptPreview.name} />}<a className={styles.refresh} href={receiptPreview.url} target="_blank" rel="noreferrer">Open in new tab</a></section></div>}
   </section>;
