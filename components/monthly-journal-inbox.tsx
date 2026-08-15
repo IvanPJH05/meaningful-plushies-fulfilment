@@ -23,10 +23,26 @@ export function MonthlyJournalInbox() {
   const [draggingSource, setDraggingSource] = useState(false);
   const sourceInput = useRef<HTMLInputElement>(null);
 
+  const loadAllBankRows = async () => {
+    if (!supabase) return { data: [], error: null };
+    const data: Row[] = [];
+    const pageSize = 1000;
+    for (let from = 0; ; from += pageSize) {
+      const response = await supabase
+        .from("monthly_journal_bank_rows")
+        .select("id,bank,paid_date,accounting_date,description,money_in,money_out,status,note,receipt_path")
+        .order("paid_date", { ascending: false })
+        .range(from, from + pageSize - 1);
+      if (response.error || !response.data?.length) return { data, error: response.error };
+      data.push(...response.data as Row[]);
+      if (response.data.length < pageSize) return { data, error: null };
+    }
+  };
+
   const load = async () => {
     if (!supabase) return;
     const [bankRows, accountRows, shortcutRows] = await Promise.all([
-      supabase.from("monthly_journal_bank_rows").select("id,bank,paid_date,accounting_date,description,money_in,money_out,status,note,receipt_path").order("paid_date", { ascending: false }),
+      loadAllBankRows(),
       supabase.from("monthly_journal_accounts").select("id,name,classification").eq("active", true).order("name"),
       supabase.from("monthly_journal_shortcuts").select("id,name,transaction_direction,bank_filter,accounting_date_rule,journal_note_template,description_template,debit_source,debit_account_id,credit_source,credit_account_id").eq("active", true).order("created_at"),
     ]);
