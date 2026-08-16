@@ -62,6 +62,61 @@ export async function fetchSharedOrders(): Promise<Order[]> {
   return (data ?? []).map((row) => row.data as Order);
 }
 
+type MonthlyJournalAccountRow = { id: string; name: string };
+
+function monthlyJournalSaleAccount(order: Order) {
+  if (order.salesChannel === "tiktok") return "TikTok Shop";
+  if (order.paymentProcessor === "Stripe") return "Stripe";
+  if (order.paymentProcessor === "Xendit") return "Xendit";
+  return "";
+}
+
+export async function syncFulfilmentSalesToMonthlyJournal(orders: Order[]) {
+  const saleOrders = orders
+    .map((order) => ({ order, processorAccount: monthlyJournalSaleAccount(order) }))
+    .filter(({ order, processorAccount }) => processorAccount && Number(order.totalAmount) - Number(order.refundedAmount || 0) > 0);
+  if (!saleOrders.length) return;
+
+  const client = requireSupabase();
+  const { data: accounts, error: accountsError } = await client
+    .from("monthly_journal_accounts")
+    .select("id,name")
+    .in("name", [...new Set(["Sales", ...saleOrders.map(({ processorAccount }) => processorAccount)])]);
+  if (accountsError) throw accountsError;
+
+  const accountsByName = new Map((accounts as MonthlyJournalAccountRow[] ?? []).map((account) => [account.name, account.id]));
+  const salesAccountId = accountsByName.get("Sales");
+  if (!salesAccountId) throw new Error("Monthly Journal needs an active Sales account before fulfilment sales can sync.");
+
+  const missingProcessorAccount = saleOrders.find(({ processorAccount }) => !accountsByName.has(processorAccount))?.processorAccount;
+  if (missingProcessorAccount) throw new Error(`Monthly Journal needs the ${missingProcessorAccount} account before those sales can sync.`);
+
+  const now = new Date().toISOString();
+  const rows = saleOrders.map(({ order, processorAccount }) => {
+    const amount = Number((Number(order.totalAmount) - Number(order.refundedAmount || 0)).toFixed(2));
+    const orderDate = String(order.orderDate || "").slice(0, 10);
+    return {
+      paid_date: orderDate,
+      accounting_date: orderDate,
+      bank: order.salesChannel === "tiktok" ? "TikTok Shop" : "Shopify",
+      bank_reference: order.orderNumber,
+      journal_note: `${processorAccount} sale #${order.orderNumber}`,
+      description: `Order #${order.orderNumber}`,
+      debit_account_id: accountsByName.get(processorAccount),
+      credit_account_id: salesAccountId,
+      amount,
+      source: "fulfilment_sale",
+      source_reference: order.id,
+      status: "posted",
+      updated_at: now,
+    };
+  });
+  const { error } = await client
+    .from("monthly_journal_entries")
+    .upsert(rows, { onConflict: "source,source_reference" });
+  if (error) throw error;
+}
+
 export async function upsertSharedOrders(orders: Order[]) {
   if (!orders.length) return;
   const rows = orders.map((order) => ({
@@ -80,6 +135,7 @@ export async function upsertSharedOrders(orders: Order[]) {
   }));
   const { error } = await requireSupabase().from("fulfilment_orders").upsert(rows, { onConflict: "id" });
   if (error) throw error;
+  await syncFulfilmentSalesToMonthlyJournal(orders);
 }
 
 export async function deleteSharedOrders(ids: string[]) {
