@@ -139,6 +139,7 @@ export function MonthlyJournalInbox() {
     const handled = new Set<string>();
     let posted = 0;
     let matched = 0;
+    let unmatched = 0;
     try {
       for (const row of selectedRows) {
         if (handled.has(row.id)) continue;
@@ -154,14 +155,10 @@ export function MonthlyJournalInbox() {
         const isInternalTransfer = Boolean(debitBank && creditBank && debitBank !== creditBank);
         if (isInternalTransfer) {
           const counterpart = findTransferCounterpart(row, debitAccountId, creditAccountId, row.money_in || row.money_out);
-          if (counterpart) {
-            const note = replace(shortcut.journal_note_template);
-            await Promise.all([
-              supabase!.from("monthly_journal_bank_rows").update({ status: "reconciled", journal_entry_id: null, note, accounting_date: accountingDate, updated_at: new Date().toISOString() }).eq("id", row.id),
-              supabase!.from("monthly_journal_bank_rows").update({ status: "reconciled", journal_entry_id: null, note, accounting_date: accountingDate, updated_at: new Date().toISOString() }).eq("id", counterpart.id),
-            ]);
-            handled.add(row.id); handled.add(counterpart.id); matched++;
-          }
+          if (!counterpart) { unmatched++; continue; }
+          const matchedRowId = await post({ ...row, accounting_date: accountingDate }, { account: debitAccountId, classification: "", note: replace(shortcut.journal_note_template), description: replace(shortcut.description_template) || row.description, debitAccountId, creditAccountId }, false);
+          if (matchedRowId === null) return;
+          handled.add(row.id); handled.add(matchedRowId); matched++; posted++;
           continue;
         }
 
@@ -172,7 +169,7 @@ export function MonthlyJournalInbox() {
         posted++;
       }
       setSelected([]); setActive(null); setSourceFile(null); await load();
-      setNotice(matched && !posted ? `${matched} internal transfer pair(s) reconciled outside the General Journal. ${selectedRows.length - matched} unmatched row(s) remain unposted for review.` : `${posted} row(s) posted with ${shortcut.name}${matched ? `; ${matched} matching bank row(s) reconciled.` : ""}`);
+      setNotice(unmatched ? `${posted} reconciled transfer pair(s) posted to the ledger. ${unmatched} unmatched row(s) remain unposted for review.` : `${posted} row(s) posted with ${shortcut.name}${matched ? `; ${matched} matching bank row(s) reconciled.` : ""}`);
     } finally {
       setPostingShortcut(false);
     }
