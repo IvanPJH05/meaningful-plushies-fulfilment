@@ -11,6 +11,7 @@ type Form = { name: string; bankFilter: Shortcut["bank_filter"]; direction: Shor
 
 const blankForm = (): Form => ({ name: "", bankFilter: "any", direction: "money_out", dateRule: "same_day", debit: "statement_bank", credit: "", note: "", description: "" });
 const sourceLabel = (value: string, accounts: Account[]) => value === "statement_bank" ? "Bank account from statement" : accounts.find((account) => account.id === value)?.name ?? "Deleted account";
+const renderTemplate = (template: string, paidDate: string, accountingDate: string) => template.replaceAll("{month}", accountingDate.slice(0, 7)).replaceAll("{paid_date}", paidDate);
 
 export function MonthlyJournalShortcuts({ accounts }: { accounts: Account[] }) {
   const [shortcuts, setShortcuts] = useState<Shortcut[]>([]);
@@ -24,6 +25,22 @@ export function MonthlyJournalShortcuts({ accounts }: { accounts: Account[] }) {
     if (error) setMessage(error.message); else setShortcuts((data ?? []) as Shortcut[]);
   }
   useEffect(() => { void load(); }, []);
+
+  async function refreshLinkedWording(shortcutId: string, noteTemplate: string, descriptionTemplate: string) {
+    if (!supabase) return 0;
+    const rows: { id: string; paid_date: string; accounting_date: string }[] = [];
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await supabase.from("monthly_journal_entries").select("id,paid_date,accounting_date").eq("shortcut_id", shortcutId).range(from, from + 999);
+      if (error) throw error;
+      rows.push(...(data ?? []));
+      if (!data || data.length < 1000) break;
+    }
+    for (const row of rows) {
+      const { error } = await supabase.from("monthly_journal_entries").update({ journal_note: renderTemplate(noteTemplate, row.paid_date, row.accounting_date), description: renderTemplate(descriptionTemplate, row.paid_date, row.accounting_date), updated_at: new Date().toISOString() }).eq("id", row.id);
+      if (error) throw error;
+    }
+    return rows.length;
+  }
 
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -41,8 +58,11 @@ export function MonthlyJournalShortcuts({ accounts }: { accounts: Account[] }) {
       : await supabase.from("monthly_journal_shortcuts").insert(values);
     if (error) return setMessage(error.message);
     const savedName = form.name.trim();
+    let refreshed = 0;
+    try { if (editingId) refreshed = await refreshLinkedWording(editingId, values.journal_note_template, values.description_template); }
+    catch (refreshError) { return setMessage(refreshError instanceof Error ? refreshError.message : "Shortcut was saved, but its linked entries could not be refreshed."); }
     setForm(blankForm()); setEditingId(null);
-    setMessage(editingId ? `${savedName} updated.` : "Shortcut saved. It is now available as a button in Bank Statement Inbox.");
+    setMessage(editingId ? `${savedName} updated. ${refreshed} linked transaction${refreshed === 1 ? "" : "s"} refreshed.` : "Shortcut saved. It is now available as a button in Bank Statement Inbox.");
     await load();
   }
 

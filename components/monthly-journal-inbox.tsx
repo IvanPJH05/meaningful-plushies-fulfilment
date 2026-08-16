@@ -6,7 +6,7 @@ import { supabase } from "../lib/supabase";
 type Account = { id: string; name: string; classification: string };
 type Row = { id: string; bank: string; paid_date: string; accounting_date: string; description: string; money_in: number; money_out: number; status: string; note: string; receipt_path: string | null };
 type Shortcut = { id: string; name: string; transaction_direction: "money_in" | "money_out"; bank_filter: "any" | "Maybank" | "Public Bank" | "Touch 'n Go eWallet"; accounting_date_rule: "same_day" | "previous_month_end"; journal_note_template: string; description_template: string; debit_source: "statement_bank" | "account"; debit_account_id: string | null; credit_source: "statement_bank" | "account"; credit_account_id: string | null };
-type PostingDetails = { account: string; classification: string; note: string; description: string; debitAccountId?: string; creditAccountId?: string };
+type PostingDetails = { account: string; classification: string; note: string; description: string; debitAccountId?: string; creditAccountId?: string; shortcutId?: string };
 const money = (value: number) => `RM ${value.toLocaleString("en-MY", { minimumFractionDigits: 2 })}`;
 const monthEnd = (date: string) => { const day = new Date(`${date}T00:00:00`); return new Date(day.getFullYear(), day.getMonth(), 0).toISOString().slice(0, 10); };
 
@@ -119,7 +119,7 @@ export function MonthlyJournalInbox() {
     const { data, error } = await supabase.from("monthly_journal_entries").insert({
       paid_date: row.paid_date, accounting_date: row.accounting_date, bank: row.bank, bank_reference: "", journal_note: details.note,
       description: details.description, debit_account_id: debit, credit_account_id: credit, amount, source: "bank_statement", status: "posted",
-      bank_row_id: row.id, receipt_path: receiptPath, entry_lines: [{ account_id: debit, debit: amount, credit: 0 }, { account_id: credit, debit: 0, credit: amount }],
+      bank_row_id: row.id, shortcut_id: details.shortcutId ?? null, receipt_path: receiptPath, entry_lines: [{ account_id: debit, debit: amount, credit: 0 }, { account_id: credit, debit: 0, credit: amount }],
     }).select("id").single();
     if (error) { setNotice(error.message); return null; }
     await supabase.from("monthly_journal_bank_rows").update({ status: "posted", journal_entry_id: data.id, note: details.note, accounting_date: row.accounting_date, receipt_path: receiptPath, updated_at: new Date().toISOString() }).eq("id", row.id);
@@ -157,13 +157,13 @@ export function MonthlyJournalInbox() {
         if (isInternalTransfer) {
           const counterpart = findTransferCounterpart(row, debitAccountId, creditAccountId, row.money_in || row.money_out);
           if (!counterpart) { unmatched++; continue; }
-          const matchedRowId = await post({ ...row, accounting_date: accountingDate }, { account: debitAccountId, classification: "", note: replace(shortcut.journal_note_template), description: replace(shortcut.description_template) || row.description, debitAccountId, creditAccountId }, false);
+          const matchedRowId = await post({ ...row, accounting_date: accountingDate }, { account: debitAccountId, classification: "", note: replace(shortcut.journal_note_template), description: replace(shortcut.description_template), debitAccountId, creditAccountId, shortcutId: shortcut.id }, false);
           if (matchedRowId === null) return;
           handled.add(row.id); handled.add(matchedRowId); matched++; posted++;
           continue;
         }
 
-        const matchedRowId = await post({ ...row, accounting_date: accountingDate }, { account: debitAccountId, classification: "", note: replace(shortcut.journal_note_template), description: replace(shortcut.description_template) || row.description, debitAccountId, creditAccountId }, false);
+        const matchedRowId = await post({ ...row, accounting_date: accountingDate }, { account: debitAccountId, classification: "", note: replace(shortcut.journal_note_template), description: replace(shortcut.description_template), debitAccountId, creditAccountId, shortcutId: shortcut.id }, false);
         if (matchedRowId === null) return;
         handled.add(row.id);
         if (matchedRowId) { handled.add(matchedRowId); matched++; }
