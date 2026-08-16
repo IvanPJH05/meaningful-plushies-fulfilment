@@ -5,9 +5,10 @@ import { supabase, supabaseConfigured } from "../lib/supabase";
 import { MonthlyJournalInbox } from "./monthly-journal-inbox";
 import { MonthlyJournalImport } from "./monthly-journal-import";
 import { MonthlyJournalShortcuts } from "./monthly-journal-shortcuts";
+import { MonthlyJournalSourceDocuments } from "./monthly-journal-source-documents";
 import styles from "./monthly-journal-workspace.module.css";
 
-type JournalView = "accounts" | "account_activity" | "general_journal" | "inbox" | "import" | "shortcuts" | "shopee";
+type JournalView = "accounts" | "account_activity" | "general_journal" | "inbox" | "import" | "shortcuts" | "source_documents" | "shopee";
 type Classification = "asset" | "liability" | "equity" | "income" | "cost_of_sales" | "operating_expense";
 type Account = { id: string; name: string; classification: Classification; account_code: string; active: boolean };
 type Entry = { id: string; paid_date: string; accounting_date: string; bank: string; bank_reference: string; journal_note: string; description: string; amount: number; debit_account_id: string | null; credit_account_id: string | null; receipt_path: string | null; created_at: string };
@@ -160,6 +161,7 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
     {visitedViews.includes("inbox") && <div hidden={view !== "inbox"}><MonthlyJournalInbox /></div>}
     {visitedViews.includes("import") && <div hidden={view !== "import"}><section className={styles.card}><p className={styles.eyebrow}>IMPORT PDF STATEMENT</p><h2>Import a bank statement</h2><MonthlyJournalImport /></section></div>}
     {visitedViews.includes("shortcuts") && <div hidden={view !== "shortcuts"}><MonthlyJournalShortcuts accounts={accounts} /></div>}
+    {visitedViews.includes("source_documents") && <div hidden={view !== "source_documents"}><MonthlyJournalSourceDocuments /></div>}
     {view === "shopee" && <section className={styles.card}><p className={styles.eyebrow}>SHOPEE PAYLATER</p><h2>Shopee PayLater</h2><p>Use the existing Shopee PayLater account from your new Chart of Accounts for purchases and payments.</p></section>}
     {receiptPreview && <div className={styles.receiptBackdrop} role="dialog" aria-modal="true" aria-label="Source document" onClick={() => setReceiptPreview(null)}><section className={styles.receiptModal} onClick={(event) => event.stopPropagation()}><header><div><p className={styles.eyebrow}>SOURCE DOCUMENT</p><h2>{receiptPreview.name}</h2></div><button className={styles.refresh} type="button" onClick={() => setReceiptPreview(null)}>Close</button></header>{/\.pdf(?:$|\?)/i.test(receiptPreview.name) ? <iframe src={receiptPreview.url} title={receiptPreview.name} /> : <img src={receiptPreview.url} alt={receiptPreview.name} />}<a className={styles.refresh} href={receiptPreview.url} target="_blank" rel="noreferrer">Open in new tab</a></section></div>}
   </section>;
