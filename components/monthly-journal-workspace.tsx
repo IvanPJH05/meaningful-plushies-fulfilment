@@ -130,6 +130,20 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
     setMessage(`${account.name} hidden from Monthly Journal.`); await loadData();
   }
 
+  async function deleteUnusedAccount(account: Account) {
+    if (!supabase) return;
+    const { count: transactionCount, error: transactionError } = await supabase.from("monthly_journal_entries").select("id", { count: "exact", head: true }).or(`debit_account_id.eq.${account.id},credit_account_id.eq.${account.id}`);
+    if (transactionError) return setMessage(transactionError.message);
+    if (transactionCount) return setMessage(`${account.name} cannot be deleted because it has ${transactionCount} Monthly Journal transaction${transactionCount === 1 ? "" : "s"}.`);
+    const { count: shortcutCount, error: shortcutError } = await supabase.from("monthly_journal_shortcuts").select("id", { count: "exact", head: true }).or(`debit_account_id.eq.${account.id},credit_account_id.eq.${account.id}`);
+    if (shortcutError) return setMessage(shortcutError.message);
+    if (shortcutCount) return setMessage(`${account.name} is used by ${shortcutCount} shortcut${shortcutCount === 1 ? "" : "s"}. Remove or edit that shortcut before deleting the account.`);
+    const { error } = await supabase.from("monthly_journal_accounts").delete().eq("id", account.id);
+    if (error) return setMessage(error.message);
+    if (selectedLedgerAccountId === account.id) setSelectedLedgerAccountId("");
+    setMessage(`${account.name} was permanently deleted.`); await loadData();
+  }
+
   async function openReceipt(entry: Entry) {
     if (!supabase || !entry.receipt_path) return;
     const { data, error } = await supabase.storage.from("monthly-journal-receipts").createSignedUrl(entry.receipt_path, 600);
@@ -211,7 +225,7 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
 
     {view === "accounts" && <div className={styles.twoColumn}>
       <section className={styles.card}><div className={styles.cardHeading}><div><p className={styles.eyebrow}>START HERE</p><h2>Chart of Accounts</h2><p>Create the accounts you want to use in the new Monthly Journal only.</p></div><strong>{accounts.length} accounts</strong></div>
-        {accountsByType.map(({ type, accounts: grouped }) => <div className={styles.accountGroup} key={type}><h3>{labels[type]}</h3>{grouped.length ? grouped.map((account) => <div className={styles.accountRow} key={account.id}><span>{account.account_code && <small>{account.account_code}</small>}{account.name}</span><button type="button" onClick={() => void removeAccount(account)}>Hide</button></div>) : <p className={styles.muted}>No accounts yet.</p>}</div>)}
+        {accountsByType.map(({ type, accounts: grouped }) => <div className={styles.accountGroup} key={type}><h3>{labels[type]}</h3>{grouped.length ? grouped.map((account) => { const transactionCount = entries.filter((entry) => entry.debit_account_id === account.id || entry.credit_account_id === account.id).length; return <div className={styles.accountRow} key={account.id}><span>{account.account_code && <small>{account.account_code}</small>}{account.name}</span><div className={styles.accountActions}><button type="button" onClick={() => void removeAccount(account)}>Hide</button><button className={styles.deleteAccount} type="button" disabled={transactionCount > 0} title={transactionCount ? `Cannot delete: ${transactionCount} transaction${transactionCount === 1 ? "" : "s"}` : "Permanently delete this unused account"} onClick={() => void deleteUnusedAccount(account)}>{transactionCount ? "Has transactions" : "Delete"}</button></div></div>; }) : <p className={styles.muted}>No accounts yet.</p>}</div>)}
       </section>
       <form className={styles.card} onSubmit={addAccount}><p className={styles.eyebrow}>NEW ACCOUNT</p><h2>Add an account</h2><label>Classification<select value={classification} onChange={(event) => setClassification(event.target.value as Classification)}>{Object.entries(labels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label><label>Account name<input value={accountName} onChange={(event) => setAccountName(event.target.value)} placeholder="Example: Software" required /></label><label>Account code <span className={styles.optional}>(optional)</span><input value={accountCode} onChange={(event) => setAccountCode(event.target.value)} placeholder="Example: 6100" /></label><button className={styles.primary} type="submit">Save account</button></form>
     </div>}
