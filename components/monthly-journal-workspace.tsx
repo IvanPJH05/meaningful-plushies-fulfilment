@@ -9,7 +9,7 @@ import { MonthlyJournalSourceDocuments } from "./monthly-journal-source-document
 import { MonthlyJournalShopeeImport } from "./monthly-journal-shopee-import";
 import styles from "./monthly-journal-workspace.module.css";
 
-type JournalView = "accounts" | "account_activity" | "general_journal" | "inbox" | "import" | "shortcuts" | "source_documents" | "shopee";
+type JournalView = "accounts" | "account_activity" | "general_journal" | "inbox" | "import" | "reports" | "shortcuts" | "source_documents" | "shopee";
 type Classification = "asset" | "liability" | "equity" | "income" | "cost_of_sales" | "operating_expense";
 type Account = { id: string; name: string; classification: Classification; account_code: string; active: boolean };
 type Entry = { id: string; paid_date: string; accounting_date: string; bank: string; bank_reference: string; journal_note: string; description: string; amount: number; debit_account_id: string | null; credit_account_id: string | null; receipt_path: string | null; shortcut_id: string | null; source: string; created_at: string };
@@ -21,6 +21,11 @@ const labels: Record<Classification, string> = {
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
+const money = (amount: number) => `RM ${amount.toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const endOfMonth = (month: string) => {
+  const [year, number] = month.split("-").map(Number);
+  return new Date(Date.UTC(year, number, 0)).toISOString().slice(0, 10);
+};
 
 export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialView?: JournalView }) {
   const [view, setView] = useState<JournalView>(initialView);
@@ -30,6 +35,7 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
   const [shortcuts, setShortcuts] = useState<ShortcutDisplay[]>([]);
   const [shopeePurchases, setShopeePurchases] = useState<ShopeePurchase[]>([]);
   const [journalMonth, setJournalMonth] = useState("");
+  const [reportMonth, setReportMonth] = useState("");
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [accountName, setAccountName] = useState("");
@@ -114,6 +120,29 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
   const selectedLedgerAccount = accountById.get(selectedLedgerAccountId) ?? accounts[0];
   const ledgerEntries = useMemo(() => selectedLedgerAccount ? entries.filter((entry) => entry.debit_account_id === selectedLedgerAccount.id || entry.credit_account_id === selectedLedgerAccount.id) : [], [entries, selectedLedgerAccount]);
   const ledgerTotals = useMemo(() => ledgerEntries.reduce((totals, entry) => ({ debit: totals.debit + (entry.debit_account_id === selectedLedgerAccount?.id ? entry.amount : 0), credit: totals.credit + (entry.credit_account_id === selectedLedgerAccount?.id ? entry.amount : 0) }), { debit: 0, credit: 0 }), [ledgerEntries, selectedLedgerAccount]);
+  const reportEndDate = useMemo(() => reportMonth ? endOfMonth(reportMonth) : entries.reduce((latest, entry) => entry.accounting_date > latest ? entry.accounting_date : latest, ""), [entries, reportMonth]);
+  const reportPeriodEntries = useMemo(() => entries.filter((entry) => !reportMonth || entry.accounting_date.startsWith(reportMonth)), [entries, reportMonth]);
+  const reportPositionEntries = useMemo(() => entries.filter((entry) => !reportEndDate || entry.accounting_date <= reportEndDate), [entries, reportEndDate]);
+  const reportAccounts = useMemo(() => accounts.map((account) => {
+    const sum = (rows: Entry[]) => rows.reduce((totals, entry) => ({ debit: totals.debit + (entry.debit_account_id === account.id ? entry.amount : 0), credit: totals.credit + (entry.credit_account_id === account.id ? entry.amount : 0) }), { debit: 0, credit: 0 });
+    return { account, period: sum(reportPeriodEntries), position: sum(reportPositionEntries) };
+  }), [accounts, reportPeriodEntries, reportPositionEntries]);
+  const trialBalance = useMemo(() => reportAccounts.map((row) => ({ ...row, debit: Math.max(0, row.position.debit - row.position.credit), credit: Math.max(0, row.position.credit - row.position.debit) })).filter((row) => row.debit || row.credit), [reportAccounts]);
+  const profitAndLoss = useMemo(() => {
+    const total = (classification: Classification, normal: "debit" | "credit") => reportAccounts.filter((row) => row.account.classification === classification).reduce((sum, row) => sum + (normal === "credit" ? row.period.credit - row.period.debit : row.period.debit - row.period.credit), 0);
+    const income = total("income", "credit"); const costOfSales = total("cost_of_sales", "debit"); const operatingExpenses = total("operating_expense", "debit");
+    return { income, costOfSales, operatingExpenses, netProfit: income - costOfSales - operatingExpenses };
+  }, [reportAccounts]);
+  const balanceSheet = useMemo(() => {
+    const total = (classification: Classification, normal: "debit" | "credit") => reportAccounts.filter((row) => row.account.classification === classification).reduce((sum, row) => sum + (normal === "credit" ? row.position.credit - row.position.debit : row.position.debit - row.position.credit), 0);
+    const assets = total("asset", "debit"); const liabilities = total("liability", "credit"); const equity = total("equity", "credit");
+    const retainedEarnings = total("income", "credit") - total("cost_of_sales", "debit") - total("operating_expense", "debit");
+    return { assets, liabilities, equity, retainedEarnings, liabilitiesAndEquity: liabilities + equity + retainedEarnings };
+  }, [reportAccounts]);
+  const reportPeriodLabel = reportMonth ? new Date(`${reportMonth}-01T00:00:00`).toLocaleDateString("en-MY", { month: "long", year: "numeric" }) : "All posted periods";
+  const reportAsAtLabel = reportEndDate ? `As at ${reportEndDate}` : "No posted entries yet";
+  const balanceSheetDifference = balanceSheet.assets - balanceSheet.liabilitiesAndEquity;
+  const trialBalanceTotals = useMemo(() => trialBalance.reduce((totals, row) => ({ debit: totals.debit + row.debit, credit: totals.credit + row.credit }), { debit: 0, credit: 0 }), [trialBalance]);
   const accountLine = (entry: Entry, side: "debit" | "credit") => {
     const accountId = side === "debit" ? entry.debit_account_id : entry.credit_account_id;
     const account = accountById.get(accountId ?? "")?.name ?? "Deleted account";
@@ -276,6 +305,46 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
     </div>}
 
     {view === "general_journal" && <section className={styles.card}><div className={styles.cardHeading}><div><p className={styles.eyebrow}>ACCOUNTING DATE DRIVES REPORTS</p><h2>General Journal</h2><p>Descriptions appear beside their account in brackets; the journal note is shown below each entry.</p></div><div className={styles.journalControls}><label>Accounting month<select value={journalMonth} onChange={(event) => setJournalMonth(event.target.value)}><option value="">All months</option>{journalMonths.map((month) => <option key={month} value={month}>{new Date(`${month}-01T00:00:00`).toLocaleDateString("en-MY", { month: "long", year: "numeric" })}</option>)}</select></label><strong>{visibleJournalEntries.length} posted entries</strong></div></div><form className={styles.contraForm} onSubmit={postContraEntry}><div className={styles.contraIntro}><p className={styles.eyebrow}>CONTRA ENTRY</p><h3>Transfer between accounts</h3><p>Use this for moving money between asset accounts, such as Bank, Touch 'n Go, Stripe, or Xendit. It does not affect income or expenses.</p></div><div className={styles.contraFields}><label>Paid date<input type="date" value={contraForm.paidDate} onChange={(event) => setContraForm({ ...contraForm, paidDate: event.target.value })} required /></label><label>Accounting date<input type="date" value={contraForm.accountingDate} onChange={(event) => setContraForm({ ...contraForm, accountingDate: event.target.value })} required /></label><label>From account <span className={styles.optional}>(credit)</span><select value={contraForm.from} onChange={(event) => setContraForm({ ...contraForm, from: event.target.value })} required><option value="">Choose account</option>{contraAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label><label>To account <span className={styles.optional}>(debit)</span><select value={contraForm.to} onChange={(event) => setContraForm({ ...contraForm, to: event.target.value })} required><option value="">Choose account</option>{contraAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label><label>Amount (RM)<input type="number" min="0.01" step="0.01" value={contraForm.amount} onChange={(event) => setContraForm({ ...contraForm, amount: event.target.value })} required /></label><label>Journal note <span className={styles.optional}>(optional)</span><input value={contraForm.note} onChange={(event) => setContraForm({ ...contraForm, note: event.target.value })} placeholder="Example: Transfer to Touch 'n Go" /></label><label className={styles.contraWide}>Description <span className={styles.optional}>(optional)</span><input value={contraForm.description} onChange={(event) => setContraForm({ ...contraForm, description: event.target.value })} placeholder="Example: Reload wallet for business payments" /></label></div><div className={styles.contraPreview}>Debit {accountById.get(contraForm.to)?.name ?? "To account"}<br />Credit {accountById.get(contraForm.from)?.name ?? "From account"}</div><button className={styles.primary} type="submit">Post contra entry</button></form><div className={styles.journalList}>{visibleJournalEntries.length ? visibleJournalEntries.map((entry) => <article className={`${styles.journalEntry}${entry.receipt_path ? ` ${styles.receiptRow}` : ""}`} key={entry.id} onClick={() => void openReceipt(entry)}><div className={styles.entryDate}><b>{entry.accounting_date}</b><span>Paid {entry.paid_date}</span>{entry.receipt_path && <small>Receipt attached</small>}</div><div><p><span>Debit {accountLine(entry, "debit")}</span><strong>RM {entry.amount.toFixed(2)}</strong></p><p className={styles.credit}><span>Credit {accountLine(entry, "credit")}</span><strong>RM {entry.amount.toFixed(2)}</strong></p>{entry.journal_note && <p className={styles.description}>{entry.journal_note}</p>}{!entry.shortcut_id && entry.description && <p className={styles.description}>{entry.description}</p>}</div></article>) : <p className={styles.muted}>No posted entries for this accounting month.</p>}</div></section>}
+
+    {view === "reports" && <section className={styles.reports}>
+      <section className={styles.card}>
+        <div className={styles.reportHeader}>
+          <div><p className={styles.eyebrow}>FINANCIAL REPORTING</p><h2>Accounting statements</h2><p>Profit &amp; Loss uses the selected accounting month. Trial Balance and Balance Sheet show balances up to that month-end.</p></div>
+          <label>Reporting month<select value={reportMonth} onChange={(event) => setReportMonth(event.target.value)}><option value="">All posted periods</option>{journalMonths.map((month) => <option key={month} value={month}>{new Date(`${month}-01T00:00:00`).toLocaleDateString("en-MY", { month: "long", year: "numeric" })}</option>)}</select></label>
+        </div>
+      </section>
+      <div className={styles.reportSummary}>
+        <article><span>Net profit / (loss)</span><strong>{money(profitAndLoss.netProfit)}</strong><small>{reportPeriodLabel}</small></article>
+        <article><span>Total assets</span><strong>{money(balanceSheet.assets)}</strong><small>{reportAsAtLabel}</small></article>
+        <article className={Math.abs(balanceSheetDifference) < 0.01 ? styles.reportBalanced : styles.reportWarning}><span>Balance Sheet check</span><strong>{money(Math.abs(balanceSheetDifference))}</strong><small>{Math.abs(balanceSheetDifference) < 0.01 ? "Balanced" : "Out of balance"}</small></article>
+      </div>
+      <div className={styles.reportGrid}>
+        <section className={styles.card}>
+          <p className={styles.eyebrow}>INCOME STATEMENT</p><h2>Profit &amp; Loss</h2><p className={styles.muted}>For {reportPeriodLabel}</p>
+          <div className={styles.reportLines}>
+            <p><span>Income</span><strong>{money(profitAndLoss.income)}</strong></p>
+            <p><span>Cost of sales</span><strong>({money(profitAndLoss.costOfSales)})</strong></p>
+            <p><span>Operating expenses</span><strong>({money(profitAndLoss.operatingExpenses)})</strong></p>
+            <p className={styles.reportTotal}><span>Net profit / (loss)</span><strong>{money(profitAndLoss.netProfit)}</strong></p>
+          </div>
+          <div className={styles.reportAccountLines}>{reportAccounts.filter((row) => ["income", "cost_of_sales", "operating_expense"].includes(row.account.classification) && (row.period.debit || row.period.credit)).map((row) => { const amount = row.account.classification === "income" ? row.period.credit - row.period.debit : row.period.debit - row.period.credit; return <p key={row.account.id}><span>{row.account.name}</span><strong>{money(amount)}</strong></p>; })}</div>
+        </section>
+        <section className={styles.card}>
+          <p className={styles.eyebrow}>FINANCIAL POSITION</p><h2>Balance Sheet</h2><p className={styles.muted}>{reportAsAtLabel}</p>
+          <div className={styles.reportLines}>
+            <p><span>Assets</span><strong>{money(balanceSheet.assets)}</strong></p>
+            <p><span>Liabilities</span><strong>{money(balanceSheet.liabilities)}</strong></p>
+            <p><span>Equity</span><strong>{money(balanceSheet.equity)}</strong></p>
+            <p><span>Current earnings</span><strong>{money(balanceSheet.retainedEarnings)}</strong></p>
+            <p className={styles.reportTotal}><span>Total liabilities &amp; equity</span><strong>{money(balanceSheet.liabilitiesAndEquity)}</strong></p>
+          </div>
+        </section>
+      </div>
+      <section className={styles.card}>
+        <div className={styles.cardHeading}><div><p className={styles.eyebrow}>ACCOUNT BALANCES</p><h2>Trial Balance</h2><p>{reportAsAtLabel}</p></div><strong>{trialBalance.length} accounts</strong></div>
+        <div className={styles.reportTable}><table><thead><tr><th>Account</th><th>Classification</th><th>Debit</th><th>Credit</th></tr></thead><tbody>{trialBalance.length ? trialBalance.map((row) => <tr key={row.account.id}><td>{row.account.name}</td><td>{labels[row.account.classification]}</td><td>{row.debit ? money(row.debit) : "—"}</td><td>{row.credit ? money(row.credit) : "—"}</td></tr>) : <tr><td colSpan={4}>No posted Monthly Journal entries yet.</td></tr>}</tbody><tfoot><tr><th colSpan={2}>Total</th><th>{money(trialBalanceTotals.debit)}</th><th>{money(trialBalanceTotals.credit)}</th></tr></tfoot></table></div>
+      </section>
+    </section>}
 
     {view === "account_activity" && <section className={styles.accountActivity}><aside className={styles.accountSelector}><p className={styles.eyebrow}>ACCOUNTS</p><h2>Select an account</h2><p className={styles.muted}>Choose an account to see every Monthly Journal transaction that affects it.</p><div className={styles.accountPicker}>{accounts.map((account) => <button className={selectedLedgerAccount?.id === account.id ? styles.selectedAccount : ""} type="button" key={account.id} onClick={() => setSelectedLedgerAccountId(account.id)}><span>{account.name}</span><small>{labels[account.classification]}</small></button>)}</div></aside><section className={styles.card}><div className={styles.cardHeading}><div><p className={styles.eyebrow}>ACCOUNT ACTIVITY</p><h2>{selectedLedgerAccount?.name ?? "Choose an account"}</h2><p>{selectedLedgerAccount ? `${labels[selectedLedgerAccount.classification]} · ${ledgerEntries.length} transaction${ledgerEntries.length === 1 ? "" : "s"}` : "No account selected."}</p></div></div>{selectedLedgerAccount && <><div className={styles.ledgerTotals}><span>Total debits <b>RM {ledgerTotals.debit.toFixed(2)}</b></span><span>Total credits <b>RM {ledgerTotals.credit.toFixed(2)}</b></span></div><div className={styles.ledgerTable}><table><thead><tr><th>Accounting date</th><th>Paid date</th><th>Other account</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead><tbody>{ledgerEntries.length ? ledgerEntries.map((entry) => { const isDebit = entry.debit_account_id === selectedLedgerAccount.id; const otherAccount = accountById.get(isDebit ? entry.credit_account_id ?? "" : entry.debit_account_id ?? "")?.name ?? "Deleted account"; return <tr className={entry.receipt_path ? styles.receiptRow : ""} key={entry.id} onClick={() => void openReceipt(entry)}><td>{entry.accounting_date}</td><td>{entry.paid_date}</td><td>{otherAccount}</td><td><span className={styles.ledgerDescription}>{entry.description || "—"}</span>{entry.journal_note && <small className={styles.ledgerJournalNote}>{entry.journal_note}</small>}{entry.receipt_path && <small className={styles.receiptAttached}>Receipt attached</small>}</td><td>{isDebit ? `RM ${entry.amount.toFixed(2)}` : "—"}</td><td>{isDebit ? "—" : `RM ${entry.amount.toFixed(2)}`}</td></tr>; }) : <tr><td colSpan={6}>No posted transactions for this account yet.</td></tr>}</tbody></table></div></>}</section></section>}
 
