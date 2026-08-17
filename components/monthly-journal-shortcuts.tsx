@@ -80,6 +80,15 @@ export function MonthlyJournalShortcuts({ accounts }: { accounts: Account[] }) {
 
   function cancelEdit() { setForm(blankForm()); setEditingId(null); }
 
+  async function copyTemplateCommand(command: string) {
+    try {
+      await navigator.clipboard.writeText(command);
+      setMessage(`${command} copied. Paste it into either template.`);
+    } catch {
+      setMessage(`Copy ${command} and paste it into either template.`);
+    }
+  }
+
   async function remove(shortcut: Shortcut) {
     if (!supabase) return;
     const { error } = await supabase.from("monthly_journal_shortcuts").delete().eq("id", shortcut.id);
@@ -97,7 +106,12 @@ export function MonthlyJournalShortcuts({ accounts }: { accounts: Account[] }) {
       <label>Accounting date<select value={form.dateRule} onChange={(event) => setForm({ ...form, dateRule: event.target.value as Form["dateRule"] })}><option value="same_day">Same as paid date</option><option value="previous_month_end">Previous month end</option></select></label>
       <label>Journal note template<input value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} placeholder="Example: Shopify subscription - {month}" /></label>
       <label>Description template<textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="Example: Shopify software for {month}" /></label>
-      <p className={styles.templateHint}>Use <b>{"{month}"}</b> for the accounting month, <b>{"{paid_date}"}</b> for the bank date, and <b>{"{previous_month_end}"}</b> for the last day of the month before the paid date.</p>
+      <div className={styles.templateCommands}>
+        <p>Copy a command, then paste it into a template.</p>
+        <button type="button" onClick={() => void copyTemplateCommand("{paid_date}")}><code>{"{paid_date}"}</code><span>Bank payment date</span></button>
+        <button type="button" onClick={() => void copyTemplateCommand("{month}")}><code>{"{month}"}</code><span>Accounting month</span></button>
+        <button type="button" onClick={() => void copyTemplateCommand("{previous_month_end}")}><code>{"{previous_month_end}"}</code><span>Last day of the month before the paid date</span></button>
+      </div>
       <button className={styles.primary} type="submit">{editingId ? "Save changes" : "Save shortcut"}</button>{editingId && <button className={styles.refresh} type="button" onClick={cancelEdit}>Cancel</button>}
     </form>
     <section className={styles.card}><p className={styles.eyebrow}>SAVED SHORTCUTS</p><h2>Your inbox buttons</h2>{shortcuts.length ? <div className={styles.shortcutList}>{shortcuts.map((shortcut) => <article key={shortcut.id}><div><strong>{shortcut.name}</strong><span>{shortcut.bank_filter === "any" ? "Any bank" : shortcut.bank_filter} · {shortcut.transaction_direction === "money_out" ? "Money out" : "Money in"} · Debit {shortcut.debit_source === "statement_bank" ? "statement bank" : sourceLabel(shortcut.debit_account_id ?? "", accounts)} · Credit {shortcut.credit_source === "statement_bank" ? "statement bank" : sourceLabel(shortcut.credit_account_id ?? "", accounts)}</span></div><div className={styles.shortcutActions}><button type="button" onClick={() => edit(shortcut)}>Edit</button><button type="button" onClick={() => void remove(shortcut)}>Remove</button></div></article>)}</div> : <p className={styles.muted}>No custom shortcuts yet.</p>}</section>
