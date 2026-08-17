@@ -145,7 +145,10 @@ export function MonthlyJournalInbox() {
       for (const row of selectedRows) {
         if (handled.has(row.id)) continue;
         const accountingDate = shortcut.accounting_date_rule === "previous_month_end" ? monthEnd(row.paid_date) : row.paid_date;
-        const replace = (template: string) => template.replaceAll("{month}", accountingDate.slice(0, 7)).replaceAll("{paid_date}", row.paid_date);
+        const replace = (template: string) => template
+          .replaceAll("{month}", accountingDate.slice(0, 7))
+          .replaceAll("{paid_date}", row.paid_date)
+          .replaceAll("{previous_month_end}", monthEnd(row.paid_date));
         const statementBankId = bankAccount(row.bank);
         const debitAccountId = shortcut.debit_source === "statement_bank" ? statementBankId : shortcut.debit_account_id ?? "";
         const creditAccountId = shortcut.credit_source === "statement_bank" ? statementBankId : shortcut.credit_account_id ?? "";

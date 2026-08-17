@@ -11,7 +11,14 @@ type Form = { name: string; bankFilter: Shortcut["bank_filter"]; direction: Shor
 
 const blankForm = (): Form => ({ name: "", bankFilter: "any", direction: "money_out", dateRule: "same_day", debit: "statement_bank", credit: "", note: "", description: "" });
 const sourceLabel = (value: string, accounts: Account[]) => value === "statement_bank" ? "Bank account from statement" : accounts.find((account) => account.id === value)?.name ?? "Deleted account";
-const renderTemplate = (template: string, paidDate: string, accountingDate: string) => template.replaceAll("{month}", accountingDate.slice(0, 7)).replaceAll("{paid_date}", paidDate);
+const previousMonthEnd = (paidDate: string) => {
+  const [year, month] = paidDate.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, 0)).toISOString().slice(0, 10);
+};
+const renderTemplate = (template: string, paidDate: string, accountingDate: string) => template
+  .replaceAll("{month}", accountingDate.slice(0, 7))
+  .replaceAll("{paid_date}", paidDate)
+  .replaceAll("{previous_month_end}", previousMonthEnd(paidDate));
 
 export function MonthlyJournalShortcuts({ accounts }: { accounts: Account[] }) {
   const [shortcuts, setShortcuts] = useState<Shortcut[]>([]);
@@ -90,7 +97,7 @@ export function MonthlyJournalShortcuts({ accounts }: { accounts: Account[] }) {
       <label>Accounting date<select value={form.dateRule} onChange={(event) => setForm({ ...form, dateRule: event.target.value as Form["dateRule"] })}><option value="same_day">Same as paid date</option><option value="previous_month_end">Previous month end</option></select></label>
       <label>Journal note template<input value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} placeholder="Example: Shopify subscription - {month}" /></label>
       <label>Description template<textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="Example: Shopify software for {month}" /></label>
-      <p className={styles.templateHint}>Use <b>{"{month}"}</b> for the accounting month and <b>{"{paid_date}"}</b> for the bank date.</p>
+      <p className={styles.templateHint}>Use <b>{"{month}"}</b> for the accounting month, <b>{"{paid_date}"}</b> for the bank date, and <b>{"{previous_month_end}"}</b> for the last day of the month before the paid date.</p>
       <button className={styles.primary} type="submit">{editingId ? "Save changes" : "Save shortcut"}</button>{editingId && <button className={styles.refresh} type="button" onClick={cancelEdit}>Cancel</button>}
     </form>
     <section className={styles.card}><p className={styles.eyebrow}>SAVED SHORTCUTS</p><h2>Your inbox buttons</h2>{shortcuts.length ? <div className={styles.shortcutList}>{shortcuts.map((shortcut) => <article key={shortcut.id}><div><strong>{shortcut.name}</strong><span>{shortcut.bank_filter === "any" ? "Any bank" : shortcut.bank_filter} · {shortcut.transaction_direction === "money_out" ? "Money out" : "Money in"} · Debit {shortcut.debit_source === "statement_bank" ? "statement bank" : sourceLabel(shortcut.debit_account_id ?? "", accounts)} · Credit {shortcut.credit_source === "statement_bank" ? "statement bank" : sourceLabel(shortcut.credit_account_id ?? "", accounts)}</span></div><div className={styles.shortcutActions}><button type="button" onClick={() => edit(shortcut)}>Edit</button><button type="button" onClick={() => void remove(shortcut)}>Remove</button></div></article>)}</div> : <p className={styles.muted}>No custom shortcuts yet.</p>}</section>
