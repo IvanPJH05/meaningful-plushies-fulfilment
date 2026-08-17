@@ -146,7 +146,7 @@ function parseTouchNGo(text: string): ParsedRow[] {
     const detail = cleanedDetails.filter((line) => line.toLowerCase() !== transactionType.toLowerCase()).join(" · ");
     const compactDescription = [transactionType, detail].filter(Boolean).join(" — ").slice(0, 500);
     const description = [compactDescription, reference ? `Ref ${reference}` : ""].filter(Boolean).join(" · ").slice(0, 500);
-    const moneyIn = /(?:auto reload|receive from wallet|duitnow[_\s-]*receive|refund|cashback|top.?up)/i.test(transactionType) ? amounts[amounts.length - 2] ?? amounts[0] : 0;
+    const moneyIn = /(?:reload|receive from wallet|duitnow[_\s-]*receive|refund|cashback|top.?up)/i.test(transactionType) ? amounts[amounts.length - 2] ?? amounts[0] : 0;
     const amount = amounts.length >= 2 ? amounts[amounts.length - 2] : amounts[0];
     rows.push({ paidDate: current.paidDate, description, compactDescription, moneyIn, moneyOut: moneyIn ? 0 : amount, balance: amounts.length >= 2 ? amounts[amounts.length - 1] : null });
     current = null;
