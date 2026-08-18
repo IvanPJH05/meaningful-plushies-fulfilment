@@ -72,21 +72,12 @@ export function MonthlyJournalInbox() {
   const choices = accounts.filter((account) => account.classification === form.classification.replaceAll(" ", "_"));
   const bankAccount = (bank: string) => accounts.find((account) => account.name === `Bank - ${bank}`)?.id ?? (bank === "Touch 'n Go eWallet" ? accounts.find((account) => account.name === "Touch 'n Go eWallet")?.id ?? "" : "");
   const statementAccountName = (bank: string) => bank === "Touch 'n Go eWallet" ? bank : `Bank - ${bank}`;
-  const statementBankForAccount = (accountId: string) => {
+  const isBankAccount = (accountId: string | null) => {
     const name = accounts.find((account) => account.id === accountId)?.name ?? "";
-    if (name.startsWith("Bank - ")) return name.slice("Bank - ".length);
-    return name === "Touch 'n Go eWallet" ? name : "";
+    return name.startsWith("Bank - ") || name === "Touch 'n Go eWallet";
   };
-  const dateDistance = (left: string, right: string) => Math.abs(new Date(`${left}T00:00:00`).getTime() - new Date(`${right}T00:00:00`).getTime()) / 86_400_000;
-  const findTransferCounterpart = (row: Row, debitAccountId: string, creditAccountId: string, amount: number) => {
-    const sourceAccountId = bankAccount(row.bank);
-    const otherAccountId = debitAccountId === sourceAccountId ? creditAccountId : creditAccountId === sourceAccountId ? debitAccountId : "";
-    const otherBank = statementBankForAccount(otherAccountId);
-    if (!otherBank || otherBank === row.bank) return null;
-    const candidates = rows.filter((candidate) => candidate.status === "unposted" && candidate.bank === otherBank && candidate.id !== row.id && Math.abs((candidate.money_in || candidate.money_out) - amount) < 0.005 && (row.money_in > 0 ? candidate.money_out > 0 : candidate.money_in > 0) && dateDistance(candidate.paid_date, row.paid_date) <= 3).sort((left, right) => dateDistance(left.paid_date, row.paid_date) - dateDistance(right.paid_date, row.paid_date));
-    const exactDate = candidates.filter((candidate) => candidate.paid_date === row.paid_date);
-    return exactDate.length === 1 ? exactDate[0] : candidates.length === 1 ? candidates[0] : null;
-  };
+  const shortcutRequiresContra = (shortcut: Shortcut) => (shortcut.debit_source === "account" && isBankAccount(shortcut.debit_account_id)) || (shortcut.credit_source === "account" && isBankAccount(shortcut.credit_account_id));
+  const postingShortcuts = customShortcuts.filter((shortcut) => !shortcutRequiresContra(shortcut));
 
   function setDocument(file?: File) {
     if (!file) return;
@@ -123,24 +114,21 @@ export function MonthlyJournalInbox() {
     }).select("id").single();
     if (error) { setNotice(error.message); return null; }
     await supabase.from("monthly_journal_bank_rows").update({ status: "posted", journal_entry_id: data.id, note: details.note, accounting_date: row.accounting_date, receipt_path: receiptPath, updated_at: new Date().toISOString() }).eq("id", row.id);
-    const counterpart = findTransferCounterpart(row, debit, credit, amount);
-    if (counterpart) await supabase.from("monthly_journal_bank_rows").update({ status: "posted", journal_entry_id: data.id, note: details.note, accounting_date: row.accounting_date, updated_at: new Date().toISOString() }).eq("id", counterpart.id);
     if (reloadAfter) {
-      setNotice(counterpart ? "Posted to General Journal and matched the other bank row." : "Posted to General Journal.");
+      setNotice("Posted to General Journal.");
       setSelected([]); setActive(null); setSourceFile(null); await load();
     }
-    return counterpart?.id ?? "";
+    return "";
   }
 
   async function applyCustomShortcut(shortcut: Shortcut) {
     if (postingShortcut) return;
+    if (shortcutRequiresContra(shortcut)) return setNotice("This is an internal transfer. Select both bank rows and use Contra selected rows instead.");
     const selectedRows = rows.filter((row) => selected.includes(row.id) && row.status === "unposted" && (shortcut.transaction_direction === "money_in" ? row.money_in > 0 : row.money_out > 0) && (shortcut.bank_filter === "any" || row.bank === shortcut.bank_filter));
     if (!selectedRows.length) return setNotice(`Select ${shortcut.transaction_direction === "money_in" ? "money-in" : "money-out"} rows for this shortcut.`);
     setPostingShortcut(true);
     const handled = new Set<string>();
     let posted = 0;
-    let matched = 0;
-    let unmatched = 0;
     try {
       for (const row of selectedRows) {
         if (handled.has(row.id)) continue;
@@ -154,26 +142,58 @@ export function MonthlyJournalInbox() {
         const creditAccountId = shortcut.credit_source === "statement_bank" ? statementBankId : shortcut.credit_account_id ?? "";
         if (!debitAccountId || !creditAccountId || debitAccountId === creditAccountId) { setNotice("This shortcut needs two different valid accounts."); return; }
 
-        const debitBank = statementBankForAccount(debitAccountId);
-        const creditBank = statementBankForAccount(creditAccountId);
-        const isInternalTransfer = Boolean(debitBank && creditBank && debitBank !== creditBank);
-        if (isInternalTransfer) {
-          const counterpart = findTransferCounterpart(row, debitAccountId, creditAccountId, row.money_in || row.money_out);
-          if (!counterpart) { unmatched++; continue; }
-          const matchedRowId = await post({ ...row, accounting_date: accountingDate }, { account: debitAccountId, classification: "", note: replace(shortcut.journal_note_template), description: replace(shortcut.description_template), debitAccountId, creditAccountId, shortcutId: shortcut.id }, false);
-          if (matchedRowId === null) return;
-          handled.add(row.id); handled.add(matchedRowId); matched++; posted++;
-          continue;
-        }
-
-        const matchedRowId = await post({ ...row, accounting_date: accountingDate }, { account: debitAccountId, classification: "", note: replace(shortcut.journal_note_template), description: replace(shortcut.description_template), debitAccountId, creditAccountId, shortcutId: shortcut.id }, false);
-        if (matchedRowId === null) return;
+        const result = await post({ ...row, accounting_date: accountingDate }, { account: debitAccountId, classification: "", note: replace(shortcut.journal_note_template), description: replace(shortcut.description_template), debitAccountId, creditAccountId, shortcutId: shortcut.id }, false);
+        if (result === null) return;
         handled.add(row.id);
-        if (matchedRowId) { handled.add(matchedRowId); matched++; }
         posted++;
       }
       setSelected([]); setActive(null); setSourceFile(null); await load();
-      setNotice(unmatched ? `${posted} reconciled transfer pair(s) posted to the ledger. ${unmatched} unmatched row(s) remain unposted for review.` : `${posted} row(s) posted with ${shortcut.name}${matched ? `; ${matched} matching bank row(s) reconciled.` : ""}`);
+      setNotice(`${posted} row(s) posted with ${shortcut.name}.`);
+    } finally {
+      setPostingShortcut(false);
+    }
+  }
+
+  async function postContra() {
+    if (!supabase || postingShortcut) return;
+    const selectedRows = rows.filter((row) => selected.includes(row.id) && row.status === "unposted");
+    if (selectedRows.length !== 2) return setNotice("Contra needs exactly two unposted bank rows.");
+    const [first, second] = selectedRows;
+    const firstAmount = first.money_in || first.money_out;
+    const secondAmount = second.money_in || second.money_out;
+    if (first.paid_date !== second.paid_date) return setNotice("Contra rows must have the same paid date.");
+    if (Math.abs(firstAmount - secondAmount) >= 0.005) return setNotice("Contra rows must have the same amount.");
+    const moneyIn = first.money_in > 0 ? first : second.money_in > 0 ? second : null;
+    const moneyOut = first.money_out > 0 ? first : second.money_out > 0 ? second : null;
+    if (!moneyIn || !moneyOut) return setNotice("Select one money-in row and one money-out row for Contra.");
+    if (moneyIn.bank === moneyOut.bank) return setNotice("Contra must move between two different accounts.");
+    const debitAccountId = bankAccount(moneyIn.bank);
+    const creditAccountId = bankAccount(moneyOut.bank);
+    if (!debitAccountId || !creditAccountId) return setNotice("Create both bank accounts in Chart of Accounts before posting Contra.");
+    const description = `Internal transfer from ${moneyOut.bank} to ${moneyIn.bank}`;
+    setPostingShortcut(true);
+    try {
+      const { data, error } = await supabase.from("monthly_journal_entries").insert({
+        paid_date: moneyIn.paid_date,
+        accounting_date: moneyIn.paid_date,
+        bank: `${moneyOut.bank} → ${moneyIn.bank}`,
+        bank_reference: `${moneyOut.id},${moneyIn.id}`,
+        journal_note: `${description} on ${moneyIn.paid_date}`,
+        description,
+        debit_account_id: debitAccountId,
+        credit_account_id: creditAccountId,
+        amount: firstAmount,
+        source: "bank_statement",
+        status: "posted",
+        bank_row_id: moneyIn.id,
+        receipt_path: null,
+        entry_lines: [{ account_id: debitAccountId, debit: firstAmount, credit: 0 }, { account_id: creditAccountId, debit: 0, credit: firstAmount }],
+      }).select("id").single();
+      if (error || !data) return setNotice(error?.message || "Could not post Contra.");
+      const { error: updateError } = await supabase.from("monthly_journal_bank_rows").update({ status: "posted", journal_entry_id: data.id, note: `${description} on ${moneyIn.paid_date}`, accounting_date: moneyIn.paid_date, updated_at: new Date().toISOString() }).in("id", [moneyIn.id, moneyOut.id]);
+      if (updateError) return setNotice(updateError.message);
+      setSelected([]); setActive(null); setSourceFile(null); await load();
+      setNotice("Contra posted. Both bank rows now point to the same journal entry.");
     } finally {
       setPostingShortcut(false);
     }
@@ -182,7 +202,7 @@ export function MonthlyJournalInbox() {
   return <div className="monthly-inbox">
     {notice && <p className="notice">{notice}</p>}
     <div className="mj-filters"><label>Transaction side<select value={filter.side} onChange={(event) => setFilter({ ...filter, side: event.target.value })}><option value="">All transactions</option><option value="debit">Debit — money in</option><option value="credit">Credit — money out</option></select></label><label>Accounting month<select value={filter.month} onChange={(event) => setFilter({ ...filter, month: event.target.value })}><option value="">All months</option>{[...new Set(rows.map((row) => row.paid_date.slice(0, 7)))].map((month) => <option key={month}>{month}</option>)}</select></label><label>Posting status<select value={filter.status} onChange={(event) => setFilter({ ...filter, status: event.target.value })}><option value="">All</option><option value="unposted">Unposted</option><option value="reconciled">Reconciled</option><option value="posted">Posted</option></select></label><label>Bank account<select value={filter.bank} onChange={(event) => setFilter({ ...filter, bank: event.target.value })}><option value="">All accounts</option><option>Maybank</option><option>Public Bank</option><option>Touch 'n Go eWallet</option></select></label><label>Exclude name<input placeholder="Hide matching name" value={filter.excludeName} onChange={(event) => setFilter({ ...filter, excludeName: event.target.value })} /></label><label>Search name<input placeholder="Merchant or reference" value={filter.search} onChange={(event) => setFilter({ ...filter, search: event.target.value })} /></label></div>
-    <div className="mj-shortcuts"><b>{selected.length} selected unposted row(s)</b><label>Posting shortcut<select value={selectedShortcutId} disabled={postingShortcut} onChange={(event) => setSelectedShortcutId(event.target.value)}><option value="">Choose a shortcut</option>{customShortcuts.map((shortcut) => <option key={shortcut.id} value={shortcut.id}>{shortcut.name}</option>)}</select></label><button disabled={postingShortcut || !selectedShortcutId} onClick={() => { const shortcut = customShortcuts.find((item) => item.id === selectedShortcutId); if (shortcut) void applyCustomShortcut(shortcut); }}>Apply shortcut</button><button onClick={() => setSelected([])}>Clear selection</button></div>
+    <div className="mj-shortcuts"><b>{selected.length} selected unposted row(s)</b><label>Posting shortcut<select value={selectedShortcutId} disabled={postingShortcut} onChange={(event) => setSelectedShortcutId(event.target.value)}><option value="">Choose a shortcut</option>{postingShortcuts.map((shortcut) => <option key={shortcut.id} value={shortcut.id}>{shortcut.name}</option>)}</select></label><button disabled={postingShortcut || !selectedShortcutId} onClick={() => { const shortcut = customShortcuts.find((item) => item.id === selectedShortcutId); if (shortcut) void applyCustomShortcut(shortcut); }}>Apply shortcut</button><button disabled={postingShortcut || selected.length !== 2} title="Select exactly one matching money-in row and one matching money-out row" onClick={() => void postContra()}>Contra selected rows</button><button onClick={() => setSelected([])}>Clear selection</button></div>
     <div className="mj-grid"><div className="mj-table"><table><thead><tr><th><input type="checkbox" onChange={(event) => setSelected(event.target.checked ? shown.filter((row) => row.status === "unposted").map((row) => row.id) : [])} /></th><th>Paid date</th><th>Bank row</th><th>Money in</th><th>Money out</th><th>Status</th></tr></thead><tbody>{shown.map((row) => <tr key={row.id} className={active?.id === row.id ? "active" : ""} onClick={() => setActive(row)}><td onClick={(event) => event.stopPropagation()}><input type="checkbox" disabled={row.status !== "unposted"} checked={selected.includes(row.id)} onChange={(event) => setSelected(event.target.checked ? [...selected, row.id] : selected.filter((id) => id !== row.id))} /></td><td>{row.paid_date}</td><td><strong>{row.description}</strong><small>{row.bank}</small></td><td>{row.money_in ? money(row.money_in) : "-"}</td><td>{row.money_out ? money(row.money_out) : "-"}</td><td>{row.status}</td></tr>)}</tbody></table></div>
       <aside className="mj-panel">{active ? <><h2>Create General Journal entry</h2><div className="mj-read"><b>{active.description}</b><br />{active.bank} · {money(active.money_in || active.money_out)}</div><div className="mj-form-grid"><label>Paid date<input type="date" value={active.paid_date} onChange={(event) => setActive({ ...active, paid_date: event.target.value })} /></label><label>Accounting date<input type="date" value={active.accounting_date} onChange={(event) => setActive({ ...active, accounting_date: event.target.value })} /></label><label>Classification<select value={form.classification} onChange={(event) => setForm({ ...form, classification: event.target.value, account: "" })}>{["asset", "liability", "equity", "income", "cost_of_sales", "operating_expense"].map((value) => <option key={value}>{value.replaceAll("_", " ")}</option>)}</select></label><label>Debit / credit account<select value={form.account} onChange={(event) => setForm({ ...form, account: event.target.value })}><option value="">Choose account</option>{choices.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label><label className="mj-wide">Journal note<input value={form.note} onChange={(event) => setForm({ ...form, note: event.target.value })} /></label><label className="mj-wide">Description<textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label><div className={`mj-source mj-wide${draggingSource ? " is-dragging" : ""}`} role="button" tabIndex={0} onClick={() => sourceInput.current?.click()} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") sourceInput.current?.click(); }} onDragEnter={(event) => { event.preventDefault(); setDraggingSource(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDraggingSource(false)} onDrop={sourceDrop}><strong>{sourceFile ? sourceFile.name : "Drop source document here"}</strong><span>{sourceFile ? "Click to replace it" : "or click to select a receipt, PDF, or image"}</span><input ref={sourceInput} type="file" accept="application/pdf,image/*" onChange={(event: ChangeEvent<HTMLInputElement>) => { setDocument(event.target.files?.[0]); event.target.value = ""; }} /></div></div><div className="mj-preview">Debit {active.money_in ? statementAccountName(active.bank) : accounts.find((account) => account.id === form.account)?.name} <b>{money(active.money_in || active.money_out)}</b><br />Credit {active.money_in ? accounts.find((account) => account.id === form.account)?.name : statementAccountName(active.bank)} <b>{money(active.money_in || active.money_out)}</b></div><button className="button primary" onClick={() => void post()}>Post to General Journal</button></> : <p>Choose a bank row to begin.</p>}</aside></div>
   </div>;
