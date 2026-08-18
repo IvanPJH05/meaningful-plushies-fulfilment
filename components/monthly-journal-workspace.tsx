@@ -41,6 +41,8 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
   const [accountName, setAccountName] = useState("");
   const [accountCode, setAccountCode] = useState("");
   const [classification, setClassification] = useState<Classification>("asset");
+  const [openingForm, setOpeningForm] = useState<{ date: string; account: string; side: "debit" | "credit"; amount: string; description: string }>({ date: today(), account: "", side: "debit", amount: "", description: "" });
+  const [savingOpeningBalance, setSavingOpeningBalance] = useState(false);
   const [selectedLedgerAccountId, setSelectedLedgerAccountId] = useState("");
   const [focused, setFocused] = useState(false);
   const [receiptPreview, setReceiptPreview] = useState<{ url: string; name: string } | null>(null);
@@ -115,6 +117,7 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
   const journalMonths = useMemo(() => [...new Set(entries.map((entry) => entry.accounting_date.slice(0, 7)))].sort().reverse(), [entries]);
   const visibleJournalEntries = useMemo(() => entries.filter((entry) => !journalMonth || entry.accounting_date.startsWith(journalMonth)), [entries, journalMonth]);
   const accountsByType = useMemo(() => Object.keys(labels).map((type) => ({ type: type as Classification, accounts: accounts.filter((account) => account.classification === type) })), [accounts]);
+  const openingBalanceAccounts = useMemo(() => accounts.filter((account) => ["asset", "liability", "equity"].includes(account.classification) && account.name.trim().toLowerCase() !== "opening balance equity"), [accounts]);
   const selectedLedgerAccount = accountById.get(selectedLedgerAccountId) ?? accounts[0];
   const ledgerEntries = useMemo(() => selectedLedgerAccount ? entries.filter((entry) => entry.debit_account_id === selectedLedgerAccount.id || entry.credit_account_id === selectedLedgerAccount.id) : [], [entries, selectedLedgerAccount]);
   const ledgerTotals = useMemo(() => ledgerEntries.reduce((totals, entry) => ({ debit: totals.debit + (entry.debit_account_id === selectedLedgerAccount?.id ? entry.amount : 0), credit: totals.credit + (entry.credit_account_id === selectedLedgerAccount?.id ? entry.amount : 0) }), { debit: 0, credit: 0 }), [ledgerEntries, selectedLedgerAccount]);
@@ -163,6 +166,47 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
     const { error } = await supabase.from("monthly_journal_accounts").update({ active: false, updated_at: new Date().toISOString() }).eq("id", account.id);
     if (error) return setMessage(error.message);
     setMessage(`${account.name} hidden from Monthly Journal.`); await loadData();
+  }
+
+  async function postOpeningBalance(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase || savingOpeningBalance) return;
+    const account = accountById.get(openingForm.account);
+    const amount = Number(openingForm.amount);
+    if (!account || !Number.isFinite(amount) || amount <= 0) return setMessage("Choose an account and enter a positive opening balance.");
+    setSavingOpeningBalance(true);
+    try {
+      let openingEquity = accounts.find((item) => item.name.trim().toLowerCase() === "opening balance equity");
+      if (!openingEquity) {
+        const { data, error } = await supabase.from("monthly_journal_accounts").insert({ name: "Opening Balance Equity", account_code: "", classification: "equity" }).select("id,name,classification,account_code,active").single();
+        if (error || !data) return setMessage(error?.message || "Could not create Opening Balance Equity.");
+        openingEquity = data as Account;
+      }
+      const debitAccountId = openingForm.side === "debit" ? account.id : openingEquity.id;
+      const creditAccountId = openingForm.side === "credit" ? account.id : openingEquity.id;
+      const description = openingForm.description.trim() || `Opening balance for ${account.name}`;
+      const { error } = await supabase.from("monthly_journal_entries").insert({
+        paid_date: openingForm.date,
+        accounting_date: openingForm.date,
+        bank: "",
+        bank_reference: "",
+        journal_note: `Opening balance at ${openingForm.date}`,
+        description,
+        debit_account_id: debitAccountId,
+        credit_account_id: creditAccountId,
+        amount,
+        source: "manual",
+        source_reference: `opening-balance:${account.id}:${openingForm.date}`,
+        status: "posted",
+        entry_lines: [{ account_id: debitAccountId, debit: amount, credit: 0 }, { account_id: creditAccountId, debit: 0, credit: amount }],
+      });
+      if (error) return setMessage(error.code === "23505" ? `An opening balance for ${account.name} already exists on ${openingForm.date}.` : error.message);
+      setOpeningForm({ date: today(), account: "", side: "debit", amount: "", description: "" });
+      setMessage(`Opening balance posted for ${account.name}.`);
+      await loadData();
+    } finally {
+      setSavingOpeningBalance(false);
+    }
   }
 
   async function deleteUnusedAccount(account: Account) {
@@ -272,7 +316,18 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
       <section className={styles.card}><div className={styles.cardHeading}><div><p className={styles.eyebrow}>START HERE</p><h2>Chart of Accounts</h2><p>Create the accounts you want to use in the new Monthly Journal only.</p></div><strong>{accounts.length} accounts</strong></div>
         {accountsByType.map(({ type, accounts: grouped }) => <div className={styles.accountGroup} key={type}><h3>{labels[type]}</h3>{grouped.length ? grouped.map((account) => { const transactionCount = entries.filter((entry) => entry.debit_account_id === account.id || entry.credit_account_id === account.id).length; return <div className={styles.accountRow} key={account.id}><span>{account.account_code && <small>{account.account_code}</small>}{account.name}</span><div className={styles.accountActions}><button type="button" onClick={() => void removeAccount(account)}>Hide</button><button className={styles.deleteAccount} type="button" disabled={transactionCount > 0} title={transactionCount ? `Cannot delete: ${transactionCount} transaction${transactionCount === 1 ? "" : "s"}` : "Permanently delete this unused account"} onClick={() => void deleteUnusedAccount(account)}>{transactionCount ? "Has transactions" : "Delete"}</button></div></div>; }) : <p className={styles.muted}>No accounts yet.</p>}</div>)}
       </section>
-      <form className={styles.card} onSubmit={addAccount}><p className={styles.eyebrow}>NEW ACCOUNT</p><h2>Add an account</h2><label>Classification<select value={classification} onChange={(event) => setClassification(event.target.value as Classification)}>{Object.entries(labels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label><label>Account name<input value={accountName} onChange={(event) => setAccountName(event.target.value)} placeholder="Example: Software" required /></label><label>Account code <span className={styles.optional}>(optional)</span><input value={accountCode} onChange={(event) => setAccountCode(event.target.value)} placeholder="Example: 6100" /></label><button className={styles.primary} type="submit">Save account</button></form>
+      <div className={styles.accountForms}>
+        <form className={styles.card} onSubmit={addAccount}><p className={styles.eyebrow}>NEW ACCOUNT</p><h2>Add an account</h2><label>Classification<select value={classification} onChange={(event) => setClassification(event.target.value as Classification)}>{Object.entries(labels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label><label>Account name<input value={accountName} onChange={(event) => setAccountName(event.target.value)} placeholder="Example: Software" required /></label><label>Account code <span className={styles.optional}>(optional)</span><input value={accountCode} onChange={(event) => setAccountCode(event.target.value)} placeholder="Example: 6100" /></label><button className={styles.primary} type="submit">Save account</button></form>
+        <form className={styles.card} onSubmit={postOpeningBalance}>
+          <p className={styles.eyebrow}>OPENING BALANCE</p><h2>Set a starting balance</h2><p>Use the balance on the day Monthly Journal starts. It posts against Opening Balance Equity, not sales or expenses.</p>
+          <label>Opening date<input type="date" value={openingForm.date} onChange={(event) => setOpeningForm({ ...openingForm, date: event.target.value })} required /></label>
+          <label>Account<select value={openingForm.account} onChange={(event) => { const selectedAccount = openingBalanceAccounts.find((account) => account.id === event.target.value); setOpeningForm({ ...openingForm, account: event.target.value, side: selectedAccount?.classification === "asset" ? "debit" : "credit" }); }} required><option value="">Choose a balance-sheet account</option>{openingBalanceAccounts.map((account) => <option key={account.id} value={account.id}>{labels[account.classification]} — {account.name}</option>)}</select></label>
+          <label>Balance side<select value={openingForm.side} onChange={(event) => setOpeningForm({ ...openingForm, side: event.target.value as "debit" | "credit" })}><option value="debit">Debit — asset balance</option><option value="credit">Credit — liability or equity balance</option></select></label>
+          <label>Amount (RM)<input type="number" min="0.01" step="0.01" value={openingForm.amount} onChange={(event) => setOpeningForm({ ...openingForm, amount: event.target.value })} placeholder="0.00" required /></label>
+          <label>Description <span className={styles.optional}>(optional)</span><input value={openingForm.description} onChange={(event) => setOpeningForm({ ...openingForm, description: event.target.value })} placeholder="Example: Maybank balance at business start" /></label>
+          <button className={styles.primary} type="submit" disabled={savingOpeningBalance}>{savingOpeningBalance ? "Posting…" : "Post opening balance"}</button>
+        </form>
+      </div>
     </div>}
 
     {view === "general_journal" && <section className={styles.card}><div className={styles.cardHeading}><div><p className={styles.eyebrow}>ACCOUNTING DATE DRIVES REPORTS</p><h2>General Journal</h2><p>Descriptions appear beside their account in brackets; the journal note is shown below each entry.</p></div><div className={styles.journalControls}><label>Accounting month<select value={journalMonth} onChange={(event) => setJournalMonth(event.target.value)}><option value="">All months</option>{journalMonths.map((month) => <option key={month} value={month}>{new Date(`${month}-01T00:00:00`).toLocaleDateString("en-MY", { month: "long", year: "numeric" })}</option>)}</select></label><strong>{visibleJournalEntries.length} posted entries</strong></div></div><div className={styles.journalList}>{visibleJournalEntries.length ? visibleJournalEntries.map((entry) => <article className={`${styles.journalEntry}${entry.receipt_path ? ` ${styles.receiptRow}` : ""}`} key={entry.id} onClick={() => void openReceipt(entry)}><div className={styles.entryDate}><b>{entry.accounting_date}</b><span>Paid {entry.paid_date}</span>{entry.receipt_path && <small>Receipt attached</small>}</div><div><p><span>Debit {accountLine(entry, "debit")}</span><strong>RM {entry.amount.toFixed(2)}</strong></p><p className={styles.credit}><span>Credit {accountLine(entry, "credit")}</span><strong>RM {entry.amount.toFixed(2)}</strong></p>{entry.journal_note && <p className={styles.description}>{entry.journal_note}</p>}{!entry.shortcut_id && entry.description && <p className={styles.description}>{entry.description}</p>}</div></article>) : <p className={styles.muted}>No posted entries for this accounting month.</p>}</div></section>}
