@@ -56,6 +56,11 @@ export function MonthlyJournalInbox() {
 
   useEffect(() => { void load(); }, []);
   useEffect(() => {
+    const reload = () => { void load(); };
+    window.addEventListener("monthly-journal-entry-undone", reload);
+    return () => window.removeEventListener("monthly-journal-entry-undone", reload);
+  }, []);
+  useEffect(() => {
     if (!active) return;
     const classification = active.money_in > 0 ? "income" : "operating expense";
     const account = accounts.find((item) => item.classification === classification);
