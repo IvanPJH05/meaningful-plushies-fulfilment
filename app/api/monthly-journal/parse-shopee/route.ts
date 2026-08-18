@@ -21,7 +21,9 @@ function parseShopeeReceipts(text: string): ParsedPurchase[] {
   const rows: ParsedPurchase[] = [];
   for (const chunk of chunks.length ? chunks : [text]) {
     const reference = chunk.match(/Order SN:\s*([A-Z0-9-]+)/i)?.[1] ?? chunk.match(/Receipt Number:\s*([A-Z0-9-]+)/i)?.[1] ?? "";
-    const date = isoDate(chunk.match(/Receipt Date:\s*([^\n]+)/i)?.[1] ?? "") || isoDate(chunk.match(/Order Paid Date:\s*([^\n]+)/i)?.[1] ?? "");
+    // The paid date is the accounting date for the purchase. Receipt Date can be
+    // later because Shopee may generate the receipt after the order was paid.
+    const date = isoDate(chunk.match(/Order Paid Date:\s*([^\n]+)/i)?.[1] ?? "") || isoDate(chunk.match(/Receipt Date:\s*([^\n]+)/i)?.[1] ?? "");
     const total = chunk.match(/Total Paid\s*(?:\r?\n)?\s*RM\s*([\d,]+\.\d{2})/i)?.[1] ?? chunk.match(/Total Paid\s*RM\s*([\d,]+\.\d{2})/i)?.[1];
     const amount = Number(total?.replace(/,/g, ""));
     if (date && reference && Number.isFinite(amount) && amount > 0) rows.push({ purchaseDate: date, description: productDescription(chunk, reference), amount, reference });

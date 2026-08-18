@@ -48,7 +48,7 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
   const [focused, setFocused] = useState(false);
   const [receiptPreview, setReceiptPreview] = useState<{ url: string; name: string } | null>(null);
   const [journalForm, setJournalForm] = useState({ paidDate: today(), accountingDate: today(), bank: "", note: "", description: "", debit: "", credit: "", amount: "" });
-  const [shopeeForm, setShopeeForm] = useState({ purchaseDate: today(), classification: "asset" as Classification, account: "", description: "", amount: "" });
+  const [shopeeForm, setShopeeForm] = useState({ purchaseDate: today(), classification: "asset" as Classification, account: "", description: "", journalNote: "", amount: "" });
   const [shopeeFile, setShopeeFile] = useState<File | null>(null);
   const [shopeeDragging, setShopeeDragging] = useState(false);
   const [savingShopee, setSavingShopee] = useState(false);
@@ -292,7 +292,7 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
         accounting_date: purchaseDate,
         bank: "Shopee PayLater",
         bank_reference: "",
-        journal_note: `Shopee PayLater purchase on ${purchaseDate}`,
+        journal_note: shopeeForm.journalNote.trim() || `Shopee PayLater purchase on ${purchaseDate}`,
         description,
         debit_account_id: shopeeForm.account,
         credit_account_id: shopeePayLater.id,
@@ -310,7 +310,7 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
         const { error: purchaseError } = await supabase.from("monthly_journal_shopee_purchases").insert({ purchase_date: purchaseDate, description, debit_account_id: shopeeForm.account, amount, journal_entry_id: entryId, receipt_path: receiptPath });
         if (purchaseError) throw purchaseError;
       }
-      setShopeeForm({ purchaseDate: today(), classification: "asset", account: "", description: "", amount: "" });
+      setShopeeForm({ purchaseDate: today(), classification: "asset", account: "", description: "", journalNote: "", amount: "" });
       setShopeeFile(null);
       setSelectedShopeePurchaseId("");
       setMessage("Shopee purchase recorded. It increases Shopee PayLater Payable; no bank cash movement was recorded.");
@@ -422,12 +422,13 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
     {visitedViews.includes("source_documents") && <div hidden={view !== "source_documents"}><MonthlyJournalSourceDocuments /></div>}
     {view === "shopee" && <div className={styles.shopeeLayout}>
       <section className={styles.card}><div className={styles.cardHeading}><div><p className={styles.eyebrow}>SHOPEE PAYLATER</p><h2>Shopee purchases</h2><p>Import a receipt, then classify it before it posts. Recorded purchases debit the account you chose and credit Shopee PayLater Payable.</p></div><strong>Outstanding RM {shopeePayLaterBalance.toFixed(2)}</strong></div><MonthlyJournalShopeeImport onImported={loadData} />
-        <div className={styles.shopeePurchases}>{shopeePurchases.length ? shopeePurchases.map((purchase) => <article key={purchase.id} className={purchase.journal_entry_id ? "" : styles.shopeePending}><div><b>{purchase.purchase_date}</b><span>{purchase.journal_entry_id ? accountById.get(purchase.debit_account_id ?? "")?.name ?? "Deleted account" : "Needs classification"}</span></div><div><strong>{purchase.description}</strong><small>{purchase.journal_entry_id ? "Posted to Shopee PayLater" : "Imported from Shopee receipt"}</small></div><div><b>RM {purchase.amount.toFixed(2)}</b>{!purchase.journal_entry_id && <button type="button" onClick={() => { setSelectedShopeePurchaseId(purchase.id); setShopeeForm({ purchaseDate: purchase.purchase_date, classification: "asset", account: "", description: purchase.description, amount: purchase.amount.toFixed(2) }); }}>Classify</button>}</div></article>) : <p className={styles.muted}>No Shopee PayLater purchases recorded yet.</p>}</div>
+        <div className={styles.shopeePurchases}>{shopeePurchases.length ? shopeePurchases.map((purchase) => <article key={purchase.id} className={purchase.journal_entry_id ? "" : styles.shopeePending}><div><b>{purchase.purchase_date}</b><span>{purchase.journal_entry_id ? accountById.get(purchase.debit_account_id ?? "")?.name ?? "Deleted account" : "Needs classification"}</span></div><div><strong>{purchase.description}</strong><small>{purchase.journal_entry_id ? "Posted to Shopee PayLater" : "Imported from Shopee receipt"}</small></div><div><b>RM {purchase.amount.toFixed(2)}</b>{!purchase.journal_entry_id && <button type="button" onClick={() => { setSelectedShopeePurchaseId(purchase.id); setShopeeForm({ purchaseDate: purchase.purchase_date, classification: "asset", account: "", description: purchase.description, journalNote: `Shopee PayLater purchase on ${purchase.purchase_date}`, amount: purchase.amount.toFixed(2) }); }}>Classify</button>}</div></article>) : <p className={styles.muted}>No Shopee PayLater purchases recorded yet.</p>}</div>
       </section>
       <form className={styles.card} onSubmit={addShopeePurchase}><p className={styles.eyebrow}>{selectedShopeePurchase ? "CLASSIFY IMPORTED PURCHASE" : "ADD SHOPEE PURCHASE"}</p><h2>{selectedShopeePurchase ? selectedShopeePurchase.description : "Record a purchase"}</h2><p className={styles.muted}>Choose whether it was Inventory, Cost of Sales, an Operating Expense, or another asset. The credit is always Shopee PayLater Payable.</p>
         <div className={styles.dates}><label>Purchase date<input type="date" value={shopeeForm.purchaseDate} onChange={(event) => setShopeeForm({ ...shopeeForm, purchaseDate: event.target.value })} required /></label><label>Classification<select value={shopeeForm.classification} onChange={(event) => setShopeeForm({ ...shopeeForm, classification: event.target.value as Classification, account: "" })}>{(["asset", "cost_of_sales", "operating_expense"] as Classification[]).map((value) => <option key={value} value={value}>{labels[value]}</option>)}</select></label></div>
         <label>Debit account<select value={shopeeForm.account} onChange={(event) => setShopeeForm({ ...shopeeForm, account: event.target.value })} required><option value="">Choose an account</option>{shopeeAccountChoices.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
         <label>Description<input value={shopeeForm.description} onChange={(event) => setShopeeForm({ ...shopeeForm, description: event.target.value })} placeholder="Example: Plush toy stock, bubble wrap, or Shopify voucher" required /></label>
+        <label>Journal note<input value={shopeeForm.journalNote} onChange={(event) => setShopeeForm({ ...shopeeForm, journalNote: event.target.value })} placeholder="Example: Shopee PayLater purchase for packaging" /></label>
         <label>Amount (RM)<input type="number" min="0.01" step="0.01" value={shopeeForm.amount} onChange={(event) => setShopeeForm({ ...shopeeForm, amount: event.target.value })} required /></label>
         <div className={`${styles.shopeeSource}${shopeeDragging ? ` ${styles.shopeeSourceDragging}` : ""}`} role="button" tabIndex={0} onClick={() => shopeeFileInput.current?.click()} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") shopeeFileInput.current?.click(); }} onDragEnter={(event) => { event.preventDefault(); setShopeeDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setShopeeDragging(false)} onDrop={dropShopeeFile}><strong>{shopeeFile ? shopeeFile.name : "Drop source document here"}</strong><span>{shopeeFile ? "Click to replace it" : "or click to select a receipt, invoice, PDF, or image"}</span><input ref={shopeeFileInput} type="file" accept="application/pdf,image/*" onChange={(event: ChangeEvent<HTMLInputElement>) => { chooseShopeeFile(event.target.files?.[0]); event.target.value = ""; }} /></div>
         <div className={styles.shopeePreview}>Debit {accountById.get(shopeeForm.account)?.name ?? "chosen account"}<br />Credit Shopee PayLater Payable</div><button className={styles.primary} type="submit" disabled={savingShopee || !shopeePayLater}>{savingShopee ? "Recording…" : "Add Shopee purchase"}</button>
