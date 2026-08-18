@@ -73,12 +73,7 @@ export function MonthlyJournalInbox() {
   const choices = accounts.filter((account) => account.classification === form.classification.replaceAll(" ", "_"));
   const bankAccount = (bank: string) => accounts.find((account) => account.name === `Bank - ${bank}`)?.id ?? (bank === "Touch 'n Go eWallet" ? accounts.find((account) => account.name === "Touch 'n Go eWallet")?.id ?? "" : "");
   const statementAccountName = (bank: string) => bank === "Touch 'n Go eWallet" ? bank : `Bank - ${bank}`;
-  const isBankAccount = (accountId: string | null) => {
-    const name = accounts.find((account) => account.id === accountId)?.name ?? "";
-    return name.startsWith("Bank - ") || name === "Touch 'n Go eWallet";
-  };
-  const shortcutRequiresContra = (shortcut: Shortcut) => (shortcut.debit_source === "account" && isBankAccount(shortcut.debit_account_id)) || (shortcut.credit_source === "account" && isBankAccount(shortcut.credit_account_id));
-  const postingShortcuts = customShortcuts.filter((shortcut) => !shortcutRequiresContra(shortcut));
+  const postingShortcuts = customShortcuts;
 
   function setDocument(file?: File) {
     if (!file) return;
@@ -124,7 +119,6 @@ export function MonthlyJournalInbox() {
 
   async function applyCustomShortcut(shortcut: Shortcut) {
     if (postingShortcut) return;
-    if (shortcutRequiresContra(shortcut)) return setNotice("This is an internal transfer. Select both bank rows and use Contra selected rows instead.");
     const selectedRows = rows.filter((row) => selected.includes(row.id) && row.status === "unposted" && (shortcut.transaction_direction === "money_in" ? row.money_in > 0 : row.money_out > 0) && (shortcut.bank_filter === "any" || row.bank === shortcut.bank_filter));
     if (!selectedRows.length) return setNotice(`Select ${shortcut.transaction_direction === "money_in" ? "money-in" : "money-out"} rows for this shortcut.`);
     setPostingShortcut(true);
