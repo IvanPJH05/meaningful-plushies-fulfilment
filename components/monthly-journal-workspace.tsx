@@ -45,7 +45,6 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
   const [savingOpeningBalance, setSavingOpeningBalance] = useState(false);
   const [selectedLedgerAccountId, setSelectedLedgerAccountId] = useState("");
   const [ledgerFormat, setLedgerFormat] = useState<"table" | "t_account">("table");
-  const [undoingEntryId, setUndoingEntryId] = useState("");
   const [focused, setFocused] = useState(false);
   const [receiptPreview, setReceiptPreview] = useState<{ url: string; name: string } | null>(null);
   const [journalForm, setJournalForm] = useState({ paidDate: today(), accountingDate: today(), bank: "", note: "", description: "", debit: "", credit: "", amount: "" });
@@ -216,34 +215,6 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
     }
   }
 
-  async function undoEntry(entry: Entry) {
-    if (!supabase || undoingEntryId) return;
-    if (entry.source === "fulfilment_sale") return setMessage("This entry comes from a fulfilment sale. Correct or cancel the sale in the fulfilment workspace instead.");
-    const returnsToInbox = entry.source === "bank_statement";
-    const message = returnsToInbox
-      ? "Undo this bank posting? Its linked bank row or rows will return to Unposted for you to classify again."
-      : "Undo this journal entry? It will be removed from Monthly Journal.";
-    if (!window.confirm(message)) return;
-    setUndoingEntryId(entry.id);
-    try {
-      if (returnsToInbox) {
-        const { error } = await supabase.from("monthly_journal_bank_rows").update({ status: "unposted", journal_entry_id: null, note: "", updated_at: new Date().toISOString() }).eq("journal_entry_id", entry.id);
-        if (error) return setMessage(error.message);
-      }
-      if (entry.source === "shopee_paylater") {
-        const { error } = await supabase.from("monthly_journal_shopee_purchases").update({ debit_account_id: null, journal_entry_id: null }).eq("journal_entry_id", entry.id);
-        if (error) return setMessage(error.message);
-      }
-      const { error } = await supabase.from("monthly_journal_entries").delete().eq("id", entry.id);
-      if (error) return setMessage(error.message);
-      window.dispatchEvent(new Event("monthly-journal-entry-undone"));
-      setMessage(returnsToInbox ? "Posting undone. The linked bank row or rows are Unposted again." : "Journal entry undone.");
-      await loadData();
-    } finally {
-      setUndoingEntryId("");
-    }
-  }
-
   async function deleteUnusedAccount(account: Account) {
     if (!supabase) return;
     const { count: transactionCount, error: transactionError } = await supabase.from("monthly_journal_entries").select("id", { count: "exact", head: true }).or(`debit_account_id.eq.${account.id},credit_account_id.eq.${account.id}`);
@@ -350,7 +321,7 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
       <aside className={styles.accountSelector}><p className={styles.eyebrow}>ACCOUNTS</p><h2>Select an account</h2><p className={styles.muted}>Choose an account to see every Monthly Journal transaction that affects it.</p><div className={styles.accountPicker}>{accounts.map((account) => <button className={selectedLedgerAccount?.id === account.id ? styles.selectedAccount : ""} type="button" key={account.id} onClick={() => setSelectedLedgerAccountId(account.id)}><span>{account.name}</span><small>{labels[account.classification]}</small></button>)}</div></aside>
       <section className={styles.card}>
         <div className={styles.cardHeading}><div><p className={styles.eyebrow}>ACCOUNT ACTIVITY</p><h2>{selectedLedgerAccount?.name ?? "Choose an account"}</h2><p>{selectedLedgerAccount ? `${labels[selectedLedgerAccount.classification]} · ${ledgerEntries.length} transaction${ledgerEntries.length === 1 ? "" : "s"}` : "No account selected."}</p></div><div className={styles.ledgerViewControls}><button className={ledgerFormat === "table" ? styles.activeLedgerFormat : ""} type="button" onClick={() => setLedgerFormat("table")}>Transaction table</button><button className={ledgerFormat === "t_account" ? styles.activeLedgerFormat : ""} type="button" onClick={() => setLedgerFormat("t_account")}>T-account</button></div></div>
-        {selectedLedgerAccount && <><div className={styles.ledgerTotals}><span>Total debits <b>{money(ledgerTotals.debit)}</b></span><span>Total credits <b>{money(ledgerTotals.credit)}</b></span></div>{ledgerFormat === "table" ? <div className={styles.ledgerTable}><table><thead><tr><th>Accounting date</th><th>Paid date</th><th>Other account</th><th>Description</th><th>Debit</th><th>Credit</th><th></th></tr></thead><tbody>{ledgerEntries.length ? ledgerEntries.map((entry) => { const isDebit = entry.debit_account_id === selectedLedgerAccount.id; const otherAccount = accountById.get(isDebit ? entry.credit_account_id ?? "" : entry.debit_account_id ?? "")?.name ?? "Deleted account"; return <tr className={entry.receipt_path ? styles.receiptRow : ""} key={entry.id} onClick={() => void openReceipt(entry)}><td>{entry.accounting_date}</td><td>{entry.paid_date}</td><td>{otherAccount}</td><td><span className={styles.ledgerDescription}>{entry.description || "—"}</span>{entry.journal_note && <small className={styles.ledgerJournalNote}>{entry.journal_note}</small>}{entry.receipt_path && <small className={styles.receiptAttached}>Receipt attached</small>}</td><td>{isDebit ? money(entry.amount) : "—"}</td><td>{isDebit ? "—" : money(entry.amount)}</td><td><button className={styles.undoEntry} type="button" disabled={Boolean(undoingEntryId) || entry.source === "fulfilment_sale"} title={entry.source === "fulfilment_sale" ? "Correct this through the fulfilment sale instead" : "Undo this posting"} onClick={(event) => { event.stopPropagation(); void undoEntry(entry); }}>{undoingEntryId === entry.id ? "Undoing…" : "Undo"}</button></td></tr>; }) : <tr><td colSpan={7}>No posted transactions for this account yet.</td></tr>}</tbody></table></div> : <div className={styles.tLedger}><header><b>{selectedLedgerAccount.name}</b><span>Debit</span><span>Credit</span></header><div className={styles.tLedgerColumns}>{(["debit", "credit"] as const).map((side) => <section key={side}><h3>{side}</h3>{ledgerEntries.filter((entry) => side === "debit" ? entry.debit_account_id === selectedLedgerAccount.id : entry.credit_account_id === selectedLedgerAccount.id).map((entry) => { const otherAccount = accountById.get(side === "debit" ? entry.credit_account_id ?? "" : entry.debit_account_id ?? "")?.name ?? "Deleted account"; return <article className={entry.receipt_path ? styles.receiptRow : ""} key={entry.id} onClick={() => void openReceipt(entry)}><small>{entry.accounting_date}</small><b>{otherAccount}</b>{entry.description && <span>{entry.description}</span>}{entry.journal_note && <em>{entry.journal_note}</em>}<strong>{money(entry.amount)}</strong><button className={styles.undoEntry} type="button" disabled={Boolean(undoingEntryId) || entry.source === "fulfilment_sale"} title={entry.source === "fulfilment_sale" ? "Correct this through the fulfilment sale instead" : "Undo this posting"} onClick={(event) => { event.stopPropagation(); void undoEntry(entry); }}>{undoingEntryId === entry.id ? "Undoing…" : "Undo"}</button></article>; })}{!ledgerEntries.some((entry) => side === "debit" ? entry.debit_account_id === selectedLedgerAccount.id : entry.credit_account_id === selectedLedgerAccount.id) && <p className={styles.muted}>No {side} entries.</p>}<footer>Total <b>{money(side === "debit" ? ledgerTotals.debit : ledgerTotals.credit)}</b></footer></section>)}</div></div>}</>}
+        {selectedLedgerAccount && <><div className={styles.ledgerTotals}><span>Total debits <b>{money(ledgerTotals.debit)}</b></span><span>Total credits <b>{money(ledgerTotals.credit)}</b></span></div>{ledgerFormat === "table" ? <div className={styles.ledgerTable}><table><thead><tr><th>Accounting date</th><th>Paid date</th><th>Other account</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead><tbody>{ledgerEntries.length ? ledgerEntries.map((entry) => { const isDebit = entry.debit_account_id === selectedLedgerAccount.id; const otherAccount = accountById.get(isDebit ? entry.credit_account_id ?? "" : entry.debit_account_id ?? "")?.name ?? "Deleted account"; return <tr className={entry.receipt_path ? styles.receiptRow : ""} key={entry.id} onClick={() => void openReceipt(entry)}><td>{entry.accounting_date}</td><td>{entry.paid_date}</td><td>{otherAccount}</td><td><span className={styles.ledgerDescription}>{entry.description || "—"}</span>{entry.journal_note && <small className={styles.ledgerJournalNote}>{entry.journal_note}</small>}{entry.receipt_path && <small className={styles.receiptAttached}>Receipt attached</small>}</td><td>{isDebit ? money(entry.amount) : "—"}</td><td>{isDebit ? "—" : money(entry.amount)}</td></tr>; }) : <tr><td colSpan={6}>No posted transactions for this account yet.</td></tr>}</tbody></table></div> : <div className={styles.tLedger}><header><b>{selectedLedgerAccount.name}</b><span>Debit</span><span>Credit</span></header><div className={styles.tLedgerColumns}>{(["debit", "credit"] as const).map((side) => <section key={side}><h3>{side}</h3>{ledgerEntries.filter((entry) => side === "debit" ? entry.debit_account_id === selectedLedgerAccount.id : entry.credit_account_id === selectedLedgerAccount.id).map((entry) => { const otherAccount = accountById.get(side === "debit" ? entry.credit_account_id ?? "" : entry.debit_account_id ?? "")?.name ?? "Deleted account"; return <article className={entry.receipt_path ? styles.receiptRow : ""} key={entry.id} onClick={() => void openReceipt(entry)}><small>{entry.accounting_date}</small><b>{otherAccount}</b>{entry.description && <span>{entry.description}</span>}{entry.journal_note && <em>{entry.journal_note}</em>}<strong>{money(entry.amount)}</strong></article>; })}{!ledgerEntries.some((entry) => side === "debit" ? entry.debit_account_id === selectedLedgerAccount.id : entry.credit_account_id === selectedLedgerAccount.id) && <p className={styles.muted}>No {side} entries.</p>}<footer>Total <b>{money(side === "debit" ? ledgerTotals.debit : ledgerTotals.credit)}</b></footer></section>)}</div></div>}</>}
       </section>
     </section>
   </section>;
