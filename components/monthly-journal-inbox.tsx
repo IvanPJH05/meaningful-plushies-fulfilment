@@ -7,6 +7,7 @@ type Account = { id: string; name: string; classification: string };
 type Row = { id: string; bank: string; paid_date: string; accounting_date: string; description: string; money_in: number; money_out: number; status: string; note: string; receipt_path: string | null; journal_entry_id: string | null };
 type Shortcut = { id: string; name: string; transaction_direction: "money_in" | "money_out"; bank_filter: "any" | "Maybank" | "Public Bank" | "Touch 'n Go eWallet"; accounting_date_rule: "same_day" | "previous_month_end"; journal_note_template: string; description_template: string; debit_source: "statement_bank" | "account"; debit_account_id: string | null; credit_source: "statement_bank" | "account"; credit_account_id: string | null };
 type PostingDetails = { account: string; classification: string; note: string; description: string; debitAccountId?: string; creditAccountId?: string; shortcutId?: string };
+type PostResult = { entryId: string; reconciledRowId?: string } | null;
 const money = (value: number) => `RM ${value.toLocaleString("en-MY", { minimumFractionDigits: 2 })}`;
 const monthEnd = (date: string) => { const day = new Date(`${date}T00:00:00`); return new Date(day.getFullYear(), day.getMonth(), 0).toISOString().slice(0, 10); };
 
@@ -80,6 +81,47 @@ export function MonthlyJournalInbox() {
   const statementAccountName = (bank: string) => bank === "Touch 'n Go eWallet" ? bank : `Bank - ${bank}`;
   const postingShortcuts = customShortcuts;
 
+  // Internal-transfer shortcuts use one statement bank and one other statement-bank
+  // account. The journal entry already affects both accounts; this pairs the second
+  // statement row so it cannot accidentally be posted a second time.
+  async function reconcileInternalTransfer(row: Row, entryId: string, shortcutId?: string): Promise<string | undefined> {
+    if (!supabase || !shortcutId) return undefined;
+    const shortcut = customShortcuts.find((item) => item.id === shortcutId);
+    if (!shortcut || (shortcut.debit_source !== "statement_bank" && shortcut.credit_source !== "statement_bank")) return undefined;
+
+    const counterpartAccountId = shortcut.debit_source === "statement_bank" ? shortcut.credit_account_id : shortcut.debit_account_id;
+    const counterpartBank = ["Maybank", "Public Bank", "Touch 'n Go eWallet"].find((bank) => bankAccount(bank) === counterpartAccountId);
+    if (!counterpartBank || counterpartBank === row.bank) return undefined;
+
+    const rowIsMoneyIn = row.money_in > 0;
+    const expectedCounterpartIsMoneyIn = shortcut.credit_source === "statement_bank";
+    if (rowIsMoneyIn === expectedCounterpartIsMoneyIn) return undefined;
+
+    const amount = row.money_in || row.money_out;
+    const paidAt = Date.parse(`${row.paid_date}T00:00:00`);
+    const counterpart = rows
+      .filter((candidate) => {
+        const candidateAmount = candidate.money_in || candidate.money_out;
+        const dayDifference = Math.abs(Date.parse(`${candidate.paid_date}T00:00:00`) - paidAt) / 86_400_000;
+        return candidate.id !== row.id && candidate.status === "unposted" && candidate.bank === counterpartBank &&
+          (candidate.money_in > 0) === expectedCounterpartIsMoneyIn && Math.abs(candidateAmount - amount) < 0.005 && dayDifference <= 1;
+      })
+      .sort((a, b) => Math.abs(Date.parse(`${a.paid_date}T00:00:00`) - paidAt) - Math.abs(Date.parse(`${b.paid_date}T00:00:00`) - paidAt))[0];
+    if (!counterpart) return undefined;
+
+    const { error } = await supabase.from("monthly_journal_bank_rows").update({
+      status: "reconciled",
+      journal_entry_id: entryId,
+      note: `Reconciled with internal transfer on ${row.paid_date}`,
+      updated_at: new Date().toISOString(),
+    }).eq("id", counterpart.id);
+    if (error) {
+      setNotice(`Posted, but could not reconcile the matching ${counterpartBank} row: ${error.message}`);
+      return undefined;
+    }
+    return counterpart.id;
+  }
+
   function setDocument(file?: File) {
     if (!file) return;
     setSourceFile(file);
@@ -99,7 +141,7 @@ export function MonthlyJournalInbox() {
     return path;
   }
 
-  async function post(row = active, details: PostingDetails = form, reloadAfter = true): Promise<string | null> {
+  async function post(row = active, details: PostingDetails = form, reloadAfter = true): Promise<PostResult> {
     if (!row || !supabase || !details.account) { setNotice("Choose a classification and account."); return null; }
     const amount = row.money_in || row.money_out;
     const bankId = bankAccount(row.bank);
@@ -115,11 +157,12 @@ export function MonthlyJournalInbox() {
     }).select("id").single();
     if (error) { setNotice(error.message); return null; }
     await supabase.from("monthly_journal_bank_rows").update({ status: "posted", journal_entry_id: data.id, note: details.note, accounting_date: row.accounting_date, receipt_path: receiptPath, updated_at: new Date().toISOString() }).eq("id", row.id);
+    const reconciledRowId = await reconcileInternalTransfer(row, data.id, details.shortcutId);
     if (reloadAfter) {
       setNotice("Posted to General Journal.");
       setSelected([]); setActive(null); setSourceFile(null); await load();
     }
-    return "";
+    return { entryId: data.id, reconciledRowId };
   }
 
   async function applyCustomShortcut(shortcut: Shortcut) {
@@ -129,6 +172,7 @@ export function MonthlyJournalInbox() {
     setPostingShortcut(true);
     const handled = new Set<string>();
     let posted = 0;
+    let reconciled = 0;
     try {
       for (const row of selectedRows) {
         if (handled.has(row.id)) continue;
@@ -145,10 +189,14 @@ export function MonthlyJournalInbox() {
         const result = await post({ ...row, accounting_date: accountingDate }, { account: debitAccountId, classification: "", note: replace(shortcut.journal_note_template), description: replace(shortcut.description_template), debitAccountId, creditAccountId, shortcutId: shortcut.id }, false);
         if (result === null) return;
         handled.add(row.id);
+        if (result.reconciledRowId) {
+          handled.add(result.reconciledRowId);
+          reconciled++;
+        }
         posted++;
       }
       setSelected([]); setActive(null); setSourceFile(null); await load();
-      setNotice(`${posted} row(s) posted with ${shortcut.name}.`);
+      setNotice(`${posted} row(s) posted with ${shortcut.name}.${reconciled ? ` ${reconciled} matching bank row${reconciled === 1 ? " was" : "s were"} reconciled.` : ""}`);
     } finally {
       setPostingShortcut(false);
     }
