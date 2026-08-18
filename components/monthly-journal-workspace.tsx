@@ -94,6 +94,11 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
 
   useEffect(() => { void loadData(); }, []);
   useEffect(() => {
+    const reload = () => { void loadData(); };
+    window.addEventListener("monthly-journal-entry-undone", reload);
+    return () => window.removeEventListener("monthly-journal-entry-undone", reload);
+  }, []);
+  useEffect(() => {
     setView(initialView);
     setVisitedViews((current) => current.includes(initialView) ? current : [...current, initialView]);
   }, [initialView]);
