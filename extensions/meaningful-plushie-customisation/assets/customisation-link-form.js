@@ -1,6 +1,9 @@
 (() => {
   document.querySelectorAll("[data-customisation-link-block]").forEach((block) => {
     const form = block.querySelector("form"), api = (block.dataset.apiUrl || "").replace(/\/$/, ""), notice = block.querySelector("[data-notice]");
+    const sessionMessage = block.querySelector("[data-session-message]");
+    const token = new URLSearchParams(location.search).get("token");
+    const showSessionMessage = (message) => { form.hidden = true; sessionMessage.textContent = message; sessionMessage.hidden = false; };
     const get = (name) => block.querySelector(`[data-${name}]`);
     const name = get("plush-name"), voice = get("voice"), voiceButton = get("voice-button");
     name.addEventListener("input", () => { name.value = name.value.toUpperCase(); });
@@ -16,10 +19,29 @@
     calendar.addEventListener("pointerdown",(event)=>{if(event.target.matches("[data-calendar-month]"))calendar.querySelector(".mp-deferred-customisation__calendar-years").hidden=true;});
     dateBox.addEventListener("click",()=>{const [d,m,y]=dateBox.value.split("/");month=y?new Date(Number(y),Number(m)-1,Number(d)):new Date();const rect=dateBox.getBoundingClientRect();calendar.style.top=`${Math.min(rect.bottom+8,window.innerHeight-360)}px`;calendar.style.left=`${Math.min(rect.left,window.innerWidth-356)}px`;render();calendar.hidden=false;});
     document.addEventListener("pointerdown",(event)=>{if(!calendar.hidden&&!calendar.contains(event.target)&&!dateBox.contains(event.target))calendar.hidden=true;});
+
+    if (api && token) {
+      form.hidden = true;
+      sessionMessage.hidden = false;
+      sessionMessage.textContent = "Loading your customisation…";
+      fetch(`${api}/api/customisation/${encodeURIComponent(token)}`)
+        .then(async (response) => {
+          const result = await response.json();
+          if (!response.ok || !result.ok) throw new Error(result.error || "This customisation link is no longer available.");
+          if (result.session.submitted) {
+            showSessionMessage("Your customisation has already been saved and is linked to your order.");
+            return;
+          }
+          sessionMessage.hidden = true;
+          form.hidden = false;
+        })
+        .catch((error) => showSessionMessage(error instanceof Error ? error.message : "This customisation link is no longer available."));
+    }
+
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (!form.reportValidity()) return;
-      const token = new URLSearchParams(location.search).get("token"), file = voice.files[0];
+      const file = voice.files[0];
       if (!api || !token || !file) { notice.textContent = "This customisation link is unavailable."; return; }
       const button = form.querySelector("button[type=submit]"); button.disabled = true; notice.textContent = "Saving your customisation…";
       try {
@@ -33,7 +55,7 @@
         const details = { plushName:name.value.trim(), gender:get("gender").value, birthDate:get("birth-date").value.trim(), birthPlace:get("birth-place").value.trim(), favouritePerson:get("favourite-person").value.trim(), belongsTo:get("belongs-to").value.trim(), meaningfulNote:get("meaningful-note").value.trim() };
         const saved = await fetch(`${api}/api/customisation/${encodeURIComponent(token)}`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({form:details,voiceStoragePath:up.voiceStoragePath}) }).then((response) => response.json());
         if (!saved.ok) throw new Error(saved.error);
-        notice.textContent = "Thank you — your customisation has been saved."; button.hidden = true;
+        showSessionMessage("Thank you — your customisation has been saved and is linked to your order.");
       } catch (error) { notice.textContent = error instanceof Error ? error.message : "Could not save your customisation."; button.disabled = false; }
     });
   });

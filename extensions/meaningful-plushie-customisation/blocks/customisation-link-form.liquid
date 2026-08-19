@@ -3,6 +3,7 @@
 <script src="{{ 'customisation-link-form.js' | asset_url }}" defer="defer"></script>
 
 <div class="mp-deferred-customisation" data-customisation-link-block data-api-url="{{ block.settings.app_url | default: 'https://meaningful-plushies-fulfilment.vercel.app' | escape }}" {{ block.shopify_attributes }}>
+  <section class="mp-deferred-customisation__confirmation" data-session-message aria-live="polite" hidden></section>
   <form class="mp-deferred-customisation__now">
     <label>Plushie's Name<input required maxlength="20" placeholder="NAME YOUR PLUSHIE" data-plush-name></label>
     <label>Plushie's Gender<select required data-gender><option>Male</option><option>Female</option></select></label>
