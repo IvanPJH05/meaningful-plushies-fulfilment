@@ -1148,12 +1148,22 @@ function packingSlipOrderLabel(order: Order) {
 }
 
 function meaningfulMessageLink(order: Order) {
-  return order.salesChannel === "tiktok" ? order.tikTokFileDataUrl || "" : order.meaningfulMessage || "";
+  const value = order.salesChannel === "tiktok" ? order.tikTokFileDataUrl || "" : order.meaningfulMessage || "";
+  if (!value.startsWith("supabase-storage:")) return value;
+  const path = value.slice("supabase-storage:".length);
+  const fileName = meaningfulMessageDownloadName(order) || path.split("/").at(-1) || "meaningful-plushie-voice";
+  return `/api/customisation/audio-download?path=${encodeURIComponent(path)}&filename=${encodeURIComponent(fileName)}`;
 }
 
 function meaningfulMessageDownloadName(order: Order) {
-  if (order.salesChannel !== "tiktok" || !order.tikTokFileDataUrl) return undefined;
-  return order.tikTokFileName || `${tikTokShortOrderLabel(order).replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "")}-message`;
+  if (order.salesChannel === "tiktok" && order.tikTokFileDataUrl) {
+    return order.tikTokFileName || `${tikTokShortOrderLabel(order).replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "")}-message`;
+  }
+  if (!order.meaningfulMessage?.startsWith("supabase-storage:")) return undefined;
+  const extension = order.meaningfulMessage.slice("supabase-storage:".length).split(".").at(-1)?.replace(/[^a-z0-9]/gi, "") || "audio";
+  const orderPart = orderLabel(order).replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "order";
+  const plushPart = (order.plushName || "plushie").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "plushie";
+  return `${orderPart}-${plushPart}-voice.${extension}`;
 }
 
 function orderSourceMatches(order: Order, source: SourceFilter) {
