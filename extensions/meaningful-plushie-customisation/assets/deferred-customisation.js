@@ -18,6 +18,59 @@
     const apiUrl = (block.dataset.apiUrl || "").replace(/\/$/, "");
     const form = block.closest("form[action*='/cart/add']") || document.querySelector("form[action*='/cart/add']");
     if (!form) return;
+    const draftKey = `mp-customisation-draft:${location.pathname}`;
+    const draftFields = ["[data-plush-name]", "[data-gender]", "[data-birth-date]", "[data-birth-place]", "[data-favourite-person]", "[data-belongs-to]", "[data-meaningful-note]", "[data-delivery-method]", "[data-contact-email]", "[data-contact-phone]"];
+    let restoredVoiceFile = null;
+
+    const selectedVoice = () => voiceInput.files?.[0] || restoredVoiceFile || null;
+    const updateVoiceLabel = () => { voiceButton.textContent = selectedVoice()?.name || voiceInput.value.split(/[/\\\\]/).pop() || "UPLOAD VOICE (MP4/MP3)"; };
+    const openDraftDatabase = () => new Promise((resolve, reject) => {
+      const request = indexedDB.open("meaningful-plushies-customisation", 1);
+      request.onupgradeneeded = () => request.result.createObjectStore("voices");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const saveVoiceDraft = async (file) => {
+      if (!file) return;
+      try {
+        const database = await openDraftDatabase();
+        const transaction = database.transaction("voices", "readwrite");
+        transaction.objectStore("voices").put({ file, savedAt: Date.now() }, draftKey);
+      } catch (_) { /* The fields still persist if browser storage is unavailable. */ }
+    };
+    const loadVoiceDraft = async () => {
+      try {
+        const database = await openDraftDatabase();
+        const transaction = database.transaction("voices", "readonly");
+        const request = transaction.objectStore("voices").get(draftKey);
+        return await new Promise((resolve) => { request.onsuccess = () => resolve(request.result); request.onerror = () => resolve(null); });
+      } catch (_) { return null; }
+    };
+    const saveDraft = () => {
+      try {
+        const values = Object.fromEntries(draftFields.map((selector) => [selector, block.querySelector(selector)?.value || ""]));
+        values.choice = [...radios].find((radio) => radio.checked)?.value || "now";
+        sessionStorage.setItem(draftKey, JSON.stringify(values));
+      } catch (_) { /* Storage is optional; the checkout flow continues normally. */ }
+    };
+    const restoreDraft = async () => {
+      try {
+        const saved = JSON.parse(sessionStorage.getItem(draftKey) || "null");
+        if (saved) {
+          draftFields.forEach((selector) => { const field = block.querySelector(selector); if (field && saved[selector]) field.value = saved[selector]; });
+          const choice = [...radios].find((radio) => radio.value === saved.choice);
+          if (choice) choice.checked = true;
+          if (birthDate.value) { dateDisplay.textContent = birthDate.value; dateDisplay.classList.add("is-filled"); }
+        }
+      } catch (_) { /* Ignore an invalid old draft. */ }
+      const voiceDraft = await loadVoiceDraft();
+      // Keep one day of local recovery only. This is browser-local and is not uploaded.
+      if (voiceDraft?.file && Date.now() - voiceDraft.savedAt < 24 * 60 * 60 * 1000) {
+        restoredVoiceFile = voiceDraft.file;
+        updateVoiceLabel();
+      }
+      sync();
+    };
 
     const isLater = () => [...radios].some((radio) => radio.checked && radio.value === "later");
     const purchaseControls = () => [...form.querySelectorAll("button, input[type='submit']")].filter((control) => {
@@ -28,7 +81,7 @@
     // Some mobile storefront browsers briefly expose a selected file through
     // the input value before they populate FileList. Treat either state as a
     // selected recording so the purchase lock releases immediately.
-    const hasVoiceRecording = () => Boolean(voiceInput.files?.length || voiceInput.value);
+    const hasVoiceRecording = () => Boolean(selectedVoice() || voiceInput.value);
     const completeNowReady = () => {
       if (isLater()) return true;
       return Boolean(
@@ -90,17 +143,17 @@
       syncPurchaseBlockers();
       notice.textContent = "";
     };
-    radios.forEach((radio) => radio.addEventListener("change", sync));
-    method.addEventListener("change", syncDelivery);
-    plushName.addEventListener("input", () => { plushName.value = plushName.value.toUpperCase(); });
+    radios.forEach((radio) => radio.addEventListener("change", () => { sync(); saveDraft(); }));
+    method.addEventListener("change", () => { syncDelivery(); saveDraft(); });
+    plushName.addEventListener("input", () => { plushName.value = plushName.value.toUpperCase(); saveDraft(); });
     const wordCaps = (input) => { input.value = input.value.replace(/(^|[\s-])([a-z])/g, (_, lead, letter) => `${lead}${letter.toUpperCase()}`); };
     ["[data-birth-place]", "[data-favourite-person]", "[data-belongs-to]"].forEach((selector) => block.querySelector(selector).addEventListener("blur", (event) => wordCaps(event.currentTarget)));
     now.querySelectorAll("input, select, textarea").forEach((field) => {
-      field.addEventListener("input", () => { notice.textContent = ""; syncPurchaseBlockers(); });
-      field.addEventListener("change", () => { notice.textContent = ""; syncPurchaseBlockers(); });
-      field.addEventListener("blur", syncPurchaseBlockers);
+      field.addEventListener("input", () => { notice.textContent = ""; syncPurchaseBlockers(); saveDraft(); });
+      field.addEventListener("change", () => { notice.textContent = ""; syncPurchaseBlockers(); saveDraft(); });
+      field.addEventListener("blur", () => { syncPurchaseBlockers(); saveDraft(); });
     });
-    voiceInput.addEventListener("change", () => { voiceButton.textContent = voiceInput.files?.[0]?.name || voiceInput.value.split(/[/\\\\]/).pop() || "UPLOAD VOICE (MP4/MP3)"; notice.textContent = ""; syncPurchaseBlockers(); });
+    voiceInput.addEventListener("change", () => { restoredVoiceFile = voiceInput.files?.[0] || null; updateVoiceLabel(); saveVoiceDraft(restoredVoiceFile); saveDraft(); notice.textContent = ""; syncPurchaseBlockers(); });
     const calendar = document.createElement("div");
     calendar.className = "mp-deferred-customisation__calendar";
     calendar.hidden = true;
@@ -155,6 +208,7 @@
     });
     document.addEventListener("pointerdown", (event) => { if (!calendar.hidden && !calendar.contains(event.target) && !dateBox.contains(event.target)) calendar.hidden = true; });
     sync();
+    restoreDraft();
 
     const appendSessionId = (id) => {
       let input = form.querySelector("input[name='properties[customisation_session_id]']");
@@ -244,7 +298,7 @@
           appendSessionId(result.sessionId);
           notice.textContent = "Your link will be paired with this order after checkout.";
         } else {
-          const voice = block.querySelector("[data-voice]").files[0];
+          const voice = selectedVoice();
           if (!voice) throw new Error("Please upload your voice recording.");
           notice.textContent = "Saving your customisation…";
           const session = await request("/api/customisation/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "complete_now" }) });
