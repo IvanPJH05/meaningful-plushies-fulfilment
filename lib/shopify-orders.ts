@@ -246,6 +246,23 @@ export function uploadLiftCertificateFields(raw: string): Omit<CertificateMetaob
 
 const certificateMetaobjectType = process.env.SHOPIFY_CERTIFICATE_METAOBJECT_TYPE || "version_1_certs";
 
+export type CertificateMetaobjectMatch = {
+  id: string;
+  code: string;
+  handle: string;
+};
+
+type CertificateMetaobjectsQuery = {
+  data?: {
+    metaobjects?: {
+      nodes?: Array<{ id?: string; handle?: string; fields?: Array<{ key?: string; value?: string }> }>;
+      pageInfo?: { hasNextPage?: boolean; endCursor?: string | null };
+    } | null;
+  };
+};
+
+type CertificateMetaobjectsPage = NonNullable<NonNullable<CertificateMetaobjectsQuery["data"]>["metaobjects"]>;
+
 function certificateHandle(code: string) {
   return code.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 255);
 }
@@ -306,6 +323,39 @@ export async function updateCertificateMetaobject(input: CertificateMetaobjectIn
     metaobject: { fields: certificateFields(input) },
   });
   return !result?.data?.metaobjectUpsert?.userErrors?.length;
+}
+
+/**
+ * Shopify Flow creates Version 1 certificates independently of this app.
+ * Locate that entry by its order number so a later secure customisation can
+ * update the same certificate instead of creating a second one.
+ */
+export async function certificateMetaobjectForOrder(orderNumber: string) {
+  const domain = shopDomain();
+  const expectedOrderNumber = cleanShopifyOrderNumber(orderNumber);
+  if (!domain || !expectedOrderNumber) return null;
+
+  let after: string | null = null;
+  for (let page = 0; page < 10; page += 1) {
+    const result: CertificateMetaobjectsQuery | null = await shopifyGraphql<CertificateMetaobjectsQuery>(domain, `
+      query CertificateMetaobjectsForOrder($type: String!, $after: String) {
+        metaobjects(type: $type, first: 250, after: $after) {
+          nodes { id handle fields { key value } }
+          pageInfo { hasNextPage endCursor }
+        }
+      }
+    `, { type: certificateMetaobjectType, after });
+    const metaobjects: CertificateMetaobjectsPage | null = result?.data?.metaobjects ?? null;
+    for (const entry of metaobjects?.nodes ?? []) {
+      const fields = new Map((entry.fields ?? []).map((field) => [field.key || "", field.value || ""]));
+      if (cleanShopifyOrderNumber(fields.get("order_number") || "") !== expectedOrderNumber) continue;
+      const code = fields.get("code") || "";
+      if (entry.id && entry.handle && code) return { id: entry.id, handle: entry.handle, code } satisfies CertificateMetaobjectMatch;
+    }
+    if (!metaobjects?.pageInfo?.hasNextPage || !metaobjects.pageInfo.endCursor) break;
+    after = metaobjects.pageInfo.endCursor;
+  }
+  return null;
 }
 
 async function shopifyRest<T>(domain: string, path: string) {

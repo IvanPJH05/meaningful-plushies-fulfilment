@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 
 import { createClient } from "@supabase/supabase-js";
 
-import { setShopifyOrderMetafield, shopDomain, shopifyGraphql, updateCertificateMetaobject } from "./shopify-orders";
+import { certificateMetaobjectForOrder, setShopifyOrderMetafield, shopDomain, shopifyGraphql, updateCertificateMetaobject } from "./shopify-orders";
 import type { Order } from "./types";
 
 const SESSION_TABLE = "customisation_sessions";
@@ -321,13 +321,24 @@ export async function saveSubmittedSession(token: string, formValue: unknown, vo
     updated_at: completedAt,
   }).eq("id", session.id);
   if (error) throw new Error(error.message);
-  if (session.fulfilment_order_id) await applySubmittedSessionToFulfilmentOrder(session.fulfilment_order_id, form, voiceStoragePath);
+  let certificateCode = session.certificate_code || "";
+  if (!certificateCode && session.order_number) {
+    const certificate = await certificateMetaobjectForOrder(session.order_number).catch(() => null);
+    if (certificate) {
+      certificateCode = certificate.code;
+      await serviceClient().from(SESSION_TABLE).update({
+        certificate_code: certificate.code,
+        certificate_metaobject_id: certificate.id,
+        updated_at: completedAt,
+      }).eq("id", session.id);
+    }
+  }
+  if (session.fulfilment_order_id) await applySubmittedSessionToFulfilmentOrder(session.fulfilment_order_id, form, voiceStoragePath, certificateCode);
   if (session.order_id) await setShopifyOrderMetafield(session.order_id, uploadLiftCompatibleText(form, voiceStoragePath)).catch(() => false);
-  if (session.certificate_code) await updateCertificateMetaobject({
-    code: session.certificate_code,
+  if (certificateCode) await updateCertificateMetaobject({
+    code: certificateCode,
     orderNumber: session.order_number || "",
     createdAt: new Date().toISOString(),
-    plushDetails: form.plushName,
     idName: form.plushName,
     gender: form.gender,
     bornOn: form.birthDate,
@@ -364,7 +375,7 @@ function uploadLiftCompatibleText(form: CustomisationForm, voiceStoragePath: str
   ].join("\n");
 }
 
-async function applySubmittedSessionToFulfilmentOrder(fulfilmentOrderId: string, form: CustomisationForm, voiceStoragePath: string) {
+async function applySubmittedSessionToFulfilmentOrder(fulfilmentOrderId: string, form: CustomisationForm, voiceStoragePath: string, certificateCode = "") {
   const client = serviceClient();
   const { data, error } = await client.from("fulfilment_orders").select("data").eq("id", fulfilmentOrderId).maybeSingle();
   if (error || !data?.data || typeof data.data !== "object") return;
@@ -376,6 +387,7 @@ async function applySubmittedSessionToFulfilmentOrder(fulfilmentOrderId: string,
     plushName: form.plushName,
     meaningfulNote: form.meaningfulNote,
     meaningfulMessage: `supabase-storage:${voiceStoragePath}`,
+    idWebsiteLink: certificateCode ? `https://meaningfulplushies.com/pages/certificate/${certificateCode}` : order.idWebsiteLink,
     voiceUploadStatus: "received",
     updatedAt: now,
     statusHistory: [...(order.statusHistory ?? []), {
