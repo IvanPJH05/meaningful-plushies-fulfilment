@@ -20,7 +20,21 @@
     if (!form) return;
 
     const isLater = () => [...radios].some((radio) => radio.checked && radio.value === "later");
+    const purchaseButtons = () => [...form.querySelectorAll("button[type='submit'], input[type='submit']")];
     const setRequired = (container, required) => container.querySelectorAll("input, select, textarea").forEach((input) => { input.required = required; });
+    const completeNowReady = () => {
+      if (isLater()) return true;
+      const fields = [...now.querySelectorAll("input, select, textarea")];
+      return fields.every((field) => field.checkValidity()) && Boolean(voiceInput.files?.[0]);
+    };
+    const syncPurchaseButtons = () => {
+      const locked = !completeNowReady();
+      purchaseButtons().forEach((button) => {
+        button.disabled = locked;
+        button.setAttribute("aria-disabled", String(locked));
+        button.toggleAttribute("data-mp-customisation-locked", locked);
+      });
+    };
     const syncDelivery = () => {
       const useWhatsApp = method.value === "whatsapp";
       emailField.hidden = useWhatsApp;
@@ -32,6 +46,7 @@
       setRequired(later, isLater());
       setRequired(now, !isLater());
       syncDelivery();
+      syncPurchaseButtons();
       notice.textContent = "";
     };
     radios.forEach((radio) => radio.addEventListener("change", sync));
@@ -39,7 +54,11 @@
     plushName.addEventListener("input", () => { plushName.value = plushName.value.toUpperCase(); });
     const wordCaps = (input) => { input.value = input.value.replace(/(^|[\s-])([a-z])/g, (_, lead, letter) => `${lead}${letter.toUpperCase()}`); };
     ["[data-birth-place]", "[data-favourite-person]", "[data-belongs-to]"].forEach((selector) => block.querySelector(selector).addEventListener("blur", (event) => wordCaps(event.currentTarget)));
-    voiceInput.addEventListener("change", () => { voiceButton.textContent = voiceInput.files[0] ? voiceInput.files[0].name : "UPLOAD VOICE (MP4/MP3)"; });
+    now.querySelectorAll("input, select, textarea").forEach((field) => {
+      field.addEventListener("input", syncPurchaseButtons);
+      field.addEventListener("change", syncPurchaseButtons);
+    });
+    voiceInput.addEventListener("change", () => { voiceButton.textContent = voiceInput.files[0] ? voiceInput.files[0].name : "UPLOAD VOICE (MP4/MP3)"; syncPurchaseButtons(); });
     const calendar = document.createElement("div");
     calendar.className = "mp-deferred-customisation__calendar";
     calendar.hidden = true;
@@ -74,6 +93,7 @@
         dateDisplay.classList.add("is-filled");
         calendar.hidden = true;
         birthDate.dispatchEvent(new Event("change", { bubbles: true }));
+        syncPurchaseButtons();
       }
     });
     calendar.addEventListener("change", (event) => {
@@ -124,7 +144,11 @@
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (!apiUrl) { notice.textContent = "Customisation is not configured yet. Please contact us."; return; }
-      if (!form.reportValidity()) return;
+      if (!completeNowReady() || !form.reportValidity()) {
+        notice.textContent = "Please complete every birth certificate field and upload your voice recording before adding to cart or checking out.";
+        now.querySelector("input:invalid, select:invalid, textarea:invalid")?.focus();
+        return;
+      }
       const submitter = event.submitter;
       if (submitter) submitter.disabled = true;
       try {
@@ -152,6 +176,6 @@
         notice.textContent = error instanceof Error ? error.message : "Could not save your customisation.";
         if (submitter) submitter.disabled = false;
       }
-    });
+    }, true);
   });
 })();
