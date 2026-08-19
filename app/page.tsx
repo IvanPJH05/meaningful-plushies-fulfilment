@@ -744,6 +744,7 @@ const feeMetricLabels: Record<FeeMetric, string> = {
 };
 
 const statusLabels: Record<OrderStatus, string> = {
+  awaiting_customisation: "Awaiting Customisation",
   new_order: "New Order",
   uploading_audio: "Uploading Audio",
   sent_for_sewing: "Sent for Sewing",
@@ -9200,6 +9201,15 @@ function OrderDrawer({ order, role, actor, onClose, onUpdate, onStatus }: { orde
   const following = nextStatus[order.status];
   const messageLink = meaningfulMessageLink(order);
   const messageDownloadName = meaningfulMessageDownloadName(order);
+  const [customisationWhatsAppLink, setCustomisationWhatsAppLink] = useState("");
+
+  useEffect(() => {
+    if (order.status !== "awaiting_customisation") return;
+    fetch(`/api/customisation/whatsapp?orderId=${encodeURIComponent(order.id)}`)
+      .then((response) => response.json())
+      .then((result) => setCustomisationWhatsAppLink(result.link || ""))
+      .catch(() => setCustomisationWhatsAppLink(""));
+  }, [order.id, order.status]);
 
   function uploadPhoto(file?: File) {
     if (!file) return;
@@ -9223,7 +9233,7 @@ function OrderDrawer({ order, role, actor, onClose, onUpdate, onStatus }: { orde
 
   return <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><aside className="order-drawer"><div className="drawer-header"><div><p>ORDER DETAIL</p><h2>{orderLabel(order)}</h2></div><button onClick={onClose}>x</button></div><div className="drawer-body">
     <section className="detail-summary"><div><span>Current status</span><StatusPill status={order.status} /></div><div><span>Last updated</span><strong>{formatDate(order.updatedAt, true)}</strong></div></section>
-    <section className="detail-section"><h3>Quick actions</h3><div className="status-actions">{following && <button className="button primary" onClick={() => onStatus(following)}>Move to {statusLabels[following]}</button>}{admin && <button className="button issue-button" onClick={() => onStatus("issue")}>Mark issue</button>}{admin && order.status === "issue" && <button className="button secondary" onClick={() => onStatus("sent_for_sewing")}>Resolve issue</button>}<a className="button whatsapp" href={whatsappLink(order)} target="_blank">Open WhatsApp</a></div></section>
+    <section className="detail-section"><h3>Quick actions</h3><div className="status-actions">{following && <button className="button primary" onClick={() => onStatus(following)}>Move to {statusLabels[following]}</button>}{admin && <button className="button issue-button" onClick={() => onStatus("issue")}>Mark issue</button>}{admin && order.status === "issue" && <button className="button secondary" onClick={() => onStatus("sent_for_sewing")}>Resolve issue</button>}{customisationWhatsAppLink && <a className="button whatsapp" href={customisationWhatsAppLink} target="_blank">Send customisation link</a>}<a className="button whatsapp" href={whatsappLink(order)} target="_blank">Open WhatsApp</a></div></section>
     <section className="detail-section"><h3>Customer and order</h3><div className="field-grid"><Field label="Order number" value={`#${order.orderNumber}`} /><Field label="Source" value={order.salesChannel === "tiktok" ? "TikTok Shop" : "Shopify"} /><Field label="Order date" value={formatDate(order.orderDate, true)} /><Field label="Payment method" value={order.paymentProcessor || "Unknown"} /><Editable label="Customer name" value={order.customerName} disabled={!admin} onChange={(value) => onUpdate({ customerName: value })} /><Editable label="Phone" value={order.phone} disabled={!admin} onChange={(value) => onUpdate({ phone: value })} /><Editable wide label="Address" value={order.address} disabled={!admin} onChange={(value) => onUpdate({ address: value })} /></div></section>
     {order.salesChannel === "tiktok" && <section className="detail-section"><h3>TikTok order file</h3><div className="field-grid"><div className="field wide"><label>Attached file</label>{order.tikTokFileDataUrl ? <a href={order.tikTokFileDataUrl} download={messageDownloadName} rel="noreferrer">{order.tikTokFileName || "Download TikTok order file"}</a> : <span>No file attached</span>}</div>{admin && <div className="field wide"><FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.txt,.doc,.docx" title={order.tikTokFileDataUrl ? "Replace TikTok file" : "Upload TikTok file"} description="Choose or drop the file for this order" selectedName={order.tikTokFileName} onFile={uploadTikTokOrderFile} className="compact-file-drop" /></div>}</div></section>}
     <section className="detail-section"><h3>Plushie details</h3><div className="field-grid"><Editable label="Product name" value={order.product} disabled={!admin} onChange={(value) => onUpdate({ product: value })} /><Editable label="Character" value={order.character} disabled={!admin} onChange={(value) => onUpdate({ character: value })} /><Editable label="Set indicator" value={order.setIndicator ?? ""} disabled={!admin} onChange={(value) => onUpdate({ setIndicator: value })} /><Editable label="ID website link" value={order.idWebsiteLink ?? ""} disabled={!admin} onChange={(value) => onUpdate({ idWebsiteLink: value })} /><Editable label="Voice length" value={String(order.voiceLength || "")} disabled={!admin} onChange={(value) => onUpdate({ voiceLength: Number(value) || 0 })} /><Editable label="Plush name" value={order.plushName} disabled={!admin} onChange={(value) => onUpdate({ plushName: value })} /><Editable wide label="Remark" value={order.remark ?? ""} disabled={!admin} onChange={(value) => onUpdate({ remark: value })} /><Editable wide textarea label="Meaningful note" value={order.meaningfulNote} disabled={!admin} onChange={(value) => onUpdate({ meaningfulNote: value })} /><div className="field wide"><label>Meaningful message</label>{messageLink ? <a href={messageLink} download={messageDownloadName} target={messageDownloadName ? undefined : "_blank"} rel="noreferrer">{messageDownloadName ? "Download customer message" : "Open customer message"}</a> : <span>{order.salesChannel === "tiktok" ? "No TikTok file uploaded" : "Not provided"}</span>}</div><div className="field"><label>Voice upload</label>{admin ? <select value={order.voiceUploadStatus} onChange={(event) => onUpdate({ voiceUploadStatus: event.target.value as Order["voiceUploadStatus"] })}><option value="missing">Missing</option><option value="received">Received</option><option value="checked">Checked</option></select> : <strong>{order.voiceUploadStatus}</strong>}</div></div></section>

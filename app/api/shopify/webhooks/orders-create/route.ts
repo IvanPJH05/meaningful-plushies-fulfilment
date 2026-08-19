@@ -2,8 +2,9 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
+import { attachCertificateToSessions, bindSessionsToOrders, customisationSessionIds } from "../../../../../lib/customisation";
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
-import { cleanShopifyOrderNumber, fetchShopifyOrderWithMetafieldRetry, shopifyMetafieldValue, textValue } from "../../../../../lib/shopify-orders";
+import { cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrderWithMetafieldRetry, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
 import { fetchMetaCapiSettings, fetchSharedOrders, insertSharedActivity, markManualOrderUsedByDiscountCode, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
 
 export const runtime = "nodejs";
@@ -54,7 +55,8 @@ export async function POST(request: Request) {
   try {
     const fullOrder = await fetchShopifyOrderWithMetafieldRetry(payload, request);
     const uploadLiftFormData = shopifyMetafieldValue(fullOrder) || shopifyMetafieldValue(payload);
-    if (!uploadLiftFormData && looksLikePersonalizedPlushie(fullOrder)) {
+    const deferredSessionIds = customisationSessionIds(fullOrder);
+    if (!uploadLiftFormData && looksLikePersonalizedPlushie(fullOrder) && !deferredSessionIds.length) {
       return json(503, { ok: false, retry: true, error: "Upload Lift metafield is not ready yet. Shopify should retry this webhook." });
     }
     const existing = await fetchSharedOrders();
@@ -65,7 +67,33 @@ export async function POST(request: Request) {
       || textValue(payload.name)
       || textValue(payload.order_number),
     );
-    const ordersToSave = importedOrders.filter((order) => order.orderNumber === syncedNumber);
+    let ordersToSave = importedOrders.filter((order) => order.orderNumber === syncedNumber);
+    const orderId = textValue(fullOrder.id) || textValue(payload.admin_graphql_api_id) || textValue(payload.id);
+    const certificateFields = uploadLiftCertificateFields(uploadLiftFormData);
+    const certificate = looksLikePersonalizedPlushie(fullOrder) && ordersToSave.length
+      ? await createCertificateMetaobject({
+        orderNumber: syncedNumber,
+        createdAt: new Date().toISOString(),
+        plushDetails: ordersToSave[0].character || ordersToSave[0].product,
+        ...certificateFields,
+      })
+      : null;
+    if (certificate) {
+      ordersToSave = ordersToSave.map((order) => ({
+        ...order,
+        certificateCode: certificate.code,
+        idWebsiteLink: `https://meaningfulplushies.com/pages/certificate/${certificate.code}`,
+      }));
+    }
+    if (deferredSessionIds.length && ordersToSave.length) {
+      ordersToSave = await bindSessionsToOrders({
+        orderId,
+        orderNumber: syncedNumber,
+        sessionIds: deferredSessionIds,
+        orders: ordersToSave,
+      });
+      if (certificate) await attachCertificateToSessions(orderId, syncedNumber, certificate);
+    }
 
     await upsertSharedOrders(ordersToSave);
     for (const code of appliedDiscountCodes(fullOrder)) {

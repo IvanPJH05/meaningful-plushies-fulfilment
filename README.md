@@ -87,6 +87,48 @@ In the Shopify app, enable order read access. The Admin GraphQL query used by th
 
 When an order is created or updated, Shopify calls the webhook, the server verifies the Shopify signature, fetches the full order and `upload_lift_form_data`, then creates or updates the matching fulfilment order. Existing status, notes, uploaded files, and fulfilment work are kept when the same order is received again. Tracking from Shopify tags replaces the fulfilment tracking number when a valid courier tag is present.
 
+## Deferred plushie customisation
+
+The **AUG Website Updates** Shopify draft theme includes a **Fill in later** choice on the WhatsApp-order customisation products. When selected, the theme creates a secure session and adds its ID to the Shopify cart line. The normal Shopify order-created webhook then creates the existing fulfilment record with status **Awaiting Customisation**. The customer later submits the birth-certificate fields and voice recording at `/customise/<secure-token>`; the app updates that same fulfilment order and writes the familiar `custom.upload_lift_form_data` order metafield for compatibility with existing Shopify reporting and Flow data.
+
+Add these server-only values in Vercel before enabling the draft theme for customers:
+
+```env
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SUPABASE_SERVICE_ROLE_KEY
+CUSTOMISATION_TOKEN_ENCRYPTION_KEY=32_BYTE_RANDOM_BASE64_OR_64_CHARACTER_HEX
+NEXT_PUBLIC_APP_URL=https://meaningful-plushies-fulfilment.vercel.app
+```
+
+The database migration creates a private `customisation-audio` bucket with a 50 MB limit. The customer form uses short-lived signed uploads, so audio files are not public. Email delivery is optional: add `RESEND_API_KEY` and `CUSTOMISATION_EMAIL_FROM` to send the link automatically to customers who select email. For WhatsApp, the fulfilment drawer shows **Send customisation link**, which opens a pre-filled WhatsApp message for staff to send manually; no WhatsApp Business API is required.
+
+### Certificate automation owned by this app
+
+The same app can replace the two certificate-related Shopify Flow actions: it generates the certificate code and `version_1_certs` metaobject when the Shopify order is created, then writes the seven birth-certificate fields and voice reference into that exact metaobject after a deferred form is submitted. It also reads immediate Upload Lift form data so the standard checkout path remains compatible during the transition.
+
+Keep `CERTIFICATE_AUTOMATION_ENABLED=false` while the existing **Generate Certificate Code on Order Creation** Flow is active. After deployment, make one test order first. Once the certificate code, metaobject, and fulfilment record are correct, disable that legacy Flow and set the variable below to `true`; do not run both certificate generators together.
+
+```env
+CERTIFICATE_AUTOMATION_ENABLED=false
+SHOPIFY_CERTIFICATE_METAOBJECT_TYPE=version_1_certs
+```
+
+### Google Drive voice archive
+
+When Google Drive archive settings are present, every submitted voice file is copied immediately to the configured private Google Drive folder. Files use the format `Order-<order-number>-<plush-name>.<extension>`, for example `Order-1234-Billy.mp3`. A fulfilled order points staff to the Drive copy after the backup succeeds.
+
+Supabase remains the primary working store and the app does **not** automatically delete voice files. Google Drive backup can be connected later, but it is optional and does not change how long files remain in Supabase.
+
+Create a Google OAuth **Web application** client with Drive file access, connect the personal Google account once, and add these server-only Vercel values:
+
+```env
+GOOGLE_DRIVE_CLIENT_ID=
+GOOGLE_DRIVE_CLIENT_SECRET=
+GOOGLE_DRIVE_REFRESH_TOKEN=
+GOOGLE_DRIVE_BACKUP_FOLDER_ID=
+```
+
+Use a one-time Google OAuth consent flow with the Google Drive scope to obtain the refresh token, then keep that token private: it grants access to the selected Google account's Drive files.
+
 For the TikTok Shop JSON export button, the Shopify app must also have metaobject read/write access. The export creates a new `Tik Tok Shop Cert Input` metaobject entry each time, sets the upload date to today's Malaysia date, and writes the selected certificate JSON into the `input` field. If your Shopify field handles are different, change the three `SHOPIFY_TIKTOK_CERT_*` variables in Vercel to match the metaobject type and field keys.
 
 ## Creator free order links
