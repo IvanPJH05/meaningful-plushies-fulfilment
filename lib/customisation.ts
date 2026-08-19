@@ -561,3 +561,25 @@ export async function whatsappCustomisationLinkForOrder(order: Order) {
   const session = await sessionForFulfilmentOrder(order.id);
   return manualWhatsAppCustomisationLink(order, session);
 }
+
+/** A mailto draft for staff to send the secure customisation link manually. */
+export async function emailCustomisationLinkForOrder(order: Order) {
+  const session = await sessionForFulfilmentOrder(order.id);
+  if (!session || session.delivery_method !== "email" || !session.contact_email || !session.token_cipher) return "";
+  const token = decryptToken(session.token_cipher);
+  if (!token) return "";
+  const name = order.customerName?.trim() || "there";
+  const subject = "Complete your Meaningful Plushie customisation";
+  const body = [
+    `Hi ${name},`,
+    "",
+    "Thank you for your order! Please use this secure link to complete your plushie's birth certificate and upload the voice recording:",
+    customerCustomisationLink(token),
+    "",
+    "This link expires in 30 days.",
+    "",
+    "With love,",
+    "Meaningful Plushies",
+  ].join("\n");
+  return `mailto:${encodeURIComponent(session.contact_email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}

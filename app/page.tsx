@@ -9220,6 +9220,7 @@ type PendingCustomisationSession = {
 function PendingCustomisationWorkspace({ orders, onViewOrder }: { orders: Order[]; onViewOrder: (id: string) => void }) {
   const [sessions, setSessions] = useState<PendingCustomisationSession[]>([]);
   const [whatsAppLinks, setWhatsAppLinks] = useState<Record<string, string>>({});
+  const [emailLinks, setEmailLinks] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const pendingOrders = useMemo(() => orders.filter((order) => order.status === "awaiting_customisation"), [orders]);
@@ -9239,6 +9240,12 @@ function PendingCustomisationWorkspace({ orders, onViewOrder }: { orders: Order[
         return [session.fulfilmentOrderId, linkResult.link || ""] as const;
       }));
       setWhatsAppLinks(Object.fromEntries(links));
+      const emails = await Promise.all(pending.filter((session) => session.deliveryMethod === "email").map(async (session) => {
+        const linkResponse = await fetch(`/api/customisation/email?orderId=${encodeURIComponent(session.fulfilmentOrderId)}`);
+        const linkResult = await linkResponse.json() as { link?: string };
+        return [session.fulfilmentOrderId, linkResult.link || ""] as const;
+      }));
+      setEmailLinks(Object.fromEntries(emails));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not load pending customisations.");
     } finally {
@@ -9258,7 +9265,8 @@ function PendingCustomisationWorkspace({ orders, onViewOrder }: { orders: Order[
     <div className="table-scroll"><table className="orders-table"><thead><tr><th>Order</th><th>Customer</th><th>Send link by</th><th>Contact</th><th>Link status</th><th>Expires</th><th>Actions</th></tr></thead><tbody>{pendingOrders.map((order) => {
       const session = byOrderId.get(order.id);
       const whatsappLink = whatsAppLinks[order.id];
-      return <tr key={order.id}><td><strong>{orderLabel(order)}</strong></td><td>{order.customerName || "-"}</td><td>{session ? session.deliveryMethod === "whatsapp" ? "WhatsApp" : "Email" : "-"}</td><td>{session?.contact || order.phone || "-"}</td><td>{session ? session.deliveryMethod === "email" ? (session.linkSentAt ? `Email sent ${formatDate(session.linkSentAt, true)}` : "Email pending") : "Ready for manual WhatsApp" : "Loading session..."}</td><td>{session?.expiresAt ? formatDate(session.expiresAt) : "-"}</td><td><div className="row-actions">{whatsappLink && <a className="view-button" href={whatsappLink} target="_blank" rel="noreferrer">Open WhatsApp message</a>}<button className="view-button" type="button" onClick={() => onViewOrder(order.id)}>View</button></div></td></tr>;
+      const emailLink = emailLinks[order.id];
+      return <tr key={order.id}><td><strong>{orderLabel(order)}</strong></td><td>{order.customerName || "-"}</td><td>{session ? session.deliveryMethod === "whatsapp" ? "WhatsApp" : "Email" : "-"}</td><td>{session?.contact || order.phone || "-"}</td><td>{session ? session.deliveryMethod === "email" ? (session.linkSentAt ? `Email sent ${formatDate(session.linkSentAt, true)}` : "Ready for manual email") : "Ready for manual WhatsApp" : "Loading session..."}</td><td>{session?.expiresAt ? formatDate(session.expiresAt) : "-"}</td><td><div className="row-actions">{whatsappLink && <a className="view-button" href={whatsappLink} target="_blank" rel="noreferrer">Open WhatsApp message</a>}{emailLink && <a className="view-button" href={emailLink}>Open email</a>}<button className="view-button" type="button" onClick={() => onViewOrder(order.id)}>View</button></div></td></tr>;
     })}</tbody></table>{!pendingOrders.length && <div className="empty"><strong>No customisations are pending</strong><p>Orders move out of this list automatically when the customer submits their details.</p></div>}</div>
   </section>;
 }
