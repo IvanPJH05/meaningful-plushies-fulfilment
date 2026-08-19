@@ -10,6 +10,14 @@ const AUDIO_BUCKET = "customisation-audio";
 const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://meaningful-plushies-fulfilment.vercel.app").replace(/\/$/, "");
 const storefrontCustomisationUrl = process.env.CUSTOMISATION_STOREFRONT_URL || "https://meaningfulplushies.com/pages/birth-certificate-customization?view=customise-your-plushie";
 
+/** The secure customisation page for each plushie and recorder option. */
+const CUSTOMISATION_PAGE_PATHS: Record<string, Record<number, string>> = {
+  billy: { 5: "billy-5s", 10: "billy-10s", 20: "billy-20s" },
+  hunnie: { 5: "hunnie-5s", 10: "hunnie-10s", 20: "hunnie-20s" },
+  tootsie: { 5: "tootsie-5s", 10: "tootsie-10s", 20: "tootsie-20s" },
+  "dragon warrior": { 5: "dw-5s", 10: "dw-10s", 20: "dw-20s" },
+};
+
 export type CustomisationMode = "complete_now" | "fill_later";
 export type DeliveryMethod = "email" | "whatsapp";
 
@@ -46,7 +54,7 @@ type SessionRow = {
   contact_email: string | null;
   contact_phone: string | null;
   status: "draft" | "pending_payment" | "awaiting_customisation" | "submitted" | "expired" | "cancelled";
-  form_data: Partial<CustomisationForm>;
+  form_data: Partial<CustomisationForm> & { customisationPageUrl?: string };
   voice_storage_path: string | null;
   google_drive_file_id?: string | null;
   google_drive_file_name?: string | null;
@@ -109,10 +117,18 @@ function requiredText(value: unknown, max: number) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
 
-function customerCustomisationLink(token: string) {
-  const url = new URL(storefrontCustomisationUrl);
+function customerCustomisationLink(token: string, pageUrl?: string) {
+  const url = new URL(pageUrl || storefrontCustomisationUrl);
   url.searchParams.set("token", token);
   return url.toString();
+}
+
+function customisationPageForOrder(order: Pick<Order, "character" | "voiceLength">) {
+  const character = order.character.trim().toLowerCase();
+  const pageHandle = CUSTOMISATION_PAGE_PATHS[character]?.[Number(order.voiceLength)];
+  return pageHandle
+    ? `https://meaningfulplushies.com/pages/${pageHandle}?view=customise-your-plushie`
+    : storefrontCustomisationUrl;
 }
 
 export function normaliseCustomisationForm(value: unknown): CustomisationForm | null {
@@ -299,7 +315,7 @@ export async function saveSubmittedSession(token: string, formValue: unknown, vo
 
   const completedAt = new Date().toISOString();
   const { error } = await serviceClient().from(SESSION_TABLE).update({
-    form_data: form,
+    form_data: { ...session.form_data, ...form },
     voice_storage_path: voiceStoragePath,
     status: "submitted",
     completed_at: completedAt,
@@ -414,16 +430,22 @@ export async function bindSessionsToOrders(input: { orderId: string; orderNumber
     } as Order;
   });
 
-  await Promise.all(updated.map((order, index) => {
+  const boundSessions = updated.map((order, index) => {
     const sessionId = input.sessionIds[index] || input.sessionIds[0];
+    const session = byId.get(sessionId);
+    if (!session) return null;
+    const formData = { ...session.form_data, customisationPageUrl: customisationPageForOrder(order) };
+    session.form_data = formData;
     return client.from(SESSION_TABLE).update({
       order_id: input.orderId,
       order_number: input.orderNumber,
       fulfilment_order_id: order.id,
       status: byId.get(sessionId)?.status === "submitted" ? "submitted" : "awaiting_customisation",
+      form_data: formData,
       updated_at: now,
     }).eq("id", sessionId);
-  }));
+  });
+  await Promise.all(boundSessions.filter((request) => request !== null));
   await Promise.all(sessions.map((session) => sendCustomisationEmail(session).catch(() => false)));
   await Promise.all(sessions.filter((session) => session.status === "submitted" && session.voice_storage_path).map((session) => backupVoiceToGoogleDrive(session, String(session.form_data?.plushName || "plushie")).catch(() => false)));
   return updated;
@@ -505,7 +527,7 @@ async function sendCustomisationEmail(session: SessionRow) {
   const from = process.env.CUSTOMISATION_EMAIL_FROM;
   const token = decryptToken(session.token_cipher);
   if (!apiKey || !from || !token) return false;
-  const link = customerCustomisationLink(token);
+  const link = customerCustomisationLink(token, session.form_data?.customisationPageUrl);
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -554,7 +576,7 @@ export function manualWhatsAppCustomisationLink(order: Order, session: SessionRo
   const phone = session.contact_phone.replace(/\D/g, "").replace(/^0/, "60");
   if (phone.length < 9) return "";
   const token = session.token_cipher ? decryptToken(session.token_cipher) : "";
-  return token ? `https://wa.me/${phone}?text=${encodeURIComponent(`Hi ${order.customerName}, please complete your Meaningful Plushie customisation here: ${customerCustomisationLink(token)}`)}` : "";
+  return token ? `https://wa.me/${phone}?text=${encodeURIComponent(`Hi ${order.customerName}, please complete your Meaningful Plushie customisation here: ${customerCustomisationLink(token, customisationPageForOrder(order))}`)}` : "";
 }
 
 export async function whatsappCustomisationLinkForOrder(order: Order) {
@@ -574,7 +596,7 @@ export async function emailCustomisationLinkForOrder(order: Order) {
     `Hi ${name},`,
     "",
     "Thank you for your order! Please use this secure link to complete your plushie's birth certificate and upload the voice recording:",
-    customerCustomisationLink(token),
+    customerCustomisationLink(token, customisationPageForOrder(order)),
     "",
     "This link expires in 30 days.",
     "",
