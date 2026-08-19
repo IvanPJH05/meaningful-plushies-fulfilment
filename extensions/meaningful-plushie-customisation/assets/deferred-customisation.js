@@ -54,7 +54,9 @@
         const day = index + 1, value = formatDate(new Date(year, month, day));
         return `<button type="button" data-day="${day}" class="${birthDate.value === value ? "is-selected" : ""}">${day}</button>`;
       }).join("");
-      calendar.innerHTML = `<div class="mp-deferred-customisation__calendar-head"><button type="button" data-month="-1" aria-label="Previous month">‹</button><span>${calendarMonth.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}</span><button type="button" data-month="1" aria-label="Next month">›</button></div><div class="mp-deferred-customisation__calendar-grid">${weeks}${blanks}${days}</div>`;
+      const months = Array.from({ length: 12 }, (_, index) => `<option value="${index}" ${index === month ? "selected" : ""}>${new Date(year, index, 1).toLocaleDateString("en-GB", { month: "long" })}</option>`).join("");
+      const years = Array.from({ length: 101 }, (_, index) => year + 1 - index).map((value) => `<option value="${value}" ${value === year ? "selected" : ""}>${value}</option>`).join("");
+      calendar.innerHTML = `<div class="mp-deferred-customisation__calendar-head"><button type="button" data-month="-1" aria-label="Previous month">‹</button><span class="mp-deferred-customisation__calendar-selects"><select aria-label="Month" data-calendar-month>${months}</select><select aria-label="Year" data-calendar-year>${years}</select></span><button type="button" data-month="1" aria-label="Next month">›</button></div><div class="mp-deferred-customisation__calendar-grid">${weeks}${blanks}${days}</div>`;
     };
     calendar.addEventListener("click", (event) => {
       const target = event.target.closest("button");
@@ -67,6 +69,11 @@
         calendar.hidden = true;
         birthDate.dispatchEvent(new Event("change", { bubbles: true }));
       }
+    });
+    calendar.addEventListener("change", (event) => {
+      if (event.target.matches("[data-calendar-month]")) calendarMonth.setMonth(Number(event.target.value));
+      if (event.target.matches("[data-calendar-year]")) calendarMonth.setFullYear(Number(event.target.value));
+      renderCalendar();
     });
     dateBox.addEventListener("click", () => {
       const selected = birthDate.value.split("/");
