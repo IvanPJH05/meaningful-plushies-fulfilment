@@ -1,4 +1,5 @@
 {{ 'deferred-customisation.css' | asset_url | stylesheet_tag }}
+{{ 'customisation-polish.css' | asset_url | stylesheet_tag }}
 <script src="{{ 'customisation-link-form.js' | asset_url }}" defer="defer"></script>
 
 <div class="mp-deferred-customisation" data-customisation-link-block data-api-url="{{ block.settings.app_url | escape }}" {{ block.shopify_attributes }}>
