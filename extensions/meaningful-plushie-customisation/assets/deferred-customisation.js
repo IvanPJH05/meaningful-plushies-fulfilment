@@ -55,13 +55,15 @@
         return `<button type="button" data-day="${day}" class="${birthDate.value === value ? "is-selected" : ""}">${day}</button>`;
       }).join("");
       const months = Array.from({ length: 12 }, (_, index) => `<option value="${index}" ${index === month ? "selected" : ""}>${new Date(year, index, 1).toLocaleDateString("en-GB", { month: "long" })}</option>`).join("");
-      const years = Array.from({ length: 101 }, (_, index) => year + 1 - index).map((value) => `<option value="${value}" ${value === year ? "selected" : ""}>${value}</option>`).join("");
-      calendar.innerHTML = `<div class="mp-deferred-customisation__calendar-head"><button type="button" data-month="-1" aria-label="Previous month">‹</button><span class="mp-deferred-customisation__calendar-selects"><select aria-label="Month" data-calendar-month>${months}</select><select aria-label="Year" data-calendar-year>${years}</select></span><button type="button" data-month="1" aria-label="Next month">›</button></div><div class="mp-deferred-customisation__calendar-grid">${weeks}${blanks}${days}</div>`;
+      const years = Array.from({ length: 101 }, (_, index) => year + 1 - index).map((value) => `<button type="button" data-calendar-year="${value}" class="${value === year ? "is-selected" : ""}">${value}</button>`).join("");
+      calendar.innerHTML = `<div class="mp-deferred-customisation__calendar-head"><button type="button" data-month="-1" aria-label="Previous month">‹</button><span class="mp-deferred-customisation__calendar-selects"><select aria-label="Month" data-calendar-month>${months}</select><button type="button" data-year-toggle aria-label="Choose year">${year}⌄</button></span><button type="button" data-month="1" aria-label="Next month">›</button><div class="mp-deferred-customisation__calendar-years" hidden>${years}</div></div><div class="mp-deferred-customisation__calendar-grid">${weeks}${blanks}${days}</div>`;
     };
     calendar.addEventListener("click", (event) => {
       const target = event.target.closest("button");
       if (!target) return;
+      if (target.dataset.yearToggle !== undefined) { calendar.querySelector(".mp-deferred-customisation__calendar-years").hidden = false; return; }
       if (target.dataset.month) { calendarMonth.setMonth(calendarMonth.getMonth() + Number(target.dataset.month)); renderCalendar(); return; }
+      if (target.dataset.calendarYear) { calendarMonth.setFullYear(Number(target.dataset.calendarYear)); renderCalendar(); return; }
       if (target.dataset.day) {
         const selected = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), Number(target.dataset.day));
         birthDate.value = formatDate(selected);
@@ -72,7 +74,6 @@
     });
     calendar.addEventListener("change", (event) => {
       if (event.target.matches("[data-calendar-month]")) calendarMonth.setMonth(Number(event.target.value));
-      if (event.target.matches("[data-calendar-year]")) calendarMonth.setFullYear(Number(event.target.value));
       renderCalendar();
     });
     dateBox.addEventListener("click", () => {
