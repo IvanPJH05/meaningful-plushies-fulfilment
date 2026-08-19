@@ -89,7 +89,7 @@ When an order is created or updated, Shopify calls the webhook, the server verif
 
 ## Deferred plushie customisation
 
-The **AUG Website Updates** Shopify draft theme includes a **Fill in later** choice on the WhatsApp-order customisation products. When selected, the theme creates a secure session and adds its ID to the Shopify cart line. The normal Shopify order-created webhook then creates the existing fulfilment record with status **Awaiting Customisation**. The customer later submits the birth-certificate fields and voice recording at `/customise/<secure-token>`; the app updates that same fulfilment order and writes the familiar `custom.upload_lift_form_data` order metafield for compatibility with existing Shopify reporting and Flow data.
+The **AUG Website Updates** Shopify draft theme includes a **Fill in later** choice on the WhatsApp-order customisation products. When selected, the theme creates a secure session and adds its ID to the Shopify cart line. The normal Shopify order-created webhook then creates the existing fulfilment record with status **Awaiting Customisation**. The customer later submits the birth-certificate fields and voice recording on the Shopify Birth Certificate Customization page; its private `token` URL parameter identifies the exact session, fulfilment order, and Shopify order.
 
 Add these server-only values in Vercel before enabling the draft theme for customers:
 
@@ -97,6 +97,7 @@ Add these server-only values in Vercel before enabling the draft theme for custo
 SUPABASE_SERVICE_ROLE_KEY=YOUR_SUPABASE_SERVICE_ROLE_KEY
 CUSTOMISATION_TOKEN_ENCRYPTION_KEY=32_BYTE_RANDOM_BASE64_OR_64_CHARACTER_HEX
 NEXT_PUBLIC_APP_URL=https://meaningful-plushies-fulfilment.vercel.app
+CUSTOMISATION_STOREFRONT_URL=https://meaningfulplushies.com/pages/birth-certificate-customization?view=customise-your-plushie
 ```
 
 The database migration creates a private `customisation-audio` bucket with a 50 MB limit. The customer form uses short-lived signed uploads, so audio files are not public. Email delivery is optional: add `RESEND_API_KEY` and `CUSTOMISATION_EMAIL_FROM` to send the link automatically to customers who select email. For WhatsApp, the fulfilment drawer shows **Send customisation link**, which opens a pre-filled WhatsApp message for staff to send manually; no WhatsApp Business API is required.

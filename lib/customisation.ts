@@ -8,6 +8,7 @@ import type { Order } from "./types";
 const SESSION_TABLE = "customisation_sessions";
 const AUDIO_BUCKET = "customisation-audio";
 const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://meaningful-plushies-fulfilment.vercel.app").replace(/\/$/, "");
+const storefrontCustomisationUrl = process.env.CUSTOMISATION_STOREFRONT_URL || "https://meaningfulplushies.com/pages/birth-certificate-customization?view=customise-your-plushie";
 
 export type CustomisationMode = "complete_now" | "fill_later";
 export type DeliveryMethod = "email" | "whatsapp";
@@ -89,6 +90,12 @@ function requiredText(value: unknown, max: number) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
 
+function customerCustomisationLink(token: string) {
+  const url = new URL(storefrontCustomisationUrl);
+  url.searchParams.set("token", token);
+  return url.toString();
+}
+
 export function normaliseCustomisationForm(value: unknown): CustomisationForm | null {
   const source = value && typeof value === "object" ? value as Record<string, unknown> : {};
   const form = {
@@ -127,7 +134,7 @@ export async function createDeferredSession(input: {
     expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
   }).select("id").single();
   if (error) throw new Error(error.message);
-  return { id: String(data.id), token, url: `${appUrl}/customise/${token}` };
+  return { id: String(data.id), token, url: customerCustomisationLink(token) };
 }
 
 /** Creates an already-completed customisation that will be attached when its cart item becomes an order. */
@@ -405,7 +412,7 @@ async function sendCustomisationEmail(session: SessionRow) {
   const from = process.env.CUSTOMISATION_EMAIL_FROM;
   const token = decryptToken(session.token_cipher);
   if (!apiKey || !from || !token) return false;
-  const link = `${appUrl}/customise/${token}`;
+  const link = customerCustomisationLink(token);
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -432,7 +439,7 @@ export function manualWhatsAppCustomisationLink(order: Order, session: SessionRo
   const phone = session.contact_phone.replace(/\D/g, "").replace(/^0/, "60");
   if (phone.length < 9) return "";
   const token = session.token_cipher ? decryptToken(session.token_cipher) : "";
-  return token ? `https://wa.me/${phone}?text=${encodeURIComponent(`Hi ${order.customerName}, please complete your Meaningful Plushie customisation here: ${appUrl}/customise/${token}`)}` : "";
+  return token ? `https://wa.me/${phone}?text=${encodeURIComponent(`Hi ${order.customerName}, please complete your Meaningful Plushie customisation here: ${customerCustomisationLink(token)}`)}` : "";
 }
 
 export async function whatsappCustomisationLinkForOrder(order: Order) {
