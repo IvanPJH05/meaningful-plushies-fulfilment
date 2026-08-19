@@ -25,6 +25,10 @@
       return ownerForm === form && (control.type === "submit" || control.name === "add" || Boolean(control.closest(".shopify-payment-button")));
     });
     const setRequired = (container, required) => container.querySelectorAll("input, select, textarea").forEach((input) => { input.required = required; });
+    // Some mobile storefront browsers briefly expose a selected file through
+    // the input value before they populate FileList. Treat either state as a
+    // selected recording so the purchase lock releases immediately.
+    const hasVoiceRecording = () => Boolean(voiceInput.files?.length || voiceInput.value);
     const completeNowReady = () => {
       if (isLater()) return true;
       return Boolean(
@@ -35,7 +39,7 @@
         && block.querySelector("[data-favourite-person]").value.trim()
         && block.querySelector("[data-belongs-to]").value.trim()
         && block.querySelector("[data-meaningful-note]").value.trim()
-        && voiceInput.files?.length,
+        && hasVoiceRecording(),
       );
     };
     const syncDelivery = () => {
@@ -45,7 +49,7 @@
     };
     let purchaseBlockers = [];
     const clearPurchaseBlockers = () => {
-      purchaseBlockers.forEach((blocker) => blocker.remove());
+      purchaseBlockers.forEach(({ blocker }) => blocker.remove());
       purchaseBlockers = [];
       purchaseControls().forEach((control) => {
         control.removeAttribute("aria-disabled");
@@ -96,7 +100,7 @@
       field.addEventListener("change", () => { notice.textContent = ""; syncPurchaseBlockers(); });
       field.addEventListener("blur", syncPurchaseBlockers);
     });
-    voiceInput.addEventListener("change", () => { voiceButton.textContent = voiceInput.files[0] ? voiceInput.files[0].name : "UPLOAD VOICE (MP4/MP3)"; notice.textContent = ""; syncPurchaseBlockers(); });
+    voiceInput.addEventListener("change", () => { voiceButton.textContent = voiceInput.files?.[0]?.name || voiceInput.value.split(/[/\\\\]/).pop() || "UPLOAD VOICE (MP4/MP3)"; notice.textContent = ""; syncPurchaseBlockers(); });
     const calendar = document.createElement("div");
     calendar.className = "mp-deferred-customisation__calendar";
     calendar.hidden = true;
