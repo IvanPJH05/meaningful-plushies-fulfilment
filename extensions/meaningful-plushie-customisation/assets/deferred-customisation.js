@@ -20,6 +20,10 @@
     if (!form) return;
 
     const isLater = () => [...radios].some((radio) => radio.checked && radio.value === "later");
+    const purchaseControls = () => [...form.querySelectorAll("button, input[type='submit']")].filter((control) => {
+      const ownerForm = control.form || control.closest("form");
+      return ownerForm === form && (control.type === "submit" || control.name === "add" || Boolean(control.closest(".shopify-payment-button")));
+    });
     const setRequired = (container, required) => container.querySelectorAll("input, select, textarea").forEach((input) => { input.required = required; });
     const completeNowReady = () => {
       if (isLater()) return true;
@@ -31,12 +35,47 @@
       emailField.hidden = useWhatsApp;
       phoneField.hidden = !useWhatsApp;
     };
+    let purchaseBlockers = [];
+    const clearPurchaseBlockers = () => {
+      purchaseBlockers.forEach((blocker) => blocker.remove());
+      purchaseBlockers = [];
+      purchaseControls().forEach((control) => {
+        control.removeAttribute("aria-disabled");
+        control.removeAttribute("data-mp-customisation-locked");
+      });
+    };
+    const positionPurchaseBlockers = () => {
+      purchaseBlockers.forEach(({ blocker, control }) => {
+        const rect = control.getBoundingClientRect();
+        blocker.style.top = `${rect.top}px`;
+        blocker.style.left = `${rect.left}px`;
+        blocker.style.width = `${rect.width}px`;
+        blocker.style.height = `${rect.height}px`;
+      });
+    };
+    const syncPurchaseBlockers = () => {
+      clearPurchaseBlockers();
+      if (isLater() || completeNowReady()) return;
+      purchaseControls().forEach((control) => {
+        control.setAttribute("aria-disabled", "true");
+        control.setAttribute("data-mp-customisation-locked", "");
+        const blocker = document.createElement("button");
+        blocker.type = "button";
+        blocker.className = "mp-purchase-blocker";
+        blocker.setAttribute("aria-label", "Complete your customisation before purchasing");
+        blocker.addEventListener("click", (event) => { event.preventDefault(); showIncompleteNowError(); });
+        document.body.appendChild(blocker);
+        purchaseBlockers.push({ blocker, control });
+      });
+      positionPurchaseBlockers();
+    };
     const sync = () => {
       later.hidden = !isLater();
       now.hidden = isLater();
       setRequired(later, isLater());
       setRequired(now, !isLater());
       syncDelivery();
+      syncPurchaseBlockers();
       notice.textContent = "";
     };
     radios.forEach((radio) => radio.addEventListener("change", sync));
@@ -45,10 +84,10 @@
     const wordCaps = (input) => { input.value = input.value.replace(/(^|[\s-])([a-z])/g, (_, lead, letter) => `${lead}${letter.toUpperCase()}`); };
     ["[data-birth-place]", "[data-favourite-person]", "[data-belongs-to]"].forEach((selector) => block.querySelector(selector).addEventListener("blur", (event) => wordCaps(event.currentTarget)));
     now.querySelectorAll("input, select, textarea").forEach((field) => {
-      field.addEventListener("input", () => { notice.textContent = ""; });
-      field.addEventListener("change", () => { notice.textContent = ""; });
+      field.addEventListener("input", () => { notice.textContent = ""; syncPurchaseBlockers(); });
+      field.addEventListener("change", () => { notice.textContent = ""; syncPurchaseBlockers(); });
     });
-    voiceInput.addEventListener("change", () => { voiceButton.textContent = voiceInput.files[0] ? voiceInput.files[0].name : "UPLOAD VOICE (MP4/MP3)"; notice.textContent = ""; });
+    voiceInput.addEventListener("change", () => { voiceButton.textContent = voiceInput.files[0] ? voiceInput.files[0].name : "UPLOAD VOICE (MP4/MP3)"; notice.textContent = ""; syncPurchaseBlockers(); });
     const calendar = document.createElement("div");
     calendar.className = "mp-deferred-customisation__calendar";
     calendar.hidden = true;
@@ -160,6 +199,8 @@
     };
     document.addEventListener("pointerdown", guardPurchaseControl, true);
     document.addEventListener("click", guardPurchaseControl, true);
+    window.addEventListener("resize", positionPurchaseBlockers);
+    window.addEventListener("scroll", positionPurchaseBlockers, true);
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
