@@ -40,6 +40,7 @@ const ORDER_SELECTION = `
       id
       name
       title
+      variantTitle
       quantity
       originalUnitPriceSet { shopMoney { amount currencyCode } }
       totalDiscountSet { shopMoney { amount currencyCode } }

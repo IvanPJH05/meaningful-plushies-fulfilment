@@ -340,6 +340,18 @@ export async function saveSubmittedSession(token: string, formValue: unknown, vo
     updated_at: completedAt,
   }).eq("id", session.id);
   if (error) throw new Error(error.message);
+  // "Complete it now" happens before Shopify has an order number. Store the
+  // completed form and file on its session first; the order webhook will use
+  // the line-item session ID to attach and copy it immediately after checkout.
+  if (!session.order_number) {
+    const { error: pendingCompletionError } = await serviceClient().from(SESSION_TABLE).update({
+      status: "submitted",
+      completed_at: completedAt,
+      updated_at: completedAt,
+    }).eq("id", session.id);
+    if (pendingCompletionError) throw new Error(pendingCompletionError.message);
+    return { sessionId: session.id, fulfilmentOrderId: "" };
+  }
   const linkedOrder = await fulfilmentOrderForSession(session);
   let certificateCode = session.certificate_code || "";
   if (!certificateCode && session.order_number) {
