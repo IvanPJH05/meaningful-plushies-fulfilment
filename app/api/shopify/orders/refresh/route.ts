@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
-import { cleanShopifyOrderNumber, fetchShopifyOrderByNumberWithMetafieldRetry, shopifyMetafieldValue, textValue } from "../../../../../lib/shopify-orders";
+import { certificateMediaForLineItem, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrderByNumberWithMetafieldRetry, flowCertificateCode, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
 import { fetchMetaCapiSettings, fetchSharedOrders, insertSharedActivity, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
 import type { Order } from "../../../../../lib/types";
 
@@ -17,6 +17,10 @@ function comparableOrder(order: Order) {
     ...order,
     updatedAt: "",
   };
+}
+
+function looksLikePersonalizedPlushie(order: Record<string, unknown>) {
+  return /meaningful plushie|build your meaningful plushie|plushie/i.test(JSON.stringify(order.lineItems ?? order.line_items ?? ""));
 }
 
 async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], request: Request) {
@@ -37,8 +41,35 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
     return { orderNumber: requestedOrderNumber, ok: false, error: `Shopify order #${requestedOrderNumber} could not be converted into fulfilment orders.`, orders: [] as Order[], updated: 0 };
   }
 
+  const createdAt = textValue(fullOrder.createdAt) || new Date().toISOString();
+  const lineItems = Array.isArray(fullOrder.lineItems) ? fullOrder.lineItems : [];
+  const certificateFields = uploadLiftCertificateFields(shopifyMetafieldValue(fullOrder));
+  const certificates = looksLikePersonalizedPlushie(fullOrder)
+    ? await Promise.all(importedOrders.map((order, index) => {
+      const lineItem = objectValue(lineItems[index]);
+      const code = order.certificateCode || flowCertificateCode(requestedOrderNumber, createdAt, textValue(lineItem.id));
+      return createCertificateMetaobject({
+        orderNumber: requestedOrderNumber,
+        createdAt,
+        code,
+        plushDetails: textValue(lineItem.title) || order.character || order.product,
+        certificate: certificateMediaForLineItem(textValue(lineItem.title), textValue(lineItem.variantTitle)),
+        plushBackgroundBottom: plushBackgroundForMeaningfulNote(certificateFields.meaningfulNote || ""),
+        ...certificateFields,
+      });
+    }))
+    : [];
+  const ordersWithCertificates = importedOrders.map((order, index) => {
+    const certificate = certificates[index];
+    return certificate ? {
+      ...order,
+      certificateCode: certificate.code,
+      idWebsiteLink: `https://meaningfulplushies.com/pages/certificate/${certificate.code}`,
+    } : order;
+  });
+
   const previousById = new Map(existing.map((order) => [order.id, order]));
-  const changedOrders = importedOrders.filter((order) => {
+  const changedOrders = ordersWithCertificates.filter((order) => {
     const previous = previousById.get(order.id);
     return !previous || JSON.stringify(comparableOrder(previous)) !== JSON.stringify(comparableOrder(order));
   });
@@ -49,7 +80,7 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
     imported: !existing.some((order) => order.orderNumber === requestedOrderNumber && (order.salesChannel ?? "shopify") === "shopify"),
     changed: changedOrders.length > 0,
     updated: changedOrders.length,
-    orders: importedOrders,
+    orders: ordersWithCertificates,
     shopifyOrder: fullOrder,
   };
 }
