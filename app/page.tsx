@@ -80,7 +80,7 @@ import { MonthlyJournalWorkspace } from "../components/monthly-journal-workspace
 
 type Session = DashboardSession;
 type View =
-  | "orders" | "fulfilment" | "packing_slips" | "print_envelope" | "nfc_card" | "import" | "tiktok_shop" | "fulfilled" | "history" | "settings" | "meta_capi" | "stock" | "sales_report"
+  | "orders" | "pending_customisation" | "fulfilment" | "packing_slips" | "print_envelope" | "nfc_card" | "import" | "tiktok_shop" | "fulfilled" | "history" | "settings" | "meta_capi" | "stock" | "sales_report"
   | "accounting_dashboard" | "accounting_documents" | "accounting_transactions" | "accounting_csv_import" | "accounting_profit_loss" | "accounting_balance_sheet"
   | "accounting_cash_flow" | "accounting_owner_equity" | "accounting_operating_costs" | "accounting_general_ledger" | "accounting_trial_balance" | "accounting_payable" | "accounting_receivable"
   | "accounting_other_income"
@@ -592,7 +592,7 @@ function cogsAccountForInventoryItem(itemName: string) {
 }
 const processorAccounts = ["Xendit", "Stripe", "TikTok"] as const;
 
-const fulfilmentViews: readonly View[] = ["orders", "fulfilment", "packing_slips", "print_envelope", "nfc_card", "import", "tiktok_shop", "fulfilled"];
+const fulfilmentViews: readonly View[] = ["orders", "pending_customisation", "fulfilment", "packing_slips", "print_envelope", "nfc_card", "import", "tiktok_shop", "fulfilled"];
 const accountingViews: readonly View[] = [
   "accounting_dashboard",
   "accounting_bank_reconciliation",
@@ -784,6 +784,7 @@ type NavItem = { view: View; label: string; icon: IconName };
 
 const fulfilmentNavItems: NavItem[] = [
   { view: "orders", label: "Orders", icon: "orders" },
+  { view: "pending_customisation", label: "Pending Customisation", icon: "orders" },
   { view: "fulfilment", label: "Fulfilment", icon: "fulfilment" },
   { view: "packing_slips", label: "Packing Slips", icon: "packing" },
   { view: "print_envelope", label: "Print Envelope", icon: "envelope" },
@@ -5598,7 +5599,7 @@ export default function Home() {
           </section>
         </>}
 
-        {view !== "fulfilment" && <section className="card orders-card">
+        {view !== "fulfilment" && view !== "pending_customisation" && <section className="card orders-card">
           <div className={`toolbar ${view === "orders" ? "orders-toolbar" : ""}`}>
             <div className="toolbar-row toolbar-filter-row"><div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, customer, phone or tracking..." /></div><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /></div>
             <div className="toolbar-row toolbar-action-row">{view === "orders" && <button className="button secondary" disabled={!selectedShopifyOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshShopifyOrders}>{refreshingOrderNumber === "bulk" ? "Refreshing..." : `Refresh ${selectedShopifyOrderCount} Shopify`}</button>}{view === "orders" && <button className="button secondary" disabled={!selectedTikTokOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshTikTokOrders}>{refreshingOrderNumber === "tiktok-bulk" ? "Syncing..." : `Sync ${selectedTikTokOrderCount} TikTok`}</button>}{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>Move {selectedOrders.length} to next status</button>}{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>Delete</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>Export CSV</button>}</div>
@@ -5606,6 +5607,8 @@ export default function Home() {
           <div className="table-scroll"><table className="orders-table"><thead><tr><th><input type="checkbox" aria-label="Select visible orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th>Order</th><th>Date</th><th>Customer</th><th>Phone</th><th>Character</th><th>Voice</th><th>Plush name</th><th>Status</th><th>Tracking number</th><th>Last updated</th><th>{view === "orders" ? "Actions" : "View"}</th></tr></thead><tbody>{filtered.map((order) => <tr key={order.id} className={isExpressShipping(order) ? "express-shipping-row" : ""}><td><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={selectedOrders.includes(order.id)} onChange={() => toggleOrderSelection(order.id)} /></td><td><strong>{orderLabel(order)}</strong>{order.salesChannel === "tiktok" && <span className="tiktok-badge">TikTok Shop</span>}{isExpressShipping(order) && <span className="shipping-badge">Express</span>}</td><td>{formatDate(order.orderDate)}</td><td><strong>{order.customerName || "-"}</strong></td><td>{order.phone || "-"}</td><td>{order.character || "-"}</td><td>{order.voiceLength ? `${order.voiceLength}s` : "-"}</td><td>{order.plushName || "-"}</td><td><StatusPill status={order.status} /></td><td><code>{order.trackingNumber || "-"}</code></td><td>{formatDate(order.updatedAt, true)}</td><td><div className="row-actions"><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button>{view === "orders" && (order.salesChannel ?? "shopify") === "shopify" && <button className="view-button refresh-order-button" disabled={refreshingOrderNumber === order.orderNumber} onClick={() => refreshShopifyOrder(order)}>{refreshingOrderNumber === order.orderNumber ? "Refreshing..." : "Refresh"}</button>}{view === "orders" && order.salesChannel === "tiktok" && <button className="view-button refresh-order-button" disabled={refreshingOrderNumber === tiktokOrderIdFromOrder(order)} onClick={() => refreshTikTokOrder(order)}>{refreshingOrderNumber === tiktokOrderIdFromOrder(order) ? "Syncing..." : "Sync"}</button>}</div></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No orders found</strong><p>Try another search or status filter.</p></div>}</div>
           <div className="table-footer">Showing {filtered.length} of {view === "fulfilled" ? orders.filter((order) => order.status === "shipped").length : orders.length} orders</div>
         </section>}
+
+        {view === "pending_customisation" && <PendingCustomisationWorkspace orders={orders} onViewOrder={setSelectedId} />}
 
         {view === "fulfilment" && <section className="card orders-card">
           <div className="toolbar"><div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, plush name, character, customer or phone..." /></div><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /><button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>Move {selectedOrders.length} to next status</button>{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>Delete</button>}</div>
@@ -9204,6 +9207,60 @@ function FileDropZone({ accept, title, description, selectedName, className = ""
 
 function ImportBox({ number, title, required, value, onChange, onFile, placeholder }: { number: string; title: string; required?: boolean; value: string; onChange: (value: string) => void; onFile: (file?: File) => void; placeholder: string }) {
   return <article className="card import-box"><div className="import-heading"><span>{number}</span><div><h3>{title}</h3><p>{required ? "Required" : "Optional, but recommended"}</p></div></div><FileDropZone accept=".csv,text/csv" title="Choose or drop CSV file" description="or paste the CSV content below" onFile={(file) => onFile(file ?? undefined)} /><textarea value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} /></article>;
+}
+
+type PendingCustomisationSession = {
+  fulfilmentOrderId: string;
+  deliveryMethod: "email" | "whatsapp";
+  contact: string;
+  linkSentAt: string | null;
+  expiresAt: string | null;
+};
+
+function PendingCustomisationWorkspace({ orders, onViewOrder }: { orders: Order[]; onViewOrder: (id: string) => void }) {
+  const [sessions, setSessions] = useState<PendingCustomisationSession[]>([]);
+  const [whatsAppLinks, setWhatsAppLinks] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const pendingOrders = useMemo(() => orders.filter((order) => order.status === "awaiting_customisation"), [orders]);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch("/api/customisation/pending");
+      const result = await response.json() as { ok?: boolean; sessions?: PendingCustomisationSession[]; error?: string };
+      if (!response.ok || !result.ok) throw new Error(result.error || "Could not load pending customisations.");
+      const pending = result.sessions || [];
+      setSessions(pending);
+      const links = await Promise.all(pending.filter((session) => session.deliveryMethod === "whatsapp").map(async (session) => {
+        const linkResponse = await fetch(`/api/customisation/whatsapp?orderId=${encodeURIComponent(session.fulfilmentOrderId)}`);
+        const linkResult = await linkResponse.json() as { link?: string };
+        return [session.fulfilmentOrderId, linkResult.link || ""] as const;
+      }));
+      setWhatsAppLinks(Object.fromEntries(links));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not load pending customisations.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+  const byOrderId = new Map(sessions.map((session) => [session.fulfilmentOrderId, session]));
+
+  return <section className="card orders-card pending-customisation-workspace">
+    <div className="toolbar pending-customisation-toolbar">
+      <div><strong>Customer responses still needed</strong><span>{pendingOrders.length} order{pendingOrders.length === 1 ? "" : "s"} awaiting a birth certificate and voice recording.</span></div>
+      <button className="button secondary" type="button" onClick={() => void refresh()} disabled={loading}>{loading ? "Refreshing..." : "Refresh"}</button>
+    </div>
+    {error && <p className="notice error">{error}</p>}
+    <div className="table-scroll"><table className="orders-table"><thead><tr><th>Order</th><th>Customer</th><th>Send link by</th><th>Contact</th><th>Link status</th><th>Expires</th><th>Actions</th></tr></thead><tbody>{pendingOrders.map((order) => {
+      const session = byOrderId.get(order.id);
+      const whatsappLink = whatsAppLinks[order.id];
+      return <tr key={order.id}><td><strong>{orderLabel(order)}</strong></td><td>{order.customerName || "-"}</td><td>{session ? session.deliveryMethod === "whatsapp" ? "WhatsApp" : "Email" : "-"}</td><td>{session?.contact || order.phone || "-"}</td><td>{session ? session.deliveryMethod === "email" ? (session.linkSentAt ? `Email sent ${formatDate(session.linkSentAt, true)}` : "Email pending") : "Ready for manual WhatsApp" : "Loading session..."}</td><td>{session?.expiresAt ? formatDate(session.expiresAt) : "-"}</td><td><div className="row-actions">{whatsappLink && <a className="view-button" href={whatsappLink} target="_blank" rel="noreferrer">Open WhatsApp message</a>}<button className="view-button" type="button" onClick={() => onViewOrder(order.id)}>View</button></div></td></tr>;
+    })}</tbody></table>{!pendingOrders.length && <div className="empty"><strong>No customisations are pending</strong><p>Orders move out of this list automatically when the customer submits their details.</p></div>}</div>
+  </section>;
 }
 
 function OrderDrawer({ order, role, actor, onClose, onUpdate, onStatus }: { order: Order; role: UserRole; actor: string; onClose: () => void; onUpdate: (patch: Partial<Order>) => void; onStatus: (status: OrderStatus) => void }) {

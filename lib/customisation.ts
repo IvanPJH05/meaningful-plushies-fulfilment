@@ -13,6 +13,14 @@ const storefrontCustomisationUrl = process.env.CUSTOMISATION_STOREFRONT_URL || "
 export type CustomisationMode = "complete_now" | "fill_later";
 export type DeliveryMethod = "email" | "whatsapp";
 
+export type PendingCustomisation = {
+  fulfilmentOrderId: string;
+  deliveryMethod: DeliveryMethod;
+  contact: string;
+  linkSentAt: string | null;
+  expiresAt: string | null;
+};
+
 export type CustomisationForm = {
   plushName: string;
   gender: string;
@@ -508,6 +516,28 @@ export async function sessionForFulfilmentOrder(fulfilmentOrderId: string) {
   const { data, error } = await serviceClient().from(SESSION_TABLE).select("*").eq("fulfilment_order_id", fulfilmentOrderId).maybeSingle();
   if (error) throw new Error(error.message);
   return data as SessionRow | null;
+}
+
+/** Pending customer responses for the fulfilment workspace. Tokens are never returned here. */
+export async function listPendingCustomisations(): Promise<PendingCustomisation[]> {
+  const { data, error } = await serviceClient()
+    .from(SESSION_TABLE)
+    .select("fulfilment_order_id,delivery_method,contact_email,contact_phone,link_sent_at,expires_at")
+    .eq("status", "awaiting_customisation")
+    .not("fulfilment_order_id", "is", null);
+  if (error) throw new Error(error.message);
+  return (data ?? []).flatMap((session) => {
+    const fulfilmentOrderId = String(session.fulfilment_order_id || "");
+    const deliveryMethod = session.delivery_method === "email" ? "email" : session.delivery_method === "whatsapp" ? "whatsapp" : null;
+    if (!fulfilmentOrderId || !deliveryMethod) return [];
+    return [{
+      fulfilmentOrderId,
+      deliveryMethod,
+      contact: String(deliveryMethod === "email" ? session.contact_email || "" : session.contact_phone || ""),
+      linkSentAt: session.link_sent_at ? String(session.link_sent_at) : null,
+      expiresAt: session.expires_at ? String(session.expires_at) : null,
+    }];
+  });
 }
 
 export function manualWhatsAppCustomisationLink(order: Order, session: SessionRow | null) {
