@@ -130,14 +130,36 @@
       meaningfulNote: block.querySelector("[data-meaningful-note]").value.trim(),
     });
 
+    const showIncompleteNowError = () => {
+      const message = "Please complete every birth certificate field and upload your voice recording before adding to cart or checking out.";
+      notice.textContent = message;
+      now.querySelector("input:invalid, select:invalid, textarea:invalid")?.focus();
+      window.alert(message);
+    };
+
+    const blockIncompletePurchase = (event) => {
+      if (isLater() || completeNowReady()) return false;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      showIncompleteNowError();
+      return true;
+    };
+
+    // Shopify's accelerated checkout buttons can begin checkout from their
+    // click handler before a normal form submit event is observed. Catch the
+    // click while it is still in the capture phase, as well as form submits.
+    document.addEventListener("click", (event) => {
+      const control = event.target.closest("button, input[type='submit']");
+      if (!control) return;
+      const ownerForm = control.form || control.closest("form");
+      const insideProductPurchase = ownerForm === form || (control.closest(".shopify-payment-button") && ownerForm === form);
+      if (insideProductPurchase) blockIncompletePurchase(event);
+    }, true);
+
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
+      if (blockIncompletePurchase(event)) return;
       if (!apiUrl) { notice.textContent = "Customisation is not configured yet. Please contact us."; return; }
-      if (!isLater() && !completeNowReady()) {
-        notice.textContent = "Please complete every birth certificate field and upload your voice recording before adding to cart or checking out.";
-        now.querySelector("input:invalid, select:invalid, textarea:invalid")?.focus();
-        return;
-      }
       if (isLater()) {
         const contact = method.value === "whatsapp" ? phone : email;
         const label = method.value === "whatsapp" ? "WhatsApp number" : "email address";
