@@ -113,8 +113,9 @@ function decryptToken(ciphertext: string) {
   }
 }
 
-function requiredText(value: unknown, max: number) {
-  return typeof value === "string" ? value.trim().slice(0, max) : "";
+function requiredText(value: unknown, max?: number) {
+  const text = typeof value === "string" ? value.trim() : "";
+  return max ? text.slice(0, max) : text;
 }
 
 function customerCustomisationLink(token: string, pageUrl?: string) {
@@ -135,12 +136,12 @@ export function normaliseCustomisationForm(value: unknown): CustomisationForm | 
   const source = value && typeof value === "object" ? value as Record<string, unknown> : {};
   const form = {
     plushName: requiredText(source.plushName, 20),
-    gender: requiredText(source.gender, 30),
-    birthDate: requiredText(source.birthDate, 12),
-    birthPlace: requiredText(source.birthPlace, 12),
-    favouritePerson: requiredText(source.favouritePerson, 12),
-    belongsTo: requiredText(source.belongsTo, 12),
-    meaningfulNote: requiredText(source.meaningfulNote, 12),
+    gender: requiredText(source.gender, 20),
+    birthDate: requiredText(source.birthDate, 20),
+    birthPlace: requiredText(source.birthPlace, 20),
+    favouritePerson: requiredText(source.favouritePerson, 20),
+    belongsTo: requiredText(source.belongsTo, 20),
+    meaningfulNote: requiredText(source.meaningfulNote),
   };
   return Object.values(form).every(Boolean) ? form : null;
 }
