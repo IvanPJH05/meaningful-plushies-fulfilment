@@ -15,6 +15,7 @@ type Account = { id: string; name: string; classification: Classification; accou
 type Entry = { id: string; paid_date: string; accounting_date: string; bank: string; bank_reference: string; journal_note: string; description: string; amount: number; debit_account_id: string | null; credit_account_id: string | null; receipt_path: string | null; shortcut_id: string | null; source: string; created_at: string };
 type ShortcutDisplay = { id: string; debit_source: "statement_bank" | "account"; credit_source: "statement_bank" | "account" };
 type ShopeePurchase = { id: string; purchase_date: string; description: string; debit_account_id: string | null; amount: number; journal_entry_id: string | null; receipt_path: string; source_reference: string };
+type ShopeeShortcut = { id: string; name: string; debit_account_id: string; journal_note_template: string; description_template: string; active: boolean };
 
 const labels: Record<Classification, string> = {
   asset: "Assets", liability: "Liabilities", equity: "Equity", income: "Income", cost_of_sales: "Cost of Sales", operating_expense: "Operating Expenses",
@@ -34,6 +35,7 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
   const [entries, setEntries] = useState<Entry[]>([]);
   const [shortcuts, setShortcuts] = useState<ShortcutDisplay[]>([]);
   const [shopeePurchases, setShopeePurchases] = useState<ShopeePurchase[]>([]);
+  const [shopeeShortcuts, setShopeeShortcuts] = useState<ShopeeShortcut[]>([]);
   const [journalMonth, setJournalMonth] = useState("");
   const [reportMonth, setReportMonth] = useState("");
   const [loading, setLoading] = useState(true);
@@ -53,6 +55,12 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
   const [shopeeDragging, setShopeeDragging] = useState(false);
   const [savingShopee, setSavingShopee] = useState(false);
   const [selectedShopeePurchaseId, setSelectedShopeePurchaseId] = useState("");
+  const [shopeeMonth, setShopeeMonth] = useState("");
+  const [shopeeStatus, setShopeeStatus] = useState<"unposted" | "posted" | "all">("unposted");
+  const [shopeeSearch, setShopeeSearch] = useState("");
+  const [selectedShopeeIds, setSelectedShopeeIds] = useState<string[]>([]);
+  const [selectedShopeeShortcutId, setSelectedShopeeShortcutId] = useState("");
+  const [shopeeShortcutForm, setShopeeShortcutForm] = useState({ name: "", account: "", description: "", journalNote: "" });
   const shopeeFileInput = useRef<HTMLInputElement>(null);
 
   const loadAllEntries = async () => {
@@ -75,18 +83,20 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
   async function loadData() {
     if (!supabase) return;
     setLoading(true);
-    const [accountsResult, entriesResult, shortcutsResult, shopeeResult] = await Promise.all([
+    const [accountsResult, entriesResult, shortcutsResult, shopeeResult, shopeeShortcutsResult] = await Promise.all([
       supabase.from("monthly_journal_accounts").select("id,name,classification,account_code,active").eq("active", true).order("classification").order("name"),
       loadAllEntries(),
       supabase.from("monthly_journal_shortcuts").select("id,debit_source,credit_source"),
       supabase.from("monthly_journal_shopee_purchases").select("id,purchase_date,description,debit_account_id,amount,journal_entry_id,receipt_path,source_reference").order("purchase_date", { ascending: false }).order("created_at", { ascending: false }),
+      supabase.from("monthly_journal_shopee_shortcuts").select("id,name,debit_account_id,journal_note_template,description_template,active").eq("active", true).order("name"),
     ]);
-    if (accountsResult.error || entriesResult.error || shortcutsResult.error || shopeeResult.error) setMessage(accountsResult.error?.message || entriesResult.error?.message || shortcutsResult.error?.message || shopeeResult.error?.message || "Could not load Monthly Journal data.");
+    if (accountsResult.error || entriesResult.error || shortcutsResult.error || shopeeResult.error || shopeeShortcutsResult.error) setMessage(accountsResult.error?.message || entriesResult.error?.message || shortcutsResult.error?.message || shopeeResult.error?.message || shopeeShortcutsResult.error?.message || "Could not load Monthly Journal data.");
     else {
       setAccounts((accountsResult.data ?? []) as Account[]);
       setEntries((entriesResult.data ?? []).map((entry) => ({ ...entry, amount: Number(entry.amount) })) as Entry[]);
       setShortcuts((shortcutsResult.data ?? []) as ShortcutDisplay[]);
       setShopeePurchases((shopeeResult.data ?? []).map((purchase) => ({ ...purchase, amount: Number(purchase.amount) })) as ShopeePurchase[]);
+      setShopeeShortcuts((shopeeShortcutsResult.data ?? []) as ShopeeShortcut[]);
     }
     setLoading(false);
   }
@@ -264,6 +274,13 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
   const shopeeAccountChoices = useMemo(() => accounts.filter((account) => account.classification === shopeeForm.classification && account.id !== shopeePayLater?.id), [accounts, shopeeForm.classification, shopeePayLater?.id]);
   const selectedShopeePurchase = shopeePurchases.find((purchase) => purchase.id === selectedShopeePurchaseId);
   const shopeePayLaterBalance = useMemo(() => !shopeePayLater ? 0 : entries.reduce((balance, entry) => balance + (entry.credit_account_id === shopeePayLater.id ? entry.amount : 0) - (entry.debit_account_id === shopeePayLater.id ? entry.amount : 0), 0), [entries, shopeePayLater]);
+  const shopeeMonths = useMemo(() => [...new Set(shopeePurchases.map((purchase) => purchase.purchase_date.slice(0, 7)))].sort().reverse(), [shopeePurchases]);
+  const visibleShopeePurchases = useMemo(() => shopeePurchases.filter((purchase) => (!shopeeMonth || purchase.purchase_date.startsWith(shopeeMonth)) && (shopeeStatus === "all" || (shopeeStatus === "posted" ? Boolean(purchase.journal_entry_id) : !purchase.journal_entry_id)) && (!shopeeSearch.trim() || purchase.description.toLowerCase().includes(shopeeSearch.trim().toLowerCase()) || purchase.source_reference.toLowerCase().includes(shopeeSearch.trim().toLowerCase()))), [shopeePurchases, shopeeMonth, shopeeStatus, shopeeSearch]);
+  const renderShopeeTemplate = (template: string, purchase: ShopeePurchase) => {
+    const [year, month] = purchase.purchase_date.slice(0, 7).split("-").map(Number);
+    const previousMonthEnd = new Date(Date.UTC(year, month - 1, 0)).toISOString().slice(0, 10);
+    return template.replaceAll("{paid_date}", purchase.purchase_date).replaceAll("{month}", purchase.purchase_date.slice(0, 7)).replaceAll("{previous_month_end}", previousMonthEnd);
+  };
 
   function chooseShopeeFile(file?: File) { if (file) setShopeeFile(file); }
   function dropShopeeFile(event: DragEvent<HTMLDivElement>) { event.preventDefault(); setShopeeDragging(false); chooseShopeeFile(event.dataTransfer.files?.[0]); }
@@ -299,6 +316,7 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
         amount,
         receipt_path: receiptPath,
         source: "shopee_paylater",
+        source_reference: selectedShopeePurchase?.source_reference ?? null,
         status: "posted",
         entry_lines: [{ account_id: shopeeForm.account, debit: amount, credit: 0 }, { account_id: shopeePayLater.id, debit: 0, credit: amount }],
       });
@@ -318,6 +336,34 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not record the Shopee purchase.");
     } finally { setSavingShopee(false); }
+  }
+
+  async function saveShopeeShortcut(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase || !shopeeShortcutForm.name.trim() || !shopeeShortcutForm.account) return setMessage("Give the shortcut a name and choose its debit account.");
+    const { error } = await supabase.from("monthly_journal_shopee_shortcuts").insert({ name: shopeeShortcutForm.name.trim(), debit_account_id: shopeeShortcutForm.account, description_template: shopeeShortcutForm.description.trim(), journal_note_template: shopeeShortcutForm.journalNote.trim() });
+    if (error) return setMessage(error.code === "23505" ? "That Shopee shortcut already exists." : error.message);
+    setShopeeShortcutForm({ name: "", account: "", description: "", journalNote: "" }); setMessage("Shopee shortcut saved."); await loadData();
+  }
+
+  async function applyShopeeShortcut() {
+    if (!supabase || !shopeePayLater || !selectedShopeeShortcutId || !selectedShopeeIds.length) return;
+    const shortcut = shopeeShortcuts.find((item) => item.id === selectedShopeeShortcutId);
+    if (!shortcut) return;
+    const purchases = shopeePurchases.filter((purchase) => selectedShopeeIds.includes(purchase.id) && !purchase.journal_entry_id);
+    if (!purchases.length) return setMessage("Select unposted Shopee purchases first.");
+    try {
+      for (const purchase of purchases) {
+        const entryId = crypto.randomUUID();
+        const description = renderShopeeTemplate(shortcut.description_template, purchase) || purchase.description;
+        const journalNote = renderShopeeTemplate(shortcut.journal_note_template, purchase) || `Shopee PayLater purchase on ${purchase.purchase_date}`;
+        const { error } = await supabase.from("monthly_journal_entries").insert({ id: entryId, paid_date: purchase.purchase_date, accounting_date: purchase.purchase_date, bank: "Shopee PayLater", bank_reference: "", journal_note: journalNote, description, debit_account_id: shortcut.debit_account_id, credit_account_id: shopeePayLater.id, amount: purchase.amount, receipt_path: purchase.receipt_path, source: "shopee_paylater", source_reference: purchase.source_reference, status: "posted", entry_lines: [{ account_id: shortcut.debit_account_id, debit: purchase.amount, credit: 0 }, { account_id: shopeePayLater.id, debit: 0, credit: purchase.amount }] });
+        if (error) throw error;
+        const { error: purchaseError } = await supabase.from("monthly_journal_shopee_purchases").update({ debit_account_id: shortcut.debit_account_id, journal_entry_id: entryId }).eq("id", purchase.id);
+        if (purchaseError) throw purchaseError;
+      }
+      setSelectedShopeeIds([]); setMessage(`${purchases.length} Shopee purchase${purchases.length === 1 ? "" : "s"} posted with ${shortcut.name}.`); await loadData();
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Could not apply the Shopee shortcut."); }
   }
 
   if (!supabaseConfigured) return <section className={styles.empty}><h1>Monthly Journal</h1><p>Connect Supabase before using this workspace.</p></section>;
@@ -421,8 +467,10 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
     {visitedViews.includes("shortcuts") && <div hidden={view !== "shortcuts"}><MonthlyJournalShortcuts accounts={accounts} /></div>}
     {visitedViews.includes("source_documents") && <div hidden={view !== "source_documents"}><MonthlyJournalSourceDocuments /></div>}
     {view === "shopee" && <div className={styles.shopeeLayout}>
-      <section className={styles.card}><div className={styles.cardHeading}><div><p className={styles.eyebrow}>SHOPEE PAYLATER</p><h2>Shopee purchases</h2><p>Import a receipt, then classify it before it posts. Recorded purchases debit the account you chose and credit Shopee PayLater Payable.</p></div><strong>Outstanding RM {shopeePayLaterBalance.toFixed(2)}</strong></div><MonthlyJournalShopeeImport onImported={loadData} />
-        <div className={styles.shopeePurchases}>{shopeePurchases.length ? shopeePurchases.map((purchase) => <article key={purchase.id} className={purchase.journal_entry_id ? "" : styles.shopeePending}><div><b>{purchase.purchase_date}</b><span>{purchase.journal_entry_id ? accountById.get(purchase.debit_account_id ?? "")?.name ?? "Deleted account" : "Needs classification"}</span></div><div><strong>{purchase.description}</strong><small>{purchase.journal_entry_id ? "Posted to Shopee PayLater" : "Imported from Shopee receipt"}</small></div><div><b>RM {purchase.amount.toFixed(2)}</b>{!purchase.journal_entry_id && <button type="button" onClick={() => { setSelectedShopeePurchaseId(purchase.id); setShopeeForm({ purchaseDate: purchase.purchase_date, classification: "asset", account: "", description: purchase.description, journalNote: `Shopee PayLater purchase on ${purchase.purchase_date}`, amount: purchase.amount.toFixed(2) }); }}>Classify</button>}</div></article>) : <p className={styles.muted}>No Shopee PayLater purchases recorded yet.</p>}</div>
+      <section className={styles.card}><div className={styles.cardHeading}><div><p className={styles.eyebrow}>SHOPEE PAYLATER INBOX</p><h2>Shopee purchases</h2><p>Every imported Shopee receipt is attached automatically. Classify each purchase, or select several and apply a Shopee-only shortcut.</p></div><strong>Outstanding RM {shopeePayLaterBalance.toFixed(2)}</strong></div><MonthlyJournalShopeeImport onImported={loadData} />
+        <div className={styles.shopeeControls}><label>Purchase month<select value={shopeeMonth} onChange={(event) => setShopeeMonth(event.target.value)}><option value="">All months</option>{shopeeMonths.map((month) => <option key={month} value={month}>{month}</option>)}</select></label><label>Status<select value={shopeeStatus} onChange={(event) => setShopeeStatus(event.target.value as "unposted" | "posted" | "all")}><option value="unposted">Needs classification</option><option value="posted">Posted</option><option value="all">All purchases</option></select></label><label>Search purchase<input value={shopeeSearch} onChange={(event) => setShopeeSearch(event.target.value)} placeholder="Product or order number" /></label></div>
+        <div className={styles.shopeeActions}><b>{selectedShopeeIds.length} selected</b><select value={selectedShopeeShortcutId} onChange={(event) => setSelectedShopeeShortcutId(event.target.value)}><option value="">Choose a Shopee shortcut</option>{shopeeShortcuts.map((shortcut) => <option key={shortcut.id} value={shortcut.id}>{shortcut.name}</option>)}</select><button type="button" onClick={() => void applyShopeeShortcut()} disabled={!selectedShopeeIds.length || !selectedShopeeShortcutId}>Apply shortcut</button></div>
+        <div className={styles.shopeePurchases}>{visibleShopeePurchases.length ? visibleShopeePurchases.map((purchase) => <article key={purchase.id} className={purchase.journal_entry_id ? "" : styles.shopeePending} onClick={() => purchase.receipt_path && void openReceipt({ id: purchase.id, receipt_path: purchase.receipt_path } as Entry)}><input type="checkbox" disabled={Boolean(purchase.journal_entry_id)} checked={selectedShopeeIds.includes(purchase.id)} onClick={(event) => event.stopPropagation()} onChange={() => setSelectedShopeeIds((current) => current.includes(purchase.id) ? current.filter((id) => id !== purchase.id) : [...current, purchase.id])} /><div><b>{purchase.purchase_date}</b><span>{purchase.journal_entry_id ? accountById.get(purchase.debit_account_id ?? "")?.name ?? "Deleted account" : "Needs classification"}</span></div><div><strong>{purchase.description}</strong><small>{purchase.journal_entry_id ? "Posted to Shopee PayLater" : purchase.receipt_path ? "Receipt attached — click to view" : "Imported from Shopee receipt"}</small></div><div><b>RM {purchase.amount.toFixed(2)}</b>{!purchase.journal_entry_id && <button type="button" onClick={(event) => { event.stopPropagation(); setSelectedShopeePurchaseId(purchase.id); setShopeeForm({ purchaseDate: purchase.purchase_date, classification: "asset", account: "", description: purchase.description, journalNote: `Shopee PayLater purchase on ${purchase.purchase_date}`, amount: purchase.amount.toFixed(2) }); }}>Classify</button>}</div></article>) : <p className={styles.muted}>No Shopee purchases match these filters.</p>}</div>
       </section>
       <form className={styles.card} onSubmit={addShopeePurchase}><p className={styles.eyebrow}>{selectedShopeePurchase ? "CLASSIFY IMPORTED PURCHASE" : "ADD SHOPEE PURCHASE"}</p><h2>{selectedShopeePurchase ? selectedShopeePurchase.description : "Record a purchase"}</h2><p className={styles.muted}>Choose whether it was Inventory, Cost of Sales, an Operating Expense, or another asset. The credit is always Shopee PayLater Payable.</p>
         <div className={styles.dates}><label>Purchase date<input type="date" value={shopeeForm.purchaseDate} onChange={(event) => setShopeeForm({ ...shopeeForm, purchaseDate: event.target.value })} required /></label><label>Classification<select value={shopeeForm.classification} onChange={(event) => setShopeeForm({ ...shopeeForm, classification: event.target.value as Classification, account: "" })}>{(["asset", "cost_of_sales", "operating_expense"] as Classification[]).map((value) => <option key={value} value={value}>{labels[value]}</option>)}</select></label></div>
@@ -432,6 +480,7 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
         <label>Amount (RM)<input type="number" min="0.01" step="0.01" value={shopeeForm.amount} onChange={(event) => setShopeeForm({ ...shopeeForm, amount: event.target.value })} required /></label>
         <div className={`${styles.shopeeSource}${shopeeDragging ? ` ${styles.shopeeSourceDragging}` : ""}`} role="button" tabIndex={0} onClick={() => shopeeFileInput.current?.click()} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") shopeeFileInput.current?.click(); }} onDragEnter={(event) => { event.preventDefault(); setShopeeDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setShopeeDragging(false)} onDrop={dropShopeeFile}><strong>{shopeeFile ? shopeeFile.name : "Drop source document here"}</strong><span>{shopeeFile ? "Click to replace it" : "or click to select a receipt, invoice, PDF, or image"}</span><input ref={shopeeFileInput} type="file" accept="application/pdf,image/*" onChange={(event: ChangeEvent<HTMLInputElement>) => { chooseShopeeFile(event.target.files?.[0]); event.target.value = ""; }} /></div>
         <div className={styles.shopeePreview}>Debit {accountById.get(shopeeForm.account)?.name ?? "chosen account"}<br />Credit Shopee PayLater Payable</div><button className={styles.primary} type="submit" disabled={savingShopee || !shopeePayLater}>{savingShopee ? "Recording…" : "Add Shopee purchase"}</button>
+        <hr /><p className={styles.eyebrow}>NEW SHOPEE SHORTCUT</p><h3>Save this classification</h3><p className={styles.muted}>Use this for future purchases that should post to the same debit account.</p><div className={styles.dates}><label>Name<input value={shopeeShortcutForm.name} onChange={(event) => setShopeeShortcutForm({ ...shopeeShortcutForm, name: event.target.value })} placeholder="Example: Packaging" /></label><label>Debit account<select value={shopeeShortcutForm.account} onChange={(event) => setShopeeShortcutForm({ ...shopeeShortcutForm, account: event.target.value })}><option value="">Choose an account</option>{accounts.filter((account) => account.id !== shopeePayLater?.id).map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label></div><label>Description template<input value={shopeeShortcutForm.description} onChange={(event) => setShopeeShortcutForm({ ...shopeeShortcutForm, description: event.target.value })} placeholder="Example: Packaging from Shopee on {paid_date}" /></label><label>Journal note template<input value={shopeeShortcutForm.journalNote} onChange={(event) => setShopeeShortcutForm({ ...shopeeShortcutForm, journalNote: event.target.value })} placeholder="Example: Shopee PayLater purchase for {month}" /></label><button type="button" onClick={(event) => void saveShopeeShortcut(event as unknown as FormEvent)}>Save Shopee shortcut</button>
       </form>
     </div>}
     {receiptPreview && <div className={styles.receiptBackdrop} role="dialog" aria-modal="true" aria-label="Source document" onClick={() => setReceiptPreview(null)}><section className={styles.receiptModal} onClick={(event) => event.stopPropagation()}><header><div><p className={styles.eyebrow}>SOURCE DOCUMENT</p><h2>{receiptPreview.name}</h2></div><button className={styles.refresh} type="button" onClick={() => setReceiptPreview(null)}>Close</button></header>{/\.pdf(?:$|\?)/i.test(receiptPreview.name) ? <iframe src={receiptPreview.url} title={receiptPreview.name} /> : <img src={receiptPreview.url} alt={receiptPreview.name} />}<a className={styles.refresh} href={receiptPreview.url} target="_blank" rel="noreferrer">Open in new tab</a></section></div>}
