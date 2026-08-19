@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
 import { bindSessionsToOrders, customisationSessionIds } from "../../../../../lib/customisation";
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
-import { certificateMediaForLineItem, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrderWithMetafieldRetry, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
+import { certificateMediaForLineItem, certificateMetaobjectForOrder, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrderWithMetafieldRetry, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
 import { fetchMetaCapiSettings, fetchSharedOrders, insertSharedActivity, markManualOrderUsedByDiscountCode, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
 
 export const runtime = "nodejs";
@@ -56,9 +56,6 @@ export async function POST(request: Request) {
     const fullOrder = await fetchShopifyOrderWithMetafieldRetry(payload, request);
     const uploadLiftFormData = shopifyMetafieldValue(fullOrder) || shopifyMetafieldValue(payload);
     const deferredSessionIds = customisationSessionIds(fullOrder);
-    if (!uploadLiftFormData && looksLikePersonalizedPlushie(fullOrder) && !deferredSessionIds.length) {
-      return json(503, { ok: false, retry: true, error: "Upload Lift metafield is not ready yet. Shopify should retry this webhook." });
-    }
     const existing = await fetchSharedOrders();
     const importedOrders = shopifyOrderToFulfilmentOrders(fullOrder, uploadLiftFormData, existing, "Shopify");
     const syncedNumber = cleanShopifyOrderNumber(
@@ -72,12 +69,16 @@ export async function POST(request: Request) {
     const certificateFields = uploadLiftCertificateFields(uploadLiftFormData);
     const orderLineItems = Array.isArray(fullOrder.lineItems) ? fullOrder.lineItems : [];
     const createdAt = textValue(fullOrder.createdAt) || new Date().toISOString();
+    const existingCertificate = looksLikePersonalizedPlushie(fullOrder)
+      ? await certificateMetaobjectForOrder(syncedNumber).catch(() => null)
+      : null;
     const certificates = looksLikePersonalizedPlushie(fullOrder) && ordersToSave.length
       ? await Promise.all(ordersToSave.map((order, index) => {
         const lineItem = objectValue(orderLineItems[index]);
         return createCertificateMetaobject({
           orderNumber: syncedNumber,
           createdAt,
+          code: order.certificateCode || existingCertificate?.code || undefined,
           plushDetails: textValue(lineItem.title) || order.character || order.product,
           certificate: certificateMediaForLineItem(textValue(lineItem.title), textValue(lineItem.variantTitle)),
           plushBackgroundBottom: plushBackgroundForMeaningfulNote(certificateFields.meaningfulNote || ""),
