@@ -55,8 +55,9 @@
         return `<button type="button" data-day="${day}" class="${birthDate.value === value ? "is-selected" : ""}">${day}</button>`;
       }).join("");
       const months = Array.from({ length: 12 }, (_, index) => `<option value="${index}" ${index === month ? "selected" : ""}>${new Date(year, index, 1).toLocaleDateString("en-GB", { month: "long" })}</option>`).join("");
-      const years = Array.from({ length: 101 }, (_, index) => year + 1 - index).map((value) => `<button type="button" data-calendar-year="${value}" class="${value === year ? "is-selected" : ""}">${value}</button>`).join("");
-      calendar.innerHTML = `<div class="mp-deferred-customisation__calendar-head"><button type="button" data-month="-1" aria-label="Previous month">‹</button><span class="mp-deferred-customisation__calendar-selects"><select aria-label="Month" data-calendar-month>${months}</select><button type="button" data-year-toggle aria-label="Choose year">${year}⌄</button></span><button type="button" data-month="1" aria-label="Next month">›</button><div class="mp-deferred-customisation__calendar-years" hidden>${years}</div></div><div class="mp-deferred-customisation__calendar-grid">${weeks}${blanks}${days}</div>`;
+      const latestYear = new Date().getFullYear() + 1;
+      const years = Array.from({ length: latestYear - 1900 + 1 }, (_, index) => latestYear - index).map((value) => `<button type="button" data-calendar-year="${value}" class="${value === year ? "is-selected" : ""}">${value}</button>`).join("");
+      calendar.innerHTML = `<div class="mp-deferred-customisation__calendar-head"><button type="button" data-month="-1" aria-label="Previous month">‹</button><span class="mp-deferred-customisation__calendar-selects"><select aria-label="Month" data-calendar-month>${months}</select><button type="button" data-year-toggle aria-label="Choose year">${year}<span aria-hidden="true">▾</span></button></span><button type="button" data-month="1" aria-label="Next month">›</button><div class="mp-deferred-customisation__calendar-years" hidden>${years}</div></div><div class="mp-deferred-customisation__calendar-grid">${weeks}${blanks}${days}</div>`;
     };
     calendar.addEventListener("click", (event) => {
       const target = event.target.closest("button");
