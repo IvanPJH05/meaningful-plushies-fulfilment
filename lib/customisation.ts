@@ -71,10 +71,19 @@ function hashToken(token: string) {
 }
 
 function encryptionKey() {
-  const raw = process.env.CUSTOMISATION_TOKEN_ENCRYPTION_KEY || "";
-  const key = /^[a-f0-9]{64}$/i.test(raw) ? Buffer.from(raw, "hex") : Buffer.from(raw, "base64");
-  if (key.length !== 32) throw new Error("CUSTOMISATION_TOKEN_ENCRYPTION_KEY must be a 32-byte base64 or 64-character hex value.");
-  return key;
+  const raw = process.env.CUSTOMISATION_TOKEN_ENCRYPTION_KEY || process.env.CRM_CREDENTIAL_ENCRYPTION_KEY || "";
+  if (!raw) throw new Error("A protected encryption key is required for customisation sessions.");
+
+  // The dedicated key is preferred. The existing fulfilment credential key is
+  // a safe production fallback, with a context-specific derivation so the two
+  // features never use the same AES key directly.
+  if (process.env.CUSTOMISATION_TOKEN_ENCRYPTION_KEY) {
+    const key = /^[a-f0-9]{64}$/i.test(raw) ? Buffer.from(raw, "hex") : Buffer.from(raw, "base64");
+    if (key.length !== 32) throw new Error("CUSTOMISATION_TOKEN_ENCRYPTION_KEY must be a 32-byte base64 or 64-character hex value.");
+    return key;
+  }
+
+  return createHash("sha256").update(`meaningful-plushies-customisation-token:${raw}`).digest();
 }
 
 function encryptToken(token: string) {
