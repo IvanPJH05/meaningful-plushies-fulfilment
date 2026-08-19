@@ -413,7 +413,40 @@ export function customisationSessionIds(order: Record<string, unknown>) {
   });
 }
 
-export async function bindSessionsToOrders(input: { orderId: string; orderNumber: string; sessionIds: string[]; orders: Order[] }) {
+type CertificateReference = { code: string; id: string };
+
+/**
+ * Shopify Flow and the app are both triggered when Shopify creates an order.
+ * When Flow owns certificate creation it can finish a few seconds after this
+ * webhook, so wait briefly before treating its certificate as unavailable.
+ */
+async function flowCertificateForOrder(orderNumber: string) {
+  for (const delay of [0, 2_000, 5_000]) {
+    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+    const certificate = await certificateMetaobjectForOrder(orderNumber).catch(() => null);
+    if (certificate) return certificate;
+  }
+  return null;
+}
+
+function submittedCertificateUpdate(session: SessionRow, form: CustomisationForm, voiceStoragePath: string, certificateCode: string) {
+  if (!certificateCode) return Promise.resolve(false);
+  return updateCertificateMetaobject({
+    code: certificateCode,
+    orderNumber: session.order_number || "",
+    createdAt: session.completed_at || new Date().toISOString(),
+    idName: form.plushName,
+    gender: form.gender,
+    bornOn: form.birthDate,
+    birthplace: form.birthPlace,
+    favouritePerson: form.favouritePerson,
+    belongsTo: form.belongsTo,
+    meaningfulNote: form.meaningfulNote,
+    meaningfulMessage: `supabase-storage:${voiceStoragePath}`,
+  });
+}
+
+export async function bindSessionsToOrders(input: { orderId: string; orderNumber: string; sessionIds: string[]; orders: Order[]; certificate?: CertificateReference | null }) {
   if (!input.sessionIds.length) return input.orders;
   const client = serviceClient();
   const { data, error } = await client.from(SESSION_TABLE).select("*").in("id", input.sessionIds);
@@ -421,6 +454,8 @@ export async function bindSessionsToOrders(input: { orderId: string; orderNumber
   const sessions = (data ?? []) as SessionRow[];
   const byId = new Map(sessions.map((session) => [session.id, session]));
   const now = new Date().toISOString();
+  const needsCertificate = sessions.some((session) => session.status === "submitted");
+  const certificate = input.certificate ?? (needsCertificate ? await flowCertificateForOrder(input.orderNumber) : null);
 
   const updated = input.orders.map((order, index) => {
     const sessionId = input.sessionIds[index] || input.sessionIds[0];
@@ -428,12 +463,15 @@ export async function bindSessionsToOrders(input: { orderId: string; orderNumber
     if (!session) return order;
     const form = session.form_data || {};
     const submitted = session.status === "submitted";
+    const certificateCode = certificate?.code || session.certificate_code || "";
     return {
       ...order,
       status: submitted ? "new_order" : "awaiting_customisation",
       plushName: submitted ? form.plushName || order.plushName : order.plushName,
       meaningfulNote: submitted ? form.meaningfulNote || order.meaningfulNote : order.meaningfulNote,
       meaningfulMessage: submitted && session.voice_storage_path ? `supabase-storage:${session.voice_storage_path}` : order.meaningfulMessage,
+      certificateCode: certificateCode || order.certificateCode,
+      idWebsiteLink: submitted && certificateCode ? `https://meaningfulplushies.com/pages/certificate/${certificateCode}` : order.idWebsiteLink,
       voiceUploadStatus: submitted && session.voice_storage_path ? "received" : "missing",
       statusHistory: submitted
         ? [...order.statusHistory, { id: `${order.id}-customisation-${now}`, status: "new_order", changedAt: now, changedBy: "Customer", note: "Customisation submitted through secure link." }]
@@ -447,16 +485,33 @@ export async function bindSessionsToOrders(input: { orderId: string; orderNumber
     if (!session) return null;
     const formData = { ...session.form_data, customisationPageUrl: customisationPageForOrder(order) };
     session.form_data = formData;
+    session.order_id = input.orderId;
+    session.order_number = input.orderNumber;
+    session.fulfilment_order_id = order.id;
+    if (certificate) {
+      session.certificate_code = certificate.code;
+      session.certificate_metaobject_id = certificate.id;
+    }
     return client.from(SESSION_TABLE).update({
       order_id: input.orderId,
       order_number: input.orderNumber,
       fulfilment_order_id: order.id,
+      certificate_code: certificate?.code || session.certificate_code || null,
+      certificate_metaobject_id: certificate?.id || session.certificate_metaobject_id || null,
       status: byId.get(sessionId)?.status === "submitted" ? "submitted" : "awaiting_customisation",
       form_data: formData,
       updated_at: now,
     }).eq("id", sessionId);
   });
   await Promise.all(boundSessions.filter((request) => request !== null));
+  await Promise.all(sessions.filter((session) => session.status === "submitted" && session.voice_storage_path).map(async (session) => {
+    const form = normaliseCustomisationForm(session.form_data);
+    if (!form || !session.voice_storage_path) return;
+    await Promise.all([
+      setShopifyOrderMetafield(input.orderId, uploadLiftCompatibleText(form, session.voice_storage_path)).catch(() => false),
+      submittedCertificateUpdate(session, form, session.voice_storage_path, session.certificate_code || "").catch(() => false),
+    ]);
+  }));
   await Promise.all(sessions.map((session) => sendCustomisationEmail(session).catch(() => false)));
   await Promise.all(sessions.filter((session) => session.status === "submitted" && session.voice_storage_path).map((session) => backupVoiceToGoogleDrive(session, String(session.form_data?.plushName || "plushie")).catch(() => false)));
   return updated;

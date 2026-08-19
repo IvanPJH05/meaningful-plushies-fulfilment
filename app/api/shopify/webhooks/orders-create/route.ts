@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
-import { attachCertificateToSessions, bindSessionsToOrders, customisationSessionIds } from "../../../../../lib/customisation";
+import { bindSessionsToOrders, customisationSessionIds } from "../../../../../lib/customisation";
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
 import { cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrderWithMetafieldRetry, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
 import { fetchMetaCapiSettings, fetchSharedOrders, insertSharedActivity, markManualOrderUsedByDiscountCode, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
@@ -91,8 +91,8 @@ export async function POST(request: Request) {
         orderNumber: syncedNumber,
         sessionIds: deferredSessionIds,
         orders: ordersToSave,
+        certificate,
       });
-      if (certificate) await attachCertificateToSessions(orderId, syncedNumber, certificate);
     }
 
     await upsertSharedOrders(ordersToSave);
