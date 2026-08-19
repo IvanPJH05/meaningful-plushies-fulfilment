@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
+import { submittedCustomisationForOrder } from "../../../../../lib/customisation";
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
 import { certificateMediaForLineItem, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrderByNumberWithMetafieldRetry, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
 import { fetchMetaCapiSettings, fetchSharedOrders, insertSharedActivity, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
@@ -43,14 +44,24 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
 
   const createdAt = textValue(fullOrder.createdAt) || new Date().toISOString();
   const lineItems = Array.isArray(fullOrder.lineItems) ? fullOrder.lineItems : [];
-  const certificateFields = uploadLiftCertificateFields(shopifyMetafieldValue(fullOrder));
+  const submitted = await submittedCustomisationForOrder(requestedOrderNumber);
+  const certificateFields = submitted ? {
+    idName: submitted.form.plushName,
+    gender: submitted.form.gender,
+    bornOn: submitted.form.birthDate,
+    birthplace: submitted.form.birthPlace,
+    favouritePerson: submitted.form.favouritePerson,
+    belongsTo: submitted.form.belongsTo,
+    meaningfulNote: submitted.form.meaningfulNote,
+    meaningfulMessage: `supabase-storage:${submitted.voiceStoragePath}`,
+  } : uploadLiftCertificateFields(shopifyMetafieldValue(fullOrder));
   const certificates = looksLikePersonalizedPlushie(fullOrder)
     ? await Promise.all(importedOrders.map((order, index) => {
       const lineItem = objectValue(lineItems[index]);
       return createCertificateMetaobject({
         orderNumber: requestedOrderNumber,
         createdAt,
-        code: order.certificateCode || undefined,
+        code: submitted?.certificateCode || order.certificateCode || undefined,
         plushDetails: textValue(lineItem.title) || order.character || order.product,
         certificate: certificateMediaForLineItem(textValue(lineItem.title), textValue(lineItem.variantTitle)),
         plushBackgroundBottom: plushBackgroundForMeaningfulNote(certificateFields.meaningfulNote || ""),
@@ -64,6 +75,18 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
       ...order,
       certificateCode: certificate.code,
       idWebsiteLink: `https://meaningfulplushies.com/pages/certificate/${certificate.code}`,
+      ...(submitted ? {
+        status: "new_order" as const,
+        plushName: submitted.form.plushName,
+        plushGender: submitted.form.gender,
+        plushBirthDate: submitted.form.birthDate,
+        plushBirthPlace: submitted.form.birthPlace,
+        plushFavouritePerson: submitted.form.favouritePerson,
+        plushBelongsTo: submitted.form.belongsTo,
+        meaningfulNote: submitted.form.meaningfulNote,
+        meaningfulMessage: `supabase-storage:${submitted.voiceStoragePath}`,
+        voiceUploadStatus: "received" as const,
+      } : {}),
     } : order;
   });
 

@@ -146,6 +146,27 @@ export function normaliseCustomisationForm(value: unknown): CustomisationForm | 
   return Object.values(form).every(Boolean) ? form : null;
 }
 
+/** Server-only reconciliation data for orders completed before the current fulfilment sync was released. */
+export async function submittedCustomisationForOrder(orderNumber: string) {
+  const { data, error } = await serviceClient().from(SESSION_TABLE)
+    .select("form_data,voice_storage_path,certificate_code,certificate_metaobject_id,completed_at")
+    .eq("order_number", orderNumber)
+    .eq("status", "submitted")
+    .order("completed_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  const form = normaliseCustomisationForm(data.form_data);
+  if (!form || !data.voice_storage_path) return null;
+  return {
+    form,
+    voiceStoragePath: String(data.voice_storage_path),
+    certificateCode: String(data.certificate_code || ""),
+    certificateMetaobjectId: String(data.certificate_metaobject_id || ""),
+    completedAt: String(data.completed_at || ""),
+  };
+}
+
 export async function createDeferredSession(input: {
   deliveryMethod: DeliveryMethod;
   contactEmail?: string;
