@@ -13,6 +13,7 @@
     const voiceButton = block.querySelector("[data-voice-button]");
     const birthDate = block.querySelector("[data-birth-date]");
     const dateDisplay = block.querySelector("[data-date-display]");
+    const dateBox = block.querySelector(".mp-deferred-customisation__date");
     const radios = block.querySelectorAll("input[type=radio]");
     const apiUrl = (block.dataset.apiUrl || "").replace(/\/$/, "");
     const form = block.closest("form[action*='/cart/add']") || document.querySelector("form[action*='/cart/add']");
@@ -39,6 +40,10 @@
     voiceInput.addEventListener("change", () => { voiceButton.textContent = voiceInput.files[0] ? voiceInput.files[0].name : "UPLOAD VOICE (MP4/MP3)"; });
     birthDate.addEventListener("change", () => {
       dateDisplay.textContent = birthDate.value ? new Date(`${birthDate.value}T00:00:00`).toLocaleDateString("en-GB") : "A meaningful date";
+    });
+    dateBox.addEventListener("click", () => {
+      if (typeof birthDate.showPicker === "function") birthDate.showPicker();
+      else { birthDate.focus(); birthDate.click(); }
     });
     sync();
 
