@@ -83,7 +83,6 @@
     // selected recording so the purchase lock releases immediately.
     const hasVoiceRecording = () => Boolean(selectedVoice() || voiceInput.value);
     const completeNowReady = () => {
-      if (isLater()) return true;
       return Boolean(
         plushName.value.trim()
         && block.querySelector("[data-gender]").value
@@ -95,6 +94,12 @@
         && hasVoiceRecording(),
       );
     };
+    const laterReady = () => {
+      if (!isLater()) return true;
+      const contact = method.value === "whatsapp" ? phone : email;
+      return Boolean(contact.value.trim() && contact.checkValidity());
+    };
+    const purchaseReady = () => isLater() ? laterReady() : completeNowReady();
     const syncDelivery = () => {
       const useWhatsApp = method.value === "whatsapp";
       emailField.hidden = useWhatsApp;
@@ -120,7 +125,7 @@
     };
     const syncPurchaseBlockers = () => {
       clearPurchaseBlockers();
-      if (isLater() || completeNowReady()) return;
+      if (purchaseReady()) return;
       purchaseControls().forEach((control) => {
         control.setAttribute("aria-disabled", "true");
         control.setAttribute("data-mp-customisation-locked", "");
@@ -128,7 +133,10 @@
         blocker.type = "button";
         blocker.className = "mp-purchase-blocker";
         blocker.setAttribute("aria-label", "Complete your customisation before purchasing");
-        blocker.innerHTML = '<span class="mp-purchase-blocker__lock" aria-hidden="true">🔒</span><span>PLEASE COMPLETE CUSTOMISATION FIRST</span>';
+        const message = isLater()
+          ? `ENTER A VALID ${method.value === "whatsapp" ? "WHATSAPP NUMBER" : "EMAIL ADDRESS"} FIRST`
+          : "PLEASE COMPLETE CUSTOMISATION FIRST";
+        blocker.innerHTML = `<span class="mp-purchase-blocker__lock" aria-hidden="true">🔒</span><span>${message}</span>`;
         document.body.appendChild(blocker);
         purchaseBlockers.push({ blocker, control });
       });
@@ -137,18 +145,24 @@
     const sync = () => {
       later.hidden = !isLater();
       now.hidden = isLater();
-      setRequired(later, isLater());
       setRequired(now, !isLater());
+      email.required = isLater() && method.value === "email";
+      phone.required = isLater() && method.value === "whatsapp";
       syncDelivery();
       syncPurchaseBlockers();
       notice.textContent = "";
     };
     radios.forEach((radio) => radio.addEventListener("change", () => { sync(); saveDraft(); }));
-    method.addEventListener("change", () => { syncDelivery(); saveDraft(); });
+    method.addEventListener("change", () => { syncDelivery(); syncPurchaseBlockers(); saveDraft(); });
     plushName.addEventListener("input", () => { plushName.value = plushName.value.toUpperCase(); saveDraft(); });
     const wordCaps = (input) => { input.value = input.value.replace(/(^|[\s-])([a-z])/g, (_, lead, letter) => `${lead}${letter.toUpperCase()}`); };
     ["[data-birth-place]", "[data-favourite-person]", "[data-belongs-to]"].forEach((selector) => block.querySelector(selector).addEventListener("blur", (event) => wordCaps(event.currentTarget)));
     now.querySelectorAll("input, select, textarea").forEach((field) => {
+      field.addEventListener("input", () => { notice.textContent = ""; syncPurchaseBlockers(); saveDraft(); });
+      field.addEventListener("change", () => { notice.textContent = ""; syncPurchaseBlockers(); saveDraft(); });
+      field.addEventListener("blur", () => { syncPurchaseBlockers(); saveDraft(); });
+    });
+    later.querySelectorAll("input, select").forEach((field) => {
       field.addEventListener("input", () => { notice.textContent = ""; syncPurchaseBlockers(); saveDraft(); });
       field.addEventListener("change", () => { notice.textContent = ""; syncPurchaseBlockers(); saveDraft(); });
       field.addEventListener("blur", () => { syncPurchaseBlockers(); saveDraft(); });
@@ -237,15 +251,17 @@
     });
 
     const showIncompleteNowError = () => {
-      const message = "Please complete every birth certificate field and upload your voice recording before adding to cart or checking out.";
+      const message = isLater()
+        ? `Please enter a valid ${method.value === "whatsapp" ? "WhatsApp number" : "email address"} before adding to cart or checking out.`
+        : "Please complete every birth certificate field and upload your voice recording before adding to cart or checking out.";
       notice.textContent = message;
-      now.querySelector("input:invalid, select:invalid, textarea:invalid")?.focus();
+      (isLater() ? later : now).querySelector("input:invalid, select:invalid, textarea:invalid")?.focus();
       window.alert(message);
     };
 
     let lastBlockedPurchaseAt = 0;
     const blockIncompletePurchase = (event) => {
-      if (isLater() || completeNowReady()) return false;
+      if (purchaseReady()) return false;
       event.preventDefault();
       event.stopImmediatePropagation();
       const nowTime = Date.now();
