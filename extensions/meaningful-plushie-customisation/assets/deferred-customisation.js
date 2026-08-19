@@ -38,13 +38,46 @@
     method.addEventListener("change", syncDelivery);
     plushName.addEventListener("input", () => { plushName.value = plushName.value.toUpperCase(); });
     voiceInput.addEventListener("change", () => { voiceButton.textContent = voiceInput.files[0] ? voiceInput.files[0].name : "UPLOAD VOICE (MP4/MP3)"; });
-    birthDate.addEventListener("change", () => {
-      dateDisplay.textContent = birthDate.value ? new Date(`${birthDate.value}T00:00:00`).toLocaleDateString("en-GB") : "A meaningful date";
+    const calendar = document.createElement("div");
+    calendar.className = "mp-deferred-customisation__calendar";
+    calendar.hidden = true;
+    document.body.appendChild(calendar);
+    let calendarMonth = new Date();
+    const formatDate = (date) => date.toLocaleDateString("en-GB");
+    const renderCalendar = () => {
+      const year = calendarMonth.getFullYear(), month = calendarMonth.getMonth();
+      const firstDay = new Date(year, month, 1).getDay();
+      const lastDate = new Date(year, month + 1, 0).getDate();
+      const weeks = ["S", "M", "T", "W", "T", "F", "S"].map((day) => `<div class="mp-deferred-customisation__calendar-weekday">${day}</div>`).join("");
+      const blanks = Array.from({ length: firstDay }, () => "<span></span>").join("");
+      const days = Array.from({ length: lastDate }, (_, index) => {
+        const day = index + 1, value = formatDate(new Date(year, month, day));
+        return `<button type="button" data-day="${day}" class="${birthDate.value === value ? "is-selected" : ""}">${day}</button>`;
+      }).join("");
+      calendar.innerHTML = `<div class="mp-deferred-customisation__calendar-head"><button type="button" data-month="-1" aria-label="Previous month">‹</button><span>${calendarMonth.toLocaleDateString("en-GB", { month: "long", year: "numeric" })}</span><button type="button" data-month="1" aria-label="Next month">›</button></div><div class="mp-deferred-customisation__calendar-grid">${weeks}${blanks}${days}</div>`;
+    };
+    calendar.addEventListener("click", (event) => {
+      const target = event.target.closest("button");
+      if (!target) return;
+      if (target.dataset.month) { calendarMonth.setMonth(calendarMonth.getMonth() + Number(target.dataset.month)); renderCalendar(); return; }
+      if (target.dataset.day) {
+        const selected = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), Number(target.dataset.day));
+        birthDate.value = formatDate(selected);
+        dateDisplay.textContent = birthDate.value;
+        calendar.hidden = true;
+        birthDate.dispatchEvent(new Event("change", { bubbles: true }));
+      }
     });
     dateBox.addEventListener("click", () => {
-      if (typeof birthDate.showPicker === "function") birthDate.showPicker();
-      else { birthDate.focus(); birthDate.click(); }
+      const selected = birthDate.value.split("/");
+      calendarMonth = selected.length === 3 ? new Date(Number(selected[2]), Number(selected[1]) - 1, Number(selected[0])) : new Date();
+      const rect = dateBox.getBoundingClientRect();
+      calendar.style.top = `${Math.min(rect.bottom + 8, window.innerHeight - 360)}px`;
+      calendar.style.left = `${Math.min(rect.left, window.innerWidth - 356)}px`;
+      renderCalendar();
+      calendar.hidden = false;
     });
+    document.addEventListener("pointerdown", (event) => { if (!calendar.hidden && !calendar.contains(event.target) && !dateBox.contains(event.target)) calendar.hidden = true; });
     sync();
 
     const appendSessionId = (id) => {
