@@ -11,6 +11,8 @@
     const plushName = block.querySelector("[data-plush-name]");
     const voiceInput = block.querySelector("[data-voice]");
     const voiceButton = block.querySelector("[data-voice-button]");
+    const birthDate = block.querySelector("[data-birth-date]");
+    const dateDisplay = block.querySelector("[data-date-display]");
     const radios = block.querySelectorAll("input[type=radio]");
     const apiUrl = (block.dataset.apiUrl || "").replace(/\/$/, "");
     const form = block.closest("form[action*='/cart/add']") || document.querySelector("form[action*='/cart/add']");
@@ -35,6 +37,9 @@
     method.addEventListener("change", syncDelivery);
     plushName.addEventListener("input", () => { plushName.value = plushName.value.toUpperCase(); });
     voiceInput.addEventListener("change", () => { voiceButton.textContent = voiceInput.files[0] ? voiceInput.files[0].name : "UPLOAD VOICE (MP4/MP3)"; });
+    birthDate.addEventListener("change", () => {
+      dateDisplay.textContent = birthDate.value ? new Date(`${birthDate.value}T00:00:00`).toLocaleDateString("en-GB") : "A meaningful date";
+    });
     sync();
 
     const appendSessionId = (id) => {
