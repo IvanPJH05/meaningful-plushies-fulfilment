@@ -210,6 +210,9 @@
     document.addEventListener("click", guardPurchaseControl, true);
     window.addEventListener("resize", positionPurchaseBlockers);
     window.addEventListener("scroll", positionPurchaseBlockers, true);
+    // Some mobile browsers don't fire a usable change event after choosing a
+    // local file. Recheck the values so the lock always clears once complete.
+    window.setInterval(syncPurchaseBlockers, 400);
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
