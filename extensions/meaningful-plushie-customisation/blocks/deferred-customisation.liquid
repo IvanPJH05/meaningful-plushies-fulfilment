@@ -6,44 +6,45 @@
   class="mp-deferred-customisation"
   data-customisation-block
   data-api-url="{{ block.settings.app_url | escape }}"
+  data-locale="{{ request.locale.iso_code | escape }}"
   {{ block.shopify_attributes }}
 >
   <div class="mp-deferred-customisation__choices" role="radiogroup" aria-label="Customisation timing">
   <label class="mp-deferred-customisation__choice">
     <input type="radio" name="mp_customisation_choice_{{ block.id }}" value="now" checked>
-    <span>Complete it now</span>
+    <span data-i18n="completeNow">Complete it now</span>
   </label>
   <label class="mp-deferred-customisation__choice">
     <input type="radio" name="mp_customisation_choice_{{ block.id }}" value="later">
-    <span>Fill it in later</span>
+    <span data-i18n="fillLater">Fill it in later</span>
   </label>
   </div>
 
   <div class="mp-deferred-customisation__now" data-complete-now>
-    <label>Plushie's Name<input required type="text" maxlength="20" placeholder="NAME YOUR PLUSHIE" autocapitalize="characters" data-plush-name></label>
-    <label>Plushie's Gender<select required data-gender><option>Male</option><option>Female</option></select></label>
-    <label>Plushie's Birth Date<span class="mp-deferred-customisation__date"><input required readonly maxlength="12" type="text" aria-label="Plushie's Birth Date" data-birth-date><span data-date-display>A meaningful date</span></span></label>
-    <label>Plushie's Birth Place<input required type="text" maxlength="12" placeholder="A meaningful place" data-birth-place></label>
-    <label>Plushie's Favourite Person<input required type="text" maxlength="12" placeholder="A meaningful person" data-favourite-person></label>
-    <label>Plushie Belongs To<input required type="text" maxlength="12" placeholder="The plushie's owner" data-belongs-to></label>
-    <label>Meaningful Note<textarea required maxlength="12" placeholder="A message for the plushie's owner" data-meaningful-note></textarea></label>
-    <label class="mp-deferred-customisation__voice">Upload Your Voice Here<input required type="file" accept="audio/mpeg,audio/mp4,audio/x-m4a,audio/wav,audio/webm,.mp3,.mp4,.m4a,.wav,.webm" data-voice><span data-voice-button>UPLOAD VOICE (MP4/MP3)</span></label>
+    <label><span data-i18n="plushNameLabel">Plushie's Name</span><input required type="text" maxlength="20" placeholder="NAME YOUR PLUSHIE" data-i18n-placeholder="plushNamePlaceholder" autocapitalize="characters" data-plush-name></label>
+    <label><span data-i18n="genderLabel">Plushie's Gender</span><select required data-gender><option data-i18n="male">Male</option><option data-i18n="female">Female</option></select></label>
+    <label><span data-i18n="birthDateLabel">Plushie's Birth Date</span><span class="mp-deferred-customisation__date"><input required readonly maxlength="12" type="text" aria-label="Plushie's Birth Date" data-birth-date><span data-date-display data-i18n="meaningfulDate">A meaningful date</span></span></label>
+    <label><span data-i18n="birthPlaceLabel">Plushie's Birth Place</span><input required type="text" maxlength="12" placeholder="A meaningful place" data-i18n-placeholder="meaningfulPlace" data-birth-place></label>
+    <label><span data-i18n="favouritePersonLabel">Plushie's Favourite Person</span><input required type="text" maxlength="12" placeholder="A meaningful person" data-i18n-placeholder="meaningfulPerson" data-favourite-person></label>
+    <label><span data-i18n="belongsToLabel">Plushie Belongs To</span><input required type="text" maxlength="12" placeholder="The plushie's owner" data-i18n-placeholder="plushOwner" data-belongs-to></label>
+    <label><span data-i18n="meaningfulNoteLabel">Meaningful Note</span><textarea required maxlength="12" placeholder="A message for the plushie's owner" data-i18n-placeholder="meaningfulNotePlaceholder" data-meaningful-note></textarea></label>
+    <label class="mp-deferred-customisation__voice"><span data-i18n="uploadVoiceLabel">Upload Your Voice Here</span><input required type="file" accept="audio/mpeg,audio/mp4,audio/x-m4a,audio/wav,audio/webm,.mp3,.mp4,.m4a,.wav,.webm" data-voice><span data-voice-button data-i18n="uploadVoiceButton">UPLOAD VOICE (MP4/MP3)</span></label>
   </div>
 
   <div class="mp-deferred-customisation__later" hidden>
     <label>
-      Send my link by
+      <span data-i18n="sendLinkBy">Send my link by</span>
       <select data-delivery-method>
         <option value="whatsapp" selected>WhatsApp</option>
-        <option value="email">Email</option>
+        <option value="email" data-i18n="email">Email</option>
       </select>
     </label>
     <label data-email-field>
-      A link to customise your plushie will be sent to your email
+      <span data-i18n="emailLinkNotice">A link to customise your plushie will be sent to your email</span>
       <input type="email" autocomplete="email" placeholder="you@example.com" data-contact-email>
     </label>
     <label data-phone-field hidden>
-      A link to customise your plushie will be sent to your WhatsApp
+      <span data-i18n="whatsappLinkNotice">A link to customise your plushie will be sent to your WhatsApp</span>
       <input type="tel" autocomplete="tel" placeholder="012 345 6789" data-contact-phone>
     </label>
   </div>

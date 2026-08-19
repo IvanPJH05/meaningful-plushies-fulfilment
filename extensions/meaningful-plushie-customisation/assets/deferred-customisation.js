@@ -18,12 +18,26 @@
     const apiUrl = (block.dataset.apiUrl || "").replace(/\/$/, "");
     const form = block.closest("form[action*='/cart/add']") || document.querySelector("form[action*='/cart/add']");
     if (!form) return;
+    const language = /^ms(?:-|$)/i.test(block.dataset.locale || "") ? "ms" : "en";
+    const translations = {
+      en: {
+        completeNow: "Complete it now", fillLater: "Fill it in later", plushNameLabel: "Plushie's Name", plushNamePlaceholder: "NAME YOUR PLUSHIE", genderLabel: "Plushie's Gender", male: "Male", female: "Female", birthDateLabel: "Plushie's Birth Date", meaningfulDate: "A meaningful date", birthPlaceLabel: "Plushie's Birth Place", meaningfulPlace: "A meaningful place", favouritePersonLabel: "Plushie's Favourite Person", meaningfulPerson: "A meaningful person", belongsToLabel: "Plushie Belongs To", plushOwner: "The plushie's owner", meaningfulNoteLabel: "Meaningful Note", meaningfulNotePlaceholder: "A message for the plushie's owner", uploadVoiceLabel: "Upload Your Voice Here", uploadVoiceButton: "UPLOAD VOICE (MP4/MP3)", sendLinkBy: "Send my link by", email: "Email", emailLinkNotice: "A link to customise your plushie will be sent to your email", whatsappLinkNotice: "A link to customise your plushie will be sent to your WhatsApp",
+        completeFirst: "PLEASE COMPLETE CUSTOMISATION FIRST", enterWhatsApp: "ENTER A VALID WHATSAPP NUMBER FIRST", enterEmail: "ENTER A VALID EMAIL ADDRESS FIRST", incompleteError: "Please complete every birth certificate field and upload your voice recording before adding to cart or checking out.", contactError: "Please enter a valid {contact} before adding to cart or checking out.", whatsappNumber: "WhatsApp number", emailAddress: "email address", notConfigured: "Customisation is not configured yet. Please contact us.", preparingLink: "Preparing your secure customisation link…", paired: "Your link will be paired with this order after checkout.", saving: "Saving your customisation…", saved: "Your customisation is saved and will be linked to this order.", uploadVoiceError: "Please upload your voice recording.", unavailable: "This customisation link is no longer available.",
+      },
+      ms: {
+        completeNow: "Lengkapkan sekarang", fillLater: "Isi kemudian", plushNameLabel: "Nama Plushie", plushNamePlaceholder: "NAMA PLUSHIE ANDA", genderLabel: "Jantina Plushie", male: "Lelaki", female: "Perempuan", birthDateLabel: "Tarikh Lahir Plushie", meaningfulDate: "Tarikh yang bermakna", birthPlaceLabel: "Tempat Lahir Plushie", meaningfulPlace: "Tempat yang bermakna", favouritePersonLabel: "Orang Kegemaran Plushie", meaningfulPerson: "Orang yang bermakna", belongsToLabel: "Plushie Milik", plushOwner: "Pemilik plushie", meaningfulNoteLabel: "Nota Bermakna", meaningfulNotePlaceholder: "Mesej untuk pemilik plushie", uploadVoiceLabel: "Muat Naik Suara Anda Di Sini", uploadVoiceButton: "MUAT NAIK SUARA (MP4/MP3)", sendLinkBy: "Hantar pautan saya melalui", email: "E-mel", emailLinkNotice: "Pautan untuk menyesuaikan plushie anda akan dihantar ke e-mel anda", whatsappLinkNotice: "Pautan untuk menyesuaikan plushie anda akan dihantar ke WhatsApp anda",
+        completeFirst: "SILA LENGKAPKAN PENYESUAIAN DAHULU", enterWhatsApp: "MASUKKAN NOMBOR WHATSAPP YANG SAH", enterEmail: "MASUKKAN ALAMAT E-MEL YANG SAH", incompleteError: "Sila lengkapkan semua maklumat sijil kelahiran dan muat naik rakaman suara sebelum menambah ke troli atau membuat pembayaran.", contactError: "Sila masukkan {contact} yang sah sebelum menambah ke troli atau membuat pembayaran.", whatsappNumber: "nombor WhatsApp", emailAddress: "alamat e-mel", notConfigured: "Penyesuaian belum disediakan. Sila hubungi kami.", preparingLink: "Menyediakan pautan penyesuaian selamat anda…", paired: "Pautan anda akan dipadankan dengan pesanan ini selepas pembayaran.", saving: "Menyimpan penyesuaian anda…", saved: "Penyesuaian anda telah disimpan dan akan dipadankan dengan pesanan ini.", uploadVoiceError: "Sila muat naik rakaman suara anda.", unavailable: "Pautan penyesuaian ini tidak lagi tersedia.",
+      },
+    };
+    const t = (key, values = {}) => String(translations[language][key] || translations.en[key] || key).replace(/\{(\w+)\}/g, (_, name) => String(values[name] || ""));
+    block.querySelectorAll("[data-i18n]").forEach((element) => { element.textContent = t(element.dataset.i18n); });
+    block.querySelectorAll("[data-i18n-placeholder]").forEach((element) => { element.setAttribute("placeholder", t(element.dataset.i18nPlaceholder)); });
     const draftKey = `mp-customisation-draft:${location.pathname}`;
     const draftFields = ["[data-plush-name]", "[data-gender]", "[data-birth-date]", "[data-birth-place]", "[data-favourite-person]", "[data-belongs-to]", "[data-meaningful-note]", "[data-delivery-method]", "[data-contact-email]", "[data-contact-phone]"];
     let restoredVoiceFile = null;
 
     const selectedVoice = () => voiceInput.files?.[0] || restoredVoiceFile || null;
-    const updateVoiceLabel = () => { voiceButton.textContent = selectedVoice()?.name || voiceInput.value.split(/[/\\\\]/).pop() || "UPLOAD VOICE (MP4/MP3)"; };
+    const updateVoiceLabel = () => { voiceButton.textContent = selectedVoice()?.name || voiceInput.value.split(/[/\\\\]/).pop() || t("uploadVoiceButton"); };
     const openDraftDatabase = () => new Promise((resolve, reject) => {
       const request = indexedDB.open("meaningful-plushies-customisation", 1);
       request.onupgradeneeded = () => request.result.createObjectStore("voices");
@@ -133,9 +147,7 @@
         blocker.type = "button";
         blocker.className = "mp-purchase-blocker";
         blocker.setAttribute("aria-label", "Complete your customisation before purchasing");
-        const message = isLater()
-          ? `ENTER A VALID ${method.value === "whatsapp" ? "WHATSAPP NUMBER" : "EMAIL ADDRESS"} FIRST`
-          : "PLEASE COMPLETE CUSTOMISATION FIRST";
+        const message = isLater() ? (method.value === "whatsapp" ? t("enterWhatsApp") : t("enterEmail")) : t("completeFirst");
         blocker.innerHTML = `<span class="mp-purchase-blocker__lock" aria-hidden="true">🔒</span><span>${message}</span>`;
         document.body.appendChild(blocker);
         purchaseBlockers.push({ blocker, control });
@@ -178,13 +190,13 @@
       const year = calendarMonth.getFullYear(), month = calendarMonth.getMonth();
       const firstDay = new Date(year, month, 1).getDay();
       const lastDate = new Date(year, month + 1, 0).getDate();
-      const weeks = ["S", "M", "T", "W", "T", "F", "S"].map((day) => `<div class="mp-deferred-customisation__calendar-weekday">${day}</div>`).join("");
+      const weeks = (language === "ms" ? ["A", "I", "S", "R", "K", "J", "S"] : ["S", "M", "T", "W", "T", "F", "S"]).map((day) => `<div class="mp-deferred-customisation__calendar-weekday">${day}</div>`).join("");
       const blanks = Array.from({ length: firstDay }, () => "<span></span>").join("");
       const days = Array.from({ length: lastDate }, (_, index) => {
         const day = index + 1, value = formatDate(new Date(year, month, day));
         return `<button type="button" data-day="${day}" class="${birthDate.value === value ? "is-selected" : ""}">${day}</button>`;
       }).join("");
-      const months = Array.from({ length: 12 }, (_, index) => `<option value="${index}" ${index === month ? "selected" : ""}>${new Date(year, index, 1).toLocaleDateString("en-GB", { month: "long" })}</option>`).join("");
+      const months = Array.from({ length: 12 }, (_, index) => `<option value="${index}" ${index === month ? "selected" : ""}>${new Date(year, index, 1).toLocaleDateString(language === "ms" ? "ms-MY" : "en-GB", { month: "long" })}</option>`).join("");
       const latestYear = new Date().getFullYear() + 1;
       const years = Array.from({ length: latestYear - 1900 + 1 }, (_, index) => latestYear - index).map((value) => `<button type="button" data-calendar-year="${value}" class="${value === year ? "is-selected" : ""}">${value}</button>`).join("");
       calendar.innerHTML = `<div class="mp-deferred-customisation__calendar-head"><button type="button" data-month="-1" aria-label="Previous month">‹</button><span class="mp-deferred-customisation__calendar-selects"><select aria-label="Month" data-calendar-month>${months}</select><button type="button" data-year-toggle aria-label="Choose year">${year}<span aria-hidden="true">▾</span></button></span><button type="button" data-month="1" aria-label="Next month">›</button><div class="mp-deferred-customisation__calendar-years" hidden>${years}</div></div><div class="mp-deferred-customisation__calendar-grid">${weeks}${blanks}${days}</div>`;
@@ -252,8 +264,8 @@
 
     const showIncompleteNowError = () => {
       const message = isLater()
-        ? `Please enter a valid ${method.value === "whatsapp" ? "WhatsApp number" : "email address"} before adding to cart or checking out.`
-        : "Please complete every birth certificate field and upload your voice recording before adding to cart or checking out.";
+        ? t("contactError", { contact: method.value === "whatsapp" ? t("whatsappNumber") : t("emailAddress") })
+        : t("incompleteError");
       notice.textContent = message;
       (isLater() ? later : now).querySelector("input:invalid, select:invalid, textarea:invalid")?.focus();
       window.alert(message);
@@ -291,12 +303,12 @@
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (blockIncompletePurchase(event)) return;
-      if (!apiUrl) { notice.textContent = "Customisation is not configured yet. Please contact us."; return; }
+      if (!apiUrl) { notice.textContent = t("notConfigured"); return; }
       if (isLater()) {
         const contact = method.value === "whatsapp" ? phone : email;
-        const label = method.value === "whatsapp" ? "WhatsApp number" : "email address";
+        const label = method.value === "whatsapp" ? t("whatsappNumber") : t("emailAddress");
         if (!contact.checkValidity()) {
-          notice.textContent = `Please enter a valid ${label} before adding to cart or checking out.`;
+          notice.textContent = t("contactError", { contact: label });
           contact.focus();
           return;
         }
@@ -306,23 +318,23 @@
       if (submitter) submitter.disabled = true;
       try {
         if (isLater()) {
-          notice.textContent = "Preparing your secure customisation link…";
+          notice.textContent = t("preparingLink");
           const result = await request("/api/customisation/sessions", {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ deliveryMethod: method.value === "whatsapp" ? "whatsapp" : "email", contactEmail: email.value.trim(), contactPhone: phone.value.trim() }),
           });
           appendSessionId(result.sessionId);
-          notice.textContent = "Your link will be paired with this order after checkout.";
+          notice.textContent = t("paired");
         } else {
           const voice = selectedVoice();
-          if (!voice) throw new Error("Please upload your voice recording.");
-          notice.textContent = "Saving your customisation…";
+          if (!voice) throw new Error(t("uploadVoiceError"));
+          notice.textContent = t("saving");
           const session = await request("/api/customisation/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "complete_now" }) });
           const upload = new FormData(); upload.append("voice", voice);
           const voiceResult = await request(`/api/customisation/${encodeURIComponent(session.token)}/upload-file`, { method: "POST", body: upload });
           await request(`/api/customisation/${encodeURIComponent(session.token)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ form: formData(), voiceStoragePath: voiceResult.voiceStoragePath }) });
           appendSessionId(session.sessionId);
-          notice.textContent = "Your customisation is saved and will be linked to this order.";
+          notice.textContent = t("saved");
         }
         form.submit();
       } catch (error) {
