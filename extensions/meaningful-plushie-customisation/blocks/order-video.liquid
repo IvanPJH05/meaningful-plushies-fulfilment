@@ -1,0 +1,16 @@
+<script src="{{ 'order-video.js' | asset_url }}" defer="defer"></script>
+
+<div class="mp-order-video" data-order-video data-api-url="{{ block.settings.app_url | escape }}" {{ block.shopify_attributes }} hidden>
+  <video data-order-video-player controls playsinline preload="metadata"></video>
+</div>
+
+{% schema %}
+{
+  "name": "Order video",
+  "target": "section",
+  "enabled_on": { "templates": ["page"] },
+  "settings": [
+    { "type": "url", "id": "app_url", "label": "Fulfilment app URL", "info": "Example: https://meaningful-plushies-fulfilment.vercel.app" }
+  ]
+}
+{% endschema %}

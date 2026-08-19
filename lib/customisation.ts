@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 
 import { createClient } from "@supabase/supabase-js";
 
-import { setShopifyOrderMetafield, updateCertificateMetaobject } from "./shopify-orders";
+import { setShopifyOrderMetafield, shopDomain, shopifyGraphql, updateCertificateMetaobject } from "./shopify-orders";
 import type { Order } from "./types";
 
 const SESSION_TABLE = "customisation_sessions";
@@ -48,6 +48,8 @@ type SessionRow = {
   completed_at: string | null;
   expires_at: string | null;
 };
+
+const ORDER_SUMMARY_VIDEO_METAOBJECT_TYPE = process.env.SHOPIFY_ORDER_SUMMARY_VIDEO_METAOBJECT_TYPE || "order_summary";
 
 function serviceClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://joaoirpegnkexmktylop.supabase.co";
@@ -172,6 +174,80 @@ export async function getPublicSession(token: string) {
     form: session.form_data || {},
     hasVoice: Boolean(session.voice_storage_path),
   };
+}
+
+type VideoReference = {
+  url?: string;
+  sources?: Array<{ url?: string; mimeType?: string }>;
+};
+
+function normaliseVideoName(value: string) {
+  return value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+function orderSummaryVideoName(lineItems: Array<{ name?: string; title?: string; variant?: { title?: string } | null }>) {
+  const description = lineItems.map((line) => `${line.name || ""} ${line.title || ""} ${line.variant?.title || ""}`).join(" ").toUpperCase();
+  const characters: Array<[string, string[]]> = [
+    ["BILLY", ["BILLY"]],
+    ["HUN", ["HUNNIE", "HUN"]],
+    ["TOOT", ["TOOT"]],
+    ["DW", ["DRAGON WARRIOR", "DW"]],
+  ];
+  const character = characters.find(([, aliases]) => aliases.some((alias) => description.includes(alias)))?.[0] || "";
+  const seconds = ["20", "10", "5"].find((length) => new RegExp(`\\b${length}\\s*(?:S|SEC|SECOND)`, "i").test(description)) || "";
+  return character && seconds ? `${character} ${seconds}s` : "";
+}
+
+/**
+ * Finds the Order Summary entry for this session's purchased plushie and
+ * speaker length. The token is still required, so an order number alone
+ * cannot be used to reveal a customer's video.
+ */
+export async function orderVideoForCustomisationToken(token: string) {
+  const session = await sessionByToken(token);
+  if (!session || !session.order_id || session.status === "cancelled" || session.status === "expired") return null;
+  const domain = shopDomain();
+  if (!domain) return null;
+
+  const result = await shopifyGraphql<{
+    data?: {
+      order?: { lineItems?: { nodes?: Array<{ name?: string; title?: string; variant?: { title?: string } | null }> } | null } | null;
+      metaobjects?: { nodes?: Array<{ fields?: Array<{ key?: string; value?: string; reference?: VideoReference | null }> }> } | null;
+    };
+  }>(domain, `
+    query CustomisationOrderVideo($orderId: ID!, $type: String!) {
+      order(id: $orderId) {
+        lineItems(first: 50) { nodes { name title variant { title } } }
+      }
+      metaobjects(type: $type, first: 250) {
+        nodes {
+          fields {
+            key
+            value
+            reference {
+              ... on GenericFile { url }
+              ... on Video { sources { url mimeType } }
+            }
+          }
+        }
+      }
+    }
+  `, { orderId: session.order_id, type: ORDER_SUMMARY_VIDEO_METAOBJECT_TYPE });
+
+  const videoName = orderSummaryVideoName(result?.data?.order?.lineItems?.nodes ?? []);
+  if (!videoName) return null;
+  const expectedName = normaliseVideoName(videoName);
+
+  for (const entry of result?.data?.metaobjects?.nodes ?? []) {
+    const fields = new Map((entry.fields ?? []).map((field) => [field.key || "", field]));
+    const title = fields.get("name")?.value || "";
+    const video = fields.get("video")?.reference;
+    if (normaliseVideoName(title) === expectedName && video) {
+      const source = video.url || video.sources?.find((item) => item.url)?.url || "";
+      if (source) return { url: source, title: title || "Your Meaningful Plushie" };
+    }
+  }
+  return null;
 }
 
 export async function createVoiceUpload(token: string, fileName: string, contentType: string) {
