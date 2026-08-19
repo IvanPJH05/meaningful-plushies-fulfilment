@@ -69,6 +69,7 @@
         const selected = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), Number(target.dataset.day));
         birthDate.value = formatDate(selected);
         dateDisplay.textContent = birthDate.value;
+        dateDisplay.classList.add("is-filled");
         calendar.hidden = true;
         birthDate.dispatchEvent(new Event("change", { bubbles: true }));
       }
