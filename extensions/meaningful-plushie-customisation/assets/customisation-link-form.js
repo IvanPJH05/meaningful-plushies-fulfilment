@@ -23,8 +23,12 @@
       if (!api || !token || !file) { notice.textContent = "This customisation link is unavailable."; return; }
       const button = form.querySelector("button[type=submit]"); button.disabled = true; notice.textContent = "Saving your customisation…";
       try {
-        const upload = new FormData(); upload.append("voice", file);
-        const up = await fetch(`${api}/api/customisation/${encodeURIComponent(token)}/upload-file`, { method:"POST", body:upload }).then((response) => response.json());
+        const prepared = await fetch(`${api}/api/customisation/${encodeURIComponent(token)}/upload`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ fileName:file.name, contentType:file.type }) }).then((response) => response.json());
+        if (!prepared.ok) throw new Error(prepared.error);
+        const upload = new FormData(); upload.append("", file);
+        const storage = await fetch(prepared.upload.signedUrl, { method:"PUT", headers:{"x-upsert":"false"}, body:upload });
+        if (!storage.ok) throw new Error("Could not upload your file.");
+        const up = { ok:true, voiceStoragePath:prepared.upload.path };
         if (!up.ok) throw new Error(up.error);
         const details = { plushName:name.value.trim(), gender:get("gender").value, birthDate:get("birth-date").value.trim(), birthPlace:get("birth-place").value.trim(), favouritePerson:get("favourite-person").value.trim(), belongsTo:get("belongs-to").value.trim(), meaningfulNote:get("meaningful-note").value.trim() };
         const saved = await fetch(`${api}/api/customisation/${encodeURIComponent(token)}`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({form:details,voiceStoragePath:up.voiceStoragePath}) }).then((response) => response.json());

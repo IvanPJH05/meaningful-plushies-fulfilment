@@ -80,7 +80,7 @@ export function CustomisationForm({ token }: { token: string }) {
     <p className="eyebrow">MEANINGFUL PLUSHIES</p><h1>Complete your plushie's customisation</h1><p className="intro">Your details will be linked securely to your order.</p>
     <label>Plushie's Gender<select required value={form.gender} onChange={(event) => change("gender", event.target.value)}><option value="">Choose one</option><option>Male</option><option>Female</option><option>Prefer not to say</option></select></label>
     {fields.map((field) => <label key={field.key}>{field.label}<input required type={field.type || "text"} maxLength={field.key === "meaningfulNote" ? undefined : 20} value={form[field.key]} placeholder={field.placeholder} onChange={(event) => change(field.key, event.target.value)} /></label>)}
-    <label>Upload Your Voice Here<input required type="file" accept="audio/mpeg,audio/mp4,audio/x-m4a,audio/wav,audio/webm,.mp3,.mp4,.m4a,.wav,.webm" onChange={(event) => setVoice(event.target.files?.[0] || null)} /></label>
+    <label>Upload Your Voice Here<input required type="file" onChange={(event) => setVoice(event.target.files?.[0] || null)} /></label>
     {notice && <p className="notice">{notice}</p>}<button disabled={saving}>{saving ? "Saving…" : "Save my customisation"}</button>
   </form></main>;
 }

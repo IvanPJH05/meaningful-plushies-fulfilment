@@ -330,8 +330,11 @@
           if (!voice) throw new Error(t("uploadVoiceError"));
           notice.textContent = t("saving");
           const session = await request("/api/customisation/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "complete_now" }) });
-          const upload = new FormData(); upload.append("voice", voice);
-          const voiceResult = await request(`/api/customisation/${encodeURIComponent(session.token)}/upload-file`, { method: "POST", body: upload });
+          const prepared = await request(`/api/customisation/${encodeURIComponent(session.token)}/upload`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileName: voice.name, contentType: voice.type }) });
+          const upload = new FormData(); upload.append("", voice);
+          const storage = await fetch(prepared.upload.signedUrl, { method: "PUT", headers: { "x-upsert": "false" }, body: upload });
+          if (!storage.ok) throw new Error("Could not upload your file.");
+          const voiceResult = { voiceStoragePath: prepared.upload.path };
           await request(`/api/customisation/${encodeURIComponent(session.token)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ form: formData(), voiceStoragePath: voiceResult.voiceStoragePath }) });
           appendSessionId(session.sessionId);
           notice.textContent = t("saved");

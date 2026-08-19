@@ -20,7 +20,7 @@ export async function POST(request: Request, { params }: Context) {
   try {
     const { token } = await params;
     const file = (await request.formData()).get("voice");
-    if (!(file instanceof File)) throw new Error("Choose your voice recording first.");
+    if (!(file instanceof File)) throw new Error("Choose a file first.");
     const voiceStoragePath = await uploadVoiceFile(token, file);
     return cors(NextResponse.json({ ok: true, voiceStoragePath }));
   } catch (error) {
