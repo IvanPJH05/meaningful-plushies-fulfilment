@@ -4,6 +4,8 @@
     const get = (name) => block.querySelector(`[data-${name}]`);
     const name = get("plush-name"), voice = get("voice"), voiceButton = get("voice-button");
     name.addEventListener("input", () => { name.value = name.value.toUpperCase(); });
+    const wordCaps = (input) => { input.value = input.value.replace(/(^|[\s-])([a-z])/g, (_, lead, letter) => `${lead}${letter.toUpperCase()}`); };
+    ["birth-place", "favourite-person", "belongs-to"].forEach((fieldName) => get(fieldName).addEventListener("blur", (event) => wordCaps(event.currentTarget)));
     voice.addEventListener("change", () => { voiceButton.textContent = voice.files[0] ? voice.files[0].name : "UPLOAD VOICE (MP4/MP3)"; });
     const dateBox = get("birth-date"), calendar = document.createElement("div");
     calendar.className = "mp-deferred-customisation__calendar"; calendar.hidden = true; document.body.appendChild(calendar);

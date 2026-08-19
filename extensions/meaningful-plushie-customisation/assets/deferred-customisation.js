@@ -37,6 +37,8 @@
     radios.forEach((radio) => radio.addEventListener("change", sync));
     method.addEventListener("change", syncDelivery);
     plushName.addEventListener("input", () => { plushName.value = plushName.value.toUpperCase(); });
+    const wordCaps = (input) => { input.value = input.value.replace(/(^|[\s-])([a-z])/g, (_, lead, letter) => `${lead}${letter.toUpperCase()}`); };
+    ["[data-birth-place]", "[data-favourite-person]", "[data-belongs-to]"].forEach((selector) => block.querySelector(selector).addEventListener("blur", (event) => wordCaps(event.currentTarget)));
     voiceInput.addEventListener("change", () => { voiceButton.textContent = voiceInput.files[0] ? voiceInput.files[0].name : "UPLOAD VOICE (MP4/MP3)"; });
     const calendar = document.createElement("div");
     calendar.className = "mp-deferred-customisation__calendar";
