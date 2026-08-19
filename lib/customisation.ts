@@ -562,7 +562,7 @@ export async function whatsappCustomisationLinkForOrder(order: Order) {
   return manualWhatsAppCustomisationLink(order, session);
 }
 
-/** A mailto draft for staff to send the secure customisation link manually. */
+/** A Gmail draft for staff to send the secure customisation link manually. */
 export async function emailCustomisationLinkForOrder(order: Order) {
   const session = await sessionForFulfilmentOrder(order.id);
   if (!session || session.delivery_method !== "email" || !session.contact_email || !session.token_cipher) return "";
@@ -581,5 +581,14 @@ export async function emailCustomisationLinkForOrder(order: Order) {
     "With love,",
     "Meaningful Plushies",
   ].join("\n");
-  return `mailto:${encodeURIComponent(session.contact_email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  // A Gmail compose URL is reliable in the fulfilment workspace. `mailto:`
+  // depends on a desktop email app being configured and can otherwise appear
+  // to do nothing in Chrome.
+  const compose = new URL("https://mail.google.com/mail/");
+  compose.searchParams.set("view", "cm");
+  compose.searchParams.set("fs", "1");
+  compose.searchParams.set("to", session.contact_email);
+  compose.searchParams.set("su", subject);
+  compose.searchParams.set("body", body);
+  return compose.toString();
 }
