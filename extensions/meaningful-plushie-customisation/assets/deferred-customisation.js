@@ -284,13 +284,27 @@
 
     // Shopify can begin its cart/accelerated-checkout handler on pointerdown,
     // before the normal click or submit event. Catch all three stages.
+    let purchaseInProgress = false;
     const guardPurchaseControl = (event) => {
       if (!(event.target instanceof Element)) return;
       const control = event.target.closest("button, input[type='submit']");
       if (!control) return;
       const ownerForm = control.form || control.closest("form");
       const insideProductPurchase = ownerForm === form || (control.closest(".shopify-payment-button") && ownerForm === form);
-      if (insideProductPurchase) blockIncompletePurchase(event);
+      if (!insideProductPurchase) return;
+      if (!purchaseReady()) {
+        blockIncompletePurchase(event);
+        return;
+      }
+      // This theme adds products with its own Ajax click handler, which means
+      // a normal form submit is not guaranteed to happen. Capture the click
+      // before the theme handles it, save the customisation, then use the
+      // native form submission to add the exact same product to the cart.
+      if (event.type === "click") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        void prepareCustomisationAndSubmit(control);
+      }
     };
     document.addEventListener("pointerdown", guardPurchaseControl, true);
     document.addEventListener("click", guardPurchaseControl, true);
@@ -300,9 +314,12 @@
     // local file. Recheck the values so the lock always clears once complete.
     window.setInterval(syncPurchaseBlockers, 400);
 
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      if (blockIncompletePurchase(event)) return;
+    const prepareCustomisationAndSubmit = async (submitter) => {
+      if (purchaseInProgress) return;
+      if (!purchaseReady()) {
+        showIncompleteNowError();
+        return;
+      }
       if (!apiUrl) { notice.textContent = t("notConfigured"); return; }
       if (isLater()) {
         const contact = method.value === "whatsapp" ? phone : email;
@@ -314,8 +331,8 @@
         }
       }
       if (!form.reportValidity()) return;
-      const submitter = event.submitter;
       if (submitter) submitter.disabled = true;
+      purchaseInProgress = true;
       try {
         if (isLater()) {
           notice.textContent = t("preparingLink");
@@ -331,8 +348,7 @@
           notice.textContent = t("saving");
           const session = await request("/api/customisation/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "complete_now" }) });
           const prepared = await request(`/api/customisation/${encodeURIComponent(session.token)}/upload`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileName: voice.name, contentType: voice.type }) });
-          const upload = new FormData(); upload.append("", voice);
-          const storage = await fetch(prepared.upload.signedUrl, { method: "PUT", headers: { "x-upsert": "false" }, body: upload });
+          const storage = await fetch(prepared.upload.signedUrl, { method: "PUT", headers: { "x-upsert": "false", "Content-Type": voice.type || "application/octet-stream" }, body: voice });
           if (!storage.ok) throw new Error("Could not upload your file.");
           const voiceResult = { voiceStoragePath: prepared.upload.path };
           await request(`/api/customisation/${encodeURIComponent(session.token)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ form: formData(), voiceStoragePath: voiceResult.voiceStoragePath }) });
@@ -343,7 +359,14 @@
       } catch (error) {
         notice.textContent = error instanceof Error ? error.message : "Could not save your customisation.";
         if (submitter) submitter.disabled = false;
+        purchaseInProgress = false;
       }
+    };
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void prepareCustomisationAndSubmit(event.submitter);
     }, true);
   });
 })();
