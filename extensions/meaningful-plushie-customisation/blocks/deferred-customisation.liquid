@@ -7,17 +7,16 @@
   data-api-url="{{ block.settings.app_url | escape }}"
   {{ block.shopify_attributes }}
 >
-  <h3>{{ block.settings.heading }}</h3>
-  <p>{{ block.settings.description }}</p>
-
+  <div class="mp-deferred-customisation__choices" role="radiogroup" aria-label="Customisation timing">
   <label class="mp-deferred-customisation__choice">
     <input type="radio" name="mp_customisation_choice_{{ block.id }}" value="now" checked>
-    <span><strong>Complete it now</strong><small>Fill in the birth certificate and upload the voice before checkout.</small></span>
+    <span>Complete it now</span>
   </label>
   <label class="mp-deferred-customisation__choice">
     <input type="radio" name="mp_customisation_choice_{{ block.id }}" value="later">
-    <span><strong>Fill it in later</strong><small>Place the order now and receive one secure customisation link.</small></span>
+    <span>Fill it in later</span>
   </label>
+  </div>
 
   <div class="mp-deferred-customisation__now" data-complete-now>
     <label>Plushie's Name<input required type="text" maxlength="60" placeholder="Name your plushie" data-plush-name></label>
@@ -58,8 +57,6 @@
   "target": "section",
   "enabled_on": { "templates": ["product"] },
   "settings": [
-    { "type": "text", "id": "heading", "label": "Heading", "default": "Customise your plushie" },
-    { "type": "textarea", "id": "description", "label": "Description", "default": "You can complete the birth certificate and voice recording now, or after placing your order." },
     { "type": "url", "id": "app_url", "label": "Fulfilment app URL", "info": "Example: https://meaningful-plushies-fulfilment.vercel.app" }
   ]
 }
