@@ -64,7 +64,6 @@
         blocker.className = "mp-purchase-blocker";
         blocker.setAttribute("aria-label", "Complete your customisation before purchasing");
         blocker.innerHTML = '<span class="mp-purchase-blocker__lock" aria-hidden="true">🔒</span><span>PLEASE COMPLETE CUSTOMISATION FIRST</span>';
-        blocker.addEventListener("click", (event) => { event.preventDefault(); showIncompleteNowError(); });
         document.body.appendChild(blocker);
         purchaseBlockers.push({ blocker, control });
       });
