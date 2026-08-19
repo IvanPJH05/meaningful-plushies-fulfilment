@@ -99,13 +99,13 @@ function customerCustomisationLink(token: string) {
 export function normaliseCustomisationForm(value: unknown): CustomisationForm | null {
   const source = value && typeof value === "object" ? value as Record<string, unknown> : {};
   const form = {
-    plushName: requiredText(source.plushName, 60),
+    plushName: requiredText(source.plushName, 20),
     gender: requiredText(source.gender, 30),
-    birthDate: requiredText(source.birthDate, 30),
-    birthPlace: requiredText(source.birthPlace, 100),
-    favouritePerson: requiredText(source.favouritePerson, 100),
-    belongsTo: requiredText(source.belongsTo, 100),
-    meaningfulNote: requiredText(source.meaningfulNote, 1_000),
+    birthDate: requiredText(source.birthDate, 12),
+    birthPlace: requiredText(source.birthPlace, 12),
+    favouritePerson: requiredText(source.favouritePerson, 12),
+    belongsTo: requiredText(source.belongsTo, 12),
+    meaningfulNote: requiredText(source.meaningfulNote, 12),
   };
   return Object.values(form).every(Boolean) ? form : null;
 }
