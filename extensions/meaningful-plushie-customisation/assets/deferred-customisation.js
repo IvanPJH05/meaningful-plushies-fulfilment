@@ -62,7 +62,7 @@
     calendar.addEventListener("click", (event) => {
       const target = event.target.closest("button");
       if (!target) return;
-      if (target.dataset.yearToggle !== undefined) { calendar.querySelector(".mp-deferred-customisation__calendar-years").hidden = false; return; }
+      if (target.dataset.yearToggle !== undefined) { const years = calendar.querySelector(".mp-deferred-customisation__calendar-years"); years.hidden = !years.hidden; return; }
       if (target.dataset.month) { calendarMonth.setMonth(calendarMonth.getMonth() + Number(target.dataset.month)); renderCalendar(); return; }
       if (target.dataset.calendarYear) { calendarMonth.setFullYear(Number(target.dataset.calendarYear)); renderCalendar(); return; }
       if (target.dataset.day) {
@@ -76,6 +76,9 @@
     calendar.addEventListener("change", (event) => {
       if (event.target.matches("[data-calendar-month]")) calendarMonth.setMonth(Number(event.target.value));
       renderCalendar();
+    });
+    calendar.addEventListener("pointerdown", (event) => {
+      if (event.target.matches("[data-calendar-month]")) calendar.querySelector(".mp-deferred-customisation__calendar-years").hidden = true;
     });
     dateBox.addEventListener("click", () => {
       const selected = birthDate.value.split("/");
