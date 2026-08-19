@@ -137,24 +137,29 @@
       window.alert(message);
     };
 
+    let lastBlockedPurchaseAt = 0;
     const blockIncompletePurchase = (event) => {
       if (isLater() || completeNowReady()) return false;
       event.preventDefault();
       event.stopImmediatePropagation();
-      showIncompleteNowError();
+      const nowTime = Date.now();
+      if (nowTime - lastBlockedPurchaseAt > 600) showIncompleteNowError();
+      lastBlockedPurchaseAt = nowTime;
       return true;
     };
 
-    // Shopify's accelerated checkout buttons can begin checkout from their
-    // click handler before a normal form submit event is observed. Catch the
-    // click while it is still in the capture phase, as well as form submits.
-    document.addEventListener("click", (event) => {
+    // Shopify can begin its cart/accelerated-checkout handler on pointerdown,
+    // before the normal click or submit event. Catch all three stages.
+    const guardPurchaseControl = (event) => {
+      if (!(event.target instanceof Element)) return;
       const control = event.target.closest("button, input[type='submit']");
       if (!control) return;
       const ownerForm = control.form || control.closest("form");
       const insideProductPurchase = ownerForm === form || (control.closest(".shopify-payment-button") && ownerForm === form);
       if (insideProductPurchase) blockIncompletePurchase(event);
-    }, true);
+    };
+    document.addEventListener("pointerdown", guardPurchaseControl, true);
+    document.addEventListener("click", guardPurchaseControl, true);
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
