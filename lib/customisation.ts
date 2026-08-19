@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 
 import { createClient } from "@supabase/supabase-js";
 
-import { certificateMetaobjectForOrder, plushBackgroundForMeaningfulNote, setShopifyOrderMetafield, shopDomain, shopifyGraphql, updateCertificateMetaobject } from "./shopify-orders";
+import { certificateMediaForLineItem, certificateMetaobjectForOrder, createCertificateMetaobject, plushBackgroundForMeaningfulNote, setShopifyOrderMetafield, shopDomain, shopifyGraphql, updateCertificateMetaobject } from "./shopify-orders";
 import type { Order } from "./types";
 
 const SESSION_TABLE = "customisation_sessions";
@@ -316,11 +316,10 @@ export async function saveSubmittedSession(token: string, formValue: unknown, vo
   const { error } = await serviceClient().from(SESSION_TABLE).update({
     form_data: { ...session.form_data, ...form },
     voice_storage_path: voiceStoragePath,
-    status: "submitted",
-    completed_at: completedAt,
     updated_at: completedAt,
   }).eq("id", session.id);
   if (error) throw new Error(error.message);
+  const linkedOrder = await fulfilmentOrderForSession(session);
   let certificateCode = session.certificate_code || "";
   if (!certificateCode && session.order_number) {
     const certificate = await certificateMetaobjectForOrder(session.order_number).catch(() => null);
@@ -333,12 +332,34 @@ export async function saveSubmittedSession(token: string, formValue: unknown, vo
       }).eq("id", session.id);
     }
   }
-  if (session.fulfilment_order_id) await applySubmittedSessionToFulfilmentOrder(session.fulfilment_order_id, form, voiceStoragePath, certificateCode);
-  if (session.order_id) await setShopifyOrderMetafield(session.order_id, uploadLiftCompatibleText(form, voiceStoragePath)).catch(() => false);
-  if (certificateCode) await updateCertificateMetaobject({
+  if (!certificateCode && session.order_number && linkedOrder) {
+    const certificate = await createCertificateMetaobject({
+      orderNumber: session.order_number,
+      createdAt: linkedOrder.orderDate || completedAt,
+      plushDetails: linkedOrder.product || linkedOrder.character,
+      certificate: certificateMediaForLineItem(linkedOrder.product, linkedOrder.character),
+      plushBackgroundBottom: plushBackgroundForMeaningfulNote(form.meaningfulNote),
+      idName: form.plushName,
+      gender: form.gender,
+      bornOn: form.birthDate,
+      birthplace: form.birthPlace,
+      favouritePerson: form.favouritePerson,
+      belongsTo: form.belongsTo,
+      meaningfulNote: form.meaningfulNote,
+      meaningfulMessage: `supabase-storage:${voiceStoragePath}`,
+    });
+    if (certificate) {
+      certificateCode = certificate.code;
+      await serviceClient().from(SESSION_TABLE).update({ certificate_code: certificate.code, certificate_metaobject_id: certificate.id, updated_at: completedAt }).eq("id", session.id);
+    }
+  }
+  if (!certificateCode) throw new Error("Your certificate could not be linked to this order. Please try again shortly.");
+  const certificateUpdated = await updateCertificateMetaobject({
     code: certificateCode,
     orderNumber: session.order_number || "",
-    createdAt: new Date().toISOString(),
+    createdAt: linkedOrder?.orderDate || completedAt,
+    plushDetails: linkedOrder?.product || linkedOrder?.character,
+    certificate: linkedOrder ? certificateMediaForLineItem(linkedOrder.product, linkedOrder.character) : undefined,
     idName: form.plushName,
     gender: form.gender,
     bornOn: form.birthDate,
@@ -348,7 +369,12 @@ export async function saveSubmittedSession(token: string, formValue: unknown, vo
     meaningfulNote: form.meaningfulNote,
     plushBackgroundBottom: plushBackgroundForMeaningfulNote(form.meaningfulNote),
     meaningfulMessage: `supabase-storage:${voiceStoragePath}`,
-  }).catch(() => false);
+  });
+  if (!certificateUpdated) throw new Error("Your certificate could not be updated. Please try again.");
+  if (session.fulfilment_order_id) await applySubmittedSessionToFulfilmentOrder(session.fulfilment_order_id, form, voiceStoragePath, certificateCode);
+  if (session.order_id && !await setShopifyOrderMetafield(session.order_id, uploadLiftCompatibleText(form, voiceStoragePath))) throw new Error("Your order customisation could not be saved. Please try again.");
+  const { error: completionError } = await serviceClient().from(SESSION_TABLE).update({ status: "submitted", completed_at: completedAt, updated_at: completedAt }).eq("id", session.id);
+  if (completionError) throw new Error(completionError.message);
   await backupVoiceToGoogleDrive({ ...session, voice_storage_path: voiceStoragePath }, form.plushName).catch(() => false);
   return { sessionId: session.id, fulfilmentOrderId: session.fulfilment_order_id || "" };
 }
@@ -376,6 +402,16 @@ function uploadLiftCompatibleText(form: CustomisationForm, voiceStoragePath: str
   ].join("\n");
 }
 
+async function fulfilmentOrderForSession(session: Pick<SessionRow, "fulfilment_order_id" | "order_number">) {
+  const client = serviceClient();
+  const query = session.fulfilment_order_id
+    ? client.from("fulfilment_orders").select("id,data").eq("id", session.fulfilment_order_id).maybeSingle()
+    : client.from("fulfilment_orders").select("id,data").eq("order_number", session.order_number || "").maybeSingle();
+  const { data, error } = await query;
+  if (error || !data?.data || typeof data.data !== "object") return null;
+  return data.data as Order;
+}
+
 async function applySubmittedSessionToFulfilmentOrder(fulfilmentOrderId: string, form: CustomisationForm, voiceStoragePath: string, certificateCode = "") {
   const client = serviceClient();
   const { data, error } = await client.from("fulfilment_orders").select("data").eq("id", fulfilmentOrderId).maybeSingle();
@@ -386,6 +422,11 @@ async function applySubmittedSessionToFulfilmentOrder(fulfilmentOrderId: string,
     ...order,
     status: "new_order",
     plushName: form.plushName,
+    plushGender: form.gender,
+    plushBirthDate: form.birthDate,
+    plushBirthPlace: form.birthPlace,
+    plushFavouritePerson: form.favouritePerson,
+    plushBelongsTo: form.belongsTo,
     meaningfulNote: form.meaningfulNote,
     meaningfulMessage: `supabase-storage:${voiceStoragePath}`,
     idWebsiteLink: certificateCode ? `https://meaningfulplushies.com/pages/certificate/${certificateCode}` : order.idWebsiteLink,
@@ -399,7 +440,8 @@ async function applySubmittedSessionToFulfilmentOrder(fulfilmentOrderId: string,
       note: "Customisation submitted through secure link.",
     }],
   };
-  await client.from("fulfilment_orders").update({ status: updated.status, updated_at: now, data: updated }).eq("id", fulfilmentOrderId);
+  const { error: updateError } = await client.from("fulfilment_orders").update({ status: updated.status, updated_at: now, data: updated }).eq("id", fulfilmentOrderId);
+  if (updateError) throw new Error(updateError.message);
 }
 
 export function customisationSessionIds(order: Record<string, unknown>) {
@@ -473,6 +515,11 @@ export async function bindSessionsToOrders(input: { orderId: string; orderNumber
       ...order,
       status: submitted ? "new_order" : "awaiting_customisation",
       plushName: submitted ? form.plushName || order.plushName : order.plushName,
+      plushGender: submitted ? form.gender || order.plushGender : order.plushGender,
+      plushBirthDate: submitted ? form.birthDate || order.plushBirthDate : order.plushBirthDate,
+      plushBirthPlace: submitted ? form.birthPlace || order.plushBirthPlace : order.plushBirthPlace,
+      plushFavouritePerson: submitted ? form.favouritePerson || order.plushFavouritePerson : order.plushFavouritePerson,
+      plushBelongsTo: submitted ? form.belongsTo || order.plushBelongsTo : order.plushBelongsTo,
       meaningfulNote: submitted ? form.meaningfulNote || order.meaningfulNote : order.meaningfulNote,
       meaningfulMessage: submitted && session.voice_storage_path ? `supabase-storage:${session.voice_storage_path}` : order.meaningfulMessage,
       certificateCode: certificateCode || order.certificateCode,

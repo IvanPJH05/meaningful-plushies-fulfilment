@@ -356,7 +356,7 @@ export async function createCertificateMetaobject(input: Omit<CertificateMetaobj
           userErrors { message }
         }
       }
-    `, { handle: { type: certificateMetaobjectType, handle }, metaobject: { fields: certificateFields({ ...input, code }) } });
+    `, { handle: { type: certificateMetaobjectType, handle }, metaobject: { fields: certificateFields({ ...input, code }), capabilities: { publishable: { status: "ACTIVE" } } } });
     const payload = result?.data?.metaobjectUpsert;
     if (payload?.metaobject?.id) return { code, id: payload.metaobject.id, handle: payload.metaobject.handle || handle };
     throw new Error("Could not create the certificate metaobject.");
@@ -372,7 +372,7 @@ export async function createCertificateMetaobject(input: Omit<CertificateMetaobj
           userErrors { message }
         }
       }
-    `, { handle: { type: certificateMetaobjectType, handle }, metaobject: { fields: certificateFields({ ...input, code }) } });
+    `, { handle: { type: certificateMetaobjectType, handle }, metaobject: { fields: certificateFields({ ...input, code }), capabilities: { publishable: { status: "ACTIVE" } } } });
     const payload = result?.data?.metaobjectUpsert;
     if (payload?.metaobject?.id) return { code, id: payload.metaobject.id, handle: payload.metaobject.handle || handle };
   }
@@ -383,15 +383,16 @@ export async function updateCertificateMetaobject(input: CertificateMetaobjectIn
   const domain = shopDomain();
   const code = input.code || "";
   if (!domain || !code) return false;
-  const result = await shopifyGraphql<{ data?: { metaobjectUpsert?: { userErrors?: { message?: string }[] } } }>(domain, `
+  const result = await shopifyGraphql<{ data?: { metaobjectUpsert?: { metaobject?: { id?: string; handle?: string }; userErrors?: { message?: string }[] } } }>(domain, `
     mutation UpdateCertificateMetaobject($handle: MetaobjectHandleInput!, $metaobject: MetaobjectUpsertInput!) {
-      metaobjectUpsert(handle: $handle, metaobject: $metaobject) { userErrors { message } }
+      metaobjectUpsert(handle: $handle, metaobject: $metaobject) { metaobject { id handle } userErrors { message } }
     }
   `, {
     handle: { type: certificateMetaobjectType, handle: certificateHandle(code) },
-    metaobject: { fields: certificateFields(input) },
+    metaobject: { fields: certificateFields(input), capabilities: { publishable: { status: "ACTIVE" } } },
   });
-  return !result?.data?.metaobjectUpsert?.userErrors?.length;
+  const payload = result?.data?.metaobjectUpsert;
+  return Boolean(payload?.metaobject?.id) && !payload?.userErrors?.length;
 }
 
 /**

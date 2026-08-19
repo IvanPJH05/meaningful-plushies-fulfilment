@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
 import { bindSessionsToOrders, customisationSessionIds } from "../../../../../lib/customisation";
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
-import { certificateMediaForLineItem, cleanShopifyOrderNumber, createCertificateMetaobject, flowCertificateCode, fetchShopifyOrderWithMetafieldRetry, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
+import { certificateMediaForLineItem, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrderWithMetafieldRetry, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
 import { fetchMetaCapiSettings, fetchSharedOrders, insertSharedActivity, markManualOrderUsedByDiscountCode, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
 
 export const runtime = "nodejs";
@@ -78,7 +78,6 @@ export async function POST(request: Request) {
         return createCertificateMetaobject({
           orderNumber: syncedNumber,
           createdAt,
-          code: flowCertificateCode(syncedNumber, createdAt, textValue(lineItem.id)),
           plushDetails: textValue(lineItem.title) || order.character || order.product,
           certificate: certificateMediaForLineItem(textValue(lineItem.title), textValue(lineItem.variantTitle)),
           plushBackgroundBottom: plushBackgroundForMeaningfulNote(certificateFields.meaningfulNote || ""),

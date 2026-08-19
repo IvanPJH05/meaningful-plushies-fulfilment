@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
-import { certificateMediaForLineItem, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrderByNumberWithMetafieldRetry, flowCertificateCode, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
+import { certificateMediaForLineItem, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrderByNumberWithMetafieldRetry, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
 import { fetchMetaCapiSettings, fetchSharedOrders, insertSharedActivity, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
 import type { Order } from "../../../../../lib/types";
 
@@ -47,11 +47,10 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
   const certificates = looksLikePersonalizedPlushie(fullOrder)
     ? await Promise.all(importedOrders.map((order, index) => {
       const lineItem = objectValue(lineItems[index]);
-      const code = order.certificateCode || flowCertificateCode(requestedOrderNumber, createdAt, textValue(lineItem.id));
       return createCertificateMetaobject({
         orderNumber: requestedOrderNumber,
         createdAt,
-        code,
+        code: order.certificateCode || undefined,
         plushDetails: textValue(lineItem.title) || order.character || order.product,
         certificate: certificateMediaForLineItem(textValue(lineItem.title), textValue(lineItem.variantTitle)),
         plushBackgroundBottom: plushBackgroundForMeaningfulNote(certificateFields.meaningfulNote || ""),
