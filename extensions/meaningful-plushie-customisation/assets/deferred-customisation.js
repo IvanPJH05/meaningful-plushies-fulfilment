@@ -8,6 +8,9 @@
     const email = block.querySelector("[data-contact-email]");
     const phone = block.querySelector("[data-contact-phone]");
     const notice = block.querySelector("[data-notice]");
+    const plushName = block.querySelector("[data-plush-name]");
+    const voiceInput = block.querySelector("[data-voice]");
+    const voiceButton = block.querySelector("[data-voice-button]");
     const radios = block.querySelectorAll("input[type=radio]");
     const apiUrl = (block.dataset.apiUrl || "").replace(/\/$/, "");
     const form = block.closest("form[action*='/cart/add']") || document.querySelector("form[action*='/cart/add']");
@@ -30,6 +33,8 @@
     };
     radios.forEach((radio) => radio.addEventListener("change", sync));
     method.addEventListener("change", syncDelivery);
+    plushName.addEventListener("input", () => { plushName.value = plushName.value.toUpperCase(); });
+    voiceInput.addEventListener("change", () => { voiceButton.textContent = voiceInput.files[0] ? voiceInput.files[0].name : "UPLOAD VOICE (MP4/MP3)"; });
     sync();
 
     const appendSessionId = (id) => {
