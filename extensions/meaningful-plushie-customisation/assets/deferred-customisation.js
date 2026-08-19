@@ -27,8 +27,16 @@
     const setRequired = (container, required) => container.querySelectorAll("input, select, textarea").forEach((input) => { input.required = required; });
     const completeNowReady = () => {
       if (isLater()) return true;
-      const fields = [...now.querySelectorAll("input, select, textarea")];
-      return fields.every((field) => field.checkValidity()) && Boolean(voiceInput.files?.[0]);
+      return Boolean(
+        plushName.value.trim()
+        && block.querySelector("[data-gender]").value
+        && birthDate.value.trim()
+        && block.querySelector("[data-birth-place]").value.trim()
+        && block.querySelector("[data-favourite-person]").value.trim()
+        && block.querySelector("[data-belongs-to]").value.trim()
+        && block.querySelector("[data-meaningful-note]").value.trim()
+        && voiceInput.files?.length,
+      );
     };
     const syncDelivery = () => {
       const useWhatsApp = method.value === "whatsapp";
@@ -86,6 +94,7 @@
     now.querySelectorAll("input, select, textarea").forEach((field) => {
       field.addEventListener("input", () => { notice.textContent = ""; syncPurchaseBlockers(); });
       field.addEventListener("change", () => { notice.textContent = ""; syncPurchaseBlockers(); });
+      field.addEventListener("blur", syncPurchaseBlockers);
     });
     voiceInput.addEventListener("change", () => { voiceButton.textContent = voiceInput.files[0] ? voiceInput.files[0].name : "UPLOAD VOICE (MP4/MP3)"; notice.textContent = ""; syncPurchaseBlockers(); });
     const calendar = document.createElement("div");
