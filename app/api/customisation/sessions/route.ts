@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { createDeferredSession, type DeliveryMethod } from "../../../../lib/customisation";
+import { createCompleteNowSession, createDeferredSession, type DeliveryMethod } from "../../../../lib/customisation";
 
 export const runtime = "nodejs";
 
@@ -17,7 +17,11 @@ export function OPTIONS() {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json() as { deliveryMethod?: DeliveryMethod; contactEmail?: string; contactPhone?: string };
+    const body = await request.json() as { mode?: "complete_now" | "fill_later"; deliveryMethod?: DeliveryMethod; contactEmail?: string; contactPhone?: string };
+    if (body.mode === "complete_now") {
+      const session = await createCompleteNowSession();
+      return cors(NextResponse.json({ ok: true, sessionId: session.id, token: session.token }));
+    }
     const session = await createDeferredSession({
       deliveryMethod: body.deliveryMethod === "whatsapp" ? "whatsapp" : "email",
       contactEmail: body.contactEmail,

@@ -130,6 +130,20 @@ export async function createDeferredSession(input: {
   return { id: String(data.id), token, url: `${appUrl}/customise/${token}` };
 }
 
+/** Creates an already-completed customisation that will be attached when its cart item becomes an order. */
+export async function createCompleteNowSession() {
+  const token = randomBytes(32).toString("base64url");
+  const { data, error } = await serviceClient().from(SESSION_TABLE).insert({
+    token_hash: hashToken(token),
+    token_cipher: encryptToken(token),
+    mode: "complete_now",
+    status: "pending_payment",
+    expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+  }).select("id").single();
+  if (error) throw new Error(error.message);
+  return { id: String(data.id), token };
+}
+
 async function sessionByToken(token: string) {
   if (!/^[A-Za-z0-9_-]{40,100}$/.test(token)) return null;
   const { data, error } = await serviceClient().from(SESSION_TABLE).select("*").eq("token_hash", hashToken(token)).maybeSingle();
@@ -162,6 +176,18 @@ export async function createVoiceUpload(token: string, fileName: string, content
   const { data, error } = await serviceClient().storage.from(AUDIO_BUCKET).createSignedUploadUrl(path);
   if (error || !data) throw new Error(error?.message || "Could not prepare the voice upload.");
   return { path, token: data.token };
+}
+
+export async function uploadVoiceFile(token: string, file: File) {
+  const session = await sessionByToken(token);
+  if (!session || !["awaiting_customisation", "pending_payment"].includes(session.status)) throw new Error("This customisation link is no longer available.");
+  if (!/^audio\/(mpeg|mp4|x-m4a|wav|webm)$/i.test(file.type)) throw new Error("Please upload an MP3, MP4, M4A, WAV, or WebM voice file.");
+  if (file.size > 25 * 1024 * 1024) throw new Error("Your voice file must be 25 MB or smaller.");
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80) || "voice-audio";
+  const path = `${session.id}/${randomBytes(12).toString("hex")}-${safeName}`;
+  const { error } = await serviceClient().storage.from(AUDIO_BUCKET).upload(path, file, { contentType: file.type, upsert: false });
+  if (error) throw new Error(error.message);
+  return path;
 }
 
 export async function saveSubmittedSession(token: string, formValue: unknown, voiceStoragePath: string) {
