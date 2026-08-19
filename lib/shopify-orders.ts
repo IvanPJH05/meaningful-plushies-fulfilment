@@ -37,6 +37,7 @@ const ORDER_SELECTION = `
   uploadLiftFormData: metafield(namespace: $uploadLiftNamespace, key: $uploadLiftKey) { value }
   lineItems(first: 50) {
     nodes {
+      id
       name
       title
       quantity
@@ -62,6 +63,16 @@ export function textValue(value: unknown) {
 
 export function cleanShopifyOrderNumber(value: string) {
   return value.replace(/[^0-9]/g, "");
+}
+
+/** Matches the Liquid formula used by the existing Shopify Flow workflow. */
+export function flowCertificateCode(orderNumber: string, orderCreatedAt: string, lineItemId: string) {
+  const prefix = cleanShopifyOrderNumber(orderNumber);
+  const timestamp = Number.isFinite(Date.parse(orderCreatedAt))
+    ? String(Math.floor(Date.parse(orderCreatedAt) / 1000)).slice(-4)
+    : "";
+  const itemSuffix = String(lineItemId).slice(-3);
+  return `${prefix}${timestamp}${itemSuffix}`;
 }
 
 export function adminGraphqlOrderId(payload: Record<string, unknown>) {
@@ -194,7 +205,49 @@ export type CertificateMetaobjectInput = {
   belongsTo?: string;
   meaningfulNote?: string;
   meaningfulMessage?: string;
+  certificate?: string;
+  plushBackgroundBottom?: string;
 };
+
+const CERTIFICATE_MEDIA_BY_CHARACTER: Array<[RegExp, string]> = [
+  [/tootsie/i, "gid://shopify/MediaImage/24492659114055"],
+  [/dragon warrior/i, "gid://shopify/MediaImage/24492659179591"],
+  [/billy/i, "gid://shopify/MediaImage/24492659081287"],
+  [/hunnie/i, "gid://shopify/MediaImage/24492659048519"],
+  [/piggy/i, "gid://shopify/MediaImage/24492659015751"],
+];
+
+const PLUSH_BACKGROUND_MEDIA: Array<[number, string]> = [
+  [140, "gid://shopify/MediaImage/24567099359303"], [175, "gid://shopify/MediaImage/24567124492359"],
+  [210, "gid://shopify/MediaImage/24567124688967"], [245, "gid://shopify/MediaImage/24567124590663"],
+  [280, "gid://shopify/MediaImage/24567124525127"], [315, "gid://shopify/MediaImage/24567124623431"],
+  [350, "gid://shopify/MediaImage/24567124459591"], [385, "gid://shopify/MediaImage/24567124557895"],
+  [420, "gid://shopify/MediaImage/24567124918343"], [455, "gid://shopify/MediaImage/24567124656199"],
+  [490, "gid://shopify/MediaImage/24567124820039"], [525, "gid://shopify/MediaImage/24567124754503"],
+  [560, "gid://shopify/MediaImage/24567124951111"], [595, "gid://shopify/MediaImage/24567124885575"],
+  [630, "gid://shopify/MediaImage/24567124852807"], [665, "gid://shopify/MediaImage/24567125147719"],
+  [700, "gid://shopify/MediaImage/24567125246023"], [735, "gid://shopify/MediaImage/24567124983879"],
+  [770, "gid://shopify/MediaImage/24567125278791"], [805, "gid://shopify/MediaImage/24567124787271"],
+  [840, "gid://shopify/MediaImage/24567125311559"], [875, "gid://shopify/MediaImage/24567125016647"],
+  [910, "gid://shopify/MediaImage/24567125049415"], [945, "gid://shopify/MediaImage/24567125114951"],
+  [980, "gid://shopify/MediaImage/24567125082183"], [1015, "gid://shopify/MediaImage/24567125213255"],
+  [1050, "gid://shopify/MediaImage/24567125180487"],
+];
+
+export function certificateMediaForLineItem(title: string, variantTitle = "") {
+  const value = `${title} ${variantTitle}`;
+  return CERTIFICATE_MEDIA_BY_CHARACTER.find(([pattern]) => pattern.test(value))?.[1];
+}
+
+export function plushBackgroundForMeaningfulNote(note: string) {
+  if (!note) return undefined;
+  return PLUSH_BACKGROUND_MEDIA.find(([maximum]) => note.length <= maximum)?.[1];
+}
+
+function flowCapitalize(value: string | undefined) {
+  const source = value || "";
+  return source ? `${source[0].toUpperCase()}${source.slice(1).toLowerCase()}` : "";
+}
 
 /**
  * Upload Lift stores the form as a text metafield.  Keeping this reader here
@@ -270,10 +323,11 @@ function certificateHandle(code: string) {
 function certificateFields(input: CertificateMetaobjectInput) {
   const values: [string, string | undefined][] = [
     ["code", input.code], ["order_number", input.orderNumber ? `#${cleanShopifyOrderNumber(input.orderNumber)}` : ""],
-    ["created_at", input.createdAt], ["plush_details", input.plushDetails], ["id_name", input.idName],
-    ["gender", input.gender], ["born_on", input.bornOn], ["birthplace", input.birthplace],
-    ["favourite_person", input.favouritePerson], ["belongs_to", input.belongsTo],
-    ["meaningful_note", input.meaningfulNote], ["meaningful_message", input.meaningfulMessage],
+    ["created_at", input.createdAt], ["plush_details", input.plushDetails], ["certificate", input.certificate],
+    ["id_name", input.idName?.toUpperCase()], ["gender", input.gender], ["born_on", input.bornOn], ["birthplace", input.birthplace],
+    ["favourite_person", flowCapitalize(input.favouritePerson)], ["belongs_to", flowCapitalize(input.belongsTo)],
+    ["meaningful_note", input.meaningfulNote], ["plush_background_bottom", input.plushBackgroundBottom],
+    ["meaningful_message", input.meaningfulMessage],
   ];
   return values.filter(([, value]) => value !== undefined).map(([key, value]) => ({ key, value: value || "" }));
 }
@@ -287,11 +341,26 @@ async function certificateHandleExists(domain: string, handle: string) {
   return Boolean(result?.data?.metaobjectByHandle?.id);
 }
 
-export async function createCertificateMetaobject(input: Omit<CertificateMetaobjectInput, "code">) {
+export async function createCertificateMetaobject(input: Omit<CertificateMetaobjectInput, "code"> & { code?: string }) {
   if (process.env.CERTIFICATE_AUTOMATION_ENABLED !== "true") return null;
   const domain = shopDomain();
   const prefix = cleanShopifyOrderNumber(input.orderNumber);
   if (!domain || !prefix) throw new Error("Shopify certificate automation is not configured.");
+  if (input.code) {
+    const code = input.code;
+    const handle = certificateHandle(code);
+    const result = await shopifyGraphql<{ data?: { metaobjectUpsert?: { metaobject?: { id?: string; handle?: string }; userErrors?: { message?: string }[] } } }>(domain, `
+      mutation CreateCertificateMetaobject($handle: MetaobjectHandleInput!, $metaobject: MetaobjectUpsertInput!) {
+        metaobjectUpsert(handle: $handle, metaobject: $metaobject) {
+          metaobject { id handle }
+          userErrors { message }
+        }
+      }
+    `, { handle: { type: certificateMetaobjectType, handle }, metaobject: { fields: certificateFields({ ...input, code }) } });
+    const payload = result?.data?.metaobjectUpsert;
+    if (payload?.metaobject?.id) return { code, id: payload.metaobject.id, handle: payload.metaobject.handle || handle };
+    throw new Error("Could not create the certificate metaobject.");
+  }
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const code = `${prefix}${randomInt(1_000_000, 10_000_000)}`;
     const handle = certificateHandle(code);

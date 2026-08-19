@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 
 import { createClient } from "@supabase/supabase-js";
 
-import { certificateMetaobjectForOrder, setShopifyOrderMetafield, shopDomain, shopifyGraphql, updateCertificateMetaobject } from "./shopify-orders";
+import { certificateMetaobjectForOrder, plushBackgroundForMeaningfulNote, setShopifyOrderMetafield, shopDomain, shopifyGraphql, updateCertificateMetaobject } from "./shopify-orders";
 import type { Order } from "./types";
 
 const SESSION_TABLE = "customisation_sessions";
@@ -346,6 +346,7 @@ export async function saveSubmittedSession(token: string, formValue: unknown, vo
     favouritePerson: form.favouritePerson,
     belongsTo: form.belongsTo,
     meaningfulNote: form.meaningfulNote,
+    plushBackgroundBottom: plushBackgroundForMeaningfulNote(form.meaningfulNote),
     meaningfulMessage: `supabase-storage:${voiceStoragePath}`,
   }).catch(() => false);
   await backupVoiceToGoogleDrive({ ...session, voice_storage_path: voiceStoragePath }, form.plushName).catch(() => false);
@@ -442,11 +443,12 @@ function submittedCertificateUpdate(session: SessionRow, form: CustomisationForm
     favouritePerson: form.favouritePerson,
     belongsTo: form.belongsTo,
     meaningfulNote: form.meaningfulNote,
+    plushBackgroundBottom: plushBackgroundForMeaningfulNote(form.meaningfulNote),
     meaningfulMessage: `supabase-storage:${voiceStoragePath}`,
   });
 }
 
-export async function bindSessionsToOrders(input: { orderId: string; orderNumber: string; sessionIds: string[]; orders: Order[]; certificate?: CertificateReference | null }) {
+export async function bindSessionsToOrders(input: { orderId: string; orderNumber: string; sessionIds: string[]; orders: Order[]; certificates?: Array<CertificateReference | null> }) {
   if (!input.sessionIds.length) return input.orders;
   const client = serviceClient();
   const { data, error } = await client.from(SESSION_TABLE).select("*").in("id", input.sessionIds);
@@ -455,7 +457,9 @@ export async function bindSessionsToOrders(input: { orderId: string; orderNumber
   const byId = new Map(sessions.map((session) => [session.id, session]));
   const now = new Date().toISOString();
   const needsCertificate = sessions.some((session) => session.status === "submitted");
-  const certificate = input.certificate ?? (needsCertificate ? await flowCertificateForOrder(input.orderNumber) : null);
+  const fallbackCertificate = !input.certificates?.length && needsCertificate
+    ? await flowCertificateForOrder(input.orderNumber)
+    : null;
 
   const updated = input.orders.map((order, index) => {
     const sessionId = input.sessionIds[index] || input.sessionIds[0];
@@ -463,6 +467,7 @@ export async function bindSessionsToOrders(input: { orderId: string; orderNumber
     if (!session) return order;
     const form = session.form_data || {};
     const submitted = session.status === "submitted";
+    const certificate = input.certificates?.[index] || fallbackCertificate;
     const certificateCode = certificate?.code || session.certificate_code || "";
     return {
       ...order,
@@ -488,6 +493,7 @@ export async function bindSessionsToOrders(input: { orderId: string; orderNumber
     session.order_id = input.orderId;
     session.order_number = input.orderNumber;
     session.fulfilment_order_id = order.id;
+    const certificate = input.certificates?.[index] || fallbackCertificate;
     if (certificate) {
       session.certificate_code = certificate.code;
       session.certificate_metaobject_id = certificate.id;

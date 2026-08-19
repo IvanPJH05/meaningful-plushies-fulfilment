@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
 import { bindSessionsToOrders, customisationSessionIds } from "../../../../../lib/customisation";
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
-import { cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrderWithMetafieldRetry, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
+import { certificateMediaForLineItem, cleanShopifyOrderNumber, createCertificateMetaobject, flowCertificateCode, fetchShopifyOrderWithMetafieldRetry, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
 import { fetchMetaCapiSettings, fetchSharedOrders, insertSharedActivity, markManualOrderUsedByDiscountCode, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
 
 export const runtime = "nodejs";
@@ -70,20 +70,31 @@ export async function POST(request: Request) {
     let ordersToSave = importedOrders.filter((order) => order.orderNumber === syncedNumber);
     const orderId = textValue(fullOrder.id) || textValue(payload.admin_graphql_api_id) || textValue(payload.id);
     const certificateFields = uploadLiftCertificateFields(uploadLiftFormData);
-    const certificate = looksLikePersonalizedPlushie(fullOrder) && ordersToSave.length
-      ? await createCertificateMetaobject({
-        orderNumber: syncedNumber,
-        createdAt: new Date().toISOString(),
-        plushDetails: ordersToSave[0].character || ordersToSave[0].product,
-        ...certificateFields,
-      })
-      : null;
-    if (certificate) {
-      ordersToSave = ordersToSave.map((order) => ({
-        ...order,
-        certificateCode: certificate.code,
-        idWebsiteLink: `https://meaningfulplushies.com/pages/certificate/${certificate.code}`,
-      }));
+    const orderLineItems = Array.isArray(fullOrder.lineItems) ? fullOrder.lineItems : [];
+    const createdAt = textValue(fullOrder.createdAt) || new Date().toISOString();
+    const certificates = looksLikePersonalizedPlushie(fullOrder) && ordersToSave.length
+      ? await Promise.all(ordersToSave.map((order, index) => {
+        const lineItem = objectValue(orderLineItems[index]);
+        return createCertificateMetaobject({
+          orderNumber: syncedNumber,
+          createdAt,
+          code: flowCertificateCode(syncedNumber, createdAt, textValue(lineItem.id)),
+          plushDetails: textValue(lineItem.title) || order.character || order.product,
+          certificate: certificateMediaForLineItem(textValue(lineItem.title), textValue(lineItem.variantTitle)),
+          plushBackgroundBottom: plushBackgroundForMeaningfulNote(certificateFields.meaningfulNote || ""),
+          ...certificateFields,
+        });
+      }))
+      : [];
+    if (certificates.some(Boolean)) {
+      ordersToSave = ordersToSave.map((order, index) => {
+        const certificate = certificates[index];
+        return certificate ? {
+          ...order,
+          certificateCode: certificate.code,
+          idWebsiteLink: `https://meaningfulplushies.com/pages/certificate/${certificate.code}`,
+        } : order;
+      });
     }
     if (deferredSessionIds.length && ordersToSave.length) {
       ordersToSave = await bindSessionsToOrders({
@@ -91,7 +102,7 @@ export async function POST(request: Request) {
         orderNumber: syncedNumber,
         sessionIds: deferredSessionIds,
         orders: ordersToSave,
-        certificate,
+        certificates,
       });
     }
 
