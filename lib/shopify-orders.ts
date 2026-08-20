@@ -396,8 +396,11 @@ export async function createCertificateMetaobject(input: Omit<CertificateMetaobj
       }
     `, { handle: { type: certificateMetaobjectType, handle }, metaobject: { fields, capabilities: { publishable: { status: "ACTIVE" } } } });
     const payload = result?.data?.metaobjectUpsert;
+    if (payload?.userErrors?.length) {
+      throw new Error(payload.userErrors.map((error) => error.message).filter(Boolean).join(" ") || "Shopify rejected the certificate metaobject.");
+    }
     if (payload?.metaobject?.id) return { code, id: payload.metaobject.id, handle: payload.metaobject.handle || handle };
-    throw new Error(payload?.userErrors?.map((error) => error.message).filter(Boolean).join(" ") || "Could not create the certificate metaobject.");
+    throw new Error("Could not create the certificate metaobject.");
   }
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const code = `${prefix}${randomInt(1_000_000, 10_000_000)}`;
@@ -413,8 +416,8 @@ export async function createCertificateMetaobject(input: Omit<CertificateMetaobj
       }
     `, { handle: { type: certificateMetaobjectType, handle }, metaobject: { fields, capabilities: { publishable: { status: "ACTIVE" } } } });
     const payload = result?.data?.metaobjectUpsert;
-    if (payload?.metaobject?.id) return { code, id: payload.metaobject.id, handle: payload.metaobject.handle || handle };
     if (payload?.userErrors?.length) throw new Error(payload.userErrors.map((error) => error.message).filter(Boolean).join(" ") || "Shopify rejected the certificate metaobject.");
+    if (payload?.metaobject?.id) return { code, id: payload.metaobject.id, handle: payload.metaobject.handle || handle };
   }
   throw new Error("Could not generate a unique certificate code.");
 }
