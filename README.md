@@ -106,10 +106,10 @@ The database migration creates a private `customisation-audio` bucket with a 50 
 
 The same app can replace the two certificate-related Shopify Flow actions: it generates the certificate code and `version_1_certs` metaobject when the Shopify order is created, then writes the seven birth-certificate fields and voice reference into that exact metaobject after a deferred form is submitted. It also reads immediate Upload Lift form data so the standard checkout path remains compatible during the transition.
 
-Keep `CERTIFICATE_AUTOMATION_ENABLED=false` while the existing **Generate Certificate Code on Order Creation** Flow is active. After deployment, make one test order first. Once the certificate code, metaobject, and fulfilment record are correct, disable that legacy Flow and set the variable below to `true`; do not run both certificate generators together.
+Meaningful Fulfilment now creates the certificate code and metaobject by default. Keep the value below as `true` and disable the legacy **Generate Certificate Code on Order Creation** Shopify Flow; do not run both certificate generators together. Set the variable to `false` only during a temporary migration back to that Flow.
 
 ```env
-CERTIFICATE_AUTOMATION_ENABLED=false
+CERTIFICATE_AUTOMATION_ENABLED=true
 SHOPIFY_CERTIFICATE_METAOBJECT_TYPE=version_1_certs
 ```
 

@@ -324,8 +324,8 @@ function certificateHandle(code: string) {
 function certificateFields(input: CertificateMetaobjectInput) {
   const values: [string, string | undefined][] = [
     ["code", input.code], ["order_number", input.orderNumber ? `#${cleanShopifyOrderNumber(input.orderNumber)}` : ""],
-    ["created_at", input.createdAt], ["plush_details", input.plushDetails], ["certificate", input.certificate],
-    ["id_name", input.idName?.toUpperCase()], ["gender", input.gender], ["born_on", input.bornOn], ["birthplace", input.birthplace],
+    ["created_at", input.createdAt], ["plush_details", input.plushDetails], ["id_picture", input.certificate],
+    ["name", input.idName?.toUpperCase()], ["gender", input.gender], ["born_on", input.bornOn], ["birthplace", input.birthplace],
     ["favourite_person", flowCapitalize(input.favouritePerson)], ["belongs_to", flowCapitalize(input.belongsTo)],
     ["meaningful_note", input.meaningfulNote], ["plush_background_bottom", input.plushBackgroundBottom],
     ["meaningful_message", input.meaningfulMessage],
@@ -343,7 +343,9 @@ async function certificateHandleExists(domain: string, handle: string) {
 }
 
 export async function createCertificateMetaobject(input: Omit<CertificateMetaobjectInput, "code"> & { code?: string }) {
-  if (process.env.CERTIFICATE_AUTOMATION_ENABLED !== "true") return null;
+  // Meaningful Fulfilment owns certificate creation. Set this explicitly to
+  // false only while a legacy Shopify Flow still creates the same entry.
+  if (process.env.CERTIFICATE_AUTOMATION_ENABLED === "false") return null;
   const domain = shopDomain();
   const prefix = cleanShopifyOrderNumber(input.orderNumber);
   if (!domain || !prefix) throw new Error("Shopify certificate automation is not configured.");
@@ -360,7 +362,7 @@ export async function createCertificateMetaobject(input: Omit<CertificateMetaobj
     `, { handle: { type: certificateMetaobjectType, handle }, metaobject: { fields: certificateFields({ ...input, code }), capabilities: { publishable: { status: "ACTIVE" } } } });
     const payload = result?.data?.metaobjectUpsert;
     if (payload?.metaobject?.id) return { code, id: payload.metaobject.id, handle: payload.metaobject.handle || handle };
-    throw new Error("Could not create the certificate metaobject.");
+    throw new Error(payload?.userErrors?.map((error) => error.message).filter(Boolean).join(" ") || "Could not create the certificate metaobject.");
   }
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const code = `${prefix}${randomInt(1_000_000, 10_000_000)}`;
@@ -376,6 +378,7 @@ export async function createCertificateMetaobject(input: Omit<CertificateMetaobj
     `, { handle: { type: certificateMetaobjectType, handle }, metaobject: { fields: certificateFields({ ...input, code }), capabilities: { publishable: { status: "ACTIVE" } } } });
     const payload = result?.data?.metaobjectUpsert;
     if (payload?.metaobject?.id) return { code, id: payload.metaobject.id, handle: payload.metaobject.handle || handle };
+    if (payload?.userErrors?.length) throw new Error(payload.userErrors.map((error) => error.message).filter(Boolean).join(" ") || "Shopify rejected the certificate metaobject.");
   }
   throw new Error("Could not generate a unique certificate code.");
 }
@@ -393,7 +396,10 @@ export async function updateCertificateMetaobject(input: CertificateMetaobjectIn
     metaobject: { fields: certificateFields(input), capabilities: { publishable: { status: "ACTIVE" } } },
   });
   const payload = result?.data?.metaobjectUpsert;
-  return Boolean(payload?.metaobject?.id) && !payload?.userErrors?.length;
+  if (payload?.userErrors?.length) {
+    throw new Error(payload.userErrors.map((error) => error.message).filter(Boolean).join(" ") || "Shopify rejected the certificate update.");
+  }
+  return Boolean(payload?.metaobject?.id);
 }
 
 /**
