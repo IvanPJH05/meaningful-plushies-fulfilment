@@ -404,6 +404,19 @@
           appendCompleteNowProperties(details, upload.voiceStoragePath, upload.session.token);
           notice.textContent = t("saved");
         }
+        // Preserve the two storefront actions: Add to cart opens the cart,
+        // while Buy it now sends the just-saved customisation straight into
+        // Shopify checkout.
+        if (/buy\s*it\s*now/i.test(submitter?.textContent || "")) {
+          let returnTo = form.querySelector('input[name="return_to"]');
+          if (!returnTo) {
+            returnTo = document.createElement("input");
+            returnTo.type = "hidden";
+            returnTo.name = "return_to";
+            form.appendChild(returnTo);
+          }
+          returnTo.value = "/checkout";
+        }
         form.submit();
       } catch (error) {
         notice.textContent = error instanceof Error ? error.message : "Could not save your customisation.";
