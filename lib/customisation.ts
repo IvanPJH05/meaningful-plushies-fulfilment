@@ -307,7 +307,7 @@ export async function orderVideoForCustomisationToken(token: string) {
 
 export async function createVoiceUpload(token: string, fileName: string, contentType: string) {
   const session = await sessionByToken(token);
-  if (!session || !["awaiting_customisation", "pending_payment"].includes(session.status)) throw new Error("This customisation link is no longer available.");
+  if (!session || !["awaiting_customisation", "pending_payment", "submitted"].includes(session.status) || (session.status === "submitted" && session.order_number)) throw new Error("This customisation link is no longer available.");
   const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80) || "voice-audio";
   const path = `${session.id}/${randomBytes(12).toString("hex")}-${safeName}`;
   const { data, error } = await serviceClient().storage.from(AUDIO_BUCKET).createSignedUploadUrl(path);
@@ -330,7 +330,7 @@ export async function saveSubmittedSession(token: string, formValue: unknown, vo
   const form = normaliseCustomisationForm(formValue);
   if (!form) throw new Error("Please complete every birth certificate field.");
   const session = await sessionByToken(token);
-  if (!session || !["awaiting_customisation", "pending_payment"].includes(session.status)) throw new Error("This customisation link is no longer available.");
+  if (!session || !["awaiting_customisation", "pending_payment", "submitted"].includes(session.status) || (session.status === "submitted" && session.order_number)) throw new Error("This customisation link is no longer available.");
   if (!voiceStoragePath.startsWith(`${session.id}/`)) throw new Error("Please upload your voice recording first.");
 
   const completedAt = new Date().toISOString();

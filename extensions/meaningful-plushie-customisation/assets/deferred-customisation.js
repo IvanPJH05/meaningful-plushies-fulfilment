@@ -37,6 +37,9 @@
     let restoredVoiceFile = null;
     let preparedUpload = null;
     let uploadPromise = null;
+    let earlySavePromise = null;
+    let earlySaveTimer = null;
+    let savedCompleteNowFingerprint = "";
 
     const selectedVoice = () => voiceInput.files?.[0] || restoredVoiceFile || null;
     const updateVoiceLabel = () => { voiceButton.textContent = selectedVoice()?.name || voiceInput.value.split(/[/\\\\]/).pop() || t("uploadVoiceButton"); };
@@ -189,16 +192,16 @@
     const wordCaps = (input) => { input.value = input.value.replace(/(^|[\s-])([a-z])/g, (_, lead, letter) => `${lead}${letter.toUpperCase()}`); };
     ["[data-birth-place]", "[data-favourite-person]", "[data-belongs-to]"].forEach((selector) => block.querySelector(selector).addEventListener("blur", (event) => wordCaps(event.currentTarget)));
     now.querySelectorAll("input, select, textarea").forEach((field) => {
-      field.addEventListener("input", () => { notice.textContent = ""; syncPurchaseBlockers(); saveDraft(); });
-      field.addEventListener("change", () => { notice.textContent = ""; syncPurchaseBlockers(); saveDraft(); });
-      field.addEventListener("blur", () => { syncPurchaseBlockers(); saveDraft(); });
+      field.addEventListener("input", () => { notice.textContent = ""; syncPurchaseBlockers(); saveDraft(); scheduleCompleteNowSave(); });
+      field.addEventListener("change", () => { notice.textContent = ""; syncPurchaseBlockers(); saveDraft(); scheduleCompleteNowSave(); });
+      field.addEventListener("blur", () => { syncPurchaseBlockers(); saveDraft(); scheduleCompleteNowSave(); });
     });
     later.querySelectorAll("input, select").forEach((field) => {
       field.addEventListener("input", () => { notice.textContent = ""; syncPurchaseBlockers(); saveDraft(); });
       field.addEventListener("change", () => { notice.textContent = ""; syncPurchaseBlockers(); saveDraft(); });
       field.addEventListener("blur", () => { syncPurchaseBlockers(); saveDraft(); });
     });
-    voiceInput.addEventListener("change", () => { restoredVoiceFile = voiceInput.files?.[0] || null; preparedUpload = null; updateVoiceLabel(); saveVoiceDraft(restoredVoiceFile); saveDraft(); syncPurchaseBlockers(); void uploadVoiceEarly().catch((error) => { notice.textContent = error instanceof Error ? error.message : "Could not upload your file."; }); });
+    voiceInput.addEventListener("change", () => { restoredVoiceFile = voiceInput.files?.[0] || null; preparedUpload = null; savedCompleteNowFingerprint = ""; updateVoiceLabel(); saveVoiceDraft(restoredVoiceFile); saveDraft(); syncPurchaseBlockers(); void uploadVoiceEarly().then(() => scheduleCompleteNowSave()).catch((error) => { notice.textContent = error instanceof Error ? error.message : "Could not upload your file."; }); });
     const calendar = document.createElement("div");
     calendar.className = "mp-deferred-customisation__calendar";
     calendar.hidden = true;
@@ -309,6 +312,32 @@
       meaningfulNote: block.querySelector("[data-meaningful-note]").value.trim(),
     });
 
+    const completeNowFingerprint = (details, upload) => JSON.stringify({ details, voiceStoragePath: upload.voiceStoragePath });
+    const saveCompleteNowEarly = async () => {
+      if (isLater() || !completeNowReady() || !apiUrl) return null;
+      const upload = await uploadVoiceEarly();
+      if (!upload) return null;
+      const details = formData();
+      const fingerprint = completeNowFingerprint(details, upload);
+      if (savedCompleteNowFingerprint === fingerprint) return upload;
+      if (earlySavePromise) return earlySavePromise;
+      earlySavePromise = request(`/api/customisation/${encodeURIComponent(upload.session.token)}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ form: details, voiceStoragePath: upload.voiceStoragePath }),
+      }).then(() => {
+        savedCompleteNowFingerprint = fingerprint;
+        return upload;
+      }).finally(() => { earlySavePromise = null; });
+      return earlySavePromise;
+    };
+    const scheduleCompleteNowSave = () => {
+      if (earlySaveTimer) window.clearTimeout(earlySaveTimer);
+      if (isLater() || !completeNowReady()) return;
+      earlySaveTimer = window.setTimeout(() => {
+        void saveCompleteNowEarly().catch(() => { /* Checkout retries and shows any real error. */ });
+      }, 500);
+    };
+
     const showIncompleteNowError = () => {
       const message = isLater()
         ? t("contactError", { contact: method.value === "whatsapp" ? t("whatsappNumber") : t("emailAddress") })
@@ -397,9 +426,12 @@
         } else {
           const upload = await uploadVoiceEarly();
           if (!upload) throw new Error(t("uploadVoiceError"));
-          notice.textContent = t("saving");
           const details = formData();
-          await request(`/api/customisation/${encodeURIComponent(upload.session.token)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ form: details, voiceStoragePath: upload.voiceStoragePath }) });
+          const fingerprint = completeNowFingerprint(details, upload);
+          if (savedCompleteNowFingerprint !== fingerprint) {
+            notice.textContent = t("saving");
+            await saveCompleteNowEarly();
+          }
           appendSessionId(upload.session.sessionId);
           appendCompleteNowProperties(details, upload.voiceStoragePath, upload.session.token);
           notice.textContent = t("saved");
