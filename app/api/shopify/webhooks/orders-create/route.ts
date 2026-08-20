@@ -139,7 +139,11 @@ export async function POST(request: Request) {
           code: order.certificateCode || existingCertificate?.code || flowCertificateCode(syncedNumber, createdAt, textValue(lineItem.id) || String(index + 1)),
           plushDetails: lineItemTitle || lineItemVariantTitle || characterHint,
           certificate: certificateMediaForLineItem(`${lineItemTitle} ${characterHint}`, `${lineItemVariantTitle} ${characterHint}`),
-          plushBackgroundBottom: plushBackgroundForMeaningfulNote(submitted?.form.meaningfulNote || certificateFields.meaningfulNote || ""),
+          // The importer can already have the note even when Shopify's line
+          // properties or the session lookup are delayed. Use that same final
+          // fallback here, otherwise the certificate gets its note but no
+          // matching bottom background (as happened for order #1609).
+          plushBackgroundBottom: plushBackgroundForMeaningfulNote(submitted?.form.meaningfulNote || certificateFields.meaningfulNote || order.meaningfulNote || ""),
           ...certificateFields,
           // The importer has already normalized the line-item properties into
           // the fulfilment order. Keep it as the final fallback so certificate
