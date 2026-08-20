@@ -246,6 +246,34 @@
       }
       input.value = id;
     };
+    // Mirror Upload Lift's line-item properties so the birth-certificate
+    // details are immediately visible inside the Shopify order as well as in
+    // the fulfilment workspace.
+    const appendOrderProperty = (key, value) => {
+      const propertyName = `properties[${key}]`;
+      let input = form.querySelector(`input[name="${CSS.escape(propertyName)}"]`);
+      if (!input) {
+        input = document.createElement("input");
+        input.type = "hidden";
+        input.name = propertyName;
+        form.appendChild(input);
+      }
+      input.value = value || "";
+    };
+    const appendCompleteNowProperties = (details, voiceStoragePath, token) => {
+      appendOrderProperty("Name", details.plushName);
+      appendOrderProperty("Gender", details.gender);
+      appendOrderProperty("Born On", details.birthDate);
+      appendOrderProperty("Birthplace", details.birthPlace);
+      appendOrderProperty("Favourite Person", details.favouritePerson);
+      appendOrderProperty("Belongs To", details.belongsTo);
+      appendOrderProperty("Meaningful Note", details.meaningfulNote);
+      const fileName = selectedVoice()?.name || "meaningful-plushie-voice";
+      const voiceLink = `${apiUrl}/api/customisation/audio-download?path=${encodeURIComponent(voiceStoragePath)}&filename=${encodeURIComponent(fileName)}`;
+      appendOrderProperty("Meaningful Message", voiceLink);
+      // Retain the token only as an internal property for recovery/support.
+      appendOrderProperty("_customisation_token", token);
+    };
     const request = async (path, options) => {
       const response = await fetch(`${apiUrl}${path}`, options);
       const result = await response.json();
@@ -351,8 +379,10 @@
           const storage = await fetch(prepared.upload.signedUrl, { method: "PUT", headers: { "x-upsert": "false", "Content-Type": voice.type || "application/octet-stream" }, body: voice });
           if (!storage.ok) throw new Error("Could not upload your file.");
           const voiceResult = { voiceStoragePath: prepared.upload.path };
-          await request(`/api/customisation/${encodeURIComponent(session.token)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ form: formData(), voiceStoragePath: voiceResult.voiceStoragePath }) });
+          const details = formData();
+          await request(`/api/customisation/${encodeURIComponent(session.token)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ form: details, voiceStoragePath: voiceResult.voiceStoragePath }) });
           appendSessionId(session.sessionId);
+          appendCompleteNowProperties(details, voiceResult.voiceStoragePath, session.token);
           notice.textContent = t("saved");
         }
         form.submit();
