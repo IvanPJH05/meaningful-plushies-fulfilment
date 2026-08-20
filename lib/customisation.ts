@@ -405,7 +405,11 @@ export async function saveSubmittedSession(token: string, formValue: unknown, vo
   });
   if (!certificateUpdated) throw new Error("Your certificate could not be updated. Please try again.");
   if (session.fulfilment_order_id) await applySubmittedSessionToFulfilmentOrder(session.fulfilment_order_id, form, voiceStoragePath, certificateCode);
-  if (session.order_id && !await setShopifyOrderMetafield(session.order_id, uploadLiftCompatibleText(form, voiceStoragePath))) throw new Error("Your order customisation could not be saved. Please try again.");
+  if (session.order_id && !await setShopifyOrderMetafield(session.order_id, uploadLiftCompatibleText(form, voiceStoragePath, {
+    orderNumber: session.order_number || "",
+    product: linkedOrder?.product || "Meaningful Plushie",
+    certificateCode,
+  }))) throw new Error("Your order customisation could not be saved. Please try again.");
   const { error: completionError } = await serviceClient().from(SESSION_TABLE).update({ status: "submitted", completed_at: completedAt, updated_at: completedAt }).eq("id", session.id);
   if (completionError) throw new Error(completionError.message);
   await backupVoiceToGoogleDrive({ ...session, voice_storage_path: voiceStoragePath }, form.plushName).catch(() => false);
@@ -421,9 +425,13 @@ export async function attachCertificateToSessions(orderId: string, orderNumber: 
   if (error) throw new Error(error.message);
 }
 
-function uploadLiftCompatibleText(form: CustomisationForm, voiceStoragePath: string) {
+function uploadLiftCompatibleText(form: CustomisationForm, voiceStoragePath: string, details: { orderNumber?: string; product?: string; certificateCode?: string } = {}) {
+  const fileName = voiceStoragePath.split("/").at(-1) || "meaningful-plushie-voice";
+  const voiceLink = `${appUrl}/api/customisation/audio-download?path=${encodeURIComponent(voiceStoragePath)}&filename=${encodeURIComponent(fileName)}`;
   return [
-    "Product: Meaningful Plushie",
+    details.orderNumber ? `Order Id: #${details.orderNumber}` : "",
+    `Product: ${details.product || "Meaningful Plushie"}`,
+    details.certificateCode ? `Certificate Code: ${details.certificateCode}` : "",
     `Name: ${form.plushName}`,
     `Gender: ${form.gender}`,
     `Born On: ${form.birthDate}`,
@@ -431,8 +439,8 @@ function uploadLiftCompatibleText(form: CustomisationForm, voiceStoragePath: str
     `Favourite Person: ${form.favouritePerson}`,
     `Belongs To: ${form.belongsTo}`,
     `Meaningful Note: ${form.meaningfulNote}`,
-    `Meaningful Message: supabase-storage:${voiceStoragePath}`,
-  ].join("\n");
+    `Meaningful Message: ${voiceLink}`,
+  ].filter(Boolean).join("\n");
 }
 
 async function fulfilmentOrderForSession(session: Pick<SessionRow, "fulfilment_order_id" | "order_number">) {
@@ -590,12 +598,18 @@ export async function bindSessionsToOrders(input: { orderId: string; orderNumber
     }).eq("id", sessionId);
   });
   await Promise.all(boundSessions.filter((request) => request !== null));
-  await Promise.all(sessions.filter((session) => session.status === "submitted" && session.voice_storage_path).map(async (session) => {
+  await Promise.all(sessions.filter((session) => session.status === "submitted" && session.voice_storage_path).map(async (session, index) => {
     const form = normaliseCustomisationForm(session.form_data);
     if (!form || !session.voice_storage_path) return;
+    const order = updated[index] || updated[0];
+    const certificateCode = session.certificate_code || order?.certificateCode || "";
     await Promise.all([
-      setShopifyOrderMetafield(input.orderId, uploadLiftCompatibleText(form, session.voice_storage_path)).catch(() => false),
-      submittedCertificateUpdate(session, form, session.voice_storage_path, session.certificate_code || "").catch(() => false),
+      setShopifyOrderMetafield(input.orderId, uploadLiftCompatibleText(form, session.voice_storage_path, {
+        orderNumber: input.orderNumber,
+        product: order?.product || "Meaningful Plushie",
+        certificateCode,
+      })).catch(() => false),
+      submittedCertificateUpdate(session, form, session.voice_storage_path, certificateCode).catch(() => false),
     ]);
   }));
   await Promise.all(sessions.map((session) => sendCustomisationEmail(session).catch(() => false)));

@@ -320,6 +320,11 @@
       const ownerForm = control.form || control.closest("form");
       const insideProductPurchase = ownerForm === form || (control.closest(".shopify-payment-button") && ownerForm === form);
       if (!insideProductPurchase) return;
+      if (purchaseInProgress) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
       if (!purchaseReady()) {
         blockIncompletePurchase(event);
         return;
@@ -328,7 +333,7 @@
       // a normal form submit is not guaranteed to happen. Capture the click
       // before the theme handles it, save the customisation, then use the
       // native form submission to add the exact same product to the cart.
-      if (event.type === "click") {
+      if (event.type === "pointerdown" || event.type === "click") {
         event.preventDefault();
         event.stopImmediatePropagation();
         void prepareCustomisationAndSubmit(control);
