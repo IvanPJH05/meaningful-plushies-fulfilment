@@ -13,6 +13,7 @@ test("matches the existing Shopify Flow certificate-code formula", () => {
 test("copies Flow's character and note-background media choices", () => {
   assert.equal(certificateMediaForLineItem("(H,20S) BUILD YOUR MEANINGFUL PLUSHIE - Hunnie"), "gid://shopify/MediaImage/24492659048519");
   assert.equal(certificateMediaForLineItem("Dragon Warrior"), "gid://shopify/MediaImage/24492659179591");
+  assert.equal(certificateMediaForLineItem("BUILD YOUR MEANINGFUL PLUSHIE", "BILLY"), "gid://shopify/MediaImage/24492659081287");
   assert.equal(plushBackgroundForMeaningfulNote("x".repeat(140)), "gid://shopify/MediaImage/24567099359303");
   assert.equal(plushBackgroundForMeaningfulNote("x".repeat(141)), "gid://shopify/MediaImage/24567124492359");
 });

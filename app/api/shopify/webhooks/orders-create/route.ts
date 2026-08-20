@@ -75,12 +75,18 @@ export async function POST(request: Request) {
     const certificates = looksLikePersonalizedPlushie(fullOrder) && ordersToSave.length
       ? await Promise.all(ordersToSave.map((order, index) => {
         const lineItem = objectValue(orderLineItems[index]);
+        const lineItemTitle = textValue(lineItem.title);
+        const lineItemVariantTitle = textValue(lineItem.variantTitle);
+        // Shopify's order payload can omit the character from the title. The
+        // saved fulfilment order retains it, so include that as a matching hint
+        // to keep the certificate picture aligned with the selected plushie.
+        const characterHint = order.character || order.product;
         return createCertificateMetaobject({
           orderNumber: syncedNumber,
           createdAt,
           code: order.certificateCode || existingCertificate?.code || undefined,
-          plushDetails: textValue(lineItem.title) || order.character || order.product,
-          certificate: certificateMediaForLineItem(textValue(lineItem.title), textValue(lineItem.variantTitle)),
+          plushDetails: lineItemTitle || lineItemVariantTitle || characterHint,
+          certificate: certificateMediaForLineItem(`${lineItemTitle} ${characterHint}`, `${lineItemVariantTitle} ${characterHint}`),
           plushBackgroundBottom: plushBackgroundForMeaningfulNote(certificateFields.meaningfulNote || ""),
           ...certificateFields,
         });

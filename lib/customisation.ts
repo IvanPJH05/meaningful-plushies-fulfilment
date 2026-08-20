@@ -513,12 +513,14 @@ async function flowCertificateForOrder(orderNumber: string) {
   return null;
 }
 
-function submittedCertificateUpdate(session: SessionRow, form: CustomisationForm, voiceStoragePath: string, certificateCode: string) {
+function submittedCertificateUpdate(session: SessionRow, form: CustomisationForm, voiceStoragePath: string, certificateCode: string, order?: Order) {
   if (!certificateCode) return Promise.resolve(false);
   return updateCertificateMetaobject({
     code: certificateCode,
     orderNumber: session.order_number || "",
     createdAt: session.completed_at || new Date().toISOString(),
+    plushDetails: order?.product || order?.character,
+    certificate: order ? certificateMediaForLineItem(order.product, order.character) : undefined,
     idName: form.plushName,
     gender: form.gender,
     bornOn: form.birthDate,
@@ -609,7 +611,7 @@ export async function bindSessionsToOrders(input: { orderId: string; orderNumber
         product: order?.product || "Meaningful Plushie",
         certificateCode,
       })).catch(() => false),
-      submittedCertificateUpdate(session, form, session.voice_storage_path, certificateCode).catch(() => false),
+      submittedCertificateUpdate(session, form, session.voice_storage_path, certificateCode, order).catch(() => false),
     ]);
   }));
   await Promise.all(sessions.map((session) => sendCustomisationEmail(session).catch(() => false)));
