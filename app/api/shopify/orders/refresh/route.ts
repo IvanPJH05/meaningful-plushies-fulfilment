@@ -64,8 +64,16 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
         code: submitted?.certificateCode || order.certificateCode || undefined,
         plushDetails: textValue(lineItem.title) || order.character || order.product,
         certificate: certificateMediaForLineItem(textValue(lineItem.title), textValue(lineItem.variantTitle)),
-        plushBackgroundBottom: plushBackgroundForMeaningfulNote(certificateFields.meaningfulNote || ""),
+        plushBackgroundBottom: plushBackgroundForMeaningfulNote(certificateFields.meaningfulNote || order.meaningfulNote || ""),
         ...certificateFields,
+        idName: certificateFields.idName || order.plushName,
+        gender: certificateFields.gender || order.plushGender,
+        bornOn: certificateFields.bornOn || order.plushBirthDate,
+        birthplace: certificateFields.birthplace || order.plushBirthPlace,
+        favouritePerson: certificateFields.favouritePerson || order.plushFavouritePerson,
+        belongsTo: certificateFields.belongsTo || order.plushBelongsTo,
+        meaningfulNote: certificateFields.meaningfulNote || order.meaningfulNote,
+        meaningfulMessage: certificateFields.meaningfulMessage || order.meaningfulMessage,
       });
     }))
     : [];

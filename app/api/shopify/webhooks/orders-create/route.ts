@@ -141,14 +141,18 @@ export async function POST(request: Request) {
           certificate: certificateMediaForLineItem(`${lineItemTitle} ${characterHint}`, `${lineItemVariantTitle} ${characterHint}`),
           plushBackgroundBottom: plushBackgroundForMeaningfulNote(submitted?.form.meaningfulNote || certificateFields.meaningfulNote || ""),
           ...certificateFields,
-          idName: submitted?.form.plushName || certificateFields.idName,
-          gender: submitted?.form.gender || certificateFields.gender,
-          bornOn: submitted?.form.birthDate || certificateFields.bornOn,
-          birthplace: submitted?.form.birthPlace || certificateFields.birthplace,
-          favouritePerson: submitted?.form.favouritePerson || certificateFields.favouritePerson,
-          belongsTo: submitted?.form.belongsTo || certificateFields.belongsTo,
-          meaningfulNote: submitted?.form.meaningfulNote || certificateFields.meaningfulNote,
-          meaningfulMessage: submitted?.voiceStoragePath ? `supabase-storage:${submitted.voiceStoragePath}` : certificateFields.meaningfulMessage,
+          // The importer has already normalized the line-item properties into
+          // the fulfilment order. Keep it as the final fallback so certificate
+          // creation cannot lose fields when Shopify returns an incomplete
+          // custom-attribute shape on a webhook retry.
+          idName: submitted?.form.plushName || certificateFields.idName || order.plushName,
+          gender: submitted?.form.gender || certificateFields.gender || order.plushGender,
+          bornOn: submitted?.form.birthDate || certificateFields.bornOn || order.plushBirthDate,
+          birthplace: submitted?.form.birthPlace || certificateFields.birthplace || order.plushBirthPlace,
+          favouritePerson: submitted?.form.favouritePerson || certificateFields.favouritePerson || order.plushFavouritePerson,
+          belongsTo: submitted?.form.belongsTo || certificateFields.belongsTo || order.plushBelongsTo,
+          meaningfulNote: submitted?.form.meaningfulNote || certificateFields.meaningfulNote || order.meaningfulNote,
+          meaningfulMessage: submitted?.voiceStoragePath ? `supabase-storage:${submitted.voiceStoragePath}` : certificateFields.meaningfulMessage || order.meaningfulMessage,
         });
       }))
       : [];
