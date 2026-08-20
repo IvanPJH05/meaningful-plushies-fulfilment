@@ -16,6 +16,8 @@ test("copies Flow's character and note-background media choices", () => {
   assert.equal(certificateMediaForLineItem("BUILD YOUR MEANINGFUL PLUSHIE", "BILLY"), "gid://shopify/MediaImage/24492659081287");
   assert.equal(plushBackgroundForMeaningfulNote("x".repeat(140)), "gid://shopify/MediaImage/24567099359303");
   assert.equal(plushBackgroundForMeaningfulNote("x".repeat(141)), "gid://shopify/MediaImage/24567124492359");
+  assert.equal(plushBackgroundForMeaningfulNote("x".repeat(1051)), "gid://shopify/MediaImage/24567125180487");
+  assert.equal(plushBackgroundForMeaningfulNote("😀".repeat(140)), "gid://shopify/MediaImage/24567099359303");
 });
 
 test("reads every birth-certificate field from Upload Lift text", () => {

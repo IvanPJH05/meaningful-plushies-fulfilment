@@ -242,7 +242,13 @@ export function certificateMediaForLineItem(title: string, variantTitle = "") {
 
 export function plushBackgroundForMeaningfulNote(note: string) {
   if (!note) return undefined;
-  return PLUSH_BACKGROUND_MEDIA.find(([maximum]) => note.length <= maximum)?.[1];
+  // Count user-visible Unicode characters, not UTF-16 code units, so emoji
+  // select the same background band as Shopify Flow's string-size rule.
+  const characterCount = Array.from(note).length;
+  return PLUSH_BACKGROUND_MEDIA.find(([maximum]) => characterCount <= maximum)?.[1]
+    // The Flow table ends at 1,050 characters. Keep using its final design
+    // for a longer note instead of leaving the certificate background blank.
+    ?? PLUSH_BACKGROUND_MEDIA.at(-1)?.[1];
 }
 
 function flowCapitalize(value: string | undefined) {
