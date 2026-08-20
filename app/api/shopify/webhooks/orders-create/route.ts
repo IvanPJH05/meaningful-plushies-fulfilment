@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 
-import { shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
+import { shopifyLinePersonalization, shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
 import { bindSessionsToOrders, customisationSessionIds, submittedCustomisationsForSessionIds } from "../../../../../lib/customisation";
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
 import { certificateMediaForLineItem, certificateMetaobjectForOrder, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrder, fetchShopifyOrderWithMetafieldRetry, flowCertificateCode, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
@@ -43,12 +43,20 @@ function appliedDiscountCodes(order: Record<string, unknown>) {
     .filter(Boolean);
 }
 
-function lineItemCustomisationFields(lineItems: Record<string, unknown>[]) {
-  const text = lineItems.flatMap((line) => Array.isArray(line.customAttributes) ? line.customAttributes : [])
-    .map((attribute) => objectValue(attribute))
-    .map((attribute) => `${textValue(attribute.key)}: ${textValue(attribute.value)}`)
-    .filter(Boolean).join("\n");
-  return uploadLiftCertificateFields(text);
+function certificateFieldsForLineItem(lineItem: Record<string, unknown>, uploadLiftFormData: string) {
+  const line = shopifyLinePersonalization(lineItem);
+  const metafield = uploadLiftCertificateFields(uploadLiftFormData);
+  return {
+    ...metafield,
+    idName: line.plushName || metafield.idName,
+    gender: line.gender || metafield.gender,
+    bornOn: line.bornOn || metafield.bornOn,
+    birthplace: line.birthplace || metafield.birthplace,
+    favouritePerson: line.favouritePerson || metafield.favouritePerson,
+    belongsTo: line.belongsTo || metafield.belongsTo,
+    meaningfulNote: line.meaningfulNote || metafield.meaningfulNote,
+    meaningfulMessage: line.meaningfulMessage || metafield.meaningfulMessage,
+  };
 }
 
 export async function POST(request: Request) {
@@ -88,19 +96,25 @@ export async function POST(request: Request) {
     // The storefront saves this same form data as Shopify line-item properties.
     // Read those first: they arrive with the webhook and do not depend on a
     // separate session lookup or delayed order metafield.
-    const certificateFields = { ...uploadLiftCertificateFields(uploadLiftFormData), ...lineItemCustomisationFields(orderLineItems.map(objectValue)) };
-    ordersToSave = ordersToSave.map((order) => ({
-      ...order,
-      plushName: certificateFields.idName || order.plushName,
-      plushGender: certificateFields.gender || order.plushGender,
-      plushBirthDate: certificateFields.bornOn || order.plushBirthDate,
-      plushBirthPlace: certificateFields.birthplace || order.plushBirthPlace,
-      plushFavouritePerson: certificateFields.favouritePerson || order.plushFavouritePerson,
-      plushBelongsTo: certificateFields.belongsTo || order.plushBelongsTo,
-      meaningfulNote: certificateFields.meaningfulNote || order.meaningfulNote,
-      meaningfulMessage: certificateFields.meaningfulMessage || order.meaningfulMessage,
-      voiceUploadStatus: certificateFields.meaningfulMessage ? "received" : order.voiceUploadStatus,
-    }));
+    const certificateFieldsByLine = ordersToSave.map((_, index) => certificateFieldsForLineItem(
+      objectValue(orderLineItems[index] ?? orderLineItems[0]),
+      uploadLiftFormData,
+    ));
+    ordersToSave = ordersToSave.map((order, index) => {
+      const certificateFields = certificateFieldsByLine[index] ?? {};
+      return {
+        ...order,
+        plushName: certificateFields.idName || order.plushName,
+        plushGender: certificateFields.gender || order.plushGender,
+        plushBirthDate: certificateFields.bornOn || order.plushBirthDate,
+        plushBirthPlace: certificateFields.birthplace || order.plushBirthPlace,
+        plushFavouritePerson: certificateFields.favouritePerson || order.plushFavouritePerson,
+        plushBelongsTo: certificateFields.belongsTo || order.plushBelongsTo,
+        meaningfulNote: certificateFields.meaningfulNote || order.meaningfulNote,
+        meaningfulMessage: certificateFields.meaningfulMessage || order.meaningfulMessage,
+        voiceUploadStatus: certificateFields.meaningfulMessage ? "received" : order.voiceUploadStatus,
+      };
+    });
     const createdAt = textValue(fullOrder.createdAt) || new Date().toISOString();
     const existingCertificate = looksLikePersonalizedPlushie(fullOrder)
       ? await certificateMetaobjectForOrder(syncedNumber).catch(() => null)
@@ -110,6 +124,7 @@ export async function POST(request: Request) {
         const lineItem = objectValue(orderLineItems[index]);
         const lineItemTitle = textValue(lineItem.title);
         const lineItemVariantTitle = textValue(lineItem.variantTitle);
+        const certificateFields = certificateFieldsByLine[index] ?? {};
         // Shopify's order payload can omit the character from the title. The
         // saved fulfilment order retains it, so include that as a matching hint
         // to keep the certificate picture aligned with the selected plushie.

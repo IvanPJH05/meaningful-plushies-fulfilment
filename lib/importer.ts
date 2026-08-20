@@ -170,6 +170,11 @@ type ShopifyPersonalization = {
   product: string;
   certificateCode: string;
   plushName: string;
+  gender: string;
+  bornOn: string;
+  birthplace: string;
+  favouritePerson: string;
+  belongsTo: string;
   meaningfulNote: string;
   meaningfulMessage: string;
 };
@@ -180,6 +185,11 @@ function personalizationBlocks(raw: string) {
     product: metafield(block, "Product"),
     certificateCode: metafield(block, "Certificate Code"),
     plushName: metafield(block, "Name"),
+    gender: metafield(block, "Gender"),
+    bornOn: metafield(block, "Born On") || metafield(block, "Birth Date"),
+    birthplace: metafield(block, "Birthplace") || metafield(block, "Birth Place"),
+    favouritePerson: metafield(block, "Favourite Person") || metafield(block, "Favorite Person"),
+    belongsTo: metafield(block, "Belongs To") || metafield(block, "Plushie Belongs To"),
     meaningfulNote: metafield(block, "Meaningful Note"),
     meaningfulMessage: metafield(block, "Meaningful Message"),
   }));
@@ -222,18 +232,23 @@ function shopifyLineAttributeValue(lineItem: unknown, labels: string[]) {
   return "";
 }
 
-function shopifyLinePersonalization(lineItem: unknown): ShopifyPersonalization {
+export function shopifyLinePersonalization(lineItem: unknown): ShopifyPersonalization {
   return {
     product: shopifyLineAttributeValue(lineItem, ["Product"]),
     certificateCode: shopifyLineAttributeValue(lineItem, ["Certificate Code", "Certificate", "certificate_code"]),
     plushName: shopifyLineAttributeValue(lineItem, ["Name", "Plushie's Name", "Plushie Name"]),
+    gender: shopifyLineAttributeValue(lineItem, ["Gender", "Plushie's Gender", "Plushie Gender"]),
+    bornOn: shopifyLineAttributeValue(lineItem, ["Born On", "Birth Date", "Birthday", "Plushie's Birthday"]),
+    birthplace: shopifyLineAttributeValue(lineItem, ["Birthplace", "Birth Place", "Plushie's Birth Place", "Plushie Birth Place"]),
+    favouritePerson: shopifyLineAttributeValue(lineItem, ["Favourite Person", "Favorite Person", "Plushie's Favourite Person", "Plushie's Favorite Person"]),
+    belongsTo: shopifyLineAttributeValue(lineItem, ["Belongs To", "Plushie Belongs To", "Plushie's Belongs To"]),
     meaningfulNote: shopifyLineAttributeValue(lineItem, ["Meaningful Note", "Note"]),
     meaningfulMessage: shopifyLineAttributeValue(lineItem, ["Meaningful Message", "Message", "Voice Message"]),
   };
 }
 
 function hasShopifyPersonalization(personalization: ShopifyPersonalization) {
-  return Boolean(personalization.product || personalization.certificateCode || personalization.plushName || personalization.meaningfulNote || personalization.meaningfulMessage);
+  return Boolean(personalization.product || personalization.certificateCode || personalization.plushName || personalization.gender || personalization.bornOn || personalization.birthplace || personalization.favouritePerson || personalization.belongsTo || personalization.meaningfulNote || personalization.meaningfulMessage);
 }
 
 function productName(lineName: string, fallback: string) {
@@ -416,8 +431,7 @@ export function shopifyOrderToFulfilmentOrders(
         : [];
   const lineItems = rawLineItems.length ? rawLineItems : [{}];
   const metafieldPersonalizations = personalizationBlocks(rawPersonalization);
-  const personalizations = metafieldPersonalizations;
-  const total = Math.max(lineItems.length, personalizations.length, 1);
+  const total = Math.max(lineItems.length, metafieldPersonalizations.length, 1);
   const shippingAddress = shopifyOrder.shipping_address ?? shopifyOrder.shippingAddress ?? {};
   const billingAddress = shopifyOrder.billing_address ?? shopifyOrder.billingAddress ?? {};
   const shippingLine = objectValue(shopifyOrder.shippingLine);
@@ -450,8 +464,21 @@ export function shopifyOrderToFulfilmentOrders(
 
   for (let index = 0; index < total; index += 1) {
     const lineItem = lineItems[index] ?? lineItems[0] ?? {};
-    const personalization = personalizations[index] ?? personalizations[0] ?? {
-      product: "", certificateCode: "", plushName: "", meaningfulNote: "", meaningfulMessage: "",
+    const metafieldPersonalization = metafieldPersonalizations[index] ?? metafieldPersonalizations[0];
+    // Meaningful Fulfilment writes the customer form to Shopify line-item
+    // properties. Those are the immediate source of truth for an order.
+    const linePersonalization = shopifyLinePersonalization(lineItem);
+    const personalization: ShopifyPersonalization = {
+      product: linePersonalization.product || metafieldPersonalization?.product || "",
+      certificateCode: linePersonalization.certificateCode || metafieldPersonalization?.certificateCode || "",
+      plushName: linePersonalization.plushName || metafieldPersonalization?.plushName || "",
+      gender: linePersonalization.gender || metafieldPersonalization?.gender || "",
+      bornOn: linePersonalization.bornOn || metafieldPersonalization?.bornOn || "",
+      birthplace: linePersonalization.birthplace || metafieldPersonalization?.birthplace || "",
+      favouritePerson: linePersonalization.favouritePerson || metafieldPersonalization?.favouritePerson || "",
+      belongsTo: linePersonalization.belongsTo || metafieldPersonalization?.belongsTo || "",
+      meaningfulNote: linePersonalization.meaningfulNote || metafieldPersonalization?.meaningfulNote || "",
+      meaningfulMessage: linePersonalization.meaningfulMessage || metafieldPersonalization?.meaningfulMessage || "",
     };
     const lineName = shopifyLineName(lineItem);
     const id = total === 1 ? number : `${number}-${index + 1}`;
@@ -489,6 +516,11 @@ export function shopifyOrderToFulfilmentOrders(
       idWebsiteLink: certificateLink(certificateCode) || current?.idWebsiteLink || "",
       voiceLength: shopifyLineVoice(lineName) || current?.voiceLength || 0,
       plushName: personalization.plushName || current?.plushName || "",
+      plushGender: personalization.gender || current?.plushGender || "",
+      plushBirthDate: personalization.bornOn || current?.plushBirthDate || "",
+      plushBirthPlace: personalization.birthplace || current?.plushBirthPlace || "",
+      plushFavouritePerson: personalization.favouritePerson || current?.plushFavouritePerson || "",
+      plushBelongsTo: personalization.belongsTo || current?.plushBelongsTo || "",
       certificateCode,
       meaningfulNote: personalization.meaningfulNote || current?.meaningfulNote || "",
       meaningfulMessage: personalization.meaningfulMessage || current?.meaningfulMessage || "",
