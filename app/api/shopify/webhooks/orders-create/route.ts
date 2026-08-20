@@ -2,9 +2,9 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
-import { bindSessionsToOrders, customisationSessionIds } from "../../../../../lib/customisation";
+import { bindSessionsToOrders, customisationSessionIds, submittedCustomisationsForSessionIds } from "../../../../../lib/customisation";
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
-import { certificateMediaForLineItem, certificateMetaobjectForOrder, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrderWithMetafieldRetry, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
+import { certificateMediaForLineItem, certificateMetaobjectForOrder, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrder, fetchShopifyOrderWithMetafieldRetry, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
 import { fetchMetaCapiSettings, fetchSharedOrders, insertSharedActivity, markManualOrderUsedByDiscountCode, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
 
 export const runtime = "nodejs";
@@ -53,9 +53,15 @@ export async function POST(request: Request) {
   }
 
   try {
-    const fullOrder = await fetchShopifyOrderWithMetafieldRetry(payload, request);
+    // Meaningful Fulfilment saves its own session ID on the line item. It does
+    // not need Upload Lift's delayed metafield, so avoid the 32-second retry.
+    const payloadSessionIds = customisationSessionIds(payload);
+    const fullOrder = payloadSessionIds.length
+      ? await fetchShopifyOrder(payload, request)
+      : await fetchShopifyOrderWithMetafieldRetry(payload, request);
     const uploadLiftFormData = shopifyMetafieldValue(fullOrder) || shopifyMetafieldValue(payload);
-    const deferredSessionIds = customisationSessionIds(fullOrder);
+    const deferredSessionIds = [...new Set([...payloadSessionIds, ...customisationSessionIds(fullOrder)])];
+    const submittedCustomisations = await submittedCustomisationsForSessionIds(deferredSessionIds);
     const existing = await fetchSharedOrders();
     const importedOrders = shopifyOrderToFulfilmentOrders(fullOrder, uploadLiftFormData, existing, "Shopify");
     const syncedNumber = cleanShopifyOrderNumber(
@@ -81,14 +87,24 @@ export async function POST(request: Request) {
         // saved fulfilment order retains it, so include that as a matching hint
         // to keep the certificate picture aligned with the selected plushie.
         const characterHint = order.character || order.product;
+        const sessionId = deferredSessionIds[index] || deferredSessionIds[0];
+        const submitted = submittedCustomisations.get(sessionId);
         return createCertificateMetaobject({
           orderNumber: syncedNumber,
           createdAt,
           code: order.certificateCode || existingCertificate?.code || undefined,
           plushDetails: lineItemTitle || lineItemVariantTitle || characterHint,
           certificate: certificateMediaForLineItem(`${lineItemTitle} ${characterHint}`, `${lineItemVariantTitle} ${characterHint}`),
-          plushBackgroundBottom: plushBackgroundForMeaningfulNote(certificateFields.meaningfulNote || ""),
+          plushBackgroundBottom: plushBackgroundForMeaningfulNote(submitted?.form.meaningfulNote || certificateFields.meaningfulNote || ""),
           ...certificateFields,
+          idName: submitted?.form.plushName || certificateFields.idName,
+          gender: submitted?.form.gender || certificateFields.gender,
+          bornOn: submitted?.form.birthDate || certificateFields.bornOn,
+          birthplace: submitted?.form.birthPlace || certificateFields.birthplace,
+          favouritePerson: submitted?.form.favouritePerson || certificateFields.favouritePerson,
+          belongsTo: submitted?.form.belongsTo || certificateFields.belongsTo,
+          meaningfulNote: submitted?.form.meaningfulNote || certificateFields.meaningfulNote,
+          meaningfulMessage: submitted?.voiceStoragePath ? `supabase-storage:${submitted.voiceStoragePath}` : certificateFields.meaningfulMessage,
         });
       }))
       : [];
@@ -146,6 +162,7 @@ export async function POST(request: Request) {
 
     return json(200, { ok: true, saved: ordersToSave.length });
   } catch (error) {
+    console.error("Shopify order webhook failed", error);
     return json(500, {
       ok: false,
       error: error instanceof Error ? error.message : "Shopify order could not be saved.",

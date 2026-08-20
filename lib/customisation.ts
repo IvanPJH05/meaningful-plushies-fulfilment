@@ -497,6 +497,28 @@ export function customisationSessionIds(order: Record<string, unknown>) {
   });
 }
 
+/**
+ * Retrieves completed "Complete it now" form data before the Shopify webhook
+ * creates its certificate. This keeps the first saved metaobject complete,
+ * rather than creating an empty certificate and relying on a later update.
+ */
+export async function submittedCustomisationsForSessionIds(sessionIds: string[]) {
+  const ids = [...new Set(sessionIds.filter(Boolean))];
+  if (!ids.length) return new Map<string, { form: CustomisationForm; voiceStoragePath: string }>();
+  const { data, error } = await serviceClient()
+    .from(SESSION_TABLE)
+    .select("id,status,form_data,voice_storage_path")
+    .in("id", ids)
+    .eq("status", "submitted");
+  if (error) throw new Error(error.message);
+
+  return new Map((data ?? []).flatMap((session) => {
+    const form = normaliseCustomisationForm(session.form_data);
+    const voiceStoragePath = String(session.voice_storage_path || "");
+    return form && voiceStoragePath ? [[String(session.id), { form, voiceStoragePath }] as const] : [];
+  }));
+}
+
 type CertificateReference = { code: string; id: string };
 
 /**
