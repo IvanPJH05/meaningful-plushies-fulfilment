@@ -1,4 +1,5 @@
 export const orderStatuses = [
+  "awaiting_customisation",
   "new_order",
   "uploading_audio",
   "sent_for_sewing",
@@ -380,6 +381,11 @@ export type Order = {
   idWebsiteLink: string;
   voiceLength: number;
   plushName: string;
+  plushGender?: string;
+  plushBirthDate?: string;
+  plushBirthPlace?: string;
+  plushFavouritePerson?: string;
+  plushBelongsTo?: string;
   certificateCode: string;
   meaningfulNote: string;
   meaningfulMessage: string;

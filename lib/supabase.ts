@@ -119,7 +119,15 @@ export async function syncFulfilmentSalesToMonthlyJournal(orders: Order[]) {
 
 export async function upsertSharedOrders(orders: Order[]) {
   if (!orders.length) return;
-  const rows = orders.map((order) => ({
+  const fallbackUpdatedAt = new Date().toISOString();
+  const normalisedOrders = orders.map((order) => {
+    // Older imported records may predate the updated_at column. Repair those
+    // records as they are saved so one legacy order cannot block a TikTok
+    // import (or any other bulk save) with a NOT NULL database error.
+    const updatedAt = order.updatedAt || order.importedAt || order.orderDate || fallbackUpdatedAt;
+    return order.updatedAt ? order : { ...order, updatedAt };
+  });
+  const rows = normalisedOrders.map((order) => ({
     id: order.id,
     order_number: order.orderNumber,
     status: order.status,
@@ -135,7 +143,7 @@ export async function upsertSharedOrders(orders: Order[]) {
   }));
   const { error } = await requireSupabase().from("fulfilment_orders").upsert(rows, { onConflict: "id" });
   if (error) throw error;
-  await syncFulfilmentSalesToMonthlyJournal(orders);
+  await syncFulfilmentSalesToMonthlyJournal(normalisedOrders);
 }
 
 export async function deleteSharedOrders(ids: string[]) {

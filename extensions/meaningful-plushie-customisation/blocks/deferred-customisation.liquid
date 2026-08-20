@@ -1,0 +1,63 @@
+{{ 'deferred-customisation.css' | asset_url | stylesheet_tag }}
+{{ 'customisation-polish.css' | asset_url | stylesheet_tag }}
+<script src="{{ 'deferred-customisation.js' | asset_url }}" defer="defer"></script>
+
+<div
+  class="mp-deferred-customisation"
+  data-customisation-block
+  data-api-url="{{ block.settings.app_url | escape }}"
+  data-locale="{{ request.locale.iso_code | escape }}"
+  {{ block.shopify_attributes }}
+>
+  <div class="mp-deferred-customisation__choices" role="radiogroup" aria-label="Customisation timing">
+  <label class="mp-deferred-customisation__choice">
+    <input type="radio" name="mp_customisation_choice_{{ block.id }}" value="now" checked>
+    <span data-i18n="completeNow">Complete it now</span>
+  </label>
+  <label class="mp-deferred-customisation__choice">
+    <input type="radio" name="mp_customisation_choice_{{ block.id }}" value="later">
+    <span data-i18n="fillLater">Fill it in later</span>
+  </label>
+  </div>
+
+  <div class="mp-deferred-customisation__now" data-complete-now>
+    <label><span data-i18n="plushNameLabel">Plushie's Name</span><input required type="text" maxlength="20" placeholder="NAME YOUR PLUSHIE" data-i18n-placeholder="plushNamePlaceholder" autocapitalize="characters" data-plush-name></label>
+    <label><span data-i18n="genderLabel">Plushie's Gender</span><select required data-gender><option data-i18n="male">Male</option><option data-i18n="female">Female</option></select></label>
+    <label><span data-i18n="birthDateLabel">Plushie's Birth Date</span><span class="mp-deferred-customisation__date"><input required readonly maxlength="20" type="text" aria-label="Plushie's Birth Date" data-birth-date><span data-date-display data-i18n="meaningfulDate">A meaningful date</span></span></label>
+    <label><span data-i18n="birthPlaceLabel">Plushie's Birth Place</span><input required type="text" maxlength="20" placeholder="A meaningful place" data-i18n-placeholder="meaningfulPlace" data-birth-place></label>
+    <label><span data-i18n="favouritePersonLabel">Plushie's Favourite Person</span><input required type="text" maxlength="20" placeholder="A meaningful person" data-i18n-placeholder="meaningfulPerson" data-favourite-person></label>
+    <label><span data-i18n="belongsToLabel">Plushie Belongs To</span><input required type="text" maxlength="20" placeholder="The plushie's owner" data-i18n-placeholder="plushOwner" data-belongs-to></label>
+    <label><span data-i18n="meaningfulNoteLabel">Meaningful Note</span><textarea required placeholder="A message for the plushie's owner" data-i18n-placeholder="meaningfulNotePlaceholder" data-meaningful-note></textarea></label>
+    <label class="mp-deferred-customisation__voice"><span data-i18n="uploadVoiceLabel">Upload Your Voice Here</span><input required type="file" data-voice><span data-voice-button data-i18n="uploadVoiceButton">UPLOAD VOICE (MP4/MP3)</span></label>
+  </div>
+
+  <div class="mp-deferred-customisation__later" hidden>
+    <label>
+      <span data-i18n="sendLinkBy">Send my link by</span>
+      <select data-delivery-method>
+        <option value="whatsapp" selected>WhatsApp</option>
+        <option value="email" data-i18n="email">Email</option>
+      </select>
+    </label>
+    <label data-email-field>
+      <span data-i18n="emailLinkNotice">A link to customise your plushie will be sent to your email</span>
+      <input type="email" autocomplete="email" placeholder="you@example.com" data-contact-email>
+    </label>
+    <label data-phone-field hidden>
+      <span data-i18n="whatsappLinkNotice">A link to customise your plushie will be sent to your WhatsApp</span>
+      <input type="tel" autocomplete="tel" placeholder="012 345 6789" data-contact-phone>
+    </label>
+  </div>
+  <p class="mp-deferred-customisation__notice" aria-live="polite" data-notice></p>
+</div>
+
+{% schema %}
+{
+  "name": "Customise later",
+  "target": "section",
+  "enabled_on": { "templates": ["product"] },
+  "settings": [
+    { "type": "url", "id": "app_url", "label": "Fulfilment app URL", "info": "Example: https://meaningful-plushies-fulfilment.vercel.app" }
+  ]
+}
+{% endschema %}
