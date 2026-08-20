@@ -35,9 +35,28 @@
     const draftKey = `mp-customisation-draft:${location.pathname}`;
     const draftFields = ["[data-plush-name]", "[data-gender]", "[data-birth-date]", "[data-birth-place]", "[data-favourite-person]", "[data-belongs-to]", "[data-meaningful-note]", "[data-delivery-method]", "[data-contact-email]", "[data-contact-phone]"];
     let restoredVoiceFile = null;
+    let preparedUpload = null;
+    let uploadPromise = null;
 
     const selectedVoice = () => voiceInput.files?.[0] || restoredVoiceFile || null;
     const updateVoiceLabel = () => { voiceButton.textContent = selectedVoice()?.name || voiceInput.value.split(/[/\\\\]/).pop() || t("uploadVoiceButton"); };
+    const uploadVoiceEarly = async () => {
+      const voice = selectedVoice();
+      if (!voice || isLater() || !apiUrl) return null;
+      if (preparedUpload?.file === voice) return preparedUpload;
+      if (uploadPromise) return uploadPromise;
+      uploadPromise = (async () => {
+        notice.textContent = "Uploading your voice…";
+        const session = await request("/api/customisation/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "complete_now" }) });
+        const prepared = await request(`/api/customisation/${encodeURIComponent(session.token)}/upload`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileName: voice.name, contentType: voice.type }) });
+        const storage = await fetch(prepared.upload.signedUrl, { method: "PUT", headers: { "x-upsert": "false", "Content-Type": voice.type || "application/octet-stream" }, body: voice });
+        if (!storage.ok) throw new Error("Could not upload your file.");
+        preparedUpload = { file: voice, session, voiceStoragePath: prepared.upload.path };
+        notice.textContent = "Voice uploaded. Ready to add to cart.";
+        return preparedUpload;
+      })();
+      try { return await uploadPromise; } finally { uploadPromise = null; }
+    };
     const openDraftDatabase = () => new Promise((resolve, reject) => {
       const request = indexedDB.open("meaningful-plushies-customisation", 1);
       request.onupgradeneeded = () => request.result.createObjectStore("voices");
@@ -179,7 +198,7 @@
       field.addEventListener("change", () => { notice.textContent = ""; syncPurchaseBlockers(); saveDraft(); });
       field.addEventListener("blur", () => { syncPurchaseBlockers(); saveDraft(); });
     });
-    voiceInput.addEventListener("change", () => { restoredVoiceFile = voiceInput.files?.[0] || null; updateVoiceLabel(); saveVoiceDraft(restoredVoiceFile); saveDraft(); notice.textContent = ""; syncPurchaseBlockers(); });
+    voiceInput.addEventListener("change", () => { restoredVoiceFile = voiceInput.files?.[0] || null; preparedUpload = null; updateVoiceLabel(); saveVoiceDraft(restoredVoiceFile); saveDraft(); syncPurchaseBlockers(); void uploadVoiceEarly().catch((error) => { notice.textContent = error instanceof Error ? error.message : "Could not upload your file."; }); });
     const calendar = document.createElement("div");
     calendar.className = "mp-deferred-customisation__calendar";
     calendar.hidden = true;
@@ -376,18 +395,13 @@
           appendSessionId(result.sessionId);
           notice.textContent = t("paired");
         } else {
-          const voice = selectedVoice();
-          if (!voice) throw new Error(t("uploadVoiceError"));
+          const upload = await uploadVoiceEarly();
+          if (!upload) throw new Error(t("uploadVoiceError"));
           notice.textContent = t("saving");
-          const session = await request("/api/customisation/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "complete_now" }) });
-          const prepared = await request(`/api/customisation/${encodeURIComponent(session.token)}/upload`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileName: voice.name, contentType: voice.type }) });
-          const storage = await fetch(prepared.upload.signedUrl, { method: "PUT", headers: { "x-upsert": "false", "Content-Type": voice.type || "application/octet-stream" }, body: voice });
-          if (!storage.ok) throw new Error("Could not upload your file.");
-          const voiceResult = { voiceStoragePath: prepared.upload.path };
           const details = formData();
-          await request(`/api/customisation/${encodeURIComponent(session.token)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ form: details, voiceStoragePath: voiceResult.voiceStoragePath }) });
-          appendSessionId(session.sessionId);
-          appendCompleteNowProperties(details, voiceResult.voiceStoragePath, session.token);
+          await request(`/api/customisation/${encodeURIComponent(upload.session.token)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ form: details, voiceStoragePath: upload.voiceStoragePath }) });
+          appendSessionId(upload.session.sessionId);
+          appendCompleteNowProperties(details, upload.voiceStoragePath, upload.session.token);
           notice.textContent = t("saved");
         }
         form.submit();
