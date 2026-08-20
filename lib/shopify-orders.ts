@@ -321,7 +321,15 @@ function certificateHandle(code: string) {
   return code.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 255);
 }
 
-function certificateFields(input: CertificateMetaobjectInput) {
+type CertificateDefinitionField = { key?: string; name?: string };
+
+/**
+ * Shopify keeps a field's API key even if its display label is later edited.
+ * Read the live definition before writing an entry so the fulfilment app uses
+ * that persisted key (rather than assuming it is the label converted to
+ * snake_case). This is particularly important for the plushie image field.
+ */
+function certificateFields(input: CertificateMetaobjectInput, definitionFields?: CertificateDefinitionField[]) {
   const values: [string, string | undefined][] = [
     ["code", input.code], ["order_number", input.orderNumber ? `#${cleanShopifyOrderNumber(input.orderNumber)}` : ""],
     ["created_at", input.createdAt], ["plush_details", input.plushDetails], ["id_picture", input.certificate],
@@ -330,7 +338,33 @@ function certificateFields(input: CertificateMetaobjectInput) {
     ["meaningful_note", input.meaningfulNote], ["plush_background_bottom", input.plushBackgroundBottom],
     ["meaningful_message", input.meaningfulMessage],
   ];
-  return values.filter(([, value]) => value !== undefined).map(([key, value]) => ({ key, value: value || "" }));
+  if (!definitionFields?.length) {
+    return values.filter(([, value]) => value !== undefined).map(([key, value]) => ({ key, value: value || "" }));
+  }
+
+  const normalise = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return values.flatMap(([expectedKey, value]) => {
+    if (value === undefined) return [];
+    const expected = normalise(expectedKey);
+    const field = definitionFields.find((candidate) =>
+      normalise(candidate.key || "") === expected || normalise(candidate.name || "") === expected,
+    );
+    return field?.key ? [{ key: field.key, value: value || "" }] : [];
+  });
+}
+
+async function certificateFieldsForLiveDefinition(domain: string, input: CertificateMetaobjectInput) {
+  const result = await shopifyGraphql<{
+    data?: { metaobjectDefinitionByType?: { fieldDefinitions?: CertificateDefinitionField[] } | null };
+  }>(domain, `
+    query CertificateMetaobjectDefinition($type: String!) {
+      metaobjectDefinitionByType(type: $type) {
+        fieldDefinitions { key name }
+      }
+    }
+  `, { type: certificateMetaobjectType });
+  const definitionFields = result?.data?.metaobjectDefinitionByType?.fieldDefinitions;
+  return certificateFields(input, definitionFields);
 }
 
 async function certificateHandleExists(domain: string, handle: string) {
@@ -352,6 +386,7 @@ export async function createCertificateMetaobject(input: Omit<CertificateMetaobj
   if (input.code) {
     const code = input.code;
     const handle = certificateHandle(code);
+    const fields = await certificateFieldsForLiveDefinition(domain, { ...input, code });
     const result = await shopifyGraphql<{ data?: { metaobjectUpsert?: { metaobject?: { id?: string; handle?: string }; userErrors?: { message?: string }[] } } }>(domain, `
       mutation CreateCertificateMetaobject($handle: MetaobjectHandleInput!, $metaobject: MetaobjectUpsertInput!) {
         metaobjectUpsert(handle: $handle, metaobject: $metaobject) {
@@ -359,7 +394,7 @@ export async function createCertificateMetaobject(input: Omit<CertificateMetaobj
           userErrors { message }
         }
       }
-    `, { handle: { type: certificateMetaobjectType, handle }, metaobject: { fields: certificateFields({ ...input, code }), capabilities: { publishable: { status: "ACTIVE" } } } });
+    `, { handle: { type: certificateMetaobjectType, handle }, metaobject: { fields, capabilities: { publishable: { status: "ACTIVE" } } } });
     const payload = result?.data?.metaobjectUpsert;
     if (payload?.metaobject?.id) return { code, id: payload.metaobject.id, handle: payload.metaobject.handle || handle };
     throw new Error(payload?.userErrors?.map((error) => error.message).filter(Boolean).join(" ") || "Could not create the certificate metaobject.");
@@ -368,6 +403,7 @@ export async function createCertificateMetaobject(input: Omit<CertificateMetaobj
     const code = `${prefix}${randomInt(1_000_000, 10_000_000)}`;
     const handle = certificateHandle(code);
     if (await certificateHandleExists(domain, handle)) continue;
+    const fields = await certificateFieldsForLiveDefinition(domain, { ...input, code });
     const result = await shopifyGraphql<{ data?: { metaobjectUpsert?: { metaobject?: { id?: string; handle?: string }; userErrors?: { message?: string }[] } } }>(domain, `
       mutation CreateCertificateMetaobject($handle: MetaobjectHandleInput!, $metaobject: MetaobjectUpsertInput!) {
         metaobjectUpsert(handle: $handle, metaobject: $metaobject) {
@@ -375,7 +411,7 @@ export async function createCertificateMetaobject(input: Omit<CertificateMetaobj
           userErrors { message }
         }
       }
-    `, { handle: { type: certificateMetaobjectType, handle }, metaobject: { fields: certificateFields({ ...input, code }), capabilities: { publishable: { status: "ACTIVE" } } } });
+    `, { handle: { type: certificateMetaobjectType, handle }, metaobject: { fields, capabilities: { publishable: { status: "ACTIVE" } } } });
     const payload = result?.data?.metaobjectUpsert;
     if (payload?.metaobject?.id) return { code, id: payload.metaobject.id, handle: payload.metaobject.handle || handle };
     if (payload?.userErrors?.length) throw new Error(payload.userErrors.map((error) => error.message).filter(Boolean).join(" ") || "Shopify rejected the certificate metaobject.");
@@ -387,13 +423,14 @@ export async function updateCertificateMetaobject(input: CertificateMetaobjectIn
   const domain = shopDomain();
   const code = input.code || "";
   if (!domain || !code) return false;
+  const fields = await certificateFieldsForLiveDefinition(domain, input);
   const result = await shopifyGraphql<{ data?: { metaobjectUpsert?: { metaobject?: { id?: string; handle?: string }; userErrors?: { message?: string }[] } } }>(domain, `
     mutation UpdateCertificateMetaobject($handle: MetaobjectHandleInput!, $metaobject: MetaobjectUpsertInput!) {
       metaobjectUpsert(handle: $handle, metaobject: $metaobject) { metaobject { id handle } userErrors { message } }
     }
   `, {
     handle: { type: certificateMetaobjectType, handle: certificateHandle(code) },
-    metaobject: { fields: certificateFields(input), capabilities: { publishable: { status: "ACTIVE" } } },
+    metaobject: { fields, capabilities: { publishable: { status: "ACTIVE" } } },
   });
   const payload = result?.data?.metaobjectUpsert;
   if (payload?.userErrors?.length) {
