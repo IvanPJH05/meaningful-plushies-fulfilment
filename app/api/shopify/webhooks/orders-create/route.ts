@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
 import { bindSessionsToOrders, customisationSessionIds, submittedCustomisationsForSessionIds } from "../../../../../lib/customisation";
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
-import { certificateMediaForLineItem, certificateMetaobjectForOrder, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrder, fetchShopifyOrderWithMetafieldRetry, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
+import { certificateMediaForLineItem, certificateMetaobjectForOrder, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrder, fetchShopifyOrderWithMetafieldRetry, flowCertificateCode, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
 import { fetchMetaCapiSettings, fetchSharedOrders, insertSharedActivity, markManualOrderUsedByDiscountCode, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
 
 export const runtime = "nodejs";
@@ -43,6 +43,14 @@ function appliedDiscountCodes(order: Record<string, unknown>) {
     .filter(Boolean);
 }
 
+function lineItemCustomisationFields(lineItems: Record<string, unknown>[]) {
+  const text = lineItems.flatMap((line) => Array.isArray(line.customAttributes) ? line.customAttributes : [])
+    .map((attribute) => objectValue(attribute))
+    .map((attribute) => `${textValue(attribute.key)}: ${textValue(attribute.value)}`)
+    .filter(Boolean).join("\n");
+  return uploadLiftCertificateFields(text);
+}
+
 export async function POST(request: Request) {
   const rawBody = await request.text();
   if (!verifyShopifyHmac(rawBody, request.headers.get("x-shopify-hmac-sha256"))) {
@@ -76,8 +84,23 @@ export async function POST(request: Request) {
     );
     let ordersToSave = importedOrders.filter((order) => order.orderNumber === syncedNumber);
     const orderId = textValue(fullOrder.id) || textValue(payload.admin_graphql_api_id) || textValue(payload.id);
-    const certificateFields = uploadLiftCertificateFields(uploadLiftFormData);
     const orderLineItems = Array.isArray(fullOrder.lineItems) ? fullOrder.lineItems : [];
+    // The storefront saves this same form data as Shopify line-item properties.
+    // Read those first: they arrive with the webhook and do not depend on a
+    // separate session lookup or delayed order metafield.
+    const certificateFields = { ...uploadLiftCertificateFields(uploadLiftFormData), ...lineItemCustomisationFields(orderLineItems.map(objectValue)) };
+    ordersToSave = ordersToSave.map((order) => ({
+      ...order,
+      plushName: certificateFields.idName || order.plushName,
+      plushGender: certificateFields.gender || order.plushGender,
+      plushBirthDate: certificateFields.bornOn || order.plushBirthDate,
+      plushBirthPlace: certificateFields.birthplace || order.plushBirthPlace,
+      plushFavouritePerson: certificateFields.favouritePerson || order.plushFavouritePerson,
+      plushBelongsTo: certificateFields.belongsTo || order.plushBelongsTo,
+      meaningfulNote: certificateFields.meaningfulNote || order.meaningfulNote,
+      meaningfulMessage: certificateFields.meaningfulMessage || order.meaningfulMessage,
+      voiceUploadStatus: certificateFields.meaningfulMessage ? "received" : order.voiceUploadStatus,
+    }));
     const createdAt = textValue(fullOrder.createdAt) || new Date().toISOString();
     const existingCertificate = looksLikePersonalizedPlushie(fullOrder)
       ? await certificateMetaobjectForOrder(syncedNumber).catch(() => null)
@@ -96,7 +119,9 @@ export async function POST(request: Request) {
         return createCertificateMetaobject({
           orderNumber: syncedNumber,
           createdAt,
-          code: order.certificateCode || existingCertificate?.code || undefined,
+          // A fixed code makes concurrent webhook retries upsert this same
+          // entry instead of creating duplicate certificates.
+          code: order.certificateCode || existingCertificate?.code || flowCertificateCode(syncedNumber, createdAt, textValue(lineItem.id) || String(index + 1)),
           plushDetails: lineItemTitle || lineItemVariantTitle || characterHint,
           certificate: certificateMediaForLineItem(`${lineItemTitle} ${characterHint}`, `${lineItemVariantTitle} ${characterHint}`),
           plushBackgroundBottom: plushBackgroundForMeaningfulNote(submitted?.form.meaningfulNote || certificateFields.meaningfulNote || ""),
