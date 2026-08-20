@@ -364,7 +364,15 @@ async function certificateFieldsForLiveDefinition(domain: string, input: Certifi
     }
   `, { type: certificateMetaobjectType });
   const definitionFields = result?.data?.metaobjectDefinitionByType?.fieldDefinitions;
-  return certificateFields(input, definitionFields);
+  const fields = certificateFields(input, definitionFields);
+  // Shopify definitions can retain older API keys after a field is renamed.
+  // Log only field keys (never customer values) so a mismatched store
+  // definition is visible rather than silently producing an empty certificate.
+  console.info("Certificate metaobject field mapping", {
+    definitionKeys: (definitionFields ?? []).map((field) => ({ key: field.key, name: field.name })),
+    mappedKeys: fields.map((field) => field.key),
+  });
+  return fields;
 }
 
 async function certificateHandleExists(domain: string, handle: string) {
