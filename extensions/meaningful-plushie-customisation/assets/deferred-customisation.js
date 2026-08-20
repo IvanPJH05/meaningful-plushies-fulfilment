@@ -18,6 +18,25 @@
     const apiUrl = (block.dataset.apiUrl || "").replace(/\/$/, "");
     const form = block.closest("form[action*='/cart/add']") || document.querySelector("form[action*='/cart/add']");
     if (!form) return;
+    const voiceProgress = document.createElement("div");
+    voiceProgress.className = "mp-deferred-customisation__upload-progress";
+    voiceProgress.hidden = true;
+    voiceProgress.style.cssText = "display:grid;gap:6px;margin-top:9px;color:#53798f;font-size:.83em;font-weight:700";
+    voiceProgress.innerHTML = '<div style="display:flex;justify-content:space-between;gap:12px"><span data-upload-status>Preparing upload…</span><strong data-upload-percent>0%</strong></div><div style="height:8px;overflow:hidden;border-radius:999px;background:#dbe8ee"><span data-upload-bar style="display:block;width:0;height:100%;border-radius:inherit;background:#668da4;transition:width .18s ease"></span></div>';
+    voiceButton.insertAdjacentElement("afterend", voiceProgress);
+    const voiceProgressStatus = voiceProgress.querySelector("[data-upload-status]");
+    const voiceProgressPercent = voiceProgress.querySelector("[data-upload-percent]");
+    const voiceProgressBar = voiceProgress.querySelector("[data-upload-bar]");
+    const setVoiceProgress = (percent, status, complete = false) => {
+      const value = Math.max(0, Math.min(100, Math.round(percent)));
+      voiceProgress.hidden = false;
+      voiceProgress.classList.toggle("is-complete", complete);
+      voiceProgress.style.color = complete ? "#27805a" : "#53798f";
+      voiceProgressStatus.textContent = status;
+      voiceProgressPercent.textContent = `${value}%`;
+      voiceProgressBar.style.width = `${value}%`;
+      voiceProgressBar.style.background = complete ? "#2f9c70" : "#668da4";
+    };
     const language = /^ms(?:-|$)/i.test(block.dataset.locale || "") ? "ms" : "en";
     const translations = {
       en: {
@@ -50,11 +69,24 @@
       if (uploadPromise) return uploadPromise;
       uploadPromise = (async () => {
         notice.textContent = "Uploading your voice…";
+        setVoiceProgress(4, "Preparing secure upload…");
         const session = await request("/api/customisation/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "complete_now" }) });
+        setVoiceProgress(8, "Uploading voice…");
         const prepared = await request(`/api/customisation/${encodeURIComponent(session.token)}/upload`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileName: voice.name, contentType: voice.type }) });
-        const storage = await fetch(prepared.upload.signedUrl, { method: "PUT", headers: { "x-upsert": "false", "Content-Type": voice.type || "application/octet-stream" }, body: voice });
-        if (!storage.ok) throw new Error("Could not upload your file.");
+        await new Promise((resolve, reject) => {
+          const transfer = new XMLHttpRequest();
+          transfer.open("PUT", prepared.upload.signedUrl);
+          transfer.setRequestHeader("x-upsert", "false");
+          transfer.setRequestHeader("Content-Type", voice.type || "application/octet-stream");
+          transfer.upload.onprogress = (event) => {
+            if (event.lengthComputable) setVoiceProgress(8 + (event.loaded / event.total) * 90, "Uploading voice…");
+          };
+          transfer.onload = () => transfer.status >= 200 && transfer.status < 300 ? resolve() : reject(new Error("Could not upload your file."));
+          transfer.onerror = () => reject(new Error("Could not upload your file."));
+          transfer.send(voice);
+        });
         preparedUpload = { file: voice, session, voiceStoragePath: prepared.upload.path };
+        setVoiceProgress(100, "Voice uploaded", true);
         notice.textContent = "Voice uploaded. Ready to add to cart.";
         return preparedUpload;
       })();
