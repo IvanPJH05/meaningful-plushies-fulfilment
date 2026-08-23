@@ -15,6 +15,7 @@
     const dateDisplay = block.querySelector("[data-date-display]");
     const dateBox = block.querySelector(".mp-deferred-customisation__date");
     const radios = block.querySelectorAll("input[type=radio]");
+    const completeNowDisabled = block.dataset.completeNowDisabled === "true";
     const apiUrl = (block.dataset.apiUrl || "").replace(/\/$/, "");
     const form = block.closest("form[action*='/cart/add']") || document.querySelector("form[action*='/cart/add']");
     if (!form) return;
@@ -126,7 +127,7 @@
         const saved = JSON.parse(sessionStorage.getItem(draftKey) || "null");
         if (saved) {
           draftFields.forEach((selector) => { const field = block.querySelector(selector); if (field && saved[selector]) field.value = saved[selector]; });
-          const choice = [...radios].find((radio) => radio.value === saved.choice);
+          const choice = !completeNowDisabled && [...radios].find((radio) => radio.value === saved.choice);
           if (choice) choice.checked = true;
           if (birthDate.value) { dateDisplay.textContent = birthDate.value; dateDisplay.classList.add("is-filled"); }
         }
@@ -140,7 +141,7 @@
       sync();
     };
 
-    const isLater = () => [...radios].some((radio) => radio.checked && radio.value === "later");
+    const isLater = () => completeNowDisabled || [...radios].some((radio) => radio.checked && radio.value === "later");
     const purchaseControls = () => [...form.querySelectorAll("button, input[type='submit']")].filter((control) => {
       const ownerForm = control.form || control.closest("form");
       return ownerForm === form && (control.type === "submit" || control.name === "add" || Boolean(control.closest(".shopify-payment-button")));
