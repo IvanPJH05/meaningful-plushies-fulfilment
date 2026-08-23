@@ -5,24 +5,24 @@
 <div
   class="mp-deferred-customisation"
   data-customisation-block
-  data-complete-now-disabled="true"
+  data-fill-later-disabled="true"
   data-api-url="{{ block.settings.app_url | escape }}"
   data-locale="{{ request.locale.iso_code | escape }}"
   {{ block.shopify_attributes }}
 >
   <div class="mp-deferred-customisation__choices" role="radiogroup" aria-label="Customisation timing" style="grid-template-columns:1fr">
-  {%- comment -%} Kept for later restoration; Complete it now is temporarily hidden. {%- endcomment -%}
-  <label class="mp-deferred-customisation__choice" style="display:none">
-    <input type="radio" name="mp_customisation_choice_{{ block.id }}" value="now">
+  <label class="mp-deferred-customisation__choice">
+    <input type="radio" name="mp_customisation_choice_{{ block.id }}" value="now" checked>
     <span data-i18n="completeNow">Complete it now</span>
   </label>
-  <label class="mp-deferred-customisation__choice">
-    <input type="radio" name="mp_customisation_choice_{{ block.id }}" value="later" checked>
+  {%- comment -%} Kept for later restoration; Fill it in later is temporarily hidden. {%- endcomment -%}
+  <label class="mp-deferred-customisation__choice" style="display:none">
+    <input type="radio" name="mp_customisation_choice_{{ block.id }}" value="later">
     <span data-i18n="fillLater">Fill it in later</span>
   </label>
   </div>
 
-  <div class="mp-deferred-customisation__now" data-complete-now hidden>
+  <div class="mp-deferred-customisation__now" data-complete-now>
     <label><span data-i18n="plushNameLabel">Plushie's Name</span><input required type="text" maxlength="20" placeholder="NAME YOUR PLUSHIE" data-i18n-placeholder="plushNamePlaceholder" autocapitalize="characters" data-plush-name></label>
     <label><span data-i18n="genderLabel">Plushie's Gender</span><select required data-gender><option data-i18n="male">Male</option><option data-i18n="female">Female</option></select></label>
     <label><span data-i18n="birthDateLabel">Plushie's Birth Date</span><span class="mp-deferred-customisation__date"><input required readonly maxlength="20" type="text" aria-label="Plushie's Birth Date" data-birth-date><span data-date-display data-i18n="meaningfulDate">A meaningful date</span></span></label>
