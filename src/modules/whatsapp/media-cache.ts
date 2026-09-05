@@ -3,7 +3,19 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 const fallbackSupabaseUrl = "https://joaoirpegnkexmktylop.supabase.co";
 const fallbackSupabaseAnonKey = "sb_publishable_qYeTDXzz1yeOydayZDSBPA_VjLbcgdE";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? fallbackSupabaseUrl;
+function validSupabaseUrl(value: string | undefined) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+// A malformed environment value should not take the existing fulfilment
+// workspace offline. The established production fallback is safe to use.
+const supabaseUrl = validSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL) ?? fallbackSupabaseUrl;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   ?? process.env.SUPABASE_SERVICE_KEY
   ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
