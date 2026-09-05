@@ -14,6 +14,13 @@ enum UserRole {
   VIEWER
 }
 
+enum CloserPairingRequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
+}
+
 enum WhatsAppConnectionStatus {
   NOT_CONNECTED
   PENDING_META_SETUP
@@ -765,6 +772,73 @@ model WebhookEvent {
   @@unique([businessId, source, externalEventId])
   @@index([businessId, status, receivedAt])
   @@map("crm_webhook_events")
+}
+
+// Customer-facing data for the paired NFC plushie experience. These models are
+// intentionally independent from fulfilment orders and CRM records.
+model CloserCertificate {
+  id            String   @id @default(cuid())
+  certificateId String   @unique @map("certificate_id")
+  accessKeyHash String   @map("access_key_hash")
+  connectionId  String?  @unique @map("connection_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([connectionId])
+  @@map("closer_app_certificates")
+}
+
+model CloserConnection {
+  id                     String   @id @default(cuid())
+  firstCertificateId     String   @unique @map("first_certificate_id")
+  secondCertificateId    String   @unique @map("second_certificate_id")
+  firstName              String   @map("first_name")
+  secondName             String   @map("second_name")
+  nextPhotoCertificateId String   @map("next_photo_certificate_id")
+  photoPath              String?  @map("photo_path")
+  photoContentType       String?  @map("photo_content_type")
+  voicePath              String?  @map("voice_path")
+  voiceContentType       String?  @map("voice_content_type")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  @@index([firstCertificateId])
+  @@index([secondCertificateId])
+  @@map("closer_app_connections")
+}
+
+model CloserPairingRequest {
+  id                String                      @id @default(cuid())
+  fromCertificateId String                      @map("from_certificate_id")
+  toCertificateId   String                      @map("to_certificate_id")
+  requesterName     String                      @map("requester_name")
+  status            CloserPairingRequestStatus @default(PENDING)
+  createdAt         DateTime                    @default(now()) @map("created_at")
+  updatedAt         DateTime                    @updatedAt @map("updated_at")
+
+  @@index([toCertificateId, status, createdAt])
+  @@index([fromCertificateId, status, createdAt])
+  @@map("closer_app_pairing_requests")
+}
+
+model CloserActivity {
+  id                 String   @id @default(cuid())
+  connectionId       String   @map("connection_id")
+  actorCertificateId String   @map("actor_certificate_id")
+  action             String
+  details            Json?
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  @@index([connectionId, createdAt])
+  @@map("closer_app_activity")
+}
+
+model CloserAppSettings {
+  id        String   @id @default("default")
+  theme     Json     @default("{}")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("closer_app_settings")
 }
 
 model AuditLog {

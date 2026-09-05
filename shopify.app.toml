@@ -1,0 +1,26 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "26bd67c2b2d4cdf511a95649aa9a682a"
+name = "Meaningful Fulfilment"
+application_url = "https://meaningful-plushies-fulfilment.vercel.app"
+embedded = true
+
+[webhooks]
+api_version = "2026-04"
+
+  [[webhooks.subscriptions]]
+  uri = "/api/shopify/webhooks/orders-updated"
+  topics = [ "orders/updated" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/api/shopify/webhooks/orders-create"
+  topics = [ "orders/create" ]
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_discounts,read_metaobject_definitions,read_metaobjects,read_orders,read_products,write_discounts,write_metaobject_definitions,write_metaobjects,write_orders"
+optional_scopes = [ ]
+use_legacy_install_flow = false
+
+[auth]
+redirect_urls = [ ]

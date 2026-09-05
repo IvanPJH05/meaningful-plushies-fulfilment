@@ -1,0 +1,42 @@
+{% liquid
+  assign certificate_id = block.settings.certificate_id | default: metaobject.system.handle | default: page.handle
+  assign app_url = block.settings.app_url | default: 'https://meaningful-plushies-fulfilment.vercel.app'
+%}
+
+<section class="closer-certificate" style="--closer-background: {{ block.settings.background }}; --closer-card: {{ block.settings.card_background }}; --closer-text: {{ block.settings.text_color }}; --closer-accent: {{ block.settings.accent_color }};" {{ block.shopify_attributes }}>
+  <div class="closer-certificate__card">
+    <p class="closer-certificate__eyebrow">{{ block.settings.eyebrow | escape }}</p>
+    <h2>{{ block.settings.heading | escape }}</h2>
+    <p>{{ block.settings.description | escape }}</p>
+    <a class="closer-certificate__button" href="{{ app_url }}/closer?certificate={{ certificate_id | url_encode }}&key={{ block.settings.access_key | url_encode }}">{{ block.settings.button_label | escape }}</a>
+  </div>
+</section>
+
+{% stylesheet %}
+  .closer-certificate { background: var(--closer-background); border-radius: 24px; padding: clamp(20px, 5vw, 48px); }
+  .closer-certificate__card { background: var(--closer-card); border-radius: 18px; color: var(--closer-text); margin: 0 auto; max-width: 680px; padding: clamp(24px, 6vw, 56px); text-align: center; }
+  .closer-certificate__eyebrow { color: var(--closer-accent); font-size: .78rem; font-weight: 700; letter-spacing: .12em; margin: 0 0 12px; text-transform: uppercase; }
+  .closer-certificate h2 { font-size: clamp(1.8rem, 5vw, 3rem); margin: 0 0 12px; }
+  .closer-certificate__card > p:not(.closer-certificate__eyebrow) { line-height: 1.6; margin: 0 auto 24px; max-width: 48ch; }
+  .closer-certificate__button { background: var(--closer-accent); border-radius: 999px; color: #fff; display: inline-block; font-weight: 700; padding: 13px 22px; text-decoration: none; }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Closer certificate",
+  "target": "section",
+  "settings": [
+    { "type": "text", "id": "certificate_id", "label": "Certificate ID", "info": "Leave blank to use the current metaobject handle." },
+    { "type": "text", "id": "access_key", "label": "Certificate access key", "info": "Connect this to the private access-key field for the current certificate." },
+    { "type": "url", "id": "app_url", "label": "Closer app address" },
+    { "type": "text", "id": "eyebrow", "label": "Small heading", "default": "A little closer, wherever you are" },
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Your shared space" },
+    { "type": "textarea", "id": "description", "label": "Description", "default": "Connect your two plushies to share photos and voice notes across the distance." },
+    { "type": "text", "id": "button_label", "label": "Button label", "default": "Open your space" },
+    { "type": "color", "id": "background", "label": "Page background", "default": "#e7eedf" },
+    { "type": "color", "id": "card_background", "label": "Card background", "default": "#fffdf8" },
+    { "type": "color", "id": "text_color", "label": "Text colour", "default": "#17302b" },
+    { "type": "color", "id": "accent_color", "label": "Button and accent colour", "default": "#d76b83" }
+  ]
+}
+{% endschema %}

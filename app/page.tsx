@@ -77,6 +77,7 @@ import {
 import { manualOrderProducts } from "../lib/manual-order-products";
 import { orderStatuses, type AccountingBankStatementLine, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type AiAccountantReview, type CommissionStatus, type ContentIdeaItem, type ContentIdeaReference, type ContentPlanItem, type CreatorCommission, type CreatorPayout, type CreatorProfile, type CreatorStatus, type CreatorTier, type DashboardAccount, type EnvelopePrintSettings, type ManualOrder, type MetaAdsEnvironment, type MetaAdsInsight, type MetaAdsSummary, type MetaCapiLog, type MetaCapiSettings, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesConsumptionMapping, type SalesFeeSetting, type StockSetting, type UserRole, type WhatsAppLead, type WhatsAppLeadStatus } from "../lib/types";
 import { MonthlyJournalWorkspace } from "../components/monthly-journal-workspace";
+import { ShopifyAppWorkspace } from "../components/shopify-app-workspace";
 
 type Session = DashboardSession;
 type View =
@@ -89,8 +90,8 @@ type View =
   | "monthly_journal_inbox" | "monthly_journal_import" | "monthly_journal_shopee" | "monthly_journal_shortcuts" | "monthly_journal_source_documents" | "monthly_journal_general_journal" | "monthly_journal_reports" | "monthly_journal_accounts" | "monthly_journal_account_activity"
   | "content_dashboard" | "content_plan" | "content_ideas"
   | "ads_dashboard" | "manual_orders_dashboard" | "manual_orders_preorders" | "manual_orders_leads"
-  | "creator_dashboard" | "creator_accounts" | "creator_sales" | "creator_commissions" | "creator_payouts" | "creator_analytics" | "creator_free_samples";
-type Workspace = "fulfilment" | "manual_orders" | "accounting" | "formal_accounting" | "monthly_journal" | "creator" | "inventory" | "reports" | "content" | "ads" | "settings";
+  | "creator_dashboard" | "creator_accounts" | "creator_sales" | "creator_commissions" | "creator_payouts" | "creator_analytics" | "creator_free_samples" | "shopify_app";
+type Workspace = "fulfilment" | "manual_orders" | "accounting" | "formal_accounting" | "monthly_journal" | "creator" | "inventory" | "reports" | "content" | "ads" | "settings" | "shopify_app";
 type SalesRange = "active" | "today" | "7d" | "30d" | "lifetime";
 type SortKey = "orderNumber" | "importedAt" | "updatedAt";
 type SortDirection = "asc" | "desc";
@@ -617,8 +618,8 @@ const manualOrderViews: readonly View[] = ["manual_orders_dashboard", "manual_or
 const manualOrderCharacters = ["Billy", "Tootsie", "Hunnie", "Dragon Warrior"] as const;
 const creatorViews: readonly View[] = ["creator_dashboard", "creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
 const creatorAdminViews: readonly View[] = ["creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
-const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "meta_capi", "stock", "sales_report", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...adsViews, ...creatorViews];
-const adminOnlyViews = new Set<View>(["history", "settings", "meta_capi", "stock", "sales_report", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...adsViews, ...creatorAdminViews]);
+const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "meta_capi", "stock", "sales_report", "shopify_app", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...adsViews, ...creatorViews];
+const adminOnlyViews = new Set<View>(["history", "settings", "meta_capi", "stock", "sales_report", "shopify_app", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...adsViews, ...creatorAdminViews]);
 const workspaceDefaultViews: Record<Workspace, View> = {
   fulfilment: "orders",
   manual_orders: "manual_orders_dashboard",
@@ -631,6 +632,7 @@ const workspaceDefaultViews: Record<Workspace, View> = {
   content: "content_dashboard",
   ads: "ads_dashboard",
   settings: "settings",
+  shopify_app: "shopify_app",
 };
 const workspaceLabels: Record<Workspace, string> = {
   fulfilment: "Fulfilment",
@@ -644,6 +646,7 @@ const workspaceLabels: Record<Workspace, string> = {
   content: "Content Plan",
   ads: "Ads",
   settings: "Settings",
+  shopify_app: "Shopify App",
 };
 const orderStatusFilterValues = ["all", ...orderStatuses] as const;
 const sourceFilterValues = ["all", "shopify", "tiktok"] as const;
@@ -853,6 +856,7 @@ const contentNavItems: NavItem[] = [
 const adsNavItems: NavItem[] = [
   { view: "ads_dashboard", label: "Ads Dashboard", icon: "report" },
 ];
+const shopifyAppNavItems: NavItem[] = [{ view: "shopify_app", label: "Closer Certificates", icon: "settings" }];
 const manualOrderNavItems: NavItem[] = [
   { view: "manual_orders_dashboard", label: "Manual Orders", icon: "orders" },
   { view: "manual_orders_preorders", label: "Preorders", icon: "cash" },
@@ -1261,6 +1265,7 @@ function workspaceForView(view: View): Workspace {
   if (accountingViews.includes(view)) return "accounting";
   if (view === "stock") return "inventory";
   if (view === "sales_report") return "reports";
+  if (view === "shopify_app") return "shopify_app";
   if (view === "history" || view === "settings" || view === "meta_capi") return "settings";
   return "fulfilment";
 }
@@ -1276,6 +1281,7 @@ function navItemsForWorkspace(workspace: Workspace, role: UserRole): NavItem[] {
   if (workspace === "reports") return reportsNavItems;
   if (workspace === "content") return contentNavItems;
   if (workspace === "ads") return adsNavItems;
+  if (workspace === "shopify_app") return shopifyAppNavItems;
   if (workspace === "manual_orders") return manualOrderNavItems;
   if (workspace === "settings") return settingsNavItems;
   return [...fulfilmentNavItems, ...fulfilmentAdminNavItems];
@@ -5288,7 +5294,7 @@ export default function Home() {
 
   const workspace = workspaceForView(view);
   const availableWorkspaces: (Workspace | "crm")[] = session.role === "admin"
-    ? ["fulfilment", "manual_orders", "crm", "accounting", "formal_accounting", "monthly_journal", "creator", "inventory", "reports", "content", "ads", "settings"]
+    ? ["fulfilment", "manual_orders", "crm", "accounting", "formal_accounting", "monthly_journal", "creator", "inventory", "reports", "content", "ads", "shopify_app", "settings"]
     : session.role === "creator" ? ["creator"] : ["fulfilment"];
   const sidebarNavItems = navItemsForWorkspace(workspace, session.role);
   const workspaceTitle = workspaceLabels[workspace];
@@ -5464,6 +5470,8 @@ export default function Home() {
       />}
 
       {workspace === "monthly_journal" && session.role === "admin" && <MonthlyJournalWorkspace initialView={view.replace("monthly_journal_", "") as "inbox" | "import" | "shopee" | "shortcuts" | "source_documents" | "general_journal" | "reports" | "account_activity" | "accounts"} />}
+
+      {workspace === "shopify_app" && session.role === "admin" && <ShopifyAppWorkspace sessionToken={session.token} />}
 
       {workspace === "creator" && (session.role === "admin" || session.role === "creator") && <CreatorProgramWorkspacePage
         view={view}
