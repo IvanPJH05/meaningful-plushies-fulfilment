@@ -25,6 +25,9 @@
 .a6-slip header { border-bottom: 3px solid #111; padding-bottom: 5%; margin-bottom: 7%; }
 .a6-slip header span { display: block; font-size: clamp(7px, .75vw, 10px); font-weight: 800; letter-spacing: .16em; }
 .a6-slip header strong { display: block; font-size: clamp(25px, 4vw, 48px); line-height: 1; margin-top: 3%; letter-spacing: -.04em; }
+.slip-marker-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
+.slip-marker-row > div { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 3px; }
+.slip-marker-row .source-badge,.slip-marker-row .order-marker,.slip-marker-row .shipping-badge { margin: 0; padding: 2px 4px; font-size: clamp(5px, .52vw, 7px); }
 .slip-fields { display: grid; gap: 3.2%; }
 .slip-fields div { border-bottom: 1px solid #d4d4d4; padding-bottom: 2.5%; }
 .slip-fields label { display: block; font-size: clamp(7px, .7vw, 9px); font-weight: 900; letter-spacing: .06em; }
@@ -65,6 +68,7 @@
   body.print-packing .a6-slip header { padding-bottom: 5mm; margin-bottom: 7mm; }
   body.print-packing .a6-slip header span { font-size: 9pt; }
   body.print-packing .a6-slip header strong { display: block !important; font-size: 38pt; margin-top: 2mm; color: #111 !important; }
+  body.print-packing .slip-marker-row .source-badge, body.print-packing .slip-marker-row .order-marker, body.print-packing .slip-marker-row .shipping-badge { padding: 1.4mm 1.8mm; font-size: 6pt; }
   body.print-packing .slip-fields { gap: 3mm; }
   body.print-packing .slip-fields div { padding-bottom: 2mm; }
   body.print-packing .slip-fields label { font-size: 8pt; }

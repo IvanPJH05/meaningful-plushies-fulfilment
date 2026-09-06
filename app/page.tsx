@@ -96,7 +96,7 @@ type SalesRange = "active" | "today" | "7d" | "30d" | "lifetime";
 type SortKey = "orderNumber" | "importedAt" | "updatedAt";
 type SortDirection = "asc" | "desc";
 type SortChoice = `${SortKey}:${SortDirection}`;
-type SourceFilter = "all" | "shopify" | "tiktok";
+type SourceFilter = "all" | "shopify" | "tiktok" | "whatsapp";
 type CollectedMetric = "bankTransfer" | "stripeCollected" | "xenditCollected" | "totalCollected";
 type DiscountMetric = "productDiscounted" | "shippingDiscounted";
 type FeeMetric = "processingFees" | "shopifyFees" | "totalFees";
@@ -649,7 +649,7 @@ const workspaceLabels: Record<Workspace, string> = {
   shopify_app: "Shopify App",
 };
 const orderStatusFilterValues = ["all", ...orderStatuses] as const;
-const sourceFilterValues = ["all", "shopify", "tiktok"] as const;
+const sourceFilterValues = ["all", "shopify", "tiktok", "whatsapp"] as const;
 const dashboardMetricValues = ["total", ...orderStatuses] as const;
 const salesRangeValues = ["active", "today", "7d", "30d", "lifetime"] as const;
 const collectedMetricValues = ["bankTransfer", "stripeCollected", "xenditCollected", "totalCollected"] as const;
@@ -1161,9 +1161,66 @@ function meaningfulMessageDownloadName(order: Order) {
   return order.tikTokFileName || `${tikTokShortOrderLabel(order).replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "")}-message`;
 }
 
-function orderSourceMatches(order: Order, source: SourceFilter) {
+function normalizedOrderNumber(value: string) {
+  return value.replace(/[^a-z0-9]/gi, "").toUpperCase();
+}
+
+function manualOrderForFulfilmentOrder(order: Order, manualOrders: ManualOrder[]) {
+  const orderNumber = normalizedOrderNumber(order.orderNumber);
+  const discountCodes = new Set([...(order.discountCodes ?? []), order.discountCodeUsed ?? ""].map((value) => value.trim().toUpperCase()).filter(Boolean));
+  return manualOrders.find((manualOrder) => {
+    const manualOrderNumbers = [manualOrder.shopifyOrderId, manualOrder.shopifyOrderName]
+      .map(normalizedOrderNumber)
+      .filter(Boolean);
+    return manualOrderNumbers.includes(orderNumber)
+      || discountCodes.has(manualOrder.productDiscountCode.trim().toUpperCase());
+  });
+}
+
+function fulfilmentSource(order: Order, manualOrders: ManualOrder[]) {
+  if (order.salesChannel === "tiktok") return "tiktok" as const;
+  return manualOrderForFulfilmentOrder(order, manualOrders) ? "whatsapp" as const : "shopify" as const;
+}
+
+function fulfilmentSourceLabel(order: Order, manualOrders: ManualOrder[]) {
+  const source = fulfilmentSource(order, manualOrders);
+  return source === "tiktok" ? "TikTok Shop" : source === "whatsapp" ? "WhatsApp" : "Shopify";
+}
+
+function isCodFulfilmentOrder(order: Order, manualOrders: ManualOrder[]) {
+  const payment = order.paymentProcessor.toLowerCase();
+  return Boolean(manualOrderForFulfilmentOrder(order, manualOrders)?.isCod)
+    || /\bcod\b|cash\s*on\s*delivery/.test(payment);
+}
+
+function isInfluencerFulfilmentOrder(order: Order) {
+  return Boolean(order.creatorFreeOrder || order.creatorId || (order.discountCodes ?? []).some((code) => /(?:creator|influencer).*(?:free|sample)|^(?:free|creator)/i.test(code)));
+}
+
+function packingSlipRemark(order: Order, manualOrders: ManualOrder[]) {
+  const details = [
+    `Source: ${fulfilmentSourceLabel(order, manualOrders)}`,
+    `Payment: ${order.paymentProcessor || "Unknown"}`,
+    isCodFulfilmentOrder(order, manualOrders) ? "COD" : "",
+    isInfluencerFulfilmentOrder(order) ? "Influencer" : "",
+    order.remark?.trim() || "",
+  ].filter(Boolean);
+  return details.join(" | ");
+}
+
+function OrderMarkers({ order, manualOrders }: { order: Order; manualOrders: ManualOrder[] }) {
+  const source = fulfilmentSource(order, manualOrders);
+  return <>
+    <span className={`source-badge ${source}`}>{fulfilmentSourceLabel(order, manualOrders)}</span>
+    {isCodFulfilmentOrder(order, manualOrders) && <span className="order-marker cod">COD</span>}
+    {isInfluencerFulfilmentOrder(order) && <span className="order-marker influencer">Influencer</span>}
+    {isExpressShipping(order) && <span className="shipping-badge">Express</span>}
+  </>;
+}
+
+function orderSourceMatches(order: Order, source: SourceFilter, manualOrders: ManualOrder[]) {
   if (source === "all") return true;
-  return (order.salesChannel ?? "shopify") === source;
+  return fulfilmentSource(order, manualOrders) === source;
 }
 
 function certificateLink(order: Order, includeProtocol = true) {
@@ -1820,20 +1877,20 @@ export default function Home() {
   const envelopePages = Array.from({ length: envelopePageCount }, (_, index) => envelopeSlots.slice(index * 2, index * 2 + 2));
   const envelopePrintableNames = envelopeSlots.map((slot) => slot.name).filter(Boolean);
   const packingAvailableOrders = useMemo(() => sortOrderRecords(
-    orders.filter((order) => orderSourceMatches(order, sourceFilter) && (packingStatusFilter === "all" || order.status === packingStatusFilter)),
+    orders.filter((order) => orderSourceMatches(order, sourceFilter, manualOrders) && (packingStatusFilter === "all" || order.status === packingStatusFilter)),
     "orderNumber",
     "desc",
-  ), [orders, packingStatusFilter, sourceFilter]);
+  ), [orders, manualOrders, packingStatusFilter, sourceFilter]);
   const envelopeAvailableOrders = useMemo(() => sortOrderRecords(
-    orders.filter((order) => orderSourceMatches(order, sourceFilter) && (envelopeStatusFilter === "all" || order.status === envelopeStatusFilter)),
+    orders.filter((order) => orderSourceMatches(order, sourceFilter, manualOrders) && (envelopeStatusFilter === "all" || order.status === envelopeStatusFilter)),
     "orderNumber",
     "desc",
-  ), [orders, envelopeStatusFilter, sourceFilter]);
+  ), [orders, manualOrders, envelopeStatusFilter, sourceFilter]);
   const filtered = useMemo(() => {
     const source = view === "fulfilled" ? orders.filter((order) => order.status === "shipped") : orders;
     const search = query.trim().toLowerCase();
     const matching = source
-      .filter((order) => orderSourceMatches(order, sourceFilter))
+      .filter((order) => orderSourceMatches(order, sourceFilter, manualOrders))
       .filter((order) => statusFilter === "all" || order.status === statusFilter)
       .filter((order) => {
         if (view !== "orders" || (!fulfilmentStartDate && !fulfilmentEndDate)) return true;
@@ -1843,7 +1900,7 @@ export default function Home() {
       .filter((order) => !search || [order.orderNumber, order.customerName, order.phone, order.trackingNumber, order.plushName, order.product, order.character, order.shippingMethod]
         .join(" ").toLowerCase().includes(search));
     return sortOrderRecords(matching, sortKey, sortDirection);
-  }, [orders, query, sourceFilter, statusFilter, view, sortKey, sortDirection, fulfilmentStartDate, fulfilmentEndDate]);
+  }, [orders, manualOrders, query, sourceFilter, statusFilter, view, sortKey, sortDirection, fulfilmentStartDate, fulfilmentEndDate]);
   const fulfilmentDateRangeSales = useMemo(() => {
     const uniqueSales = new Map<string, Order>();
     for (const order of orders) {
@@ -5602,7 +5659,7 @@ export default function Home() {
             <div className="toolbar-row toolbar-filter-row"><div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, customer, phone or tracking..." /></div><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /></div>
             <div className="toolbar-row toolbar-action-row">{view === "orders" && <button className="button secondary" disabled={!selectedShopifyOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshShopifyOrders}>{refreshingOrderNumber === "bulk" ? "Refreshing..." : `Refresh ${selectedShopifyOrderCount} Shopify`}</button>}{view === "orders" && <button className="button secondary" disabled={!selectedTikTokOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshTikTokOrders}>{refreshingOrderNumber === "tiktok-bulk" ? "Syncing..." : `Sync ${selectedTikTokOrderCount} TikTok`}</button>}{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>Move {selectedOrders.length} to next status</button>}{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>Delete</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>Export CSV</button>}</div>
           </div>
-          <div className="table-scroll"><table className="orders-table"><thead><tr><th><input type="checkbox" aria-label="Select visible orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th>Order</th><th>Date</th><th>Customer</th><th>Phone</th><th>Character</th><th>Voice</th><th>Plush name</th><th>Status</th><th>Tracking number</th><th>Last updated</th><th>{view === "orders" ? "Actions" : "View"}</th></tr></thead><tbody>{filtered.map((order) => <tr key={order.id} className={isExpressShipping(order) ? "express-shipping-row" : ""}><td><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={selectedOrders.includes(order.id)} onChange={() => toggleOrderSelection(order.id)} /></td><td><strong>{orderLabel(order)}</strong>{order.salesChannel === "tiktok" && <span className="tiktok-badge">TikTok Shop</span>}{isExpressShipping(order) && <span className="shipping-badge">Express</span>}</td><td>{formatDate(order.orderDate)}</td><td><strong>{order.customerName || "-"}</strong></td><td>{order.phone || "-"}</td><td>{order.character || "-"}</td><td>{order.voiceLength ? `${order.voiceLength}s` : "-"}</td><td>{order.plushName || "-"}</td><td><StatusPill status={order.status} /></td><td><code>{order.trackingNumber || "-"}</code></td><td>{formatDate(order.updatedAt, true)}</td><td><div className="row-actions"><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button>{view === "orders" && (order.salesChannel ?? "shopify") === "shopify" && <button className="view-button refresh-order-button" disabled={refreshingOrderNumber === order.orderNumber} onClick={() => refreshShopifyOrder(order)}>{refreshingOrderNumber === order.orderNumber ? "Refreshing..." : "Refresh"}</button>}{view === "orders" && order.salesChannel === "tiktok" && <button className="view-button refresh-order-button" disabled={refreshingOrderNumber === tiktokOrderIdFromOrder(order)} onClick={() => refreshTikTokOrder(order)}>{refreshingOrderNumber === tiktokOrderIdFromOrder(order) ? "Syncing..." : "Sync"}</button>}</div></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No orders found</strong><p>Try another search or status filter.</p></div>}</div>
+          <div className="table-scroll"><table className="orders-table"><thead><tr><th><input type="checkbox" aria-label="Select visible orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th>Order</th><th>Date</th><th>Customer</th><th>Phone</th><th>Character</th><th>Voice</th><th>Plush name</th><th>Status</th><th>Tracking number</th><th>Last updated</th><th>{view === "orders" ? "Actions" : "View"}</th></tr></thead><tbody>{filtered.map((order) => <tr key={order.id} className={isExpressShipping(order) ? "express-shipping-row" : ""}><td><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={selectedOrders.includes(order.id)} onChange={() => toggleOrderSelection(order.id)} /></td><td><strong>{orderLabel(order)}</strong><OrderMarkers order={order} manualOrders={manualOrders} /></td><td>{formatDate(order.orderDate)}</td><td><strong>{order.customerName || "-"}</strong></td><td>{order.phone || "-"}</td><td>{order.character || "-"}</td><td>{order.voiceLength ? `${order.voiceLength}s` : "-"}</td><td>{order.plushName || "-"}</td><td><StatusPill status={order.status} /></td><td><code>{order.trackingNumber || "-"}</code></td><td>{formatDate(order.updatedAt, true)}</td><td><div className="row-actions"><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button>{view === "orders" && (order.salesChannel ?? "shopify") === "shopify" && <button className="view-button refresh-order-button" disabled={refreshingOrderNumber === order.orderNumber} onClick={() => refreshShopifyOrder(order)}>{refreshingOrderNumber === order.orderNumber ? "Refreshing..." : "Refresh"}</button>}{view === "orders" && order.salesChannel === "tiktok" && <button className="view-button refresh-order-button" disabled={refreshingOrderNumber === tiktokOrderIdFromOrder(order)} onClick={() => refreshTikTokOrder(order)}>{refreshingOrderNumber === tiktokOrderIdFromOrder(order) ? "Syncing..." : "Sync"}</button>}</div></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No orders found</strong><p>Try another search or status filter.</p></div>}</div>
           <div className="table-footer">Showing {filtered.length} of {view === "fulfilled" ? orders.filter((order) => order.status === "shipped").length : orders.length} orders</div>
         </section>}
 
@@ -5619,7 +5676,7 @@ export default function Home() {
               <button className="button secondary small" type="button" onClick={copyNfcHelperSetupCommand}>Copy setup command</button>
             </div>
           </div>
-          <div className="fulfilment-scroll table-scroll"><table className="orders-table fulfilment-table"><thead><tr><th className="select-column"><input type="checkbox" aria-label="Select visible fulfilment orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th className="locked-order-column">Order ID</th>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <th key={column} className={draggedColumn === column ? "dragging" : ""} draggable onDragStart={(event) => { setDraggedColumn(column); event.dataTransfer.setData("text/plain", column); }} onDragEnd={() => setDraggedColumn(null)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => reorderFulfilmentColumn(event.dataTransfer.getData("text/plain") as FulfilmentColumn, column)}><span className="drag-handle"><Icon name="drag" /></span>{fulfilmentColumnLabels[column]}</th>)}<th>Status</th><th>View</th></tr></thead><tbody>{filtered.map((order) => { const checked = selectedOrders.includes(order.id); const rowClass = [checked ? "selected-row" : "", isExpressShipping(order) ? "express-shipping-row" : ""].filter(Boolean).join(" "); return <tr key={order.id} className={rowClass} onClick={(event) => { if ((event.target as HTMLElement).closest("button,a,input")) return; toggleOrderSelection(order.id); }}><td className="select-column"><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={checked} onChange={() => toggleOrderSelection(order.id)} /></td><td className="locked-order-column"><strong>{orderLabel(order)}</strong>{order.salesChannel === "tiktok" && <span className="tiktok-badge">TikTok Shop</span>}{isExpressShipping(order) && <span className="shipping-badge">Express</span>}</td>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <td key={column} className={column === "idWebsiteLink" ? "certificate-cell" : ""}>{fulfilmentCell(order, column)}</td>)}<td><StatusPill status={order.status} /></td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>; })}</tbody></table>{!filtered.length && <div className="empty"><strong>No fulfilment orders found</strong><p>Try another search or status filter.</p></div>}</div>
+          <div className="fulfilment-scroll table-scroll"><table className="orders-table fulfilment-table"><thead><tr><th className="select-column"><input type="checkbox" aria-label="Select visible fulfilment orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th className="locked-order-column">Order ID</th>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <th key={column} className={draggedColumn === column ? "dragging" : ""} draggable onDragStart={(event) => { setDraggedColumn(column); event.dataTransfer.setData("text/plain", column); }} onDragEnd={() => setDraggedColumn(null)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => reorderFulfilmentColumn(event.dataTransfer.getData("text/plain") as FulfilmentColumn, column)}><span className="drag-handle"><Icon name="drag" /></span>{fulfilmentColumnLabels[column]}</th>)}<th>Status</th><th>View</th></tr></thead><tbody>{filtered.map((order) => { const checked = selectedOrders.includes(order.id); const rowClass = [checked ? "selected-row" : "", isExpressShipping(order) ? "express-shipping-row" : ""].filter(Boolean).join(" "); return <tr key={order.id} className={rowClass} onClick={(event) => { if ((event.target as HTMLElement).closest("button,a,input")) return; toggleOrderSelection(order.id); }}><td className="select-column"><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={checked} onChange={() => toggleOrderSelection(order.id)} /></td><td className="locked-order-column"><strong>{orderLabel(order)}</strong><OrderMarkers order={order} manualOrders={manualOrders} /></td>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <td key={column} className={column === "idWebsiteLink" ? "certificate-cell" : ""}>{fulfilmentCell(order, column)}</td>)}<td><StatusPill status={order.status} /></td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>; })}</tbody></table>{!filtered.length && <div className="empty"><strong>No fulfilment orders found</strong><p>Try another search or status filter.</p></div>}</div>
           <div className="table-footer">Showing {filtered.length} of {orders.length} orders</div>
         </section>}
       </>}
@@ -5656,9 +5713,9 @@ export default function Home() {
         <div className="packing-controls card">
           <div className="packing-manual"><div><h2>Choose orders to print</h2><p>Enter order IDs separated by commas or spaces, or select orders from the list below.</p></div><div className="manual-entry"><input value={manualOrderIds} onChange={(event) => setManualOrderIds(event.target.value)} onKeyDown={(event) => event.key === "Enter" && selectManualOrders()} placeholder="Example: 1359, 1360, 1361" /><button className="button primary" onClick={selectManualOrders}>Add order IDs</button></div></div>
           <div className="packing-list-header"><div><strong>Available orders</strong><span>Order number, descending</span></div><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><select value={packingStatusFilter} onChange={(event) => setPackingStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><div className="packing-list-actions"><button onClick={() => setPackingSelection((current) => [...new Set([...current, ...packingAvailableOrders.map((order) => order.id)])])}>Select shown</button><button onClick={() => setPackingSelection([])}>Clear</button></div></div>
-          <div className="packing-order-list">{packingAvailableOrders.map((order) => <label key={order.id}><input type="checkbox" checked={packingSelection.includes(order.id)} onChange={() => setPackingSelection((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><div><strong>{orderLabel(order)} | {order.plushName || "Unnamed plushie"}</strong><span>{order.customerName} | {order.character || "No character"}</span></div><StatusPill status={order.status} /></label>)}</div>
+          <div className="packing-order-list">{packingAvailableOrders.map((order) => <label key={order.id}><input type="checkbox" checked={packingSelection.includes(order.id)} onChange={() => setPackingSelection((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><div><strong>{orderLabel(order)} | {order.plushName || "Unnamed plushie"}</strong><span>{order.customerName} | {order.character || "No character"}</span><OrderMarkers order={order} manualOrders={manualOrders} /></div><StatusPill status={order.status} /></label>)}</div>
         </div>
-        <div className="packing-preview"><div className="preview-heading"><div><h2>A6 print preview</h2><p>One packing slip will print on each A6 page.</p></div><span>{packingOrders.length} selected</span></div>{packingOrders.length ? <div className="slip-grid">{packingOrders.map((order) => <PackingSlip order={order} key={order.id} />)}</div> : <div className="preview-empty"><strong>No orders selected</strong><p>Enter order IDs or tick orders from the list.</p></div>}</div>
+        <div className="packing-preview"><div className="preview-heading"><div><h2>A6 print preview</h2><p>One packing slip will print on each A6 page.</p></div><span>{packingOrders.length} selected</span></div>{packingOrders.length ? <div className="slip-grid">{packingOrders.map((order) => <PackingSlip order={order} manualOrders={manualOrders} key={order.id} />)}</div> : <div className="preview-empty"><strong>No orders selected</strong><p>Enter order IDs or tick orders from the list.</p></div>}</div>
       </section>}
 
       {view === "print_envelope" && <section className="envelope-page">
@@ -9170,7 +9227,7 @@ function StatusFilterPills({ value, onChange }: { value: "all" | OrderStatus; on
 }
 
 function SourceFilterSelect({ value, onChange }: { value: SourceFilter; onChange: (source: SourceFilter) => void }) {
-  const labels: Record<SourceFilter, string> = { all: "All", shopify: "Shopify", tiktok: "TikTok" };
+  const labels: Record<SourceFilter, string> = { all: "All", shopify: "Shopify", tiktok: "TikTok", whatsapp: "WhatsApp" };
   return <select className="source-filter-select" aria-label="Filter by source" value={value} onChange={(event) => onChange(event.target.value as SourceFilter)}>{sourceFilterValues.map((source) => <option key={source} value={source}>{labels[source]}</option>)}</select>;
 }
 
@@ -9253,8 +9310,8 @@ function Editable({ label, value, onChange, disabled, placeholder, wide, textare
   return <div className={`field ${wide ? "wide" : ""}`}><label>{label}</label>{textarea ? <textarea value={value} disabled={disabled} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} /> : <input value={value} disabled={disabled} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} />}</div>;
 }
 
-function PackingSlip({ order }: { order: Order }) {
-  return <article className="a6-slip"><header><span>ORDER ID</span><strong>{packingSlipOrderLabel(order)}</strong></header><div className="slip-fields"><div className="primary-slip-field"><label>CHARACTER:</label><p>{order.character || "-"}</p></div><div className="primary-slip-field"><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{order.remark || "-"}</p></div></div><footer>Meaningful Plushies</footer></article>;
+function PackingSlip({ order, manualOrders }: { order: Order; manualOrders: ManualOrder[] }) {
+  return <article className="a6-slip"><header><div className="slip-marker-row"><span>ORDER ID</span><div><OrderMarkers order={order} manualOrders={manualOrders} /></div></div><strong>{packingSlipOrderLabel(order)}</strong></header><div className="slip-fields"><div className="primary-slip-field"><label>CHARACTER:</label><p>{order.character || "-"}</p></div><div className="primary-slip-field"><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{packingSlipRemark(order, manualOrders)}</p></div></div><footer>Meaningful Plushies</footer></article>;
 }
 
 function EnvelopeSettingsPanel({ settings, onChange, onFontUpload, onReset }: { settings: EnvelopePrintSettings; onChange: (patch: Partial<EnvelopePrintSettings>) => void; onFontUpload: (file: File | null) => void; onReset: () => void }) {

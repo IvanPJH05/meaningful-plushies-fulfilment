@@ -369,6 +369,12 @@
 .refresh-order-button:disabled { opacity: .55; cursor: wait; }
 .shipping-badge { display: inline-flex; margin-left: 7px; padding: 3px 7px; border-radius: 999px; background: #ffedbd; color: #9a5a00; font-size: 9px; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; vertical-align: middle; }
 .tiktok-badge { display: inline-flex; margin-left: 7px; padding: 3px 7px; border-radius: 999px; background: #111827; color: #fff; font-size: 9px; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; vertical-align: middle; }
+.source-badge,.order-marker { display: inline-flex; margin: 4px 0 0 6px; padding: 3px 7px; border-radius: 999px; font-size: 9px; font-weight: 900; letter-spacing: .04em; line-height: 1.15; text-transform: uppercase; vertical-align: middle; white-space: nowrap; }
+.source-badge.shopify { background: #e8f2ff; color: #155da8; }
+.source-badge.tiktok { background: #111827; color: #fff; }
+.source-badge.whatsapp { background: #dcfce7; color: #047857; }
+.order-marker.cod { background: #ffedbd; color: #9a5a00; }
+.order-marker.influencer { background: #f3e8ff; color: #7e22ce; }
 .tiktok-import-section { margin-top: 22px; overflow: hidden; }
 .tiktok-import-section .settings-heading { border-bottom: 1px solid var(--line); }
 .tiktok-import-section .import-columns,.tiktok-import-section .import-action { margin: 15px; }
