@@ -444,7 +444,9 @@ export function shopifyOrderToFulfilmentOrders(
   const refundedAmount = shopifyMoney(shopifyOrder.total_refunded ?? shopifyOrder.totalRefundedSet);
   const outstandingBalance = shopifyMoney(shopifyOrder.total_outstanding ?? shopifyOrder.totalOutstandingSet);
   const discountCodes = shopifyDiscountCodes(shopifyOrder);
-  const creatorFreeOrder = isCreatorFreeDiscountCode(discountCodes);
+  // Discount-code ownership is resolved against the Creator Program records
+  // when reporting. A FREE-looking code alone may be a paid manual order.
+  const creatorFreeOrder = false;
   const isZeroCashOrder = totalAmount === 0;
   const productDiscountAmount = creatorFreeOrder
     ? subtotalAmount
@@ -775,7 +777,9 @@ export function importShopifyData(
       : Math.max(0, importedDiscountAmount - importedProductDiscountAmount);
     const discountAmount = isZeroCashOrder ? shippingDiscountAmount : importedDiscountAmount;
     const discountCodes = cleanDiscountCodes((shared["Discount Code"] || "").split(/[,\s]+/));
-    const creatorFreeOrder = isCreatorFreeDiscountCode(discountCodes);
+    // A CSV cannot prove that a discount belongs to a creator. Keep this
+    // false until the live Creator Program match is available to reporting.
+    const creatorFreeOrder = false;
 
     for (let index = 0; index < total; index += 1) {
       const row = rows[index] ?? rows[0] ?? {};

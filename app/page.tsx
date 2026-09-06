@@ -2,11 +2,11 @@
 
 import "./settings.css";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, DragEvent, FormEvent, SVGProps } from "react";
 import { applyTikTokDetailEntries, detectCsvKind, fulfilledOrdersCsv, importShopifyData, importTikTokShopData, normalizePaymentProcessor, parseTikTokDetailsBlock, tikTokCertificateJson, tikTokDetailsToText } from "../lib/importer";
 import { parseBankStatementCsv } from "../lib/bank-statements";
-import { buildSalesReportRows, isCreatorFreeOrder, summarizeSales, type SalesReportRow, type SalesSummary } from "../lib/sales";
+import { buildSalesReportRows, isCreatorFreeOrder, manualOrderFor, summarizeSales, type SalesReportRow, type SalesSummary } from "../lib/sales";
 import { stockCharacters, summarizeStock } from "../lib/stock";
 import {
   createDashboardAccount,
@@ -80,6 +80,7 @@ import { MonthlyJournalWorkspace } from "../components/monthly-journal-workspace
 import { ShopifyAppWorkspace } from "../components/shopify-app-workspace";
 
 type Session = DashboardSession;
+const CreatorProfilesContext = createContext<CreatorProfile[]>([]);
 type View =
   | "orders" | "fulfilment" | "packing_slips" | "print_envelope" | "nfc_card" | "import" | "tiktok_shop" | "fulfilled" | "history" | "settings" | "meta_capi" | "stock" | "sales_report"
   | "accounting_dashboard" | "accounting_documents" | "accounting_transactions" | "accounting_csv_import" | "accounting_profit_loss" | "accounting_balance_sheet"
@@ -1173,7 +1174,8 @@ function manualOrderForFulfilmentOrder(order: Order, manualOrders: ManualOrder[]
       .map(normalizedOrderNumber)
       .filter(Boolean);
     return manualOrderNumbers.includes(orderNumber)
-      || discountCodes.has(manualOrder.productDiscountCode.trim().toUpperCase());
+      || discountCodes.has(manualOrder.productDiscountCode.trim().toUpperCase())
+      || discountCodes.has(manualOrder.shippingDiscountCode.trim().toUpperCase());
   });
 }
 
@@ -1193,27 +1195,31 @@ function isCodFulfilmentOrder(order: Order, manualOrders: ManualOrder[]) {
     || /\bcod\b|cash\s*on\s*delivery/.test(payment);
 }
 
-function isInfluencerFulfilmentOrder(order: Order) {
-  return Boolean(order.creatorFreeOrder || order.creatorId || (order.discountCodes ?? []).some((code) => /(?:creator|influencer).*(?:free|sample)|^(?:free|creator)/i.test(code)));
+function isInfluencerFulfilmentOrder(order: Order, creatorProfiles: CreatorProfile[]) {
+  return isCreatorFreeOrder(order, creatorProfiles);
 }
 
-function packingSlipRemark(order: Order, manualOrders: ManualOrder[]) {
+function packingSlipRemark(order: Order, manualOrders: ManualOrder[], creatorProfiles: CreatorProfile[]) {
+  const unrecordedManualOrder = !manualOrderForFulfilmentOrder(order, manualOrders) && order.totalAmount === 0 && !isInfluencerFulfilmentOrder(order, creatorProfiles);
   const details = [
-    `Source: ${fulfilmentSourceLabel(order, manualOrders)}`,
+    `Source: ${unrecordedManualOrder ? "WhatsApp (manual record missing)" : fulfilmentSourceLabel(order, manualOrders)}`,
     `Payment: ${order.paymentProcessor || "Unknown"}`,
     isCodFulfilmentOrder(order, manualOrders) ? "COD" : "",
-    isInfluencerFulfilmentOrder(order) ? "Influencer" : "",
+    isInfluencerFulfilmentOrder(order, creatorProfiles) ? "Influencer" : "",
     order.remark?.trim() || "",
   ].filter(Boolean);
   return details.join(" | ");
 }
 
 function OrderMarkers({ order, manualOrders }: { order: Order; manualOrders: ManualOrder[] }) {
+  const creatorProfiles = useContext(CreatorProfilesContext);
   const source = fulfilmentSource(order, manualOrders);
+  const unrecordedManualOrder = source === "shopify" && order.totalAmount === 0 && !isInfluencerFulfilmentOrder(order, creatorProfiles);
   return <>
     <span className={`source-badge ${source}`}>{fulfilmentSourceLabel(order, manualOrders)}</span>
+    {unrecordedManualOrder && <span className="order-marker legacy-manual">Manual (legacy)</span>}
     {isCodFulfilmentOrder(order, manualOrders) && <span className="order-marker cod">COD</span>}
-    {isInfluencerFulfilmentOrder(order) && <span className="order-marker influencer">Influencer</span>}
+    {isInfluencerFulfilmentOrder(order, creatorProfiles) && <span className="order-marker influencer">Influencer</span>}
     {isExpressShipping(order) && <span className="shipping-badge">Express</span>}
   </>;
 }
@@ -1946,8 +1952,8 @@ export default function Home() {
     const threshold = Date.now() - days * 24 * 60 * 60 * 1000;
     return orders.filter((order) => new Date(order.orderDate).getTime() >= threshold);
   }, [orders, salesRange]);
-  const sales = useMemo(() => summarizeSales(reportingOrders, processorSettings, salesFeeSettings.shopifyPercentage), [reportingOrders, processorSettings, salesFeeSettings]);
-  const allSalesReportRows = useMemo(() => buildSalesReportRows(orders, processorSettings, salesFeeSettings.shopifyPercentage), [orders, processorSettings, salesFeeSettings]);
+  const sales = useMemo(() => summarizeSales(reportingOrders, processorSettings, salesFeeSettings.shopifyPercentage, manualOrders, creatorProfiles), [reportingOrders, processorSettings, salesFeeSettings, manualOrders, creatorProfiles]);
+  const allSalesReportRows = useMemo(() => buildSalesReportRows(orders, processorSettings, salesFeeSettings.shopifyPercentage, manualOrders, creatorProfiles), [orders, processorSettings, salesFeeSettings, manualOrders, creatorProfiles]);
   const tikTokOrders = useMemo(() => sortOrderRecords(
     orders.filter((order) => order.salesChannel === "tiktok"),
     "orderNumber",
@@ -5358,7 +5364,7 @@ export default function Home() {
   const sidebarNavItems = navItemsForWorkspace(workspace, session.role);
   const workspaceTitle = workspaceLabels[workspace];
 
-  return <main className="app-shell">
+  return <CreatorProfilesContext.Provider value={creatorProfiles}><main className="app-shell">
     <aside className="side-nav">
       <div className="workspace-switcher">
         <div className="logo"><span>MP</span><div>Meaningful Plushies<small>{workspaceTitle}</small></div></div>
@@ -5599,6 +5605,8 @@ export default function Home() {
         startDate={metaAdsStartDate}
         endDate={metaAdsEndDate}
         orders={orders}
+        manualOrders={manualOrders}
+        creatorProfiles={creatorProfiles}
         environment={metaAdsEnvironment}
         trackingSettings={metaCapiSettings}
         capiEnvironment={metaCapiEnvironment}
@@ -5860,7 +5868,7 @@ export default function Home() {
       const transactions = accountingTransactions.filter((item) => matchedIds.has(item.id));
       return line && transactions.length ? <LinkedBankTransactionModal line={line} transactions={transactions} documents={accountingDocuments} ledgerEntries={accountingLedgerEntries.filter((entry) => matchedIds.has(entry.transactionId))} onOpenDocument={(item) => { setPreviewBankLineId(""); openAccountingDocument(item); }} onClose={() => setPreviewBankLineId("")} /> : null;
     })()}
-  </main>;
+  </main></CreatorProfilesContext.Provider>;
 }
 
 function getBankLineAmount(line: AccountingBankStatementLine) {
@@ -7192,6 +7200,8 @@ function AdsWorkspacePage({
   startDate,
   endDate,
   orders,
+  manualOrders,
+  creatorProfiles,
   environment,
   trackingSettings,
   capiEnvironment,
@@ -7208,6 +7218,8 @@ function AdsWorkspacePage({
   startDate: string;
   endDate: string;
   orders: Order[];
+  manualOrders: ManualOrder[];
+  creatorProfiles: CreatorProfile[];
   environment: MetaAdsEnvironment;
   trackingSettings: MetaCapiSettings;
   capiEnvironment: { pixelConfigured: boolean; tokenConfigured: boolean; tokenMasked: string; testEventCodeConfigured: boolean };
@@ -7231,7 +7243,7 @@ function AdsWorkspacePage({
     const time = new Date(order.orderDate || order.importedAt || order.updatedAt).getTime();
     return Number.isFinite(time) && time >= periodStart && time <= periodEnd;
   });
-  const influencerFreeRows = buildSalesReportRows(ordersInPeriod.filter(isCreatorFreeOrder));
+  const influencerFreeRows = buildSalesReportRows(ordersInPeriod.filter((order) => isCreatorFreeOrder(order, creatorProfiles)), [], 0, manualOrders, creatorProfiles);
   const influencerFreeSampleValue = influencerFreeRows.reduce((total, row) => total + row.totalDiscount, 0);
   const influencerFreeSampleCount = influencerFreeRows.length;
   const paidRevenue = Math.max(0, summary.revenue - influencerFreeSampleValue);
@@ -9311,7 +9323,8 @@ function Editable({ label, value, onChange, disabled, placeholder, wide, textare
 }
 
 function PackingSlip({ order, manualOrders }: { order: Order; manualOrders: ManualOrder[] }) {
-  return <article className="a6-slip"><header><div className="slip-marker-row"><span>ORDER ID</span><div><OrderMarkers order={order} manualOrders={manualOrders} /></div></div><strong>{packingSlipOrderLabel(order)}</strong></header><div className="slip-fields"><div className="primary-slip-field"><label>CHARACTER:</label><p>{order.character || "-"}</p></div><div className="primary-slip-field"><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{packingSlipRemark(order, manualOrders)}</p></div></div><footer>Meaningful Plushies</footer></article>;
+  const creatorProfiles = useContext(CreatorProfilesContext);
+  return <article className="a6-slip"><header><div className="slip-marker-row"><span>ORDER ID</span><div><OrderMarkers order={order} manualOrders={manualOrders} /></div></div><strong>{packingSlipOrderLabel(order)}</strong></header><div className="slip-fields"><div className="primary-slip-field"><label>CHARACTER:</label><p>{order.character || "-"}</p></div><div className="primary-slip-field"><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{packingSlipRemark(order, manualOrders, creatorProfiles)}</p></div></div><footer>Meaningful Plushies</footer></article>;
 }
 
 function EnvelopeSettingsPanel({ settings, onChange, onFontUpload, onReset }: { settings: EnvelopePrintSettings; onChange: (patch: Partial<EnvelopePrintSettings>) => void; onFontUpload: (file: File | null) => void; onReset: () => void }) {

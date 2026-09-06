@@ -375,6 +375,7 @@
 .source-badge.whatsapp { background: #dcfce7; color: #047857; }
 .order-marker.cod { background: #ffedbd; color: #9a5a00; }
 .order-marker.influencer { background: #f3e8ff; color: #7e22ce; }
+.order-marker.legacy-manual { background: #dcfce7; color: #047857; }
 .tiktok-import-section { margin-top: 22px; overflow: hidden; }
 .tiktok-import-section .settings-heading { border-bottom: 1px solid var(--line); }
 .tiktok-import-section .import-columns,.tiktok-import-section .import-action { margin: 15px; }

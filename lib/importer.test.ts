@@ -122,7 +122,7 @@ test("converts Shopify API orders with Upload Lift metafield into fulfilment ord
   assert.equal(orders[0]?.idWebsiteLink, "https://meaningfulplushies.com/pages/certificate/14553997287");
 });
 
-test("marks Shopify API orders with free creator codes as creator free orders", () => {
+test("keeps free-looking Shopify codes unclassified until Creator Program matching", () => {
   const orders = shopifyOrderToFulfilmentOrders({
     name: "#1501",
     createdAt: "2026-07-01T10:00:00Z",
@@ -145,7 +145,7 @@ test("marks Shopify API orders with free creator codes as creator free orders", 
     },
   }, "", []);
 
-  assert.equal(orders[0]?.creatorFreeOrder, true);
+  assert.equal(orders[0]?.creatorFreeOrder, false);
   assert.equal(orders[0]?.discountCodeUsed, "FREE-CREATOR10");
 });
 
