@@ -134,9 +134,9 @@ export async function POST(request: Request) {
         return createCertificateMetaobject({
           orderNumber: syncedNumber,
           createdAt,
-          // A fixed code makes concurrent webhook retries upsert this same
-          // entry instead of creating duplicate certificates.
-          code: order.certificateCode || existingCertificate?.code || flowCertificateCode(syncedNumber, createdAt, textValue(lineItem.id) || String(index + 1)),
+          // Existing records always keep their original code; a new one uses
+          // the order number plus a seven-digit random suffix.
+          code: order.certificateCode || existingCertificate?.code || flowCertificateCode(syncedNumber),
           plushDetails: lineItemTitle || lineItemVariantTitle || characterHint,
           certificate: certificateMediaForLineItem(`${lineItemTitle} ${characterHint}`, `${lineItemVariantTitle} ${characterHint}`),
           // The importer can already have the note even when Shopify's line
