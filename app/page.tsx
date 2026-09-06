@@ -1638,42 +1638,29 @@ export default function Home() {
       setDatabaseError("");
       setLoadingOrders(false);
 
-      const [
-        sharedActivity,
-        sharedStockSettings,
-        sharedAccountingCategories,
-        sharedAccountingDocuments,
-        sharedAccountingTransactions,
-        sharedAccountingLedgerEntries,
-        sharedBankStatementLines,
-        sharedAiAccountantReviews,
-        sharedSalesConsumptionMappings,
-        sharedContentPlanItems,
-        sharedContentIdeas,
-        sharedEnvelopePrintSettings,
-        sharedMetaCapiSettings,
-        sharedMetaCapiLogs,
-      ] = await Promise.all([
-        fetchSharedActivity(), fetchStockSettings(),
-        fetchAccountingCategories(), fetchAccountingDocuments(), fetchAccountingTransactions(), fetchAccountingLedgerEntries(), fetchAccountingBankStatementLines(), fetchAiAccountantReviews(), fetchSalesConsumptionMappings(), fetchContentPlanItems(), fetchContentIdeas(), fetchEnvelopePrintSettings(), fetchMetaCapiSettings(), fetchMetaCapiLogs(),
+      // Orders are the workspace's first priority.  Everything below is supporting
+      // data for other workspaces, so it must never hold up the order screen or turn
+      // a temporary slow query into a misleading "the app is broken" message.
+      void Promise.allSettled([
+        fetchSharedActivity().then(setActivity),
+        fetchStockSettings().then(setStockSettings),
+        fetchAccountingCategories().then(setAccountingCategories),
+        fetchAccountingDocuments().then(setAccountingDocuments),
+        fetchAccountingTransactions().then(setAccountingTransactions),
+        fetchAccountingLedgerEntries().then(setAccountingLedgerEntries),
+        fetchAccountingBankStatementLines().then(setBankStatementLines),
+        fetchAiAccountantReviews().then(setAiAccountantReviews),
+        fetchSalesConsumptionMappings().then((mappings) => setSalesConsumptionMappings(normalizeSalesConsumptionMappings(mappings))),
+        fetchContentPlanItems().then(setContentPlanItems),
+        fetchContentIdeas().then(setContentIdeas),
+        fetchEnvelopePrintSettings().then((settings) => {
+          skipNextEnvelopeSettingsSave.current = true;
+          setEnvelopePrintSettings({ ...defaultEnvelopePrintSettings, ...readStoredEnvelopeSettings(), ...settings });
+          setEnvelopeSettingsLoaded(true);
+        }),
+        fetchMetaCapiSettings().then(setMetaCapiSettings),
+        fetchMetaCapiLogs().then(setMetaCapiLogs),
       ]);
-      setActivity(sharedActivity);
-      setStockSettings(sharedStockSettings);
-      setAccountingCategories(sharedAccountingCategories);
-      setAccountingDocuments(sharedAccountingDocuments);
-      setAccountingTransactions(sharedAccountingTransactions);
-      setAccountingLedgerEntries(sharedAccountingLedgerEntries);
-      setBankStatementLines(sharedBankStatementLines);
-      setAiAccountantReviews(sharedAiAccountantReviews);
-      setSalesConsumptionMappings(normalizeSalesConsumptionMappings(sharedSalesConsumptionMappings));
-      setContentPlanItems(sharedContentPlanItems);
-      setContentIdeas(sharedContentIdeas);
-      skipNextEnvelopeSettingsSave.current = true;
-      setEnvelopePrintSettings({ ...defaultEnvelopePrintSettings, ...readStoredEnvelopeSettings(), ...sharedEnvelopePrintSettings });
-      setMetaCapiSettings(sharedMetaCapiSettings);
-      setMetaCapiLogs(sharedMetaCapiLogs);
-      setEnvelopeSettingsLoaded(true);
-      setDatabaseError("");
     } catch (error) {
       setDatabaseError(error instanceof Error ? error.message : "Could not load shared data from Supabase.");
     } finally {
@@ -1685,7 +1672,7 @@ export default function Home() {
     if (!supabaseConfigured || !changedTables.length) return;
     const tables = new Set(changedTables);
     try {
-      await Promise.all([
+      await Promise.allSettled([
         tables.has("fulfilment_orders") ? fetchSharedOrders().then((sharedOrders) => setOrders(normalizeSharedOrders(sharedOrders))) : Promise.resolve(),
         tables.has("manual_orders") ? fetchManualOrders().then(setManualOrders) : Promise.resolve(),
         tables.has("whatsapp_leads") ? fetchWhatsAppLeads().then(setWhatsAppLeads) : Promise.resolve(),
@@ -1713,9 +1700,9 @@ export default function Home() {
         (tables.has("creator_commissions") && session && (session.role === "admin" || session.role === "creator")) ? fetchCreatorCommissions(session.token).then(setCreatorCommissions) : Promise.resolve(),
         (tables.has("creator_payouts") && session && (session.role === "admin" || session.role === "creator")) ? fetchCreatorPayouts(session.token).then(setCreatorPayouts) : Promise.resolve(),
       ]);
-      setDatabaseError("");
-    } catch (error) {
-      setDatabaseError(error instanceof Error ? error.message : "Could not refresh the latest Supabase changes.");
+    } catch {
+      // A Realtime refresh is best-effort. The next update or manual refresh will
+      // recover it; do not replace a usable workspace with a generic error.
     }
   }, [normalizeSalesConsumptionMappings, normalizeSharedOrders, session]);
 
@@ -1834,31 +1821,35 @@ export default function Home() {
   }, [envelopePrintSettings, envelopeSettingsLoaded]);
 
   useEffect(() => {
-    if (session?.role !== "admin") return;
-    void fetchDashboardAccounts(session.token).then(setAccounts).catch((error) => setNotice(error instanceof Error ? error.message : "Accounts could not be loaded."));
-    void reloadMetaCapiStatus().catch((error) => setNotice(readableError(error, "Meta CAPI status could not be loaded.")));
-  }, [session]);
+    if (session?.role !== "admin" || workspaceForView(view) !== "settings") return;
+    // These are only needed in Settings. Keep a transient background failure quiet
+    // instead of showing unrelated warnings while someone is fulfilling orders.
+    void fetchDashboardAccounts(session.token).then(setAccounts).catch(() => undefined);
+    if (view === "meta_capi") void reloadMetaCapiStatus().catch(() => undefined);
+  }, [session, view]);
 
   useEffect(() => {
     if (session?.role === "staff" && adminOnlyViews.has(view)) setView("orders");
     if (session?.role === "creator" && !creatorViews.includes(view)) setView("creator_dashboard");
   }, [session, view]);
 
-  const loadCreatorData = useCallback(async () => {
+  const loadCreatorData = useCallback(async (includeFinancialData = true) => {
     if (!session || !supabaseConfigured || (session.role !== "admin" && session.role !== "creator")) return;
-    const [profiles, commissions, payouts] = await Promise.all([
-      fetchCreatorProfiles(session.token),
+    const profiles = await fetchCreatorProfiles(session.token);
+    setCreatorProfiles(profiles);
+    if (!includeFinancialData) return;
+    const [commissions, payouts] = await Promise.all([
       fetchCreatorCommissions(session.token),
       fetchCreatorPayouts(session.token),
     ]);
-    setCreatorProfiles(profiles);
     setCreatorCommissions(commissions);
     setCreatorPayouts(payouts);
   }, [session]);
 
   useEffect(() => {
-    void loadCreatorData().catch((error) => setNotice(error instanceof Error ? error.message : "Creator Program could not be loaded."));
-  }, [loadCreatorData]);
+    const isCreatorWorkspace = workspaceForView(view) === "creator";
+    void loadCreatorData(isCreatorWorkspace).catch(() => undefined);
+  }, [loadCreatorData, view]);
 
   useEffect(() => {
     if (session?.role !== "admin" || workspaceForView(view) !== "ads") return;
