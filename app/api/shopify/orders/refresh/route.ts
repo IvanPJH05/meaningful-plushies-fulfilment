@@ -181,6 +181,7 @@ export async function POST(request: Request) {
       results,
     });
   } catch (error) {
+    console.error("Shopify order refresh failed", error);
     return json(500, {
       ok: false,
       error: error instanceof Error ? error.message : "Shopify order could not be refreshed.",

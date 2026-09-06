@@ -333,6 +333,9 @@ type CertificateDefinitionField = { key?: string; name?: string };
  * snake_case). This is particularly important for the plushie image field.
  */
 function certificateFields(input: CertificateMetaobjectInput, definitionFields?: CertificateDefinitionField[]) {
+  // Some Version 1 certificate definitions use single-line fields. Keep
+  // customer-entered line breaks from making the entire metaobject write fail.
+  const valueForMetaobject = (value: string | undefined) => (value || "").replace(/[\r\n]+/g, " ").trim();
   const values: [string, string | undefined][] = [
     ["code", input.code], ["order_number", input.orderNumber ? `#${cleanShopifyOrderNumber(input.orderNumber)}` : ""],
     ["created_at", input.createdAt], ["plush_details", input.plushDetails], ["certificate", input.certificate],
@@ -342,7 +345,7 @@ function certificateFields(input: CertificateMetaobjectInput, definitionFields?:
     ["meaningful_message", input.meaningfulMessage],
   ];
   if (!definitionFields?.length) {
-    return values.filter(([, value]) => value !== undefined).map(([key, value]) => ({ key, value: value || "" }));
+    return values.filter(([, value]) => value !== undefined).map(([key, value]) => ({ key, value: valueForMetaobject(value) }));
   }
 
   const normalise = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -352,7 +355,7 @@ function certificateFields(input: CertificateMetaobjectInput, definitionFields?:
     const field = definitionFields.find((candidate) =>
       normalise(candidate.key || "") === expected || normalise(candidate.name || "") === expected,
     );
-    return field?.key ? [{ key: field.key, value: value || "" }] : [];
+    return field?.key ? [{ key: field.key, value: valueForMetaobject(value) }] : [];
   });
 }
 

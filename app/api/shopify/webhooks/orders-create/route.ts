@@ -188,7 +188,14 @@ export async function POST(request: Request) {
         textValue(fullOrder.name) || textValue(payload.name),
       );
     }
-    await syncCreatorCommissions();
+    try {
+      await syncCreatorCommissions();
+    } catch (error) {
+      // A slow commission recalculation must never make Shopify retry and
+      // duplicate an otherwise imported order. The next successful order
+      // sync or manual refresh will recalculate commissions again.
+      console.error("Creator commission sync failed after Shopify import", error);
+    }
     try {
       const metaSettings = await fetchMetaCapiSettings();
       if (ordersToSave.length) {
