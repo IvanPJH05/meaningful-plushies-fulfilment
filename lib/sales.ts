@@ -64,17 +64,17 @@ export function manualOrderFor(order: Order, manualOrders: ManualOrder[] = []) {
   });
 }
 
-export function isCreatorFreeOrder(order: Order, creatorProfiles?: CreatorProfile[]) {
+export function isCreatorFreeOrder(order: Order, creatorProfiles?: CreatorProfile[], freeCreatorSampleCodes: string[] = []) {
   const codes = orderDiscountCodes(order);
   // When the Creator Program has been loaded, only an exact program code can
   // mark a RM0 checkout as an influencer order. A generic FREE-* discount is
   // never enough on its own.
   if (creatorProfiles) {
     if (order.totalAmount > 0) return false;
-    const creatorCodes = new Set(creatorProfiles.flatMap((profile) => {
+    const creatorCodes = new Set([...creatorProfiles.flatMap((profile) => {
       const code = profile.discountCode.trim().toUpperCase();
       return code ? [code, code.startsWith("FREE-") ? code : `FREE-${code}`] : [];
-    }));
+    }), ...freeCreatorSampleCodes.map((code) => code.trim().toUpperCase()).filter(Boolean)]);
     return codes.some((code) => creatorCodes.has(code));
   }
   if (order.creatorFreeOrder) return true;
@@ -85,8 +85,8 @@ export function isCreatorFreeOrder(order: Order, creatorProfiles?: CreatorProfil
   ));
 }
 
-export function summarizeSales(orders: Order[], settings: PaymentProcessorSetting[] = [], shopifyPercentage = 0, manualOrders: ManualOrder[] = [], creatorProfiles?: CreatorProfile[]): SalesSummary {
-  const rows = buildSalesReportRows(orders, settings, shopifyPercentage, manualOrders, creatorProfiles);
+export function summarizeSales(orders: Order[], settings: PaymentProcessorSetting[] = [], shopifyPercentage = 0, manualOrders: ManualOrder[] = [], creatorProfiles?: CreatorProfile[], freeCreatorSampleCodes: string[] = []): SalesSummary {
+  const rows = buildSalesReportRows(orders, settings, shopifyPercentage, manualOrders, creatorProfiles, freeCreatorSampleCodes);
   return rows.reduce((summary, row) => ({
     gross: summary.gross + row.salePrice + row.totalDiscount,
     productDiscounted: summary.productDiscounted + row.productDiscount,
@@ -102,7 +102,7 @@ export function summarizeSales(orders: Order[], settings: PaymentProcessorSettin
   }), emptySummary);
 }
 
-export function buildSalesReportRows(orders: Order[], settings: PaymentProcessorSetting[] = [], shopifyPercentage = 0, manualOrders: ManualOrder[] = [], creatorProfiles?: CreatorProfile[]): SalesReportRow[] {
+export function buildSalesReportRows(orders: Order[], settings: PaymentProcessorSetting[] = [], shopifyPercentage = 0, manualOrders: ManualOrder[] = [], creatorProfiles?: CreatorProfile[], freeCreatorSampleCodes: string[] = []): SalesReportRow[] {
   const feesByProcessor = new Map(settings.map((setting) => [setting.processor.toLowerCase(), setting]));
   const groupedOrders = new Map<string, Order[]>();
   for (const order of orders) {
@@ -116,7 +116,7 @@ export function buildSalesReportRows(orders: Order[], settings: PaymentProcessor
       order.totalAmount - order.refundedAmount - order.outstandingBalance,
     );
     const manualOrder = manualOrderFor(order, manualOrders);
-    const creatorFreeOrder = isCreatorFreeOrder(order, creatorProfiles);
+    const creatorFreeOrder = isCreatorFreeOrder(order, creatorProfiles, freeCreatorSampleCodes);
     const isManualOrder = Boolean(manualOrder) || (cashCollected === 0 && !creatorFreeOrder);
     const manualPrice = Math.max(0, order.subtotalAmount) + (manualOrder?.isCod ? 10 : 0);
     const salePrice = creatorFreeOrder ? 0 : isManualOrder ? manualPrice : cashCollected;

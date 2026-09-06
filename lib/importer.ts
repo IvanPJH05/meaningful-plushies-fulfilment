@@ -391,15 +391,6 @@ function shopifyTrackingFromTags(order: Record<string, unknown>) {
   return { courier: "", trackingNumber: "" };
 }
 
-function isCreatorFreeDiscountCode(codes: string[]) {
-  return codes.some((code) => {
-    const normalized = code.trim().toUpperCase();
-    return normalized.startsWith("FREE-")
-      || normalized.startsWith("CREATOR-FREE")
-      || normalized.includes("INFLUENCER-FREE");
-  });
-}
-
 function firstMetafieldValue(order: Record<string, unknown>, key: string) {
   const metafields = order.metafields;
   if (!Array.isArray(metafields)) return "";

@@ -80,6 +80,17 @@ test("keeps creator free orders out of collected cash", () => {
   });
 });
 
+test("recognizes an exact Free Creator Sample code as an influencer order", () => {
+  const [row] = buildSalesReportRows([order({
+    discountCodes: ["IKLLDMIA"],
+    discountCodeUsed: "IKLLDMIA",
+  })], [], 0, [], [], ["IKLLDMIA"]);
+
+  assert.equal(row.paymentProcessor, "Influencer (RM0)");
+  assert.equal(row.salePrice, 0);
+  assert.equal(row.totalDiscount, 123);
+});
+
 test("keeps discounts when customer revenue is greater than zero", () => {
   const result = summarizeSales([order({
     totalAmount: 100,
