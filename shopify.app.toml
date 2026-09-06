@@ -26,6 +26,6 @@ use_legacy_install_flow = false
 redirect_urls = [ ]
 
 [app_proxy]
-url = "/closer-proxy"
+url = "https://meaningful-plushies-fulfilment.vercel.app/closer-proxy"
 prefix = "apps"
 subpath = "closer"
