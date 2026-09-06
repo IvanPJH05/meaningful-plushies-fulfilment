@@ -1,6 +1,6 @@
 {% liquid
   assign certificate_id = block.settings.certificate_id | default: metaobject.system.handle | default: page.handle
-  assign app_url = block.settings.app_url | default: 'https://meaningful-plushies-fulfilment.vercel.app'
+  assign app_url = block.settings.app_url | default: 'https://meaningfulplushies.com/apps/closer'
 %}
 
 {{ 'closer-certificate.css' | asset_url | stylesheet_tag }}

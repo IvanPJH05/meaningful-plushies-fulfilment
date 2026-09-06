@@ -4,6 +4,8 @@ import { FormEvent, useEffect, useState } from "react";
 
 import styles from "./shopify-app-workspace.module.css";
 
+const closerStorefrontUrl = "https://meaningfulplushies.com/apps/closer";
+
 export function ShopifyAppWorkspace({ sessionToken }: { sessionToken: string }) {
   const [accent, setAccent] = useState("#d76b83");
   const [background, setBackground] = useState("#e7eedf");
@@ -23,7 +25,7 @@ export function ShopifyAppWorkspace({ sessionToken }: { sessionToken: string }) 
   }
   async function load() { const data = await request("GET"); setCounts({ certificates: data.certificates.length, connections: data.connections.length, activity: data.activity.length }); setConnections(data.connections); setActivity(data.activity); const theme = data.theme || {}; if (theme.heading) setHeading(theme.heading); if (theme.accent) setAccent(theme.accent); if (theme.background) setBackground(theme.background); }
   useEffect(() => { void load().catch((error: Error) => setNotice(error.message)); }, []);
-  async function createCertificate(event: FormEvent) { event.preventDefault(); setNotice(""); try { const data = await request("POST", { action: "create_certificate", certificateId }); const link = `${window.location.origin}/closer?certificate=${encodeURIComponent(data.certificate.certificateId)}&key=${encodeURIComponent(data.certificate.accessKey)}`; setCreatedLink(link); setCertificateId(""); await load(); } catch (error) { setNotice(error instanceof Error ? error.message : "Could not create certificate."); } }
+  async function createCertificate(event: FormEvent) { event.preventDefault(); setNotice(""); try { const data = await request("POST", { action: "create_certificate", certificateId }); const link = `${closerStorefrontUrl}?certificate=${encodeURIComponent(data.certificate.certificateId)}&key=${encodeURIComponent(data.certificate.accessKey)}`; setCreatedLink(link); setCertificateId(""); await load(); } catch (error) { setNotice(error instanceof Error ? error.message : "Could not create certificate."); } }
   async function saveTheme() { try { await request("POST", { action: "save_theme", theme: { heading, accent, background } }); setNotice("Theme saved."); } catch (error) { setNotice(error instanceof Error ? error.message : "Could not save theme."); } }
   async function unlink(certificateId: string) { if (!window.confirm("Unlink this pair and remove its shared media?")) return; try { await request("POST", { action: "unlink", certificateId }); await load(); setNotice("Pair unlinked."); } catch (error) { setNotice(error instanceof Error ? error.message : "Could not unlink pair."); } }
 

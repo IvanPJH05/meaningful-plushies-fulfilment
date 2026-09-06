@@ -29,6 +29,10 @@ export function CloserCustomerPage() {
   const params = useSearchParams();
   const certificateId = useMemo(() => params.get("certificate") || params.get("id") || "", [params]);
   const accessKey = useMemo(() => params.get("key") || "", [params]);
+  const proxyPath = useMemo(() => (params.get("path_prefix") || "").replace(/\/+$/, ""), [params]);
+  const apiPath = proxyPath ? `${proxyPath}/api` : "/api/closer";
+  const mediaPath = proxyPath ? `${proxyPath}/media` : "/api/closer/media";
+  const themePath = proxyPath ? `${proxyPath}/theme` : "/api/closer/theme";
   const [state, setState] = useState<CloserState | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -45,7 +49,7 @@ export function CloserCustomerPage() {
 
   const call = useCallback(async (action: string, payload: Record<string, unknown> = {}) => {
     if (!certificateId || !accessKey) throw new Error("This NFC link is incomplete. Please scan the tag again.");
-    const response = await fetch("/api/closer", {
+    const response = await fetch(apiPath, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, certificateId, accessKey, ...payload }),
@@ -53,7 +57,7 @@ export function CloserCustomerPage() {
     const data = await response.json() as { error?: string; state?: CloserState };
     if (!response.ok) throw new Error(data.error || "We could not update your shared space.");
     return data;
-  }, [accessKey, certificateId]);
+  }, [accessKey, apiPath, certificateId]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -77,13 +81,13 @@ export function CloserCustomerPage() {
   }, [call, refresh]);
 
   useEffect(() => {
-    void fetch("/api/closer/theme")
+    void fetch(themePath)
       .then((response) => response.ok ? response.json() : null)
       .then((data: { theme?: Partial<CloserTheme> } | null) => {
         if (data?.theme) setTheme((current) => ({ ...current, ...data.theme }));
       })
       .catch(() => undefined);
-  }, []);
+  }, [themePath]);
 
   const themedStyle = {
     "--closer-background": theme.background,
@@ -152,7 +156,7 @@ export function CloserCustomerPage() {
     }
   }
 
-  const mediaUrl = (type: "photo" | "voice") => `/api/closer/media?certificate=${encodeURIComponent(certificateId)}&key=${encodeURIComponent(accessKey)}&type=${type}&v=${mediaVersion}`;
+  const mediaUrl = (type: "photo" | "voice") => `${mediaPath}?certificate=${encodeURIComponent(certificateId)}&key=${encodeURIComponent(accessKey)}&type=${type}&v=${mediaVersion}`;
 
   async function sendMedia(mediaType: "photo" | "voice", data: string) {
     setBusy(true);
