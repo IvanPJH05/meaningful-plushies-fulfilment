@@ -747,6 +747,7 @@ const feeMetricLabels: Record<FeeMetric, string> = {
 };
 
 const statusLabels: Record<OrderStatus, string> = {
+  awaiting_customisation: "Awaiting Customisation",
   new_order: "New Order",
   uploading_audio: "Uploading Audio",
   sent_for_sewing: "Sent for Sewing",
@@ -756,6 +757,7 @@ const statusLabels: Record<OrderStatus, string> = {
 };
 
 const nextStatus: Partial<Record<OrderStatus, OrderStatus>> = {
+  awaiting_customisation: "new_order",
   new_order: "uploading_audio",
   uploading_audio: "sent_for_sewing",
   sent_for_sewing: "packed",

@@ -1,4 +1,5 @@
 export const orderStatuses = [
+  "awaiting_customisation",
   "new_order",
   "uploading_audio",
   "sent_for_sewing",

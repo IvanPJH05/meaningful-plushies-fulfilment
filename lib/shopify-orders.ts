@@ -181,6 +181,15 @@ export async function setShopifyOrderMetafield(orderId: string, value: string) {
   return !(result?.data?.metafieldsSet?.userErrors?.length);
 }
 
+export function flowCertificateCode(orderNumber: string, orderCreatedAt: string, lineItemId: string) {
+  const prefix = cleanShopifyOrderNumber(orderNumber);
+  const timestamp = Number.isFinite(Date.parse(orderCreatedAt))
+    ? String(Math.floor(Date.parse(orderCreatedAt) / 1000)).slice(-4)
+    : "";
+  const itemSuffix = String(lineItemId).slice(-3);
+  return `${prefix}${timestamp}${itemSuffix}`;
+}
+
 export type CertificateMetaobjectInput = {
   orderNumber: string;
   createdAt: string;
