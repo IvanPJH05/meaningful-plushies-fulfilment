@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildSalesReportRows, summarizeSales } from "./sales.ts";
-import type { Order } from "./types";
+import type { ManualOrder, Order } from "./types";
 
 function order(overrides: Partial<Order>): Order {
   return {
@@ -89,6 +89,39 @@ test("recognizes an exact Free Creator Sample code as an influencer order", () =
   assert.equal(row.paymentProcessor, "Influencer (RM0)");
   assert.equal(row.salePrice, 0);
   assert.equal(row.totalDiscount, 123);
+});
+
+test("adds East Malaysia and COD charges to a manual order's revenue", () => {
+  const manualOrder: ManualOrder = {
+    id: "manual-1",
+    customerName: "Customer",
+    phoneOriginal: "0123456789",
+    phoneNormalized: "60123456789",
+    phoneLastFour: "6789",
+    productKey: "plushie_10s",
+    productDisplayName: "10 seconds",
+    shopifyProductId: "",
+    shopifyVariantId: "",
+    productPath: "/products/plushie",
+    shippingRegion: "EAST",
+    isCod: true,
+    productDiscountCode: "MANUAL-EAST",
+    productDiscountShopifyId: "",
+    shippingDiscountCode: "",
+    shippingDiscountShopifyId: "",
+    customerLink: "",
+    status: "used",
+    shopifyOrderId: "",
+    shopifyOrderName: "",
+    createdAt: "2026-06-14",
+    updatedAt: "2026-06-14",
+    usedAt: "",
+    paymentReceipts: [],
+  };
+  const [row] = buildSalesReportRows([order({ discountCodes: ["MANUAL-EAST"] })], [], 0, [manualOrder], []);
+
+  assert.equal(row.paymentProcessor, "COD");
+  assert.equal(row.salePrice, 145);
 });
 
 test("keeps discounts when customer revenue is greater than zero", () => {

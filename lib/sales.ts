@@ -64,6 +64,12 @@ export function manualOrderFor(order: Order, manualOrders: ManualOrder[] = []) {
   });
 }
 
+export function manualOrderRevenue(order: Order, manualOrder?: ManualOrder) {
+  const eastMalaysiaSurcharge = manualOrder?.shippingRegion === "EAST" ? 20 : 0;
+  const codFee = manualOrder?.isCod ? 10 : 0;
+  return Math.max(0, order.subtotalAmount) + eastMalaysiaSurcharge + codFee;
+}
+
 export function isCreatorFreeOrder(order: Order, creatorProfiles?: CreatorProfile[], freeCreatorSampleCodes: string[] = []) {
   const codes = orderDiscountCodes(order);
   // When the Creator Program has been loaded, only an exact program code can
@@ -118,7 +124,7 @@ export function buildSalesReportRows(orders: Order[], settings: PaymentProcessor
     const manualOrder = manualOrderFor(order, manualOrders);
     const creatorFreeOrder = isCreatorFreeOrder(order, creatorProfiles, freeCreatorSampleCodes);
     const isManualOrder = Boolean(manualOrder) || (cashCollected === 0 && !creatorFreeOrder);
-    const manualPrice = Math.max(0, order.subtotalAmount) + (manualOrder?.isCod ? 10 : 0);
+    const manualPrice = manualOrderRevenue(order, manualOrder);
     const salePrice = creatorFreeOrder ? 0 : isManualOrder ? manualPrice : cashCollected;
     const paymentProcessor = creatorFreeOrder ? "Influencer (RM0)" : isManualOrder ? (manualOrder?.isCod ? "COD" : "Bank Transfer") : order.paymentProcessor || "Unassigned";
     const processor = feesByProcessor.get(paymentProcessor.toLowerCase());
