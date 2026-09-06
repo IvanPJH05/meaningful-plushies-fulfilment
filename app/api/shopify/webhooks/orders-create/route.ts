@@ -13,14 +13,18 @@ function json(status: number, body: Record<string, unknown>) {
 }
 
 function verifyShopifyHmac(rawBody: string, hmacHeader: string | null) {
-  const secret = process.env.SHOPIFY_WEBHOOK_SECRET;
-  if (!secret) return true;
+  // The store's legacy webhook and the installed Shopify app use different
+  // first-party signing secrets. Accept either so every valid order reaches
+  // the fulfilment and creator-commission sync.
+  const secrets = [process.env.SHOPIFY_WEBHOOK_SECRET, process.env.SHOPIFY_CLIENT_SECRET].filter(Boolean) as string[];
+  if (!secrets.length) return true;
   if (!hmacHeader) return false;
 
-  const digest = createHmac("sha256", secret).update(rawBody, "utf8").digest("base64");
-  const expected = Buffer.from(digest, "utf8");
   const received = Buffer.from(hmacHeader, "utf8");
-  return expected.length === received.length && timingSafeEqual(expected, received);
+  return secrets.some((secret) => {
+    const expected = Buffer.from(createHmac("sha256", secret).update(rawBody, "utf8").digest("base64"), "utf8");
+    return expected.length === received.length && timingSafeEqual(expected, received);
+  });
 }
 
 function looksLikePersonalizedPlushie(order: Record<string, unknown>) {
