@@ -2392,7 +2392,9 @@ export default function Home() {
       ? importTikTokShopData(tikTokCsv, details, orders, actor)
       : applyTikTokDetailEntries(details, orders, actor);
     try {
-      await upsertSharedOrders(imported);
+      // A TikTok import only changes the rows read from this file. Saving the
+      // entire fulfilment history here can exceed Supabase's statement limit.
+      await upsertSharedOrders(importedOrders);
       await ensurePaymentProcessors(importedOrders.map((order) => order.paymentProcessor));
     }
     catch (error) { setNotice(readableError(error, "TikTok Shop import could not be saved to Supabase.")); return; }

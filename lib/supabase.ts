@@ -121,10 +121,13 @@ export async function syncFulfilmentSalesToMonthlyJournal(orders: Order[]) {
       updated_at: now,
     };
   });
-  const { error } = await client
-    .from("monthly_journal_entries")
-    .upsert(rows, { onConflict: "source,source_reference" });
-  if (error) throw error;
+  const batchSize = 25;
+  for (let start = 0; start < rows.length; start += batchSize) {
+    const { error } = await client
+      .from("monthly_journal_entries")
+      .upsert(rows.slice(start, start + batchSize), { onConflict: "source,source_reference" });
+    if (error) throw error;
+  }
 }
 
 export async function upsertSharedOrders(orders: Order[]) {
@@ -143,8 +146,17 @@ export async function upsertSharedOrders(orders: Order[]) {
     meta_capi_error: order.metaCapiError || null,
     data: order,
   }));
-  const { error } = await requireSupabase().from("fulfilment_orders").upsert(rows, { onConflict: "id" });
-  if (error) throw error;
+  // Fulfilment rows contain the complete order payload, which can include
+  // uploaded files. Smaller writes keep large CSV imports below Postgres's
+  // statement timeout while preserving the same upsert behaviour.
+  const batchSize = 25;
+  const client = requireSupabase();
+  for (let start = 0; start < rows.length; start += batchSize) {
+    const { error } = await client
+      .from("fulfilment_orders")
+      .upsert(rows.slice(start, start + batchSize), { onConflict: "id" });
+    if (error) throw error;
+  }
   await syncFulfilmentSalesToMonthlyJournal(orders);
 }
 
