@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 
 import { certificateMediaForLineItem, certificateMetaobjectForOrder, createCertificateMetaobject, plushBackgroundForMeaningfulNote, setShopifyOrderMetafield, shopDomain, shopifyGraphql, updateCertificateMetaobject } from "./shopify-orders";
 import type { Order } from "./types";
+import { voiceBackupFileName } from "./voice-file-name";
 
 const SESSION_TABLE = "customisation_sessions";
 const AUDIO_BUCKET = "customisation-audio";
@@ -408,6 +409,8 @@ export async function saveSubmittedSession(token: string, formValue: unknown, vo
   if (session.order_id && !await setShopifyOrderMetafield(session.order_id, uploadLiftCompatibleText(form, voiceStoragePath, {
     orderNumber: session.order_number || "",
     product: linkedOrder?.product || "Meaningful Plushie",
+    character: linkedOrder?.character || "",
+    salesChannel: linkedOrder?.salesChannel,
     certificateCode,
   }))) throw new Error("Your order customisation could not be saved. Please try again.");
   const { error: completionError } = await serviceClient().from(SESSION_TABLE).update({ status: "submitted", completed_at: completedAt, updated_at: completedAt }).eq("id", session.id);
@@ -425,8 +428,13 @@ export async function attachCertificateToSessions(orderId: string, orderNumber: 
   if (error) throw new Error(error.message);
 }
 
-function uploadLiftCompatibleText(form: CustomisationForm, voiceStoragePath: string, details: { orderNumber?: string; product?: string; certificateCode?: string } = {}) {
-  const fileName = voiceStoragePath.split("/").at(-1) || "meaningful-plushie-voice";
+function uploadLiftCompatibleText(form: CustomisationForm, voiceStoragePath: string, details: { orderNumber?: string; product?: string; character?: string; salesChannel?: Order["salesChannel"]; certificateCode?: string } = {}) {
+  const extension = voiceStoragePath.split(".").at(-1)?.replace(/[^a-z0-9]/gi, "") || "audio";
+  const fileName = voiceBackupFileName({
+    orderNumber: details.orderNumber || "",
+    character: details.character || "",
+    salesChannel: details.salesChannel,
+  }, extension);
   const voiceLink = `${appUrl}/api/customisation/audio-download?path=${encodeURIComponent(voiceStoragePath)}&filename=${encodeURIComponent(fileName)}`;
   return [
     details.orderNumber ? `Order Id: #${details.orderNumber}` : "",
@@ -631,6 +639,8 @@ export async function bindSessionsToOrders(input: { orderId: string; orderNumber
       setShopifyOrderMetafield(input.orderId, uploadLiftCompatibleText(form, session.voice_storage_path, {
         orderNumber: input.orderNumber,
         product: order?.product || "Meaningful Plushie",
+        character: order?.character || "",
+        salesChannel: order?.salesChannel,
         certificateCode,
       })).catch(() => false),
       submittedCertificateUpdate(session, form, session.voice_storage_path, certificateCode, order).catch(() => false),
@@ -661,20 +671,19 @@ async function googleDriveAccessToken() {
   return payload.access_token;
 }
 
-function driveBackupFileName(session: SessionRow, plushName: string) {
-  const extension = session.voice_storage_path?.split(".").at(-1)?.replace(/[^a-z0-9]/gi, "") || "audio";
-  const safeName = plushName.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").slice(0, 40) || "plushie";
-  const order = (session.order_number || "pending-order").replace(/[^0-9A-Za-z-]/g, "");
-  return `Order-${order}-${safeName}.${extension.toLowerCase()}`;
-}
-
 export async function backupVoiceToGoogleDrive(session: SessionRow, plushName: string) {
   if (!session.voice_storage_path || session.google_drive_file_id || !googleDriveConfigured()) return false;
   const client = serviceClient();
   try {
     const { data: audio, error: downloadError } = await client.storage.from(AUDIO_BUCKET).download(session.voice_storage_path);
     if (downloadError || !audio) throw new Error(downloadError?.message || "Could not read the saved voice file.");
-    const fileName = driveBackupFileName(session, plushName);
+    const linkedOrder = await fulfilmentOrderForSession(session);
+    const extension = session.voice_storage_path.split(".").at(-1)?.replace(/[^a-z0-9]/gi, "") || "audio";
+    const fileName = voiceBackupFileName({
+      orderNumber: linkedOrder?.orderNumber || session.order_number || "",
+      character: linkedOrder?.character || plushName,
+      salesChannel: linkedOrder?.salesChannel,
+    }, extension);
     const token = await googleDriveAccessToken();
     const body = new FormData();
     body.append("metadata", new Blob([JSON.stringify({ name: fileName, parents: [process.env.GOOGLE_DRIVE_BACKUP_FOLDER_ID] })], { type: "application/json" }));
