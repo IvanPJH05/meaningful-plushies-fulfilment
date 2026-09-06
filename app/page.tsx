@@ -41,6 +41,7 @@ import {
   fetchSharedOrders,
   fetchDashboardAccounts,
   fetchPaymentProcessorSettings,
+  fetchRecentSharedOrders,
   fetchSalesFeeSettings,
   fetchStockSettings,
   insertSharedActivity,
@@ -1622,20 +1623,26 @@ export default function Home() {
     }
     if (showLoading) setLoadingOrders(true);
     try {
-      const [sharedOrders, sharedManualOrders, sharedWhatsAppLeads, sharedProcessorSettings, sharedSalesFeeSettings] = await Promise.all([
-        fetchSharedOrders(),
+      const [recentOrders, sharedManualOrders, sharedWhatsAppLeads, sharedProcessorSettings, sharedSalesFeeSettings] = await Promise.all([
+        fetchRecentSharedOrders(),
         fetchManualOrders(),
         fetchWhatsAppLeads(),
         fetchPaymentProcessorSettings(),
         fetchSalesFeeSettings(),
       ]);
-      setOrders(normalizeSharedOrders(sharedOrders));
+      setOrders(normalizeSharedOrders(recentOrders));
       setManualOrders(sharedManualOrders);
       setWhatsAppLeads(sharedWhatsAppLeads);
       setProcessorSettings(sharedProcessorSettings);
       setSalesFeeSettings(sharedSalesFeeSettings);
       setDatabaseError("");
       setLoadingOrders(false);
+
+      // Order rows may include TikTok attachments and photos. Let staff start
+      // working with the latest orders before the full history has arrived.
+      void fetchSharedOrders()
+        .then((sharedOrders) => setOrders(normalizeSharedOrders(sharedOrders)))
+        .catch((error) => setDatabaseError(error instanceof Error ? error.message : "Could not finish loading the order history."));
 
       const [
         sharedActivity,
