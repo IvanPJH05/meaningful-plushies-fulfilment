@@ -3,6 +3,8 @@
   assign app_url = block.settings.app_url | default: 'https://meaningful-plushies-fulfilment.vercel.app'
 %}
 
+{{ 'closer-certificate.css' | asset_url | stylesheet_tag }}
+
 <section class="closer-certificate" style="--closer-background: {{ block.settings.background }}; --closer-card: {{ block.settings.card_background }}; --closer-text: {{ block.settings.text_color }}; --closer-accent: {{ block.settings.accent_color }};" {{ block.shopify_attributes }}>
   <div class="closer-certificate__card">
     <p class="closer-certificate__eyebrow">{{ block.settings.eyebrow | escape }}</p>
@@ -11,15 +13,6 @@
     <a class="closer-certificate__button" href="{{ app_url }}/closer?certificate={{ certificate_id | url_encode }}&key={{ block.settings.access_key | url_encode }}">{{ block.settings.button_label | escape }}</a>
   </div>
 </section>
-
-{% stylesheet %}
-  .closer-certificate { background: var(--closer-background); border-radius: 24px; padding: clamp(20px, 5vw, 48px); }
-  .closer-certificate__card { background: var(--closer-card); border-radius: 18px; color: var(--closer-text); margin: 0 auto; max-width: 680px; padding: clamp(24px, 6vw, 56px); text-align: center; }
-  .closer-certificate__eyebrow { color: var(--closer-accent); font-size: .78rem; font-weight: 700; letter-spacing: .12em; margin: 0 0 12px; text-transform: uppercase; }
-  .closer-certificate h2 { font-size: clamp(1.8rem, 5vw, 3rem); margin: 0 0 12px; }
-  .closer-certificate__card > p:not(.closer-certificate__eyebrow) { line-height: 1.6; margin: 0 auto 24px; max-width: 48ch; }
-  .closer-certificate__button { background: var(--closer-accent); border-radius: 999px; color: #fff; display: inline-block; font-weight: 700; padding: 13px 22px; text-decoration: none; }
-{% endstylesheet %}
 
 {% schema %}
 {
