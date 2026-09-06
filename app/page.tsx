@@ -2,7 +2,7 @@
 
 import "./settings.css";
 
-import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent, FormEvent, SVGProps } from "react";
 import { applyTikTokDetailEntries, detectCsvKind, fulfilledOrdersCsv, importShopifyData, importTikTokShopData, normalizePaymentProcessor, parseTikTokDetailsBlock, tikTokCertificateJson, tikTokDetailsToText } from "../lib/importer";
 import { parseBankStatementCsv } from "../lib/bank-statements";
@@ -41,7 +41,6 @@ import {
   fetchSharedOrders,
   fetchDashboardAccounts,
   fetchPaymentProcessorSettings,
-  fetchRecentSharedOrders,
   fetchSalesFeeSettings,
   fetchStockSettings,
   insertSharedActivity,
@@ -1385,6 +1384,7 @@ export default function Home() {
   const [session, setSession] = useState<Session | null>(() => storedSession);
   const [view, setView] = useState<View>(() => permittedView(storedUi.view, storedSession?.role));
   const [orders, setOrders] = useState<Order[]>([]);
+  const skipNextEnvelopeSettingsSave = useRef(false);
   const [manualOrders, setManualOrders] = useState<ManualOrder[]>([]);
   const [whatsAppLeads, setWhatsAppLeads] = useState<WhatsAppLead[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -1623,26 +1623,20 @@ export default function Home() {
     }
     if (showLoading) setLoadingOrders(true);
     try {
-      const [recentOrders, sharedManualOrders, sharedWhatsAppLeads, sharedProcessorSettings, sharedSalesFeeSettings] = await Promise.all([
-        fetchRecentSharedOrders(),
+      const [sharedOrders, sharedManualOrders, sharedWhatsAppLeads, sharedProcessorSettings, sharedSalesFeeSettings] = await Promise.all([
+        fetchSharedOrders(),
         fetchManualOrders(),
         fetchWhatsAppLeads(),
         fetchPaymentProcessorSettings(),
         fetchSalesFeeSettings(),
       ]);
-      setOrders(normalizeSharedOrders(recentOrders));
+      setOrders(normalizeSharedOrders(sharedOrders));
       setManualOrders(sharedManualOrders);
       setWhatsAppLeads(sharedWhatsAppLeads);
       setProcessorSettings(sharedProcessorSettings);
       setSalesFeeSettings(sharedSalesFeeSettings);
       setDatabaseError("");
       setLoadingOrders(false);
-
-      // Order rows may include TikTok attachments and photos. Let staff start
-      // working with the latest orders before the full history has arrived.
-      void fetchSharedOrders()
-        .then((sharedOrders) => setOrders(normalizeSharedOrders(sharedOrders)))
-        .catch((error) => setDatabaseError(error instanceof Error ? error.message : "Could not finish loading the order history."));
 
       const [
         sharedActivity,
@@ -1674,6 +1668,7 @@ export default function Home() {
       setSalesConsumptionMappings(normalizeSalesConsumptionMappings(sharedSalesConsumptionMappings));
       setContentPlanItems(sharedContentPlanItems);
       setContentIdeas(sharedContentIdeas);
+      skipNextEnvelopeSettingsSave.current = true;
       setEnvelopePrintSettings({ ...defaultEnvelopePrintSettings, ...readStoredEnvelopeSettings(), ...sharedEnvelopePrintSettings });
       setMetaCapiSettings(sharedMetaCapiSettings);
       setMetaCapiLogs(sharedMetaCapiLogs);
@@ -1710,6 +1705,7 @@ export default function Home() {
         tables.has("meta_capi_settings") ? fetchMetaCapiSettings().then(setMetaCapiSettings) : Promise.resolve(),
         tables.has("meta_capi_logs") ? fetchMetaCapiLogs().then(setMetaCapiLogs) : Promise.resolve(),
         tables.has("envelope_print_settings") ? fetchEnvelopePrintSettings().then((settings) => {
+          skipNextEnvelopeSettingsSave.current = true;
           setEnvelopePrintSettings({ ...defaultEnvelopePrintSettings, ...readStoredEnvelopeSettings(), ...settings });
           setEnvelopeSettingsLoaded(true);
         }) : Promise.resolve(),
@@ -1825,6 +1821,10 @@ export default function Home() {
   useEffect(() => {
     writeJson(envelopeSettingsStorageKey, envelopePrintSettings);
     if (!envelopeSettingsLoaded || !supabaseConfigured) return;
+    if (skipNextEnvelopeSettingsSave.current) {
+      skipNextEnvelopeSettingsSave.current = false;
+      return;
+    }
     const saveTimer = window.setTimeout(() => {
       void saveEnvelopePrintSettings(envelopePrintSettings).catch((error) => {
         setNotice(error instanceof Error ? `Envelope print settings could not be saved: ${error.message}` : "Envelope print settings could not be saved.");

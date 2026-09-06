@@ -72,17 +72,6 @@ export async function fetchSharedOrders(): Promise<Order[]> {
   return (data ?? []).map((row) => row.data as Order);
 }
 
-/** Shows recent orders quickly while the complete history continues loading. */
-export async function fetchRecentSharedOrders(limit = 10): Promise<Order[]> {
-  const { data, error } = await requireSupabase()
-    .from("fulfilment_orders")
-    .select("data")
-    .order("updated_at", { ascending: false })
-    .range(0, Math.max(0, limit - 1));
-  if (error) throw error;
-  return (data ?? []).map((row) => row.data as Order);
-}
-
 type MonthlyJournalAccountRow = { id: string; name: string };
 
 function monthlyJournalSaleAccount(order: Order) {
