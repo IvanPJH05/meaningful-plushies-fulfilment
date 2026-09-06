@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, CSSProperties, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
@@ -17,6 +17,9 @@ type LinkedState = {
 };
 
 type CloserState = UnlinkedState | LinkedState;
+type CloserTheme = { heading: string; accent: string; background: string };
+
+const defaultTheme: CloserTheme = { heading: "Your shared space", accent: "#d76b83", background: "#e7eedf" };
 
 function messageFrom(error: unknown) {
   return error instanceof Error ? error.message : "Something went wrong. Please try again.";
@@ -36,6 +39,7 @@ export function CloserCustomerPage() {
   const [partnerCertificateId, setPartnerCertificateId] = useState("");
   const [recording, setRecording] = useState(false);
   const [mediaVersion, setMediaVersion] = useState(0);
+  const [theme, setTheme] = useState<CloserTheme>(defaultTheme);
   const recorder = useRef<MediaRecorder | null>(null);
   const recordingStream = useRef<MediaStream | null>(null);
 
@@ -71,6 +75,20 @@ export function CloserCustomerPage() {
     }, 12_000);
     return () => window.clearInterval(interval);
   }, [call, refresh]);
+
+  useEffect(() => {
+    void fetch("/api/closer/theme")
+      .then((response) => response.ok ? response.json() : null)
+      .then((data: { theme?: Partial<CloserTheme> } | null) => {
+        if (data?.theme) setTheme((current) => ({ ...current, ...data.theme }));
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const themedStyle = {
+    "--closer-background": theme.background,
+    "--closer-accent": theme.accent,
+  } as CSSProperties;
 
   async function submitRequest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -198,12 +216,12 @@ export function CloserCustomerPage() {
     } catch (caught) { setError("Microphone access is needed to record a voice note."); }
   }
 
-  if (loading) return <main className={styles.page}><div className={styles.loading}>Opening your shared space…</div></main>;
-  if (error && !state) return <main className={styles.page}><section className={styles.card}><p className={styles.eyebrow}>closer ♥</p><h1>We couldn’t open this plushie.</h1><p>{error}</p><button className={styles.secondaryButton} onClick={() => void refresh()}>Try again</button></section></main>;
+  if (loading) return <main className={styles.page} style={themedStyle}><div className={styles.loading}>Opening your shared space…</div></main>;
+  if (error && !state) return <main className={styles.page} style={themedStyle}><section className={styles.card}><p className={styles.eyebrow}>closer ♥</p><h1>We couldn’t open this plushie.</h1><p>{error}</p><button className={styles.secondaryButton} onClick={() => void refresh()}>Try again</button></section></main>;
   if (!state) return null;
 
-  return <main className={styles.page}>
-    <header className={styles.header}><Link href="/" className={styles.brand}>closer<span>♥</span></Link><span>YOUR SHARED SPACE</span></header>
+  return <main className={styles.page} style={themedStyle}>
+    <header className={styles.header}><Link href="/" className={styles.brand}>closer<span>♥</span></Link><span>{theme.heading.toUpperCase()}</span></header>
     {error && <p className={styles.error}>{error}</p>}
 
     {state.status === "unlinked" ? <section className={styles.card}>
