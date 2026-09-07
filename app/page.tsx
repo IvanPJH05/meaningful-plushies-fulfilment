@@ -1159,7 +1159,20 @@ function packingSlipOrderLabel(order: Order) {
 }
 
 function meaningfulMessageLink(order: Order) {
-  if (order.salesChannel !== "tiktok") return order.meaningfulMessage || "";
+  if (order.salesChannel !== "tiktok") {
+    const link = order.meaningfulMessage || "";
+    const downloadName = meaningfulMessageDownloadName(order);
+    if (!link || !downloadName) return link;
+    try {
+      const downloadUrl = new URL(link);
+      // The audio endpoint uses this parameter for Content-Disposition. Updating
+      // it here renames existing files too, not only newly uploaded ones.
+      downloadUrl.searchParams.set("filename", downloadName);
+      return downloadUrl.toString();
+    } catch {
+      return link;
+    }
+  }
   if (!order.tikTokFileDataUrl && !order.tikTokFileName) return "";
   return `/api/tiktok/attachment?orderId=${encodeURIComponent(order.id)}`;
 }
