@@ -79,7 +79,7 @@ import {
   type DashboardSession,
 } from "../lib/supabase";
 import { manualOrderProducts } from "../lib/manual-order-products";
-import { orderStatuses, type AccountingBankStatementLine, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type AiAccountantReview, type CommissionStatus, type ContentIdeaItem, type ContentIdeaReference, type ContentPlanItem, type CreatorCommission, type CreatorPayout, type CreatorProfile, type CreatorStatus, type CreatorTier, type DashboardAccount, type EnvelopePrintSettings, type ManualOrder, type MetaAdsEnvironment, type MetaAdsInsight, type MetaAdsSummary, type MetaCapiLog, type MetaCapiSettings, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesConsumptionMapping, type SalesFeeSetting, type StockSetting, type UserRole, type WhatsAppLead, type WhatsAppLeadStatus } from "../lib/types";
+import { orderStatuses, type AccountingBankStatementLine, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type AiAccountantReview, type CommissionStatus, type ContentIdeaItem, type ContentIdeaReference, type ContentPlanItem, type CreatorCommission, type CreatorPayout, type CreatorProfile, type CreatorStatus, type CreatorTier, type DashboardAccount, type EnvelopePrintSettings, type ManualOrder, type MetaCapiLog, type MetaCapiSettings, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesConsumptionMapping, type SalesFeeSetting, type StockSetting, type UserRole, type WhatsAppLead, type WhatsAppLeadStatus } from "../lib/types";
 import { MonthlyJournalWorkspace } from "../components/monthly-journal-workspace";
 import { ShopifyAppWorkspace } from "../components/shopify-app-workspace";
 
@@ -95,9 +95,9 @@ type View =
   | "accounting_tax_reports" | "accounting_settings" | "accounting_files" | "accounting_general_journal" | "accounting_t_accounts" | "accounting_unit_costs" | "accounting_financial_reports"
   | "monthly_journal_inbox" | "monthly_journal_import" | "monthly_journal_shopee" | "monthly_journal_shortcuts" | "monthly_journal_source_documents" | "monthly_journal_general_journal" | "monthly_journal_reports" | "monthly_journal_accounts" | "monthly_journal_account_activity"
   | "content_dashboard" | "content_plan" | "content_ideas"
-  | "ads_dashboard" | "manual_orders_dashboard" | "manual_orders_preorders" | "manual_orders_leads"
+  | "manual_orders_dashboard" | "manual_orders_preorders" | "manual_orders_leads"
   | "creator_dashboard" | "creator_accounts" | "creator_sales" | "creator_commissions" | "creator_payouts" | "creator_analytics" | "creator_free_samples" | "shopify_app";
-type Workspace = "fulfilment" | "manual_orders" | "accounting" | "formal_accounting" | "monthly_journal" | "creator" | "inventory" | "reports" | "content" | "ads" | "settings" | "shopify_app";
+type Workspace = "fulfilment" | "manual_orders" | "accounting" | "formal_accounting" | "monthly_journal" | "creator" | "inventory" | "reports" | "content" | "settings" | "shopify_app";
 type SalesRange = "active" | "today" | "7d" | "30d" | "lifetime";
 type SortKey = "orderNumber" | "importedAt" | "updatedAt";
 type SortDirection = "asc" | "desc";
@@ -619,13 +619,12 @@ const accountingViews: readonly View[] = [
 const formalAccountingViews: readonly View[] = ["accounting_general_journal", "accounting_t_accounts", "accounting_unit_costs", "accounting_financial_reports"];
 const monthlyJournalViews: readonly View[] = ["monthly_journal_inbox", "monthly_journal_import", "monthly_journal_shopee", "monthly_journal_shortcuts", "monthly_journal_source_documents", "monthly_journal_general_journal", "monthly_journal_reports", "monthly_journal_account_activity", "monthly_journal_accounts"];
 const contentViews: readonly View[] = ["content_dashboard", "content_plan", "content_ideas"];
-const adsViews: readonly View[] = ["ads_dashboard"];
 const manualOrderViews: readonly View[] = ["manual_orders_dashboard", "manual_orders_preorders", "manual_orders_leads"];
 const manualOrderCharacters = ["Billy", "Tootsie", "Hunnie", "Dragon Warrior"] as const;
 const creatorViews: readonly View[] = ["creator_dashboard", "creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
 const creatorAdminViews: readonly View[] = ["creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
-const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "meta_capi", "stock", "sales_report", "shopify_app", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...adsViews, ...creatorViews];
-const adminOnlyViews = new Set<View>(["history", "settings", "meta_capi", "stock", "sales_report", "shopify_app", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...adsViews, ...creatorAdminViews]);
+const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "meta_capi", "stock", "sales_report", "shopify_app", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...creatorViews];
+const adminOnlyViews = new Set<View>(["history", "settings", "meta_capi", "stock", "sales_report", "shopify_app", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...creatorAdminViews]);
 const workspaceDefaultViews: Record<Workspace, View> = {
   fulfilment: "orders",
   manual_orders: "manual_orders_dashboard",
@@ -636,7 +635,6 @@ const workspaceDefaultViews: Record<Workspace, View> = {
   inventory: "stock",
   reports: "sales_report",
   content: "content_dashboard",
-  ads: "ads_dashboard",
   settings: "settings",
   shopify_app: "shopify_app",
 };
@@ -650,7 +648,6 @@ const workspaceLabels: Record<Workspace, string> = {
   inventory: "Inventory",
   reports: "Reports",
   content: "Content Plan",
-  ads: "Ads",
   settings: "Settings",
   shopify_app: "Shopify App",
 };
@@ -678,8 +675,6 @@ const envelopeSettingsStorageKey = "meaningful-plushies-envelope-print-settings"
 const freeCreatorSamplesStorageKey = "meaningful-plushies-free-creator-samples";
 const freeCreatorSampleProductLink = "https://meaningfulplushies.com/products/meaningful-plushie";
 const defaultMetaCapiSettings: MetaCapiSettings = { enabled: false, purchaseMode: "manual_only", testEventCode: "", pixelId: "", browserPixelEnabled: false, trackingNotes: "" };
-const defaultMetaAdsEnvironment: MetaAdsEnvironment = { adAccountConfigured: false, tokenConfigured: false, tokenMasked: "", graphVersion: "v20.0" };
-const defaultMetaAdsSummary: MetaAdsSummary = { spend: 0, purchases: 0, revenue: 0, roas: 0, cpa: 0, impressions: 0, clicks: 0, linkClicks: 0 };
 const shopifyStorefrontUrl = process.env.NEXT_PUBLIC_SHOPIFY_STOREFRONT_URL || "https://meaningfulplushies.com";
 const influencerOrderPagePath = process.env.NEXT_PUBLIC_INFLUENCER_ORDER_PAGE_PATH || "/products/build-your-meaningful-plushie";
 const defaultEnvelopePrintSettings: EnvelopePrintSettings = {
@@ -860,9 +855,6 @@ const contentNavItems: NavItem[] = [
   { view: "content_dashboard", label: "Dashboard", icon: "report" },
   { view: "content_plan", label: "Planned Content", icon: "calendar" },
   { view: "content_ideas", label: "Idea Brainstorming", icon: "idea" },
-];
-const adsNavItems: NavItem[] = [
-  { view: "ads_dashboard", label: "Ads Dashboard", icon: "report" },
 ];
 const shopifyAppNavItems: NavItem[] = [{ view: "shopify_app", label: "Closer Certificates", icon: "settings" }];
 const manualOrderNavItems: NavItem[] = [
@@ -1328,7 +1320,6 @@ function permittedView(value: unknown, role?: UserRole) {
 
 function workspaceForView(view: View): Workspace {
   if (creatorViews.includes(view)) return "creator";
-  if (adsViews.includes(view)) return "ads";
   if (contentViews.includes(view)) return "content";
   if (manualOrderViews.includes(view)) return "manual_orders";
   if (formalAccountingViews.includes(view)) return "formal_accounting";
@@ -1351,7 +1342,6 @@ function navItemsForWorkspace(workspace: Workspace, role: UserRole): NavItem[] {
   if (workspace === "inventory") return inventoryNavItems;
   if (workspace === "reports") return reportsNavItems;
   if (workspace === "content") return contentNavItems;
-  if (workspace === "ads") return adsNavItems;
   if (workspace === "shopify_app") return shopifyAppNavItems;
   if (workspace === "manual_orders") return manualOrderNavItems;
   if (workspace === "settings") return settingsNavItems;
@@ -1369,13 +1359,12 @@ function viewTitle(view: View) {
     content_dashboard: "Content Dashboard",
     content_plan: "Planned Content",
     content_ideas: "Idea Brainstorming",
-    ads_dashboard: "Ads Dashboard",
     manual_orders_dashboard: "Manual Orders",
     manual_orders_preorders: "Preorders",
     manual_orders_leads: "Leads",
   };
   if (titleOverrides[view]) return titleOverrides[view]!;
-  const item = [...fulfilmentNavItems, ...fulfilmentAdminNavItems, ...manualOrderNavItems, ...accountingNavItems, ...formalAccountingNavItems, ...monthlyJournalNavItems, ...creatorAdminNavItems, ...inventoryNavItems, ...reportsNavItems, ...contentNavItems, ...adsNavItems, ...settingsNavItems]
+  const item = [...fulfilmentNavItems, ...fulfilmentAdminNavItems, ...manualOrderNavItems, ...accountingNavItems, ...formalAccountingNavItems, ...monthlyJournalNavItems, ...creatorAdminNavItems, ...inventoryNavItems, ...reportsNavItems, ...contentNavItems, ...settingsNavItems]
     .find((navItem) => navItem.view === view);
   if (item) return item.label;
   return "Orders Dashboard";
@@ -1421,14 +1410,6 @@ export default function Home() {
   const [metaCapiEnvironment, setMetaCapiEnvironment] = useState({ pixelConfigured: false, tokenConfigured: false, tokenMasked: "", testEventCodeConfigured: false });
   const [metaCapiRetryOrders, setMetaCapiRetryOrders] = useState("");
   const [metaCapiBusy, setMetaCapiBusy] = useState("");
-  const [metaAdsStartDate, setMetaAdsStartDate] = useState(() => monthStartKey());
-  const [metaAdsEndDate, setMetaAdsEndDate] = useState(() => localDateKey(new Date()));
-  const [metaAdsEnvironment, setMetaAdsEnvironment] = useState<MetaAdsEnvironment>(defaultMetaAdsEnvironment);
-  const [metaAdsSummary, setMetaAdsSummary] = useState<MetaAdsSummary>(defaultMetaAdsSummary);
-  const [metaAdsInsights, setMetaAdsInsights] = useState<MetaAdsInsight[]>([]);
-  const [metaAdsConfigured, setMetaAdsConfigured] = useState(false);
-  const [metaAdsLoading, setMetaAdsLoading] = useState(false);
-  const [metaAdsError, setMetaAdsError] = useState("");
   const [manualOrderForm, setManualOrderForm] = useState<{
     customerName: string;
     phone: string;
@@ -1943,11 +1924,6 @@ export default function Home() {
     const isCreatorWorkspace = workspaceForView(view) === "creator";
     void loadCreatorData(isCreatorWorkspace).catch(() => undefined);
   }, [loadCreatorData, view]);
-
-  useEffect(() => {
-    if (session?.role !== "admin" || workspaceForView(view) !== "ads") return;
-    void loadMetaAdsDashboard();
-  }, [session?.role, view, metaAdsStartDate, metaAdsEndDate]);
 
   useEffect(() => {
     const businessEvent = bookkeepingEventByView[view];
@@ -2619,32 +2595,6 @@ export default function Home() {
       setNotice(readableError(error, "Meta CAPI action failed."));
     } finally {
       setMetaCapiBusy("");
-    }
-  }
-
-  async function loadMetaAdsDashboard() {
-    setMetaAdsLoading(true);
-    setMetaAdsError("");
-    try {
-      const params = new URLSearchParams({ from: metaAdsStartDate, to: metaAdsEndDate });
-      const response = await fetch(`/api/meta-ads?${params.toString()}`);
-      const result = await response.json() as {
-        ok?: boolean;
-        error?: string;
-        configured?: boolean;
-        environment?: MetaAdsEnvironment;
-        summary?: MetaAdsSummary;
-        insights?: MetaAdsInsight[];
-      };
-      setMetaAdsConfigured(result.configured === true);
-      setMetaAdsEnvironment(result.environment ?? defaultMetaAdsEnvironment);
-      setMetaAdsSummary(result.summary ?? defaultMetaAdsSummary);
-      setMetaAdsInsights(result.insights ?? []);
-      if (!response.ok || !result.ok) throw new Error(result.error || "Meta ads dashboard could not be loaded.");
-    } catch (error) {
-      setMetaAdsError(readableError(error, "Meta ads dashboard could not be loaded."));
-    } finally {
-      setMetaAdsLoading(false);
     }
   }
 
@@ -5461,7 +5411,7 @@ export default function Home() {
 
   const workspace = workspaceForView(view);
   const availableWorkspaces: Workspace[] = session.role === "admin"
-    ? ["fulfilment", "manual_orders", "accounting", "formal_accounting", "monthly_journal", "creator", "inventory", "reports", "content", "ads", "shopify_app", "settings"]
+    ? ["fulfilment", "manual_orders", "accounting", "formal_accounting", "monthly_journal", "creator", "inventory", "reports", "content", "shopify_app", "settings"]
     : session.role === "creator" ? ["creator"] : ["fulfilment"];
   const sidebarNavItems = navItemsForWorkspace(workspace, session.role);
   const workspaceTitle = workspaceLabels[workspace];
@@ -5701,27 +5651,6 @@ export default function Home() {
         onSaveIdea={saveContentIdeaItem}
         onDeleteIdea={removeContentIdea}
         onMoveIdeaToPlanned={moveContentIdeaToPlanned}
-      />}
-
-      {workspace === "ads" && session.role === "admin" && <AdsWorkspacePage
-        startDate={metaAdsStartDate}
-        endDate={metaAdsEndDate}
-        orders={orders}
-        manualOrders={manualOrders}
-        creatorProfiles={creatorProfiles}
-        freeCreatorSampleCodes={freeCreatorSampleCodes}
-        environment={metaAdsEnvironment}
-        trackingSettings={metaCapiSettings}
-        capiEnvironment={metaCapiEnvironment}
-        summary={metaAdsSummary}
-        insights={metaAdsInsights}
-        configured={metaAdsConfigured}
-        loading={metaAdsLoading}
-        error={metaAdsError}
-        capiLogs={metaCapiLogs}
-        onStartDateChange={setMetaAdsStartDate}
-        onEndDateChange={setMetaAdsEndDate}
-        onRefresh={loadMetaAdsDashboard}
       />}
 
       {workspace === "fulfilment" && view !== "import" && view !== "tiktok_shop" && view !== "packing_slips" && view !== "print_envelope" && view !== "nfc_card" && view !== "history" && view !== "settings" && view !== "stock" && view !== "sales_report" && <>
@@ -7297,150 +7226,6 @@ function formatRatio(value: number) {
 
 function formatPercent(value: number) {
   return Number.isFinite(value) ? `${(value * 100).toFixed(2)}%` : "-";
-}
-
-function AdsWorkspacePage({
-  startDate,
-  endDate,
-  orders,
-  manualOrders,
-  creatorProfiles,
-  freeCreatorSampleCodes,
-  environment,
-  trackingSettings,
-  capiEnvironment,
-  summary,
-  insights,
-  configured,
-  loading,
-  error,
-  capiLogs,
-  onStartDateChange,
-  onEndDateChange,
-  onRefresh,
-}: {
-  startDate: string;
-  endDate: string;
-  orders: Order[];
-  manualOrders: ManualOrder[];
-  creatorProfiles: CreatorProfile[];
-  freeCreatorSampleCodes: string[];
-  environment: MetaAdsEnvironment;
-  trackingSettings: MetaCapiSettings;
-  capiEnvironment: { pixelConfigured: boolean; tokenConfigured: boolean; tokenMasked: string; testEventCodeConfigured: boolean };
-  summary: MetaAdsSummary;
-  insights: MetaAdsInsight[];
-  configured: boolean;
-  loading: boolean;
-  error: string;
-  capiLogs: MetaCapiLog[];
-  onStartDateChange: (value: string) => void;
-  onEndDateChange: (value: string) => void;
-  onRefresh: () => void;
-}) {
-  const periodStart = startDate ? new Date(`${startDate}T00:00:00`).getTime() : 0;
-  const periodEnd = endDate ? new Date(`${endDate}T23:59:59`).getTime() : Date.now();
-  const logsInPeriod = capiLogs.filter((log) => {
-    const time = new Date(log.createdAt).getTime();
-    return Number.isFinite(time) && time >= periodStart && time <= periodEnd;
-  });
-  const ordersInPeriod = orders.filter((order) => {
-    const time = new Date(order.orderDate || order.importedAt || order.updatedAt).getTime();
-    return Number.isFinite(time) && time >= periodStart && time <= periodEnd;
-  });
-  const influencerFreeRows = buildSalesReportRows(ordersInPeriod.filter((order) => isCreatorFreeOrder(order, creatorProfiles, freeCreatorSampleCodes)), [], 0, manualOrders, creatorProfiles, freeCreatorSampleCodes);
-  const influencerFreeSampleValue = influencerFreeRows.reduce((total, row) => total + row.totalDiscount, 0);
-  const influencerFreeSampleCount = influencerFreeRows.length;
-  const paidRevenue = Math.max(0, summary.revenue - influencerFreeSampleValue);
-  const paidPurchases = Math.max(0, summary.purchases - influencerFreeSampleCount);
-  const adjustedSummary = {
-    ...summary,
-    revenue: paidRevenue,
-    purchases: paidPurchases,
-    roas: summary.spend > 0 ? paidRevenue / summary.spend : 0,
-    cpa: paidPurchases > 0 ? summary.spend / paidPurchases : 0,
-  };
-  const successfulEvents = logsInPeriod.filter((log) => log.status === "success").length;
-  const failedEvents = logsInPeriod.filter((log) => log.status === "failed").length;
-  const reviewEvents = logsInPeriod.filter((log) => log.status === "needs_review").length;
-  const trackingScore = logsInPeriod.length ? successfulEvents / logsInPeriod.length : 0;
-  const bestAds = insights.filter((ad) => ad.spend > 0).sort((a, b) => b.roas - a.roas);
-  const watchAds = insights.filter((ad) => ad.spend > 0 && ad.purchases <= 0).sort((a, b) => b.spend - a.spend);
-  const pixelReady = Boolean(trackingSettings.pixelId.trim()) || capiEnvironment.pixelConfigured;
-
-  return <section className="ads-workspace">
-    <div className="accounting-hero card ads-hero"><div><p>META ADS</p><h2>Ads performance and tracking health</h2><span>Pulls ad spend and purchase results from Meta, then compares it with your server-side tracking events so you can see whether the numbers are trustworthy.</span></div><div className={`accounting-status-pill ${configured ? "" : "loss"}`}>{configured ? "Meta connected" : "Setup needed"}</div></div>
-
-    <section className="ads-controls card">
-      <div><label>From<input type="date" value={startDate} onChange={(event) => onStartDateChange(event.target.value)} /></label><label>To<input type="date" value={endDate} onChange={(event) => onEndDateChange(event.target.value)} /></label></div>
-      <button className="button primary" onClick={onRefresh} disabled={loading}>{loading ? "Refreshing..." : "Refresh Meta data"}</button>
-    </section>
-
-    {error && <div className="notice"><span>{error}</span></div>}
-    {!configured && <section className="card ads-setup-card">
-      <h3>Meta ads connection is not configured yet</h3>
-      <p>Add `META_AD_ACCOUNT_ID` and `META_ADS_ACCESS_TOKEN` in Vercel. The token needs Meta Marketing API access with permission to read ads insights.</p>
-      <div className="ads-setup-grid"><span>Ad account: <strong>{environment.adAccountConfigured ? "Configured" : "Missing"}</strong></span><span>Token: <strong>{environment.tokenConfigured ? environment.tokenMasked : "Missing"}</strong></span><span>Graph API: <strong>{environment.graphVersion}</strong></span></div>
-      {environment.tokenConfigured && error && <p className="ads-tracking-notes">The token is present, but Meta rejected it. Replace the Vercel value with the actual access token, not the token name, Pixel ID, or app secret.</p>}
-    </section>}
-
-    <section className="card ads-setup-card">
-      <h3>Tracking setup</h3>
-      <p>Use Settings workspace &gt; Meta CAPI to save your Pixel ID and tracking notes. The access token stays in Vercel because it is private.</p>
-      <div className="ads-setup-grid">
-        <span>Meta Pixel ID: <strong>{pixelReady ? trackingSettings.pixelId || "Configured in Vercel" : "Missing"}</strong></span>
-        <span>Browser Pixel: <strong>{trackingSettings.browserPixelEnabled ? "Marked installed" : "Not marked yet"}</strong></span>
-        <span>Server events: <strong>{trackingSettings.enabled && capiEnvironment.tokenConfigured ? "Ready" : "Not ready"}</strong></span>
-      </div>
-      {trackingSettings.trackingNotes && <p className="ads-tracking-notes">{trackingSettings.trackingNotes}</p>}
-    </section>
-
-    <section className="ads-summary-grid">
-      <MoneyStat label="Ad spend" value={adjustedSummary.spend} tone="fees" />
-      <MoneyStat label="Paid purchase revenue" value={adjustedSummary.revenue} tone="sales" />
-      <article className="money-stat ads-ratio"><span>ROAS</span><strong>{formatRatio(adjustedSummary.roas)}</strong></article>
-      <MoneyStat label="CPA" value={adjustedSummary.cpa} tone="transfer" />
-      <article className="money-stat ads-ratio"><span>Purchases</span><strong>{formatNumber(adjustedSummary.purchases)}</strong></article>
-      <article className="money-stat ads-ratio"><span>Tracking success</span><strong>{logsInPeriod.length ? formatPercent(trackingScore) : "-"}</strong></article>
-    </section>
-
-    <section className="card ads-channel-card">
-      <div>
-        <span>Collection channel</span>
-        <strong>Paid purchases</strong>
-        <em>{formatMoney(paidRevenue)}</em>
-      </div>
-      <div>
-        <span>Collection channel</span>
-        <strong>Influencer free sample</strong>
-        <em>{formatMoney(influencerFreeSampleValue)}</em>
-        <small>{formatNumber(influencerFreeSampleCount)} free sample order{influencerFreeSampleCount === 1 ? "" : "s"} excluded from revenue and ROAS.</small>
-      </div>
-      <p>Meta can report free sample checkouts as purchase value. This dashboard removes creator/free-code samples from paid revenue so ROAS is based on real collected sales.</p>
-    </section>
-
-    <section className="ads-insight-grid">
-      <article className="card ads-mini-panel"><h3>Doing well</h3>{bestAds.slice(0, 4).map((ad) => <div key={ad.adId || ad.adName}><span>{ad.adName}</span><strong>{formatRatio(ad.roas)}</strong><small>{formatMoney(ad.spend)} spend | {formatNumber(ad.purchases)} purchase{ad.purchases === 1 ? "" : "s"}</small></div>)}{!bestAds.length && <p>No ads with spend yet for this range.</p>}</article>
-      <article className="card ads-mini-panel"><h3>Watch closely</h3>{watchAds.slice(0, 4).map((ad) => <div key={ad.adId || ad.adName}><span>{ad.adName}</span><strong>{formatMoney(ad.spend)}</strong><small>No purchases tracked</small></div>)}{!watchAds.length && <p>No high-spend zero-purchase ads in this range.</p>}</article>
-      <article className="card ads-mini-panel"><h3>Tracking health</h3><div><span>Successful CAPI events</span><strong>{successfulEvents}</strong></div><div><span>Failed events</span><strong>{failedEvents}</strong></div><div><span>Needs review</span><strong>{reviewEvents}</strong></div><small>These are server-side Meta Purchase events saved in your app logs.</small></article>
-    </section>
-
-    <section className="card accounting-table-card ads-table-card">
-      <h3>Ad performance</h3>
-      <div className="table-scroll"><table className="orders-table"><thead><tr><th>Ad</th><th>Campaign</th><th>Spend</th><th>Meta purchase value</th><th>ROAS</th><th>CPA</th><th>Purchases</th><th>CTR</th><th>Clicks</th><th>Impressions</th></tr></thead><tbody>{insights.map((ad) => <tr key={ad.adId || `${ad.campaignName}-${ad.adName}`}>
-        <td><strong>{ad.adName}</strong><br /><small>{ad.adsetName || ad.adId}</small></td>
-        <td>{ad.campaignName || "-"}</td>
-        <td>{formatMoney(ad.spend)}</td>
-        <td>{formatMoney(ad.revenue)}</td>
-        <td><strong>{formatRatio(ad.roas)}</strong></td>
-        <td>{ad.cpa ? formatMoney(ad.cpa) : "-"}</td>
-        <td>{formatNumber(ad.purchases)}</td>
-        <td>{formatPercent(ad.ctr)}</td>
-        <td>{formatNumber(ad.clicks)}</td>
-        <td>{formatNumber(ad.impressions)}</td>
-      </tr>)}</tbody></table>{!insights.length && <div className="empty"><strong>No Meta ads data loaded yet</strong><p>{configured ? "Try another date range or refresh Meta data." : "Add the Meta ads environment variables in Vercel, then redeploy."}</p></div>}</div>
-    </section>
-  </section>;
 }
 
 function ContentPlanWorkspacePage({
