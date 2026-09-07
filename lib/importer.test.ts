@@ -397,7 +397,7 @@ test("updates existing TikTok orders from detail entries without a CSV", () => {
   assert.equal(updated.plushName, "Baby");
   assert.equal(updated.meaningfulNote, "happy birthday sayang mama");
   assert.equal(updated.voiceUploadStatus, "received");
-  assert.equal(updated.tikTokFileName, "message.mp4");
+  assert.equal(updated.tikTokFileName, "TT1027 HUNNIE.mp4");
   assert.equal(tikTokCertificateJson(updated).Name, "BABY");
 });
 
@@ -432,7 +432,7 @@ test("imports TikTok Shop orders with certificate JSON", () => {
   assert.equal(order.character, "Hunnie");
   assert.equal(order.voiceLength, 20);
   assert.equal(order.customerName, "mikayla200");
-  assert.equal(order.tikTokFileName, "tiktok-order.pdf");
+  assert.equal(order.tikTokFileName, "TT1027 HUNNIE.pdf");
   assert.equal(order.tikTokFileDataUrl, "data:application/pdf;base64,abc123");
   assert.equal(order.paymentProcessor, "Bank Transfer");
   assert.equal(order.totalAmount, 123.3);

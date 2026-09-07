@@ -83,6 +83,18 @@ export async function fetchSharedOrders(): Promise<Order[]> {
   return (data ?? []).map((row) => row.data as Order);
 }
 
+// Load a media-bearing order only when its download link is used. This keeps a
+// browser refresh fast while still allowing cached TikTok rows to download files.
+export async function fetchSharedOrderById(id: string): Promise<Order | null> {
+  const { data, error } = await requireSupabase()
+    .from("fulfilment_orders")
+    .select("data")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? data.data as Order : null;
+}
+
 export type SharedOrderChanges = {
   changedOrders: Order[];
 };

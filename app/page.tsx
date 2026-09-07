@@ -8,6 +8,7 @@ import { applyTikTokDetailEntries, detectCsvKind, fulfilledOrdersCsv, importShop
 import { parseBankStatementCsv } from "../lib/bank-statements";
 import { buildSalesReportRows, isCreatorFreeOrder, manualOrderFor, summarizeSales, type SalesReportRow, type SalesSummary } from "../lib/sales";
 import { stockCharacters, summarizeStock } from "../lib/stock";
+import { mediaFileExtension, voiceBackupFileName } from "../lib/voice-file-name";
 import {
   createDashboardAccount,
   createAccountingDocumentSignedUrl,
@@ -1158,12 +1159,14 @@ function packingSlipOrderLabel(order: Order) {
 }
 
 function meaningfulMessageLink(order: Order) {
-  return order.salesChannel === "tiktok" ? order.tikTokFileDataUrl || "" : order.meaningfulMessage || "";
+  if (order.salesChannel !== "tiktok") return order.meaningfulMessage || "";
+  if (!order.tikTokFileDataUrl && !order.tikTokFileName) return "";
+  return `/api/tiktok/attachment?orderId=${encodeURIComponent(order.id)}`;
 }
 
 function meaningfulMessageDownloadName(order: Order) {
-  if (order.salesChannel !== "tiktok" || !order.tikTokFileDataUrl) return undefined;
-  return order.tikTokFileName || `${tikTokShortOrderLabel(order).replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "")}-message`;
+  if (order.salesChannel !== "tiktok" || (!order.tikTokFileDataUrl && !order.tikTokFileName)) return undefined;
+  return voiceBackupFileName(order, mediaFileExtension(order.tikTokFileName, order.tikTokFileType, order.tikTokFileDataUrl));
 }
 
 function normalizedOrderNumber(value: string) {
@@ -5940,7 +5943,7 @@ export default function Home() {
                     <label>Plushie Belongs to<input value={entry.belongsTo} onChange={(event) => updateTikTokDetailEntry(entry.id, { belongsTo: event.target.value })} placeholder="Ayangku" /></label>
                     <label className="wide">Meaningful Note<textarea value={entry.meaningfulNote} onChange={(event) => updateTikTokDetailEntry(entry.id, { meaningfulNote: event.target.value })} placeholder="Nota bermakna..." /></label>
                   </div>
-                  <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.txt,.doc,.docx" title="TikTok order file" description="Choose or drop the file for this order" selectedName={entry.fileName} onFile={(file) => uploadTikTokDetailFile(entry.id, file)} className="compact-file-drop" />
+                  <FileDropZone accept="audio/*,video/*,application/pdf,image/png,image/jpeg,image/webp,.txt,.doc,.docx" title="TikTok order message" description="Choose or drop the customer's audio, video, or document" selectedName={entry.fileName} onFile={(file) => uploadTikTokDetailFile(entry.id, file)} className="compact-file-drop" />
                 </article>)}
               </div>
               <button className="button secondary tiktok-add-entry" type="button" onClick={addTikTokDetailEntry}>Add Entry</button>
@@ -9324,7 +9327,7 @@ function OrderDrawer({ order, role, actor, onClose, onUpdate, onStatus }: { orde
     const reader = new FileReader();
     reader.onload = () => onUpdate({
       tikTokFileDataUrl: String(reader.result),
-      tikTokFileName: file.name,
+      tikTokFileName: voiceBackupFileName(order, mediaFileExtension(file.name, file.type, String(reader.result))),
       tikTokFileType: file.type || "application/octet-stream",
     });
     reader.readAsDataURL(file);
@@ -9334,7 +9337,7 @@ function OrderDrawer({ order, role, actor, onClose, onUpdate, onStatus }: { orde
     <section className="detail-summary"><div><span>Current status</span><StatusPill status={order.status} /></div><div><span>Last updated</span><strong>{formatDate(order.updatedAt, true)}</strong></div></section>
     <section className="detail-section"><h3>Quick actions</h3><div className="status-actions">{following && <button className="button primary" onClick={() => onStatus(following)}>Move to {statusLabels[following]}</button>}{admin && <button className="button issue-button" onClick={() => onStatus("issue")}>Mark issue</button>}{admin && order.status === "issue" && <button className="button secondary" onClick={() => onStatus("sent_for_sewing")}>Resolve issue</button>}<a className="button whatsapp" href={whatsappLink(order)} target="_blank">Open WhatsApp</a></div></section>
     <section className="detail-section"><h3>Customer and order</h3><div className="field-grid"><Field label="Order number" value={`#${order.orderNumber}`} /><Field label="Source" value={order.salesChannel === "tiktok" ? "TikTok Shop" : "Shopify"} /><Field label="Order date" value={formatDate(order.orderDate, true)} /><Field label="Payment method" value={order.paymentProcessor || "Unknown"} /><Editable label="Customer name" value={order.customerName} disabled={!admin} onChange={(value) => onUpdate({ customerName: value })} /><Editable label="Phone" value={order.phone} disabled={!admin} onChange={(value) => onUpdate({ phone: value })} /><Editable wide label="Address" value={order.address} disabled={!admin} onChange={(value) => onUpdate({ address: value })} /></div></section>
-    {order.salesChannel === "tiktok" && <section className="detail-section"><h3>TikTok order file</h3><div className="field-grid"><div className="field wide"><label>Attached file</label>{order.tikTokFileDataUrl ? <a href={order.tikTokFileDataUrl} download={messageDownloadName} rel="noreferrer">{order.tikTokFileName || "Download TikTok order file"}</a> : <span>No file attached</span>}</div>{admin && <div className="field wide"><FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.txt,.doc,.docx" title={order.tikTokFileDataUrl ? "Replace TikTok file" : "Upload TikTok file"} description="Choose or drop the file for this order" selectedName={order.tikTokFileName} onFile={uploadTikTokOrderFile} className="compact-file-drop" /></div>}</div></section>}
+    {order.salesChannel === "tiktok" && <section className="detail-section"><h3>TikTok order file</h3><div className="field-grid"><div className="field wide"><label>Attached file</label>{messageLink ? <a href={messageLink} download={messageDownloadName} rel="noreferrer">{messageDownloadName || "Download TikTok order file"}</a> : <span>No file attached</span>}</div>{admin && <div className="field wide"><FileDropZone accept="audio/*,video/*,application/pdf,image/png,image/jpeg,image/webp,.txt,.doc,.docx" title={order.tikTokFileDataUrl ? "Replace TikTok file" : "Upload TikTok file"} description="Choose or drop the customer's audio, video, or document" selectedName={order.tikTokFileName} onFile={uploadTikTokOrderFile} className="compact-file-drop" /></div>}</div></section>}
     <section className="detail-section"><h3>Plushie details</h3><div className="field-grid"><Editable label="Product name" value={order.product} disabled={!admin} onChange={(value) => onUpdate({ product: value })} /><Editable label="Character" value={order.character} disabled={!admin} onChange={(value) => onUpdate({ character: value })} /><Editable label="Set indicator" value={order.setIndicator ?? ""} disabled={!admin} onChange={(value) => onUpdate({ setIndicator: value })} /><Editable label="ID website link" value={order.idWebsiteLink ?? ""} disabled={!admin} onChange={(value) => onUpdate({ idWebsiteLink: value })} /><Editable label="Voice length" value={String(order.voiceLength || "")} disabled={!admin} onChange={(value) => onUpdate({ voiceLength: Number(value) || 0 })} /><Editable label="Plush name" value={order.plushName} disabled={!admin} onChange={(value) => onUpdate({ plushName: value })} /><Editable wide label="Remark" value={order.remark ?? ""} disabled={!admin} onChange={(value) => onUpdate({ remark: value })} /><Editable wide textarea label="Meaningful note" value={order.meaningfulNote} disabled={!admin} onChange={(value) => onUpdate({ meaningfulNote: value })} /><div className="field wide"><label>Meaningful message</label>{messageLink ? <a href={messageLink} download={messageDownloadName} target={messageDownloadName ? undefined : "_blank"} rel="noreferrer">{messageDownloadName ? "Download customer message" : "Open customer message"}</a> : <span>{order.salesChannel === "tiktok" ? "No TikTok file uploaded" : "Not provided"}</span>}</div><div className="field"><label>Voice upload</label>{admin ? <select value={order.voiceUploadStatus} onChange={(event) => onUpdate({ voiceUploadStatus: event.target.value as Order["voiceUploadStatus"] })}><option value="missing">Missing</option><option value="received">Received</option><option value="checked">Checked</option></select> : <strong>{order.voiceUploadStatus}</strong>}</div></div></section>
     <section className="detail-section"><h3>Delivery</h3><div className="field-grid"><Field label="Shipping method" value={order.shippingMethod || "Not imported"} /><Editable label="Courier" value={order.courier} disabled={!admin} placeholder="J&T Express" onChange={(value) => onUpdate({ courier: value })} /><Editable label="Tracking number" value={order.trackingNumber} disabled={!admin} placeholder="Enter tracking number" onChange={(value) => onUpdate({ trackingNumber: value })} /></div></section>
     <section className="detail-section"><h3>Tailor / packing photo</h3><div className="photo-field">{order.photoDataUrl ? <img src={order.photoDataUrl} alt="Tailor or packing evidence" /> : <div className="photo-placeholder">No photo uploaded</div>}{admin && <FileDropZone accept="image/*" title={order.photoDataUrl ? "Replace photo" : "Upload photo"} description="Click or drop an image" selectedName={order.photoName} onFile={(file) => uploadPhoto(file ?? undefined)} className="photo-file-drop" />}</div></section>

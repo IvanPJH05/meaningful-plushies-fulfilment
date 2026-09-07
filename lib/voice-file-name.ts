@@ -4,6 +4,15 @@ export type VoiceFileOrder = {
   salesChannel?: "shopify" | "tiktok";
 };
 
+export function mediaFileExtension(fileName = "", contentType = "", dataUrl = "") {
+  const namedExtension = fileName.split(/[?#]/, 1)[0]?.match(/\.([a-z0-9]{1,10})$/i)?.[1];
+  if (namedExtension) return namedExtension.toLowerCase();
+
+  const dataUrlType = dataUrl.match(/^data:([^;,]+)/i)?.[1] || contentType;
+  const subtype = dataUrlType.split("/")[1]?.split(/[+;]/)[0]?.replace(/[^a-z0-9]/gi, "");
+  return subtype?.toLowerCase() || "audio";
+}
+
 export function voiceBackupFileName(order: VoiceFileOrder, extension = "audio") {
   const rawOrderNumber = order.orderNumber || "";
   const tikTokOrder = rawOrderNumber.match(/\bTT\d+\b/i)?.[0];

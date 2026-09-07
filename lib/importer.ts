@@ -1,4 +1,5 @@
 import type { ImportResult, Order } from "./types";
+import { mediaFileExtension, voiceBackupFileName } from "./voice-file-name.ts";
 
 function clean(value: string | undefined) {
   return (value ?? "").trim().replace(/^"|"$/g, "");
@@ -934,7 +935,9 @@ export function importTikTokShopData(
       photoDataUrl: current?.photoDataUrl,
       photoName: current?.photoName,
       tikTokFileDataUrl: details.fileDataUrl || current?.tikTokFileDataUrl,
-      tikTokFileName: details.fileName || current?.tikTokFileName,
+      tikTokFileName: details.fileDataUrl
+        ? voiceBackupFileName({ orderNumber: displayOrderNumber, character, salesChannel: "tiktok" }, mediaFileExtension(details.fileName, details.fileType, details.fileDataUrl))
+        : current?.tikTokFileName,
       tikTokFileType: details.fileType || current?.tikTokFileType,
       statusHistory: current?.statusHistory ?? [
         { id: `${id}-${timestamp}`, status: initialStatus, changedAt: timestamp, changedBy: actor, note: "Imported from TikTok Shop CSV" },
@@ -989,7 +992,9 @@ export function applyTikTokDetailEntries(
       meaningfulNote: details.meaningfulNote || current.meaningfulNote,
       meaningfulMessage: meaningfulMessage || current.meaningfulMessage,
       tikTokFileDataUrl: entry.fileDataUrl || current.tikTokFileDataUrl,
-      tikTokFileName: entry.fileName || current.tikTokFileName,
+      tikTokFileName: entry.fileDataUrl
+        ? voiceBackupFileName({ orderNumber: current.orderNumber, character: current.character, salesChannel: "tiktok" }, mediaFileExtension(entry.fileName, entry.fileType, entry.fileDataUrl))
+        : current.tikTokFileName,
       tikTokFileType: entry.fileType || current.tikTokFileType,
       voiceUploadStatus: current.voiceUploadStatus === "checked" ? current.voiceUploadStatus : (entry.fileDataUrl || current.tikTokFileDataUrl ? "received" : current.voiceUploadStatus),
       updatedAt: timestamp,
