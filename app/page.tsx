@@ -15,6 +15,7 @@ import {
   deleteContentIdea,
   deleteContentPlanItem,
   deleteDashboardAccount,
+  deleteCreatorFreeSample,
   deleteSharedOrders,
   deleteAccountingDocument,
   deleteAccountingTransaction,
@@ -29,6 +30,7 @@ import {
   fetchContentIdeas,
   fetchContentPlanItems,
   fetchCreatorCommissions,
+  fetchCreatorFreeSamples,
   fetchCreatorPayouts,
   fetchCreatorProfiles,
   fetchEnvelopePrintSettings,
@@ -45,6 +47,7 @@ import {
   fetchStockSettings,
   insertSharedActivity,
   loginDashboardAccount,
+  importCreatorFreeSample,
   saveAccountingDocument,
   saveAccountingBankStatementLine,
   saveAccountingBankStatementLines,
@@ -55,6 +58,7 @@ import {
   saveContentIdea,
   saveContentPlanItem,
   saveCreatorPayout,
+  saveCreatorFreeSample,
   saveCreatorPayoutInfo,
   saveCreatorProfile,
   saveEnvelopePrintSettings,
@@ -1615,6 +1619,27 @@ export default function Home() {
     return () => window.removeEventListener("meaningful-plushies-free-creator-samples", refreshSampleCodes);
   }, []);
 
+  useEffect(() => {
+    if (session?.role !== "admin" || !supabaseConfigured) return;
+    let cancelled = false;
+    const loadSharedFreeSamples = async () => {
+      const legacySamples = readJson<FreeCreatorSample[]>(freeCreatorSamplesStorageKey) ?? [];
+      let sharedSamples = await fetchCreatorFreeSamples(session.token);
+      const sampleIdentity = (sample: FreeCreatorSample) => `${sample.creatorName.trim().toLowerCase()}|${sample.sampleCode.trim().toUpperCase()}`;
+      const sharedIdentities = new Set(sharedSamples.map(sampleIdentity));
+      const missingLegacySamples = legacySamples.filter((sample) => sample.sampleCode && !sharedIdentities.has(sampleIdentity(sample)));
+      if (missingLegacySamples.length) {
+        await Promise.all(missingLegacySamples.map((sample) => importCreatorFreeSample(session.token, sample)));
+        sharedSamples = await fetchCreatorFreeSamples(session.token);
+      }
+      if (cancelled) return;
+      writeJson(freeCreatorSamplesStorageKey, sharedSamples);
+      window.dispatchEvent(new Event("meaningful-plushies-free-creator-samples"));
+    };
+    void loadSharedFreeSamples().catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [session]);
+
   const loadSharedData = useCallback(async (showLoading = false) => {
     if (!supabaseConfigured) {
       setDatabaseError("Supabase is not configured. Add the public Supabase URL and anon key in Vercel.");
@@ -1699,6 +1724,10 @@ export default function Home() {
         (tables.has("creator_profiles") && session && (session.role === "admin" || session.role === "creator")) ? fetchCreatorProfiles(session.token).then(setCreatorProfiles) : Promise.resolve(),
         (tables.has("creator_commissions") && session && (session.role === "admin" || session.role === "creator")) ? fetchCreatorCommissions(session.token).then(setCreatorCommissions) : Promise.resolve(),
         (tables.has("creator_payouts") && session && (session.role === "admin" || session.role === "creator")) ? fetchCreatorPayouts(session.token).then(setCreatorPayouts) : Promise.resolve(),
+        (tables.has("creator_free_samples") && session?.role === "admin") ? fetchCreatorFreeSamples(session.token).then((samples) => {
+          writeJson(freeCreatorSamplesStorageKey, samples);
+          setFreeCreatorSampleCodes(samples.map((sample) => sample.sampleCode));
+        }) : Promise.resolve(),
       ]);
     } catch {
       // A Realtime refresh is best-effort. The next update or manual refresh will
@@ -8715,6 +8744,14 @@ function CreatorProgramWorkspacePage({
     writeJson(freeCreatorSamplesStorageKey, freeCreatorSamples);
     window.dispatchEvent(new Event("meaningful-plushies-free-creator-samples"));
   }, [freeCreatorSamples]);
+  useEffect(() => {
+    if (!admin) return;
+    let cancelled = false;
+    void fetchCreatorFreeSamples(session.token).then((samples) => {
+      if (!cancelled) setFreeCreatorSamples(samples);
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [admin, session.token]);
 
   function updateForm(patch: Partial<typeof creatorFormDefaults>) {
     setForm((current) => {
@@ -8848,7 +8885,7 @@ function CreatorProgramWorkspacePage({
       const result = await response.json().catch(() => ({})) as { ok?: boolean; discountId?: string; error?: string };
       if (!response.ok || !result.ok || !result.discountId) throw new Error(result.error || "Shopify creator sample discount could not be created.");
       const now = new Date().toISOString();
-      setFreeCreatorSamples((current) => [{
+      const sample: FreeCreatorSample = {
         id: crypto.randomUUID(),
         creatorName,
         creatorUrl: freeCreatorSampleForm.creatorUrl.trim(),
@@ -8857,7 +8894,9 @@ function CreatorProgramWorkspacePage({
         orderNumber: "",
         givenAt: now,
         notes: freeCreatorSampleForm.notes.trim(),
-      }, ...current]);
+      };
+      await saveCreatorFreeSample(session.token, sample);
+      setFreeCreatorSamples((current) => [sample, ...current]);
       setFreeCreatorSampleForm({ creatorName: "", creatorUrl: "", sampleCode: "", notes: "" });
       setMessage("Free creator sample logged and Shopify RM150 discount created.");
     } catch (error) {
@@ -8869,19 +8908,32 @@ function CreatorProgramWorkspacePage({
 
   async function deleteFreeCreatorSample(sampleId: string) {
     const sample = freeCreatorSamples.find((item) => item.id === sampleId);
-    setFreeCreatorSamples((current) => current.filter((item) => item.id !== sampleId));
-    if (sample?.shopifyDiscountId) {
-      void fetch("/api/shopify/creator-sample-discounts", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "deactivate", discountId: sample.shopifyDiscountId }),
-      });
+    if (!sample) return;
+    try {
+      await deleteCreatorFreeSample(session.token, sampleId);
+      setFreeCreatorSamples((current) => current.filter((item) => item.id !== sampleId));
+      if (sample.shopifyDiscountId) {
+        void fetch("/api/shopify/creator-sample-discounts", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "deactivate", discountId: sample.shopifyDiscountId }),
+        });
+      }
+      setMessage("Free creator sample removed.");
+    } catch (error) {
+      setMessage(readableError(error, "Free creator sample could not be removed."));
     }
-    setMessage("Free creator sample removed.");
   }
 
   function updateFreeCreatorSample(sampleId: string, patch: Partial<FreeCreatorSample>) {
-    setFreeCreatorSamples((current) => current.map((sample) => sample.id === sampleId ? { ...sample, ...patch } : sample));
+    const current = freeCreatorSamples.find((sample) => sample.id === sampleId);
+    if (!current) return;
+    const next = { ...current, ...patch };
+    setFreeCreatorSamples((samples) => samples.map((sample) => sample.id === sampleId ? next : sample));
+    void saveCreatorFreeSample(session.token, next).catch((error) => {
+      setFreeCreatorSamples((samples) => samples.map((sample) => sample.id === sampleId ? current : sample));
+      setMessage(readableError(error, "Free creator sample could not be saved."));
+    });
   }
 
   function freeCreatorSampleClaims(codeValue: string) {

@@ -12,6 +12,17 @@ export type SharedActivity = {
   createdAt: string;
 };
 
+export type CreatorFreeSampleRecord = {
+  id: string;
+  creatorName: string;
+  creatorUrl: string;
+  sampleCode: string;
+  shopifyDiscountId?: string;
+  orderNumber?: string;
+  givenAt: string;
+  notes: string;
+};
+
 // Public browser credentials for the shared production database. Vercel
 // environment variables override these defaults when configured.
 function validSupabaseUrl(value: string | undefined) {
@@ -686,6 +697,60 @@ export async function fetchCreatorProfiles(token: string): Promise<CreatorProfil
     throw error;
   }
   return (data ?? []).map((row: Record<string, unknown>) => creatorProfileFromRow(row));
+}
+
+function creatorFreeSampleFromRow(row: Record<string, unknown>): CreatorFreeSampleRecord {
+  return {
+    id: String(row.id ?? ""),
+    creatorName: String(row.creator_name ?? ""),
+    creatorUrl: String(row.creator_url ?? ""),
+    sampleCode: String(row.sample_code ?? ""),
+    shopifyDiscountId: String(row.shopify_discount_id ?? "") || undefined,
+    orderNumber: String(row.order_number ?? ""),
+    givenAt: String(row.given_at ?? ""),
+    notes: String(row.notes ?? ""),
+  };
+}
+
+export async function fetchCreatorFreeSamples(token: string): Promise<CreatorFreeSampleRecord[]> {
+  const { data, error } = await requireSupabase().rpc("creator_list_free_samples", { p_session_token: token });
+  if (error) throw new Error(supabaseErrorMessage(error, "Free creator samples could not be loaded."));
+  return (data ?? []).map((row: Record<string, unknown>) => creatorFreeSampleFromRow(row));
+}
+
+export async function saveCreatorFreeSample(token: string, sample: CreatorFreeSampleRecord) {
+  const { error } = await requireSupabase().rpc("creator_save_free_sample", {
+    p_session_token: token,
+    p_id: sample.id || null,
+    p_creator_name: sample.creatorName,
+    p_creator_url: sample.creatorUrl,
+    p_sample_code: sample.sampleCode,
+    p_shopify_discount_id: sample.shopifyDiscountId ?? "",
+    p_order_number: sample.orderNumber ?? "",
+    p_given_at: sample.givenAt || new Date().toISOString(),
+    p_notes: sample.notes,
+  });
+  if (error) throw new Error(supabaseErrorMessage(error, "Free creator sample could not be saved."));
+}
+
+export async function importCreatorFreeSample(token: string, sample: CreatorFreeSampleRecord) {
+  const { error } = await requireSupabase().rpc("creator_import_free_sample", {
+    p_session_token: token,
+    p_id: sample.id || null,
+    p_creator_name: sample.creatorName,
+    p_creator_url: sample.creatorUrl,
+    p_sample_code: sample.sampleCode,
+    p_shopify_discount_id: sample.shopifyDiscountId ?? "",
+    p_order_number: sample.orderNumber ?? "",
+    p_given_at: sample.givenAt || new Date().toISOString(),
+    p_notes: sample.notes,
+  });
+  if (error) throw new Error(supabaseErrorMessage(error, "Free creator sample could not be imported."));
+}
+
+export async function deleteCreatorFreeSample(token: string, id: string) {
+  const { error } = await requireSupabase().rpc("creator_delete_free_sample", { p_session_token: token, p_id: id });
+  if (error) throw new Error(supabaseErrorMessage(error, "Free creator sample could not be removed."));
 }
 
 export async function saveCreatorProfile(token: string, profile: CreatorProfile) {
@@ -1415,6 +1480,7 @@ export function subscribeToSharedData(onChange: (table: string) => void) {
     .on("postgres_changes", { event: "*", schema: "public", table: "creator_profiles" }, () => onChange("creator_profiles"))
     .on("postgres_changes", { event: "*", schema: "public", table: "creator_commissions" }, () => onChange("creator_commissions"))
     .on("postgres_changes", { event: "*", schema: "public", table: "creator_payouts" }, () => onChange("creator_payouts"))
+    .on("postgres_changes", { event: "*", schema: "public", table: "creator_free_samples" }, () => onChange("creator_free_samples"))
     .on("postgres_changes", { event: "*", schema: "public", table: "meta_capi_settings" }, () => onChange("meta_capi_settings"))
     .on("postgres_changes", { event: "*", schema: "public", table: "meta_capi_logs" }, () => onChange("meta_capi_logs"))
     .subscribe();
