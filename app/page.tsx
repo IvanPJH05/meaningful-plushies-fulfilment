@@ -40,6 +40,7 @@ import {
   fetchWhatsAppLeads,
   fetchSalesConsumptionMappings,
   fetchSharedActivity,
+  fetchSharedOrderChangesSince,
   fetchSharedOrders,
   fetchDashboardAccounts,
   fetchPaymentProcessorSettings,
@@ -671,6 +672,7 @@ const sortChoiceLabels: Record<SortChoice, string> = {
 const fulfilmentColumnValues: readonly FulfilmentColumn[] = ["orderNumber", "meaningfulMessage", "plushName", "character", "idWebsiteLink", "customerName", "phone"];
 const sessionStorageKey = "meaningful-plushies-dashboard-session";
 const uiStorageKey = "meaningful-plushies-ui-preferences";
+const ordersCacheStorageKey = "meaningful-plushies-orders-cache-v1";
 const envelopeSettingsStorageKey = "meaningful-plushies-envelope-print-settings";
 const freeCreatorSamplesStorageKey = "meaningful-plushies-free-creator-samples";
 const freeCreatorSampleProductLink = "https://meaningfulplushies.com/products/meaningful-plushie";
@@ -691,6 +693,11 @@ const defaultEnvelopePrintSettings: EnvelopePrintSettings = {
   topY: 1564.2,
   bottomX: 301.8,
   bottomY: 135.6,
+};
+
+type StoredOrdersCache = {
+  checkedAt: string;
+  orders: Order[];
 };
 
 function creatorFreeOrderCode(profile: CreatorProfile) {
@@ -1298,6 +1305,12 @@ function readStoredUi() {
   return readJson<StoredUiPreferences>(uiStorageKey) ?? {};
 }
 
+function readStoredOrdersCache(): StoredOrdersCache | null {
+  const cached = readJson<StoredOrdersCache>(ordersCacheStorageKey);
+  if (!cached || !Array.isArray(cached.orders) || typeof cached.checkedAt !== "string") return null;
+  return cached;
+}
+
 function readStoredEnvelopeSettings(): EnvelopePrintSettings {
   return { ...defaultEnvelopePrintSettings, ...(readJson<Partial<EnvelopePrintSettings>>(envelopeSettingsStorageKey) ?? {}) };
 }
@@ -1374,9 +1387,12 @@ export default function Home() {
   const storedSession = readStoredSession();
   const storedUi = readStoredUi();
   const storedEnvelopeSettings = readStoredEnvelopeSettings();
+  const initialOrdersCache = useRef<StoredOrdersCache | null>(readStoredOrdersCache()).current;
+  const hasOrdersCache = useRef(Boolean(initialOrdersCache));
+  const ordersCacheCheckedAt = useRef(initialOrdersCache?.checkedAt ?? "");
   const [session, setSession] = useState<Session | null>(() => storedSession);
   const [view, setView] = useState<View>(() => permittedView(storedUi.view, storedSession?.role));
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [orders, setOrders] = useState<Order[]>(() => initialOrdersCache?.orders ?? []);
   const skipNextEnvelopeSettingsSave = useRef(false);
   const [manualOrders, setManualOrders] = useState<ManualOrder[]>([]);
   const [whatsAppLeads, setWhatsAppLeads] = useState<WhatsAppLead[]>([]);
@@ -1552,7 +1568,7 @@ export default function Home() {
   const [selectedTikTokJsonOrders, setSelectedTikTokJsonOrders] = useState<string[]>([]);
   const [exportingTikTokShopify, setExportingTikTokShopify] = useState(false);
   const [notice, setNotice] = useState("");
-  const [loadingOrders, setLoadingOrders] = useState(true);
+  const [loadingOrders, setLoadingOrders] = useState(() => !initialOrdersCache);
   const [databaseError, setDatabaseError] = useState("");
   const [refreshingOrderNumber, setRefreshingOrderNumber] = useState("");
   const [nfcWritingOrderId, setNfcWritingOrderId] = useState("");
@@ -1656,19 +1672,45 @@ export default function Home() {
     throw lastError ?? new Error("Could not reach the shared order database.");
   }, []);
 
+  const refreshCachedOrders = useCallback(async () => {
+    const checkedAt = new Date().toISOString();
+    if (!hasOrdersCache.current) {
+      const sharedOrders = await fetchSharedOrdersWithRetry();
+      const normalizedOrders = normalizeSharedOrders(sharedOrders);
+      hasOrdersCache.current = true;
+      ordersCacheCheckedAt.current = checkedAt;
+      writeJson(ordersCacheStorageKey, { checkedAt, orders: normalizedOrders });
+      setOrders(normalizedOrders);
+      return;
+    }
+
+    const { activeIds, changedOrders } = await fetchSharedOrderChangesSince(ordersCacheCheckedAt.current);
+    const changedById = new Map(normalizeSharedOrders(changedOrders).map((order) => [order.id, order]));
+    const activeIdSet = new Set(activeIds);
+    ordersCacheCheckedAt.current = checkedAt;
+    setOrders((current) => {
+      const merged = current
+        .filter((order) => activeIdSet.has(order.id))
+        .map((order) => changedById.get(order.id) ?? order);
+      for (const order of changedById.values()) {
+        if (!merged.some((currentOrder) => currentOrder.id === order.id)) merged.push(order);
+      }
+      writeJson(ordersCacheStorageKey, { checkedAt, orders: merged });
+      return merged;
+    });
+  }, [fetchSharedOrdersWithRetry, normalizeSharedOrders]);
+
   const loadSharedData = useCallback(async (showLoading = false) => {
     if (!supabaseConfigured) {
       setDatabaseError("Supabase is not configured. Add the public Supabase URL and anon key in Vercel.");
       setLoadingOrders(false);
       return;
     }
-    if (showLoading) setLoadingOrders(true);
+    if (showLoading && !hasOrdersCache.current) setLoadingOrders(true);
     try {
-      // The Creator Sample "Used" figures are calculated from this order history.
-      // Load it separately, so a slow lead/settings request cannot make every sample
-      // incorrectly look unused.
-      const sharedOrders = await fetchSharedOrdersWithRetry();
-      setOrders(normalizeSharedOrders(sharedOrders));
+      // Use the local order snapshot immediately after a browser refresh, then ask
+      // Supabase only for order IDs/timestamps and the rows that actually changed.
+      await refreshCachedOrders();
       setDatabaseError("");
       setLoadingOrders(false);
 
@@ -1709,14 +1751,14 @@ export default function Home() {
     } finally {
       setLoadingOrders(false);
     }
-  }, [fetchSharedOrdersWithRetry, normalizeSalesConsumptionMappings, normalizeSharedOrders]);
+  }, [normalizeSalesConsumptionMappings, refreshCachedOrders]);
 
   const loadChangedSharedData = useCallback(async (changedTables: string[]) => {
     if (!supabaseConfigured || !changedTables.length) return;
     const tables = new Set(changedTables);
     try {
       await Promise.allSettled([
-        tables.has("fulfilment_orders") ? fetchSharedOrders().then((sharedOrders) => setOrders(normalizeSharedOrders(sharedOrders))) : Promise.resolve(),
+        tables.has("fulfilment_orders") ? refreshCachedOrders() : Promise.resolve(),
         tables.has("manual_orders") ? fetchManualOrders().then(setManualOrders) : Promise.resolve(),
         tables.has("whatsapp_leads") ? fetchWhatsAppLeads().then(setWhatsAppLeads) : Promise.resolve(),
         tables.has("activity_events") ? fetchSharedActivity().then(setActivity) : Promise.resolve(),
@@ -1752,7 +1794,7 @@ export default function Home() {
       // A Realtime refresh is best-effort. The next update or manual refresh will
       // recover it; do not replace a usable workspace with a generic error.
     }
-  }, [normalizeSalesConsumptionMappings, normalizeSharedOrders, session]);
+  }, [normalizeSalesConsumptionMappings, refreshCachedOrders, session]);
 
   useEffect(() => {
     void loadSharedData(true);
@@ -1805,9 +1847,8 @@ export default function Home() {
     if (!supabaseConfigured) return;
     let cancelled = false;
     const refreshOrders = () => {
-      void fetchSharedOrdersWithRetry().then((sharedOrders) => {
+      void refreshCachedOrders().then(() => {
         if (cancelled) return;
-        setOrders(normalizeSharedOrders(sharedOrders));
         setDatabaseError("");
       }).catch((error) => {
         if (!cancelled) setDatabaseError(readableError(error, "Could not reach the shared database. Your displayed data is unchanged and the app will retry automatically."));
@@ -1825,7 +1866,7 @@ export default function Home() {
       document.removeEventListener("visibilitychange", refreshWhenActive);
       window.clearInterval(interval);
     };
-  }, [fetchSharedOrdersWithRetry, normalizeSharedOrders]);
+  }, [refreshCachedOrders]);
 
   useEffect(() => {
     if (session) writeJson(sessionStorageKey, session);
@@ -2094,6 +2135,10 @@ export default function Home() {
   const currentSession = session;
 
   function signOut() {
+    removeStored(ordersCacheStorageKey);
+    hasOrdersCache.current = false;
+    ordersCacheCheckedAt.current = "";
+    setOrders([]);
     setSession(null);
     setSelectedOrders([]);
     setSelectedId(null);

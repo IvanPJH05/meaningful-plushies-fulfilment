@@ -83,6 +83,40 @@ export async function fetchSharedOrders(): Promise<Order[]> {
   return (data ?? []).map((row) => row.data as Order);
 }
 
+export type SharedOrderChanges = {
+  activeIds: string[];
+  changedOrders: Order[];
+};
+
+// This deliberately reads only IDs and timestamps first. The fulfilment payload can
+// contain attached media, so a browser refresh should only download complete rows
+// that actually changed since its last successful check.
+export async function fetchSharedOrderChangesSince(checkedAt: string): Promise<SharedOrderChanges> {
+  const client = requireSupabase();
+  const { data: indexRows, error: indexError } = await client
+    .from("fulfilment_orders")
+    .select("id, updated_at");
+  if (indexError) throw indexError;
+
+  const activeIds = (indexRows ?? []).map((row) => String(row.id));
+  const since = Date.parse(checkedAt);
+  const changedIds = (indexRows ?? [])
+    .filter((row) => !Number.isFinite(since) || Date.parse(String(row.updated_at ?? "")) > since)
+    .map((row) => String(row.id));
+  if (!changedIds.length) return { activeIds, changedOrders: [] };
+
+  const changedOrders: Order[] = [];
+  for (let start = 0; start < changedIds.length; start += 100) {
+    const { data, error } = await client
+      .from("fulfilment_orders")
+      .select("data")
+      .in("id", changedIds.slice(start, start + 100));
+    if (error) throw error;
+    changedOrders.push(...(data ?? []).map((row) => row.data as Order));
+  }
+  return { activeIds, changedOrders };
+}
+
 function creatorFreeSampleError(error: unknown, fallback: string) {
   const message = supabaseErrorMessage(error, fallback);
   if (/ADMIN_REQUIRED|LOGIN_REQUIRED/i.test(message)) {
