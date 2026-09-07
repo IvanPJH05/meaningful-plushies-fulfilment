@@ -1648,20 +1648,20 @@ export default function Home() {
     }
     if (showLoading) setLoadingOrders(true);
     try {
-      const [sharedOrders, sharedManualOrders, sharedWhatsAppLeads, sharedProcessorSettings, sharedSalesFeeSettings] = await Promise.all([
-        fetchSharedOrders(),
-        fetchManualOrders(),
-        fetchWhatsAppLeads(),
-        fetchPaymentProcessorSettings(),
-        fetchSalesFeeSettings(),
-      ]);
+      // The Creator Sample "Used" figures are calculated from this order history.
+      // Load it separately, so a slow lead/settings request cannot make every sample
+      // incorrectly look unused.
+      const sharedOrders = await fetchSharedOrders();
       setOrders(normalizeSharedOrders(sharedOrders));
-      setManualOrders(sharedManualOrders);
-      setWhatsAppLeads(sharedWhatsAppLeads);
-      setProcessorSettings(sharedProcessorSettings);
-      setSalesFeeSettings(sharedSalesFeeSettings);
       setDatabaseError("");
       setLoadingOrders(false);
+
+      void Promise.allSettled([
+        fetchManualOrders().then(setManualOrders),
+        fetchWhatsAppLeads().then(setWhatsAppLeads),
+        fetchPaymentProcessorSettings().then(setProcessorSettings),
+        fetchSalesFeeSettings().then(setSalesFeeSettings),
+      ]);
 
       // Orders are the workspace's first priority.  Everything below is supporting
       // data for other workspaces, so it must never hold up the order screen or turn
