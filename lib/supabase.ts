@@ -84,7 +84,6 @@ export async function fetchSharedOrders(): Promise<Order[]> {
 }
 
 export type SharedOrderChanges = {
-  activeIds: string[];
   changedOrders: Order[];
 };
 
@@ -98,12 +97,11 @@ export async function fetchSharedOrderChangesSince(checkedAt: string): Promise<S
     .select("id, updated_at");
   if (indexError) throw indexError;
 
-  const activeIds = (indexRows ?? []).map((row) => String(row.id));
   const since = Date.parse(checkedAt);
   const changedIds = (indexRows ?? [])
     .filter((row) => !Number.isFinite(since) || Date.parse(String(row.updated_at ?? "")) > since)
     .map((row) => String(row.id));
-  if (!changedIds.length) return { activeIds, changedOrders: [] };
+  if (!changedIds.length) return { changedOrders: [] };
 
   const changedOrders: Order[] = [];
   for (let start = 0; start < changedIds.length; start += 100) {
@@ -114,7 +112,7 @@ export async function fetchSharedOrderChangesSince(checkedAt: string): Promise<S
     if (error) throw error;
     changedOrders.push(...(data ?? []).map((row) => row.data as Order));
   }
-  return { activeIds, changedOrders };
+  return { changedOrders };
 }
 
 function creatorFreeSampleError(error: unknown, fallback: string) {

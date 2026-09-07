@@ -672,7 +672,7 @@ const sortChoiceLabels: Record<SortChoice, string> = {
 const fulfilmentColumnValues: readonly FulfilmentColumn[] = ["orderNumber", "meaningfulMessage", "plushName", "character", "idWebsiteLink", "customerName", "phone"];
 const sessionStorageKey = "meaningful-plushies-dashboard-session";
 const uiStorageKey = "meaningful-plushies-ui-preferences";
-const ordersCacheStorageKey = "meaningful-plushies-orders-cache-v1";
+const ordersCacheStorageKey = "meaningful-plushies-orders-cache-v2";
 const envelopeSettingsStorageKey = "meaningful-plushies-envelope-print-settings";
 const freeCreatorSamplesStorageKey = "meaningful-plushies-free-creator-samples";
 const freeCreatorSampleProductLink = "https://meaningfulplushies.com/products/meaningful-plushie";
@@ -1710,13 +1710,11 @@ export default function Home() {
       return;
     }
 
-    const { activeIds, changedOrders } = await fetchSharedOrderChangesSince(ordersCacheCheckedAt.current);
+    const { changedOrders } = await fetchSharedOrderChangesSince(ordersCacheCheckedAt.current);
     const changedById = new Map(normalizeSharedOrders(changedOrders).map((order) => [order.id, order]));
-    const activeIdSet = new Set(activeIds);
     ordersCacheCheckedAt.current = checkedAt;
     setOrders((current) => {
       const merged = current
-        .filter((order) => activeIdSet.has(order.id))
         .map((order) => changedById.get(order.id) ?? order);
       for (const order of changedById.values()) {
         if (!merged.some((currentOrder) => currentOrder.id === order.id)) merged.push(order);
