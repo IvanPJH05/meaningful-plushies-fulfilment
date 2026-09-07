@@ -1619,26 +1619,48 @@ export default function Home() {
     return () => window.removeEventListener("meaningful-plushies-free-creator-samples", refreshSampleCodes);
   }, []);
 
+  const syncLocalFreeCreatorSamples = useCallback(async (token: string) => {
+    // Earlier versions kept this ledger only in the browser. Keep every valid
+    // old row from that browser, even if one corrupted legacy row cannot import.
+    const localSamples = readJson<FreeCreatorSample[]>(freeCreatorSamplesStorageKey) ?? [];
+    let sharedSamples = await fetchCreatorFreeSamples(token);
+    const sampleIdentity = (sample: FreeCreatorSample) => `${sample.creatorName.trim().toLowerCase()}|${sample.sampleCode.trim().toUpperCase()}`;
+    const sharedIdentities = new Set(sharedSamples.map(sampleIdentity));
+    const pendingSamples = localSamples.filter((sample) => {
+      const creatorName = sample.creatorName.trim();
+      const sampleCode = sample.sampleCode.trim();
+      return creatorName && sampleCode && !sharedIdentities.has(sampleIdentity(sample));
+    });
+    const importResults = await Promise.allSettled(pendingSamples.map((sample) => importCreatorFreeSample(token, {
+      ...sample,
+      // A few very old browser records did not have a UUID. Let Supabase issue
+      // one for those instead of letting a single record block the whole ledger.
+      id: /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(sample.id) ? sample.id : "",
+    })));
+    sharedSamples = await fetchCreatorFreeSamples(token);
+    writeJson(freeCreatorSamplesStorageKey, sharedSamples);
+    setFreeCreatorSampleCodes(sharedSamples.map((sample) => sample.sampleCode));
+    window.dispatchEvent(new Event("meaningful-plushies-free-creator-samples"));
+    return {
+      samples: sharedSamples,
+      imported: importResults.filter((result) => result.status === "fulfilled").length,
+      skipped: localSamples.length - pendingSamples.length,
+      failed: importResults.filter((result) => result.status === "rejected").length,
+    };
+  }, []);
+
   useEffect(() => {
     if (session?.role !== "admin" || !supabaseConfigured) return;
     let cancelled = false;
     const loadSharedFreeSamples = async () => {
-      const legacySamples = readJson<FreeCreatorSample[]>(freeCreatorSamplesStorageKey) ?? [];
-      let sharedSamples = await fetchCreatorFreeSamples(session.token);
-      const sampleIdentity = (sample: FreeCreatorSample) => `${sample.creatorName.trim().toLowerCase()}|${sample.sampleCode.trim().toUpperCase()}`;
-      const sharedIdentities = new Set(sharedSamples.map(sampleIdentity));
-      const missingLegacySamples = legacySamples.filter((sample) => sample.sampleCode && !sharedIdentities.has(sampleIdentity(sample)));
-      if (missingLegacySamples.length) {
-        await Promise.all(missingLegacySamples.map((sample) => importCreatorFreeSample(session.token, sample)));
-        sharedSamples = await fetchCreatorFreeSamples(session.token);
-      }
+      const { samples: sharedSamples } = await syncLocalFreeCreatorSamples(session.token);
       if (cancelled) return;
       writeJson(freeCreatorSamplesStorageKey, sharedSamples);
       window.dispatchEvent(new Event("meaningful-plushies-free-creator-samples"));
     };
     void loadSharedFreeSamples().catch(() => undefined);
     return () => { cancelled = true; };
-  }, [session]);
+  }, [session, syncLocalFreeCreatorSamples]);
 
   const loadSharedData = useCallback(async (showLoading = false) => {
     if (!supabaseConfigured) {
@@ -5619,6 +5641,7 @@ export default function Home() {
           await saveCreatorPayout(session.token, payout);
           await loadCreatorData();
         }}
+        onSyncLocalFreeCreatorSamples={() => syncLocalFreeCreatorSamples(session.token)}
       />}
 
       {workspace === "content" && session.role === "admin" && <ContentPlanWorkspacePage
@@ -8686,6 +8709,7 @@ function CreatorProgramWorkspacePage({
   onUpdateCommission,
   onSavePayoutInfo,
   onSavePayout,
+  onSyncLocalFreeCreatorSamples,
 }: {
   view: View;
   session: Session;
@@ -8701,6 +8725,7 @@ function CreatorProgramWorkspacePage({
   onUpdateCommission: (commission: CreatorCommission) => Promise<void>;
   onSavePayoutInfo: (profile: CreatorProfile) => Promise<void>;
   onSavePayout: (payout: CreatorPayout) => Promise<void>;
+  onSyncLocalFreeCreatorSamples: () => Promise<{ samples: FreeCreatorSample[]; imported: number; skipped: number; failed: number }>;
 }) {
   const admin = session.role === "admin";
   const [message, setMessage] = useState("");
@@ -8723,6 +8748,7 @@ function CreatorProgramWorkspacePage({
   const [freeCreatorSamples, setFreeCreatorSamples] = useState<FreeCreatorSample[]>(() => readJson<FreeCreatorSample[]>(freeCreatorSamplesStorageKey) ?? []);
   const [freeCreatorSampleForm, setFreeCreatorSampleForm] = useState({ creatorName: "", creatorUrl: "", sampleCode: "", notes: "" });
   const [creatingFreeCreatorSample, setCreatingFreeCreatorSample] = useState(false);
+  const [syncingFreeCreatorSamples, setSyncingFreeCreatorSamples] = useState(false);
   const visibleProfiles = admin ? creatorProfiles : creatorProfiles.filter((profile) => profile.userId === session.id);
   const currentProfile = visibleProfiles[0];
   const visibleCommissions = admin
@@ -8934,6 +8960,26 @@ function CreatorProgramWorkspacePage({
     }
   }
 
+  async function syncThisDeviceFreeCreatorSamples() {
+    if (!admin) return;
+    setSyncingFreeCreatorSamples(true);
+    try {
+      const result = await onSyncLocalFreeCreatorSamples();
+      setFreeCreatorSamples(result.samples);
+      if (result.imported) {
+        setMessage(`${result.imported} local sample record${result.imported === 1 ? "" : "s"} synced to every device.${result.failed ? ` ${result.failed} older record${result.failed === 1 ? " could" : "s could"} not be synced.` : ""}`);
+      } else if (result.failed) {
+        setMessage(`${result.failed} older sample record${result.failed === 1 ? " could" : "s could"} not be synced. Sign out and back in, then try again.`);
+      } else {
+        setMessage("This device has no additional local sample records to sync.");
+      }
+    } catch (error) {
+      setMessage(readableError(error, "This device's sample records could not be synced."));
+    } finally {
+      setSyncingFreeCreatorSamples(false);
+    }
+  }
+
   function updateFreeCreatorSample(sampleId: string, patch: Partial<FreeCreatorSample>) {
     const current = freeCreatorSamples.find((sample) => sample.id === sampleId);
     if (!current) return;
@@ -9066,7 +9112,7 @@ function CreatorProgramWorkspacePage({
 
   if (view === "creator_free_samples" && admin) {
     return <section className="creator-workspace">
-      <div className="creator-hero card"><div><p>CREATOR PROGRAM</p><h2>Free Creator Sample</h2><span>Track every creator who received a free sample code, then pair the row to the order once they claim it.</span></div><div className="accounting-status-pill">{freeCreatorSamples.length} creators</div></div>
+      <div className="creator-hero card"><div><p>CREATOR PROGRAM</p><h2>Free Creator Sample</h2><span>Track every creator who received a free sample code, then pair the row to the order once they claim it.</span></div><div className="creator-sample-hero-actions"><button className="button secondary small" type="button" onClick={syncThisDeviceFreeCreatorSamples} disabled={syncingFreeCreatorSamples}>{syncingFreeCreatorSamples ? "Syncing this device..." : "Sync local samples"}</button><div className="accounting-status-pill">{freeCreatorSamples.length} creators</div></div></div>
       {message && <div className="notice"><span>{message}</span><button onClick={() => setMessage("")}>x</button></div>}
       <section className="creator-sample-ledger-layout">
         <form className="creator-form card creator-sample-entry-form" onSubmit={saveFreeCreatorSample}>

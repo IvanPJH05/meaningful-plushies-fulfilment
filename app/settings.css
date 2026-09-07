@@ -487,6 +487,7 @@
 .creator-hero p { margin: 0 0 8px; color: #2e66ab; font-size: 10px; font-weight: 900; letter-spacing: .15em; }
 .creator-hero h2 { margin: 0; font-size: 25px; letter-spacing: -.02em; }
 .creator-hero span { display: block; margin-top: 8px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.creator-sample-hero-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
 .creator-code { min-width: 140px; padding: 13px 16px; border-radius: 12px; background: #0f2746; color: #fff; text-align: center; font-size: 20px; font-weight: 900; letter-spacing: .08em; }
 .creator-form { padding: 20px; }
 .creator-table { overflow: auto; }
