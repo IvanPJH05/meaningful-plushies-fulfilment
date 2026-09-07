@@ -1286,8 +1286,15 @@ function readJson<T>(key: string): T | null {
 }
 
 function writeJson(key: string, value: unknown) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(key, JSON.stringify(value));
+  if (typeof window === "undefined") return false;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch {
+    // Browser storage can fill up with files attached to orders. Saving a local
+    // convenience cache must never make a successful database request look failed.
+    return false;
+  }
 }
 
 function removeStored(key: string) {
@@ -1309,6 +1316,25 @@ function readStoredOrdersCache(): StoredOrdersCache | null {
   const cached = readJson<StoredOrdersCache>(ordersCacheStorageKey);
   if (!cached || !Array.isArray(cached.orders) || typeof cached.checkedAt !== "string") return null;
   return cached;
+}
+
+function isInlineFile(value: string | undefined) {
+  return Boolean(value && /^data:/i.test(value));
+}
+
+function orderCacheCopy(order: Order): Order {
+  return {
+    ...order,
+    // Store only the lightweight order list locally. Full-size TikTok files and
+    // photos remain safely in Supabase and are never written into browser storage.
+    photoDataUrl: isInlineFile(order.photoDataUrl) ? "" : order.photoDataUrl,
+    tikTokFileDataUrl: isInlineFile(order.tikTokFileDataUrl) ? "" : order.tikTokFileDataUrl,
+    meaningfulMessage: isInlineFile(order.meaningfulMessage) ? "" : order.meaningfulMessage,
+  };
+}
+
+function writeOrdersCache(checkedAt: string, orders: Order[]) {
+  return writeJson(ordersCacheStorageKey, { checkedAt, orders: orders.map(orderCacheCopy) });
 }
 
 function readStoredEnvelopeSettings(): EnvelopePrintSettings {
@@ -1679,7 +1705,7 @@ export default function Home() {
       const normalizedOrders = normalizeSharedOrders(sharedOrders);
       hasOrdersCache.current = true;
       ordersCacheCheckedAt.current = checkedAt;
-      writeJson(ordersCacheStorageKey, { checkedAt, orders: normalizedOrders });
+      writeOrdersCache(checkedAt, normalizedOrders);
       setOrders(normalizedOrders);
       return;
     }
@@ -1695,7 +1721,7 @@ export default function Home() {
       for (const order of changedById.values()) {
         if (!merged.some((currentOrder) => currentOrder.id === order.id)) merged.push(order);
       }
-      writeJson(ordersCacheStorageKey, { checkedAt, orders: merged });
+      writeOrdersCache(checkedAt, merged);
       return merged;
     });
   }, [fetchSharedOrdersWithRetry, normalizeSharedOrders]);
