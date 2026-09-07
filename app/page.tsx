@@ -1165,8 +1165,18 @@ function meaningfulMessageLink(order: Order) {
 }
 
 function meaningfulMessageDownloadName(order: Order) {
-  if (order.salesChannel !== "tiktok" || (!order.tikTokFileDataUrl && !order.tikTokFileName)) return undefined;
-  return voiceBackupFileName(order, mediaFileExtension(order.tikTokFileName, order.tikTokFileType, order.tikTokFileDataUrl));
+  if (order.salesChannel === "tiktok") {
+    if (!order.tikTokFileDataUrl && !order.tikTokFileName) return undefined;
+    return voiceBackupFileName(order, mediaFileExtension(order.tikTokFileName, order.tikTokFileType, order.tikTokFileDataUrl));
+  }
+  if (!/^https?:\/\//i.test(order.meaningfulMessage || "")) return undefined;
+  try {
+    const messageUrl = new URL(order.meaningfulMessage);
+    const uploadedName = messageUrl.searchParams.get("filename") || messageUrl.pathname.split("/").at(-1) || "";
+    return voiceBackupFileName(order, mediaFileExtension(uploadedName));
+  } catch {
+    return voiceBackupFileName(order);
+  }
 }
 
 function normalizedOrderNumber(value: string) {

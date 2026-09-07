@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 const AUDIO_BUCKET = "customisation-audio";
 
 function safeFileName(value: string) {
-  return value.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/-+/g, "-").slice(0, 120) || "meaningful-plushie-voice";
+  return value.replace(/[^a-zA-Z0-9._ -]/g, "-").replace(/-+/g, "-").slice(0, 120) || "meaningful-plushie-voice";
 }
 
 export async function GET(request: Request) {
