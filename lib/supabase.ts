@@ -83,6 +83,14 @@ export async function fetchSharedOrders(): Promise<Order[]> {
   return (data ?? []).map((row) => row.data as Order);
 }
 
+function creatorFreeSampleError(error: unknown, fallback: string) {
+  const message = supabaseErrorMessage(error, fallback);
+  if (/ADMIN_REQUIRED|LOGIN_REQUIRED/i.test(message)) {
+    return "Your admin sign-in has expired. Sign out, sign in again, then save the creator sample.";
+  }
+  return message;
+}
+
 type MonthlyJournalAccountRow = { id: string; name: string };
 
 function monthlyJournalSaleAccount(order: Order) {
@@ -714,7 +722,7 @@ function creatorFreeSampleFromRow(row: Record<string, unknown>): CreatorFreeSamp
 
 export async function fetchCreatorFreeSamples(token: string): Promise<CreatorFreeSampleRecord[]> {
   const { data, error } = await requireSupabase().rpc("creator_list_free_samples", { p_session_token: token });
-  if (error) throw new Error(supabaseErrorMessage(error, "Free creator samples could not be loaded."));
+  if (error) throw new Error(creatorFreeSampleError(error, "Free creator samples could not be loaded."));
   return (data ?? []).map((row: Record<string, unknown>) => creatorFreeSampleFromRow(row));
 }
 
@@ -730,7 +738,7 @@ export async function saveCreatorFreeSample(token: string, sample: CreatorFreeSa
     p_given_at: sample.givenAt || new Date().toISOString(),
     p_notes: sample.notes,
   });
-  if (error) throw new Error(supabaseErrorMessage(error, "Free creator sample could not be saved."));
+  if (error) throw new Error(creatorFreeSampleError(error, "Free creator sample could not be saved."));
 }
 
 export async function importCreatorFreeSample(token: string, sample: CreatorFreeSampleRecord) {
@@ -745,12 +753,12 @@ export async function importCreatorFreeSample(token: string, sample: CreatorFree
     p_given_at: sample.givenAt || new Date().toISOString(),
     p_notes: sample.notes,
   });
-  if (error) throw new Error(supabaseErrorMessage(error, "Free creator sample could not be imported."));
+  if (error) throw new Error(creatorFreeSampleError(error, "Free creator sample could not be imported."));
 }
 
 export async function deleteCreatorFreeSample(token: string, id: string) {
   const { error } = await requireSupabase().rpc("creator_delete_free_sample", { p_session_token: token, p_id: id });
-  if (error) throw new Error(supabaseErrorMessage(error, "Free creator sample could not be removed."));
+  if (error) throw new Error(creatorFreeSampleError(error, "Free creator sample could not be removed."));
 }
 
 export async function saveCreatorProfile(token: string, profile: CreatorProfile) {
