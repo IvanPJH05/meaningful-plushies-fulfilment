@@ -2740,7 +2740,7 @@ export default function Home() {
       const paymentReceipts: { fileName: string; url: string }[] = [];
       for (const file of manualOrderReceiptFiles) {
         const uploadData = new FormData(); uploadData.append("file", file);
-        const uploadResponse = await fetch("/api/crm/media-assets", { method: "POST", body: uploadData });
+        const uploadResponse = await fetch("/api/media-assets", { method: "POST", body: uploadData });
         const upload = await uploadResponse.json() as { ok?: boolean; asset?: { originalUrl: string }; error?: string };
         if (!uploadResponse.ok || !upload.ok || !upload.asset) throw new Error(upload.error || `Could not upload ${file.name}.`);
         paymentReceipts.push({ fileName: file.name, url: upload.asset.originalUrl });
@@ -5460,8 +5460,8 @@ export default function Home() {
   }
 
   const workspace = workspaceForView(view);
-  const availableWorkspaces: (Workspace | "crm")[] = session.role === "admin"
-    ? ["fulfilment", "manual_orders", "crm", "accounting", "formal_accounting", "monthly_journal", "creator", "inventory", "reports", "content", "ads", "shopify_app", "settings"]
+  const availableWorkspaces: Workspace[] = session.role === "admin"
+    ? ["fulfilment", "manual_orders", "accounting", "formal_accounting", "monthly_journal", "creator", "inventory", "reports", "content", "ads", "shopify_app", "settings"]
     : session.role === "creator" ? ["creator"] : ["fulfilment"];
   const sidebarNavItems = navItemsForWorkspace(workspace, session.role);
   const workspaceTitle = workspaceLabels[workspace];
@@ -5473,11 +5473,10 @@ export default function Home() {
         <label>
           <span>Workspace</span>
           <select value={workspace} onChange={(event) => {
-            const nextWorkspace = event.target.value as Workspace | "crm";
-            if (nextWorkspace === "crm") { window.location.assign("/crm/inbox"); return; }
+            const nextWorkspace = event.target.value as Workspace;
             setView(workspaceDefaultViews[nextWorkspace]);
           }}>
-            {availableWorkspaces.map((item) => <option key={item} value={item}>{item === "crm" ? "WhatsApp CRM" : workspaceLabels[item]}</option>)}
+            {availableWorkspaces.map((item) => <option key={item} value={item}>{workspaceLabels[item]}</option>)}
           </select>
         </label>
       </div>
@@ -8012,7 +8011,7 @@ function PreordersWorkspacePage() {
   const balance = Math.max(0, totalPrice - Number(form.depositAmount || 0));
   const load = useCallback(async () => { const response = await fetch("/api/preorders"); const result = await response.json(); if (result.ok) setOrders(result.preorders); else setNotice(result.error || "Could not load preorders."); }, []);
   useEffect(() => { void load(); }, [load]);
-  async function submit(event: FormEvent) { event.preventDefault(); try { const paymentReceipts: { fileName: string; url: string }[] = []; for (const file of files) { const data = new FormData(); data.append("file", file); const upload = await fetch("/api/crm/media-assets", { method: "POST", body: data }).then((r) => r.json()); if (!upload.ok) throw new Error(upload.error || `Could not upload ${file.name}.`); paymentReceipts.push({ fileName: file.name, url: upload.asset.originalUrl }); } const result = await fetch("/api/preorders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, totalAmount: String(totalPrice), paymentReceipts }) }).then((r) => r.json()); if (!result.ok) throw new Error(result.error); setFiles([]); setNotice("Preorder saved."); await load(); } catch (e) { setNotice(e instanceof Error ? e.message : "Could not save preorder."); } }
+  async function submit(event: FormEvent) { event.preventDefault(); try { const paymentReceipts: { fileName: string; url: string }[] = []; for (const file of files) { const data = new FormData(); data.append("file", file); const upload = await fetch("/api/media-assets", { method: "POST", body: data }).then((r) => r.json()); if (!upload.ok) throw new Error(upload.error || `Could not upload ${file.name}.`); paymentReceipts.push({ fileName: file.name, url: upload.asset.originalUrl }); } const result = await fetch("/api/preorders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, totalAmount: String(totalPrice), paymentReceipts }) }).then((r) => r.json()); if (!result.ok) throw new Error(result.error); setFiles([]); setNotice("Preorder saved."); await load(); } catch (e) { setNotice(e instanceof Error ? e.message : "Could not save preorder."); } }
   async function markPaid(preorder: Preorder) { const result = await fetch("/api/preorders", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preorder }) }).then((r) => r.json()); if (!result.ok) return setNotice(result.error || "Could not create Manual Order."); setNotice("Balance marked paid — Manual Order link created."); await load(); }
   const selectedProduct = manualOrderProducts.find((product) => product.key === form.productKey) ?? manualOrderProducts[0];
   const speakerLabel = (name: string) => name.match(/(\d+)\s*seconds?/i)?.[1] ? `${name.match(/(\d+)\s*seconds?/i)?.[1]}s` : name;
