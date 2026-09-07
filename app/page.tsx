@@ -1662,6 +1662,19 @@ export default function Home() {
     return () => { cancelled = true; };
   }, [session, syncLocalFreeCreatorSamples]);
 
+  const fetchSharedOrdersWithRetry = useCallback(async () => {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await fetchSharedOrders();
+      } catch (error) {
+        lastError = error;
+        if (attempt < 2) await new Promise<void>((resolve) => window.setTimeout(resolve, (attempt + 1) * 500));
+      }
+    }
+    throw lastError ?? new Error("Could not reach the shared order database.");
+  }, []);
+
   const loadSharedData = useCallback(async (showLoading = false) => {
     if (!supabaseConfigured) {
       setDatabaseError("Supabase is not configured. Add the public Supabase URL and anon key in Vercel.");
@@ -1673,7 +1686,7 @@ export default function Home() {
       // The Creator Sample "Used" figures are calculated from this order history.
       // Load it separately, so a slow lead/settings request cannot make every sample
       // incorrectly look unused.
-      const sharedOrders = await fetchSharedOrders();
+      const sharedOrders = await fetchSharedOrdersWithRetry();
       setOrders(normalizeSharedOrders(sharedOrders));
       setDatabaseError("");
       setLoadingOrders(false);
@@ -1709,11 +1722,13 @@ export default function Home() {
         fetchMetaCapiLogs().then(setMetaCapiLogs),
       ]);
     } catch (error) {
-      setDatabaseError(error instanceof Error ? error.message : "Could not load shared data from Supabase.");
+      // Preserve the last successful workspace data if a device briefly loses its
+      // connection. The next automatic refresh will retry rather than clearing it.
+      setDatabaseError(readableError(error, "Could not reach the shared database. Your displayed data is unchanged and the app will retry automatically."));
     } finally {
       setLoadingOrders(false);
     }
-  }, [normalizeSalesConsumptionMappings, normalizeSharedOrders]);
+  }, [fetchSharedOrdersWithRetry, normalizeSalesConsumptionMappings, normalizeSharedOrders]);
 
   const loadChangedSharedData = useCallback(async (changedTables: string[]) => {
     if (!supabaseConfigured || !changedTables.length) return;
@@ -1749,6 +1764,7 @@ export default function Home() {
         (tables.has("creator_free_samples") && session?.role === "admin") ? fetchCreatorFreeSamples(session.token).then((samples) => {
           writeJson(freeCreatorSamplesStorageKey, samples);
           setFreeCreatorSampleCodes(samples.map((sample) => sample.sampleCode));
+          window.dispatchEvent(new Event("meaningful-plushies-free-creator-samples"));
         }) : Promise.resolve(),
       ]);
     } catch {
@@ -1803,6 +1819,32 @@ export default function Home() {
       window.clearInterval(refreshInterval);
     };
   }, []);
+
+  useEffect(() => {
+    if (!supabaseConfigured) return;
+    let cancelled = false;
+    const refreshOrders = () => {
+      void fetchSharedOrdersWithRetry().then((sharedOrders) => {
+        if (cancelled) return;
+        setOrders(normalizeSharedOrders(sharedOrders));
+        setDatabaseError("");
+      }).catch((error) => {
+        if (!cancelled) setDatabaseError(readableError(error, "Could not reach the shared database. Your displayed data is unchanged and the app will retry automatically."));
+      });
+    };
+    const refreshWhenActive = () => {
+      if (!document.hidden) refreshOrders();
+    };
+    window.addEventListener("focus", refreshWhenActive);
+    document.addEventListener("visibilitychange", refreshWhenActive);
+    const interval = window.setInterval(refreshOrders, 45_000);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", refreshWhenActive);
+      document.removeEventListener("visibilitychange", refreshWhenActive);
+      window.clearInterval(interval);
+    };
+  }, [fetchSharedOrdersWithRetry, normalizeSharedOrders]);
 
   useEffect(() => {
     if (session) writeJson(sessionStorageKey, session);
@@ -8768,16 +8810,31 @@ function CreatorProgramWorkspacePage({
   }, [currentProfile?.id, currentProfile?.payoutMethod, currentProfile?.payoutAccountName, currentProfile?.payoutAccountNumber, currentProfile?.payoutNotes]);
   useEffect(() => {
     writeJson(freeCreatorSamplesStorageKey, freeCreatorSamples);
-    window.dispatchEvent(new Event("meaningful-plushies-free-creator-samples"));
   }, [freeCreatorSamples]);
   useEffect(() => {
-    if (!admin) return;
+    if (!admin || view !== "creator_free_samples") return;
     let cancelled = false;
-    void fetchCreatorFreeSamples(session.token).then((samples) => {
-      if (!cancelled) setFreeCreatorSamples(samples);
-    }).catch(() => undefined);
-    return () => { cancelled = true; };
-  }, [admin, session.token]);
+    const refreshSamples = () => {
+      void fetchCreatorFreeSamples(session.token).then((samples) => {
+        if (!cancelled) setFreeCreatorSamples(samples);
+      }).catch(() => undefined);
+    };
+    const refreshWhenActive = () => {
+      if (!document.hidden) refreshSamples();
+    };
+    refreshSamples();
+    window.addEventListener("focus", refreshWhenActive);
+    document.addEventListener("visibilitychange", refreshWhenActive);
+    window.addEventListener("meaningful-plushies-free-creator-samples", refreshSamples);
+    const interval = window.setInterval(refreshSamples, 15_000);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", refreshWhenActive);
+      document.removeEventListener("visibilitychange", refreshWhenActive);
+      window.removeEventListener("meaningful-plushies-free-creator-samples", refreshSamples);
+      window.clearInterval(interval);
+    };
+  }, [admin, session.token, view]);
 
   function updateForm(patch: Partial<typeof creatorFormDefaults>) {
     setForm((current) => {
