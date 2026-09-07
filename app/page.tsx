@@ -8877,20 +8877,15 @@ function CreatorProgramWorkspacePage({
     }
     setCreatingFreeCreatorSample(true);
     try {
-      const response = await fetch("/api/shopify/creator-sample-discounts", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ code: sampleCode, creatorName }),
-      });
-      const result = await response.json().catch(() => ({})) as { ok?: boolean; discountId?: string; error?: string };
-      if (!response.ok || !result.ok || !result.discountId) throw new Error(result.error || "Shopify creator sample discount could not be created.");
+      // Save the shared ledger first. Shopify can reject an existing code, but that
+      // must never leave a real creator sample invisible on one device.
       const now = new Date().toISOString();
       const sample: FreeCreatorSample = {
         id: crypto.randomUUID(),
         creatorName,
         creatorUrl: freeCreatorSampleForm.creatorUrl.trim(),
         sampleCode,
-        shopifyDiscountId: result.discountId,
+        shopifyDiscountId: "",
         orderNumber: "",
         givenAt: now,
         notes: freeCreatorSampleForm.notes.trim(),
@@ -8898,9 +8893,23 @@ function CreatorProgramWorkspacePage({
       await saveCreatorFreeSample(session.token, sample);
       setFreeCreatorSamples((current) => [sample, ...current]);
       setFreeCreatorSampleForm({ creatorName: "", creatorUrl: "", sampleCode: "", notes: "" });
-      setMessage("Free creator sample logged and Shopify RM150 discount created.");
+
+      const response = await fetch("/api/shopify/creator-sample-discounts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ code: sampleCode, creatorName }),
+      });
+      const result = await response.json().catch(() => ({})) as { ok?: boolean; discountId?: string; error?: string };
+      if (!response.ok || !result.ok || !result.discountId) {
+        setMessage(`Creator sample saved in the shared ledger. Shopify could not create this discount code: ${result.error || "the code may already exist"}.`);
+        return;
+      }
+      const savedSample = { ...sample, shopifyDiscountId: result.discountId };
+      await saveCreatorFreeSample(session.token, savedSample);
+      setFreeCreatorSamples((current) => current.map((item) => item.id === sample.id ? savedSample : item));
+      setMessage("Free creator sample saved and Shopify RM150 discount created.");
     } catch (error) {
-      setMessage(readableError(error, "Creator sample discount could not be created in Shopify."));
+      setMessage(readableError(error, "Free creator sample could not be saved in the shared ledger."));
     } finally {
       setCreatingFreeCreatorSample(false);
     }
