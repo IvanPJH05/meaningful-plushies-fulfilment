@@ -31,7 +31,16 @@ export function CloserCustomerPage() {
   const isDemo = demoMode === "pairing" || demoMode === "shared";
   const certificateId = useMemo(() => isDemo ? "102331" : params.get("certificate") || params.get("id") || "", [isDemo, params]);
   const accessKey = useMemo(() => isDemo ? "demo" : params.get("key") || "", [isDemo, params]);
-  const proxyPath = useMemo(() => (params.get("path_prefix") || "").replace(/\/+$/, ""), [params]);
+  const proxyPath = useMemo(() => {
+    const forwardedPrefix = (params.get("path_prefix") || "").replace(/\/+$/, "");
+    if (forwardedPrefix) return forwardedPrefix;
+    // Shopify adds path_prefix only to its server-to-server proxy request, not
+    // to the address visible in the customer's browser. Detect the public
+    // proxy URL so customer actions stay under /apps/closer instead of asking
+    // Shopify's theme for the non-existent /api/closer route.
+    if (typeof window !== "undefined" && window.location.pathname.startsWith("/apps/closer")) return "/apps/closer";
+    return "";
+  }, [params]);
   const apiPath = proxyPath ? `${proxyPath}/api` : "/api/closer";
   const mediaPath = proxyPath ? `${proxyPath}/media` : "/api/closer/media";
   const themePath = proxyPath ? `${proxyPath}/theme` : "/api/closer/theme";
