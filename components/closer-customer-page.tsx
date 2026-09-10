@@ -27,8 +27,10 @@ function messageFrom(error: unknown) {
 
 export function CloserCustomerPage() {
   const params = useSearchParams();
-  const certificateId = useMemo(() => params.get("certificate") || params.get("id") || "", [params]);
-  const accessKey = useMemo(() => params.get("key") || "", [params]);
+  const demoMode = useMemo(() => params.get("demo"), [params]);
+  const isDemo = demoMode === "pairing" || demoMode === "shared";
+  const certificateId = useMemo(() => isDemo ? "102331" : params.get("certificate") || params.get("id") || "", [isDemo, params]);
+  const accessKey = useMemo(() => isDemo ? "demo" : params.get("key") || "", [isDemo, params]);
   const proxyPath = useMemo(() => (params.get("path_prefix") || "").replace(/\/+$/, ""), [params]);
   const apiPath = proxyPath ? `${proxyPath}/api` : "/api/closer";
   const mediaPath = proxyPath ? `${proxyPath}/media` : "/api/closer/media";
@@ -65,6 +67,13 @@ export function CloserCustomerPage() {
   const refresh = useCallback(async () => {
     setLoading(true);
     setError("");
+    if (isDemo) {
+      setState(demoMode === "shared"
+        ? { status: "linked", connection: { id: "demo", names: ["Snowy", "Honey"], partnerCertificateId: "102332", canUploadNextPhoto: true, hasPhoto: false, hasVoice: false } }
+        : { status: "unlinked", request: null });
+      setLoading(false);
+      return;
+    }
     try {
       const data = await call("state");
       setState(data.state || null);
@@ -73,24 +82,26 @@ export function CloserCustomerPage() {
     } finally {
       setLoading(false);
     }
-  }, [call]);
+  }, [call, demoMode, isDemo]);
 
   useEffect(() => {
     void refresh();
+    if (isDemo) return;
     const interval = window.setInterval(() => {
       void call("state").then((data) => { if (data.state) setState(data.state); }).catch(() => undefined);
     }, 12_000);
     return () => window.clearInterval(interval);
-  }, [call, refresh]);
+  }, [call, isDemo, refresh]);
 
   useEffect(() => {
+    if (isDemo) return;
     void fetch(themePath)
       .then((response) => response.ok ? response.json() : null)
       .then((data: { theme?: Partial<CloserTheme> } | null) => {
         if (data?.theme) setTheme((current) => ({ ...current, ...data.theme }));
       })
       .catch(() => undefined);
-  }, [themePath]);
+  }, [isDemo, themePath]);
 
   const themedStyle = {
     "--closer-background": theme.background,
@@ -229,6 +240,7 @@ export function CloserCustomerPage() {
 
   return <main className={styles.page} style={themedStyle}>
     <header className={styles.header}><Link href="/" className={styles.brand}>closer<span>♥</span></Link><span>{theme.heading.toUpperCase()}</span></header>
+    {isDemo && <p className={styles.demoNotice}>Demo preview · No customer data is connected.</p>}
     {error && <p className={styles.error}>{error}</p>}
 
     {state.status === "unlinked" ? <section className={styles.unlinkedSpace}>
