@@ -39,6 +39,7 @@ export function CloserCustomerPage() {
   const [error, setError] = useState("");
   const [showRequest, setShowRequest] = useState(false);
   const [showAccept, setShowAccept] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
   const [name, setName] = useState("");
   const [partnerCertificateId, setPartnerCertificateId] = useState("");
   const [recording, setRecording] = useState(false);
@@ -46,6 +47,8 @@ export function CloserCustomerPage() {
   const [theme, setTheme] = useState<CloserTheme>(defaultTheme);
   const recorder = useRef<MediaRecorder | null>(null);
   const recordingStream = useRef<MediaStream | null>(null);
+  const cameraPhotoInput = useRef<HTMLInputElement | null>(null);
+  const galleryPhotoInput = useRef<HTMLInputElement | null>(null);
 
   const call = useCallback(async (action: string, payload: Record<string, unknown> = {}) => {
     if (!certificateId || !accessKey) throw new Error("This NFC link is incomplete. Please scan the tag again.");
@@ -228,29 +231,44 @@ export function CloserCustomerPage() {
     <header className={styles.header}><Link href="/" className={styles.brand}>closer<span>♥</span></Link><span>{theme.heading.toUpperCase()}</span></header>
     {error && <p className={styles.error}>{error}</p>}
 
-    {state.status === "unlinked" ? <section className={styles.card}>
-      <p className={styles.eyebrow}>YOUR PLUSHIE IS READY</p>
-      <h1>{state.request ? "Someone wants to connect." : "Bring your plushies closer."}</h1>
+    {state.status === "unlinked" ? <section className={styles.unlinkedSpace}>
+      <div className={styles.idPill}>ID: {certificateId}</div>
       {state.request ? <>
-        <p><strong>{state.request.requesterName}</strong> would like to link their plushie with yours.</p>
-        {!showAccept ? <div className={styles.actions}><button className={styles.primaryButton} disabled={busy} onClick={() => setShowAccept(true)}>Accept connection</button><button className={styles.secondaryButton} disabled={busy} onClick={() => void rejectRequest()}>Reject</button></div> : <form className={styles.form} onSubmit={submitAccept}><label>Your name<input value={name} maxLength={60} onChange={(event) => setName(event.target.value)} placeholder="Your name" required /></label><button className={styles.primaryButton} disabled={busy}>{busy ? "Connecting…" : "Create our shared space"}</button><button type="button" className={styles.textButton} onClick={() => setShowAccept(false)}>Go back</button></form>}
+        <section className={styles.card}>
+          <p className={styles.eyebrow}>CONNECTION REQUEST</p>
+          <h1>{state.request.requesterName} wants to pair with you.</h1>
+          {!showAccept ? <div className={styles.actions}><button className={styles.primaryButton} disabled={busy} onClick={() => setShowAccept(true)}>Accept connection</button><button className={styles.secondaryButton} disabled={busy} onClick={() => void rejectRequest()}>Reject</button></div> : <form className={styles.form} onSubmit={submitAccept}><label>What should your partner call you?<input value={name} maxLength={60} onChange={(event) => setName(event.target.value)} placeholder="Your nickname" required /></label><button className={styles.primaryButton} disabled={busy}>{busy ? "Connecting…" : "Create our shared space"}</button><button type="button" className={styles.textButton} onClick={() => setShowAccept(false)}>Go back</button></form>}
+        </section>
       </> : <>
-        <p>Link with the person you love to create one shared space for photos and voice notes.</p>
-        {!showRequest ? <button className={styles.primaryButton} onClick={() => setShowRequest(true)}>Request connection</button> : <form className={styles.form} onSubmit={submitRequest}><label>Your name<input value={name} maxLength={60} onChange={(event) => setName(event.target.value)} placeholder="Your name" required /></label><label>Their plushie ID<input value={partnerCertificateId} maxLength={100} onChange={(event) => setPartnerCertificateId(event.target.value)} placeholder="For example: 124" required /></label><button className={styles.primaryButton} disabled={busy}>{busy ? "Sending…" : "Send connection request"}</button><button type="button" className={styles.textButton} onClick={() => setShowRequest(false)}>Go back</button></form>}
+        <section className={styles.tutorialCard}>
+          <h1>Video tutorial on how it works</h1>
+          <button className={styles.playButton} onClick={() => setShowTutorial(true)} aria-label="See how pairing works"><span /></button>
+          {showTutorial && <div className={styles.tutorialSteps} role="dialog" aria-modal="true" aria-label="How Closer works">
+            <strong>How Closer works</strong>
+            <ol><li>Scan your Snowy’s NFC tag.</li><li>Enter your partner’s plushie ID and your nickname.</li><li>They accept the request from their tag.</li><li>Take turns sharing a photo and leave voice messages.</li></ol>
+            <button className={styles.textButton} onClick={() => setShowTutorial(false)}>Close</button>
+          </div>}
+        </section>
+        {!showRequest ? <button className={styles.primaryButton} onClick={() => setShowRequest(true)}>Pair Snowy now</button> : <section className={styles.card}><p className={styles.eyebrow}>PAIR YOUR SNOWY</p><form className={styles.form} onSubmit={submitRequest}><label>What should your partner call you?<input value={name} maxLength={60} onChange={(event) => setName(event.target.value)} placeholder="Your nickname" required /></label><label>Your partner’s Snowy ID<input value={partnerCertificateId} maxLength={100} onChange={(event) => setPartnerCertificateId(event.target.value)} placeholder="For example: 124" required /></label><button className={styles.primaryButton} disabled={busy}>{busy ? "Sending…" : "Send connection request"}</button><button type="button" className={styles.textButton} onClick={() => setShowRequest(false)}>Go back</button></form></section>}
       </>}
-    </section> : <section className={`${styles.card} ${styles.linkedCard}`}>
-      <p className={styles.eyebrow}>CONNECTED FROM AFAR</p>
-      <h1>{state.connection.names[0]} <span>+</span> {state.connection.names[1]}</h1>
-      <p className={styles.partner}>Linked with plushie #{state.connection.partnerCertificateId}</p>
-      <div className={styles.mediaArea}>
+    </section> : <section className={styles.sharedSpace}>
+      <div className={styles.namesPill}>“{state.connection.names[0]}” + “{state.connection.names[1]}”</div>
+      <div className={styles.photoFrame}>
         {state.connection.hasPhoto ? <img className={styles.photo} src={mediaUrl("photo")} alt={`A shared memory from ${state.connection.names.join(" and ")}`} /> : <div className={styles.mediaPlaceholder}><span>♥</span><h2>Your memories will live here</h2><p>Share the first photo when it is your turn.</p></div>}
-        {state.connection.hasVoice && <audio className={styles.audio} controls src={mediaUrl("voice")}>Your browser cannot play this voice note.</audio>}
       </div>
-      <div className={styles.mediaActions}>
-        {state.connection.canUploadNextPhoto ? <label className={styles.primaryButton}>Share a photo<input type="file" accept="image/*" onChange={selectPhoto} disabled={busy} hidden /></label> : <span className={styles.waiting}>Your partner shares the next photo.</span>}
-        <button className={styles.secondaryButton} onClick={() => void toggleRecording()} disabled={busy}>{recording ? "Stop & send voice note" : "Record a voice note"}</button>
+      <div className={styles.uploadCard}>
+        <h2>{state.connection.canUploadNextPhoto ? "It’s your turn to upload" : `It’s ${state.connection.names[1]}’s turn to upload`}</h2>
+        {state.connection.canUploadNextPhoto ? <div className={styles.photoButtons}>
+          <button className={styles.primaryButton} disabled={busy} onClick={() => cameraPhotoInput.current?.click()}>Take image</button>
+          <button className={styles.primaryButton} disabled={busy} onClick={() => galleryPhotoInput.current?.click()}>Open gallery</button>
+          <input ref={cameraPhotoInput} type="file" accept="image/*" capture="environment" onChange={selectPhoto} hidden />
+          <input ref={galleryPhotoInput} type="file" accept="image/*" onChange={selectPhoto} hidden />
+        </div> : <p className={styles.waiting}>You’ll be able to share after {state.connection.names[1]} adds the next photo.</p>}
       </div>
-      <p className={styles.turnNote}>{state.connection.canUploadNextPhoto ? "It’s your turn to share the next photo." : "Your partner’s turn to share the next photo."}</p>
+      <div className={styles.voiceCard}>
+        {state.connection.hasVoice ? <><audio className={styles.audio} controls src={mediaUrl("voice")}>Your browser cannot play this voice note.</audio><h2>“{state.connection.names[1]}” left you a message</h2></> : <h2>Leave “{state.connection.names[1]}” a message</h2>}
+      </div>
+      <button className={styles.primaryButton} onClick={() => void toggleRecording()} disabled={busy}>{recording ? "Stop and send voice message" : "Send them a voice message"}</button>
       <button className={styles.textButton} onClick={() => void unlink()} disabled={busy}>{busy ? "Unlinking…" : "Unlink our plushies"}</button>
     </section>}
   </main>;
