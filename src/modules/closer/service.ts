@@ -49,6 +49,26 @@ async function connectionById(id: string | null) {
   return data;
 }
 
+async function connectionForCertificate(certificate: Certificate | null) {
+  if (!certificate) return null;
+  const direct = await connectionById(certificate.connection_id);
+  if (direct) return direct;
+
+  // Recover safely from an interrupted older pairing attempt: a connection may
+  // exist while one participant's certificate did not receive its link.
+  const [asFirst, asSecond] = await Promise.all([
+    database().from("closer_app_connections").select("*").eq("first_certificate_id", certificate.certificate_id).maybeSingle<Connection>(),
+    database().from("closer_app_connections").select("*").eq("second_certificate_id", certificate.certificate_id).maybeSingle<Connection>(),
+  ]);
+  throwDatabaseError(asFirst.error);
+  throwDatabaseError(asSecond.error);
+  const recovered = asFirst.data || asSecond.data;
+  if (!recovered) return null;
+  const { error } = await database().from("closer_app_certificates").update({ connection_id: recovered.id }).eq("certificate_id", certificate.certificate_id).is("connection_id", null);
+  throwDatabaseError(error);
+  return recovered;
+}
+
 async function logActivity(connectionId: string, actorCertificateId: string, action: string, details?: Record<string, unknown>) {
   const { error } = await database().from("closer_app_activity").insert({ id: randomUUID(), connection_id: connectionId, actor_certificate_id: actorCertificateId, action, details: details || null });
   throwDatabaseError(error);
@@ -69,7 +89,7 @@ export async function authenticateCloserCertificate(certificateId: unknown, acce
 
 export async function closerConnectionForCertificate(certificateId: string) {
   const certificate = await certificateById(certificateId);
-  return connectionById(certificate?.connection_id || null);
+  return connectionForCertificate(certificate);
 }
 
 export async function closerTheme() {
@@ -117,7 +137,7 @@ export async function saveCloserTheme(theme: Record<string, unknown>) {
 export async function closerState(certificateId: string) {
   const certificate = await certificateById(certificateId);
   const [connection, requestResult, outgoingRequestResult] = await Promise.all([
-    connectionById(certificate?.connection_id || null),
+    connectionForCertificate(certificate),
     database().from("closer_app_pairing_requests").select("id,from_certificate_id,to_certificate_id,requester_name,status,created_at").eq("to_certificate_id", certificateId).eq("status", "PENDING").order("created_at", { ascending: false }).limit(1).maybeSingle<PairingRequest>(),
     database().from("closer_app_pairing_requests").select("id,from_certificate_id,to_certificate_id,requester_name,status,created_at").eq("from_certificate_id", certificateId).eq("status", "PENDING").order("created_at", { ascending: false }).limit(1).maybeSingle<PairingRequest>(),
   ]);
@@ -164,9 +184,17 @@ export async function acceptCloserConnection(certificateId: string, requestIdVal
   const connectionId = randomUUID();
   const { error: connectionError } = await database().from("closer_app_connections").insert({ id: connectionId, first_certificate_id: from.certificate_id, second_certificate_id: to.certificate_id, first_name: request.requester_name, second_name: recipientName, next_photo_certificate_id: from.certificate_id });
   throwDatabaseError(connectionError);
-  const { error: fromError } = await database().from("closer_app_certificates").update({ connection_id: connectionId }).eq("certificate_id", from.certificate_id);
-  const { error: toError } = await database().from("closer_app_certificates").update({ connection_id: connectionId }).eq("certificate_id", to.certificate_id);
-  throwDatabaseError(fromError); throwDatabaseError(toError);
+  const { data: linkedCertificates, error: linkError } = await database().from("closer_app_certificates")
+    .update({ connection_id: connectionId })
+    .in("certificate_id", [from.certificate_id, to.certificate_id])
+    .is("connection_id", null)
+    .select("certificate_id");
+  throwDatabaseError(linkError);
+  if (linkedCertificates?.length !== 2) {
+    await database().from("closer_app_certificates").update({ connection_id: null }).eq("connection_id", connectionId);
+    await database().from("closer_app_connections").delete().eq("id", connectionId);
+    throw new CloserError("One of these plushies was linked at the same time. Please refresh and try again.", 409);
+  }
   const { error: acceptedError } = await database().from("closer_app_pairing_requests").update({ status: "ACCEPTED" }).eq("id", request.id);
   throwDatabaseError(acceptedError);
   const { error: cancelledError } = await database().from("closer_app_pairing_requests").update({ status: "CANCELLED" }).or(`from_certificate_id.in.(${from.certificate_id},${to.certificate_id}),to_certificate_id.in.(${from.certificate_id},${to.certificate_id})`).eq("status", "PENDING");
