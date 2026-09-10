@@ -9,6 +9,8 @@ const nameLimit = 60;
 type Certificate = { id: string; certificate_id: string; access_key_hash: string; connection_id: string | null; created_at: string };
 type Connection = { id: string; first_certificate_id: string; second_certificate_id: string; first_name: string; second_name: string; next_photo_certificate_id: string; photo_path: string | null; photo_content_type: string | null; voice_path: string | null; voice_content_type: string | null; created_at: string; updated_at: string };
 type PairingRequest = { id: string; from_certificate_id: string; to_certificate_id: string; requester_name: string; status: "PENDING" | "ACCEPTED" | "REJECTED" | "CANCELLED"; created_at: string };
+type AdminCertificate = Pick<Certificate, "certificate_id" | "connection_id" | "created_at">;
+type AdminActivity = { id: string; action: string; actor_certificate_id: string; created_at: string };
 
 let closerDatabase: SupabaseClient | null = null;
 
@@ -74,6 +76,42 @@ export async function closerTheme() {
   const { data, error } = await database().from("closer_app_settings").select("theme").eq("id", "default").maybeSingle<{ theme: unknown }>();
   throwDatabaseError(error);
   return data?.theme && typeof data.theme === "object" ? data.theme as Record<string, unknown> : {};
+}
+
+// The fulfilment dashboard uses the same server-only Supabase connection as
+// the customer pages. Prisma's database role intentionally cannot read these
+// RLS-protected Closer tables in production.
+export async function loadCloserAdminDashboard() {
+  const [certificatesResult, connectionsResult, activityResult, settingsResult] = await Promise.all([
+    database().from("closer_app_certificates").select("certificate_id,connection_id,created_at").order("created_at", { ascending: false }).limit(100).returns<AdminCertificate[]>(),
+    database().from("closer_app_connections").select("id,first_certificate_id,second_certificate_id,first_name,second_name").order("updated_at", { ascending: false }).limit(100).returns<Array<Pick<Connection, "id" | "first_certificate_id" | "second_certificate_id" | "first_name" | "second_name">>>(),
+    database().from("closer_app_activity").select("id,action,actor_certificate_id,created_at").order("created_at", { ascending: false }).limit(100).returns<AdminActivity[]>(),
+    database().from("closer_app_settings").select("theme").eq("id", "default").maybeSingle<{ theme: unknown }>(),
+  ]);
+  throwDatabaseError(certificatesResult.error);
+  throwDatabaseError(connectionsResult.error);
+  throwDatabaseError(activityResult.error);
+  throwDatabaseError(settingsResult.error);
+  return {
+    certificates: certificatesResult.data || [],
+    connections: connectionsResult.data || [],
+    activity: activityResult.data || [],
+    theme: settingsResult.data?.theme && typeof settingsResult.data.theme === "object" ? settingsResult.data.theme : {},
+  };
+}
+
+export async function createCloserCertificate(certificateId: string, accessKey: string) {
+  const { error } = await database().from("closer_app_certificates").insert({
+    id: randomUUID(),
+    certificate_id: certificateId,
+    access_key_hash: hashCloserAccessKey(accessKey),
+  });
+  throwDatabaseError(error);
+}
+
+export async function saveCloserTheme(theme: Record<string, unknown>) {
+  const { error } = await database().from("closer_app_settings").upsert({ id: "default", theme }, { onConflict: "id" });
+  throwDatabaseError(error);
 }
 
 export async function closerState(certificateId: string) {

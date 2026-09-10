@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 
-import { hashCloserAccessKey, unlinkCloserConnection } from "@/src/modules/closer/service";
+import { createCloserCertificate, loadCloserAdminDashboard, saveCloserTheme, unlinkCloserConnection } from "@/src/modules/closer/service";
 import { deleteCloserMedia } from "@/src/modules/closer/media-storage";
 import { prisma } from "@/src/infrastructure/database/prisma";
 
@@ -20,13 +20,13 @@ function error(message: string, status = 400) { return NextResponse.json({ error
 export async function GET(request: NextRequest) {
   try {
     if (!await requireAdmin(request)) return error("Administrator access is required.", 403);
-    const [certificates, connections, activity, settings] = await Promise.all([
-      prisma.closerCertificate.findMany({ orderBy: { createdAt: "desc" }, take: 100, select: { certificateId: true, connectionId: true, createdAt: true } }),
-      prisma.closerConnection.findMany({ orderBy: { updatedAt: "desc" }, take: 100 }),
-      prisma.closerActivity.findMany({ orderBy: { createdAt: "desc" }, take: 100 }),
-      prisma.closerAppSettings.findUnique({ where: { id: "default" } }),
-    ]);
-    return NextResponse.json({ certificates, connections, activity, theme: settings?.theme || {} });
+    const dashboard = await loadCloserAdminDashboard();
+    return NextResponse.json({
+      certificates: dashboard.certificates.map((certificate) => ({ certificateId: certificate.certificate_id, connectionId: certificate.connection_id, createdAt: certificate.created_at })),
+      connections: dashboard.connections.map((connection) => ({ id: connection.id, firstCertificateId: connection.first_certificate_id, secondCertificateId: connection.second_certificate_id, firstName: connection.first_name, secondName: connection.second_name })),
+      activity: dashboard.activity.map((item) => ({ id: item.id, action: item.action, actorCertificateId: item.actor_certificate_id, createdAt: item.created_at })),
+      theme: dashboard.theme,
+    });
   } catch (caught) {
     console.error("Closer admin load failed", caught);
     return error("Closer settings could not be loaded.", 500);
@@ -41,12 +41,12 @@ export async function POST(request: NextRequest) {
       const certificateId = typeof body.certificateId === "string" ? body.certificateId.trim() : "";
       if (!/^[A-Za-z0-9_-]{3,100}$/.test(certificateId)) return error("Use 3–100 letters, numbers, hyphens, or underscores for the certificate ID.");
       const accessKey = randomBytes(24).toString("base64url");
-      await prisma.closerCertificate.create({ data: { certificateId, accessKeyHash: hashCloserAccessKey(accessKey) } });
+      await createCloserCertificate(certificateId, accessKey);
       return NextResponse.json({ ok: true, certificate: { certificateId, accessKey } });
     }
     if (body.action === "save_theme") {
       const theme = typeof body.theme === "object" && body.theme !== null ? body.theme : {};
-      await prisma.closerAppSettings.upsert({ where: { id: "default" }, create: { id: "default", theme }, update: { theme } });
+      await saveCloserTheme(theme as Record<string, unknown>);
       return NextResponse.json({ ok: true });
     }
     if (body.action === "unlink") {
