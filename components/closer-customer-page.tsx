@@ -9,6 +9,7 @@ import styles from "./closer-customer-page.module.css";
 type UnlinkedState = {
   status: "unlinked";
   request: { id: string; requesterName: string; fromCertificateId: string } | null;
+  outgoingRequest: { id: string; partnerCertificateId: string } | null;
 };
 
 type LinkedState = {
@@ -79,7 +80,7 @@ export function CloserCustomerPage() {
     if (isDemo) {
       setState(demoMode === "shared"
         ? { status: "linked", connection: { id: "demo", names: ["Snowy", "Honey"], partnerCertificateId: "102332", canUploadNextPhoto: true, hasPhoto: false, hasVoice: false } }
-        : { status: "unlinked", request: null });
+        : { status: "unlinked", request: null, outgoingRequest: null });
       setLoading(false);
       return;
     }
@@ -260,7 +261,11 @@ export function CloserCustomerPage() {
           <h1>{state.request.requesterName} wants to pair with you.</h1>
           {!showAccept ? <div className={styles.actions}><button className={styles.primaryButton} disabled={busy} onClick={() => setShowAccept(true)}>Accept connection</button><button className={styles.secondaryButton} disabled={busy} onClick={() => void rejectRequest()}>Reject</button></div> : <form className={styles.form} onSubmit={submitAccept}><label>What should your partner call you?<input value={name} maxLength={60} onChange={(event) => setName(event.target.value)} placeholder="Your nickname" required /></label><button className={styles.primaryButton} disabled={busy}>{busy ? "Connecting…" : "Create our shared space"}</button><button type="button" className={styles.textButton} onClick={() => setShowAccept(false)}>Go back</button></form>}
         </section>
-      </> : <>
+      </> : state.outgoingRequest ? <section className={styles.card}>
+        <p className={styles.eyebrow}>CONNECTION REQUEST SENT</p>
+        <h1>Waiting for your partner to accept.</h1>
+        <p>Your request was sent to Snowy ID {state.outgoingRequest.partnerCertificateId}. Ask your partner to scan their NFC tag and accept the connection.</p>
+      </section> : <>
         <section className={styles.tutorialCard}>
           <h1>Video tutorial on how it works</h1>
           <button className={styles.playButton} onClick={() => setShowTutorial(true)} aria-label="See how pairing works"><span /></button>
