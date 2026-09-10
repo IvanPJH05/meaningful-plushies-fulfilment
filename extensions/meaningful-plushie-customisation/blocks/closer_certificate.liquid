@@ -10,7 +10,7 @@
     <p class="closer-certificate__eyebrow">{{ block.settings.eyebrow | escape }}</p>
     <h2>{{ block.settings.heading | escape }}</h2>
     <p>{{ block.settings.description | escape }}</p>
-    <a class="closer-certificate__button" href="{{ app_url }}/closer?certificate={{ certificate_id | url_encode }}&key={{ block.settings.access_key | url_encode }}">{{ block.settings.button_label | escape }}</a>
+    <a class="closer-certificate__button" href="{{ app_url }}?certificate={{ certificate_id | url_encode }}&key={{ block.settings.access_key | url_encode }}">{{ block.settings.button_label | escape }}</a>
   </div>
 </section>
 
