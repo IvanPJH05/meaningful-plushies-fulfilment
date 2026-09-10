@@ -40,7 +40,10 @@ export async function POST(request: NextRequest) {
     const certificate = await authenticateCloserCertificate(body.certificateId, body.accessKey);
     const action = body.action;
 
-    if (action === "state") return NextResponse.json(await closerState(certificate.certificateId));
+    // Keep the read response consistent with every other Closer action. The
+    // customer page always reads `data.state`; returning the state directly
+    // left a successfully loaded page with nothing to render.
+    if (action === "state") return NextResponse.json({ state: await closerState(certificate.certificateId) });
     if (action === "request") {
       await requestCloserConnection(certificate.certificateId, body.partnerCertificateId, body.name);
       return NextResponse.json({ ok: true, state: await closerState(certificate.certificateId) });
