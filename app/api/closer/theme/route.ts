@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { prisma } from "@/src/infrastructure/database/prisma";
+import { closerTheme } from "@/src/modules/closer/service";
 
 const defaults = { heading: "Your shared space", accent: "#d76b83", background: "#e7eedf" };
 
@@ -10,8 +10,7 @@ function themeValue(value: unknown, fallback: string, pattern: RegExp) {
 
 export async function GET() {
   try {
-    const settings = await prisma.closerAppSettings.findUnique({ where: { id: "default" } });
-    const saved = settings?.theme && typeof settings.theme === "object" ? settings.theme as Record<string, unknown> : {};
+    const saved = await closerTheme();
     return NextResponse.json({
       theme: {
         heading: themeValue(saved.heading, defaults.heading, /^.{1,80}$/),
