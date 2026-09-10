@@ -116,12 +116,18 @@ export async function saveCloserTheme(theme: Record<string, unknown>) {
 
 export async function closerState(certificateId: string) {
   const certificate = await certificateById(certificateId);
-  const [connection, requestResult] = await Promise.all([
+  const [connection, requestResult, outgoingRequestResult] = await Promise.all([
     connectionById(certificate?.connection_id || null),
     database().from("closer_app_pairing_requests").select("id,from_certificate_id,to_certificate_id,requester_name,status,created_at").eq("to_certificate_id", certificateId).eq("status", "PENDING").order("created_at", { ascending: false }).limit(1).maybeSingle<PairingRequest>(),
+    database().from("closer_app_pairing_requests").select("id,from_certificate_id,to_certificate_id,requester_name,status,created_at").eq("from_certificate_id", certificateId).eq("status", "PENDING").order("created_at", { ascending: false }).limit(1).maybeSingle<PairingRequest>(),
   ]);
   throwDatabaseError(requestResult.error);
-  if (!connection) return { status: "unlinked" as const, request: requestResult.data ? { id: requestResult.data.id, requesterName: requestResult.data.requester_name, fromCertificateId: requestResult.data.from_certificate_id } : null };
+  throwDatabaseError(outgoingRequestResult.error);
+  if (!connection) return {
+    status: "unlinked" as const,
+    request: requestResult.data ? { id: requestResult.data.id, requesterName: requestResult.data.requester_name, fromCertificateId: requestResult.data.from_certificate_id } : null,
+    outgoingRequest: outgoingRequestResult.data ? { id: outgoingRequestResult.data.id, partnerCertificateId: outgoingRequestResult.data.to_certificate_id } : null,
+  };
   const isFirst = connection.first_certificate_id === certificateId;
   return { status: "linked" as const, connection: { id: connection.id, names: (isFirst ? [connection.first_name, connection.second_name] : [connection.second_name, connection.first_name]) as [string, string], partnerCertificateId: isFirst ? connection.second_certificate_id : connection.first_certificate_id, canUploadNextPhoto: connection.next_photo_certificate_id === certificateId, hasPhoto: Boolean(connection.photo_path), hasVoice: Boolean(connection.voice_path) } };
 }
@@ -133,7 +139,7 @@ export async function requestCloserConnection(fromCertificateId: string, toCerti
   const [from, to] = await Promise.all([certificateById(fromCertificateId), certificateById(toCertificateId)]);
   if (!to) throw new CloserError("That certificate ID was not found.", 404);
   if (from?.connection_id || to.connection_id) throw new CloserError("One of these plushies is already linked.", 409);
-  const { error: cancelledError } = await database().from("closer_app_pairing_requests").update({ status: "CANCELLED" }).eq("from_certificate_id", fromCertificateId).eq("to_certificate_id", toCertificateId).eq("status", "PENDING");
+  const { error: cancelledError } = await database().from("closer_app_pairing_requests").update({ status: "CANCELLED" }).eq("from_certificate_id", fromCertificateId).eq("status", "PENDING");
   throwDatabaseError(cancelledError);
   const { error } = await database().from("closer_app_pairing_requests").insert({ id: randomUUID(), from_certificate_id: fromCertificateId, to_certificate_id: toCertificateId, requester_name: requesterName, status: "PENDING" });
   throwDatabaseError(error);
