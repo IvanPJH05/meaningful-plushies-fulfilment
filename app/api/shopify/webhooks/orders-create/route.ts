@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { shopifyLinePersonalization, shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
 import { bindSessionsToOrders, customisationSessionIds, submittedCustomisationsForSessionIds } from "../../../../../lib/customisation";
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
-import { certificateMediaForLineItem, certificateMetaobjectForOrder, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrder, fetchShopifyOrderWithMetafieldRetry, flowCertificateCode, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
+import { certificateMediaForLineItem, certificateMetaobjectForOrder, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrder, flowCertificateCode, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
 import { fetchMetaCapiSettings, fetchSharedOrdersByOrderNumber, insertSharedActivity, markManualOrderUsedByDiscountCode, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
 
 export const runtime = "nodejs";
@@ -73,12 +73,11 @@ export async function POST(request: Request) {
   }
 
   try {
-    // Meaningful Fulfilment saves its own session ID on the line item. It does
-    // not need Upload Lift's delayed metafield, so avoid the 32-second retry.
+    // Import the sale immediately. Waiting for a delayed optional metafield can
+    // make Shopify time out and retry the webhook, leaving the order absent.
+    // Line-item properties and later updates still enrich the saved order.
     const payloadSessionIds = customisationSessionIds(payload);
-    const fullOrder = payloadSessionIds.length
-      ? await fetchShopifyOrder(payload, request)
-      : await fetchShopifyOrderWithMetafieldRetry(payload, request);
+    const fullOrder = await fetchShopifyOrder(payload, request);
     const uploadLiftFormData = shopifyMetafieldValue(fullOrder) || shopifyMetafieldValue(payload);
     const deferredSessionIds = [...new Set([...payloadSessionIds, ...customisationSessionIds(fullOrder)])];
     const submittedCustomisations = await submittedCustomisationsForSessionIds(deferredSessionIds);
