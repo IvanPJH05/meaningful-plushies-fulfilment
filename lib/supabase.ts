@@ -83,6 +83,18 @@ export async function fetchSharedOrders(): Promise<Order[]> {
   return (data ?? []).map((row) => row.data as Order);
 }
 
+// A Shopify webhook or manual refresh only needs the existing rows for that
+// order to preserve its fulfilment status and other staff edits. Avoid loading
+// every historical order (including large media payloads) during a live sale.
+export async function fetchSharedOrdersByOrderNumber(orderNumber: string): Promise<Order[]> {
+  const { data, error } = await requireSupabase()
+    .from("fulfilment_orders")
+    .select("data")
+    .eq("order_number", orderNumber);
+  if (error) throw error;
+  return (data ?? []).map((row) => row.data as Order);
+}
+
 // Load a media-bearing order only when its download link is used. This keeps a
 // browser refresh fast while still allowing cached TikTok rows to download files.
 export async function fetchSharedOrderById(id: string): Promise<Order | null> {

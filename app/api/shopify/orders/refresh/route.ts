@@ -4,7 +4,7 @@ import { shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
 import { submittedCustomisationForOrder } from "../../../../../lib/customisation";
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
 import { certificateMediaForLineItem, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrderByNumberWithMetafieldRetry, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
-import { fetchMetaCapiSettings, fetchSharedOrders, insertSharedActivity, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
+import { fetchMetaCapiSettings, fetchSharedOrdersByOrderNumber, insertSharedActivity, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
 import type { Order } from "../../../../../lib/types";
 
 export const runtime = "nodejs";
@@ -131,10 +131,9 @@ export async function POST(request: Request) {
   if (!uniqueOrderNumbers.length) return json(400, { ok: false, error: "At least one order number is required." });
 
   try {
-    const existing = await fetchSharedOrders();
     const results = [];
     for (const orderNumber of uniqueOrderNumbers) {
-      results.push(await refreshOneOrder(orderNumber, existing, request));
+      results.push(await refreshOneOrder(orderNumber, await fetchSharedOrdersByOrderNumber(orderNumber), request));
     }
 
     const successful = results.filter((result) => result.ok);

@@ -5,7 +5,7 @@ import { shopifyLinePersonalization, shopifyOrderToFulfilmentOrders } from "../.
 import { bindSessionsToOrders, customisationSessionIds, submittedCustomisationsForSessionIds } from "../../../../../lib/customisation";
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
 import { certificateMediaForLineItem, certificateMetaobjectForOrder, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrder, fetchShopifyOrderWithMetafieldRetry, flowCertificateCode, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
-import { fetchMetaCapiSettings, fetchSharedOrders, insertSharedActivity, markManualOrderUsedByDiscountCode, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
+import { fetchMetaCapiSettings, fetchSharedOrdersByOrderNumber, insertSharedActivity, markManualOrderUsedByDiscountCode, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
 
 export const runtime = "nodejs";
 
@@ -82,14 +82,14 @@ export async function POST(request: Request) {
     const uploadLiftFormData = shopifyMetafieldValue(fullOrder) || shopifyMetafieldValue(payload);
     const deferredSessionIds = [...new Set([...payloadSessionIds, ...customisationSessionIds(fullOrder)])];
     const submittedCustomisations = await submittedCustomisationsForSessionIds(deferredSessionIds);
-    const existing = await fetchSharedOrders();
-    const importedOrders = shopifyOrderToFulfilmentOrders(fullOrder, uploadLiftFormData, existing, "Shopify");
     const syncedNumber = cleanShopifyOrderNumber(
       textValue(fullOrder.name)
       || textValue(fullOrder.order_number)
       || textValue(payload.name)
       || textValue(payload.order_number),
     );
+    const existing = await fetchSharedOrdersByOrderNumber(syncedNumber);
+    const importedOrders = shopifyOrderToFulfilmentOrders(fullOrder, uploadLiftFormData, existing, "Shopify");
     let ordersToSave = importedOrders.filter((order) => order.orderNumber === syncedNumber);
     const orderId = textValue(fullOrder.id) || textValue(payload.admin_graphql_api_id) || textValue(payload.id);
     const orderLineItems = Array.isArray(fullOrder.lineItems) ? fullOrder.lineItems : [];
