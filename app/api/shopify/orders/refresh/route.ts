@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
 import { submittedCustomisationForOrder } from "../../../../../lib/customisation";
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
-import { certificateMediaForLineItem, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrderByNumberWithMetafieldRetry, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
+import { certificateMediaForLineItem, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrderByNumber, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
 import { fetchMetaCapiSettings, fetchSharedOrdersByOrderNumber, insertSharedActivity, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
 import type { Order } from "../../../../../lib/types";
 
@@ -25,7 +25,7 @@ function looksLikePersonalizedPlushie(order: Record<string, unknown>) {
 }
 
 async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], request: Request) {
-  const fullOrder = await fetchShopifyOrderByNumberWithMetafieldRetry(requestedOrderNumber, request);
+  const fullOrder = await fetchShopifyOrderByNumber(requestedOrderNumber, request);
   const syncedNumber = cleanShopifyOrderNumber(textValue(fullOrder?.name));
   if (!fullOrder || syncedNumber !== requestedOrderNumber) {
     return { orderNumber: requestedOrderNumber, ok: false, error: `Shopify order #${requestedOrderNumber} could not be found.`, orders: [] as Order[], updated: 0 };
