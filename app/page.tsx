@@ -84,6 +84,8 @@ import { manualOrderProducts } from "../lib/manual-order-products";
 import { orderStatuses, type AccountingBankStatementLine, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type AiAccountantReview, type CommissionStatus, type ContentIdeaItem, type ContentIdeaReference, type ContentPlanItem, type CreatorCommission, type CreatorPayout, type CreatorProfile, type CreatorStatus, type CreatorTier, type DashboardAccount, type EnvelopePrintSettings, type ManualOrder, type MetaCapiLog, type MetaCapiSettings, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesConsumptionMapping, type SalesFeeSetting, type StockSetting, type UserRole, type WhatsAppLead, type WhatsAppLeadStatus } from "../lib/types";
 import { MonthlyJournalWorkspace } from "../components/monthly-journal-workspace";
 import { ShopifyAppWorkspace } from "../components/shopify-app-workspace";
+import { AudioScannerWorkspace } from "../components/audio-scanner-workspace";
+import { OrderBarcode, orderBarcodeValue } from "../components/order-barcode";
 
 type Session = DashboardSession;
 const CreatorProfilesContext = createContext<CreatorProfile[]>([]);
@@ -98,8 +100,8 @@ type View =
   | "monthly_journal_inbox" | "monthly_journal_import" | "monthly_journal_shopee" | "monthly_journal_shortcuts" | "monthly_journal_source_documents" | "monthly_journal_general_journal" | "monthly_journal_reports" | "monthly_journal_accounts" | "monthly_journal_account_activity"
   | "content_dashboard" | "content_plan" | "content_ideas"
   | "manual_orders_dashboard" | "manual_orders_preorders" | "manual_orders_leads"
-  | "creator_dashboard" | "creator_accounts" | "creator_sales" | "creator_commissions" | "creator_payouts" | "creator_analytics" | "creator_free_samples" | "shopify_app";
-type Workspace = "fulfilment" | "manual_orders" | "accounting" | "formal_accounting" | "monthly_journal" | "creator" | "inventory" | "reports" | "content" | "settings" | "shopify_app";
+  | "creator_dashboard" | "creator_accounts" | "creator_sales" | "creator_commissions" | "creator_payouts" | "creator_analytics" | "creator_free_samples" | "shopify_app" | "audio_scanner";
+type Workspace = "fulfilment" | "manual_orders" | "accounting" | "formal_accounting" | "monthly_journal" | "creator" | "inventory" | "reports" | "content" | "settings" | "shopify_app" | "audio_scanner";
 type SalesRange = "active" | "today" | "7d" | "30d" | "lifetime";
 type SortKey = "orderNumber" | "importedAt" | "updatedAt";
 type SortDirection = "asc" | "desc";
@@ -625,8 +627,8 @@ const manualOrderViews: readonly View[] = ["manual_orders_dashboard", "manual_or
 const manualOrderCharacters = ["Billy", "Tootsie", "Hunnie", "Dragon Warrior"] as const;
 const creatorViews: readonly View[] = ["creator_dashboard", "creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
 const creatorAdminViews: readonly View[] = ["creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
-const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "meta_capi", "stock", "sales_report", "shopify_app", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...creatorViews];
-const adminOnlyViews = new Set<View>(["history", "settings", "meta_capi", "stock", "sales_report", "shopify_app", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...creatorAdminViews]);
+const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "meta_capi", "stock", "sales_report", "shopify_app", "audio_scanner", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...creatorViews];
+const adminOnlyViews = new Set<View>(["history", "settings", "meta_capi", "stock", "sales_report", "shopify_app", "audio_scanner", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...creatorAdminViews]);
 const workspaceDefaultViews: Record<Workspace, View> = {
   fulfilment: "orders",
   manual_orders: "manual_orders_dashboard",
@@ -639,6 +641,7 @@ const workspaceDefaultViews: Record<Workspace, View> = {
   content: "content_dashboard",
   settings: "settings",
   shopify_app: "shopify_app",
+  audio_scanner: "audio_scanner",
 };
 const workspaceLabels: Record<Workspace, string> = {
   fulfilment: "Fulfilment",
@@ -652,6 +655,7 @@ const workspaceLabels: Record<Workspace, string> = {
   content: "Content Plan",
   settings: "Settings",
   shopify_app: "Shopify App",
+  audio_scanner: "Audio Scanner",
 };
 const orderStatusFilterValues = ["all", ...orderStatuses] as const;
 const sourceFilterValues = ["all", "shopify", "tiktok", "whatsapp"] as const;
@@ -808,6 +812,7 @@ const fulfilmentNavItems: NavItem[] = [
 const fulfilmentAdminNavItems: NavItem[] = [
   { view: "sales_report", label: "Sales Report", icon: "report" },
 ];
+const audioScannerNavItems: NavItem[] = [{ view: "audio_scanner", label: "Scan & Play", icon: "report" }];
 
 const accountingNavItems: NavItem[] = [
   { view: "accounting_dashboard", label: "Book Keeping Book", icon: "ledger" },
@@ -1393,6 +1398,7 @@ function workspaceForView(view: View): Workspace {
   if (view === "stock") return "inventory";
   if (view === "sales_report") return "reports";
   if (view === "shopify_app") return "shopify_app";
+  if (view === "audio_scanner") return "audio_scanner";
   if (view === "history" || view === "settings" || view === "meta_capi") return "settings";
   return "fulfilment";
 }
@@ -1408,6 +1414,7 @@ function navItemsForWorkspace(workspace: Workspace, role: UserRole): NavItem[] {
   if (workspace === "reports") return reportsNavItems;
   if (workspace === "content") return contentNavItems;
   if (workspace === "shopify_app") return shopifyAppNavItems;
+  if (workspace === "audio_scanner") return audioScannerNavItems;
   if (workspace === "manual_orders") return manualOrderNavItems;
   if (workspace === "settings") return settingsNavItems;
   return [...fulfilmentNavItems, ...fulfilmentAdminNavItems];
@@ -1429,7 +1436,7 @@ function viewTitle(view: View) {
     manual_orders_leads: "Leads",
   };
   if (titleOverrides[view]) return titleOverrides[view]!;
-  const item = [...fulfilmentNavItems, ...fulfilmentAdminNavItems, ...manualOrderNavItems, ...accountingNavItems, ...formalAccountingNavItems, ...monthlyJournalNavItems, ...creatorAdminNavItems, ...inventoryNavItems, ...reportsNavItems, ...contentNavItems, ...settingsNavItems]
+  const item = [...fulfilmentNavItems, ...fulfilmentAdminNavItems, ...audioScannerNavItems, ...manualOrderNavItems, ...accountingNavItems, ...formalAccountingNavItems, ...monthlyJournalNavItems, ...creatorAdminNavItems, ...inventoryNavItems, ...reportsNavItems, ...contentNavItems, ...settingsNavItems]
     .find((navItem) => navItem.view === view);
   if (item) return item.label;
   return "Orders Dashboard";
@@ -5506,7 +5513,7 @@ export default function Home() {
 
   const workspace = workspaceForView(view);
   const availableWorkspaces: Workspace[] = session.role === "admin"
-    ? ["fulfilment", "manual_orders", "accounting", "formal_accounting", "monthly_journal", "creator", "inventory", "reports", "content", "shopify_app", "settings"]
+    ? ["fulfilment", "manual_orders", "accounting", "formal_accounting", "monthly_journal", "creator", "inventory", "reports", "content", "shopify_app", "audio_scanner", "settings"]
     : session.role === "creator" ? ["creator"] : ["fulfilment"];
   const sidebarNavItems = navItemsForWorkspace(workspace, session.role);
   const workspaceTitle = workspaceLabels[workspace];
@@ -5683,6 +5690,7 @@ export default function Home() {
       {workspace === "monthly_journal" && session.role === "admin" && <MonthlyJournalWorkspace initialView={view.replace("monthly_journal_", "") as "inbox" | "import" | "shopee" | "shortcuts" | "source_documents" | "general_journal" | "reports" | "account_activity" | "accounts"} />}
 
       {workspace === "shopify_app" && session.role === "admin" && <ShopifyAppWorkspace sessionToken={session.token} />}
+      {workspace === "audio_scanner" && session.role === "admin" && <AudioScannerWorkspace orders={orders} audioSourceFor={meaningfulMessageLink} />}
 
       {workspace === "creator" && (session.role === "admin" || session.role === "creator") && <CreatorProgramWorkspacePage
         view={view}
@@ -9381,7 +9389,7 @@ function Editable({ label, value, onChange, disabled, placeholder, wide, textare
 function PackingSlip({ order, manualOrders }: { order: Order; manualOrders: ManualOrder[] }) {
   const creatorProfiles = useContext(CreatorProfilesContext);
   const freeCreatorSampleCodes = useContext(FreeCreatorSampleCodesContext);
-  return <article className="a6-slip"><header><div className="slip-marker-row"><span>ORDER ID</span><div><OrderMarkers order={order} manualOrders={manualOrders} /></div></div><strong>{packingSlipOrderLabel(order)}</strong></header><div className="slip-fields"><div className="primary-slip-field"><label>CHARACTER:</label><p>{order.character || "-"}</p></div><div className="primary-slip-field"><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{packingSlipRemark(order, manualOrders, creatorProfiles, freeCreatorSampleCodes)}</p></div></div><footer>Meaningful Plushies</footer></article>;
+  return <article className="a6-slip"><header><div className="slip-marker-row"><span>ORDER ID</span><div><OrderMarkers order={order} manualOrders={manualOrders} /></div></div><strong>{packingSlipOrderLabel(order)}</strong></header><div className="slip-fields"><div className="primary-slip-field"><label>CHARACTER:</label><p>{order.character || "-"}</p></div><div className="primary-slip-field"><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{packingSlipRemark(order, manualOrders, creatorProfiles, freeCreatorSampleCodes)}</p></div></div><OrderBarcode value={orderBarcodeValue(order)} compact /><footer>Meaningful Plushies</footer></article>;
 }
 
 function EnvelopeSettingsPanel({ settings, onChange, onFontUpload, onReset }: { settings: EnvelopePrintSettings; onChange: (patch: Partial<EnvelopePrintSettings>) => void; onFontUpload: (file: File | null) => void; onReset: () => void }) {

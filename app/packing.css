@@ -34,6 +34,12 @@
 .slip-fields p { font-size: clamp(10px, 1.15vw, 16px); font-weight: 650; line-height: 1.22; margin: 2.5% 0 0; overflow-wrap: anywhere; }
 .slip-fields .primary-slip-field p { font-size: clamp(15px, 1.65vw, 22px); font-weight: 850; line-height: 1.08; }
 .slip-fields .remark-row { min-height: 19%; }
+.order-barcode { display: grid; gap: 4px; text-align: center; color: #111; }
+.order-barcode svg { display: block; width: 100%; height: 54px; background: #fff; }
+.order-barcode span { font: 800 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; }
+.a6-slip .order-barcode { margin-top: 5%; }
+.a6-slip .order-barcode.compact svg { height: clamp(22px, 2.25vw, 32px); }
+.a6-slip .order-barcode.compact span { font-size: clamp(5px, .55vw, 8px); }
 .a6-slip footer { margin-top: auto; text-align: center; border-top: 1px solid #111; padding-top: 4%; font-size: clamp(7px, .7vw, 9px); font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
 .preview-empty { height: 480px; display: grid; place-content: center; text-align: center; color: #768398; }
 .preview-empty strong { color: #425169; }
@@ -74,5 +80,8 @@
   body.print-packing .slip-fields label { font-size: 8pt; }
   body.print-packing .slip-fields p { font-size: 13pt; margin-top: 2mm; }
   body.print-packing .slip-fields .primary-slip-field p { font-size: 18pt; }
+  body.print-packing .a6-slip .order-barcode { margin-top: 3mm; }
+  body.print-packing .a6-slip .order-barcode.compact svg { height: 9mm; }
+  body.print-packing .a6-slip .order-barcode.compact span { font-size: 6pt; }
   body.print-packing .a6-slip footer { font-size: 8pt; padding-top: 3mm; }
 }
