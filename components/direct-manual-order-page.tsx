@@ -37,10 +37,12 @@ export function DirectManualOrderPage({
   lockedPlushie,
   apiUrl = "/apps/closer/manual-order",
   collectionCode,
+  orderSummaryVideo,
 }: {
   lockedPlushie?: LockedPlushie;
   apiUrl?: string;
   collectionCode?: string;
+  orderSummaryVideo?: string;
 }) {
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
@@ -112,6 +114,7 @@ export function DirectManualOrderPage({
     <header className={styles.header}><Link href="/" className={styles.brand}>MEANINGFUL PLUSHIES</Link></header>
     <form className={styles.form} onSubmit={submit}>
       <h1>CUSTOMISE YOUR PLUSHIE</h1>
+      {orderSummaryVideo ? <video className={styles.orderSummaryVideo} autoPlay loop muted playsInline preload="metadata" aria-label="Order summary"><source src={orderSummaryVideo} type="video/mp4" /></video> : null}
       <h2>YOUR PLUSHIE’S BIRTH CERTIFICATE</h2>
       {lockedPlushie ? <div className={styles.lockedProduct}><span>YOUR PLUSHIE</span><strong>{lockedPlushie.character} · {lockedPlushie.productKey.replace("plushie_", "").replace("s", " seconds voice")}</strong><input type="hidden" name="character" value={lockedPlushie.character} /><input type="hidden" name="productKey" value={lockedPlushie.productKey} /></div> : <><label>Character<select required name="character"><option value="Billy">Billy</option><option value="Tootsie">Tootsie</option><option value="Hunnie">Hunnie</option><option value="Dragon Warrior">Dragon Warrior</option></select></label><label>Voice Length<select required name="productKey"><option value="plushie_5s">5 seconds voice</option><option value="plushie_10s">10 seconds voice</option><option value="plushie_20s">20 seconds voice</option></select></label></>}
       <label>Plushie&apos;s Name<input required name="plushName" maxLength={20} placeholder="Name your plushie" /></label>
