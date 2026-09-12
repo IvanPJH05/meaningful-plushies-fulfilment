@@ -28,16 +28,17 @@
 .slip-marker-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
 .slip-marker-row > div { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 3px; }
 .slip-marker-row .source-badge,.slip-marker-row .order-marker,.slip-marker-row .shipping-badge { margin: 0; padding: 2px 4px; font-size: clamp(5px, .52vw, 7px); }
-.slip-fields { display: grid; gap: 3.2%; }
+.slip-marker-row .source-badge { padding: 0; border-radius: 0; background: transparent; color: #111; }
+.slip-fields { display: grid; gap: 3.2%; flex: 0 0 auto; }
 .slip-fields div { border-bottom: 1px solid #d4d4d4; padding-bottom: 2.5%; }
 .slip-fields label { display: block; font-size: clamp(7px, .7vw, 9px); font-weight: 900; letter-spacing: .06em; }
 .slip-fields p { font-size: clamp(10px, 1.15vw, 16px); font-weight: 650; line-height: 1.22; margin: 2.5% 0 0; overflow-wrap: anywhere; }
 .slip-fields .primary-slip-field p { font-size: clamp(15px, 1.65vw, 22px); font-weight: 850; line-height: 1.08; }
-.slip-fields .remark-row { min-height: 19%; }
+.slip-fields .remark-row { min-height: 0; }
 .order-barcode { display: grid; gap: 4px; text-align: center; color: #111; }
 .order-barcode svg { display: block; width: 100%; height: 54px; background: #fff; }
 .order-barcode span { font: 800 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; }
-.a6-slip .order-barcode { margin-top: 5%; }
+.a6-slip .order-barcode { margin-top: 3%; }
 .a6-slip .order-barcode.compact svg { height: clamp(22px, 2.25vw, 32px); }
 .a6-slip .order-barcode.compact span { font-size: clamp(5px, .55vw, 8px); }
 .a6-slip footer { margin-top: auto; text-align: center; border-top: 1px solid #111; padding-top: 4%; font-size: clamp(7px, .7vw, 9px); font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
@@ -75,6 +76,7 @@
   body.print-packing .a6-slip header span { font-size: 9pt; }
   body.print-packing .a6-slip header strong { display: block !important; font-size: 38pt; margin-top: 2mm; color: #111 !important; }
   body.print-packing .slip-marker-row .source-badge, body.print-packing .slip-marker-row .order-marker, body.print-packing .slip-marker-row .shipping-badge { padding: 1.4mm 1.8mm; font-size: 6pt; }
+  body.print-packing .slip-marker-row .source-badge { padding: 0; background: transparent; color: #111; }
   body.print-packing .slip-fields { gap: 3mm; }
   body.print-packing .slip-fields div { padding-bottom: 2mm; }
   body.print-packing .slip-fields label { font-size: 8pt; }
