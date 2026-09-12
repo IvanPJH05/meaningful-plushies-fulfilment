@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { manualOrderIntakeReference, type ManualOrderIntake } from "@/lib/manual-order-intakes";
+import type { ManualOrderIntake } from "@/lib/manual-order-intakes";
+
+function manualOrderIntakeReference(id: string) {
+  return `MP-${id.toUpperCase()}`;
+}
 
 export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: string }) {
   const [intakes, setIntakes] = useState<ManualOrderIntake[]>([]);
