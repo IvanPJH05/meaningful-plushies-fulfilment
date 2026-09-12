@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
         shippingAddress: (body.shippingAddress || {}) as never, form: (body.form || {}) as never,
         sessionToken: String(body.sessionToken || ""), voiceStoragePath: String(body.voiceStoragePath || ""),
       });
-      return result({ ok: true, intakeId: intake.id });
+      return result({ ok: true, intakeId: intake.id, reference: intake.reference, whatsAppUrl: intake.whatsAppUrl || undefined });
     }
     return result({ ok: false, error: "That collection action is not supported." }, 400);
   } catch (error) {
