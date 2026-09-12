@@ -96,53 +96,36 @@ export function DirectManualOrderPage() {
   }
 
   return <main className={styles.page}>
-    <header className={styles.header}><Link href="/" className={styles.brand}>meaningful<br /><span>PLUSHIES</span></Link><p>CREATE YOUR PLUSHIE</p></header>
-    <section className={styles.intro}>
-      <p className={styles.eyebrow}>A PLUSHIE MADE FOR YOU</p>
-      <h1>Tell us your plushie’s story.</h1>
-      <p>Complete the birth certificate and delivery details below. Your information is saved directly to our fulfilment team, who will prepare your order after payment is confirmed.</p>
-    </section>
+    <header className={styles.header}><Link href="/" className={styles.brand}>MEANINGFUL PLUSHIES</Link></header>
     <form className={styles.form} onSubmit={submit}>
-      <section className={styles.card}>
-        <div className={styles.step}><span>1</span><div><p>YOUR DETAILS</p><h2>Who is this plushie for?</h2></div></div>
-        <div className={styles.grid}>
-          <label>Full name<input required name="customerName" autoComplete="name" /></label>
-          <label>Phone number<input required name="phone" inputMode="tel" autoComplete="tel" placeholder="0123456789" /></label>
-          <label className={styles.wide}>Email <small>Optional</small><input name="customerEmail" type="email" autoComplete="email" /></label>
-        </div>
-      </section>
+      <h1>CUSTOMISE YOUR PLUSHIE</h1>
+      <div className={styles.choiceRow} aria-label="Included items"><div><strong>PLUSHIE</strong><span>YOUR CHARACTER</span></div><div><strong>ID CARD</strong><span>BIRTH CERTIFICATE</span></div><div><strong>SPEAKER</strong><span>YOUR VOICE</span></div></div>
 
-      <section className={styles.card}>
-        <div className={styles.step}><span>2</span><div><p>BIRTH CERTIFICATE</p><h2>Your plushie’s details</h2></div></div>
-        <p className={styles.help}>These details appear on your plushie’s meaningful birth certificate.</p>
-        <div className={styles.grid}>
-          <label>Character<select required name="character"><option value="Billy">Billy</option><option value="Tootsie">Tootsie</option><option value="Hunnie">Hunnie</option><option value="Dragon Warrior">Dragon Warrior</option></select></label>
-          <label>Voice message length<select required name="productKey"><option value="plushie_5s">5 seconds</option><option value="plushie_10s">10 seconds</option><option value="plushie_20s">20 seconds</option></select></label>
-          <label>Plushie’s name<input required name="plushName" maxLength={20} /></label>
-          <label>Gender<select required name="gender"><option value="Male">Male</option><option value="Female">Female</option></select></label>
-          <label>Birth date<input required name="birthDate" type="date" /></label>
-          <label>Birth place<input required name="birthPlace" maxLength={50} /></label>
-          <label>Favourite person<input required name="favouritePerson" maxLength={50} /></label>
-          <label>Plushie belongs to<input required name="belongsTo" maxLength={50} /></label>
-          <label className={styles.wide}>Meaningful note<textarea required name="meaningfulNote" rows={4} placeholder="A sweet message for your plushie…" /></label>
-          <label className={styles.wide}>Voice message<input required name="voice" type="file" accept="audio/*" capture="user" /><small>Use your phone to record a message, or choose an audio file. Maximum 50 MB.</small></label>
-        </div>
-      </section>
+      <h2>YOUR PLUSHIE’S BIRTH CERTIFICATE</h2>
+      <label>Character<select required name="character"><option value="Billy">Billy</option><option value="Tootsie">Tootsie</option><option value="Hunnie">Hunnie</option><option value="Dragon Warrior">Dragon Warrior</option></select></label>
+      <label>Voice Length<select required name="productKey"><option value="plushie_5s">5 seconds voice</option><option value="plushie_10s">10 seconds voice</option><option value="plushie_20s">20 seconds voice</option></select></label>
+      <label>Plushie&apos;s Name<input required name="plushName" maxLength={20} placeholder="Name your plushie" /></label>
+      <label>Plushie&apos;s Gender<select required name="gender"><option value="Male">Male</option><option value="Female">Female</option></select></label>
+      <label>Plushie&apos;s Birth Date<input required name="birthDate" type="text" placeholder="A meaningful date" /></label>
+      <label>Plushie&apos;s Birth Place<input required name="birthPlace" maxLength={50} placeholder="A meaningful place" /></label>
+      <label>Plushie&apos;s Favourite Person<input required name="favouritePerson" maxLength={50} placeholder="A meaningful person" /></label>
+      <label>Plushie Belongs To<input required name="belongsTo" maxLength={50} placeholder="The plushie&apos;s owner" /></label>
+      <label>Meaningful Note<textarea required name="meaningfulNote" rows={4} placeholder="A message for the plushie&apos;s owner" /></label>
+      <label>Upload Your Voice Here<span className={styles.uploadButton}>UPLOAD VOICE (MP4/MP3)<input required name="voice" type="file" accept="audio/*" capture="user" /></span><small>Record a message or choose an audio file (maximum 50 MB).</small></label>
 
-      <section className={styles.card}>
-        <div className={styles.step}><span>3</span><div><p>SHIPPING INFORMATION</p><h2>Where should we send your plushie?</h2></div></div>
-        <div className={styles.grid}>
-          <label className={styles.wide}>Address<input required name="address1" autoComplete="address-line1" /></label>
-          <label className={styles.wide}>Address line 2 <small>Optional</small><input name="address2" autoComplete="address-line2" /></label>
-          <label>City<input required name="city" autoComplete="address-level2" /></label>
-          <label>State<select required name="province">{states.map((state) => <option key={state} value={state}>{state}</option>)}</select></label>
-          <label>Postcode<input required name="zip" inputMode="numeric" autoComplete="postal-code" /></label>
-          <label>Delivery region<select required name="shippingRegion"><option value="WEST">West Malaysia</option><option value="EAST">East Malaysia (+RM20 delivery)</option></select></label>
-        </div>
-      </section>
-
-      <button className={styles.submit} type="submit" disabled={saving}>{saving ? "Saving your details…" : "Save my plushie’s details"}</button>
+      <h2>YOUR SHIPPING INFORMATION</h2>
+      <label>Full Name<input required name="customerName" autoComplete="name" placeholder="Your full name" /></label>
+      <label>Phone Number<input required name="phone" inputMode="tel" autoComplete="tel" placeholder="0123456789" /></label>
+      <label>Email <small>Optional</small><input name="customerEmail" type="email" autoComplete="email" placeholder="Your email address" /></label>
+      <label>Address<input required name="address1" autoComplete="address-line1" placeholder="House number, street, area" /></label>
+      <label>Address Line 2 <small>Optional</small><input name="address2" autoComplete="address-line2" placeholder="Apartment, unit, etc." /></label>
+      <label>City<input required name="city" autoComplete="address-level2" placeholder="Your city" /></label>
+      <label>State<select required name="province">{states.map((state) => <option key={state} value={state}>{state}</option>)}</select></label>
+      <label>Postcode<input required name="zip" inputMode="numeric" autoComplete="postal-code" placeholder="Your postcode" /></label>
+      <label>Delivery Region<select required name="shippingRegion"><option value="WEST">West Malaysia</option><option value="EAST">East Malaysia (+RM20 delivery)</option></select></label>
+      <button className={styles.submit} type="submit" disabled={saving}>{saving ? "SAVING YOUR DETAILS…" : "SAVE MY CUSTOMISATION"}</button>
       <p className={notice.includes("saved") ? styles.success : styles.notice} aria-live="polite">{notice}</p>
+      <footer><Link href="/policies/terms-of-service">Terms and Policies</Link><span>© 2026 MEANINGFUL PLUSHIES</span></footer>
     </form>
   </main>;
 }
