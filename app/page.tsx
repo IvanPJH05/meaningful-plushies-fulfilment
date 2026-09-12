@@ -1234,16 +1234,8 @@ function isInfluencerFulfilmentOrder(order: Order, creatorProfiles: CreatorProfi
   return isCreatorFreeOrder(order, creatorProfiles, freeCreatorSampleCodes);
 }
 
-function packingSlipRemark(order: Order, manualOrders: ManualOrder[], creatorProfiles: CreatorProfile[], freeCreatorSampleCodes: string[]) {
-  const unrecordedManualOrder = !manualOrderForFulfilmentOrder(order, manualOrders) && order.totalAmount === 0 && !isInfluencerFulfilmentOrder(order, creatorProfiles, freeCreatorSampleCodes);
-  const details = [
-    `Source: ${unrecordedManualOrder ? "WhatsApp (manual record missing)" : fulfilmentSourceLabel(order, manualOrders)}`,
-    `Payment: ${order.paymentProcessor || "Unknown"}`,
-    isCodFulfilmentOrder(order, manualOrders) ? "COD" : "",
-    isInfluencerFulfilmentOrder(order, creatorProfiles, freeCreatorSampleCodes) ? "Influencer" : "",
-    order.remark?.trim() || "",
-  ].filter(Boolean);
-  return details.join(" | ");
+function packingSlipRemark(order: Order) {
+  return order.remark?.trim() || "-";
 }
 
 function OrderMarkers({ order, manualOrders }: { order: Order; manualOrders: ManualOrder[] }) {
@@ -9387,9 +9379,7 @@ function Editable({ label, value, onChange, disabled, placeholder, wide, textare
 }
 
 function PackingSlip({ order, manualOrders }: { order: Order; manualOrders: ManualOrder[] }) {
-  const creatorProfiles = useContext(CreatorProfilesContext);
-  const freeCreatorSampleCodes = useContext(FreeCreatorSampleCodesContext);
-  return <article className="a6-slip"><header><div className="slip-marker-row"><span>ORDER ID</span><div><OrderMarkers order={order} manualOrders={manualOrders} /></div></div><strong>{packingSlipOrderLabel(order)}</strong></header><div className="slip-fields"><div className="primary-slip-field"><label>CHARACTER:</label><p>{order.character || "-"}</p></div><div className="primary-slip-field"><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{packingSlipRemark(order, manualOrders, creatorProfiles, freeCreatorSampleCodes)}</p></div></div><OrderBarcode value={orderBarcodeValue(order)} compact /></article>;
+  return <article className="a6-slip"><header><div className="slip-marker-row"><span>ORDER ID</span><div><OrderMarkers order={order} manualOrders={manualOrders} /></div></div><strong>{packingSlipOrderLabel(order)}</strong></header><div className="slip-fields"><div className="primary-slip-field"><label>CHARACTER:</label><p>{order.character || "-"}</p></div><div className="primary-slip-field"><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{packingSlipRemark(order)}</p></div></div><OrderBarcode value={orderBarcodeValue(order)} compact /></article>;
 }
 
 function EnvelopeSettingsPanel({ settings, onChange, onFontUpload, onReset }: { settings: EnvelopePrintSettings; onChange: (patch: Partial<EnvelopePrintSettings>) => void; onFontUpload: (file: File | null) => void; onReset: () => void }) {
