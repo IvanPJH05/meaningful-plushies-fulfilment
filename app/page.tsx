@@ -86,6 +86,7 @@ import { MonthlyJournalWorkspace } from "../components/monthly-journal-workspace
 import { ShopifyAppWorkspace } from "../components/shopify-app-workspace";
 import { AudioScannerWorkspace } from "../components/audio-scanner-workspace";
 import { OrderBarcode, orderBarcodeValue } from "../components/order-barcode";
+import { ManualOrderIntakeRecords } from "../components/manual-order-intake-records";
 
 type Session = DashboardSession;
 const CreatorProfilesContext = createContext<CreatorProfile[]>([]);
@@ -5552,6 +5553,7 @@ export default function Home() {
         whatsAppLink={manualOrderWhatsAppLink}
         receiptFiles={manualOrderReceiptFiles}
         onReceiptFilesChange={setManualOrderReceiptFiles}
+        sessionToken={session.token}
       />}
       {workspace === "manual_orders" && view === "manual_orders_preorders" && session.role === "admin" && <PreordersWorkspacePage />}
 
@@ -7708,6 +7710,7 @@ function ManualOrdersWorkspacePage({
   whatsAppLink,
   receiptFiles,
   onReceiptFilesChange,
+  sessionToken,
 }: {
   manualOrders: ManualOrder[];
   form: { customerName: string; phone: string; character: string; productKey: string; shippingRegion: "WEST" | "EAST"; isCod: boolean };
@@ -7724,6 +7727,7 @@ function ManualOrdersWorkspacePage({
   whatsAppLink: (order: ManualOrder) => string;
   receiptFiles: File[];
   onReceiptFilesChange: (files: File[]) => void;
+  sessionToken: string;
 }) {
   const normalizedQuery = query.trim().toLowerCase();
   const [receiptPreview, setReceiptPreview] = useState<{ fileName: string; url: string; customerName: string } | null>(null);
@@ -7859,6 +7863,7 @@ function ManualOrdersWorkspacePage({
         </table>
       </div>
     </section>
+    <ManualOrderIntakeRecords sessionToken={sessionToken} />
     {receiptPreview && <ReceiptPreviewModal receipt={receiptPreview} onClose={() => setReceiptPreview(null)} />}
   </section>;
 }
