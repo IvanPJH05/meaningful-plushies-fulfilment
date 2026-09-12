@@ -47,7 +47,7 @@ export type ManualOrderIntake = {
 
 export type ManualOrderIntakeSubmission = {
   customerName: string;
-  customerEmail?: string;
+  customerEmail: string;
   phone: string;
   character: string;
   productKey: string;
@@ -57,6 +57,16 @@ export type ManualOrderIntakeSubmission = {
   sessionToken: string;
   voiceStoragePath: string;
 };
+
+export function manualOrderIntakeReference(id: string) {
+  return `MP-${id.toUpperCase()}`;
+}
+
+function collectionWhatsAppUrl(reference: string) {
+  const recipient = (process.env.MANUAL_ORDER_COLLECTION_WHATSAPP || "").replace(/\D/g, "");
+  if (!recipient) return "";
+  return `https://wa.me/${recipient}?text=${encodeURIComponent(`I have completed my customisation for ${reference}`)}`;
+}
 
 function serviceClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://joaoirpegnkexmktylop.supabase.co";
@@ -136,7 +146,7 @@ export async function submitManualOrderIntake(input: ManualOrderIntakeSubmission
   const customerName = clean(input.customerName, 120);
   const email = clean(input.customerEmail, 254).toLowerCase();
   if (!customerName) throw new Error("Enter the customer name.");
-  if (email && !/^\S+@\S+\.\S+$/.test(email)) throw new Error("Enter a valid email address.");
+  if (!email || !/^\S+@\S+\.\S+$/.test(email)) throw new Error("Enter a valid email address.");
   const character = normalizeManualOrderCharacter(input.character);
   const product = manualOrderProductByKey(input.productKey);
   const seconds = Number(product ? manualOrderSpeakerSeconds(product) : 0);
@@ -156,7 +166,8 @@ export async function submitManualOrderIntake(input: ManualOrderIntakeSubmission
     created_at: now, updated_at: now,
   }).select("*").single();
   if (error || !data) throw new Error(error?.message || "Your details could not be saved.");
-  return rowToIntake(data as Record<string, unknown>);
+  const intake = rowToIntake(data as Record<string, unknown>);
+  return { ...intake, reference: manualOrderIntakeReference(intake.id), whatsAppUrl: collectionWhatsAppUrl(manualOrderIntakeReference(intake.id)) };
 }
 
 export async function listManualOrderIntakes() {

@@ -4,6 +4,10 @@ import { useCallback, useEffect, useState } from "react";
 
 import type { ManualOrderIntake } from "@/lib/manual-order-intakes";
 
+function manualOrderIntakeReference(id: string) {
+  return `MP-${id.toUpperCase()}`;
+}
+
 export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: string }) {
   const [intakes, setIntakes] = useState<ManualOrderIntake[]>([]);
   const [notice, setNotice] = useState("");
@@ -42,9 +46,9 @@ export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: strin
   return <section className="card accounting-table-card manual-order-table-card">
     <div className="manual-order-table-toolbar"><div><h3>Customer collection submissions</h3><p>These details came from the Shopify collection page. Attach the verified receipt and the Shopify order is created with the customer, address, plush details, and voice linked.</p></div><button className="button secondary" type="button" onClick={() => void load()}>Refresh</button></div>
     {notice && <p className="inline-notice">{notice}</p>}
-    <div className="table-scroll"><table className="orders-table manual-orders-records-table"><thead><tr><th>Submitted</th><th>Customer</th><th>Plushie</th><th>Address</th><th>Status</th><th>Receipt & order</th></tr></thead><tbody>
-      {intakes.map((intake) => <tr key={intake.id}><td>{new Date(intake.createdAt).toLocaleString()}</td><td><strong>{intake.customerName}</strong><small>{intake.phoneOriginal}{intake.customerEmail ? ` · ${intake.customerEmail}` : ""}</small></td><td>{intake.character} · {intake.productDisplayName.match(/(\d+) seconds/i)?.[1] || ""}s</td><td>{intake.shippingAddress.address1}, {intake.shippingAddress.city}, {intake.shippingAddress.province} {intake.shippingAddress.zip}</td><td><span className={`manual-order-status ${intake.status === "created" ? "used" : "active"}`}>{intake.status === "created" ? "Created" : intake.status === "ready_to_create" ? "Receipt attached" : "Awaiting payment"}</span></td><td>{intake.status === "created" ? <strong>{intake.shopifyOrderName || "Created"}</strong> : <label className="button secondary small" style={{ display: "inline-flex", cursor: "pointer" }}><input hidden type="file" multiple accept="application/pdf,image/png,image/jpeg,image/webp" disabled={busy === intake.id} onChange={(event) => void uploadAndCreate(intake, Array.from(event.target.files || []))} />{busy === intake.id ? "Creating..." : "Attach receipt & create Shopify order"}</label>}</td></tr>)}
-      {!intakes.length && <tr><td colSpan={6}>No customer collection submissions yet.</td></tr>}
+    <div className="table-scroll"><table className="orders-table manual-orders-records-table"><thead><tr><th>Reference</th><th>Submitted</th><th>Customer</th><th>Plushie</th><th>Address</th><th>Status</th><th>Receipt & order</th></tr></thead><tbody>
+      {intakes.map((intake) => <tr key={intake.id}><td><strong>{manualOrderIntakeReference(intake.id)}</strong></td><td>{new Date(intake.createdAt).toLocaleString()}</td><td><strong>{intake.customerName}</strong><small>{intake.phoneOriginal}{intake.customerEmail ? ` · ${intake.customerEmail}` : ""}</small></td><td>{intake.character} · {intake.productDisplayName.match(/(\d+) seconds/i)?.[1] || ""}s</td><td>{intake.shippingAddress.address1}, {intake.shippingAddress.city}, {intake.shippingAddress.province} {intake.shippingAddress.zip}</td><td><span className={`manual-order-status ${intake.status === "created" ? "used" : "active"}`}>{intake.status === "created" ? "Created" : intake.status === "ready_to_create" ? "Receipt attached" : "Awaiting payment"}</span></td><td>{intake.status === "created" ? <strong>{intake.shopifyOrderName || "Created"}</strong> : <label className="button secondary small" style={{ display: "inline-flex", cursor: "pointer" }}><input hidden type="file" multiple accept="application/pdf,image/png,image/jpeg,image/webp" disabled={busy === intake.id} onChange={(event) => void uploadAndCreate(intake, Array.from(event.target.files || []))} />{busy === intake.id ? "Creating..." : "Attach receipt & create Shopify order"}</label>}</td></tr>)}
+      {!intakes.length && <tr><td colSpan={7}>No customer collection submissions yet.</td></tr>}
     </tbody></table></div>
   </section>;
 }

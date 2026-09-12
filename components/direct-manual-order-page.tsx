@@ -10,6 +10,8 @@ type ApiReply = {
   error?: string;
   session?: { token: string };
   upload?: { signedUrl: string; path: string };
+  reference?: string;
+  whatsAppUrl?: string;
 };
 
 export type LockedPlushie = {
@@ -81,7 +83,7 @@ export function DirectManualOrderPage({
       });
       if (!voiceUpload.ok) throw new Error("Your voice message could not be uploaded. Please try again.");
 
-      await request(apiUrl, {
+      const submitted = await request(apiUrl, {
         action: "submit",
         sessionToken: started.session.token,
         voiceStoragePath: upload.upload.path,
@@ -102,7 +104,9 @@ export function DirectManualOrderPage({
         },
       }, collectionCode);
       form.reset();
-      setNotice("Your details are saved. We will confirm payment and create your Shopify order shortly.");
+      const reference = submitted.reference || "your submitted customisation";
+      setNotice(submitted.whatsAppUrl ? `Your details are saved. Your reference is ${reference}. Opening WhatsApp now…` : `Your details are saved. Your reference is ${reference}. Please send this reference to us on WhatsApp.`);
+      if (submitted.whatsAppUrl) window.location.assign(submitted.whatsAppUrl);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Your details could not be saved.");
     } finally {
@@ -129,7 +133,7 @@ export function DirectManualOrderPage({
       <h2>YOUR SHIPPING INFORMATION</h2>
       <label>Full Name<input required name="customerName" autoComplete="name" placeholder="Your full name" /></label>
       <label>Phone Number<input required name="phone" inputMode="tel" autoComplete="tel" placeholder="0123456789" /></label>
-      <label>Email <small>Optional</small><input name="customerEmail" type="email" autoComplete="email" placeholder="Your email address" /></label>
+      <label>Email<input required name="customerEmail" type="email" autoComplete="email" placeholder="Your email address" /></label>
       <label>Address<input required name="address1" autoComplete="address-line1" placeholder="House number, street, area" /></label>
       <label>Address Line 2 <small>Optional</small><input name="address2" autoComplete="address-line2" placeholder="Apartment, unit, etc." /></label>
       <label>City<input required name="city" autoComplete="address-level2" placeholder="Your city" /></label>
