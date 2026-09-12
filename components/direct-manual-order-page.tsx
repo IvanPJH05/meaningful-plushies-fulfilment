@@ -26,7 +26,7 @@ const states = [
 
 const translations = {
   en: {
-    language: "Bahasa Melayu", title: "CUSTOMISE YOUR PLUSHIE", certificate: "YOUR PLUSHIE'S BIRTH CERTIFICATE", yourPlushie: "YOUR PLUSHIE", character: "Character", voiceLength: "Voice Length", secondsVoice: "seconds voice",
+    title: "CUSTOMISE YOUR PLUSHIE", certificate: "YOUR PLUSHIE'S BIRTH CERTIFICATE", yourPlushie: "YOUR PLUSHIE", character: "Character", voiceLength: "Voice Length", secondsVoice: "seconds voice",
     plushName: "Plushie's Name", plushNamePlaceholder: "Name your plushie", gender: "Plushie's Gender", male: "Male", female: "Female", birthDate: "Plushie's Birth Date", birthDatePlaceholder: "A meaningful date", birthPlace: "Plushie's Birth Place", birthPlacePlaceholder: "A meaningful place",
     favouritePerson: "Plushie's Favourite Person", favouritePersonPlaceholder: "A meaningful person", belongsTo: "Plushie Belongs To", belongsToPlaceholder: "The plushie's owner", meaningfulNote: "Meaningful Note", meaningfulNotePlaceholder: "A message for the plushie's owner",
     uploadVoice: "Upload Your Voice Here", uploadButton: "UPLOAD VOICE (MP4/MP3)", uploadHint: "Record a message or choose an audio file (maximum 50 MB).", shipping: "YOUR SHIPPING INFORMATION", fullName: "Full Name", fullNamePlaceholder: "Your full name", phone: "Phone Number", email: "Email", emailPlaceholder: "Your email address",
@@ -34,7 +34,7 @@ const translations = {
     saving: "SAVING YOUR DETAILS…", submit: "SAVE MY CUSTOMISATION", terms: "Terms and Policies", missingVoice: "Please record or choose a voice message for your plushie.", voiceTooLarge: "Your voice message must be 50 MB or smaller.", savingDetails: "Saving your details…", saved: "Your details are saved. Your reference is", openingWhatsApp: "Opening WhatsApp now…", sendWhatsApp: "Please send this reference to us on WhatsApp.", saveFailed: "Your details could not be saved.",
   },
   ms: {
-    language: "English", title: "SESUAIKAN PLUSHIE ANDA", certificate: "SIJIL KELAHIRAN PLUSHIE ANDA", yourPlushie: "PLUSHIE ANDA", character: "Watak", voiceLength: "Tempoh Suara", secondsVoice: "saat suara",
+    title: "SESUAIKAN PLUSHIE ANDA", certificate: "SIJIL KELAHIRAN PLUSHIE ANDA", yourPlushie: "PLUSHIE ANDA", character: "Watak", voiceLength: "Tempoh Suara", secondsVoice: "saat suara",
     plushName: "Nama Plushie", plushNamePlaceholder: "Namakan plushie anda", gender: "Jantina Plushie", male: "Lelaki", female: "Perempuan", birthDate: "Tarikh Lahir Plushie", birthDatePlaceholder: "Tarikh yang bermakna", birthPlace: "Tempat Lahir Plushie", birthPlacePlaceholder: "Tempat yang bermakna",
     favouritePerson: "Orang Kegemaran Plushie", favouritePersonPlaceholder: "Orang yang bermakna", belongsTo: "Plushie Milik", belongsToPlaceholder: "Pemilik plushie", meaningfulNote: "Nota Bermakna", meaningfulNotePlaceholder: "Pesanan untuk pemilik plushie",
     uploadVoice: "Muat Naik Suara Anda", uploadButton: "MUAT NAIK SUARA (MP4/MP3)", uploadHint: "Rakam mesej atau pilih fail audio (maksimum 50 MB).", shipping: "MAKLUMAT PENGHANTARAN ANDA", fullName: "Nama Penuh", fullNamePlaceholder: "Nama penuh anda", phone: "Nombor Telefon", email: "E-mel", emailPlaceholder: "Alamat e-mel anda",
@@ -136,7 +136,7 @@ export function DirectManualOrderPage({
   }
 
   return <main className={styles.page}>
-    <header className={styles.header}><Link href="/" className={styles.brand}>MEANINGFUL PLUSHIES</Link><button className={styles.languageButton} type="button" onClick={() => setLanguage((current) => current === "en" ? "ms" : "en")}>{copy.language}</button></header>
+    <header className={styles.header}><Link href="/" className={styles.brand}>MEANINGFUL PLUSHIES</Link><div className={styles.languageButtons} aria-label="Language"><button className={language === "en" ? styles.languageActive : styles.languageButton} type="button" onClick={() => setLanguage("en")}>ENGLISH</button><button className={language === "ms" ? styles.languageActive : styles.languageButton} type="button" onClick={() => setLanguage("ms")}>MALAY</button></div></header>
     <form className={styles.form} onSubmit={submit}>
       <h1>{copy.title}</h1>
       {orderSummaryVideo ? <video className={styles.orderSummaryVideo} autoPlay loop muted playsInline preload="metadata" aria-label="Order summary"><source src={orderSummaryVideo} type="video/mp4" /></video> : null}
