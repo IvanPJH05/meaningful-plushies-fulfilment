@@ -12,23 +12,36 @@ type ApiReply = {
   upload?: { signedUrl: string; path: string };
 };
 
+export type LockedPlushie = {
+  character: "Billy" | "Tootsie" | "Dragon Warrior" | "Hunnie";
+  productKey: "plushie_5s" | "plushie_10s" | "plushie_20s";
+};
+
 const states = [
   "Johor", "Kedah", "Kelantan", "Kuala Lumpur", "Labuan", "Melaka", "Negeri Sembilan", "Pahang",
   "Penang", "Perak", "Perlis", "Putrajaya", "Sabah", "Sarawak", "Selangor", "Terengganu",
 ];
 
-async function request(body: Record<string, unknown>): Promise<ApiReply> {
-  const response = await fetch("/apps/closer/manual-order", {
+async function request(apiUrl: string, body: Record<string, unknown>, collectionCode?: string): Promise<ApiReply> {
+  const response = await fetch(apiUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify(collectionCode ? { ...body, collectionCode } : body),
   });
   const data = await response.json().catch(() => ({})) as ApiReply;
   if (!response.ok || !data.ok) throw new Error(data.error || "Please try again.");
   return data;
 }
 
-export function DirectManualOrderPage() {
+export function DirectManualOrderPage({
+  lockedPlushie,
+  apiUrl = "/apps/closer/manual-order",
+  collectionCode,
+}: {
+  lockedPlushie?: LockedPlushie;
+  apiUrl?: string;
+  collectionCode?: string;
+}) {
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -50,14 +63,14 @@ export function DirectManualOrderPage() {
     setSaving(true);
     setNotice("Saving your details…");
     try {
-      const started = await request({ action: "start" });
+      const started = await request(apiUrl, { action: "start" }, collectionCode);
       if (!started.session?.token) throw new Error("Could not start your order.");
-      const upload = await request({
+      const upload = await request(apiUrl, {
         action: "prepare_voice_upload",
         sessionToken: started.session.token,
         fileName: voice.name || "voice-message.webm",
         contentType: voice.type || "audio/webm",
-      });
+      }, collectionCode);
       if (!upload.upload?.signedUrl || !upload.upload.path) throw new Error("Could not prepare your voice message.");
       const voiceUpload = await fetch(upload.upload.signedUrl, {
         method: "PUT",
@@ -66,7 +79,7 @@ export function DirectManualOrderPage() {
       });
       if (!voiceUpload.ok) throw new Error("Your voice message could not be uploaded. Please try again.");
 
-      await request({
+      await request(apiUrl, {
         action: "submit",
         sessionToken: started.session.token,
         voiceStoragePath: upload.upload.path,
@@ -85,7 +98,7 @@ export function DirectManualOrderPage() {
           birthPlace: data.get("birthPlace"), favouritePerson: data.get("favouritePerson"),
           belongsTo: data.get("belongsTo"), meaningfulNote: data.get("meaningfulNote"),
         },
-      });
+      }, collectionCode);
       form.reset();
       setNotice("Your details are saved. We will confirm payment and create your Shopify order shortly.");
     } catch (error) {
@@ -102,8 +115,7 @@ export function DirectManualOrderPage() {
       <div className={styles.choiceRow} aria-label="Included items"><div><strong>PLUSHIE</strong><span>YOUR CHARACTER</span></div><div><strong>ID CARD</strong><span>BIRTH CERTIFICATE</span></div><div><strong>SPEAKER</strong><span>YOUR VOICE</span></div></div>
 
       <h2>YOUR PLUSHIE’S BIRTH CERTIFICATE</h2>
-      <label>Character<select required name="character"><option value="Billy">Billy</option><option value="Tootsie">Tootsie</option><option value="Hunnie">Hunnie</option><option value="Dragon Warrior">Dragon Warrior</option></select></label>
-      <label>Voice Length<select required name="productKey"><option value="plushie_5s">5 seconds voice</option><option value="plushie_10s">10 seconds voice</option><option value="plushie_20s">20 seconds voice</option></select></label>
+      {lockedPlushie ? <div className={styles.lockedProduct}><span>YOUR PLUSHIE</span><strong>{lockedPlushie.character} · {lockedPlushie.productKey.replace("plushie_", "").replace("s", " seconds voice")}</strong><input type="hidden" name="character" value={lockedPlushie.character} /><input type="hidden" name="productKey" value={lockedPlushie.productKey} /></div> : <><label>Character<select required name="character"><option value="Billy">Billy</option><option value="Tootsie">Tootsie</option><option value="Hunnie">Hunnie</option><option value="Dragon Warrior">Dragon Warrior</option></select></label><label>Voice Length<select required name="productKey"><option value="plushie_5s">5 seconds voice</option><option value="plushie_10s">10 seconds voice</option><option value="plushie_20s">20 seconds voice</option></select></label></>}
       <label>Plushie&apos;s Name<input required name="plushName" maxLength={20} placeholder="Name your plushie" /></label>
       <label>Plushie&apos;s Gender<select required name="gender"><option value="Male">Male</option><option value="Female">Female</option></select></label>
       <label>Plushie&apos;s Birth Date<input required name="birthDate" type="text" placeholder="A meaningful date" /></label>
