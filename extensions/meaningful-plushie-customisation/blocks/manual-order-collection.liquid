@@ -1,0 +1,45 @@
+<div class="mp-manual-collection" data-manual-order-collection data-api-url="/apps/closer/manual-order" {{ block.shopify_attributes }}>
+  <form class="mp-manual-collection__form">
+    <div class="mp-manual-collection__heading"><p>MANUAL ORDER</p><h2>{{ block.settings.heading }}</h2><span>{{ block.settings.description }}</span></div>
+    <div class="mp-manual-collection__section"><h3>Your details</h3>
+      <label>Full name<input required name="customerName" autocomplete="name"></label>
+      <label>Phone number<input required name="phone" inputmode="tel" autocomplete="tel" placeholder="0123456789"></label>
+      <label>Email <small>(optional)</small><input name="customerEmail" type="email" autocomplete="email"></label>
+    </div>
+    <div class="mp-manual-collection__section"><h3>Your plushie</h3>
+      <label>Character<select required name="character"><option value="Billy">Billy</option><option value="Tootsie">Tootsie</option><option value="Hunnie">Hunnie</option><option value="Dragon Warrior">Dragon Warrior</option></select></label>
+      <label>Voice length<select required name="productKey"><option value="plushie_5s">5 seconds</option><option value="plushie_10s">10 seconds</option><option value="plushie_20s">20 seconds</option></select></label>
+      <label>Plushie's name<input required name="plushName" maxlength="20"></label>
+      <label>Gender<select required name="gender"><option value="Male">Male</option><option value="Female">Female</option></select></label>
+      <label>Birth date<input required name="birthDate" type="date"></label>
+      <label>Birth place<input required name="birthPlace" maxlength="50"></label>
+      <label>Favourite person<input required name="favouritePerson" maxlength="50"></label>
+      <label>Plushie belongs to<input required name="belongsTo" maxlength="50"></label>
+      <label>Meaningful note<textarea required name="meaningfulNote" rows="4"></textarea></label>
+      <label>Voice message<input required name="voice" type="file" accept="audio/*" capture="user"><small>Record or choose an audio file (up to 50 MB).</small></label>
+    </div>
+    <div class="mp-manual-collection__section"><h3>Delivery address</h3>
+      <label>Address<input required name="address1" autocomplete="address-line1"></label>
+      <label>Address line 2 <small>(optional)</small><input name="address2" autocomplete="address-line2"></label>
+      <label>City<input required name="city" autocomplete="address-level2"></label>
+      <label>State<select required name="province"><option value="Johor">Johor</option><option value="Kedah">Kedah</option><option value="Kelantan">Kelantan</option><option value="Kuala Lumpur">Kuala Lumpur</option><option value="Labuan">Labuan</option><option value="Melaka">Melaka</option><option value="Negeri Sembilan">Negeri Sembilan</option><option value="Pahang">Pahang</option><option value="Penang">Penang</option><option value="Perak">Perak</option><option value="Perlis">Perlis</option><option value="Putrajaya">Putrajaya</option><option value="Sabah">Sabah</option><option value="Sarawak">Sarawak</option><option value="Selangor">Selangor</option><option value="Terengganu">Terengganu</option></select></label>
+      <label>Postcode<input required name="zip" inputmode="numeric" autocomplete="postal-code"></label>
+      <label>Region<select required name="shippingRegion"><option value="WEST">West Malaysia</option><option value="EAST">East Malaysia (+RM20 delivery)</option></select></label>
+    </div>
+    <button type="submit">Save my plushie's details</button><p class="mp-manual-collection__notice" aria-live="polite" data-notice></p>
+  </form>
+</div>
+
+{% schema %}
+{
+  "name": "Manual order collection",
+  "target": "section",
+  "stylesheet": "manual-order-collection.css",
+  "javascript": "manual-order-collection.js",
+  "enabled_on": { "templates": ["page"] },
+  "settings": [
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Tell us about your plushie" },
+    { "type": "textarea", "id": "description", "label": "Description", "default": "Save your plushie's details here. We will confirm your payment before creating your Shopify order." }
+  ]
+}
+{% endschema %}
