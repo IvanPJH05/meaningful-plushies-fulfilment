@@ -199,7 +199,11 @@ async function ensureShopifyCustomerAddress(domain: string, intake: ManualOrderI
       }
     `, { customerId: existing.id, address });
     const message = shopifyErrors(addressResult || {}, addressResult?.data?.customerAddressCreate?.userErrors);
-    if (message || !addressResult?.data?.customerAddressCreate?.address?.id) throw new Error(`Shopify could not save the customer's shipping address. ${message}`.trim());
+    // Retrying an interrupted approval can encounter the address that the
+    // earlier request already saved. It is safe to reuse that customer rather
+    // than blocking the order because the same address cannot be added twice.
+    const alreadySaved = /address.*(already|exist|taken)|(already|exist|taken).*address/i.test(message);
+    if ((message && !alreadySaved) || (!message && !addressResult?.data?.customerAddressCreate?.address?.id)) throw new Error(`Shopify could not save the customer's shipping address. ${message}`.trim());
     return existing.id;
   }
 
@@ -239,7 +243,7 @@ async function repairShopifyShippingAddress(domain: string, order: ShopifyManual
         userErrors { message }
       }
     }
-  `, { input: { id: order.id, shippingAddress: address, billingAddress: address } });
+  `, { input: { id: order.id, shippingAddress: address } });
   const graphqlErrors = shopifyErrors(graphql || {}, graphql?.data?.orderUpdate?.userErrors);
   if (graphqlErrors) throw new Error(`Shopify could not save this order's shipping address. ${graphqlErrors}`);
   if (graphql?.data?.orderUpdate?.order?.shippingAddress?.address1) return true;
