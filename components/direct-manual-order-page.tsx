@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import Link from "next/link";
 
 import styles from "./direct-manual-order-page.module.css";
@@ -24,22 +24,24 @@ const states = [
   "Penang", "Perak", "Perlis", "Putrajaya", "Sabah", "Sarawak", "Selangor", "Terengganu",
 ];
 
+const MAX_VOICE_BYTES = 200 * 1024 * 1024;
+
 const translations = {
   en: {
     title: "CUSTOMISE YOUR PLUSHIE", certificate: "YOUR PLUSHIE'S BIRTH CERTIFICATE", yourPlushie: "YOUR PLUSHIE", character: "Character", voiceLength: "Voice Length", secondsVoice: "seconds voice",
     plushName: "Plushie's Name", plushNamePlaceholder: "Name your plushie", gender: "Plushie's Gender", male: "Male", female: "Female", birthDate: "Plushie's Birth Date", birthDatePlaceholder: "A meaningful date", birthPlace: "Plushie's Birth Place", birthPlacePlaceholder: "A meaningful place",
     favouritePerson: "Plushie's Favourite Person", favouritePersonPlaceholder: "A meaningful person", belongsTo: "Plushie Belongs To", belongsToPlaceholder: "The plushie's owner", meaningfulNote: "Meaningful Note", meaningfulNotePlaceholder: "A message for the plushie's owner",
-    uploadVoice: "Upload Your Voice Here", uploadButton: "UPLOAD VOICE (MP4/MP3)", uploadHint: "Record a message or choose an audio file (maximum 50 MB).", shipping: "YOUR SHIPPING INFORMATION", fullName: "Full Name", fullNamePlaceholder: "Your full name", phone: "Phone Number", email: "Email", emailPlaceholder: "Your email address",
+    uploadVoice: "Your Voice Message", recordVoice: "RECORD VOICE", stopRecording: "STOP RECORDING", uploadAudio: "UPLOAD AUDIO", uploadHint: "Record a message here or choose an existing audio file (maximum 200 MB).", voiceReady: "Voice message ready:", recording: "Recording… tap Stop recording when you are done.", recordingUnavailable: "Voice recording is not available in this browser. Please upload an audio file instead.", recordingError: "We could not start the voice recording. Please allow microphone access or upload an audio file.", shipping: "YOUR SHIPPING INFORMATION", fullName: "Full Name", fullNamePlaceholder: "Your full name", phone: "Phone Number", email: "Email", emailPlaceholder: "Your email address",
     address: "Address", addressPlaceholder: "House number, street, area", addressLine2: "Address Line 2", optional: "Optional", addressLine2Placeholder: "Apartment, unit, etc.", city: "City", cityPlaceholder: "Your city", state: "State", postcode: "Postcode", postcodePlaceholder: "Your postcode", deliveryRegion: "Delivery Region", westMalaysia: "West Malaysia", eastMalaysia: "East Malaysia (+RM20 delivery)",
-    saving: "SAVING YOUR DETAILS…", submit: "SAVE MY CUSTOMISATION", terms: "Terms and Policies", missingVoice: "Please record or choose a voice message for your plushie.", voiceTooLarge: "Your voice message must be 50 MB or smaller.", savingDetails: "Saving your details…", saved: "Your details are saved. Your reference is", openingWhatsApp: "Opening WhatsApp now…", sendWhatsApp: "Please send this reference to us on WhatsApp.", saveFailed: "Your details could not be saved.",
+    saving: "SAVING YOUR DETAILS…", submit: "SAVE MY CUSTOMISATION", terms: "Terms and Policies", missingVoice: "Please record or choose a voice message for your plushie.", voiceTooLarge: "Your voice message must be 200 MB or smaller.", savingDetails: "Saving your details…", saved: "Your details are saved. Your reference is", openingWhatsApp: "Opening WhatsApp now…", sendWhatsApp: "Please send this reference to us on WhatsApp.", saveFailed: "Your details could not be saved.",
   },
   ms: {
     title: "SESUAIKAN PLUSHIE ANDA", certificate: "SIJIL KELAHIRAN PLUSHIE ANDA", yourPlushie: "PLUSHIE ANDA", character: "Watak", voiceLength: "Tempoh Suara", secondsVoice: "saat suara",
     plushName: "Nama Plushie", plushNamePlaceholder: "Namakan plushie anda", gender: "Jantina Plushie", male: "Lelaki", female: "Perempuan", birthDate: "Tarikh Lahir Plushie", birthDatePlaceholder: "Tarikh yang bermakna", birthPlace: "Tempat Lahir Plushie", birthPlacePlaceholder: "Tempat yang bermakna",
     favouritePerson: "Orang Kegemaran Plushie", favouritePersonPlaceholder: "Orang yang bermakna", belongsTo: "Plushie Milik", belongsToPlaceholder: "Pemilik plushie", meaningfulNote: "Nota Bermakna", meaningfulNotePlaceholder: "Pesanan untuk pemilik plushie",
-    uploadVoice: "Muat Naik Suara Anda", uploadButton: "MUAT NAIK SUARA (MP4/MP3)", uploadHint: "Rakam mesej atau pilih fail audio (maksimum 50 MB).", shipping: "MAKLUMAT PENGHANTARAN ANDA", fullName: "Nama Penuh", fullNamePlaceholder: "Nama penuh anda", phone: "Nombor Telefon", email: "E-mel", emailPlaceholder: "Alamat e-mel anda",
+    uploadVoice: "Mesej Suara Anda", recordVoice: "RAKAM SUARA", stopRecording: "HENTIKAN RAKAMAN", uploadAudio: "MUAT NAIK AUDIO", uploadHint: "Rakam mesej di sini atau pilih fail audio sedia ada (maksimum 200 MB).", voiceReady: "Mesej suara sedia:", recording: "Sedang merakam… tekan Hentikan rakaman apabila selesai.", recordingUnavailable: "Rakaman suara tidak tersedia dalam pelayar ini. Sila muat naik fail audio.", recordingError: "Rakaman suara tidak dapat dimulakan. Sila benarkan mikrofon atau muat naik fail audio.", shipping: "MAKLUMAT PENGHANTARAN ANDA", fullName: "Nama Penuh", fullNamePlaceholder: "Nama penuh anda", phone: "Nombor Telefon", email: "E-mel", emailPlaceholder: "Alamat e-mel anda",
     address: "Alamat", addressPlaceholder: "Nombor rumah, jalan, kawasan", addressLine2: "Alamat Baris 2", optional: "Pilihan", addressLine2Placeholder: "Apartmen, unit dan lain-lain", city: "Bandar", cityPlaceholder: "Bandar anda", state: "Negeri", postcode: "Poskod", postcodePlaceholder: "Poskod anda", deliveryRegion: "Kawasan Penghantaran", westMalaysia: "Semenanjung Malaysia", eastMalaysia: "Malaysia Timur (+RM20 penghantaran)",
-    saving: "MENYIMPAN MAKLUMAT ANDA…", submit: "SIMPAN PENYESUAIAN SAYA", terms: "Terma dan Polisi", missingVoice: "Sila rakam atau pilih mesej suara untuk plushie anda.", voiceTooLarge: "Mesej suara anda mestilah 50 MB atau lebih kecil.", savingDetails: "Menyimpan maklumat anda…", saved: "Maklumat anda telah disimpan. Rujukan anda ialah", openingWhatsApp: "Membuka WhatsApp sekarang…", sendWhatsApp: "Sila hantar rujukan ini kepada kami melalui WhatsApp.", saveFailed: "Maklumat anda tidak dapat disimpan.",
+    saving: "MENYIMPAN MAKLUMAT ANDA…", submit: "SIMPAN PENYESUAIAN SAYA", terms: "Terma dan Polisi", missingVoice: "Sila rakam atau pilih mesej suara untuk plushie anda.", voiceTooLarge: "Mesej suara anda mestilah 200 MB atau lebih kecil.", savingDetails: "Menyimpan maklumat anda…", saved: "Maklumat anda telah disimpan. Rujukan anda ialah", openingWhatsApp: "Membuka WhatsApp sekarang…", sendWhatsApp: "Sila hantar rujukan ini kepada kami melalui WhatsApp.", saveFailed: "Maklumat anda tidak dapat disimpan.",
   },
 } as const;
 
@@ -68,19 +70,55 @@ export function DirectManualOrderPage({
   const [language, setLanguage] = useState<keyof typeof translations>("en");
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
+  const [voice, setVoice] = useState<File | null>(null);
+  const [recording, setRecording] = useState(false);
+  const recorder = useRef<MediaRecorder | null>(null);
+  const chunks = useRef<Blob[]>([]);
   const copy = translations[language];
+
+  function selectVoice(file?: File) {
+    if (!file) return;
+    if (file.size > MAX_VOICE_BYTES) return setNotice(copy.voiceTooLarge);
+    setVoice(file);
+    setNotice("");
+  }
+
+  async function startRecording() {
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") return setNotice(copy.recordingUnavailable);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const next = new MediaRecorder(stream);
+      chunks.current = [];
+      next.ondataavailable = (event) => { if (event.data.size) chunks.current.push(event.data); };
+      next.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const type = next.mimeType || "audio/webm";
+        selectVoice(new File([new Blob(chunks.current, { type })], `voice-message-${Date.now()}.webm`, { type }));
+        setRecording(false);
+      };
+      recorder.current = next;
+      next.start();
+      setRecording(true);
+      setNotice(copy.recording);
+    } catch {
+      setNotice(copy.recordingError);
+    }
+  }
+
+  function stopRecording() {
+    if (recorder.current?.state === "recording") recorder.current.stop();
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     if (!form.reportValidity()) return;
     const data = new FormData(form);
-    const voice = data.get("voice");
-    if (!(voice instanceof File) || !voice.size) {
+    if (!voice?.size) {
       setNotice(copy.missingVoice);
       return;
     }
-    if (voice.size > 50 * 1024 * 1024) {
+    if (voice.size > MAX_VOICE_BYTES) {
       setNotice(copy.voiceTooLarge);
       return;
     }
@@ -125,6 +163,7 @@ export function DirectManualOrderPage({
         },
       }, collectionCode);
       form.reset();
+      setVoice(null);
       const reference = submitted.reference || "MP-REFERENCE";
       setNotice(submitted.whatsAppUrl ? `${copy.saved} ${reference}. ${copy.openingWhatsApp}` : `${copy.saved} ${reference}. ${copy.sendWhatsApp}`);
       if (submitted.whatsAppUrl) window.location.assign(submitted.whatsAppUrl);
@@ -149,7 +188,7 @@ export function DirectManualOrderPage({
       <label>{copy.favouritePerson}<input required name="favouritePerson" maxLength={50} placeholder={copy.favouritePersonPlaceholder} /></label>
       <label>{copy.belongsTo}<input required name="belongsTo" maxLength={50} placeholder={copy.belongsToPlaceholder} /></label>
       <label>{copy.meaningfulNote}<textarea required name="meaningfulNote" rows={4} placeholder={copy.meaningfulNotePlaceholder} /></label>
-      <label>{copy.uploadVoice}<span className={styles.uploadButton}>{copy.uploadButton}<input required name="voice" type="file" accept="audio/*" capture="user" /></span><small>{copy.uploadHint}</small></label>
+      <section className={styles.voiceSection} aria-label={copy.uploadVoice}><span>{copy.uploadVoice}</span><div className={styles.voiceActions}><button className={styles.voiceAction} type="button" onClick={recording ? stopRecording : () => void startRecording()}>{recording ? copy.stopRecording : copy.recordVoice}</button><label className={styles.voiceAction}>{copy.uploadAudio}<input type="file" accept="audio/*" onChange={(event) => selectVoice(event.target.files?.[0])} /></label></div><small>{copy.uploadHint}</small>{voice ? <p className={styles.voiceReady}>{copy.voiceReady} {voice.name}</p> : null}</section>
 
       <h2>{copy.shipping}</h2>
       <label>{copy.fullName}<input required name="customerName" autoComplete="name" placeholder={copy.fullNamePlaceholder} /></label>

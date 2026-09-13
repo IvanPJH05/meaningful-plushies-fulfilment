@@ -319,7 +319,7 @@ export async function createVoiceUpload(token: string, fileName: string, content
 export async function uploadVoiceFile(token: string, file: File) {
   const session = await sessionByToken(token);
   if (!session || !["awaiting_customisation", "pending_payment"].includes(session.status)) throw new Error("This customisation link is no longer available.");
-  if (file.size > 50 * 1024 * 1024) throw new Error("Your file must be 50 MB or smaller.");
+  if (file.size > 200 * 1024 * 1024) throw new Error("Your file must be 200 MB or smaller.");
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80) || "voice-audio";
   const path = `${session.id}/${randomBytes(12).toString("hex")}-${safeName}`;
   const { error } = await serviceClient().storage.from(AUDIO_BUCKET).upload(path, file, { contentType: file.type || "application/octet-stream", upsert: false });
