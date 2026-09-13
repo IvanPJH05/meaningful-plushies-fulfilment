@@ -134,6 +134,12 @@ function asVariantGid(id: string) {
   return id.startsWith("gid://") ? id : `gid://shopify/ProductVariant/${id}`;
 }
 
+function voiceDownloadUrl(path: string) {
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://meaningful-plushies-fulfilment.vercel.app").replace(/\/$/, "");
+  const fileName = path.split("/").at(-1) || "meaningful-plushie-voice";
+  return `${appUrl}/api/customisation/audio-download?path=${encodeURIComponent(path)}&filename=${encodeURIComponent(fileName)}`;
+}
+
 export async function startManualOrderIntake() {
   return createCompleteNowSession();
 }
@@ -203,6 +209,18 @@ export async function createPaidShopifyOrder(intakeId: string) {
   const customisation = submitted.get(intake.customisationSessionId);
   if (!customisation) throw new Error("The saved customisation for this collection submission could not be found.");
   const form = customisation.form;
+  const shopifyAddress = {
+    firstName: firstName || intake.customerName,
+    lastName: surname.join(" "),
+    address1: intake.shippingAddress.address1,
+    address2: intake.shippingAddress.address2 || undefined,
+    city: intake.shippingAddress.city,
+    province: intake.shippingAddress.province,
+    zip: intake.shippingAddress.zip,
+    country: "Malaysia",
+    countryCode: "MY",
+    phone: intake.phoneOriginal,
+  };
   const lineItemProperties = [
     { name: "customisation_session_id", value: intake.customisationSessionId },
     { name: "Name", value: form.plushName },
@@ -212,12 +230,12 @@ export async function createPaidShopifyOrder(intakeId: string) {
     { name: "Favourite Person", value: form.favouritePerson },
     { name: "Belongs To", value: form.belongsTo },
     { name: "Meaningful Note", value: form.meaningfulNote },
-    { name: "Meaningful Message", value: `supabase-storage:${customisation.voiceStoragePath}` },
+    { name: "Meaningful Message", value: voiceDownloadUrl(customisation.voiceStoragePath) },
   ];
-  const result = await shopifyGraphql<{ data?: { orderCreate?: { order?: { id?: string; legacyResourceId?: string; name?: string }; userErrors?: Array<{ message?: string }> } }; errors?: Array<{ message?: string }> }>(domain, `
+  const result = await shopifyGraphql<{ data?: { orderCreate?: { order?: { id?: string; legacyResourceId?: string; name?: string; shippingAddress?: { address1?: string } | null }; userErrors?: Array<{ message?: string }> } }; errors?: Array<{ message?: string }> }>(domain, `
     mutation CreatePaidManualOrder($order: OrderCreateOrderInput!, $options: OrderCreateOptionsInput) {
       orderCreate(order: $order, options: $options) {
-        order { id legacyResourceId name }
+        order { id legacyResourceId name shippingAddress { address1 } }
         userErrors { message }
       }
     }
@@ -232,16 +250,8 @@ export async function createPaidShopifyOrder(intakeId: string) {
         { key: "manual_order_intake_id", value: intake.id },
         { key: "payment_receipt", value: intake.paymentReceipts.map((item) => item.url).join("\n") },
       ],
-      shippingAddress: {
-        firstName: firstName || intake.customerName, lastName: surname.join(" "), address1: intake.shippingAddress.address1,
-        address2: intake.shippingAddress.address2 || undefined, city: intake.shippingAddress.city, province: intake.shippingAddress.province,
-        zip: intake.shippingAddress.zip, countryCode: "MY", phone: intake.phoneOriginal,
-      },
-      billingAddress: {
-        firstName: firstName || intake.customerName, lastName: surname.join(" "), address1: intake.shippingAddress.address1,
-        address2: intake.shippingAddress.address2 || undefined, city: intake.shippingAddress.city, province: intake.shippingAddress.province,
-        zip: intake.shippingAddress.zip, countryCode: "MY", phone: intake.phoneOriginal,
-      },
+      shippingAddress: shopifyAddress,
+      billingAddress: shopifyAddress,
       lineItems: [{ variantId: intake.shopifyVariantId, quantity: 1, requiresShipping: true, properties: lineItemProperties }],
       shippingLines: [{ title: intake.shippingRegion === "EAST" ? "East Malaysia delivery" : "Standard delivery", priceSet: { shopMoney: { amount: shippingCost, currencyCode: "MYR" } } }],
     },
@@ -252,6 +262,26 @@ export async function createPaidShopifyOrder(intakeId: string) {
   if (topErrors.length || userErrors.length) throw new Error([...topErrors, ...userErrors].join(" "));
   const order = result?.data?.orderCreate?.order;
   if (!order?.id) throw new Error("Shopify did not return the new order.");
+  // Shopify occasionally accepts an address during orderCreate but does not
+  // persist it. Check the returned order and immediately write it again so
+  // every paid collection order stays exportable to J&T.
+  if (!order.shippingAddress?.address1) {
+    const addressUpdate = await shopifyGraphql<{ data?: { orderUpdate?: { order?: { shippingAddress?: { address1?: string } | null }; userErrors?: Array<{ message?: string }> } }; errors?: Array<{ message?: string }> }>(domain, `
+      mutation AddManualOrderShippingAddress($input: OrderInput!) {
+        orderUpdate(input: $input) {
+          order { shippingAddress { address1 } }
+          userErrors { message }
+        }
+      }
+    `, { input: { id: order.id, shippingAddress: shopifyAddress, billingAddress: shopifyAddress } });
+    const addressErrors = [
+      ...(addressUpdate?.errors?.map((item) => item.message).filter(Boolean) || []),
+      ...(addressUpdate?.data?.orderUpdate?.userErrors?.map((item) => item.message).filter(Boolean) || []),
+    ];
+    if (addressErrors.length || !addressUpdate?.data?.orderUpdate?.order?.shippingAddress?.address1) {
+      throw new Error(`Shopify created the order but could not save its shipping address. ${addressErrors.join(" ")}`.trim());
+    }
+  }
   const now = new Date().toISOString();
   const { error: updateError } = await serviceClient().from(TABLE).update({ status: "created", shopify_order_id: textValue(order.legacyResourceId) || textValue(order.id), shopify_order_name: textValue(order.name), created_by_order_at: now, updated_at: now }).eq("id", intake.id).eq("status", "ready_to_create");
   if (updateError) throw new Error(updateError.message);
