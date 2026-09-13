@@ -8,6 +8,15 @@ function manualOrderIntakeReference(id: string) {
   return `MP-${id.toUpperCase()}`;
 }
 
+function receiptUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
 export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: string }) {
   const [intakes, setIntakes] = useState<ManualOrderIntake[]>([]);
   const [notice, setNotice] = useState("");
@@ -87,9 +96,17 @@ export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: strin
     finally { setBusy(""); }
   }
 
+  function receiptLinks(intake: ManualOrderIntake) {
+    if (intake.isCod) return null;
+    const receipts = intake.paymentReceipts
+      .map((receipt) => ({ ...receipt, url: receiptUrl(receipt.url) }))
+      .filter((receipt) => Boolean(receipt.url));
+    return receipts.map((receipt, index) => <a className="manual-order-receipt-view" href={receipt.url} key={`${receipt.url}-${index}`} target="_blank" rel="noreferrer">{receipts.length === 1 ? "VIEW RECEIPT" : `VIEW RECEIPT ${index + 1}`}</a>);
+  }
+
   function submissionRows(rows: ManualOrderIntake[], emptyText: string) {
     if (!rows.length) return <tr><td colSpan={7}>{emptyText}</td></tr>;
-    return rows.map((intake) => <tr key={intake.id}><td><strong>{manualOrderIntakeReference(intake.id)}</strong></td><td>{new Date(intake.createdAt).toLocaleString()}</td><td><strong>{intake.customerName}</strong><small>{intake.phoneOriginal}{intake.customerEmail ? ` · ${intake.customerEmail}` : ""}</small></td><td>{intake.character} · {intake.productDisplayName.match(/(\d+) seconds/i)?.[1] || ""}s</td><td>{intake.shippingAddress.address1}, {intake.shippingAddress.city}, {intake.shippingAddress.province} {intake.shippingAddress.zip}</td><td><span className={`manual-order-status ${intake.status === "created" ? "used" : "active"}`}>{intake.status === "created" ? (intake.isCod ? "COD" : "Paid") : intake.status === "ready_to_create" ? (intake.isCod ? "COD approved" : "Receipt attached") : "Awaiting payment"}</span></td><td><div className="manual-order-approval-actions">{intake.status === "created" ? <><strong>{intake.shopifyOrderName || "Created"}</strong><button className="manual-order-receipt-drop" type="button" disabled={busy === intake.id} onClick={() => void repairShipping(intake)}>{busy === intake.id ? "SAVING SHIPPING..." : "CHECK / FIX SHIPPING"}</button></> : <>{intake.status === "awaiting_payment" && <button className="manual-order-cod-button" type="button" disabled={busy === intake.id} onClick={() => void approveCodAndCreate(intake)}>{busy === intake.id ? "CREATING ORDER..." : "APPROVE COD"}</button>}{intake.status === "ready_to_create" ? <button className="manual-order-receipt-drop" type="button" disabled={busy === intake.id} onClick={() => void finishCreatingOrder(intake)}>{busy === intake.id ? "CREATING ORDER..." : "FINISH CREATING ORDER"}</button> : <label className={`manual-order-receipt-drop${draggingReceiptFor === intake.id ? " is-dragging" : ""}${busy === intake.id ? " is-busy" : ""}`} onDragOver={(event) => { event.preventDefault(); if (busy !== intake.id) setDraggingReceiptFor(intake.id); }} onDragLeave={() => setDraggingReceiptFor("")} onDrop={(event) => { event.preventDefault(); setDraggingReceiptFor(""); if (busy !== intake.id) void uploadAndCreate(intake, Array.from(event.dataTransfer.files || [])); }}><input hidden type="file" multiple accept="application/pdf,image/png,image/jpeg,image/webp" disabled={busy === intake.id} onChange={(event) => { void uploadAndCreate(intake, Array.from(event.target.files || [])); event.target.value = ""; }} /><strong>{busy === intake.id ? "CREATING ORDER..." : "DROP RECEIPT OR OPEN FILES"}</strong></label>}</>}<button className="button danger small" type="button" disabled={busy === intake.id} onClick={() => void deleteManualOrder(intake)}>{busy === intake.id ? "REMOVING..." : "DELETE"}</button></div></td></tr>);
+    return rows.map((intake) => <tr key={intake.id}><td><strong>{manualOrderIntakeReference(intake.id)}</strong></td><td>{new Date(intake.createdAt).toLocaleString()}</td><td><strong>{intake.customerName}</strong><small>{intake.phoneOriginal}{intake.customerEmail ? ` · ${intake.customerEmail}` : ""}</small></td><td>{intake.character} · {intake.productDisplayName.match(/(\d+) seconds/i)?.[1] || ""}s</td><td>{intake.shippingAddress.address1}, {intake.shippingAddress.city}, {intake.shippingAddress.province} {intake.shippingAddress.zip}</td><td><span className={`manual-order-status ${intake.status === "created" ? "used" : "active"}`}>{intake.status === "created" ? (intake.isCod ? "COD" : "Paid") : intake.status === "ready_to_create" ? (intake.isCod ? "COD approved" : "Receipt attached") : "Awaiting payment"}</span></td><td><div className="manual-order-approval-actions">{receiptLinks(intake)}{intake.status === "created" ? <><strong>{intake.shopifyOrderName || "Created"}</strong><button className="manual-order-receipt-drop" type="button" disabled={busy === intake.id} onClick={() => void repairShipping(intake)}>{busy === intake.id ? "SAVING SHIPPING..." : "CHECK / FIX SHIPPING"}</button></> : <>{intake.status === "awaiting_payment" && <button className="manual-order-cod-button" type="button" disabled={busy === intake.id} onClick={() => void approveCodAndCreate(intake)}>{busy === intake.id ? "CREATING ORDER..." : "APPROVE COD"}</button>}{intake.status === "ready_to_create" ? <button className="manual-order-receipt-drop" type="button" disabled={busy === intake.id} onClick={() => void finishCreatingOrder(intake)}>{busy === intake.id ? "CREATING ORDER..." : "FINISH CREATING ORDER"}</button> : <label className={`manual-order-receipt-drop${draggingReceiptFor === intake.id ? " is-dragging" : ""}${busy === intake.id ? " is-busy" : ""}`} onDragOver={(event) => { event.preventDefault(); if (busy !== intake.id) setDraggingReceiptFor(intake.id); }} onDragLeave={() => setDraggingReceiptFor("")} onDrop={(event) => { event.preventDefault(); setDraggingReceiptFor(""); if (busy !== intake.id) void uploadAndCreate(intake, Array.from(event.dataTransfer.files || [])); }}><input hidden type="file" multiple accept="application/pdf,image/png,image/jpeg,image/webp" disabled={busy === intake.id} onChange={(event) => { void uploadAndCreate(intake, Array.from(event.target.files || [])); event.target.value = ""; }} /><strong>{busy === intake.id ? "CREATING ORDER..." : "DROP RECEIPT OR OPEN FILES"}</strong></label>}</>}<button className="button danger small" type="button" disabled={busy === intake.id} onClick={() => void deleteManualOrder(intake)}>{busy === intake.id ? "REMOVING..." : "DELETE"}</button></div></td></tr>);
   }
 
   const awaitingApproval = intakes.filter((intake) => intake.status !== "created");

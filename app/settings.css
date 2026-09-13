@@ -1213,6 +1213,24 @@ body.print-sales-report .report-table th,
   font-size: 12px;
 }
 
+.manual-order-receipt-view {
+  align-items: center;
+  background: #fff;
+  border: 2px solid #1d4f85;
+  border-radius: 8px;
+  color: #1d4f85;
+  display: flex;
+  font-size: 12px;
+  font-weight: 900;
+  justify-content: center;
+  min-height: 38px;
+  text-decoration: none;
+}
+
+.manual-order-receipt-view:hover {
+  background: #edf5ff;
+}
+
 .manual-order-receipt-drop.is-dragging {
   border-color: #17633e;
   background: #24734d;
