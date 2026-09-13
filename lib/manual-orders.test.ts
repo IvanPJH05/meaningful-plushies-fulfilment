@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { shopifyManualOrderCustomerName } from "./manual-order-customer-name.ts";
 import { buildManualOrderCustomerLink } from "./manual-order-links.ts";
 import { shopifyManualOrderPhone } from "./manual-order-phone.ts";
 import { manualOrderProductPathForSelection } from "./manual-order-product-paths.ts";
@@ -47,4 +48,10 @@ test("formats Malaysian customer phones for Shopify shipping", () => {
   assert.equal(shopifyManualOrderPhone("012-345 6789"), "+60123456789");
   assert.equal(shopifyManualOrderPhone("+60 12 345 6789"), "+60123456789");
   assert.equal(shopifyManualOrderPhone("123456789"), "+60123456789");
+});
+
+test("keeps the complete customer name in Shopify's required surname field", () => {
+  assert.deepEqual(shopifyManualOrderCustomerName("Dedek"), { firstName: "", lastName: "Dedek" });
+  assert.deepEqual(shopifyManualOrderCustomerName("Sofia   Jasmine"), { firstName: "", lastName: "Sofia Jasmine" });
+  assert.throws(() => shopifyManualOrderCustomerName("   "), /full name/);
 });

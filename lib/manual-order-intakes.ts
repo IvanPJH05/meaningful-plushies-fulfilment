@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 
 import { createCompleteNowSession, createVoiceUpload, saveSubmittedSession, submittedCustomisationsForSessionIds, type CustomisationForm } from "./customisation";
+import { shopifyManualOrderCustomerName } from "./manual-order-customer-name";
 import { manualOrderProductByKey } from "./manual-order-products";
 import { normalizeManualOrderPhone, shopifyManualOrderPhone } from "./manual-order-phone";
 import { manualOrderSpeakerSeconds, normalizeManualOrderCharacter } from "./manual-order-product-paths";
@@ -204,7 +205,7 @@ async function ensureShopifyCustomerAddress(domain: string, intake: ManualOrderI
     return existing.id;
   }
 
-  const [firstName, ...surname] = intake.customerName.split(/\s+/).filter(Boolean);
+  const customerName = shopifyManualOrderCustomerName(intake.customerName);
   const created = await shopifyGraphql<{ data?: { customerCreate?: { customer?: ShopifyCustomer; userErrors?: Array<{ message?: string }> } }; errors?: Array<{ message?: string }> }>(domain, `
     mutation CreateCollectionCustomer($input: CustomerInput!) {
       customerCreate(input: $input) {
@@ -214,8 +215,8 @@ async function ensureShopifyCustomerAddress(domain: string, intake: ManualOrderI
     }
   `, {
     input: {
-      firstName: firstName || intake.customerName,
-      lastName: surname.join(" "),
+      firstName: customerName.firstName,
+      lastName: customerName.lastName,
       email: intake.customerEmail,
       phone: customerPhone(intake.phoneOriginal),
       addresses: [address],
@@ -284,15 +285,19 @@ async function repairShopifyShippingAddress(domain: string, order: ShopifyManual
 }
 
 function shopifyAddressForIntake(intake: ManualOrderIntake) {
-  const [firstName, ...surname] = intake.customerName.split(/\s+/).filter(Boolean);
+  // Re-validate the stored address at approval time. This happens before any
+  // Shopify customer or order write, so an incomplete record stays in Manual
+  // Orders until it is corrected instead of creating a partial Shopify order.
+  const shippingAddress = validAddress(intake.shippingAddress);
+  const customerName = shopifyManualOrderCustomerName(intake.customerName);
   return {
-    firstName: firstName || intake.customerName,
-    lastName: surname.join(" "),
-    address1: intake.shippingAddress.address1,
-    address2: intake.shippingAddress.address2 || undefined,
-    city: intake.shippingAddress.city,
-    province: intake.shippingAddress.province,
-    zip: intake.shippingAddress.zip,
+    firstName: customerName.firstName,
+    lastName: customerName.lastName,
+    address1: shippingAddress.address1,
+    address2: shippingAddress.address2 || undefined,
+    city: shippingAddress.city,
+    province: shippingAddress.province,
+    zip: shippingAddress.zip,
     country: "Malaysia",
     countryCode: "MY",
     phone: customerPhone(intake.phoneOriginal),
