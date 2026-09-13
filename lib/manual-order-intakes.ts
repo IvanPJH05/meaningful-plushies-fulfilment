@@ -327,37 +327,10 @@ export async function submitManualOrderIntake(input: ManualOrderIntakeSubmission
 export async function listManualOrderIntakes() {
   const { data, error } = await serviceClient().from(TABLE).select("*").order("created_at", { ascending: false });
   if (error) throw new Error(error.message);
-  const intakes = (data || []).map((row) => rowToIntake(row as Record<string, unknown>));
-  // Recover an order that Shopify has already created but whose final address
-  // check failed. The receipt was verified, so it belongs in Paid orders—not
-  // in an in-between "receipt attached" state. This also prevents a second
-  // Shopify order from being created for the same customer submission.
-  const domain = intakes.length ? shopDomain() : "";
-  if (!domain) return intakes;
-  const shopifyOrders = await existingManualShopifyOrders(domain);
-  for (const intake of intakes) {
-    const order = shopifyOrderForIntake(shopifyOrders, intake.id);
-    if (!order) continue;
-    const [firstName, ...surname] = intake.customerName.split(/\s+/).filter(Boolean);
-    const address = {
-      firstName: firstName || intake.customerName, lastName: surname.join(" "),
-      address1: intake.shippingAddress.address1, address2: intake.shippingAddress.address2 || undefined,
-      city: intake.shippingAddress.city, province: intake.shippingAddress.province, zip: intake.shippingAddress.zip,
-      country: "Malaysia", countryCode: "MY", phone: intake.phoneOriginal,
-    };
-    if (!order.shippingAddress?.address1) {
-      await ensureShopifyCustomerAddress(domain, intake, address);
-      await repairShopifyShippingAddress(domain, order, address);
-    }
-    if (intake.status !== "ready_to_create") continue;
-    const marked = await markIntakeCreated(intake, order);
-    intake.status = "created";
-    intake.shopifyOrderId = marked.shopifyOrderId;
-    intake.shopifyOrderName = marked.shopifyOrderName;
-    intake.createdByOrderAt = marked.now;
-    intake.updatedAt = marked.now;
-  }
-  return intakes;
+  // Loading the private Supabase records must never depend on Shopify. In
+  // particular, customer permission changes must not make the list appear
+  // empty even though every submission remains safely stored in Supabase.
+  return (data || []).map((row) => rowToIntake(row as Record<string, unknown>));
 }
 
 export async function attachManualOrderReceipt(id: string, receipts: PaymentReceipt[]) {
