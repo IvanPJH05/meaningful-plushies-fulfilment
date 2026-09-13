@@ -1194,6 +1194,46 @@ body.print-sales-report .report-table th,
   margin-top: 3px;
 }
 
+.manual-order-receipt-drop {
+  display: grid;
+  min-width: 220px;
+  gap: 6px;
+  justify-items: center;
+  padding: 12px;
+  border: 2px dashed #7891ad;
+  border-radius: 10px;
+  background: #f8fbff;
+  color: #46617f;
+  cursor: pointer;
+  text-align: center;
+}
+
+.manual-order-receipt-drop strong {
+  padding: 7px 12px;
+  border-radius: 7px;
+  background: #214f85;
+  color: #fff;
+  font-size: 12px;
+}
+
+.manual-order-receipt-drop span {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.manual-order-receipt-drop.is-dragging {
+  border-style: solid;
+  border-color: #24734d;
+  background: #e8f6ed;
+  color: #17633e;
+}
+
+.manual-order-receipt-drop.is-busy {
+  cursor: wait;
+  opacity: .7;
+}
+
 .manual-order-price-breakdown {
   display: grid;
   grid-template-columns: 1fr auto;
