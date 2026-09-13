@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { approveManualOrderCod, attachManualOrderReceipt, createPaidShopifyOrder, isDashboardAdmin, listManualOrderIntakes, type PaymentReceipt } from "@/lib/manual-order-intakes";
+import { approveManualOrderCod, attachManualOrderReceipt, createPaidShopifyOrder, isDashboardAdmin, listManualOrderIntakes, repairManualOrderShipping, type PaymentReceipt } from "@/lib/manual-order-intakes";
 
 export const runtime = "nodejs";
 
@@ -21,6 +21,7 @@ export async function POST(request: NextRequest) {
     if (body.action === "attach_receipt") return NextResponse.json({ ok: true, intake: await attachManualOrderReceipt(String(body.id || ""), Array.isArray(body.paymentReceipts) ? body.paymentReceipts : []) });
     if (body.action === "approve_cod") return NextResponse.json({ ok: true, intake: await approveManualOrderCod(String(body.id || "")) });
     if (body.action === "create_shopify_order") return NextResponse.json({ ok: true, order: await createPaidShopifyOrder(String(body.id || "")) });
+    if (body.action === "repair_shipping") return NextResponse.json({ ok: true, order: await repairManualOrderShipping(String(body.id || "")) });
     return NextResponse.json({ ok: false, error: "That Manual Order action is not supported." }, { status: 400 });
   } catch (error) { return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "The Manual Order action could not be completed." }, { status: 400 }); }
 }
