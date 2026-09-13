@@ -308,8 +308,8 @@ export async function fetchManualOrders(): Promise<ManualOrder[]> {
   return (data ?? []).map((row) => manualOrderFromRow(row as Record<string, unknown>));
 }
 
-export async function saveManualOrder(order: ManualOrder) {
-  const { error } = await requireSupabase()
+export async function saveManualOrder(order: ManualOrder, client = requireSupabase()) {
+  const { error } = await client
     .from("manual_orders")
     .upsert(manualOrderToRow({ ...order, updatedAt: new Date().toISOString() }), { onConflict: "id" });
   if (error) throw error;
