@@ -144,8 +144,11 @@ type ShopifyManualOrder = {
   id?: string;
   legacyResourceId?: string;
   name?: string;
+  shippingAddress?: { address1?: string } | null;
   customAttributes?: Array<{ key?: string; value?: string }>;
 };
+
+type ShopifyCustomer = { id?: string };
 
 function shopifyOrderId(order: ShopifyManualOrder) {
   return textValue(order.legacyResourceId) || textValue(order.id);
@@ -155,11 +158,69 @@ async function existingManualShopifyOrders(domain: string) {
   const result = await shopifyGraphql<{ data?: { orders?: { nodes?: ShopifyManualOrder[] } } }>(domain, `
     query RecentManualCollectionOrders {
       orders(first: 100, query: "tag:'Manual order'", sortKey: CREATED_AT, reverse: true) {
-        nodes { id legacyResourceId name customAttributes { key value } }
+        nodes { id legacyResourceId name shippingAddress { address1 } customAttributes { key value } }
       }
     }
   `, {});
   return result?.data?.orders?.nodes || [];
+}
+
+function shopifyErrors(result: { errors?: Array<{ message?: string }> | undefined; data?: Record<string, unknown> | undefined }, userErrors: Array<{ message?: string }> | undefined) {
+  return [
+    ...(result.errors?.map((item) => item.message).filter(Boolean) || []),
+    ...(userErrors?.map((item) => item.message).filter(Boolean) || []),
+  ].join(" ");
+}
+
+function customerPhone(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (digits.startsWith("60")) return `+${digits}`;
+  if (digits.startsWith("0")) return `+60${digits.slice(1)}`;
+  return value.trim();
+}
+
+async function ensureShopifyCustomerAddress(domain: string, intake: ManualOrderIntake, address: Record<string, unknown>) {
+  const lookup = await shopifyGraphql<{ data?: { customers?: { nodes?: ShopifyCustomer[] } }; errors?: Array<{ message?: string }> }>(domain, `
+    query CollectionCustomerByEmail($query: String!) {
+      customers(first: 1, query: $query) { nodes { id } }
+    }
+  `, { query: `email:${intake.customerEmail}` });
+  const existing = lookup?.data?.customers?.nodes?.[0];
+  if (existing?.id) {
+    const addressResult = await shopifyGraphql<{ data?: { customerAddressCreate?: { address?: { id?: string }; userErrors?: Array<{ message?: string }> } }; errors?: Array<{ message?: string }> }>(domain, `
+      mutation SaveCollectionCustomerAddress($customerId: ID!, $address: MailingAddressInput!) {
+        customerAddressCreate(customerId: $customerId, address: $address, setAsDefault: true) {
+          address { id }
+          userErrors { message }
+        }
+      }
+    `, { customerId: existing.id, address });
+    const message = shopifyErrors(addressResult || {}, addressResult?.data?.customerAddressCreate?.userErrors);
+    if (message || !addressResult?.data?.customerAddressCreate?.address?.id) throw new Error(`Shopify could not save the customer's shipping address. ${message}`.trim());
+    return existing.id;
+  }
+
+  const [firstName, ...surname] = intake.customerName.split(/\s+/).filter(Boolean);
+  const created = await shopifyGraphql<{ data?: { customerCreate?: { customer?: ShopifyCustomer; userErrors?: Array<{ message?: string }> } }; errors?: Array<{ message?: string }> }>(domain, `
+    mutation CreateCollectionCustomer($input: CustomerInput!) {
+      customerCreate(input: $input) {
+        customer { id }
+        userErrors { message }
+      }
+    }
+  `, {
+    input: {
+      firstName: firstName || intake.customerName,
+      lastName: surname.join(" "),
+      email: intake.customerEmail,
+      phone: customerPhone(intake.phoneOriginal),
+      addresses: [address],
+    },
+  });
+  const message = shopifyErrors(created || {}, created?.data?.customerCreate?.userErrors);
+  const customerId = created?.data?.customerCreate?.customer?.id;
+  if (message || !customerId) throw new Error(`Shopify could not create the customer. ${message}`.trim());
+  return customerId;
 }
 
 function shopifyOrderForIntake(orders: ShopifyManualOrder[], intakeId: string) {
@@ -268,20 +329,24 @@ export async function listManualOrderIntakes() {
   // check failed. The receipt was verified, so it belongs in Paid orders—not
   // in an in-between "receipt attached" state. This also prevents a second
   // Shopify order from being created for the same customer submission.
-  const waiting = intakes.filter((intake) => intake.status === "ready_to_create");
-  const domain = waiting.length ? shopDomain() : "";
+  const domain = intakes.length ? shopDomain() : "";
   if (!domain) return intakes;
   const shopifyOrders = await existingManualShopifyOrders(domain);
-  for (const intake of waiting) {
+  for (const intake of intakes) {
     const order = shopifyOrderForIntake(shopifyOrders, intake.id);
     if (!order) continue;
     const [firstName, ...surname] = intake.customerName.split(/\s+/).filter(Boolean);
-    await repairShopifyShippingAddress(domain, order, {
+    const address = {
       firstName: firstName || intake.customerName, lastName: surname.join(" "),
       address1: intake.shippingAddress.address1, address2: intake.shippingAddress.address2 || undefined,
       city: intake.shippingAddress.city, province: intake.shippingAddress.province, zip: intake.shippingAddress.zip,
       country: "Malaysia", countryCode: "MY", phone: intake.phoneOriginal,
-    });
+    };
+    if (!order.shippingAddress?.address1) {
+      await ensureShopifyCustomerAddress(domain, intake, address);
+      await repairShopifyShippingAddress(domain, order, address);
+    }
+    if (intake.status !== "ready_to_create") continue;
     const marked = await markIntakeCreated(intake, order);
     intake.status = "created";
     intake.shopifyOrderId = marked.shopifyOrderId;
@@ -342,6 +407,10 @@ export async function createPaidShopifyOrder(intakeId: string) {
     { name: "Meaningful Note", value: form.meaningfulNote },
     { name: "Meaningful Message", value: voiceDownloadUrl(customisation.voiceStoragePath) },
   ];
+  // Shopify needs a real customer with a saved default address before this
+  // manual paid order is made. Without that sequence it can create the order
+  // and shipping line but leave "No shipping address provided" in Admin.
+  const customerId = await ensureShopifyCustomerAddress(domain, intake, shopifyAddress);
   // A previous request may have created the Shopify order successfully and
   // then stopped while saving its address. Find it by its intake reference
   // first so retrying can never charge/create a duplicate order.
@@ -359,6 +428,7 @@ export async function createPaidShopifyOrder(intakeId: string) {
     order: {
       email: intake.customerEmail || undefined,
       phone: intake.phoneOriginal,
+      customer: { toAssociate: { id: customerId } },
       financialStatus: "PAID",
       tags: ["Manual order", "WhatsApp", "Receipt verified"],
       note: "Created from Manual Order Collection after payment receipt was verified.",
