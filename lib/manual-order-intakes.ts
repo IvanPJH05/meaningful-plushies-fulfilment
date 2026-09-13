@@ -488,7 +488,18 @@ export async function createPaidShopifyOrder(intakeId: string) {
     status: "used", isCod: intake.isCod, shopifyOrderId, shopifyOrderName, createdAt: intake.createdAt, updatedAt: now, usedAt: now,
     paymentReceipts: intake.paymentReceipts,
   };
-  await saveManualOrder(linkedManualOrder);
+  // The order and its Paid status are already safely stored before this
+  // dashboard marker is written. Use the service connection here too; a
+  // marker failure must never tell staff that a completed Shopify order failed.
+  try {
+    await saveManualOrder(linkedManualOrder, serviceClient());
+  } catch (error) {
+    console.error("Manual Order dashboard marker could not be saved after Shopify order creation", {
+      intakeId: intake.id,
+      shopifyOrderId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   return { shopifyOrderId, shopifyOrderName };
 }
 
