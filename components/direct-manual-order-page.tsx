@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 import styles from "./direct-manual-order-page.module.css";
@@ -31,7 +31,7 @@ const translations = {
     title: "CUSTOMISE YOUR PLUSHIE", certificate: "YOUR PLUSHIE'S BIRTH CERTIFICATE", yourPlushie: "YOUR PLUSHIE", character: "Character", voiceLength: "Voice Length", secondsVoice: "seconds voice",
     plushName: "Plushie's Name", plushNamePlaceholder: "Name your plushie", gender: "Plushie's Gender", male: "Male", female: "Female", birthDate: "Plushie's Birth Date", birthDatePlaceholder: "A meaningful date", birthPlace: "Plushie's Birth Place", birthPlacePlaceholder: "A meaningful place",
     favouritePerson: "Plushie's Favourite Person", favouritePersonPlaceholder: "A meaningful person", belongsTo: "Plushie Belongs To", belongsToPlaceholder: "The plushie's owner", meaningfulNote: "Meaningful Note", meaningfulNotePlaceholder: "A message for the plushie's owner",
-    uploadVoice: "Your Voice Message", recordVoice: "RECORD VOICE", stopRecording: "STOP RECORDING", uploadAudio: "UPLOAD AUDIO", uploadHint: "Record a message here or choose an existing audio file (maximum 200 MB).", voiceReady: "Voice message ready:", recording: "Recording… tap Stop recording when you are done.", recordingUnavailable: "Voice recording is not available in this browser. Please upload an audio file instead.", recordingError: "We could not start the voice recording. Please allow microphone access or upload an audio file.", shipping: "YOUR SHIPPING INFORMATION", fullName: "Full Name", fullNamePlaceholder: "Your full name", phone: "Phone Number", email: "Email", emailPlaceholder: "Your email address",
+    uploadVoice: "Your Voice Message", recordVoice: "RECORD VOICE", stopRecording: "STOP RECORDING", uploadAudio: "UPLOAD AUDIO", chooseAudio: "CHOOSE AUDIO FILE", playback: "Listen to your message", uploadHint: "Maximum 200 MB.", voiceReady: "Voice message ready:", recording: "Recording… tap Stop recording when you are done.", recordingNow: "RECORDING NOW", recordingUnavailable: "Voice recording is not available in this browser. Please upload an audio file instead.", recordingError: "We could not start the voice recording. Please allow microphone access or upload an audio file.", shipping: "YOUR SHIPPING INFORMATION", fullName: "Full Name", fullNamePlaceholder: "Your full name", phone: "Phone Number", email: "Email", emailPlaceholder: "Your email address",
     address: "Address", addressPlaceholder: "House number, street, area", addressLine2: "Address Line 2", optional: "Optional", addressLine2Placeholder: "Apartment, unit, etc.", city: "City", cityPlaceholder: "Your city", state: "State", postcode: "Postcode", postcodePlaceholder: "Your postcode", deliveryRegion: "Delivery Region", westMalaysia: "West Malaysia", eastMalaysia: "East Malaysia (+RM20 delivery)",
     saving: "SAVING YOUR DETAILS…", submit: "SAVE MY CUSTOMISATION", terms: "Terms and Policies", missingVoice: "Please record or choose a voice message for your plushie.", voiceTooLarge: "Your voice message must be 200 MB or smaller.", savingDetails: "Saving your details…", saved: "Your details are saved. Your reference is", openingWhatsApp: "Opening WhatsApp now…", sendWhatsApp: "Please send this reference to us on WhatsApp.", saveFailed: "Your details could not be saved.",
   },
@@ -39,7 +39,7 @@ const translations = {
     title: "SESUAIKAN PLUSHIE ANDA", certificate: "SIJIL KELAHIRAN PLUSHIE ANDA", yourPlushie: "PLUSHIE ANDA", character: "Watak", voiceLength: "Tempoh Suara", secondsVoice: "saat suara",
     plushName: "Nama Plushie", plushNamePlaceholder: "Namakan plushie anda", gender: "Jantina Plushie", male: "Lelaki", female: "Perempuan", birthDate: "Tarikh Lahir Plushie", birthDatePlaceholder: "Tarikh yang bermakna", birthPlace: "Tempat Lahir Plushie", birthPlacePlaceholder: "Tempat yang bermakna",
     favouritePerson: "Orang Kegemaran Plushie", favouritePersonPlaceholder: "Orang yang bermakna", belongsTo: "Plushie Milik", belongsToPlaceholder: "Pemilik plushie", meaningfulNote: "Nota Bermakna", meaningfulNotePlaceholder: "Pesanan untuk pemilik plushie",
-    uploadVoice: "Mesej Suara Anda", recordVoice: "RAKAM SUARA", stopRecording: "HENTIKAN RAKAMAN", uploadAudio: "MUAT NAIK AUDIO", uploadHint: "Rakam mesej di sini atau pilih fail audio sedia ada (maksimum 200 MB).", voiceReady: "Mesej suara sedia:", recording: "Sedang merakam… tekan Hentikan rakaman apabila selesai.", recordingUnavailable: "Rakaman suara tidak tersedia dalam pelayar ini. Sila muat naik fail audio.", recordingError: "Rakaman suara tidak dapat dimulakan. Sila benarkan mikrofon atau muat naik fail audio.", shipping: "MAKLUMAT PENGHANTARAN ANDA", fullName: "Nama Penuh", fullNamePlaceholder: "Nama penuh anda", phone: "Nombor Telefon", email: "E-mel", emailPlaceholder: "Alamat e-mel anda",
+    uploadVoice: "Mesej Suara Anda", recordVoice: "RAKAM SUARA", stopRecording: "HENTIKAN RAKAMAN", uploadAudio: "MUAT NAIK AUDIO", chooseAudio: "PILIH FAIL AUDIO", playback: "Dengar mesej anda", uploadHint: "Maksimum 200 MB.", voiceReady: "Mesej suara sedia:", recording: "Sedang merakam… tekan Hentikan rakaman apabila selesai.", recordingNow: "SEDANG MERAKAM", recordingUnavailable: "Rakaman suara tidak tersedia dalam pelayar ini. Sila muat naik fail audio.", recordingError: "Rakaman suara tidak dapat dimulakan. Sila benarkan mikrofon atau muat naik fail audio.", shipping: "MAKLUMAT PENGHANTARAN ANDA", fullName: "Nama Penuh", fullNamePlaceholder: "Nama penuh anda", phone: "Nombor Telefon", email: "E-mel", emailPlaceholder: "Alamat e-mel anda",
     address: "Alamat", addressPlaceholder: "Nombor rumah, jalan, kawasan", addressLine2: "Alamat Baris 2", optional: "Pilihan", addressLine2Placeholder: "Apartmen, unit dan lain-lain", city: "Bandar", cityPlaceholder: "Bandar anda", state: "Negeri", postcode: "Poskod", postcodePlaceholder: "Poskod anda", deliveryRegion: "Kawasan Penghantaran", westMalaysia: "Semenanjung Malaysia", eastMalaysia: "Malaysia Timur (+RM20 penghantaran)",
     saving: "MENYIMPAN MAKLUMAT ANDA…", submit: "SIMPAN PENYESUAIAN SAYA", terms: "Terma dan Polisi", missingVoice: "Sila rakam atau pilih mesej suara untuk plushie anda.", voiceTooLarge: "Mesej suara anda mestilah 200 MB atau lebih kecil.", savingDetails: "Menyimpan maklumat anda…", saved: "Maklumat anda telah disimpan. Rujukan anda ialah", openingWhatsApp: "Membuka WhatsApp sekarang…", sendWhatsApp: "Sila hantar rujukan ini kepada kami melalui WhatsApp.", saveFailed: "Maklumat anda tidak dapat disimpan.",
   },
@@ -71,10 +71,19 @@ export function DirectManualOrderPage({
   const [notice, setNotice] = useState("");
   const [saving, setSaving] = useState(false);
   const [voice, setVoice] = useState<File | null>(null);
+  const [voiceMode, setVoiceMode] = useState<"record" | "upload">("record");
+  const [voiceUrl, setVoiceUrl] = useState("");
   const [recording, setRecording] = useState(false);
   const recorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
   const copy = translations[language];
+
+  useEffect(() => {
+    if (!voice) return setVoiceUrl("");
+    const url = URL.createObjectURL(voice);
+    setVoiceUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [voice]);
 
   function selectVoice(file?: File) {
     if (!file) return;
@@ -188,7 +197,7 @@ export function DirectManualOrderPage({
       <label>{copy.favouritePerson}<input required name="favouritePerson" maxLength={50} placeholder={copy.favouritePersonPlaceholder} /></label>
       <label>{copy.belongsTo}<input required name="belongsTo" maxLength={50} placeholder={copy.belongsToPlaceholder} /></label>
       <label>{copy.meaningfulNote}<textarea required name="meaningfulNote" rows={4} placeholder={copy.meaningfulNotePlaceholder} /></label>
-      <section className={styles.voiceSection} aria-label={copy.uploadVoice}><span>{copy.uploadVoice}</span><div className={styles.voiceActions}><button className={styles.voiceAction} type="button" onClick={recording ? stopRecording : () => void startRecording()}>{recording ? copy.stopRecording : copy.recordVoice}</button><label className={styles.voiceAction}>{copy.uploadAudio}<input type="file" accept="audio/*" onChange={(event) => selectVoice(event.target.files?.[0])} /></label></div><small>{copy.uploadHint}</small>{voice ? <p className={styles.voiceReady}>{copy.voiceReady} {voice.name}</p> : null}</section>
+      <section className={styles.voiceSection} aria-label={copy.uploadVoice}><span>{copy.uploadVoice}</span><div className={styles.voiceModeButtons}><button className={voiceMode === "record" ? styles.voiceModeActive : styles.voiceModeButton} type="button" onClick={() => setVoiceMode("record")}>{copy.recordVoice}</button><button className={voiceMode === "upload" ? styles.voiceModeActive : styles.voiceModeButton} type="button" onClick={() => setVoiceMode("upload")}>{copy.uploadAudio}</button></div>{voiceMode === "record" ? <div className={styles.voicePanel}><button className={recording ? styles.recordingButton : styles.recordButton} type="button" onClick={recording ? stopRecording : () => void startRecording()}>{recording ? <><span className={styles.recordingPulse} />{copy.stopRecording}</> : copy.recordVoice}</button>{recording ? <p className={styles.recordingStatus}><span className={styles.recordingDot} />{copy.recordingNow}</p> : null}</div> : <div className={styles.voicePanel}><label className={styles.uploadAudioButton}>{copy.chooseAudio}<input type="file" accept="audio/*" onChange={(event) => selectVoice(event.target.files?.[0])} /></label></div>}<small>{copy.uploadHint}</small>{voice ? <div className={styles.voicePreview}><p>{copy.voiceReady} {voice.name}</p><label>{copy.playback}<audio controls src={voiceUrl} /></label></div> : null}</section>
 
       <h2>{copy.shipping}</h2>
       <label>{copy.fullName}<input required name="customerName" autoComplete="name" placeholder={copy.fullNamePlaceholder} /></label>
