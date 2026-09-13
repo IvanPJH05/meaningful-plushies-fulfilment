@@ -3,6 +3,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import { buildManualOrderCustomerLink } from "./manual-order-links";
 import { manualOrderProductPathForSelection, manualOrderSpeakerSeconds, normalizeManualOrderCharacter } from "./manual-order-product-paths";
 import { manualOrderProductByKey, type ManualOrderProductConfig } from "./manual-order-products";
+import { normalizeManualOrderPhone } from "./manual-order-phone";
 import { cleanShopifyOrderNumber, objectValue, shopDomain, shopifyGraphql, textValue } from "./shopify-orders";
 import { fetchManualOrders } from "./supabase";
 import type { ManualOrder } from "./types";
@@ -293,20 +294,7 @@ async function resolveManualOrderProduct(input: ManualOrderCreateInput, product:
   return { productId: "", variantId: "", productPath: product.productPath };
 }
 
-export function normalizeManualOrderPhone(phone: string) {
-  const digits = phone.replace(/\D/g, "");
-  let normalized = digits;
-  if (digits.startsWith("0")) normalized = `6${digits}`;
-  if (digits.startsWith("60")) normalized = digits;
-  if (digits.startsWith("1") && digits.length >= 9) normalized = `60${digits}`;
-  if (!/^60\d{8,11}$/.test(normalized)) {
-    throw new Error("Enter a valid Malaysia phone number, for example 0123456789 or 60123456789.");
-  }
-  return {
-    normalized,
-    lastFour: normalized.slice(-4),
-  };
-}
+export { normalizeManualOrderPhone } from "./manual-order-phone";
 
 export async function generateManualOrderCode(phoneLastFour: string) {
   const existing = new Set((await fetchManualOrders()).flatMap((order) => [

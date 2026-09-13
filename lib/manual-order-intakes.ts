@@ -4,7 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 
 import { createCompleteNowSession, createVoiceUpload, saveSubmittedSession, submittedCustomisationsForSessionIds, type CustomisationForm } from "./customisation";
 import { manualOrderProductByKey } from "./manual-order-products";
-import { normalizeManualOrderPhone } from "./manual-orders";
+import { normalizeManualOrderPhone, shopifyManualOrderPhone } from "./manual-order-phone";
 import { manualOrderSpeakerSeconds, normalizeManualOrderCharacter } from "./manual-order-product-paths";
 import { shopDomain, shopifyGraphql, shopifyRest, textValue } from "./shopify-orders";
 import { saveManualOrder } from "./supabase";
@@ -176,10 +176,7 @@ function shopifyErrors(result: { errors?: Array<{ message?: string }> | undefine
 }
 
 function customerPhone(value: string) {
-  const digits = value.replace(/\D/g, "");
-  if (digits.startsWith("60")) return `+${digits}`;
-  if (digits.startsWith("0")) return `+60${digits.slice(1)}`;
-  return value.trim();
+  return shopifyManualOrderPhone(value);
 }
 
 async function ensureShopifyCustomerAddress(domain: string, intake: ManualOrderIntake, address: Record<string, unknown>) {
@@ -298,7 +295,7 @@ function shopifyAddressForIntake(intake: ManualOrderIntake) {
     zip: intake.shippingAddress.zip,
     country: "Malaysia",
     countryCode: "MY",
-    phone: intake.phoneOriginal,
+    phone: customerPhone(intake.phoneOriginal),
   };
 }
 
