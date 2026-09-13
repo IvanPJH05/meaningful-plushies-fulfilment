@@ -240,6 +240,8 @@ async function repairShopifyShippingAddress(domain: string, order: ShopifyManual
       }
     }
   `, { input: { id: order.id, shippingAddress: address, billingAddress: address } });
+  const graphqlErrors = shopifyErrors(graphql || {}, graphql?.data?.orderUpdate?.userErrors);
+  if (graphqlErrors) throw new Error(`Shopify could not save this order's shipping address. ${graphqlErrors}`);
   if (graphql?.data?.orderUpdate?.order?.shippingAddress?.address1) return true;
 
   // Shopify's REST order update is deliberately a fallback only. It repairs
@@ -276,7 +278,24 @@ async function repairShopifyShippingAddress(domain: string, order: ShopifyManual
       },
     },
   });
-  return Boolean(rest?.order?.shipping_address?.address1);
+  if (rest?.order?.shipping_address?.address1) return true;
+  throw new Error("Shopify did not confirm the shipping address. The order was kept ready to retry so its address cannot be lost.");
+}
+
+function shopifyAddressForIntake(intake: ManualOrderIntake) {
+  const [firstName, ...surname] = intake.customerName.split(/\s+/).filter(Boolean);
+  return {
+    firstName: firstName || intake.customerName,
+    lastName: surname.join(" "),
+    address1: intake.shippingAddress.address1,
+    address2: intake.shippingAddress.address2 || undefined,
+    city: intake.shippingAddress.city,
+    province: intake.shippingAddress.province,
+    zip: intake.shippingAddress.zip,
+    country: "Malaysia",
+    countryCode: "MY",
+    phone: intake.phoneOriginal,
+  };
 }
 
 async function markIntakeCreated(intake: ManualOrderIntake, order: ShopifyManualOrder) {
@@ -362,7 +381,6 @@ export async function createPaidShopifyOrder(intakeId: string) {
   if (intake.status !== "ready_to_create" || (!intake.isCod && !intake.paymentReceipts.length)) throw new Error("Attach the payment receipt or approve this order as COD before creating the Shopify order.");
   const domain = shopDomain();
   if (!domain) throw new Error("SHOPIFY_SHOP_DOMAIN is missing in Vercel.");
-  const [firstName, ...surname] = intake.customerName.split(/\s+/).filter(Boolean);
   const shippingCost = intake.shippingRegion === "EAST" ? "20.00" : "0.00";
   // The customer completed this before paying. Copy the complete record to the
   // Shopify line item now instead of relying only on the later webhook. This
@@ -372,18 +390,7 @@ export async function createPaidShopifyOrder(intakeId: string) {
   const customisation = submitted.get(intake.customisationSessionId);
   if (!customisation) throw new Error("The saved customisation for this collection submission could not be found.");
   const form = customisation.form;
-  const shopifyAddress = {
-    firstName: firstName || intake.customerName,
-    lastName: surname.join(" "),
-    address1: intake.shippingAddress.address1,
-    address2: intake.shippingAddress.address2 || undefined,
-    city: intake.shippingAddress.city,
-    province: intake.shippingAddress.province,
-    zip: intake.shippingAddress.zip,
-    country: "Malaysia",
-    countryCode: "MY",
-    phone: intake.phoneOriginal,
-  };
+  const shopifyAddress = shopifyAddressForIntake(intake);
   const lineItemProperties = [
     { name: "customisation_session_id", value: intake.customisationSessionId },
     { name: "Name", value: form.plushName },
@@ -443,16 +450,11 @@ export async function createPaidShopifyOrder(intakeId: string) {
   // behaviour seen in these collection orders where the shipping line saves
   // but the address itself does not.
   const shippingAddressSaved = await repairShopifyShippingAddress(domain, order, shopifyAddress);
+  if (!shippingAddressSaved) throw new Error("Shopify did not confirm the shipping address. This order is still ready to retry.");
   const marked = await markIntakeCreated(intake, order);
   const shopifyOrderId = marked.shopifyOrderId;
   const shopifyOrderName = marked.shopifyOrderName;
   const now = marked.now;
-  // A confirmed payment must never remain in Awaiting approval just because a
-  // separate address repair needs another retry. It moves to Paid immediately.
-  // The saved intake address is also retained for fulfilment as a fallback.
-  if (!shippingAddressSaved) {
-    console.error("Manual order shipping address needs a Shopify retry", { intakeId: intake.id, shopifyOrderId });
-  }
   // The familiar Manual Order marker drives your existing WhatsApp labels,
   // packing-slip source, and sales reporting. This record intentionally has
   // no discount because the customer paid before the Shopify order was made.
@@ -467,6 +469,20 @@ export async function createPaidShopifyOrder(intakeId: string) {
   };
   await saveManualOrder(linkedManualOrder);
   return { shopifyOrderId, shopifyOrderName };
+}
+
+export async function repairManualOrderShipping(intakeId: string) {
+  const { data, error } = await serviceClient().from(TABLE).select("*").eq("id", intakeId).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Manual order submission not found.");
+  const intake = rowToIntake(data as Record<string, unknown>);
+  if (!intake.shopifyOrderId) throw new Error("This Manual Order has not reached Shopify yet.");
+  const domain = shopDomain();
+  if (!domain) throw new Error("SHOPIFY_SHOP_DOMAIN is missing in Vercel.");
+  const existing = shopifyOrderForIntake(await existingManualShopifyOrders(domain), intake.id);
+  if (!existing) throw new Error("The linked Shopify order could not be found.");
+  await repairShopifyShippingAddress(domain, existing, shopifyAddressForIntake(intake));
+  return { shopifyOrderId: shopifyOrderId(existing), shopifyOrderName: textValue(existing.name) };
 }
 
 export async function isDashboardAdmin(token: string) {
