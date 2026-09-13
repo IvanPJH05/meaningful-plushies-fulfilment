@@ -6,7 +6,7 @@ import { createCompleteNowSession, createVoiceUpload, saveSubmittedSession, subm
 import { manualOrderProductByKey } from "./manual-order-products";
 import { normalizeManualOrderPhone } from "./manual-orders";
 import { manualOrderSpeakerSeconds, normalizeManualOrderCharacter } from "./manual-order-product-paths";
-import { shopDomain, shopifyGraphql, textValue } from "./shopify-orders";
+import { shopDomain, shopifyGraphql, shopifyRest, textValue } from "./shopify-orders";
 import { saveManualOrder } from "./supabase";
 import type { ManualOrder } from "./types";
 
@@ -140,6 +140,90 @@ function voiceDownloadUrl(path: string) {
   return `${appUrl}/api/customisation/audio-download?path=${encodeURIComponent(path)}&filename=${encodeURIComponent(fileName)}`;
 }
 
+type ShopifyManualOrder = {
+  id?: string;
+  legacyResourceId?: string;
+  name?: string;
+  customAttributes?: Array<{ key?: string; value?: string }>;
+};
+
+function shopifyOrderId(order: ShopifyManualOrder) {
+  return textValue(order.legacyResourceId) || textValue(order.id);
+}
+
+async function existingManualShopifyOrders(domain: string) {
+  const result = await shopifyGraphql<{ data?: { orders?: { nodes?: ShopifyManualOrder[] } } }>(domain, `
+    query RecentManualCollectionOrders {
+      orders(first: 100, query: "tag:'Manual order'", sortKey: CREATED_AT, reverse: true) {
+        nodes { id legacyResourceId name customAttributes { key value } }
+      }
+    }
+  `, {});
+  return result?.data?.orders?.nodes || [];
+}
+
+function shopifyOrderForIntake(orders: ShopifyManualOrder[], intakeId: string) {
+  return orders.find((order) => order.customAttributes?.some((attribute) => attribute.key === "manual_order_intake_id" && attribute.value === intakeId));
+}
+
+async function repairShopifyShippingAddress(domain: string, order: ShopifyManualOrder, address: Record<string, unknown>) {
+  if (!order.id) return false;
+  const graphql = await shopifyGraphql<{ data?: { orderUpdate?: { order?: { shippingAddress?: { address1?: string } | null }; userErrors?: Array<{ message?: string }> } } }>(domain, `
+    mutation AddManualOrderShippingAddress($input: OrderInput!) {
+      orderUpdate(input: $input) {
+        order { shippingAddress { address1 } }
+        userErrors { message }
+      }
+    }
+  `, { input: { id: order.id, shippingAddress: address, billingAddress: address } });
+  if (graphql?.data?.orderUpdate?.order?.shippingAddress?.address1) return true;
+
+  // Shopify's REST order update is deliberately a fallback only. It repairs
+  // orders where the GraphQL create/update response has silently omitted the
+  // delivery address, keeping those paid orders exportable to J&T.
+  const legacyId = shopifyOrderId(order).replace(/^gid:\/\/shopify\/Order\//, "");
+  if (!/^\d+$/.test(legacyId)) return false;
+  const rest = await shopifyRest<{ order?: { shipping_address?: { address1?: string } | null } }>(domain, `/orders/${legacyId}.json`, "PUT", {
+    order: {
+      id: Number(legacyId),
+      shipping_address: {
+        first_name: address.firstName,
+        last_name: address.lastName,
+        address1: address.address1,
+        address2: address.address2,
+        city: address.city,
+        province: address.province,
+        zip: address.zip,
+        country: "Malaysia",
+        country_code: "MY",
+        phone: address.phone,
+      },
+      billing_address: {
+        first_name: address.firstName,
+        last_name: address.lastName,
+        address1: address.address1,
+        address2: address.address2,
+        city: address.city,
+        province: address.province,
+        zip: address.zip,
+        country: "Malaysia",
+        country_code: "MY",
+        phone: address.phone,
+      },
+    },
+  });
+  return Boolean(rest?.order?.shipping_address?.address1);
+}
+
+async function markIntakeCreated(intake: ManualOrderIntake, order: ShopifyManualOrder) {
+  const now = new Date().toISOString();
+  const resolvedShopifyOrderId = shopifyOrderId(order);
+  const shopifyOrderName = textValue(order.name);
+  const { error } = await serviceClient().from(TABLE).update({ status: "created", shopify_order_id: resolvedShopifyOrderId, shopify_order_name: shopifyOrderName, created_by_order_at: now, updated_at: now }).eq("id", intake.id).eq("status", "ready_to_create");
+  if (error) throw new Error(error.message);
+  return { shopifyOrderId: resolvedShopifyOrderId, shopifyOrderName, now };
+}
+
 export async function startManualOrderIntake() {
   return createCompleteNowSession();
 }
@@ -179,7 +263,33 @@ export async function submitManualOrderIntake(input: ManualOrderIntakeSubmission
 export async function listManualOrderIntakes() {
   const { data, error } = await serviceClient().from(TABLE).select("*").order("created_at", { ascending: false });
   if (error) throw new Error(error.message);
-  return (data || []).map((row) => rowToIntake(row as Record<string, unknown>));
+  const intakes = (data || []).map((row) => rowToIntake(row as Record<string, unknown>));
+  // Recover an order that Shopify has already created but whose final address
+  // check failed. The receipt was verified, so it belongs in Paid orders—not
+  // in an in-between "receipt attached" state. This also prevents a second
+  // Shopify order from being created for the same customer submission.
+  const waiting = intakes.filter((intake) => intake.status === "ready_to_create");
+  const domain = waiting.length ? shopDomain() : "";
+  if (!domain) return intakes;
+  const shopifyOrders = await existingManualShopifyOrders(domain);
+  for (const intake of waiting) {
+    const order = shopifyOrderForIntake(shopifyOrders, intake.id);
+    if (!order) continue;
+    const [firstName, ...surname] = intake.customerName.split(/\s+/).filter(Boolean);
+    await repairShopifyShippingAddress(domain, order, {
+      firstName: firstName || intake.customerName, lastName: surname.join(" "),
+      address1: intake.shippingAddress.address1, address2: intake.shippingAddress.address2 || undefined,
+      city: intake.shippingAddress.city, province: intake.shippingAddress.province, zip: intake.shippingAddress.zip,
+      country: "Malaysia", countryCode: "MY", phone: intake.phoneOriginal,
+    });
+    const marked = await markIntakeCreated(intake, order);
+    intake.status = "created";
+    intake.shopifyOrderId = marked.shopifyOrderId;
+    intake.shopifyOrderName = marked.shopifyOrderName;
+    intake.createdByOrderAt = marked.now;
+    intake.updatedAt = marked.now;
+  }
+  return intakes;
 }
 
 export async function attachManualOrderReceipt(id: string, receipts: PaymentReceipt[]) {
@@ -232,7 +342,13 @@ export async function createPaidShopifyOrder(intakeId: string) {
     { name: "Meaningful Note", value: form.meaningfulNote },
     { name: "Meaningful Message", value: voiceDownloadUrl(customisation.voiceStoragePath) },
   ];
-  const result = await shopifyGraphql<{ data?: { orderCreate?: { order?: { id?: string; legacyResourceId?: string; name?: string; shippingAddress?: { address1?: string } | null }; userErrors?: Array<{ message?: string }> } }; errors?: Array<{ message?: string }> }>(domain, `
+  // A previous request may have created the Shopify order successfully and
+  // then stopped while saving its address. Find it by its intake reference
+  // first so retrying can never charge/create a duplicate order.
+  const existing = shopifyOrderForIntake(await existingManualShopifyOrders(domain), intake.id);
+  let order: ShopifyManualOrder | undefined = existing;
+  if (!order) {
+    const result = await shopifyGraphql<{ data?: { orderCreate?: { order?: ShopifyManualOrder; userErrors?: Array<{ message?: string }> } }; errors?: Array<{ message?: string }> }>(domain, `
     mutation CreatePaidManualOrder($order: OrderCreateOrderInput!, $options: OrderCreateOptionsInput) {
       orderCreate(order: $order, options: $options) {
         order { id legacyResourceId name shippingAddress { address1 } }
@@ -257,36 +373,27 @@ export async function createPaidShopifyOrder(intakeId: string) {
     },
     options: { sendReceipt: false, sendFulfillmentReceipt: false },
   });
-  const topErrors = result?.errors?.map((item) => item.message).filter(Boolean) || [];
-  const userErrors = result?.data?.orderCreate?.userErrors?.map((item) => item.message).filter(Boolean) || [];
-  if (topErrors.length || userErrors.length) throw new Error([...topErrors, ...userErrors].join(" "));
-  const order = result?.data?.orderCreate?.order;
-  if (!order?.id) throw new Error("Shopify did not return the new order.");
-  // Shopify occasionally accepts an address during orderCreate but does not
-  // persist it. Check the returned order and immediately write it again so
-  // every paid collection order stays exportable to J&T.
-  if (!order.shippingAddress?.address1) {
-    const addressUpdate = await shopifyGraphql<{ data?: { orderUpdate?: { order?: { shippingAddress?: { address1?: string } | null }; userErrors?: Array<{ message?: string }> } }; errors?: Array<{ message?: string }> }>(domain, `
-      mutation AddManualOrderShippingAddress($input: OrderInput!) {
-        orderUpdate(input: $input) {
-          order { shippingAddress { address1 } }
-          userErrors { message }
-        }
-      }
-    `, { input: { id: order.id, shippingAddress: shopifyAddress, billingAddress: shopifyAddress } });
-    const addressErrors = [
-      ...(addressUpdate?.errors?.map((item) => item.message).filter(Boolean) || []),
-      ...(addressUpdate?.data?.orderUpdate?.userErrors?.map((item) => item.message).filter(Boolean) || []),
-    ];
-    if (addressErrors.length || !addressUpdate?.data?.orderUpdate?.order?.shippingAddress?.address1) {
-      throw new Error(`Shopify created the order but could not save its shipping address. ${addressErrors.join(" ")}`.trim());
-    }
+    const topErrors = result?.errors?.map((item) => item.message).filter(Boolean) || [];
+    const userErrors = result?.data?.orderCreate?.userErrors?.map((item) => item.message).filter(Boolean) || [];
+    if (topErrors.length || userErrors.length) throw new Error([...topErrors, ...userErrors].join(" "));
+    order = result?.data?.orderCreate?.order;
+    if (!order?.id) throw new Error("Shopify did not return the new order.");
   }
-  const now = new Date().toISOString();
-  const { error: updateError } = await serviceClient().from(TABLE).update({ status: "created", shopify_order_id: textValue(order.legacyResourceId) || textValue(order.id), shopify_order_name: textValue(order.name), created_by_order_at: now, updated_at: now }).eq("id", intake.id).eq("status", "ready_to_create");
-  if (updateError) throw new Error(updateError.message);
-  const shopifyOrderId = textValue(order.legacyResourceId) || textValue(order.id);
-  const shopifyOrderName = textValue(order.name);
+
+  // Always make the follow-up write. The REST fallback covers the Shopify
+  // behaviour seen in these collection orders where the shipping line saves
+  // but the address itself does not.
+  const shippingAddressSaved = await repairShopifyShippingAddress(domain, order, shopifyAddress);
+  const marked = await markIntakeCreated(intake, order);
+  const shopifyOrderId = marked.shopifyOrderId;
+  const shopifyOrderName = marked.shopifyOrderName;
+  const now = marked.now;
+  // A confirmed payment must never remain in Awaiting approval just because a
+  // separate address repair needs another retry. It moves to Paid immediately.
+  // The saved intake address is also retained for fulfilment as a fallback.
+  if (!shippingAddressSaved) {
+    console.error("Manual order shipping address needs a Shopify retry", { intakeId: intake.id, shopifyOrderId });
+  }
   // The familiar Manual Order marker drives your existing WhatsApp labels,
   // packing-slip source, and sales reporting. This record intentionally has
   // no discount because the customer paid before the Shopify order was made.

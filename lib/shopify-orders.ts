@@ -480,16 +480,21 @@ export async function certificateMetaobjectForOrder(orderNumber: string) {
   return null;
 }
 
-async function shopifyRest<T>(domain: string, path: string) {
+// Shopify's GraphQL API is the default connection. This supports its small
+// REST fallback for repairing a manual order address when Shopify accepts the
+// shipping line but drops the address in the original order creation.
+export async function shopifyRest<T>(domain: string, path: string, method: "GET" | "PUT" | "POST" = "GET", body?: Record<string, unknown>) {
   const token = await getShopifyAccessToken(domain);
   if (!token || !domain) return null;
 
   const apiVersion = process.env.SHOPIFY_API_VERSION ?? "2026-04";
   const response = await fetch(`https://${domain}/admin/api/${apiVersion}${path}`, {
+    method,
     headers: {
       "Content-Type": "application/json",
       "X-Shopify-Access-Token": token,
     },
+    ...(body ? { body: JSON.stringify(body) } : {}),
   });
 
   if (!response.ok) return null;
