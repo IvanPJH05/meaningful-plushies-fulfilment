@@ -354,6 +354,20 @@ export async function listManualOrderIntakes() {
   return (data || []).map((row) => rowToIntake(row as Record<string, unknown>));
 }
 
+export async function deleteManualOrderIntake(id: string) {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("Choose a valid Manual Order submission.");
+
+  // This intentionally removes only the internal Manual Orders records. The
+  // linked Shopify order, customer, fulfilment records, and uploaded files are
+  // never changed by this workspace clean-up action.
+  const linkedManualOrder = await serviceClient().from("manual_orders").delete().eq("id", `collection-${id}`);
+  if (linkedManualOrder.error) throw new Error(linkedManualOrder.error.message);
+
+  const { data, error } = await serviceClient().from(TABLE).delete().eq("id", id).select("id").maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("This Manual Order submission was not found or was already removed.");
+}
+
 export async function attachManualOrderReceipt(id: string, receipts: PaymentReceipt[]) {
   if (!id || !receipts.length) throw new Error("Attach at least one payment receipt.");
   const now = new Date().toISOString();
