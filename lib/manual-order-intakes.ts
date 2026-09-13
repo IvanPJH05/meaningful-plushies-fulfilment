@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { createClient } from "@supabase/supabase-js";
 
-import { createCompleteNowSession, createVoiceUpload, saveSubmittedSession, type CustomisationForm } from "./customisation";
+import { createCompleteNowSession, createVoiceUpload, saveSubmittedSession, submittedCustomisationsForSessionIds, type CustomisationForm } from "./customisation";
 import { manualOrderProductByKey } from "./manual-order-products";
 import { normalizeManualOrderPhone } from "./manual-orders";
 import { manualOrderSpeakerSeconds, normalizeManualOrderCharacter } from "./manual-order-product-paths";
@@ -195,6 +195,25 @@ export async function createPaidShopifyOrder(intakeId: string) {
   if (!domain) throw new Error("SHOPIFY_SHOP_DOMAIN is missing in Vercel.");
   const [firstName, ...surname] = intake.customerName.split(/\s+/).filter(Boolean);
   const shippingCost = intake.shippingRegion === "EAST" ? "20.00" : "0.00";
+  // The customer completed this before paying. Copy the complete record to the
+  // Shopify line item now instead of relying only on the later webhook. This
+  // keeps the birth certificate and voice visible to Shopify and available to
+  // the fulfilment importer from the moment the paid order exists.
+  const submitted = await submittedCustomisationsForSessionIds([intake.customisationSessionId]);
+  const customisation = submitted.get(intake.customisationSessionId);
+  if (!customisation) throw new Error("The saved customisation for this collection submission could not be found.");
+  const form = customisation.form;
+  const lineItemProperties = [
+    { name: "customisation_session_id", value: intake.customisationSessionId },
+    { name: "Name", value: form.plushName },
+    { name: "Gender", value: form.gender },
+    { name: "Born On", value: form.birthDate },
+    { name: "Birthplace", value: form.birthPlace },
+    { name: "Favourite Person", value: form.favouritePerson },
+    { name: "Belongs To", value: form.belongsTo },
+    { name: "Meaningful Note", value: form.meaningfulNote },
+    { name: "Meaningful Message", value: `supabase-storage:${customisation.voiceStoragePath}` },
+  ];
   const result = await shopifyGraphql<{ data?: { orderCreate?: { order?: { id?: string; legacyResourceId?: string; name?: string }; userErrors?: Array<{ message?: string }> } }; errors?: Array<{ message?: string }> }>(domain, `
     mutation CreatePaidManualOrder($order: OrderCreateOrderInput!, $options: OrderCreateOptionsInput) {
       orderCreate(order: $order, options: $options) {
@@ -223,8 +242,8 @@ export async function createPaidShopifyOrder(intakeId: string) {
         address2: intake.shippingAddress.address2 || undefined, city: intake.shippingAddress.city, province: intake.shippingAddress.province,
         zip: intake.shippingAddress.zip, countryCode: "MY", phone: intake.phoneOriginal,
       },
-      lineItems: [{ variantId: intake.shopifyVariantId, quantity: 1, properties: [{ name: "customisation_session_id", value: intake.customisationSessionId }] }],
-      shippingLines: shippingCost === "0.00" ? [] : [{ title: "East Malaysia delivery", priceSet: { shopMoney: { amount: shippingCost, currencyCode: "MYR" } } }],
+      lineItems: [{ variantId: intake.shopifyVariantId, quantity: 1, requiresShipping: true, properties: lineItemProperties }],
+      shippingLines: [{ title: intake.shippingRegion === "EAST" ? "East Malaysia delivery" : "Standard delivery", priceSet: { shopMoney: { amount: shippingCost, currencyCode: "MYR" } } }],
     },
     options: { sendReceipt: false, sendFulfillmentReceipt: false },
   });
