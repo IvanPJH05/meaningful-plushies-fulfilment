@@ -302,8 +302,9 @@ async function markIntakeCreated(intake: ManualOrderIntake, order: ShopifyManual
   const now = new Date().toISOString();
   const resolvedShopifyOrderId = shopifyOrderId(order);
   const shopifyOrderName = textValue(order.name);
-  const { error } = await serviceClient().from(TABLE).update({ status: "created", shopify_order_id: resolvedShopifyOrderId, shopify_order_name: shopifyOrderName, created_by_order_at: now, updated_at: now }).eq("id", intake.id).eq("status", "ready_to_create");
+  const { data, error } = await serviceClient().from(TABLE).update({ status: "created", shopify_order_id: resolvedShopifyOrderId, shopify_order_name: shopifyOrderName, created_by_order_at: now, updated_at: now }).eq("id", intake.id).eq("status", "ready_to_create").select("id").maybeSingle();
   if (error) throw new Error(error.message);
+  if (!data) throw new Error("This order could not be moved to Paid orders. Refresh the page and try Finish creating order once more.");
   return { shopifyOrderId: resolvedShopifyOrderId, shopifyOrderName, now };
 }
 
