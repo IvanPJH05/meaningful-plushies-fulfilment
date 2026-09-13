@@ -424,7 +424,7 @@ export async function createPaidShopifyOrder(intakeId: string) {
   `, {
     order: {
       email: intake.customerEmail || undefined,
-      phone: intake.phoneOriginal,
+      phone: customerPhone(intake.phoneOriginal),
       customer: { toAssociate: { id: customerId } },
       financialStatus: intake.isCod ? "PENDING" : "PAID",
       tags: intake.isCod ? ["Manual order", "WhatsApp", "COD"] : ["Manual order", "WhatsApp", "Receipt verified"],
