@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildManualOrderCustomerLink } from "./manual-order-links.ts";
+import { shopifyManualOrderPhone } from "./manual-order-phone.ts";
 import { manualOrderProductPathForSelection } from "./manual-order-product-paths.ts";
 
 const product5s = {
@@ -40,4 +41,10 @@ test("maps manual orders to exact character and speaker WA products", () => {
     manualOrderProductPathForSelection("Hunnie", product20s),
     "products/hunnie-wa-order",
   );
+});
+
+test("formats Malaysian customer phones for Shopify shipping", () => {
+  assert.equal(shopifyManualOrderPhone("012-345 6789"), "+60123456789");
+  assert.equal(shopifyManualOrderPhone("+60 12 345 6789"), "+60123456789");
+  assert.equal(shopifyManualOrderPhone("123456789"), "+60123456789");
 });
