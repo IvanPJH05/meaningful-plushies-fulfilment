@@ -11,6 +11,7 @@ import { saveManualOrder } from "./supabase";
 import type { ManualOrder } from "./types";
 
 const TABLE = "manual_order_intakes";
+const COD_PAYMENT_MARKER = "manual-order://cash-on-delivery";
 
 export type PaymentReceipt = { fileName: string; url: string };
 export type ShippingAddress = {
@@ -36,6 +37,7 @@ export type ManualOrderIntake = {
   shippingAddress: ShippingAddress;
   customisationSessionId: string;
   paymentReceipts: PaymentReceipt[];
+  isCod: boolean;
   status: "awaiting_payment" | "ready_to_create" | "created" | "cancelled";
   shopifyOrderId: string;
   shopifyOrderName: string;
@@ -110,6 +112,7 @@ function rowToIntake(row: Record<string, unknown>): ManualOrderIntake {
     shippingAddress: validAddress(address),
     customisationSessionId: String(row.customisation_session_id || ""),
     paymentReceipts: Array.isArray(row.payment_receipts) ? row.payment_receipts as PaymentReceipt[] : [],
+    isCod: Array.isArray(row.payment_receipts) && (row.payment_receipts as PaymentReceipt[]).some((receipt) => receipt.url === COD_PAYMENT_MARKER),
     status: ["awaiting_payment", "ready_to_create", "created", "cancelled"].includes(String(row.status)) ? String(row.status) as ManualOrderIntake["status"] : "awaiting_payment",
     shopifyOrderId: String(row.shopify_order_id || ""),
     shopifyOrderName: String(row.shopify_order_name || ""),
@@ -366,12 +369,24 @@ export async function attachManualOrderReceipt(id: string, receipts: PaymentRece
   return rowToIntake(data as Record<string, unknown>);
 }
 
+export async function approveManualOrderCod(id: string) {
+  if (!id) throw new Error("Choose a Manual Order submission first.");
+  const now = new Date().toISOString();
+  const { data, error } = await serviceClient().from(TABLE).update({
+    payment_receipts: [{ fileName: "Cash on delivery", url: COD_PAYMENT_MARKER }],
+    status: "ready_to_create", paid_at: now, updated_at: now,
+  }).eq("id", id).eq("status", "awaiting_payment").select("*").maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("This submission is no longer waiting for approval.");
+  return rowToIntake(data as Record<string, unknown>);
+}
+
 export async function createPaidShopifyOrder(intakeId: string) {
   const { data, error } = await serviceClient().from(TABLE).select("*").eq("id", intakeId).maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Manual order submission not found.");
   const intake = rowToIntake(data as Record<string, unknown>);
-  if (intake.status !== "ready_to_create" || !intake.paymentReceipts.length) throw new Error("Attach the payment receipt before creating the Shopify order.");
+  if (intake.status !== "ready_to_create" || (!intake.isCod && !intake.paymentReceipts.length)) throw new Error("Attach the payment receipt or approve this order as COD before creating the Shopify order.");
   const domain = shopDomain();
   if (!domain) throw new Error("SHOPIFY_SHOP_DOMAIN is missing in Vercel.");
   const [firstName, ...surname] = intake.customerName.split(/\s+/).filter(Boolean);
@@ -429,12 +444,13 @@ export async function createPaidShopifyOrder(intakeId: string) {
       email: intake.customerEmail || undefined,
       phone: intake.phoneOriginal,
       customer: { toAssociate: { id: customerId } },
-      financialStatus: "PAID",
-      tags: ["Manual order", "WhatsApp", "Receipt verified"],
-      note: "Created from Manual Order Collection after payment receipt was verified.",
+      financialStatus: intake.isCod ? "PENDING" : "PAID",
+      tags: intake.isCod ? ["Manual order", "WhatsApp", "COD"] : ["Manual order", "WhatsApp", "Receipt verified"],
+      note: intake.isCod ? "Created from Manual Order Collection as Cash on Delivery." : "Created from Manual Order Collection after payment receipt was verified.",
       customAttributes: [
         { key: "manual_order_intake_id", value: intake.id },
-        { key: "payment_receipt", value: intake.paymentReceipts.map((item) => item.url).join("\n") },
+        { key: "payment_type", value: intake.isCod ? "COD" : "Receipt verified" },
+        { key: "payment_receipt", value: intake.isCod ? "Cash on Delivery" : intake.paymentReceipts.map((item) => item.url).join("\n") },
       ],
       shippingAddress: shopifyAddress,
       billingAddress: shopifyAddress,
@@ -471,9 +487,9 @@ export async function createPaidShopifyOrder(intakeId: string) {
     id: `collection-${intake.id}`, customerName: intake.customerName, phoneOriginal: intake.phoneOriginal,
     phoneNormalized: intake.phoneNormalized, phoneLastFour: intake.phoneNormalized.slice(-4), productKey: intake.productKey,
     productDisplayName: intake.productDisplayName, shopifyProductId: "", shopifyVariantId: intake.shopifyVariantId,
-    productPath: "", shippingRegion: intake.shippingRegion, isCod: false, productDiscountCode: `INTAKE-${intake.id}`,
+    productPath: "", shippingRegion: intake.shippingRegion, productDiscountCode: `INTAKE-${intake.id}`,
     productDiscountShopifyId: "", shippingDiscountCode: "", shippingDiscountShopifyId: "", customerLink: "",
-    status: "used", shopifyOrderId, shopifyOrderName, createdAt: intake.createdAt, updatedAt: now, usedAt: now,
+    status: "used", isCod: intake.isCod, shopifyOrderId, shopifyOrderName, createdAt: intake.createdAt, updatedAt: now, usedAt: now,
     paymentReceipts: intake.paymentReceipts,
   };
   await saveManualOrder(linkedManualOrder);

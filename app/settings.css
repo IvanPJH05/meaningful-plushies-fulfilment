@@ -1224,6 +1224,28 @@ body.print-sales-report .report-table th,
   opacity: .7;
 }
 
+.manual-order-approval-actions {
+  display: grid;
+  gap: 8px;
+  min-width: 220px;
+}
+
+.manual-order-cod-button {
+  min-height: 42px;
+  border: 2px solid #191919;
+  border-radius: 8px;
+  background: #191919;
+  color: #fff;
+  cursor: pointer;
+  font-weight: 900;
+  font-size: 12px;
+}
+
+.manual-order-cod-button:disabled {
+  cursor: wait;
+  opacity: .7;
+}
+
 .manual-order-list-section + .manual-order-list-section {
   margin-top: 28px;
 }
