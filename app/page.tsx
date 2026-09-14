@@ -1215,9 +1215,16 @@ function manualOrderForFulfilmentOrder(order: Order, manualOrders: ManualOrder[]
   });
 }
 
+function isCollectionWhatsAppOrder(order: Order) {
+  // Older collection orders can exist without their supporting Manual Orders
+  // dashboard row. Shopify's note remains on the imported order, so it is a
+  // durable fallback for showing their real source to fulfilment staff.
+  return /created from manual order collection/i.test(order.remark || "");
+}
+
 function fulfilmentSource(order: Order, manualOrders: ManualOrder[]) {
   if (order.salesChannel === "tiktok") return "tiktok" as const;
-  return manualOrderForFulfilmentOrder(order, manualOrders) ? "whatsapp" as const : "shopify" as const;
+  return manualOrderForFulfilmentOrder(order, manualOrders) || isCollectionWhatsAppOrder(order) ? "whatsapp" as const : "shopify" as const;
 }
 
 function fulfilmentSourceLabel(order: Order, manualOrders: ManualOrder[]) {
@@ -1228,7 +1235,8 @@ function fulfilmentSourceLabel(order: Order, manualOrders: ManualOrder[]) {
 function isCodFulfilmentOrder(order: Order, manualOrders: ManualOrder[]) {
   const payment = order.paymentProcessor.toLowerCase();
   return Boolean(manualOrderForFulfilmentOrder(order, manualOrders)?.isCod)
-    || /\bcod\b|cash\s*on\s*delivery/.test(payment);
+    || /\bcod\b|cash\s*on\s*delivery/.test(payment)
+    || /\bcod\b|cash\s*on\s*delivery/.test(order.remark || "");
 }
 
 function isInfluencerFulfilmentOrder(order: Order, creatorProfiles: CreatorProfile[], freeCreatorSampleCodes: string[]) {
@@ -5989,7 +5997,7 @@ export default function Home() {
       </section>}
     </section>
 
-    {selected && <OrderDrawer order={selected} role={session.role} actor={session.displayName} onClose={() => setSelectedId(null)} onUpdate={(patch) => updateOrder(selected.id, patch)} onStatus={(status) => setStatus(selected, status)} />}
+    {selected && <OrderDrawer order={selected} manualOrders={manualOrders} role={session.role} actor={session.displayName} onClose={() => setSelectedId(null)} onUpdate={(patch) => updateOrder(selected.id, patch)} onStatus={(status) => setStatus(selected, status)} />}
     {previewDocument && <DocumentPreviewModal document={previewDocument} url={previewDocumentUrl} error={previewDocumentError} onClose={() => { setPreviewDocument(null); setPreviewDocumentUrl(""); setPreviewDocumentError(""); }} />}
     {previewBankLineId && (() => {
       const line = bankStatementLines.find((item) => item.id === previewBankLineId);
@@ -9335,11 +9343,13 @@ function ImportBox({ number, title, required, value, onChange, onFile, placehold
   return <article className="card import-box"><div className="import-heading"><span>{number}</span><div><h3>{title}</h3><p>{required ? "Required" : "Optional, but recommended"}</p></div></div><FileDropZone accept=".csv,text/csv" title="Choose or drop CSV file" description="or paste the CSV content below" onFile={(file) => onFile(file ?? undefined)} /><textarea value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} /></article>;
 }
 
-function OrderDrawer({ order, role, actor, onClose, onUpdate, onStatus }: { order: Order; role: UserRole; actor: string; onClose: () => void; onUpdate: (patch: Partial<Order>) => void; onStatus: (status: OrderStatus) => void }) {
+function OrderDrawer({ order, manualOrders, role, actor, onClose, onUpdate, onStatus }: { order: Order; manualOrders: ManualOrder[]; role: UserRole; actor: string; onClose: () => void; onUpdate: (patch: Partial<Order>) => void; onStatus: (status: OrderStatus) => void }) {
   const admin = role === "admin";
   const following = nextStatus[order.status];
   const messageLink = meaningfulMessageLink(order);
   const messageDownloadName = meaningfulMessageDownloadName(order);
+  const source = fulfilmentSourceLabel(order, manualOrders);
+  const isCod = isCodFulfilmentOrder(order, manualOrders);
 
   function uploadPhoto(file?: File) {
     if (!file) return;
@@ -9364,7 +9374,7 @@ function OrderDrawer({ order, role, actor, onClose, onUpdate, onStatus }: { orde
   return <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><aside className="order-drawer"><div className="drawer-header"><div><p>ORDER DETAIL</p><h2>{orderLabel(order)}</h2></div><button onClick={onClose}>x</button></div><div className="drawer-body">
     <section className="detail-summary"><div><span>Current status</span><StatusPill status={order.status} /></div><div><span>Last updated</span><strong>{formatDate(order.updatedAt, true)}</strong></div></section>
     <section className="detail-section"><h3>Quick actions</h3><div className="status-actions">{following && <button className="button primary" onClick={() => onStatus(following)}>Move to {statusLabels[following]}</button>}{admin && <button className="button issue-button" onClick={() => onStatus("issue")}>Mark issue</button>}{admin && order.status === "issue" && <button className="button secondary" onClick={() => onStatus("sent_for_sewing")}>Resolve issue</button>}<a className="button whatsapp" href={whatsappLink(order)} target="_blank">Open WhatsApp</a></div></section>
-    <section className="detail-section"><h3>Customer and order</h3><div className="field-grid"><Field label="Order number" value={`#${order.orderNumber}`} /><Field label="Source" value={order.salesChannel === "tiktok" ? "TikTok Shop" : "Shopify"} /><Field label="Order date" value={formatDate(order.orderDate, true)} /><Field label="Payment method" value={order.paymentProcessor || "Unknown"} /><Editable label="Customer name" value={order.customerName} disabled={!admin} onChange={(value) => onUpdate({ customerName: value })} /><Editable label="Phone" value={order.phone} disabled={!admin} onChange={(value) => onUpdate({ phone: value })} /><Editable wide label="Address" value={order.address} disabled={!admin} onChange={(value) => onUpdate({ address: value })} /></div></section>
+    <section className="detail-section"><h3>Customer and order</h3><div className="field-grid"><Field label="Order number" value={`#${order.orderNumber}`} /><Field label="Source" value={source} /><Field label="Order date" value={formatDate(order.orderDate, true)} /><Field label="Payment method" value={isCod ? "Cash on delivery (COD)" : order.paymentProcessor || "Unknown"} />{isCod && <Field label="Collection instruction" value="COD — collect payment on delivery" />}<Editable label="Customer name" value={order.customerName} disabled={!admin} onChange={(value) => onUpdate({ customerName: value })} /><Editable label="Phone" value={order.phone} disabled={!admin} onChange={(value) => onUpdate({ phone: value })} /><Editable wide label="Address" value={order.address} disabled={!admin} onChange={(value) => onUpdate({ address: value })} /></div></section>
     {order.salesChannel === "tiktok" && <section className="detail-section"><h3>TikTok order file</h3><div className="field-grid"><div className="field wide"><label>Attached file</label>{messageLink ? <a href={messageLink} download={messageDownloadName} rel="noreferrer">{messageDownloadName || "Download TikTok order file"}</a> : <span>No file attached</span>}</div>{admin && <div className="field wide"><FileDropZone accept="audio/*,video/*,application/pdf,image/png,image/jpeg,image/webp,.txt,.doc,.docx" title={order.tikTokFileDataUrl ? "Replace TikTok file" : "Upload TikTok file"} description="Choose or drop the customer's audio, video, or document" selectedName={order.tikTokFileName} onFile={uploadTikTokOrderFile} className="compact-file-drop" /></div>}</div></section>}
     <section className="detail-section"><h3>Plushie details</h3><div className="field-grid"><Editable label="Product name" value={order.product} disabled={!admin} onChange={(value) => onUpdate({ product: value })} /><Editable label="Character" value={order.character} disabled={!admin} onChange={(value) => onUpdate({ character: value })} /><Editable label="Set indicator" value={order.setIndicator ?? ""} disabled={!admin} onChange={(value) => onUpdate({ setIndicator: value })} /><Editable label="ID website link" value={order.idWebsiteLink ?? ""} disabled={!admin} onChange={(value) => onUpdate({ idWebsiteLink: value })} /><Editable label="Voice length" value={String(order.voiceLength || "")} disabled={!admin} onChange={(value) => onUpdate({ voiceLength: Number(value) || 0 })} /><Editable label="Plush name" value={order.plushName} disabled={!admin} onChange={(value) => onUpdate({ plushName: value })} /><Editable wide label="Remark" value={order.remark ?? ""} disabled={!admin} onChange={(value) => onUpdate({ remark: value })} /><Editable wide textarea label="Meaningful note" value={order.meaningfulNote} disabled={!admin} onChange={(value) => onUpdate({ meaningfulNote: value })} /><div className="field wide"><label>Meaningful message</label>{messageLink ? <a href={messageLink} download={messageDownloadName} target={messageDownloadName ? undefined : "_blank"} rel="noreferrer">{messageDownloadName ? "Download customer message" : "Open customer message"}</a> : <span>{order.salesChannel === "tiktok" ? "No TikTok file uploaded" : "Not provided"}</span>}</div><div className="field"><label>Voice upload</label>{admin ? <select value={order.voiceUploadStatus} onChange={(event) => onUpdate({ voiceUploadStatus: event.target.value as Order["voiceUploadStatus"] })}><option value="missing">Missing</option><option value="received">Received</option><option value="checked">Checked</option></select> : <strong>{order.voiceUploadStatus}</strong>}</div></div></section>
     <section className="detail-section"><h3>Delivery</h3><div className="field-grid"><Field label="Shipping method" value={order.shippingMethod || "Not imported"} /><Editable label="Courier" value={order.courier} disabled={!admin} placeholder="J&T Express" onChange={(value) => onUpdate({ courier: value })} /><Editable label="Tracking number" value={order.trackingNumber} disabled={!admin} placeholder="Enter tracking number" onChange={(value) => onUpdate({ trackingNumber: value })} /></div></section>
