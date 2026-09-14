@@ -122,6 +122,23 @@ test("converts Shopify API orders with Upload Lift metafield into fulfilment ord
   assert.equal(orders[0]?.idWebsiteLink, "https://meaningfulplushies.com/pages/certificate/14553997287");
 });
 
+test("preserves manual collection COD status from Shopify into fulfilment", () => {
+  const orders = shopifyOrderToFulfilmentOrders({
+    name: "#1729",
+    createdAt: "2026-09-14T00:00:00Z",
+    currencyCode: "MYR",
+    currentTotalPriceSet: { shopMoney: { amount: "115.00", currencyCode: "MYR" } },
+    tags: ["Manual order", "WhatsApp", "COD"],
+    customAttributes: [{ key: "payment_type", value: "COD" }],
+    note: "Created from Manual Order Collection as Cash on Delivery.",
+    shippingAddress: { name: "COD customer", address1: "1 Test Road" },
+    lineItems: { nodes: [{ name: "BUILD YOUR MEANINGFUL PLUSHIE - BILLY / INCLUDED / 5 seconds", quantity: 1 }] },
+  }, "", []);
+
+  assert.equal(orders[0]?.paymentProcessor, "COD");
+  assert.match(orders[0]?.remark || "", /cash on delivery/i);
+});
+
 test("keeps free-looking Shopify codes unclassified until Creator Program matching", () => {
   const orders = shopifyOrderToFulfilmentOrders({
     name: "#1501",
