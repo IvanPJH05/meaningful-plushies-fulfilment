@@ -129,13 +129,21 @@ function knownVariantId(character: string, seconds: number) {
     billy: { 5: "42426495959111", 10: "42426495991879", 20: "42426496024647" },
     hunnie: { 5: "42426496090183", 10: "42426496122951", 20: "42426496155719" },
     tootsie: { 5: "42426496221255", 10: "42426496254023", 20: "42426496286791" },
-    "dragon warrior": { 5: "42426496352327", 10: "42426496385095", 20: "42426496386791" },
+    "dragon warrior": { 5: "42426496352327", 10: "42426496385095", 20: "42426496417863" },
   };
   return variants[character.toLowerCase()]?.[seconds] || "";
 }
 
 function asVariantGid(id: string) {
   return id.startsWith("gid://") ? id : `gid://shopify/ProductVariant/${id}`;
+}
+
+function currentVariantIdForIntake(intake: ManualOrderIntake) {
+  const product = manualOrderProductByKey(intake.productKey);
+  const character = normalizeManualOrderCharacter(intake.character);
+  const seconds = Number(product ? manualOrderSpeakerSeconds(product) : 0);
+  const currentVariant = character && seconds ? knownVariantId(character, seconds) : "";
+  return currentVariant ? asVariantGid(currentVariant) : intake.shopifyVariantId;
 }
 
 function voiceDownloadUrl(path: string) {
@@ -412,6 +420,11 @@ export async function createPaidShopifyOrder(intakeId: string) {
   if (!customisation) throw new Error("The saved customisation for this collection submission could not be found.");
   const form = customisation.form;
   const shopifyAddress = shopifyAddressForIntake(intake);
+  const shopifyVariantId = currentVariantIdForIntake(intake);
+  if (!shopifyVariantId) throw new Error("The selected plushie product is not available in Shopify. This order has not been created.");
+  if (shopifyVariantId !== intake.shopifyVariantId) {
+    await serviceClient().from(TABLE).update({ shopify_variant_id: shopifyVariantId, updated_at: new Date().toISOString() }).eq("id", intake.id);
+  }
   const lineItemProperties = [
     { name: "customisation_session_id", value: intake.customisationSessionId },
     { name: "Name", value: form.plushName },
@@ -455,7 +468,7 @@ export async function createPaidShopifyOrder(intakeId: string) {
       ],
       shippingAddress: shopifyAddress,
       billingAddress: shopifyAddress,
-      lineItems: [{ variantId: intake.shopifyVariantId, quantity: 1, requiresShipping: true, properties: lineItemProperties }],
+      lineItems: [{ variantId: shopifyVariantId, quantity: 1, requiresShipping: true, properties: lineItemProperties }],
       shippingLines: [{ title: intake.shippingRegion === "EAST" ? "East Malaysia delivery" : "Standard delivery", priceSet: { shopMoney: { amount: shippingCost, currencyCode: "MYR" } } }],
     },
     options: { sendReceipt: false, sendFulfillmentReceipt: false },
