@@ -3022,8 +3022,43 @@ export default function Home() {
     try { await upsertSharedOrders(changed); }
     catch (error) { setNotice(error instanceof Error ? error.message : "Packing-slip changes could not be saved."); return; }
     setOrders(nextOrders);
-    printView("print-packing");
-    setNotice(`${packingOrders.length} packing slip${packingOrders.length === 1 ? "" : "s"} sent to print. New orders moved to Uploading Audio.`);
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      setNotice("Allow pop-ups for this site, then press Print again to open the sharp PDF.");
+      return;
+    }
+    printWindow.document.title = "Preparing print PDF";
+    printWindow.document.body.textContent = "Preparing the high-quality packing and label PDF…";
+    try {
+      const response = await fetch("/api/packing-slips/pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orders: packingOrders.map((order) => ({
+          orderNumber: order.orderNumber,
+          setIndicator: order.setIndicator,
+          salesChannel: order.salesChannel,
+          character: order.character,
+          plushName: order.plushName,
+          customerName: order.customerName,
+          phone: order.phone,
+          remark: packingSlipRemark(order),
+          shippingLabelUrl: order.shippingLabelUrl,
+          source: fulfilmentSourceLabel(order, manualOrders),
+          isCod: isCodFulfilmentOrder(order, manualOrders),
+        })) }),
+      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.error || "Could not create the print PDF.");
+      }
+      const url = URL.createObjectURL(await response.blob());
+      printWindow.location.replace(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setNotice(`${packingOrders.length} packing slip${packingOrders.length === 1 ? "" : "s"} prepared as a sharp PDF. Use the PDF viewer's Print button. New orders moved to Uploading Audio.`);
+    } catch (error) {
+      printWindow.close();
+      setNotice(error instanceof Error ? error.message : "Could not create the print PDF.");
+    }
     await logActivity("Packing slips printed", `${packingOrders.length} packing slip${packingOrders.length === 1 ? "" : "s"} printed.`);
   }
 
