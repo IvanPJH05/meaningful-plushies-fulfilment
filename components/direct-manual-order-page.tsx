@@ -24,6 +24,8 @@ const states = [
   "Penang", "Perak", "Perlis", "Putrajaya", "Sabah", "Sarawak", "Selangor", "Terengganu",
 ];
 
+const eastMalaysiaStates = new Set(["Sabah", "Sarawak", "Labuan"]);
+
 const MAX_VOICE_BYTES = 200 * 1024 * 1024;
 
 function formatBirthDate(date: Date) {
@@ -75,7 +77,7 @@ const translations = {
     plushName: "Plushie's Name", plushNamePlaceholder: "Name your plushie", gender: "Plushie's Gender", male: "Male", female: "Female", birthDate: "Plushie's Birth Date", birthDatePlaceholder: "A meaningful date", birthPlace: "Plushie's Birth Place", birthPlacePlaceholder: "A meaningful place",
     favouritePerson: "Plushie's Favourite Person", favouritePersonPlaceholder: "A meaningful person", belongsTo: "Plushie Belongs To", belongsToPlaceholder: "The plushie's owner", meaningfulNote: "Meaningful Note", meaningfulNotePlaceholder: "A message for the plushie's owner",
     uploadVoice: "Your Voice Message", recordVoice: "RECORD VOICE", stopRecording: "STOP RECORDING", uploadAudio: "UPLOAD AUDIO", chooseAudio: "OPEN FILES", dragAudio: "Drag and drop your audio file here", playback: "Listen to your message", uploadHint: "Maximum 200 MB.", voiceReady: "Voice message ready:", recording: "Recording… tap Stop recording when you are done.", recordingNow: "RECORDING NOW", seconds: "seconds", recordingUnavailable: "Voice recording is not available in this browser. Please upload an audio file instead.", recordingError: "We could not start the voice recording. Please allow microphone access or upload an audio file.", shipping: "YOUR SHIPPING INFORMATION", fullName: "Full Name", fullNamePlaceholder: "Your full name", phone: "Phone Number", email: "Email", emailPlaceholder: "Your email address",
-    address: "Address", addressPlaceholder: "House number, street, area", addressLine2: "Address Line 2", optional: "Optional", addressLine2Placeholder: "Apartment, unit, etc.", city: "City", cityPlaceholder: "Your city", state: "State", postcode: "Postcode", postcodePlaceholder: "Your postcode", deliveryRegion: "Delivery Region", westMalaysia: "West Malaysia", eastMalaysia: "East Malaysia (+RM20 delivery)",
+    address: "Address", addressPlaceholder: "House number, street, area", addressLine2: "Address Line 2", optional: "Optional", addressLine2Placeholder: "Apartment, unit, etc.", city: "City", cityPlaceholder: "Your city", state: "State", postcode: "Postcode", postcodePlaceholder: "Your postcode", deliveryRegion: "Delivery Region", westMalaysia: "West Malaysia", eastMalaysia: "East Malaysia",
     saving: "SAVING YOUR DETAILS…", submit: "SAVE MY CUSTOMISATION", terms: "Terms and Policies", missingVoice: "Please record or choose a voice message for your plushie.", voiceTooLarge: "Your voice message must be 200 MB or smaller.", savingDetails: "Saving your details…", saved: "Your details are saved. Your reference is", openingWhatsApp: "Opening WhatsApp now…", sendWhatsApp: "Please send this reference to us on WhatsApp.", saveFailed: "Your details could not be saved.",
   },
   ms: {
@@ -83,7 +85,7 @@ const translations = {
     plushName: "Nama Plushie", plushNamePlaceholder: "Namakan plushie anda", gender: "Jantina Plushie", male: "Lelaki", female: "Perempuan", birthDate: "Tarikh Lahir Plushie", birthDatePlaceholder: "Tarikh yang bermakna", birthPlace: "Tempat Lahir Plushie", birthPlacePlaceholder: "Tempat yang bermakna",
     favouritePerson: "Orang Kegemaran Plushie", favouritePersonPlaceholder: "Orang yang bermakna", belongsTo: "Plushie Milik", belongsToPlaceholder: "Pemilik plushie", meaningfulNote: "Nota Bermakna", meaningfulNotePlaceholder: "Pesanan untuk pemilik plushie",
     uploadVoice: "Mesej Suara Anda", recordVoice: "RAKAM SUARA", stopRecording: "HENTIKAN RAKAMAN", uploadAudio: "MUAT NAIK AUDIO", chooseAudio: "BUKA FAIL", dragAudio: "Seret dan lepaskan fail audio anda di sini", playback: "Dengar mesej anda", uploadHint: "Maksimum 200 MB.", voiceReady: "Mesej suara sedia:", recording: "Sedang merakam… tekan Hentikan rakaman apabila selesai.", recordingNow: "SEDANG MERAKAM", seconds: "saat", recordingUnavailable: "Rakaman suara tidak tersedia dalam pelayar ini. Sila muat naik fail audio.", recordingError: "Rakaman suara tidak dapat dimulakan. Sila benarkan mikrofon atau muat naik fail audio.", shipping: "MAKLUMAT PENGHANTARAN ANDA", fullName: "Nama Penuh", fullNamePlaceholder: "Nama penuh anda", phone: "Nombor Telefon", email: "E-mel", emailPlaceholder: "Alamat e-mel anda",
-    address: "Alamat", addressPlaceholder: "Nombor rumah, jalan, kawasan", addressLine2: "Alamat Baris 2", optional: "Pilihan", addressLine2Placeholder: "Apartmen, unit dan lain-lain", city: "Bandar", cityPlaceholder: "Bandar anda", state: "Negeri", postcode: "Poskod", postcodePlaceholder: "Poskod anda", deliveryRegion: "Kawasan Penghantaran", westMalaysia: "Semenanjung Malaysia", eastMalaysia: "Malaysia Timur (+RM20 penghantaran)",
+    address: "Alamat", addressPlaceholder: "Nombor rumah, jalan, kawasan", addressLine2: "Alamat Baris 2", optional: "Pilihan", addressLine2Placeholder: "Apartmen, unit dan lain-lain", city: "Bandar", cityPlaceholder: "Bandar anda", state: "Negeri", postcode: "Poskod", postcodePlaceholder: "Poskod anda", deliveryRegion: "Kawasan Penghantaran", westMalaysia: "Semenanjung Malaysia", eastMalaysia: "Malaysia Timur",
     saving: "MENYIMPAN MAKLUMAT ANDA…", submit: "SIMPAN PENYESUAIAN SAYA", terms: "Terma dan Polisi", missingVoice: "Sila rakam atau pilih mesej suara untuk plushie anda.", voiceTooLarge: "Mesej suara anda mestilah 200 MB atau lebih kecil.", savingDetails: "Menyimpan maklumat anda…", saved: "Maklumat anda telah disimpan. Rujukan anda ialah", openingWhatsApp: "Membuka WhatsApp sekarang…", sendWhatsApp: "Sila hantar rujukan ini kepada kami melalui WhatsApp.", saveFailed: "Maklumat anda tidak dapat disimpan.",
   },
 } as const;
@@ -118,6 +120,7 @@ export function DirectManualOrderPage({
   const [draggingAudio, setDraggingAudio] = useState(false);
   const [voiceUrl, setVoiceUrl] = useState("");
   const [birthDate, setBirthDate] = useState("");
+  const [province, setProvince] = useState(states[0]);
   const [recording, setRecording] = useState(false);
   const [recordedSeconds, setRecordedSeconds] = useState(0);
   const [limitReached, setLimitReached] = useState(false);
@@ -127,6 +130,7 @@ export function DirectManualOrderPage({
   const stopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const copy = translations[language];
   const voiceSeconds = Number(lockedPlushie?.productKey.match(/\d+/)?.[0] || 20);
+  const shippingRegion = eastMalaysiaStates.has(province) ? "EAST" : "WEST";
 
   useEffect(() => {
     if (!voice) return setVoiceUrl("");
@@ -242,10 +246,10 @@ export function DirectManualOrderPage({
         phone: data.get("phone"),
         character: data.get("character"),
         productKey: data.get("productKey"),
-        shippingRegion: data.get("shippingRegion"),
+        shippingRegion,
         shippingAddress: {
           address1: data.get("address1"), address2: data.get("address2"), city: data.get("city"),
-          province: data.get("province"), zip: data.get("zip"), countryCode: "MY",
+          province, zip: data.get("zip"), countryCode: "MY",
         },
         form: {
           plushName: data.get("plushName"), gender: data.get("gender"), birthDate,
@@ -289,9 +293,9 @@ export function DirectManualOrderPage({
       <label>{copy.address}<input required name="address1" autoComplete="address-line1" placeholder={copy.addressPlaceholder} /></label>
       <label>{copy.addressLine2} <small>{copy.optional}</small><input name="address2" autoComplete="address-line2" placeholder={copy.addressLine2Placeholder} /></label>
       <label>{copy.city}<input required name="city" autoComplete="address-level2" placeholder={copy.cityPlaceholder} /></label>
-      <label>{copy.state}<select required name="province">{states.map((state) => <option key={state} value={state}>{state}</option>)}</select></label>
+      <label>{copy.state}<select required name="province" value={province} onChange={(event) => setProvince(event.target.value)}>{states.map((state) => <option key={state} value={state}>{state}</option>)}</select></label>
       <label>{copy.postcode}<input required name="zip" inputMode="numeric" autoComplete="postal-code" placeholder={copy.postcodePlaceholder} /></label>
-      <label>{copy.deliveryRegion}<select required name="shippingRegion"><option value="WEST">{copy.westMalaysia}</option><option value="EAST">{copy.eastMalaysia}</option></select></label>
+      <label>{copy.deliveryRegion}<input readOnly value={shippingRegion === "EAST" ? copy.eastMalaysia : copy.westMalaysia} /></label>
       <button className={styles.submit} type="submit" disabled={saving}>{saving ? copy.saving : copy.submit}</button>
       <p className={notice.includes("saved") ? styles.success : styles.notice} aria-live="polite">{notice}</p>
       <footer><Link href="/policies/terms-of-service">{copy.terms}</Link><span>© 2026 MEANINGFUL PLUSHIES</span></footer>
