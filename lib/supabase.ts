@@ -207,7 +207,36 @@ export async function syncFulfilmentSalesToMonthlyJournal(orders: Order[]) {
 
 export async function upsertSharedOrders(orders: Order[]) {
   if (!orders.length) return;
-  const rows = orders.map((order) => ({
+  const client = requireSupabase();
+  // The browser cache deliberately excludes inline files. When a cached order
+  // is later moved to another fulfilment stage, keep any server-side file
+  // instead of treating that lightweight cache entry as a file removal.
+  const ordersNeedingAssetProtection = orders.filter((order) => !order.tikTokFileDataUrl || !order.photoDataUrl || !order.meaningfulMessage);
+  const existingById = new Map<string, Order>();
+  if (ordersNeedingAssetProtection.length) {
+    const { data, error } = await client
+      .from("fulfilment_orders")
+      .select("id,data")
+      .in("id", ordersNeedingAssetProtection.map((order) => order.id));
+    if (error) throw error;
+    for (const row of data ?? []) {
+      if (row.data) existingById.set(String(row.id), row.data as Order);
+    }
+  }
+  const protectedOrders = orders.map((order) => {
+    const existing = existingById.get(order.id);
+    if (!existing) return order;
+    return {
+      ...order,
+      photoDataUrl: order.photoDataUrl || existing.photoDataUrl || "",
+      photoName: order.photoDataUrl ? order.photoName : (order.photoName || existing.photoName),
+      tikTokFileDataUrl: order.tikTokFileDataUrl || existing.tikTokFileDataUrl || "",
+      tikTokFileName: order.tikTokFileDataUrl ? order.tikTokFileName : (order.tikTokFileName || existing.tikTokFileName),
+      tikTokFileType: order.tikTokFileDataUrl ? order.tikTokFileType : (order.tikTokFileType || existing.tikTokFileType),
+      meaningfulMessage: order.meaningfulMessage || existing.meaningfulMessage || "",
+    };
+  });
+  const rows = protectedOrders.map((order) => ({
     id: order.id,
     order_number: order.orderNumber,
     status: order.status,
@@ -225,7 +254,6 @@ export async function upsertSharedOrders(orders: Order[]) {
   // uploaded files. Smaller writes keep large CSV imports below Postgres's
   // statement timeout while preserving the same upsert behaviour.
   const batchSize = 25;
-  const client = requireSupabase();
   for (let start = 0; start < rows.length; start += batchSize) {
     const { error } = await client
       .from("fulfilment_orders")
