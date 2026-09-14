@@ -3,6 +3,9 @@
 .packing-manual { padding: 19px; border-bottom: 1px solid var(--line); }
 .packing-manual h2, .preview-heading h2 { font-size: 16px; margin: 0; }
 .packing-manual p, .preview-heading p { font-size: 11px; color: #78869a; margin: 5px 0 0; }
+.shipping-label-import { padding: 16px 19px; border-bottom: 1px solid var(--line); display: grid; gap: 11px; }
+.shipping-label-import h3 { margin: 0; font-size: 13px; }
+.shipping-label-import p { margin: 4px 0 0; color: #78869a; font-size: 10px; line-height: 1.45; }
 .manual-entry { display: flex; gap: 8px; margin-top: 14px; }
 .manual-entry input { min-width: 0; flex: 1; height: 38px; border: 1px solid #d4dee9; border-radius: 7px; padding: 0 11px; }
 .packing-list-header { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(120px, 160px) auto; gap: 12px; align-items: center; padding: 12px 16px; background: #f8fafc; font-size: 11px; }
@@ -43,6 +46,9 @@
 .a6-slip .order-barcode.compact svg { height: clamp(22px, 2.25vw, 32px); }
 .a6-slip .order-barcode.compact span { font-size: clamp(5px, .55vw, 8px); }
 .a6-slip footer { margin-top: auto; text-align: center; border-top: 1px solid #111; padding-top: 4%; font-size: clamp(7px, .7vw, 9px); font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.shipping-label-page { background: white; border: 1px solid #cfd5dc; box-shadow: 0 5px 15px rgba(28,42,58,.1); padding: 10px; color: #111; }
+.shipping-label-preview-heading { font-size: 10px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 7px; }
+.shipping-label-page iframe { display: block; width: 100%; height: 640px; border: 0; background: white; }
 .preview-empty { height: 480px; display: grid; place-content: center; text-align: center; color: #768398; }
 .preview-empty strong { color: #425169; }
 .preview-empty p { font-size: 11px; }
@@ -61,6 +67,7 @@
 }
 
 @page packing-slip { size: A6 portrait; margin: 0; }
+@page shipping-label { margin: 0; }
 
 @media print {
   body.print-packing { width: 105mm; background: #fff; }
@@ -88,4 +95,8 @@
   body.print-packing .a6-slip .order-barcode.compact svg { height: 9mm; }
   body.print-packing .a6-slip .order-barcode.compact span { font-size: 6pt; }
   body.print-packing .a6-slip footer { font-size: 8pt; padding-top: 3mm; }
+  body.print-packing .shipping-label-page { page: shipping-label; width: 100%; height: auto; border: 0; box-shadow: none; padding: 0; break-after: page; page-break-after: always; }
+  body.print-packing .shipping-label-page:last-child { break-after: auto; page-break-after: auto; }
+  body.print-packing .shipping-label-preview-heading { display: none; }
+  body.print-packing .shipping-label-page iframe { width: 100%; height: 100vh; border: 0; }
 }

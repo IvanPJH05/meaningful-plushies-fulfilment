@@ -1465,6 +1465,8 @@ export default function Home() {
   const [statusFilter, setStatusFilter] = useState<"all" | OrderStatus>(() => choice(storedUi.statusFilter, "all", orderStatusFilterValues));
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [packingSelection, setPackingSelection] = useState<string[]>([]);
+  const [shippingLabelImporting, setShippingLabelImporting] = useState(false);
+  const [shippingLabelSummary, setShippingLabelSummary] = useState("");
   const [envelopeSelection, setEnvelopeSelection] = useState<string[]>([]);
   const [packingStatusFilter, setPackingStatusFilter] = useState<"all" | OrderStatus>(() => choice(storedUi.packingStatusFilter, "all", orderStatusFilterValues));
   const [envelopeStatusFilter, setEnvelopeStatusFilter] = useState<"all" | OrderStatus>(() => choice(storedUi.envelopeStatusFilter, "all", orderStatusFilterValues));
@@ -2948,6 +2950,49 @@ export default function Home() {
     const missing = requested.filter((number) => !orders.some((order) => order.orderNumber === number));
     setPackingSelection((current) => [...new Set([...current, ...found])]);
     setNotice(missing.length ? `Selected ${found.length} order(s). Not found: ${missing.map((id) => `#${id}`).join(", ")}.` : `Selected ${found.length} order(s) for printing.`);
+  }
+
+  async function importShippingLabels(file: File | null) {
+    if (!file) return;
+    setShippingLabelImporting(true);
+    setShippingLabelSummary("");
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const result = await fetch("/api/shipping-labels", { method: "POST", body }).then((response) => response.json());
+      if (!result.ok) throw new Error(result.error || "Could not import the shipping-label PDF.");
+      const changedAt = new Date().toISOString();
+      const changed: Order[] = [];
+      const unmatched: string[] = [];
+      for (const label of result.labels as Array<{ page: number; source: "jnt" | "tiktok" | null; reference: string; url: string; fileName: string }>) {
+        const matched = label.source === "jnt"
+          ? orders.find((order) => order.orderNumber === label.reference)
+          : label.source === "tiktok"
+            ? orders.find((order) => order.salesChannel === "tiktok" && order.orderNumber.replace(/\D/g, "").includes(label.reference))
+            : undefined;
+        if (!matched) {
+          unmatched.push(`page ${label.page}${label.reference ? ` (${label.reference})` : ""}`);
+          continue;
+        }
+        changed.push({ ...matched, shippingLabelUrl: label.url, shippingLabelFileName: label.fileName, shippingLabelSource: label.source === "tiktok" ? "tiktok" : "jnt", updatedAt: changedAt });
+      }
+      if (changed.length) {
+        await upsertSharedOrders(changed);
+        const changedById = new Map(changed.map((order) => [order.id, order]));
+        setOrders((current) => current.map((order) => changedById.get(order.id) ?? order));
+        setPackingSelection((current) => [...new Set([...current, ...changed.map((order) => order.id)])]);
+      }
+      const summary = `${changed.length} label${changed.length === 1 ? "" : "s"} paired.${unmatched.length ? ` Could not pair: ${unmatched.join(", ")}.` : ""}`;
+      setShippingLabelSummary(summary);
+      setNotice(summary);
+      if (changed.length) await logActivity("Shipping labels imported", `${changed.length} label${changed.length === 1 ? "" : "s"} paired with packing slips.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not import the shipping-label PDF.";
+      setShippingLabelSummary(message);
+      setNotice(message);
+    } finally {
+      setShippingLabelImporting(false);
+    }
   }
 
   async function printPackingSlips() {
@@ -5861,10 +5906,11 @@ export default function Home() {
       {view === "packing_slips" && <section className="packing-page">
         <div className="packing-controls card">
           <div className="packing-manual"><div><h2>Choose orders to print</h2><p>Enter order IDs separated by commas or spaces, or select orders from the list below.</p></div><div className="manual-entry"><input value={manualOrderIds} onChange={(event) => setManualOrderIds(event.target.value)} onKeyDown={(event) => event.key === "Enter" && selectManualOrders()} placeholder="Example: 1359, 1360, 1361" /><button className="button primary" onClick={selectManualOrders}>Add order IDs</button></div></div>
+          <div className="shipping-label-import"><div><h3>Import shipping-label PDF</h3><p>J&amp;T Shopify labels pair from the Remark order number; TikTok labels pair from the top-left Order ID.</p></div><FileDropZone accept="application/pdf,.pdf" title={shippingLabelImporting ? "Importing labels..." : "Drop label PDF or open files"} description={shippingLabelSummary || "Each paired label prints immediately after its packing slip."} onFile={(file) => void importShippingLabels(file)} className="compact-file-drop" /></div>
           <div className="packing-list-header"><div><strong>Available orders</strong><span>Order number, descending</span></div><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><select value={packingStatusFilter} onChange={(event) => setPackingStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><div className="packing-list-actions"><button onClick={() => setPackingSelection((current) => [...new Set([...current, ...packingAvailableOrders.map((order) => order.id)])])}>Select shown</button><button onClick={() => setPackingSelection([])}>Clear</button></div></div>
           <div className="packing-order-list">{packingAvailableOrders.map((order) => <label key={order.id}><input type="checkbox" checked={packingSelection.includes(order.id)} onChange={() => setPackingSelection((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><div><strong>{orderLabel(order)} | {order.plushName || "Unnamed plushie"}</strong><span>{order.customerName} | {order.character || "No character"}</span><OrderMarkers order={order} manualOrders={manualOrders} /></div><StatusPill status={order.status} /></label>)}</div>
         </div>
-        <div className="packing-preview"><div className="preview-heading"><div><h2>A6 print preview</h2><p>One packing slip will print on each A6 page.</p></div><span>{packingOrders.length} selected</span></div>{packingOrders.length ? <div className="slip-grid">{packingOrders.map((order) => <PackingSlip order={order} manualOrders={manualOrders} key={order.id} />)}</div> : <div className="preview-empty"><strong>No orders selected</strong><p>Enter order IDs or tick orders from the list.</p></div>}</div>
+        <div className="packing-preview"><div className="preview-heading"><div><h2>A6 print preview</h2><p>Each order prints as its packing slip followed by its paired shipping label.</p></div><span>{packingOrders.length} selected</span></div>{packingOrders.length ? <div className="slip-grid">{packingOrders.map((order) => <Fragment key={order.id}><PackingSlip order={order} manualOrders={manualOrders} />{order.shippingLabelUrl && <ShippingLabelPage order={order} />}</Fragment>)}</div> : <div className="preview-empty"><strong>No orders selected</strong><p>Enter order IDs or tick orders from the list.</p></div>}</div>
       </section>}
 
       {view === "print_envelope" && <section className="envelope-page">
@@ -9400,6 +9446,10 @@ function Editable({ label, value, onChange, disabled, placeholder, wide, textare
 
 function PackingSlip({ order, manualOrders }: { order: Order; manualOrders: ManualOrder[] }) {
   return <article className="a6-slip"><header><div className="slip-header-main"><div><span>ORDER ID</span><strong>{packingSlipOrderLabel(order)}</strong></div><div className="slip-order-markers"><OrderMarkers order={order} manualOrders={manualOrders} /></div></div></header><div className="slip-fields"><div className="primary-slip-field"><label>CHARACTER:</label><p>{order.character || "-"}</p></div><div className="primary-slip-field"><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{packingSlipRemark(order)}</p></div></div><OrderBarcode value={orderBarcodeValue(order)} compact /></article>;
+}
+
+function ShippingLabelPage({ order }: { order: Order }) {
+  return <article className="shipping-label-page"><div className="shipping-label-preview-heading">Shipping label for {orderLabel(order)}</div><iframe src={order.shippingLabelUrl} title={`Shipping label for order ${order.orderNumber}`} /></article>;
 }
 
 function EnvelopeSettingsPanel({ settings, onChange, onFontUpload, onReset }: { settings: EnvelopePrintSettings; onChange: (patch: Partial<EnvelopePrintSettings>) => void; onFontUpload: (file: File | null) => void; onReset: () => void }) {
