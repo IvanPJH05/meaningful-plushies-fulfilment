@@ -1259,7 +1259,7 @@ function OrderMarkers({ order, manualOrders }: { order: Order; manualOrders: Man
   return <>
     <span className={`source-badge ${source}`}>{fulfilmentSourceLabel(order, manualOrders)}</span>
     {unrecordedManualOrder && <span className="order-marker legacy-manual">Manual (legacy)</span>}
-    {isCodFulfilmentOrder(order, manualOrders) && <span className="order-marker cod">COD</span>}
+    {isCodFulfilmentOrder(order, manualOrders) && <span className="order-marker cod" title="Collect payment when this order is delivered">COD — COLLECT ON DELIVERY</span>}
     {isInfluencerFulfilmentOrder(order, creatorProfiles, freeCreatorSampleCodes) && <span className="order-marker influencer">Influencer</span>}
     {isExpressShipping(order) && <span className="shipping-badge">Express</span>}
   </>;
