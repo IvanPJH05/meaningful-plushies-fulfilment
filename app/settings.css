@@ -1219,9 +1219,11 @@ body.print-sales-report .report-table th,
   border: 2px solid #1d4f85;
   border-radius: 8px;
   color: #1d4f85;
+  cursor: pointer;
   display: flex;
   font-size: 12px;
   font-weight: 900;
+  font-family: inherit;
   justify-content: center;
   min-height: 38px;
   text-decoration: none;
