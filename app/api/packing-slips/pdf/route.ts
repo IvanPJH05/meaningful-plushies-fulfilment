@@ -33,7 +33,11 @@ const code39: Record<string, string> = {
 };
 
 function value(input: unknown) {
-  return typeof input === "string" ? input.trim() : "";
+  if (typeof input !== "string") return "";
+  // The built-in print font supports WinAnsi only. Keep the text readable
+  // (including names with accents) and omit decorative emoji such as a blue
+  // heart, rather than allowing one character to stop the whole batch.
+  return input.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^\x20-\x7E]/g, "").replace(/\s+/g, " ").trim();
 }
 
 function barcodeValue(order: PackingPdfOrder) {
