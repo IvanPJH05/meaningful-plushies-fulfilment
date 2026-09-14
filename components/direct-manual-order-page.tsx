@@ -26,6 +26,49 @@ const states = [
 
 const MAX_VOICE_BYTES = 200 * 1024 * 1024;
 
+function formatBirthDate(date: Date) {
+  return date.toLocaleDateString("en-GB");
+}
+
+function parseBirthDate(value: string) {
+  const [day, month, year] = value.split("/").map(Number);
+  return day && month && year ? new Date(year, month - 1, day) : new Date();
+}
+
+function titleCaseWords(value: string) {
+  return value.replace(/(^|[\s-])([a-z])/g, (_match, lead: string, letter: string) => `${lead}${letter.toUpperCase()}`);
+}
+
+function BirthDatePicker({ value, placeholder, onChange }: { value: string; placeholder: string; onChange: (value: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [shownMonth, setShownMonth] = useState(() => parseBirthDate(value));
+  const year = shownMonth.getFullYear();
+  const month = shownMonth.getMonth();
+  const firstWeekday = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const latestYear = new Date().getFullYear() + 1;
+
+  function setMonth(nextMonth: number, nextYear = year) {
+    setShownMonth(new Date(nextYear, nextMonth, 1));
+  }
+
+  return <div className={styles.datePicker}>
+    <button type="button" className={value ? styles.dateTriggerFilled : styles.dateTrigger} aria-haspopup="dialog" aria-expanded={open} onClick={() => { setShownMonth(parseBirthDate(value)); setOpen((current) => !current); }}>{value || placeholder}</button>
+    {open && <div className={styles.calendar} role="dialog" aria-label="Choose plushie's birth date">
+      <div className={styles.calendarHeader}>
+        <button type="button" aria-label="Previous month" onClick={() => setMonth(month === 0 ? 11 : month - 1, month === 0 ? year - 1 : year)}>‹</button>
+        <div><select aria-label="Month" value={month} onChange={(event) => setMonth(Number(event.target.value))}>{Array.from({ length: 12 }, (_, index) => <option key={index} value={index}>{new Date(year, index, 1).toLocaleDateString("en-GB", { month: "long" })}</option>)}</select><select aria-label="Year" value={year} onChange={(event) => setMonth(month, Number(event.target.value))}>{Array.from({ length: latestYear - 1900 + 1 }, (_, index) => latestYear - index).map((optionYear) => <option key={optionYear} value={optionYear}>{optionYear}</option>)}</select></div>
+        <button type="button" aria-label="Next month" onClick={() => setMonth(month === 11 ? 0 : month + 1, month === 11 ? year + 1 : year)}>›</button>
+      </div>
+      <div className={styles.calendarGrid}>{["S", "M", "T", "W", "T", "F", "S"].map((day, index) => <span key={`${day}-${index}`} className={styles.calendarWeekday}>{day}</span>)}{Array.from({ length: firstWeekday }, (_, index) => <span key={`blank-${index}`} />)}{Array.from({ length: daysInMonth }, (_, index) => {
+        const day = index + 1;
+        const selected = formatBirthDate(new Date(year, month, day)) === value;
+        return <button key={day} type="button" className={selected ? styles.calendarDaySelected : styles.calendarDay} onClick={() => { onChange(formatBirthDate(new Date(year, month, day))); setOpen(false); }}>{day}</button>;
+      })}</div>
+    </div>}
+  </div>;
+}
+
 const translations = {
   en: {
     title: "CUSTOMISE YOUR PLUSHIE", certificate: "YOUR PLUSHIE'S BIRTH CERTIFICATE", yourPlushie: "YOUR PLUSHIE", character: "Character", voiceLength: "Voice Length", secondsVoice: "seconds voice",
@@ -74,6 +117,7 @@ export function DirectManualOrderPage({
   const [voiceMode, setVoiceMode] = useState<"record" | "upload">("record");
   const [draggingAudio, setDraggingAudio] = useState(false);
   const [voiceUrl, setVoiceUrl] = useState("");
+  const [birthDate, setBirthDate] = useState("");
   const [recording, setRecording] = useState(false);
   const [recordedSeconds, setRecordedSeconds] = useState(0);
   const [limitReached, setLimitReached] = useState(false);
@@ -156,6 +200,10 @@ export function DirectManualOrderPage({
     event.preventDefault();
     const form = event.currentTarget;
     if (!form.reportValidity()) return;
+    if (!birthDate) {
+      setNotice(language === "ms" ? "Sila pilih tarikh lahir plushie." : "Please choose your plushie's birth date.");
+      return;
+    }
     const data = new FormData(form);
     if (!voice?.size) {
       setNotice(copy.missingVoice);
@@ -200,13 +248,14 @@ export function DirectManualOrderPage({
           province: data.get("province"), zip: data.get("zip"), countryCode: "MY",
         },
         form: {
-          plushName: data.get("plushName"), gender: data.get("gender"), birthDate: data.get("birthDate"),
+          plushName: data.get("plushName"), gender: data.get("gender"), birthDate,
           birthPlace: data.get("birthPlace"), favouritePerson: data.get("favouritePerson"),
           belongsTo: data.get("belongsTo"), meaningfulNote: data.get("meaningfulNote"),
         },
       }, collectionCode);
       form.reset();
       setVoice(null);
+      setBirthDate("");
       const reference = submitted.reference || "MP-REFERENCE";
       setNotice(submitted.whatsAppUrl ? `${copy.saved} ${reference}. ${copy.openingWhatsApp}` : `${copy.saved} ${reference}. ${copy.sendWhatsApp}`);
       if (submitted.whatsAppUrl) window.location.assign(submitted.whatsAppUrl);
@@ -224,12 +273,12 @@ export function DirectManualOrderPage({
       {orderSummaryVideo ? <video className={styles.orderSummaryVideo} autoPlay loop muted playsInline preload="metadata" aria-label="Order summary"><source src={orderSummaryVideo} type="video/mp4" /></video> : null}
       <h2>{copy.certificate}</h2>
       {lockedPlushie ? <div className={styles.lockedProduct}><span>{copy.yourPlushie}</span><strong>{lockedPlushie.character} · {lockedPlushie.productKey.replace("plushie_", "").replace("s", ` ${copy.secondsVoice}`)}</strong><input type="hidden" name="character" value={lockedPlushie.character} /><input type="hidden" name="productKey" value={lockedPlushie.productKey} /></div> : <><label>{copy.character}<select required name="character"><option value="Billy">Billy</option><option value="Tootsie">Tootsie</option><option value="Hunnie">Hunnie</option><option value="Dragon Warrior">Dragon Warrior</option></select></label><label>{copy.voiceLength}<select required name="productKey"><option value="plushie_5s">5 {copy.secondsVoice}</option><option value="plushie_10s">10 {copy.secondsVoice}</option><option value="plushie_20s">20 {copy.secondsVoice}</option></select></label></>}
-      <label>{copy.plushName}<input required name="plushName" maxLength={20} placeholder={copy.plushNamePlaceholder} /></label>
+      <label>{copy.plushName}<input required name="plushName" maxLength={20} autoCapitalize="characters" placeholder={copy.plushNamePlaceholder} onChange={(event) => { event.currentTarget.value = event.currentTarget.value.toUpperCase(); }} /></label>
       <label>{copy.gender}<select required name="gender"><option value="Male">{copy.male}</option><option value="Female">{copy.female}</option></select></label>
-      <label>{copy.birthDate}<input required name="birthDate" type="text" placeholder={copy.birthDatePlaceholder} /></label>
-      <label>{copy.birthPlace}<input required name="birthPlace" maxLength={50} placeholder={copy.birthPlacePlaceholder} /></label>
-      <label>{copy.favouritePerson}<input required name="favouritePerson" maxLength={50} placeholder={copy.favouritePersonPlaceholder} /></label>
-      <label>{copy.belongsTo}<input required name="belongsTo" maxLength={50} placeholder={copy.belongsToPlaceholder} /></label>
+      <label>{copy.birthDate}<BirthDatePicker value={birthDate} placeholder={copy.birthDatePlaceholder} onChange={setBirthDate} /></label>
+      <label>{copy.birthPlace}<input required name="birthPlace" maxLength={20} placeholder={copy.birthPlacePlaceholder} onBlur={(event) => { event.currentTarget.value = titleCaseWords(event.currentTarget.value); }} /></label>
+      <label>{copy.favouritePerson}<input required name="favouritePerson" maxLength={20} placeholder={copy.favouritePersonPlaceholder} onBlur={(event) => { event.currentTarget.value = titleCaseWords(event.currentTarget.value); }} /></label>
+      <label>{copy.belongsTo}<input required name="belongsTo" maxLength={20} placeholder={copy.belongsToPlaceholder} onBlur={(event) => { event.currentTarget.value = titleCaseWords(event.currentTarget.value); }} /></label>
       <label>{copy.meaningfulNote}<textarea required name="meaningfulNote" rows={4} placeholder={copy.meaningfulNotePlaceholder} /></label>
       <section className={styles.voiceSection} aria-label={copy.uploadVoice}><span>{copy.uploadVoice}</span><div className={styles.voiceModeButtons}><button className={voiceMode === "record" ? styles.voiceModeActive : styles.voiceModeButton} type="button" onClick={() => setVoiceMode("record")}>{copy.recordVoice}</button><button className={voiceMode === "upload" ? styles.voiceModeActive : styles.voiceModeButton} type="button" onClick={() => { if (recording) stopRecording(); setVoiceMode("upload"); }}>{copy.uploadAudio}</button></div>{voiceMode === "record" ? <div className={styles.voicePanel}><button className={recording ? styles.recordingButton : styles.recordButton} type="button" onClick={recording ? stopRecording : () => void startRecording()}>{recording ? <><span className={styles.recordingPulse} />{copy.stopRecording}</> : copy.recordVoice}</button>{recording || limitReached ? <div className={styles.recordingProgress}><div className={styles.recordingProgressTop}><span className={recording ? styles.recordingStatus : styles.recordingComplete}>{recording ? <><span className={styles.recordingDot} />{copy.recordingNow}</> : copy.recordingNow}</span><strong>{Math.floor(recordedSeconds)}/{voiceSeconds} {copy.seconds}</strong></div><div className={styles.progressTrack}><span className={limitReached ? styles.progressFull : styles.progressFill} style={{ width: `${Math.min(100, (recordedSeconds / voiceSeconds) * 100)}%` }} /></div></div> : null}</div> : <label className={draggingAudio ? styles.audioDropActive : styles.audioDropZone} onDragOver={(event) => { event.preventDefault(); setDraggingAudio(true); }} onDragLeave={() => setDraggingAudio(false)} onDrop={(event) => { event.preventDefault(); setDraggingAudio(false); selectVoice(event.dataTransfer.files?.[0]); }}><strong>{copy.chooseAudio}</strong><span>{copy.dragAudio}</span><input type="file" accept="audio/*" onChange={(event) => selectVoice(event.target.files?.[0])} /></label>}<small>{copy.uploadHint}</small>{voice ? <div className={styles.voicePreview}><p>{copy.voiceReady} {voice.name}</p><label>{copy.playback}<audio controls src={voiceUrl} /></label></div> : null}</section>
 
