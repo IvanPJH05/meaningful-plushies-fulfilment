@@ -369,6 +369,9 @@ export type Order = {
   tikTokFileDataUrl?: string;
   tikTokFileName?: string;
   tikTokFileType?: string;
+  shippingLabelUrl?: string;
+  shippingLabelFileName?: string;
+  shippingLabelSource?: "jnt" | "tiktok";
   statusHistory: StatusEvent[];
   importedAt: string;
   updatedAt: string;
