@@ -16,6 +16,13 @@ const code39: Record<string, string> = {
 };
 
 export function orderBarcodeValue(order: Order) {
+  // TikTok order labels also carry TikTok's long internal ID. The short TT
+  // number is the staff-facing order number and is enough to find the order,
+  // so keep its scanner label compact for reliable printing and scanning.
+  if (order.salesChannel === "tiktok") {
+    const tikTokNumber = order.orderNumber.toUpperCase().match(/\bTT\d+\b/);
+    if (tikTokNumber) return `MP-${tikTokNumber[0]}`;
+  }
   const safeOrderNumber = order.orderNumber.toUpperCase().replace(/[^A-Z0-9-]/g, "");
   return `MP-${safeOrderNumber || order.id.slice(0, 8).toUpperCase()}`;
 }
