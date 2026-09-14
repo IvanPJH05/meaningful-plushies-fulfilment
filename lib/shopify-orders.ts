@@ -31,6 +31,7 @@ const ORDER_SELECTION = `
     }
   }
   tags
+  customAttributes { key value }
   shippingAddress { name address1 address2 city province zip country phone }
   billingAddress { name address1 address2 city province zip country phone }
   shippingLine { title }

@@ -344,6 +344,7 @@ function shopifyLineVoice(lineName: string) {
 }
 
 function shopifyPaymentProcessor(order: Record<string, unknown>, isZeroCashOrder: boolean) {
+  if (shopifyIsCodOrder(order)) return "COD";
   const gateways = Array.isArray(order.payment_gateway_names)
     ? order.payment_gateway_names
     : Array.isArray(order.paymentGatewayNames)
@@ -378,6 +379,24 @@ function shopifyTags(order: Record<string, unknown>) {
   const tags = order.tags;
   if (Array.isArray(tags)) return tags.map((tag) => textValue(tag)).filter(Boolean);
   return textValue(tags).split(",").map((tag) => tag.trim()).filter(Boolean);
+}
+
+function shopifyCustomAttributes(order: Record<string, unknown>) {
+  const attributes = order.customAttributes ?? order.custom_attributes;
+  return arrayValue(attributes).map((attribute) => objectValue(attribute));
+}
+
+// Manual collection orders deliberately carry this status in more than one
+// Shopify field. Read every durable form so webhook, refresh, and CSV-shaped
+// API payloads all preserve COD in fulfilment even if a payment gateway is
+// blank or Shopify reports it as "Manual".
+function shopifyIsCodOrder(order: Record<string, unknown>) {
+  if (shopifyTags(order).some((tag) => /^cod$/i.test(tag.trim()))) return true;
+  if (shopifyCustomAttributes(order).some((attribute) =>
+    String(attribute.key ?? "").trim().toLowerCase() === "payment_type"
+      && /^(cod|cash\s*on\s*delivery)$/i.test(String(attribute.value ?? "").trim()),
+  )) return true;
+  return /\bcod\b|cash\s*on\s*delivery/i.test(String(order.note ?? ""));
 }
 
 function shopifyTrackingFromTags(order: Record<string, unknown>) {
