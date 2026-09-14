@@ -22,6 +22,7 @@ export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: strin
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState("");
   const [draggingReceiptFor, setDraggingReceiptFor] = useState("");
+  const [receiptPreview, setReceiptPreview] = useState<{ url: string; fileName: string } | null>(null);
 
   const request = useCallback(async (body?: Record<string, unknown>) => {
     const response = await fetch("/api/manual-order-intakes", { method: body ? "POST" : "GET", cache: "no-store", headers: { "Content-Type": "application/json", "x-dashboard-session": sessionToken }, body: body ? JSON.stringify(body) : undefined });
@@ -101,7 +102,7 @@ export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: strin
     const receipts = intake.paymentReceipts
       .map((receipt) => ({ ...receipt, url: receiptUrl(receipt.url) }))
       .filter((receipt) => Boolean(receipt.url));
-    return receipts.map((receipt, index) => <a className="manual-order-receipt-view" href={receipt.url} key={`${receipt.url}-${index}`} target="_blank" rel="noreferrer">{receipts.length === 1 ? "VIEW RECEIPT" : `VIEW RECEIPT ${index + 1}`}</a>);
+    return receipts.map((receipt, index) => <button className="manual-order-receipt-view" type="button" onClick={() => setReceiptPreview({ url: receipt.url, fileName: receipt.fileName })} key={`${receipt.url}-${index}`}>{receipts.length === 1 ? "VIEW RECEIPT" : `VIEW RECEIPT ${index + 1}`}</button>);
   }
 
   function submissionRows(rows: ManualOrderIntake[], emptyText: string) {
@@ -118,5 +119,6 @@ export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: strin
     {notice && <p className="inline-notice">{notice}</p>}
     <section className="manual-order-list-section"><div className="manual-order-list-heading"><h4>Awaiting approval</h4><span>{awaitingApproval.length}</span></div><div className="table-scroll"><table className="orders-table manual-orders-records-table">{tableHead}<tbody>{submissionRows(awaitingApproval, "No orders are waiting for payment approval.")}</tbody></table></div></section>
     <section className="manual-order-list-section"><div className="manual-order-list-heading"><h4>Paid orders</h4><span>{paidOrders.length}</span></div><div className="table-scroll"><table className="orders-table manual-orders-records-table">{tableHead}<tbody>{submissionRows(paidOrders, "No paid collection orders yet.")}</tbody></table></div></section>
+    {receiptPreview && <div className="document-preview-backdrop" role="dialog" aria-modal="true" aria-label="Payment receipt" onClick={() => setReceiptPreview(null)}><section className="document-preview-modal" onClick={(event) => event.stopPropagation()}><header><div><p>PAYMENT RECEIPT</p><h2>{receiptPreview.fileName || "Receipt"}</h2></div><button className="button secondary" type="button" onClick={() => setReceiptPreview(null)}>Close</button></header>{/\.pdf(?:$|\?)/i.test(receiptPreview.fileName || receiptPreview.url) ? <iframe className="document-preview-frame" src={receiptPreview.url} title={receiptPreview.fileName || "Payment receipt"} /> : <img className="document-preview-image" src={receiptPreview.url} alt={receiptPreview.fileName || "Payment receipt"} />}</section></div>}
   </section>;
 }
