@@ -59,7 +59,17 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, certificateId, accessKey, ...payload }),
     });
-    const data = await response.json() as { error?: string; state?: CloserState };
+    // An app-proxy outage or storefront error can return an HTML page. Parse
+    // defensively so customers see a useful retry message, never raw JSON
+    // parsing text such as "Unexpected token '<'".
+    const raw = await response.text();
+    let data: { error?: string; state?: CloserState } = {};
+    try { data = JSON.parse(raw) as { error?: string; state?: CloserState }; }
+    catch {
+      throw new Error(response.ok
+        ? "Closer returned an unexpected response. Please refresh and try again."
+        : "We could not reach Closer just now. Please refresh and try again.");
+    }
     if (!response.ok) throw new Error(data.error || "We could not update your shared space.");
     return data;
   }, [accessKey, apiPath, certificateId]);
