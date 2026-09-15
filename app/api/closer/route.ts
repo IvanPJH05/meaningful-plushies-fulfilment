@@ -4,6 +4,7 @@ import {
   CloserError,
   acceptCloserConnection,
   authenticateCloserAccess,
+  cancelCloserConnectionRequest,
   closerState,
   rejectCloserConnection,
   requestCloserConnection,
@@ -50,6 +51,10 @@ export async function POST(request: NextRequest) {
     }
     if (action === "reject") {
       await rejectCloserConnection(certificate.certificateId, body.requestId);
+      return NextResponse.json({ ok: true, state: await closerState(certificate.certificateId) });
+    }
+    if (action === "cancel_request") {
+      await cancelCloserConnectionRequest(certificate.certificateId, body.requestId);
       return NextResponse.json({ ok: true, state: await closerState(certificate.certificateId) });
     }
     if (action === "accept") {
