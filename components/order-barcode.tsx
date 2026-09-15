@@ -18,7 +18,8 @@ const code39: Record<string, string> = {
 export function OrderBarcode({ value, compact = false }: { value: string; compact?: boolean }) {
   const encoded = `*${value.toUpperCase().replace(/[^A-Z0-9 .\-$/+%]/g, "")}*`;
   const modules: Array<{ x: number; width: number }> = [];
-  let x = 8;
+  // Preserve the empty quiet zone required by Code 39 readers on both sides.
+  let x = 12;
   for (const character of encoded) {
     const pattern = code39[character] ?? code39["-"];
     for (let index = 0; index < pattern.length; index += 1) {
@@ -30,7 +31,7 @@ export function OrderBarcode({ value, compact = false }: { value: string; compac
   }
   const height = compact ? 30 : 54;
   return <div className={compact ? "order-barcode compact" : "order-barcode"} aria-label={`Barcode ${value}`}>
-    <svg viewBox={`0 0 ${x + 8} ${height}`} role="img" preserveAspectRatio="none">
+    <svg viewBox={`0 0 ${x + 12} ${height}`} role="img" preserveAspectRatio="none">
       <rect width="100%" height="100%" fill="#fff" />
       {modules.map((bar, index) => <rect key={index} x={bar.x} y="0" width={bar.width} height={height} fill="#111" />)}
     </svg>
