@@ -67,8 +67,12 @@ function fitLines(text: string, maxWidth: number, font: { widthOfTextAtSize: (te
 function drawBarcode(page: PDFPage, text: string, x: number, y: number, width: number, height: number) {
   const encoded = `*${text.toUpperCase().replace(/[^A-Z0-9 .\-$/+%]/g, "")}*`;
   const units = [...encoded].reduce((total, character) => total + [...(code39[character] ?? code39["-"])].reduce((sum, unit) => sum + (unit === "w" ? 3 : 1), 0) + 1, 0);
-  const scale = width / units;
-  let cursor = x;
+  // Code 39 requires empty "quiet zones" before and after the bars. Without
+  // them, scanners can miss a barcode printed close to another line. Keep ten
+  // narrow modules on each side while retaining the requested half-page block.
+  const quietZoneUnits = 10;
+  const scale = width / (units + quietZoneUnits * 2);
+  let cursor = x + quietZoneUnits * scale;
   for (const character of encoded) {
     const pattern = code39[character] ?? code39["-"];
     for (let index = 0; index < pattern.length; index += 1) {
@@ -133,10 +137,15 @@ function drawPackingSlip(page: PDFPage, order: PackingPdfOrder, regular: PDFFont
   }
 
   const barcode = orderBarcodeValue(order);
-  const barcodeHeight = 9 * MM;
-  drawBarcode(page, barcode, margin, margin + 10, right - margin, barcodeHeight);
-  const barcodeWidth = bold.widthOfTextAtSize(barcode, 7);
-  drawText(barcode, (A6_WIDTH - barcodeWidth) / 2, margin + 2, 7, true);
+  // A centered half-page barcode leaves a generous blank area on both sides
+  // and makes the bars taller, so it is much easier for the packing scanner
+  // to read on a thermal printer.
+  const barcodeWidth = A6_WIDTH / 2;
+  const barcodeHeight = 14 * MM;
+  const barcodeX = (A6_WIDTH - barcodeWidth) / 2;
+  drawBarcode(page, barcode, barcodeX, margin + 10, barcodeWidth, barcodeHeight);
+  const barcodeTextWidth = bold.widthOfTextAtSize(barcode, 8);
+  drawText(barcode, (A6_WIDTH - barcodeTextWidth) / 2, margin + 2, 8, true);
 }
 
 async function labelBytes(url: string, origin: string) {
