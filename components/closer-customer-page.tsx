@@ -33,8 +33,11 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
   const certificateId = useMemo(() => isDemo ? "102331" : params.get("certificate") || params.get("id") || "", [isDemo, params]);
   const accessKey = useMemo(() => isDemo ? "demo" : params.get("key") || "", [isDemo, params]);
   const adminPreview = useMemo(() => isDemo ? "" : params.get("adminPreview") || "", [isDemo, params]);
-  const apiPath = proxyPath ? `${proxyPath}/api` : "/api/closer";
   const backupApiPath = "https://meaningful-plushies-fulfilment.vercel.app/api/closer";
+  // Keep the storefront URL through Shopify's app proxy, but use the app host
+  // for API calls. The proxy can intermittently replace a POST response with
+  // an HTML gateway page, which leaves one of the paired phones out of sync.
+  const apiPath = proxyPath ? backupApiPath : "/api/closer";
   const mediaPath = proxyPath ? `${proxyPath}/media` : "/api/closer/media";
   const themePath = proxyPath ? `${proxyPath}/theme` : "/api/closer/theme";
   const [state, setState] = useState<CloserState | null>(null);
@@ -76,15 +79,8 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
       if (!response.ok) throw new Error(data.error || "We could not update your shared space.");
       return data;
     };
-    try {
-      return await send(apiPath, "application/json");
-    } catch (caught) {
-      // Only retry reads. Retrying a mutation could submit a request or accept
-      // a pairing twice if the proxy lost the response after completing it.
-      if (action !== "state" || !proxyPath) throw caught;
-      return send(backupApiPath, "text/plain");
-    }
-  }, [accessKey, adminPreview, apiPath, backupApiPath, certificateId, proxyPath]);
+    return send(apiPath, proxyPath ? "text/plain" : "application/json");
+  }, [accessKey, adminPreview, apiPath, certificateId, proxyPath]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
