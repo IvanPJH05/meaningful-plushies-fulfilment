@@ -41,7 +41,6 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
   const [error, setError] = useState("");
   const [showRequest, setShowRequest] = useState(false);
   const [showAccept, setShowAccept] = useState(false);
-  const [showTutorial, setShowTutorial] = useState(false);
   const [language, setLanguage] = useState<"en" | "ms">("en");
   const [name, setName] = useState("");
   const [partnerCertificateId, setPartnerCertificateId] = useState("");
@@ -250,11 +249,15 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
   if (!state) return null;
 
   return <main className={styles.page} style={themedStyle}>
-    <header className={styles.header}><div className={styles.languageSwitch}><button className={language === "en" ? styles.selectedLanguage : ""} onClick={() => setLanguage("en")}>English</button><button className={language === "ms" ? styles.selectedLanguage : ""} onClick={() => setLanguage("ms")}>Malay</button></div></header>
+    <header className={styles.header}>
+      <div className={styles.logo} aria-label="Meaningful Plushies"><span>MEANINGFUL</span><em>Plushies</em></div>
+      <div className={styles.languageSwitch}><button className={language === "en" ? styles.selectedLanguage : ""} onClick={() => setLanguage("en")}>English</button><button className={language === "ms" ? styles.selectedLanguage : ""} onClick={() => setLanguage("ms")}>Malay</button></div>
+    </header>
     {isDemo && <p className={styles.demoNotice}>Demo preview · No customer data is connected.</p>}
     {error && <p className={styles.error}>{error}</p>}
 
     {state.status === "unlinked" ? <section className={styles.unlinkedSpace}>
+      <div className={styles.blankPanel} aria-hidden="true" />
       <div className={styles.idPill}>ID: {certificateId}</div>
       {state.request ? <>
         <section className={styles.card}>
@@ -267,16 +270,7 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
         <h1>Waiting for your partner to accept.</h1>
         <p>Your request was sent to Snowy ID {state.outgoingRequest.partnerCertificateId}. Ask your partner to scan their NFC tag and accept the connection.</p>
       </section> : <>
-        <section className={styles.tutorialCard}>
-          <h1>Video tutorial on how it works</h1>
-          <button className={styles.playButton} onClick={() => setShowTutorial(true)} aria-label="See how pairing works"><span /></button>
-          {showTutorial && <div className={styles.tutorialSteps} role="dialog" aria-modal="true" aria-label="How Closer works">
-            <strong>How Closer works</strong>
-            <ol><li>Scan your Snowy’s NFC tag.</li><li>Enter your partner’s plushie ID and your nickname.</li><li>They accept the request from their tag.</li><li>Take turns sharing a photo and leave voice messages.</li></ol>
-            <button className={styles.textButton} onClick={() => setShowTutorial(false)}>Close</button>
-          </div>}
-        </section>
-          {!showRequest ? <button className={styles.primaryButton} onClick={() => setShowRequest(true)}>Pair Snowy</button> : <section className={styles.card}><button type="button" className={styles.closeButton} onClick={() => setShowRequest(false)} aria-label="Close">×</button><p className={styles.eyebrow}>Your nickname</p><form className={styles.form} onSubmit={submitRequest}><label><input value={name} maxLength={60} onChange={(event) => setName(event.target.value)} placeholder="Your nickname" required /></label><label>Your partner’s ID<input value={partnerCertificateId} maxLength={100} onChange={(event) => setPartnerCertificateId(event.target.value)} placeholder="For example: 124" required /></label><button className={styles.primaryButton} disabled={busy}>{busy ? "Sending…" : "Pair now"}</button></form></section>}
+        {!showRequest ? <button className={styles.primaryButton} onClick={() => setShowRequest(true)}>Pair Snowy</button> : <section className={styles.card} role="dialog" aria-modal="true" aria-label="Pair your plushie"><button type="button" className={styles.closeButton} onClick={() => setShowRequest(false)} aria-label="Close">×</button><p className={styles.eyebrow}>Your nickname</p><form className={styles.form} onSubmit={submitRequest}><label><input value={name} maxLength={60} onChange={(event) => setName(event.target.value)} placeholder="Your nickname" required /></label><label>Your partner’s ID<input value={partnerCertificateId} maxLength={100} onChange={(event) => setPartnerCertificateId(event.target.value)} placeholder="For example: 124" required /></label><button className={styles.primaryButton} disabled={busy}>{busy ? "Sending…" : "Pair now"}</button></form></section>}
       </>}
     </section> : <section className={styles.sharedSpace}>
       <div className={styles.namesPill}>“{state.connection.names[0]}” + “{state.connection.names[1]}”</div>
