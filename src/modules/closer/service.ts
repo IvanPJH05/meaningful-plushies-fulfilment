@@ -104,7 +104,7 @@ export async function closerTheme() {
 export async function loadCloserAdminDashboard() {
   const [certificatesResult, connectionsResult, activityResult, settingsResult] = await Promise.all([
     database().from("closer_app_certificates").select("certificate_id,connection_id,created_at").order("created_at", { ascending: false }).limit(100).returns<AdminCertificate[]>(),
-    database().from("closer_app_connections").select("id,first_certificate_id,second_certificate_id,first_name,second_name").order("updated_at", { ascending: false }).limit(100).returns<Array<Pick<Connection, "id" | "first_certificate_id" | "second_certificate_id" | "first_name" | "second_name">>>(),
+    database().from("closer_app_connections").select("id,first_certificate_id,second_certificate_id,first_name,second_name,photo_path,voice_path,created_at,updated_at").order("updated_at", { ascending: false }).limit(100).returns<Array<Pick<Connection, "id" | "first_certificate_id" | "second_certificate_id" | "first_name" | "second_name" | "photo_path" | "voice_path" | "created_at" | "updated_at">>>(),
     database().from("closer_app_activity").select("id,action,actor_certificate_id,created_at").order("created_at", { ascending: false }).limit(100).returns<AdminActivity[]>(),
     database().from("closer_app_settings").select("theme").eq("id", "default").maybeSingle<{ theme: unknown }>(),
   ]);
@@ -127,6 +127,45 @@ export async function createCloserCertificate(certificateId: string, accessKey: 
     access_key_hash: hashCloserAccessKey(accessKey),
   });
   throwDatabaseError(error);
+}
+
+export async function rotateCloserCertificateAccessKey(certificateIdValue: unknown, accessKey: string) {
+  const certificateId = cleanText(certificateIdValue, "Certificate ID", 100);
+  const certificate = await certificateById(certificateId);
+  if (!certificate) throw new CloserError("That certificate ID was not found.", 404);
+  const { error } = await database().from("closer_app_certificates").update({ access_key_hash: hashCloserAccessKey(accessKey) }).eq("certificate_id", certificateId);
+  throwDatabaseError(error);
+}
+
+export async function deleteCloserCertificate(certificateIdValue: unknown) {
+  const certificateId = cleanText(certificateIdValue, "Certificate ID", 100);
+  const certificate = await certificateById(certificateId);
+  if (!certificate) throw new CloserError("That certificate ID was not found.", 404);
+  if (await connectionForCertificate(certificate)) throw new CloserError("Unlink this pair before deleting either certificate.", 409);
+  const { error: requestsError } = await database().from("closer_app_pairing_requests").update({ status: "CANCELLED" }).or(`from_certificate_id.eq.${certificateId},to_certificate_id.eq.${certificateId}`).eq("status", "PENDING");
+  throwDatabaseError(requestsError);
+  const { error } = await database().from("closer_app_certificates").delete().eq("certificate_id", certificateId);
+  throwDatabaseError(error);
+}
+
+export async function updateCloserConnectionNames(connectionIdValue: unknown, firstNameValue: unknown, secondNameValue: unknown) {
+  const connectionId = cleanText(connectionIdValue, "Connection", 100);
+  const firstName = cleanText(firstNameValue, "First plushie's name");
+  const secondName = cleanText(secondNameValue, "Second plushie's name");
+  const { data, error } = await database().from("closer_app_connections").update({ first_name: firstName, second_name: secondName }).eq("id", connectionId).select("id");
+  throwDatabaseError(error);
+  if (!data?.length) throw new CloserError("That active pair was not found.", 404);
+}
+
+export async function clearCloserConnectionMedia(connectionIdValue: unknown, type: unknown) {
+  const connectionId = cleanText(connectionIdValue, "Connection", 100);
+  if (type !== "photo" && type !== "voice") throw new CloserError("That media type is not supported.");
+  const connection = await connectionById(connectionId);
+  if (!connection) throw new CloserError("That active pair was not found.", 404);
+  const patch = type === "photo" ? { photo_path: null, photo_content_type: null } : { voice_path: null, voice_content_type: null };
+  const { error } = await database().from("closer_app_connections").update(patch).eq("id", connectionId);
+  throwDatabaseError(error);
+  return { mediaPaths: [type === "photo" ? connection.photo_path : connection.voice_path] };
 }
 
 export async function saveCloserTheme(theme: Record<string, unknown>) {
