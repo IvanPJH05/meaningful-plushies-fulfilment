@@ -1,7 +1,6 @@
 "use client";
 
 import { ChangeEvent, CSSProperties, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
 import styles from "./closer-customer-page.module.css";
@@ -251,7 +250,7 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
   if (!state) return null;
 
   return <main className={styles.page} style={themedStyle}>
-    <header className={styles.header}><Link href="/" className={styles.brand} aria-label="Meaningful Plushies home"><img src="/closer/meaningful-plushies-logo.png" alt="Meaningful Plushies" /></Link><div className={styles.languageSwitch}><button className={language === "en" ? styles.selectedLanguage : ""} onClick={() => setLanguage("en")}>English</button><button className={language === "ms" ? styles.selectedLanguage : ""} onClick={() => setLanguage("ms")}>Malay</button></div></header>
+    <header className={styles.header}><div className={styles.languageSwitch}><button className={language === "en" ? styles.selectedLanguage : ""} onClick={() => setLanguage("en")}>English</button><button className={language === "ms" ? styles.selectedLanguage : ""} onClick={() => setLanguage("ms")}>Malay</button></div></header>
     {isDemo && <p className={styles.demoNotice}>Demo preview · No customer data is connected.</p>}
     {error && <p className={styles.error}>{error}</p>}
 
