@@ -3034,6 +3034,7 @@ export default function Home() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orders: packingOrders.map((order) => ({
+          id: order.id,
           orderNumber: order.orderNumber,
           setIndicator: order.setIndicator,
           salesChannel: order.salesChannel,
