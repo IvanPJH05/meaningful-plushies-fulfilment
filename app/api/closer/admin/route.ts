@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 
-import { clearCloserConnectionMedia, createCloserCertificate, deleteCloserCertificate, loadCloserAdminDashboard, rotateCloserCertificateAccessKey, saveCloserTheme, unlinkCloserConnection, updateCloserConnectionNames } from "@/src/modules/closer/service";
+import { clearCloserConnectionMedia, createCloserAdminPreviewToken, createCloserCertificate, deleteCloserCertificate, loadCloserAdminDashboard, rotateCloserCertificateAccessKey, saveCloserTheme, unlinkCloserConnection, updateCloserConnectionNames } from "@/src/modules/closer/service";
 import { deleteCloserMedia } from "@/src/modules/closer/media-storage";
 import { prisma } from "@/src/infrastructure/database/prisma";
 
@@ -54,6 +54,10 @@ export async function POST(request: NextRequest) {
       const accessKey = randomBytes(24).toString("base64url");
       await rotateCloserCertificateAccessKey(certificateId, accessKey);
       return NextResponse.json({ ok: true, certificate: { certificateId, accessKey } });
+    }
+    if (body.action === "create_admin_preview") {
+      const certificateId = typeof body.certificateId === "string" ? body.certificateId.trim() : "";
+      return NextResponse.json({ ok: true, certificateId, previewToken: createCloserAdminPreviewToken(certificateId) });
     }
     if (body.action === "delete_certificate") {
       await deleteCloserCertificate(body.certificateId);

@@ -32,6 +32,7 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
   const isDemo = demoMode === "pairing" || demoMode === "shared";
   const certificateId = useMemo(() => isDemo ? "102331" : params.get("certificate") || params.get("id") || "", [isDemo, params]);
   const accessKey = useMemo(() => isDemo ? "demo" : params.get("key") || "", [isDemo, params]);
+  const adminPreview = useMemo(() => isDemo ? "" : params.get("adminPreview") || "", [isDemo, params]);
   const apiPath = proxyPath ? `${proxyPath}/api` : "/api/closer";
   const mediaPath = proxyPath ? `${proxyPath}/media` : "/api/closer/media";
   const themePath = proxyPath ? `${proxyPath}/theme` : "/api/closer/theme";
@@ -53,11 +54,11 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
   const galleryPhotoInput = useRef<HTMLInputElement | null>(null);
 
   const call = useCallback(async (action: string, payload: Record<string, unknown> = {}) => {
-    if (!certificateId || !accessKey) throw new Error("This NFC link is incomplete. Please scan the tag again.");
+    if (!certificateId || (!accessKey && !adminPreview)) throw new Error("This NFC link is incomplete. Please scan the tag again.");
     const response = await fetch(apiPath, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, certificateId, accessKey, ...payload }),
+      body: JSON.stringify({ action, certificateId, accessKey, adminPreview, ...payload }),
     });
     // An app-proxy outage or storefront error can return an HTML page. Parse
     // defensively so customers see a useful retry message, never raw JSON
@@ -72,7 +73,7 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
     }
     if (!response.ok) throw new Error(data.error || "We could not update your shared space.");
     return data;
-  }, [accessKey, apiPath, certificateId]);
+  }, [accessKey, adminPreview, apiPath, certificateId]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -180,7 +181,7 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
     }
   }
 
-  const mediaUrl = (type: "photo" | "voice") => `${mediaPath}?certificate=${encodeURIComponent(certificateId)}&key=${encodeURIComponent(accessKey)}&type=${type}&v=${mediaVersion}`;
+  const mediaUrl = (type: "photo" | "voice") => `${mediaPath}?certificate=${encodeURIComponent(certificateId)}&key=${encodeURIComponent(accessKey)}&adminPreview=${encodeURIComponent(adminPreview)}&type=${type}&v=${mediaVersion}`;
 
   async function sendMedia(mediaType: "photo" | "voice", data: string) {
     setBusy(true);

@@ -1,4 +1,4 @@
-import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
@@ -76,6 +76,34 @@ async function logActivity(connectionId: string, actorCertificateId: string, act
 
 export function hashCloserAccessKey(accessKey: string) { return createHash("sha256").update(accessKey).digest("hex"); }
 
+function previewSigningKey() {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+  if (!key) throw new Error("Closer data is not configured.");
+  return key;
+}
+
+export function createCloserAdminPreviewToken(certificateIdValue: unknown) {
+  const certificateId = cleanText(certificateIdValue, "Certificate ID", 100);
+  const payload = Buffer.from(JSON.stringify({ certificateId, expiresAt: Date.now() + 15 * 60_000 }), "utf8").toString("base64url");
+  const signature = createHmac("sha256", previewSigningKey()).update(payload).digest("base64url");
+  return `${payload}.${signature}`;
+}
+
+function previewCertificateId(tokenValue: unknown) {
+  if (typeof tokenValue !== "string") return null;
+  const [payload, signature] = tokenValue.split(".");
+  if (!payload || !signature) return null;
+  const expected = createHmac("sha256", previewSigningKey()).update(payload).digest("base64url");
+  const suppliedBytes = Buffer.from(signature, "utf8");
+  const expectedBytes = Buffer.from(expected, "utf8");
+  if (suppliedBytes.length !== expectedBytes.length || !timingSafeEqual(suppliedBytes, expectedBytes)) return null;
+  try {
+    const decoded = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as { certificateId?: unknown; expiresAt?: unknown };
+    if (typeof decoded.expiresAt !== "number" || decoded.expiresAt < Date.now()) return null;
+    return cleanText(decoded.certificateId, "Certificate ID", 100);
+  } catch { return null; }
+}
+
 export async function authenticateCloserCertificate(certificateId: unknown, accessKey: unknown) {
   const cleanCertificateId = cleanText(certificateId, "Certificate ID", 100);
   if (typeof accessKey !== "string" || !accessKey) throw new CloserError("This certificate link is not valid.", 401);
@@ -127,6 +155,18 @@ export async function createCloserCertificate(certificateId: string, accessKey: 
     access_key_hash: hashCloserAccessKey(accessKey),
   });
   throwDatabaseError(error);
+}
+
+export async function authenticateCloserAccess(certificateIdValue: unknown, accessKey: unknown, previewToken: unknown) {
+  const certificateId = cleanText(certificateIdValue, "Certificate ID", 100);
+  if (previewToken) {
+    const previewId = previewCertificateId(previewToken);
+    if (!previewId || previewId !== certificateId) throw new CloserError("This admin preview link has expired. Create a new preview from Closer controls.", 401);
+    const certificate = await certificateById(certificateId);
+    if (!certificate) throw new CloserError("We could not find this certificate.", 404);
+    return { ...certificate, certificateId: certificate.certificate_id, connectionId: certificate.connection_id };
+  }
+  return authenticateCloserCertificate(certificateId, accessKey);
 }
 
 export async function rotateCloserCertificateAccessKey(certificateIdValue: unknown, accessKey: string) {
