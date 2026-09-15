@@ -19,7 +19,10 @@ const maxMediaBytes = 3 * 1024 * 1024;
 function decodeMedia(value: unknown, type: unknown) {
   if (type !== "photo" && type !== "voice") throw new CloserError("That media type is not supported.");
   if (typeof value !== "string") throw new CloserError("Choose a photo or record a voice note first.");
-  const match = /^data:([^;]+);base64,([A-Za-z0-9+/=]+)$/.exec(value);
+  // MediaRecorder commonly includes a codec parameter (for example,
+  // "audio/webm;codecs=opus") in its data URL. Keep the base MIME type for
+  // validation and storage while accepting that standard browser output.
+  const match = /^data:([^;,]+)(?:;[^,]+)*;base64,([A-Za-z0-9+/=]+)$/.exec(value);
   if (!match) throw new CloserError("Choose a supported image or audio file.");
   const contentType = match[1].toLowerCase();
   const allowed = type === "photo" ? ["image/jpeg", "image/png", "image/webp"] : ["audio/webm", "audio/mp4", "audio/mpeg", "audio/ogg"];
