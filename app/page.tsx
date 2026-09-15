@@ -1157,7 +1157,7 @@ function orderLabel(order: Order) {
 function tikTokShortOrderLabel(order: Order) {
   const match = order.orderNumber.match(/\b(TT\d+)\b\s+(\d+)/i);
   if (!match) return orderLabel(order);
-  return `#${match[1].toUpperCase()} ${match[2].slice(-4)}`;
+  return `${match[1].toUpperCase()} ${match[2].slice(-4)}`;
 }
 
 function packingSlipOrderLabel(order: Order) {
@@ -1241,6 +1241,14 @@ function isCodFulfilmentOrder(order: Order, manualOrders: ManualOrder[]) {
   return Boolean(manualOrderForFulfilmentOrder(order, manualOrders)?.isCod)
     || /\bcod\b|cash\s*on\s*delivery/.test(payment)
     || /\bcod\b|cash\s*on\s*delivery/.test(order.remark || "");
+}
+
+function codCollectionAmount(order: Order, manualOrders: ManualOrder[]) {
+  const manualOrder = manualOrderForFulfilmentOrder(order, manualOrders);
+  const itemPrice = order.subtotalAmount > 0
+    ? order.subtotalAmount
+    : Math.max(0, order.totalAmount - order.shippingAmount);
+  return itemPrice + (manualOrder?.shippingRegion === "EAST" ? 20 : 10);
 }
 
 function isInfluencerFulfilmentOrder(order: Order, creatorProfiles: CreatorProfile[], freeCreatorSampleCodes: string[]) {
@@ -2995,7 +3003,7 @@ export default function Home() {
     }
   }
 
-  async function printPackingSlips() {
+  async function printPackingSlips(mode: "packing" | "labels" | "both") {
     if (!packingOrders.length) {
       setNotice("Select at least one order before printing.");
       return;
@@ -3003,7 +3011,7 @@ export default function Home() {
     const changedAt = new Date().toISOString();
     const changed: Order[] = [];
     const nextOrders = orders.map((order) => {
-      if (!packingSelection.includes(order.id) || order.status !== "new_order") return order;
+      if (mode === "labels" || !packingSelection.includes(order.id) || order.status !== "new_order") return order;
       const updated: Order = {
         ...order,
         status: "uploading_audio",
@@ -3013,13 +3021,13 @@ export default function Home() {
           status: "uploading_audio",
           changedAt,
           changedBy: session ? `${session.displayName} (${session.username})` : "Staff",
-          note: "Packing slip printed",
+      note: "Packing slip printed",
         }],
       };
       changed.push(updated);
       return updated;
     });
-    try { await upsertSharedOrders(changed); }
+    try { if (changed.length) await upsertSharedOrders(changed); }
     catch (error) { setNotice(error instanceof Error ? error.message : "Packing-slip changes could not be saved."); return; }
     setOrders(nextOrders);
     const printWindow = window.open("", "_blank");
@@ -3028,12 +3036,12 @@ export default function Home() {
       return;
     }
     printWindow.document.title = "Preparing print PDF";
-    printWindow.document.body.textContent = "Preparing the high-quality packing and label PDF…";
+    printWindow.document.body.textContent = "Preparing the high-quality print PDF…";
     try {
       const response = await fetch("/api/packing-slips/pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orders: packingOrders.map((order) => ({
+        body: JSON.stringify({ mode, orders: packingOrders.map((order) => ({
           id: order.id,
           orderNumber: order.orderNumber,
           setIndicator: order.setIndicator,
@@ -3046,6 +3054,8 @@ export default function Home() {
           shippingLabelUrl: order.shippingLabelUrl,
           source: fulfilmentSourceLabel(order, manualOrders),
           isCod: isCodFulfilmentOrder(order, manualOrders),
+          address: order.address,
+          codAmount: codCollectionAmount(order, manualOrders),
         })) }),
       });
       if (!response.ok) {
@@ -3055,12 +3065,13 @@ export default function Home() {
       const url = URL.createObjectURL(await response.blob());
       printWindow.location.replace(url);
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      setNotice(`${packingOrders.length} packing slip${packingOrders.length === 1 ? "" : "s"} prepared as a sharp PDF. Use the PDF viewer's Print button. New orders moved to Uploading Audio.`);
+      const printed = mode === "packing" ? "packing slip" : mode === "labels" ? "shipping label" : "packing slip + shipping label";
+      setNotice(`${packingOrders.length} ${printed}${packingOrders.length === 1 ? "" : "s"} prepared as a sharp PDF. Use the PDF viewer's Print button.${changed.length ? " New orders moved to Uploading Audio." : ""}`);
     } catch (error) {
       printWindow.close();
       setNotice(error instanceof Error ? error.message : "Could not create the print PDF.");
     }
-    await logActivity("Packing slips printed", `${packingOrders.length} packing slip${packingOrders.length === 1 ? "" : "s"} printed.`);
+    await logActivity("Print PDF prepared", `${packingOrders.length} ${mode} print set prepared.`);
   }
 
   function selectManualEnvelopeOrders() {
@@ -5625,7 +5636,7 @@ export default function Home() {
     </aside>
 
     <section className="main-area">
-      <header className="topbar"><div><p>{workspaceTitle.toUpperCase()} WORKSPACE</p><h1>{viewTitle(view)}</h1></div><div className="top-actions"><span className={`role-badge ${session.role}`}>{session.role}</span>{view === "packing_slips" && <button className="button primary print-trigger" onClick={printPackingSlips}>Print {packingOrders.length} A6 slip{packingOrders.length === 1 ? "" : "s"}</button>}{view === "print_envelope" && <button className="button primary" disabled={!envelopePrintableNames.length || !envelopePrintSettings.fontBase64} onClick={printEnvelopes}>Generate {Math.ceil(envelopePrintableNames.length / 2)} A4 page{Math.ceil(envelopePrintableNames.length / 2) === 1 ? "" : "s"}</button>}{view === "sales_report" && <button className="button primary" onClick={() => printView("print-sales-report")}>Print / Save PDF</button>}{workspace === "fulfilment" && view !== "import" && <button className="button secondary" onClick={() => setView("import")}>Import CSV</button>}</div></header>
+      <header className="topbar"><div><p>{workspaceTitle.toUpperCase()} WORKSPACE</p><h1>{viewTitle(view)}</h1></div><div className="top-actions"><span className={`role-badge ${session.role}`}>{session.role}</span>{view === "packing_slips" && <div className="packing-print-actions"><button className="button secondary print-trigger" onClick={() => printPackingSlips("packing")}>Packing slips</button><button className="button secondary print-trigger" onClick={() => printPackingSlips("labels")}>Shipping labels</button><button className="button primary print-trigger" onClick={() => printPackingSlips("both")}>Packing slip + label</button></div>}{view === "print_envelope" && <button className="button primary" disabled={!envelopePrintableNames.length || !envelopePrintSettings.fontBase64} onClick={printEnvelopes}>Generate {Math.ceil(envelopePrintableNames.length / 2)} A4 page{Math.ceil(envelopePrintableNames.length / 2) === 1 ? "" : "s"}</button>}{view === "sales_report" && <button className="button primary" onClick={() => printView("print-sales-report")}>Print / Save PDF</button>}{workspace === "fulfilment" && view !== "import" && <button className="button secondary" onClick={() => setView("import")}>Import CSV</button>}</div></header>
       {databaseError && <div className="notice"><span>Database connection: {databaseError}</span></div>}
       {loadingOrders && <div className="notice"><span>Loading shared orders from Supabase...</span></div>}
       {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice("")}>x</button></div>}
@@ -5946,7 +5957,7 @@ export default function Home() {
           <div className="packing-list-header"><div><strong>Available orders</strong><span>Order number, descending</span></div><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><select value={packingStatusFilter} onChange={(event) => setPackingStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><div className="packing-list-actions"><button onClick={() => setPackingSelection((current) => [...new Set([...current, ...packingAvailableOrders.map((order) => order.id)])])}>Select shown</button><button onClick={() => setPackingSelection([])}>Clear</button></div></div>
           <div className="packing-order-list">{packingAvailableOrders.map((order) => <label key={order.id}><input type="checkbox" checked={packingSelection.includes(order.id)} onChange={() => setPackingSelection((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><div><strong>{orderLabel(order)} | {order.plushName || "Unnamed plushie"}</strong><span>{order.customerName} | {order.character || "No character"}</span><OrderMarkers order={order} manualOrders={manualOrders} /></div><StatusPill status={order.status} /></label>)}</div>
         </div>
-        <div className="packing-preview"><div className="preview-heading"><div><h2>A6 print preview</h2><p>Each order prints as its packing slip followed by its paired shipping label.</p></div><span>{packingOrders.length} selected</span></div>{packingOrders.length ? <div className="slip-grid">{packingOrders.map((order) => <Fragment key={order.id}><PackingSlip order={order} manualOrders={manualOrders} />{order.shippingLabelUrl && <ShippingLabelPage order={order} />}</Fragment>)}</div> : <div className="preview-empty"><strong>No orders selected</strong><p>Enter order IDs or tick orders from the list.</p></div>}</div>
+        <div className="packing-preview"><div className="preview-heading"><div><h2>A6 print preview</h2><p>Every order is paired with either its actual shipping label or a clear manual-label instruction page.</p></div><span>{packingOrders.length} selected</span></div>{packingOrders.length ? <div className="slip-grid">{packingOrders.map((order) => <Fragment key={order.id}><PackingSlip order={order} manualOrders={manualOrders} /><ShippingLabelPage order={order} manualOrders={manualOrders} /></Fragment>)}</div> : <div className="preview-empty"><strong>No orders selected</strong><p>Enter order IDs or tick orders from the list.</p></div>}</div>
       </section>}
 
       {view === "print_envelope" && <section className="envelope-page">
@@ -9481,11 +9492,15 @@ function Editable({ label, value, onChange, disabled, placeholder, wide, textare
 }
 
 function PackingSlip({ order, manualOrders }: { order: Order; manualOrders: ManualOrder[] }) {
-  return <article className="a6-slip"><header><div className="slip-header-main"><div><span>ORDER ID</span><strong>{packingSlipOrderLabel(order)}</strong></div><div className="slip-order-markers"><OrderMarkers order={order} manualOrders={manualOrders} /></div></div></header><div className="slip-fields"><div className="primary-slip-field"><label>CHARACTER:</label><p>{order.character || "-"}</p></div><div className="primary-slip-field"><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{packingSlipRemark(order)}</p></div></div><OrderBarcode value={orderBarcodeValue(order)} compact /></article>;
+  const isCod = isCodFulfilmentOrder(order, manualOrders);
+  return <article className={`a6-slip${isCod ? " is-cod" : ""}`}>{isCod && <div className="cod-watermark" aria-hidden="true">COD</div>}<header><div className="slip-header-main"><div><span>ORDER ID</span><strong>{packingSlipOrderLabel(order)}</strong></div><div className="slip-order-markers"><OrderMarkers order={order} manualOrders={manualOrders} /></div></div></header><div className="slip-fields"><div className="primary-slip-field"><label>CHARACTER:</label><p>{order.character || "-"}</p></div><div className="primary-slip-field"><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{packingSlipRemark(order)}</p></div></div><OrderBarcode value={orderBarcodeValue(order)} compact /></article>;
 }
 
-function ShippingLabelPage({ order }: { order: Order }) {
-  return <article className="shipping-label-page"><div className="shipping-label-preview-heading">Shipping label for {orderLabel(order)}</div><iframe src={order.shippingLabelUrl} title={`Shipping label for order ${order.orderNumber}`} /></article>;
+function ShippingLabelPage({ order, manualOrders }: { order: Order; manualOrders: ManualOrder[] }) {
+  const isCod = isCodFulfilmentOrder(order, manualOrders);
+  if (order.shippingLabelUrl && !isCod) return <article className="shipping-label-page"><div className="shipping-label-preview-heading">Shipping label for {orderLabel(order)}</div><iframe src={order.shippingLabelUrl} title={`Shipping label for order ${order.orderNumber}`} /></article>;
+  const amount = codCollectionAmount(order, manualOrders);
+  return <article className="shipping-label-page shipping-label-placeholder"><div className="shipping-label-placeholder-arrow" aria-hidden="true">↑</div><h3>Please print {isCod ? "COD " : ""}shipping label for Order {orderLabel(order)}</h3>{isCod && <strong>COD amount to be collected: RM {amount.toFixed(2)}</strong>}<div><span>Customer</span><b>{order.customerName || "-"}</b></div><div><span>Phone</span><b>{order.phone || "-"}</b></div><div><span>Address</span><b>{order.address || "No address saved"}</b></div><p>Pair this page with the packing slip above.</p></article>;
 }
 
 function EnvelopeSettingsPanel({ settings, onChange, onFontUpload, onReset }: { settings: EnvelopePrintSettings; onChange: (patch: Partial<EnvelopePrintSettings>) => void; onFontUpload: (file: File | null) => void; onReset: () => void }) {

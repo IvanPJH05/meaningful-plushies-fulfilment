@@ -1,4 +1,4 @@
-import { PDFDocument, type PDFFont, type PDFPage, StandardFonts, rgb } from "pdf-lib";
+import { degrees, PDFDocument, type PDFFont, type PDFPage, StandardFonts, rgb } from "pdf-lib";
 import { NextResponse } from "next/server";
 
 import { code128Modules, code128UnitCount } from "@/lib/code128";
@@ -23,19 +23,9 @@ type PackingPdfOrder = {
   shippingLabelUrl?: string;
   source?: string;
   isCod?: boolean;
+  address?: string;
+  codAmount?: number;
 };
-
-const code39: Record<string, string> = {
-  "0": "nnnwwnwnn", "1": "wnnwnnnnw", "2": "nnwwnnnnw", "3": "wnwwnnnnn", "4": "nnnwwnnnw",
-  "5": "wnnwwnnnn", "6": "nnwwwnnnn", "7": "nnnwnnwnw", "8": "wnnwnnwnn", "9": "nnwwnnwnn",
-  A: "wnnnnwnnw", B: "nnwnnwnnw", C: "wnwnnwnnn", D: "nnnnwwnnw", E: "wnnnwwnnn", F: "nnwnwwnnn",
-  G: "nnnnnwwnw", H: "wnnnnwwnn", I: "nnwnnwwnn", J: "nnnnwwwnn", K: "wnnnnnnww", L: "nnwnnnnww",
-  M: "wnwnnnnwn", N: "nnnnwnnww", O: "wnnnwnnwn", P: "nnwnwnnnw", Q: "nnnnnnwww", R: "wnnnnnwwn",
-  S: "nnwnnnwwn", T: "nnnnwnwwn", U: "wwnnnnnnw", V: "nwwnnnnnw", W: "wwwnnnnnn", X: "nwnnwnnnw",
-  Y: "wwnnwnnnn", Z: "nwwnwnnnn", "-": "nwnnnnwnw", ".": "wwnnnnwnn", " ": "nwwnnnwnn",
-  "$": "nwnwnwnnn", "/": "nwnwnnnwn", "+": "nwnnnwnwn", "%": "nnnwnwnwn", "*": "nwnnwnwnn",
-};
-void code39;
 
 function value(input: unknown) {
   if (typeof input !== "string") return "";
@@ -92,8 +82,10 @@ function drawPackingSlip(page: PDFPage, order: PackingPdfOrder, regular: PDFFont
     ? rawOrderNumber.match(/\b(TT\d+)\b\s+(\d+)/i)
     : null;
   const shownOrderNumber = tikTokShortNumber ? `${tikTokShortNumber[1].toUpperCase()} ${tikTokShortNumber[2].slice(-4)}` : rawOrderNumber;
-  const orderLabel = `#${shownOrderNumber || "-"}${value(order.setIndicator) ? ` ${value(order.setIndicator)}` : ""}`;
+  const orderLabel = `${tikTokShortNumber ? "" : "#"}${shownOrderNumber || "-"}${value(order.setIndicator) ? ` ${value(order.setIndicator)}` : ""}`;
   const top = A6_HEIGHT - margin;
+
+  if (order.isCod) page.drawText("COD", { x: 23 * MM, y: 40 * MM, size: 92, font: bold, color: rgb(0.82, 0.82, 0.82), rotate: degrees(-36) });
 
   drawText("ORDER ID", margin, top - 9, 9, true);
   const sourceFontSize = 16;
@@ -144,6 +136,39 @@ function drawPackingSlip(page: PDFPage, order: PackingPdfOrder, regular: PDFFont
   drawText(barcode, (A6_WIDTH - barcodeTextWidth) / 2, margin + 2, 8, true);
 }
 
+function drawInstructionPage(page: PDFPage, order: PackingPdfOrder, regular: PDFFont, bold: PDFFont, pairedWithSlip: boolean) {
+  const margin = 10 * MM;
+  const right = A6_WIDTH - margin;
+  const drawText = (text: string, x: number, y: number, size: number, useBold = false, color = rgb(0, 0, 0)) => page.drawText(text, { x, y, size, font: useBold ? bold : regular, color });
+  const orderName = `#${value(order.orderNumber) || "-"}`;
+  const title = `PLEASE PRINT ${order.isCod ? "COD " : ""}SHIPPING LABEL`;
+  drawText(title, margin, A6_HEIGHT - margin - 22, 16, true);
+  drawText(`FOR ORDER ${orderName}`, margin, A6_HEIGHT - margin - 45, 17, true);
+  if (pairedWithSlip) {
+    drawText("↑", A6_WIDTH / 2 - 14, A6_HEIGHT - margin - 82, 38, true);
+    drawText("PAIR WITH THE PACKING SLIP ABOVE", margin, A6_HEIGHT - margin - 104, 10, true);
+  }
+  let y = A6_HEIGHT - margin - (pairedWithSlip ? 140 : 82);
+  if (order.isCod) {
+    const amount = Number.isFinite(order.codAmount) ? Number(order.codAmount) : 0;
+    drawText(`COD AMOUNT TO COLLECT: RM ${amount.toFixed(2)}`, margin, y, 14, true);
+    y -= 30;
+  }
+  const details: Array<[string, string]> = [
+    ["CUSTOMER", value(order.customerName) || "-"],
+    ["PHONE", value(order.phone) || "-"],
+    ["ADDRESS", value(order.address) || "NO ADDRESS SAVED"],
+  ];
+  for (const [label, detail] of details) {
+    drawText(label, margin, y, 8, true);
+    const lines = fitLines(detail, right - margin, regular, 12, label === "ADDRESS" ? 4 : 2);
+    lines.forEach((line, index) => drawText(line, margin, y - 16 - index * 14, 12, false));
+    y -= 30 + Math.max(0, lines.length - 1) * 14;
+    page.drawLine({ start: { x: margin, y }, end: { x: right, y }, thickness: 0.4, color: rgb(0.68, 0.68, 0.68) });
+    y -= 12;
+  }
+}
+
 async function labelBytes(url: string, origin: string) {
   const parsed = new URL(url);
   if (parsed.origin !== origin) throw new Error("A shipping label must come from this fulfilment system.");
@@ -155,8 +180,9 @@ async function labelBytes(url: string, origin: string) {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json() as { orders?: PackingPdfOrder[] };
+    const body = await request.json() as { orders?: PackingPdfOrder[]; mode?: "packing" | "labels" | "both" };
     const orders = Array.isArray(body.orders) ? body.orders : [];
+    const mode = body.mode === "packing" || body.mode === "labels" || body.mode === "both" ? body.mode : "both";
     if (!orders.length) return NextResponse.json({ ok: false, error: "Choose at least one packing slip." }, { status: 400 });
     if (orders.length > 100) return NextResponse.json({ ok: false, error: "Print up to 100 orders at a time." }, { status: 400 });
 
@@ -165,13 +191,20 @@ export async function POST(request: Request) {
     const bold = await output.embedFont(StandardFonts.HelveticaBold);
     const origin = new URL(request.url).origin;
     for (const order of orders) {
-      const slip = output.addPage([A6_WIDTH, A6_HEIGHT]);
-      drawPackingSlip(slip, order, regular, bold);
+      if (mode !== "labels") {
+        const slip = output.addPage([A6_WIDTH, A6_HEIGHT]);
+        drawPackingSlip(slip, order, regular, bold);
+      }
+      if (mode === "packing") continue;
       const labelUrl = value(order.shippingLabelUrl);
-      if (!labelUrl) continue;
-      const source = await PDFDocument.load(await labelBytes(labelUrl, origin));
-      const pages = await output.copyPages(source, source.getPageIndices());
-      pages.forEach((page) => output.addPage(page));
+      if (!order.isCod && labelUrl) {
+        const source = await PDFDocument.load(await labelBytes(labelUrl, origin));
+        const pages = await output.copyPages(source, source.getPageIndices());
+        pages.forEach((page) => output.addPage(page));
+      } else {
+        const instruction = output.addPage([A6_WIDTH, A6_HEIGHT]);
+        drawInstructionPage(instruction, order, regular, bold, mode === "both");
+      }
     }
     const pdfBytes = await output.save();
     return new Response(Buffer.from(pdfBytes), {

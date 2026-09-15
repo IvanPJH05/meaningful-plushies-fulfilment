@@ -24,7 +24,9 @@
 .preview-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
 .preview-heading > span { background: white; border-radius: 20px; padding: 6px 9px; font-size: 9px; color: #66758a; }
 .slip-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
-.a6-slip { background: white; width: 100%; aspect-ratio: 105 / 148; border: 1px solid #cfd5dc; box-shadow: 0 5px 15px rgba(28,42,58,.1); padding: 7%; display: flex; flex-direction: column; color: #111; }
+.a6-slip { position: relative; overflow: hidden; background: white; width: 100%; aspect-ratio: 105 / 148; border: 1px solid #cfd5dc; box-shadow: 0 5px 15px rgba(28,42,58,.1); padding: 7%; display: flex; flex-direction: column; color: #111; }
+.cod-watermark { position: absolute; z-index: 0; left: 5%; top: 39%; color: #c7c7c7; font-size: clamp(66px, 11vw, 145px); font-weight: 900; line-height: 1; letter-spacing: .02em; transform: rotate(-38deg); pointer-events: none; }
+.a6-slip > :not(.cod-watermark) { position: relative; z-index: 1; }
 .a6-slip header { border-bottom: 3px solid #111; padding-bottom: 5%; margin-bottom: 7%; }
 .slip-header-main { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: start; }
 .a6-slip header span { display: block; font-size: clamp(7px, .75vw, 10px); font-weight: 800; letter-spacing: .16em; }
@@ -49,6 +51,14 @@
 .shipping-label-page { background: white; border: 1px solid #cfd5dc; box-shadow: 0 5px 15px rgba(28,42,58,.1); padding: 10px; color: #111; }
 .shipping-label-preview-heading { font-size: 10px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 7px; }
 .shipping-label-page iframe { display: block; width: 100%; height: 640px; border: 0; background: white; }
+.shipping-label-placeholder { min-height: 420px; display: grid; align-content: start; gap: 12px; padding: 28px; }
+.shipping-label-placeholder h3 { margin: 0; font-size: 19px; line-height: 1.15; }
+.shipping-label-placeholder > strong { font-size: 15px; }
+.shipping-label-placeholder-arrow { text-align: center; font-size: 42px; line-height: .75; }
+.shipping-label-placeholder div:not(.shipping-label-placeholder-arrow) { display: grid; gap: 3px; border-top: 1px solid #bfc6cf; padding-top: 9px; }
+.shipping-label-placeholder span, .shipping-label-placeholder p { color: #5d6978; font-size: 11px; margin: 0; }
+.shipping-label-placeholder b { font-size: 14px; overflow-wrap: anywhere; }
+.packing-print-actions { display: flex; gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
 .preview-empty { height: 480px; display: grid; place-content: center; text-align: center; color: #768398; }
 .preview-empty strong { color: #425169; }
 .preview-empty p { font-size: 11px; }
@@ -79,6 +89,7 @@
   body.print-packing .packing-preview { padding: 0; margin: 0; background: #fff; min-height: 0; }
   body.print-packing .slip-grid { display: block; }
   body.print-packing .a6-slip { page: packing-slip; width: 105mm; height: 148mm; aspect-ratio: auto; border: 0; box-shadow: none; padding: 8mm; break-after: page; page-break-after: always; }
+  body.print-packing .cod-watermark { font-size: 104pt; }
   body.print-packing .a6-slip:last-child { break-after: auto; page-break-after: auto; }
   body.print-packing .a6-slip header { padding-bottom: 5mm; margin-bottom: 7mm; }
   body.print-packing .a6-slip header span { font-size: 9pt; }
