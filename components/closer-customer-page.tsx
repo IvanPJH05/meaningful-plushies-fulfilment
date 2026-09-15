@@ -251,7 +251,7 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
 
   return <main className={styles.page} style={themedStyle}>
     <header className={styles.header}>
-      <div className={styles.logo}><CloserGlyphText text="MEANINGFUL" label="Meaningful Plushies" /><CloserGlyphText text="PLUSHIES" /></div>
+      <div className={styles.logo}><CloserGlyphText className={styles.logoLine} text="MEANINGFUL" label="Meaningful Plushies" /><CloserGlyphText className={styles.logoLine} text="PLUSHIES" /></div>
       <div className={styles.languageSwitch}><button className={language === "en" ? styles.selectedLanguage : ""} onClick={() => setLanguage("en")}><CloserWordArt asset="english" label="English" /></button><button className={language === "ms" ? styles.selectedLanguage : ""} onClick={() => setLanguage("ms")}><CloserWordArt asset="malay" label="Malay" /></button></div>
     </header>
     {isDemo && <p className={styles.demoNotice}>Demo preview · No customer data is connected.</p>}
