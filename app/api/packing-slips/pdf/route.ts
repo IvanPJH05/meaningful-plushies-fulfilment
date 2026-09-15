@@ -1,6 +1,8 @@
 import { PDFDocument, type PDFFont, type PDFPage, StandardFonts, rgb } from "pdf-lib";
 import { NextResponse } from "next/server";
 
+import { orderBarcodeValue } from "@/lib/order-barcode";
+
 export const runtime = "nodejs";
 
 const MM = 72 / 25.4;
@@ -39,15 +41,6 @@ function value(input: unknown) {
   // (including names with accents) and omit decorative emoji such as a blue
   // heart, rather than allowing one character to stop the whole batch.
   return input.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^\x20-\x7E]/g, "").replace(/\s+/g, " ").trim();
-}
-
-function barcodeValue(order: PackingPdfOrder) {
-  if (/tiktok/i.test(value(order.salesChannel))) {
-    const tikTok = value(order.orderNumber).toUpperCase().match(/\bTT\d+\b/);
-    if (tikTok) return `MP-${tikTok[0]}`;
-  }
-  const number = value(order.orderNumber).toUpperCase().replace(/[^A-Z0-9-]/g, "");
-  return `MP-${number || value(order.id).toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 8) || "ORDER"}`;
 }
 
 function fitLines(text: string, maxWidth: number, font: { widthOfTextAtSize: (text: string, size: number) => number }, size: number, maxLines: number) {
@@ -91,44 +84,59 @@ function drawPackingSlip(page: PDFPage, order: PackingPdfOrder, regular: PDFFont
   const margin = 8 * MM;
   const right = A6_WIDTH - margin;
   const drawText = (text: string, x: number, y: number, size: number, useBold = false, color = rgb(0, 0, 0)) => page.drawText(text, { x, y, size, font: useBold ? bold : regular, color });
-  const source = value(order.source) || (order.salesChannel === "tiktok" ? "TIKTOK SHOP" : "SHOPIFY");
-  const orderLabel = `#${value(order.orderNumber) || "-"}${value(order.setIndicator) ? ` ${value(order.setIndicator)}` : ""}`;
+  // Match the A6 preview: all markers are black and white and the source is
+  // a bordered label at the top right.
+  const source = (value(order.source) || (/tiktok/i.test(value(order.salesChannel)) ? "TIKTOK SHOP" : "SHOPIFY")).toUpperCase();
+  const rawOrderNumber = value(order.orderNumber);
+  const tikTokShortNumber = /tiktok/i.test(value(order.salesChannel))
+    ? rawOrderNumber.match(/\b(TT\d+)\b\s+(\d+)/i)
+    : null;
+  const shownOrderNumber = tikTokShortNumber ? `${tikTokShortNumber[1].toUpperCase()} ${tikTokShortNumber[2].slice(-4)}` : rawOrderNumber;
+  const orderLabel = `#${shownOrderNumber || "-"}${value(order.setIndicator) ? ` ${value(order.setIndicator)}` : ""}`;
+  const top = A6_HEIGHT - margin;
 
-  drawText("ORDER ID", margin, A6_HEIGHT - margin - 8, 9, true);
-  const sourceWidth = bold.widthOfTextAtSize(source, 16);
-  drawText(source, right - sourceWidth, A6_HEIGHT - margin - 12, 16, true);
+  drawText("ORDER ID", margin, top - 9, 9, true);
+  const sourceFontSize = 16;
+  const sourcePaddingX = 4;
+  const sourcePaddingY = 3;
+  const sourceWidth = bold.widthOfTextAtSize(source, sourceFontSize) + sourcePaddingX * 2;
+  const sourceHeight = sourceFontSize + sourcePaddingY * 2;
+  page.drawRectangle({ x: right - sourceWidth, y: top - sourceHeight, width: sourceWidth, height: sourceHeight, borderColor: rgb(0, 0, 0), borderWidth: 0.75 });
+  drawText(source, right - sourceWidth + sourcePaddingX, top - sourceHeight + sourcePaddingY, sourceFontSize, true);
   if (order.isCod) {
-    const cod = "COD";
-    const codWidth = bold.widthOfTextAtSize(cod, 7) + 8;
-    page.drawRectangle({ x: right - codWidth, y: A6_HEIGHT - margin - 25, width: codWidth, height: 10, color: rgb(0, 0, 0) });
-    drawText(cod, right - codWidth + 4, A6_HEIGHT - margin - 22, 7, true, rgb(1, 1, 1));
+    const cod = "COD - COLLECT ON DELIVERY";
+    const codFontSize = 7;
+    const codWidth = bold.widthOfTextAtSize(cod, codFontSize) + 8;
+    page.drawRectangle({ x: right - codWidth, y: top - sourceHeight - 14, width: codWidth, height: 10, color: rgb(0, 0, 0) });
+    drawText(cod, right - codWidth + 4, top - sourceHeight - 11, codFontSize, true, rgb(1, 1, 1));
   }
-  drawText(orderLabel, margin, A6_HEIGHT - margin - 40, 40, true);
-  page.drawLine({ start: { x: margin, y: A6_HEIGHT - margin - 50 }, end: { x: right, y: A6_HEIGHT - margin - 50 }, thickness: 2, color: rgb(0, 0, 0) });
+  drawText(orderLabel, margin, top - 38, 38, true);
+  const headerRuleY = top - 70;
+  page.drawLine({ start: { x: margin, y: headerRuleY }, end: { x: right, y: headerRuleY }, thickness: 2.25, color: rgb(0, 0, 0) });
 
-  let y = A6_HEIGHT - margin - 68;
+  let y = headerRuleY - 25;
   const fields: Array<[string, string, number, number]> = [
-    ["CHARACTER:", value(order.character) || "-", 20, 1],
-    ["PLUSH NAME:", value(order.plushName) || "-", 20, 1],
-    ["CUSTOMER:", value(order.customerName) || "-", 14, 2],
-    ["PHONE:", value(order.phone) || "-", 14, 1],
-    ["REMARK:", value(order.remark) || "-", 12, 2],
+    ["CHARACTER:", value(order.character) || "-", 18, 1],
+    ["PLUSH NAME:", value(order.plushName) || "-", 18, 1],
+    ["CUSTOMER:", value(order.customerName) || "-", 13, 2],
+    ["PHONE:", value(order.phone) || "-", 13, 1],
+    ["REMARK:", value(order.remark) || "-", 13, 2],
   ];
   for (const [label, fieldValue, size, maxLines] of fields) {
     drawText(label, margin, y, 8, true);
     const lines = fitLines(fieldValue, right - margin, bold, size, maxLines);
-    lines.forEach((line, index) => drawText(line, margin, y - 14 - index * (size + 2), size, true));
-    const fieldHeight = 24 + Math.max(0, lines.length - 1) * (size + 2);
+    lines.forEach((line, index) => drawText(line, margin, y - 15 - index * (size + 2), size, true));
+    const fieldHeight = 28 + Math.max(0, lines.length - 1) * (size + 2);
     y -= fieldHeight;
     page.drawLine({ start: { x: margin, y }, end: { x: right, y }, thickness: 0.35, color: rgb(0.72, 0.72, 0.72) });
-    y -= 8;
+    y -= 9;
   }
 
-  const barcode = barcodeValue(order);
+  const barcode = orderBarcodeValue(order);
   const barcodeHeight = 9 * MM;
-  drawBarcode(page, barcode, margin + 5, margin + 10, right - margin - 10, barcodeHeight);
+  drawBarcode(page, barcode, margin, margin + 10, right - margin, barcodeHeight);
   const barcodeWidth = bold.widthOfTextAtSize(barcode, 7);
-  drawText(barcode, (A6_WIDTH - barcodeWidth) / 2, margin + 3, 7, true);
+  drawText(barcode, (A6_WIDTH - barcodeWidth) / 2, margin + 2, 7, true);
 }
 
 async function labelBytes(url: string, origin: string) {
