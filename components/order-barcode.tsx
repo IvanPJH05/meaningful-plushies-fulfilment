@@ -1,6 +1,6 @@
 "use client";
 
-import type { Order } from "../lib/types";
+export { normaliseBarcodeValue, orderBarcodeValue } from "../lib/order-barcode";
 
 // Code 39 is deliberately used here because it is widely supported by inexpensive
 // USB barcode scanners and the label can be produced entirely in the browser.
@@ -14,22 +14,6 @@ const code39: Record<string, string> = {
   Y: "wwnnwnnnn", Z: "nwwnwnnnn", "-": "nwnnnnwnw", ".": "wwnnnnwnn", " ": "nwwnnnwnn",
   "$": "nwnwnwnnn", "/": "nwnwnnnwn", "+": "nwnnnwnwn", "%": "nnnwnwnwn", "*": "nwnnwnwnn",
 };
-
-export function orderBarcodeValue(order: Order) {
-  // TikTok order labels also carry TikTok's long internal ID. The short TT
-  // number is the staff-facing order number and is enough to find the order,
-  // so keep its scanner label compact for reliable printing and scanning.
-  if (order.salesChannel === "tiktok") {
-    const tikTokNumber = order.orderNumber.toUpperCase().match(/\bTT\d+\b/);
-    if (tikTokNumber) return `MP-${tikTokNumber[0]}`;
-  }
-  const safeOrderNumber = order.orderNumber.toUpperCase().replace(/[^A-Z0-9-]/g, "");
-  return `MP-${safeOrderNumber || order.id.slice(0, 8).toUpperCase()}`;
-}
-
-export function normaliseBarcodeValue(value: string) {
-  return value.toUpperCase().replace(/[^A-Z0-9]/g, "");
-}
 
 export function OrderBarcode({ value, compact = false }: { value: string; compact?: boolean }) {
   const encoded = `*${value.toUpperCase().replace(/[^A-Z0-9 .\-$/+%]/g, "")}*`;

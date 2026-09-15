@@ -1,33 +1,28 @@
 import { PDFDocument } from "pdf-lib";
-import pdfParse from "pdf-parse/lib/pdf-parse";
+import pdfjs from "pdf-parse/lib/pdf.js/v1.10.100/build/pdf.js";
 import { NextResponse } from "next/server";
 
 import { ensureDefaultBusiness } from "@/src/modules/businesses/default-business";
 import { createOrReuseMediaAssetFromBytes, mediaAssetPublicUrls } from "@/src/modules/whatsapp/media-assets";
+import { identifyShippingLabel } from "@/lib/shipping-labels";
 
 export const runtime = "nodejs";
 
-type LabelSource = "jnt" | "tiktok";
+type PdfTextContent = { items: Array<{ str?: string }> };
+type PdfPage = { getTextContent: (options: { normalizeWhitespace: boolean }) => Promise<PdfTextContent> };
+type PdfDocumentProxy = { numPages: number; getPage: (pageNumber: number) => Promise<PdfPage> };
 
-function pageText(buffer: Buffer) {
+async function pageText(buffer: Buffer) {
+  const document = await (pdfjs.getDocument({ data: new Uint8Array(buffer) }).promise as Promise<PdfDocumentProxy>);
   const pages: string[] = [];
-  return pdfParse(buffer, {
-    pagerender: async (page: { getTextContent: (options: { normalizeWhitespace: boolean }) => Promise<{ items: Array<{ str?: string }> }> }) => {
-      const content = await page.getTextContent({ normalizeWhitespace: true });
-      pages.push(content.items.map((item) => item.str || "").join(" "));
-      return "";
-    },
-  }).then(() => pages);
-}
-
-function identifyLabel(text: string): { source: LabelSource; reference: string } | null {
-  const compact = text.replace(/\s+/g, " ");
-  const tiktokOrder = compact.match(/order\s*id\s*:?\s*(\d{8,})/i);
-  if (tiktokOrder) return { source: "tiktok", reference: tiktokOrder[1] };
-  // J&T renders the Shopify reference as "#1726 Remark" in the supplied
-  // labels, so deliberately use the number directly before that label.
-  const jntRemark = compact.match(/#\s*(\d{3,})\s+remark/i);
-  return jntRemark ? { source: "jnt", reference: jntRemark[1] } : null;
+  // Read in PDF page order. The old callback accumulated pages as their async
+  // text extraction completed, which could make the first J&T label attach to
+  // no order or the wrong order.
+  for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+    const content = await (await document.getPage(pageNumber)).getTextContent({ normalizeWhitespace: true });
+    pages.push(content.items.map((item) => item.str || "").join(" "));
+  }
+  return pages;
 }
 
 export async function POST(request: Request) {
@@ -54,7 +49,7 @@ export async function POST(request: Request) {
       const labelBytes = await labelPdf.save();
       const asset = await createOrReuseMediaAssetFromBytes({ businessId: business.id, bytes: Buffer.from(labelBytes), contentType: "application/pdf" });
       if (!asset) throw new Error("Shared label storage is not available yet.");
-      const detected = identifyLabel(texts[index] || "");
+      const detected = identifyShippingLabel(texts[index] || "");
       labels.push({
         page: index + 1,
         source: detected?.source ?? null,
