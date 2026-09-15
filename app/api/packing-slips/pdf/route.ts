@@ -145,7 +145,14 @@ function drawInstructionPage(page: PDFPage, order: PackingPdfOrder, regular: PDF
   drawText(title, margin, A6_HEIGHT - margin - 22, 16, true);
   drawText(`FOR ORDER ${orderName}`, margin, A6_HEIGHT - margin - 45, 17, true);
   if (pairedWithSlip) {
-    drawText("↑", A6_WIDTH / 2 - 14, A6_HEIGHT - margin - 82, 38, true);
+    // Draw the arrow rather than using a Unicode glyph: Helvetica's WinAnsi
+    // encoding is intentionally used for dependable thermal-printer PDFs.
+    const arrowX = A6_WIDTH / 2;
+    const arrowBaseY = A6_HEIGHT - margin - 94;
+    const arrowTipY = A6_HEIGHT - margin - 58;
+    page.drawLine({ start: { x: arrowX, y: arrowBaseY }, end: { x: arrowX, y: arrowTipY }, thickness: 2.5, color: rgb(0, 0, 0) });
+    page.drawLine({ start: { x: arrowX, y: arrowTipY }, end: { x: arrowX - 8, y: arrowTipY - 10 }, thickness: 2.5, color: rgb(0, 0, 0) });
+    page.drawLine({ start: { x: arrowX, y: arrowTipY }, end: { x: arrowX + 8, y: arrowTipY - 10 }, thickness: 2.5, color: rgb(0, 0, 0) });
     drawText("PAIR WITH THE PACKING SLIP ABOVE", margin, A6_HEIGHT - margin - 104, 10, true);
   }
   let y = A6_HEIGHT - margin - (pairedWithSlip ? 140 : 82);
