@@ -34,6 +34,7 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
   const accessKey = useMemo(() => isDemo ? "demo" : params.get("key") || "", [isDemo, params]);
   const adminPreview = useMemo(() => isDemo ? "" : params.get("adminPreview") || "", [isDemo, params]);
   const apiPath = proxyPath ? `${proxyPath}/api` : "/api/closer";
+  const backupApiPath = "https://meaningful-plushies-fulfilment.vercel.app/api/closer";
   const mediaPath = proxyPath ? `${proxyPath}/media` : "/api/closer/media";
   const themePath = proxyPath ? `${proxyPath}/theme` : "/api/closer/theme";
   const [state, setState] = useState<CloserState | null>(null);
@@ -55,25 +56,35 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
 
   const call = useCallback(async (action: string, payload: Record<string, unknown> = {}) => {
     if (!certificateId || (!accessKey && !adminPreview)) throw new Error("This NFC link is incomplete. Please scan the tag again.");
-    const response = await fetch(apiPath, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, certificateId, accessKey, adminPreview, ...payload }),
-    });
-    // An app-proxy outage or storefront error can return an HTML page. Parse
-    // defensively so customers see a useful retry message, never raw JSON
-    // parsing text such as "Unexpected token '<'".
-    const raw = await response.text();
-    let data: { error?: string; state?: CloserState } = {};
-    try { data = JSON.parse(raw) as { error?: string; state?: CloserState }; }
-    catch {
-      throw new Error(response.ok
-        ? "Closer returned an unexpected response. Please refresh and try again."
-        : "We could not reach Closer just now. Please refresh and try again.");
+    const send = async (url: string, contentType: "application/json" | "text/plain") => {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": contentType },
+        body: JSON.stringify({ action, certificateId, accessKey, adminPreview, ...payload }),
+      });
+      // An app-proxy outage or storefront error can return an HTML page. Parse
+      // defensively so customers see a useful retry message, never raw JSON
+      // parsing text such as "Unexpected token '<'".
+      const raw = await response.text();
+      let data: { error?: string; state?: CloserState } = {};
+      try { data = JSON.parse(raw) as { error?: string; state?: CloserState }; }
+      catch {
+        throw new Error(response.ok
+          ? "Closer returned an unexpected response. Please refresh and try again."
+          : "We could not reach Closer just now. Please refresh and try again.");
+      }
+      if (!response.ok) throw new Error(data.error || "We could not update your shared space.");
+      return data;
+    };
+    try {
+      return await send(apiPath, "application/json");
+    } catch (caught) {
+      // Only retry reads. Retrying a mutation could submit a request or accept
+      // a pairing twice if the proxy lost the response after completing it.
+      if (action !== "state" || !proxyPath) throw caught;
+      return send(backupApiPath, "text/plain");
     }
-    if (!response.ok) throw new Error(data.error || "We could not update your shared space.");
-    return data;
-  }, [accessKey, adminPreview, apiPath, certificateId]);
+  }, [accessKey, adminPreview, apiPath, backupApiPath, certificateId, proxyPath]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -114,6 +125,12 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
       .catch(() => undefined);
   }, [isDemo, themePath]);
 
+  async function recoverFromTransportIssue(caught: unknown) {
+    const message = messageFrom(caught);
+    setError(message);
+    if (message === "We could not reach Closer just now. Please refresh and try again." || message === "Closer returned an unexpected response. Please refresh and try again.") await refresh();
+  }
+
   const themedStyle = {
     "--closer-background": theme.background,
     "--closer-accent": theme.accent,
@@ -130,7 +147,7 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
       setName("");
       setPartnerCertificateId("");
     } catch (caught) {
-      setError(messageFrom(caught));
+      await recoverFromTransportIssue(caught);
     } finally {
       setBusy(false);
     }
@@ -147,7 +164,7 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
       setShowAccept(false);
       setName("");
     } catch (caught) {
-      setError(messageFrom(caught));
+      await recoverFromTransportIssue(caught);
     } finally {
       setBusy(false);
     }
