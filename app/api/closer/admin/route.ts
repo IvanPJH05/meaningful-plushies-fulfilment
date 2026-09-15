@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 
-import { createCloserCertificate, loadCloserAdminDashboard, saveCloserTheme, unlinkCloserConnection } from "@/src/modules/closer/service";
+import { clearCloserConnectionMedia, createCloserCertificate, deleteCloserCertificate, loadCloserAdminDashboard, rotateCloserCertificateAccessKey, saveCloserTheme, unlinkCloserConnection, updateCloserConnectionNames } from "@/src/modules/closer/service";
 import { deleteCloserMedia } from "@/src/modules/closer/media-storage";
 import { prisma } from "@/src/infrastructure/database/prisma";
 
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     const dashboard = await loadCloserAdminDashboard();
     return NextResponse.json({
       certificates: dashboard.certificates.map((certificate) => ({ certificateId: certificate.certificate_id, connectionId: certificate.connection_id, createdAt: certificate.created_at })),
-      connections: dashboard.connections.map((connection) => ({ id: connection.id, firstCertificateId: connection.first_certificate_id, secondCertificateId: connection.second_certificate_id, firstName: connection.first_name, secondName: connection.second_name })),
+      connections: dashboard.connections.map((connection) => ({ id: connection.id, firstCertificateId: connection.first_certificate_id, secondCertificateId: connection.second_certificate_id, firstName: connection.first_name, secondName: connection.second_name, hasPhoto: Boolean(connection.photo_path), hasVoice: Boolean(connection.voice_path), createdAt: connection.created_at, updatedAt: connection.updated_at })),
       activity: dashboard.activity.map((item) => ({ id: item.id, action: item.action, actorCertificateId: item.actor_certificate_id, createdAt: item.created_at })),
       theme: dashboard.theme,
     });
@@ -49,9 +49,28 @@ export async function POST(request: NextRequest) {
       await saveCloserTheme(theme as Record<string, unknown>);
       return NextResponse.json({ ok: true });
     }
+    if (body.action === "rotate_certificate_link") {
+      const certificateId = typeof body.certificateId === "string" ? body.certificateId.trim() : "";
+      const accessKey = randomBytes(24).toString("base64url");
+      await rotateCloserCertificateAccessKey(certificateId, accessKey);
+      return NextResponse.json({ ok: true, certificate: { certificateId, accessKey } });
+    }
+    if (body.action === "delete_certificate") {
+      await deleteCloserCertificate(body.certificateId);
+      return NextResponse.json({ ok: true });
+    }
     if (body.action === "unlink") {
       const certificateId = typeof body.certificateId === "string" ? body.certificateId : "";
       const result = await unlinkCloserConnection(certificateId);
+      await deleteCloserMedia(result.mediaPaths);
+      return NextResponse.json({ ok: true });
+    }
+    if (body.action === "rename_pair") {
+      await updateCloserConnectionNames(body.connectionId, body.firstName, body.secondName);
+      return NextResponse.json({ ok: true });
+    }
+    if (body.action === "clear_pair_media") {
+      const result = await clearCloserConnectionMedia(body.connectionId, body.mediaType);
       await deleteCloserMedia(result.mediaPaths);
       return NextResponse.json({ ok: true });
     }
