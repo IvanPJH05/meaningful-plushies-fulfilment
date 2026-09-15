@@ -3,6 +3,7 @@
 import { ChangeEvent, CSSProperties, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
+import { CloserGlyphText, CloserWordArt } from "./closer-art-text";
 import styles from "./closer-customer-page.module.css";
 
 type UnlinkedState = {
@@ -250,15 +251,15 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
 
   return <main className={styles.page} style={themedStyle}>
     <header className={styles.header}>
-      <div className={styles.logo} aria-label="Meaningful Plushies"><span>MEANINGFUL</span><em>Plushies</em></div>
-      <div className={styles.languageSwitch}><button className={language === "en" ? styles.selectedLanguage : ""} onClick={() => setLanguage("en")}>English</button><button className={language === "ms" ? styles.selectedLanguage : ""} onClick={() => setLanguage("ms")}>Malay</button></div>
+      <div className={styles.logo}><CloserGlyphText text="MEANINGFUL" label="Meaningful Plushies" /><CloserGlyphText text="PLUSHIES" /></div>
+      <div className={styles.languageSwitch}><button className={language === "en" ? styles.selectedLanguage : ""} onClick={() => setLanguage("en")}><CloserWordArt asset="english" label="English" /></button><button className={language === "ms" ? styles.selectedLanguage : ""} onClick={() => setLanguage("ms")}><CloserWordArt asset="malay" label="Malay" /></button></div>
     </header>
     {isDemo && <p className={styles.demoNotice}>Demo preview · No customer data is connected.</p>}
     {error && <p className={styles.error}>{error}</p>}
 
     {state.status === "unlinked" ? <section className={styles.unlinkedSpace}>
       <div className={styles.blankPanel} aria-hidden="true" />
-      <div className={styles.idPill}>ID: {certificateId}</div>
+      <div className={styles.idPill}><CloserGlyphText text={`ID: ${certificateId}`} /></div>
       {state.request ? <>
         <section className={styles.card}>
           <p className={styles.eyebrow}>CONNECTION REQUEST</p>
@@ -270,10 +271,10 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
         <h1>Waiting for your partner to accept.</h1>
         <p>Your request was sent to Snowy ID {state.outgoingRequest.partnerCertificateId}. Ask your partner to scan their NFC tag and accept the connection.</p>
       </section> : <>
-        {!showRequest ? <button className={styles.primaryButton} onClick={() => setShowRequest(true)}>Pair Snowy</button> : <section className={styles.card} role="dialog" aria-modal="true" aria-label="Pair your plushie"><button type="button" className={styles.closeButton} onClick={() => setShowRequest(false)} aria-label="Close">×</button><p className={styles.eyebrow}>Your nickname</p><form className={styles.form} onSubmit={submitRequest}><label><input value={name} maxLength={60} onChange={(event) => setName(event.target.value)} placeholder="Your nickname" required /></label><label>Your partner’s ID<input value={partnerCertificateId} maxLength={100} onChange={(event) => setPartnerCertificateId(event.target.value)} placeholder="For example: 124" required /></label><button className={styles.primaryButton} disabled={busy}>{busy ? "Sending…" : "Pair now"}</button></form></section>}
+        {!showRequest ? <button className={styles.primaryButton} onClick={() => setShowRequest(true)}><CloserWordArt asset="pair-snowy" label="Pair Snowy" /></button> : <section className={styles.card} role="dialog" aria-modal="true" aria-label="Pair your plushie"><button type="button" className={styles.closeButton} onClick={() => setShowRequest(false)} aria-label="Close">×</button><p className={styles.eyebrow}><CloserWordArt asset="your-nickname" label="Your nickname" /></p><form className={styles.form} onSubmit={submitRequest}><label><input value={name} maxLength={60} onChange={(event) => setName(event.target.value)} placeholder="Your nickname" required /></label><label><CloserWordArt asset="partners-id" label="Your partner's ID" /><input value={partnerCertificateId} maxLength={100} onChange={(event) => setPartnerCertificateId(event.target.value)} placeholder="For example: 124" required /></label><button className={styles.primaryButton} disabled={busy}>{busy ? "Sending…" : <CloserWordArt asset="pair-now" label="Pair now" />}</button></form></section>}
       </>}
     </section> : <section className={styles.sharedSpace}>
-      <div className={styles.namesPill}>“{state.connection.names[0]}” + “{state.connection.names[1]}”</div>
+      <div className={styles.namesPill}><CloserGlyphText text={`${state.connection.names[0]} + ${state.connection.names[1]}`} /></div>
       <div className={styles.photoFrame}>
         {state.connection.hasPhoto ? <img className={styles.photo} src={mediaUrl("photo")} alt={`A shared memory from ${state.connection.names.join(" and ")}`} /> : <div className={styles.mediaPlaceholder}><span>♥</span><h2>Your memories will live here</h2><p>Share the first photo when it is your turn.</p></div>}
       </div>
