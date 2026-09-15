@@ -46,6 +46,7 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
   const [error, setError] = useState("");
   const [showRequest, setShowRequest] = useState(false);
   const [showAccept, setShowAccept] = useState(false);
+  const [showPhotoPicker, setShowPhotoPicker] = useState(false);
   const [language, setLanguage] = useState<"en" | "ms">("en");
   const [name, setName] = useState("");
   const [partnerCertificateId, setPartnerCertificateId] = useState("");
@@ -245,6 +246,7 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
+    setShowPhotoPicker(false);
     try { await sendMedia("photo", await imageDataUrl(file)); } catch (caught) { setError(messageFrom(caught)); }
   }
 
@@ -279,7 +281,7 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
   return <main className={styles.page} style={themedStyle}><div className={styles.scene}>
     <header className={styles.header}>
       <img className={styles.logo} src="https://meaningful-plushies-fulfilment.vercel.app/closer/meaningful-plushies-logo.png" alt="Meaningful Plushies" />
-      <div className={styles.languageSwitch}><button className={language === "en" ? styles.selectedLanguage : ""} onClick={() => setLanguage("en")}><CloserWordArt asset="english" label="English" /></button><button className={language === "ms" ? styles.selectedLanguage : ""} onClick={() => setLanguage("ms")}><CloserWordArt asset="malay" label="Malay" /></button></div>
+      {state.status === "unlinked" && <div className={styles.languageSwitch}><button className={language === "en" ? styles.selectedLanguage : ""} onClick={() => setLanguage("en")}><CloserWordArt asset="english" label="English" /></button><button className={language === "ms" ? styles.selectedLanguage : ""} onClick={() => setLanguage("ms")}><CloserWordArt asset="malay" label="Malay" /></button></div>}
     </header>
     {isDemo && <p className={styles.demoNotice}>Demo preview · No customer data is connected.</p>}
     {error && <p className={styles.error}>{error}</p>}
@@ -306,24 +308,18 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
         {!showRequest ? <button className={styles.primaryButton} onClick={() => setShowRequest(true)}><CloserWordArt asset="pair-snowy" label="Pair Snowy" /></button> : <section className={styles.card} role="dialog" aria-modal="true" aria-label="Pair your plushie"><button type="button" className={styles.closeButton} onClick={() => setShowRequest(false)} aria-label="Close">×</button><p className={styles.eyebrow}><CloserWordArt asset="your-nickname" label="Your nickname" /></p><form className={styles.form} onSubmit={submitRequest}><label><input value={name} maxLength={60} onChange={(event) => setName(event.target.value)} placeholder="Your nickname" required /></label><label><CloserWordArt asset="partners-id" label="Your partner's ID" /><input value={partnerCertificateId} maxLength={100} onChange={(event) => setPartnerCertificateId(event.target.value)} placeholder="For example: 124" required /></label><button className={styles.primaryButton} disabled={busy}>{busy ? "Sending…" : <CloserWordArt asset="pair-now" label="Pair now" />}</button></form></section>}
       </>}
     </section> : <section className={styles.sharedSpace}>
+      <button type="button" className={styles.photoFrame} disabled={busy || !state.connection.canUploadNextPhoto} onClick={() => setShowPhotoPicker(true)} aria-label={state.connection.canUploadNextPhoto ? "Add or replace the shared photo" : `Waiting for ${state.connection.names[1]} to add the next photo`}>
+        {state.connection.hasPhoto ? <img className={styles.photo} src={mediaUrl("photo")} alt={`A shared memory from ${state.connection.names.join(" and ")}`} /> : <span className={styles.photoEmpty} aria-hidden="true" />}
+      </button>
       <div className={styles.namesPill}><CloserGlyphText text={`${state.connection.names[0]} + ${state.connection.names[1]}`} /></div>
-      <div className={styles.photoFrame}>
-        {state.connection.hasPhoto ? <img className={styles.photo} src={mediaUrl("photo")} alt={`A shared memory from ${state.connection.names.join(" and ")}`} /> : <div className={styles.mediaPlaceholder}><span>♥</span><h2>Your memories will live here</h2><p>Share the first photo when it is your turn.</p></div>}
-      </div>
-      <div className={styles.uploadCard}>
-        <h2>{state.connection.canUploadNextPhoto ? "It’s your turn to upload" : `It’s ${state.connection.names[1]}’s turn to upload`}</h2>
-        {state.connection.canUploadNextPhoto ? <div className={styles.photoButtons}>
-          <button className={styles.primaryButton} disabled={busy} onClick={() => cameraPhotoInput.current?.click()}>Take image</button>
-          <button className={styles.primaryButton} disabled={busy} onClick={() => galleryPhotoInput.current?.click()}>Open gallery</button>
-          <input ref={cameraPhotoInput} type="file" accept="image/*" capture="environment" onChange={selectPhoto} hidden />
-          <input ref={galleryPhotoInput} type="file" accept="image/*" onChange={selectPhoto} hidden />
-        </div> : <p className={styles.waiting}>You’ll be able to share after {state.connection.names[1]} adds the next photo.</p>}
-      </div>
+      <input ref={cameraPhotoInput} type="file" accept="image/*" capture="environment" onChange={selectPhoto} hidden />
+      <input ref={galleryPhotoInput} type="file" accept="image/*" onChange={selectPhoto} hidden />
       <div className={styles.voiceCard}>
         {state.connection.hasVoice ? <><audio className={styles.audio} controls src={mediaUrl("voice")}>Your browser cannot play this voice note.</audio><h2>“{state.connection.names[1]}” left you a message</h2></> : <h2>Leave “{state.connection.names[1]}” a message</h2>}
       </div>
       <button className={styles.primaryButton} onClick={() => void toggleRecording()} disabled={busy}>{recording ? "Stop and send voice message" : "Send them a voice message"}</button>
       <button className={styles.textButton} onClick={() => void unlink()} disabled={busy}>{busy ? "Unlinking…" : "Unlink our plushies"}</button>
+      {showPhotoPicker && <section className={`${styles.card} ${styles.photoPicker}`} role="dialog" aria-modal="true" aria-label="Add a shared photo"><button type="button" className={styles.closeButton} onClick={() => setShowPhotoPicker(false)} aria-label="Close">×</button><p className={styles.eyebrow}>Add a photo</p><h1>Choose a photo</h1><div className={styles.photoButtons}><button className={styles.primaryButton} disabled={busy} onClick={() => cameraPhotoInput.current?.click()}>Take photo</button><button className={styles.primaryButton} disabled={busy} onClick={() => galleryPhotoInput.current?.click()}>Open gallery</button></div></section>}
     </section>}
   </div></main>;
 }
