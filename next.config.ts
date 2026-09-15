@@ -10,6 +10,15 @@ const nextConfig: NextConfig = {
   // App proxy HTML is served from Shopify's domain. Load its Next assets from
   // the app host while keeping the customer-facing URL on the Shopify domain.
   assetPrefix: process.env.NEXT_PUBLIC_APP_URL || "https://meaningful-plushies-fulfilment.vercel.app",
+  // The storefront proxy occasionally returns an HTML gateway response instead
+  // of the Closer API response. Permit the customer page to fall back to the
+  // app host for a read-only state check when that happens.
+  async headers() {
+    return [{
+      source: "/api/closer",
+      headers: [{ key: "Access-Control-Allow-Origin", value: "https://meaningfulplushies.com" }],
+    }];
+  },
 };
 
 export default nextConfig;
