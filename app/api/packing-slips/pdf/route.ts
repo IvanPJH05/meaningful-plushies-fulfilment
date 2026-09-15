@@ -1,6 +1,7 @@
 import { PDFDocument, type PDFFont, type PDFPage, StandardFonts, rgb } from "pdf-lib";
 import { NextResponse } from "next/server";
 
+import { code128Modules, code128UnitCount } from "@/lib/code128";
 import { orderBarcodeValue } from "@/lib/order-barcode";
 
 export const runtime = "nodejs";
@@ -34,6 +35,7 @@ const code39: Record<string, string> = {
   Y: "wwnnwnnnn", Z: "nwwnwnnnn", "-": "nwnnnnwnw", ".": "wwnnnnwnn", " ": "nwwnnnwnn",
   "$": "nwnwnwnnn", "/": "nwnwnnnwn", "+": "nwnnnwnwn", "%": "nnnwnwnwn", "*": "nwnnwnwnn",
 };
+void code39;
 
 function value(input: unknown) {
   if (typeof input !== "string") return "";
@@ -65,22 +67,16 @@ function fitLines(text: string, maxWidth: number, font: { widthOfTextAtSize: (te
 }
 
 function drawBarcode(page: PDFPage, text: string, x: number, y: number, width: number, height: number) {
-  const encoded = `*${text.toUpperCase().replace(/[^A-Z0-9 .\-$/+%]/g, "")}*`;
-  const units = [...encoded].reduce((total, character) => total + [...(code39[character] ?? code39["-"])].reduce((sum, unit) => sum + (unit === "w" ? 3 : 1), 0) + 1, 0);
-  // Code 39 requires empty "quiet zones" before and after the bars. Without
-  // them, scanners can miss a barcode printed close to another line. Keep ten
-  // narrow modules on each side while retaining the requested half-page block.
+  const modules = code128Modules(text);
+  // Code 128 needs empty quiet zones before and after the bars. The scanner
+  // value remains MP-<order>, but its bars are wider than Code 39 at A6 size.
   const quietZoneUnits = 10;
-  const scale = width / (units + quietZoneUnits * 2);
+  const scale = width / (code128UnitCount(text) + quietZoneUnits * 2);
   let cursor = x + quietZoneUnits * scale;
-  for (const character of encoded) {
-    const pattern = code39[character] ?? code39["-"];
-    for (let index = 0; index < pattern.length; index += 1) {
-      const barWidth = (pattern[index] === "w" ? 3 : 1) * scale;
-      if (index % 2 === 0) page.drawRectangle({ x: cursor, y, width: barWidth, height, color: rgb(0, 0, 0) });
-      cursor += barWidth;
-    }
-    cursor += scale;
+  for (const segment of modules) {
+    const barWidth = segment.width * scale;
+    if (segment.black) page.drawRectangle({ x: cursor, y, width: barWidth, height, color: rgb(0, 0, 0) });
+    cursor += barWidth;
   }
 }
 
