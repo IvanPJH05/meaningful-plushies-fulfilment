@@ -251,6 +251,13 @@ export async function rejectCloserConnection(certificateId: string, requestIdVal
   if (!data?.length) throw new CloserError("That connection request is no longer available.", 404);
 }
 
+export async function cancelCloserConnectionRequest(certificateId: string, requestIdValue: unknown) {
+  const requestId = cleanText(requestIdValue, "Connection request", 100);
+  const { data, error } = await database().from("closer_app_pairing_requests").update({ status: "CANCELLED" }).eq("id", requestId).eq("from_certificate_id", certificateId).eq("status", "PENDING").select("id");
+  throwDatabaseError(error);
+  if (!data?.length) throw new CloserError("That connection request is no longer available.", 404);
+}
+
 export async function acceptCloserConnection(certificateId: string, requestIdValue: unknown, recipientNameValue: unknown) {
   const requestId = cleanText(requestIdValue, "Connection request", 100);
   const recipientName = cleanText(recipientNameValue, "Your name");

@@ -167,6 +167,20 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
     }
   }
 
+  async function cancelOutgoingRequest() {
+    if (!state || state.status !== "unlinked" || !state.outgoingRequest) return;
+    setBusy(true);
+    setError("");
+    try {
+      const data = await call("cancel_request", { requestId: state.outgoingRequest.id });
+      setState(data.state || null);
+    } catch (caught) {
+      setError(messageFrom(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function unlink() {
     if (!window.confirm("Unlink these plushies? Their shared space will be closed.")) return;
     setBusy(true);
@@ -265,10 +279,16 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
           <p className={`${styles.eyebrow} ${styles.requestEyebrow}`}><CloserWordArt asset="connection-request" label="Connection request" /></p>
           {!showAccept ? <><h1 className={styles.requestHeading}><CloserGlyphText className={styles.requestName} text={state.request.requesterName} label={state.request.requesterName} /><CloserWordArt className={styles.requestPhrase} asset="wants-to-pair-with-you" label="Wants to pair with you" /></h1><div className={styles.actions}><button className={styles.primaryButton} disabled={busy} onClick={() => setShowAccept(true)}><CloserWordArt className={styles.acceptWord} asset="accept" label="Accept" /></button><button className={styles.secondaryButton} disabled={busy} onClick={() => void rejectRequest()}><CloserWordArt className={styles.actionWord} asset="reject" label="Reject" /></button></div></> : <form className={styles.form} onSubmit={submitAccept}><label><CloserWordArt className={styles.formLabelArt} asset="your-nickname" label="Your nickname" /><input value={name} maxLength={60} onChange={(event) => setName(event.target.value)} placeholder="Your nickname" required /></label><button className={styles.primaryButton} disabled={busy}>{busy ? "Connecting…" : <CloserWordArt className={styles.createSpaceWord} asset="create-our-shared-space" label="Create our shared space" />}</button><button type="button" className={styles.textButton} onClick={() => setShowAccept(false)}><CloserWordArt className={styles.actionWord} asset="cancel" label="Cancel" /></button></form>}
         </section>
-      </> : state.outgoingRequest ? <section className={styles.card}>
-        <p className={styles.eyebrow}>CONNECTION REQUEST SENT</p>
-        <h1>Waiting for your partner to accept.</h1>
-        <p>Your request was sent to Snowy ID {state.outgoingRequest.partnerCertificateId}. Ask your partner to scan their NFC tag and accept the connection.</p>
+      </> : state.outgoingRequest ? <section className={`${styles.card} ${styles.waitingCard}`}>
+        <p className={`${styles.eyebrow} ${styles.waitingEyebrow}`}><CloserWordArt asset="connection-request-sent" label="Connection request sent" /></p>
+        <div className={styles.waitingAnimation} role="img" aria-label="Waiting for your partner to accept">
+          {["waiting-0", "waiting-1", "waiting-2", "waiting-3"].map((asset, index) => <CloserWordArt className={`${styles.waitingFrame} ${styles[`waitingFrame${index}`]}`} asset={asset} label="" key={asset} />)}
+        </div>
+        <div className={styles.sentTo}>
+          <CloserWordArt className={styles.sentToArt} asset="your-request-was-sent-to" label="Your request was sent to" />
+          <CloserGlyphText className={styles.partnerId} text={state.outgoingRequest.partnerCertificateId} label={`Partner ID ${state.outgoingRequest.partnerCertificateId}`} />
+        </div>
+        <button type="button" className={styles.textButton} disabled={busy} onClick={() => void cancelOutgoingRequest()}><CloserWordArt className={styles.actionWord} asset="cancel" label="Cancel request" /></button>
       </section> : <>
         {!showRequest ? <button className={styles.primaryButton} onClick={() => setShowRequest(true)}><CloserWordArt asset="pair-snowy" label="Pair Snowy" /></button> : <section className={styles.card} role="dialog" aria-modal="true" aria-label="Pair your plushie"><button type="button" className={styles.closeButton} onClick={() => setShowRequest(false)} aria-label="Close">×</button><p className={styles.eyebrow}><CloserWordArt asset="your-nickname" label="Your nickname" /></p><form className={styles.form} onSubmit={submitRequest}><label><input value={name} maxLength={60} onChange={(event) => setName(event.target.value)} placeholder="Your nickname" required /></label><label><CloserWordArt asset="partners-id" label="Your partner's ID" /><input value={partnerCertificateId} maxLength={100} onChange={(event) => setPartnerCertificateId(event.target.value)} placeholder="For example: 124" required /></label><button className={styles.primaryButton} disabled={busy}>{busy ? "Sending…" : <CloserWordArt asset="pair-now" label="Pair now" />}</button></form></section>}
       </>}
