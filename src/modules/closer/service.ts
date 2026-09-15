@@ -54,8 +54,9 @@ async function connectionForCertificate(certificate: Certificate | null) {
   const direct = await connectionById(certificate.connection_id);
   if (direct) return direct;
 
-  // Recover safely from an interrupted older pairing attempt: a connection may
-  // exist while one participant's certificate did not receive its link.
+  // Older installs accidentally made connection_id unique. They can therefore
+  // store the link on only one certificate; look up the pair record for the
+  // other side without trying to write that same ID twice.
   const [asFirst, asSecond] = await Promise.all([
     database().from("closer_app_connections").select("*").eq("first_certificate_id", certificate.certificate_id).maybeSingle<Connection>(),
     database().from("closer_app_connections").select("*").eq("second_certificate_id", certificate.certificate_id).maybeSingle<Connection>(),
@@ -64,9 +65,25 @@ async function connectionForCertificate(certificate: Certificate | null) {
   throwDatabaseError(asSecond.error);
   const recovered = asFirst.data || asSecond.data;
   if (!recovered) return null;
-  const { error } = await database().from("closer_app_certificates").update({ connection_id: recovered.id }).eq("certificate_id", certificate.certificate_id).is("connection_id", null);
-  throwDatabaseError(error);
-  return recovered;
+  const [first, second] = await Promise.all([certificateById(recovered.first_certificate_id), certificateById(recovered.second_certificate_id)]);
+  // A connection row with no certificate pointing to it is an incomplete
+  // legacy attempt, not an active pair.
+  return first?.connection_id === recovered.id || second?.connection_id === recovered.id ? recovered : null;
+}
+
+async function clearOrphanedConnections(certificateIds: string[]) {
+  const results = await Promise.all(certificateIds.flatMap((certificateId) => [
+    database().from("closer_app_connections").select("*").eq("first_certificate_id", certificateId).maybeSingle<Connection>(),
+    database().from("closer_app_connections").select("*").eq("second_certificate_id", certificateId).maybeSingle<Connection>(),
+  ]));
+  results.forEach((result) => throwDatabaseError(result.error));
+  const connections = [...new Map(results.map((result) => result.data).filter((connection): connection is Connection => Boolean(connection)).map((connection) => [connection.id, connection])).values()];
+  for (const connection of connections) {
+    const [first, second] = await Promise.all([certificateById(connection.first_certificate_id), certificateById(connection.second_certificate_id)]);
+    if (first?.connection_id === connection.id || second?.connection_id === connection.id) continue;
+    const { error } = await database().from("closer_app_connections").delete().eq("id", connection.id);
+    throwDatabaseError(error);
+  }
 }
 
 async function logActivity(connectionId: string, actorCertificateId: string, action: string, details?: Record<string, unknown>) {
@@ -235,9 +252,10 @@ export async function requestCloserConnection(fromCertificateId: string, toCerti
   const toCertificateId = cleanText(toCertificateIdValue, "Partner certificate ID", 100);
   const requesterName = cleanText(requesterNameValue, "Your name");
   if (fromCertificateId === toCertificateId) throw new CloserError("Choose your partner's certificate, not your own.");
+  await clearOrphanedConnections([fromCertificateId, toCertificateId]);
   const [from, to] = await Promise.all([certificateById(fromCertificateId), certificateById(toCertificateId)]);
   if (!to) throw new CloserError("That certificate ID was not found.", 404);
-  if (from?.connection_id || to.connection_id) throw new CloserError("One of these plushies is already linked.", 409);
+  if (await connectionForCertificate(from) || await connectionForCertificate(to)) throw new CloserError("One of these plushies is already linked.", 409);
   const { error: cancelledError } = await database().from("closer_app_pairing_requests").update({ status: "CANCELLED" }).eq("from_certificate_id", fromCertificateId).eq("status", "PENDING");
   throwDatabaseError(cancelledError);
   const { error } = await database().from("closer_app_pairing_requests").insert({ id: randomUUID(), from_certificate_id: fromCertificateId, to_certificate_id: toCertificateId, requester_name: requesterName, status: "PENDING" });
@@ -264,19 +282,20 @@ export async function acceptCloserConnection(certificateId: string, requestIdVal
   const { data: request, error: requestError } = await database().from("closer_app_pairing_requests").select("id,from_certificate_id,to_certificate_id,requester_name,status,created_at").eq("id", requestId).eq("to_certificate_id", certificateId).eq("status", "PENDING").maybeSingle<PairingRequest>();
   throwDatabaseError(requestError);
   if (!request) throw new CloserError("That connection request is no longer available.", 404);
+  await clearOrphanedConnections([request.from_certificate_id, certificateId]);
   const [from, to] = await Promise.all([certificateById(request.from_certificate_id), certificateById(certificateId)]);
   if (!from || !to) throw new CloserError("One of these certificates is no longer available.", 404);
-  if (from.connection_id || to.connection_id) throw new CloserError("One of these plushies is already linked.", 409);
+  if (await connectionForCertificate(from) || await connectionForCertificate(to)) throw new CloserError("One of these plushies is already linked.", 409);
   const connectionId = randomUUID();
   const { error: connectionError } = await database().from("closer_app_connections").insert({ id: connectionId, first_certificate_id: from.certificate_id, second_certificate_id: to.certificate_id, first_name: request.requester_name, second_name: recipientName, next_photo_certificate_id: from.certificate_id });
   throwDatabaseError(connectionError);
   const { data: linkedCertificates, error: linkError } = await database().from("closer_app_certificates")
     .update({ connection_id: connectionId })
-    .in("certificate_id", [from.certificate_id, to.certificate_id])
+    .eq("certificate_id", from.certificate_id)
     .is("connection_id", null)
     .select("certificate_id");
   throwDatabaseError(linkError);
-  if (linkedCertificates?.length !== 2) {
+  if (linkedCertificates?.length !== 1) {
     await database().from("closer_app_certificates").update({ connection_id: null }).eq("connection_id", connectionId);
     await database().from("closer_app_connections").delete().eq("id", connectionId);
     throw new CloserError("One of these plushies was linked at the same time. Please refresh and try again.", 409);
@@ -290,7 +309,7 @@ export async function acceptCloserConnection(certificateId: string, requestIdVal
 
 export async function unlinkCloserConnection(certificateId: string) {
   const certificate = await certificateById(certificateId);
-  const connection = await connectionById(certificate?.connection_id || null);
+  const connection = await connectionForCertificate(certificate);
   if (!connection) {
     // An administrator may be cleaning up a request after a partial pairing
     // flow. Treat that as an unlink operation too, so the customer does not
@@ -321,7 +340,7 @@ export async function unlinkCloserConnection(certificateId: string) {
 
 export async function uploadCloserMedia(args: { certificateId: string; type: "photo" | "voice"; bytes: ArrayBuffer; contentType: string }) {
   const certificate = await certificateById(args.certificateId);
-  const connection = await connectionById(certificate?.connection_id || null);
+  const connection = await connectionForCertificate(certificate);
   if (!connection) throw new CloserError("Link your plushies before sharing media.", 409);
   if (args.type === "photo" && connection.next_photo_certificate_id !== args.certificateId) throw new CloserError("It is your partner’s turn to upload the next photo.", 409);
   const extension = args.type === "photo" ? "jpg" : args.contentType === "audio/mp4" ? "m4a" : "webm";
