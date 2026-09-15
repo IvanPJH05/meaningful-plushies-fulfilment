@@ -272,11 +272,11 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
     } catch (caught) { setError("Microphone access is needed to record a voice note."); }
   }
 
-  if (loading) return <main className={styles.page} style={themedStyle}><div className={styles.loading}>Opening your shared space…</div></main>;
-  if (error && !state) return <main className={styles.page} style={themedStyle}><section className={styles.card}><p className={styles.eyebrow}>closer ♥</p><h1>We couldn’t open this plushie.</h1><p>{error}</p><button className={styles.secondaryButton} onClick={() => void refresh()}>Try again</button></section></main>;
+  if (loading) return <main className={styles.page} style={themedStyle}><div className={styles.scene}><div className={styles.loading}>Opening your shared space…</div></div></main>;
+  if (error && !state) return <main className={styles.page} style={themedStyle}><div className={styles.scene}><section className={styles.card}><p className={styles.eyebrow}>closer ♥</p><h1>We couldn’t open this plushie.</h1><p>{error}</p><button className={styles.secondaryButton} onClick={() => void refresh()}>Try again</button></section></div></main>;
   if (!state) return null;
 
-  return <main className={styles.page} style={themedStyle}>
+  return <main className={styles.page} style={themedStyle}><div className={styles.scene}>
     <header className={styles.header}>
       <img className={styles.logo} src="https://meaningful-plushies-fulfilment.vercel.app/closer/meaningful-plushies-logo.png" alt="Meaningful Plushies" />
       <div className={styles.languageSwitch}><button className={language === "en" ? styles.selectedLanguage : ""} onClick={() => setLanguage("en")}><CloserWordArt asset="english" label="English" /></button><button className={language === "ms" ? styles.selectedLanguage : ""} onClick={() => setLanguage("ms")}><CloserWordArt asset="malay" label="Malay" /></button></div>
@@ -325,5 +325,5 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
       <button className={styles.primaryButton} onClick={() => void toggleRecording()} disabled={busy}>{recording ? "Stop and send voice message" : "Send them a voice message"}</button>
       <button className={styles.textButton} onClick={() => void unlink()} disabled={busy}>{busy ? "Unlinking…" : "Unlink our plushies"}</button>
     </section>}
-  </main>;
+  </div></main>;
 }
