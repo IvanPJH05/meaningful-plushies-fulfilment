@@ -284,8 +284,27 @@ export async function acceptCloserConnection(certificateId: string, requestIdVal
 export async function unlinkCloserConnection(certificateId: string) {
   const certificate = await certificateById(certificateId);
   const connection = await connectionById(certificate?.connection_id || null);
-  if (!connection) throw new CloserError("This plushie is not linked.", 409);
+  if (!connection) {
+    // An administrator may be cleaning up a request after a partial pairing
+    // flow. Treat that as an unlink operation too, so the customer does not
+    // remain stuck on the "waiting for your partner" screen.
+    const { data, error } = await database().from("closer_app_pairing_requests")
+      .update({ status: "CANCELLED" })
+      .or(`from_certificate_id.eq.${certificateId},to_certificate_id.eq.${certificateId}`)
+      .eq("status", "PENDING")
+      .select("id");
+    throwDatabaseError(error);
+    if (!data?.length) throw new CloserError("This plushie is not linked.", 409);
+    return { mediaPaths: [] };
+  }
   await logActivity(connection.id, certificateId, "connection_unlinked");
+  // Remove every outstanding request involving either side. This prevents an
+  // older request reappearing as soon as the now-unlinked NFC page refreshes.
+  const { error: cancelledRequestsError } = await database().from("closer_app_pairing_requests")
+    .update({ status: "CANCELLED" })
+    .or(`from_certificate_id.in.(${connection.first_certificate_id},${connection.second_certificate_id}),to_certificate_id.in.(${connection.first_certificate_id},${connection.second_certificate_id})`)
+    .eq("status", "PENDING");
+  throwDatabaseError(cancelledRequestsError);
   const { error: firstError } = await database().from("closer_app_certificates").update({ connection_id: null }).eq("certificate_id", connection.first_certificate_id);
   const { error: secondError } = await database().from("closer_app_certificates").update({ connection_id: null }).eq("certificate_id", connection.second_certificate_id);
   const { error: deleteError } = await database().from("closer_app_connections").delete().eq("id", connection.id);
