@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   CloserError,
   acceptCloserConnection,
-  authenticateCloserCertificate,
+  authenticateCloserAccess,
   closerState,
   rejectCloserConnection,
   requestCloserConnection,
@@ -37,7 +37,7 @@ function responseError(error: unknown) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json() as Record<string, unknown>;
-    const certificate = await authenticateCloserCertificate(body.certificateId, body.accessKey);
+    const certificate = await authenticateCloserAccess(body.certificateId, body.accessKey, body.adminPreview);
     const action = body.action;
 
     // Keep the read response consistent with every other Closer action. The
