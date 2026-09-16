@@ -38,7 +38,10 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
   // for API calls. The proxy can intermittently replace a POST response with
   // an HTML gateway page, which leaves one of the paired phones out of sync.
   const apiPath = proxyPath ? backupApiPath : "/api/closer";
-  const mediaPath = proxyPath ? `${proxyPath}/media` : "/api/closer/media";
+  // Shared media needs the same reliable route as pairing actions. Shopify's
+  // app proxy can return an HTML error page for the image request, leaving the
+  // browser to show the image's alt text instead of the uploaded photo.
+  const mediaPath = proxyPath ? `${backupApiPath}/media` : "/api/closer/media";
   const themePath = proxyPath ? `${proxyPath}/theme` : "/api/closer/theme";
   const [state, setState] = useState<CloserState | null>(null);
   const [loading, setLoading] = useState(true);
