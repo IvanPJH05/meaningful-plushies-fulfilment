@@ -55,6 +55,7 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
   const [partnerCertificateId, setPartnerCertificateId] = useState("");
   const [recording, setRecording] = useState(false);
   const [mediaVersion, setMediaVersion] = useState(0);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [theme, setTheme] = useState<CloserTheme>(defaultTheme);
   const recorder = useRef<MediaRecorder | null>(null);
   const recordingStream = useRef<MediaStream | null>(null);
@@ -221,8 +222,10 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
       const result = await call("upload", { mediaType, data });
       setState(result.state || null);
       setMediaVersion((version) => version + 1);
+      return true;
     } catch (caught) {
       setError(messageFrom(caught));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -250,7 +253,14 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
     event.target.value = "";
     if (!file) return;
     setShowPhotoPicker(false);
-    try { await sendMedia("photo", await imageDataUrl(file)); } catch (caught) { setError(messageFrom(caught)); }
+    setUploadingPhoto(true);
+    try {
+      const uploaded = await sendMedia("photo", await imageDataUrl(file));
+      if (!uploaded) setUploadingPhoto(false);
+    } catch (caught) {
+      setUploadingPhoto(false);
+      setError(messageFrom(caught));
+    }
   }
 
   async function toggleRecording() {
@@ -312,7 +322,8 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
       </>}
     </section> : <section className={styles.sharedSpace}>
       <button type="button" className={styles.photoFrame} disabled={busy || !state.connection.canUploadNextPhoto} onClick={() => setShowPhotoPicker(true)} aria-label={state.connection.canUploadNextPhoto ? "Add or replace the shared photo" : `Waiting for ${state.connection.names[1]} to add the next photo`}>
-        {state.connection.hasPhoto ? <img className={styles.photo} src={mediaUrl("photo")} alt={`A shared memory from ${state.connection.names.join(" and ")}`} /> : <span className={styles.photoEmpty} aria-hidden="true" />}
+        {state.connection.hasPhoto ? <img className={styles.photo} src={mediaUrl("photo")} alt={`A shared memory from ${state.connection.names.join(" and ")}`} onLoad={() => setUploadingPhoto(false)} onError={() => { setUploadingPhoto(false); setError("We could not load the shared photo. Please refresh and try again."); }} /> : <span className={styles.photoEmpty} aria-hidden="true" />}
+        {uploadingPhoto && <span className={styles.photoUploading} role="status" aria-live="polite"><CloserGlyphText text="Updating" label="Updating shared photo" /><span className={styles.uploadDots} aria-hidden="true"><i /><i /><i /></span></span>}
       </button>
       <div className={styles.namesPill}><CloserGlyphText text={`${state.connection.names[0]} + ${state.connection.names[1]}`} /></div>
       <input ref={cameraPhotoInput} type="file" accept="image/*" capture="environment" onChange={selectPhoto} hidden />
