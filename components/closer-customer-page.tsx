@@ -50,6 +50,7 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
   const [showRequest, setShowRequest] = useState(false);
   const [showAccept, setShowAccept] = useState(false);
   const [showPhotoPicker, setShowPhotoPicker] = useState(false);
+  const [showUnlinkConfirm, setShowUnlinkConfirm] = useState(false);
   const [language, setLanguage] = useState<"en" | "ms">("en");
   const [name, setName] = useState("");
   const [partnerCertificateId, setPartnerCertificateId] = useState("");
@@ -213,12 +214,12 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
   }
 
   async function unlink() {
-    if (!window.confirm("Unlink these plushies? Their shared space will be closed.")) return;
     setBusy(true);
     setError("");
     try {
       const data = await call("unlink");
       setState(data.state || null);
+      setShowUnlinkConfirm(false);
     } catch (caught) {
       setError(messageFrom(caught));
     } finally {
@@ -228,7 +229,6 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
 
   const mediaUrl = (type: "photo" | "voice") => `${mediaPath}?certificate=${encodeURIComponent(certificateId)}&key=${encodeURIComponent(accessKey)}&adminPreview=${encodeURIComponent(adminPreview)}&type=${type}&v=${mediaVersion}`;
   const recordingTime = `${Math.floor(recordingSeconds / 60)}:${String(recordingSeconds % 60).padStart(2, "0")}`;
-  const voiceTime = (seconds: number) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
 
   async function toggleVoicePlayback() {
     const audio = voiceAudio.current;
@@ -359,14 +359,14 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
           <audio ref={voiceAudio} className={styles.audio} src={mediaUrl("voice")} onLoadedMetadata={(event) => setVoiceDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)} onTimeUpdate={(event) => setVoiceCurrentTime(event.currentTarget.currentTime)} onPlay={() => setVoicePlaying(true)} onPause={() => setVoicePlaying(false)} onEnded={(event) => { event.currentTarget.currentTime = 0; setVoicePlaying(false); setVoiceCurrentTime(0); }} />
           <button type="button" className={styles.voicePlayButton} onClick={() => void toggleVoicePlayback()} aria-label={voicePlaying ? "Pause voice message" : "Play voice message"}><CloserGlyphText text={voicePlaying ? "Pause" : "Play"} label={voicePlaying ? "Pause" : "Play"} /></button>
           <input className={styles.voiceProgress} type="range" min="0" max={voiceDuration || 0} step="0.1" value={Math.min(voiceCurrentTime, voiceDuration || 0)} onChange={(event) => { const time = Number(event.target.value); if (voiceAudio.current) voiceAudio.current.currentTime = time; setVoiceCurrentTime(time); }} aria-label="Voice message progress" />
-          <CloserGlyphText className={styles.voiceTime} text={`${voiceTime(voiceCurrentTime)} ${voiceTime(voiceDuration)}`} label={`${voiceTime(voiceCurrentTime)} of ${voiceTime(voiceDuration)}`} />
         </div>}
       </div>
       <button className={`${styles.primaryButton} ${recording ? styles.recordingButton : ""}`} onClick={() => void toggleRecording()} disabled={busy} aria-label={recording ? "Stop and send voice message" : `Send ${state.connection.names[1]} a voice message`}>
         {recording ? <span className={styles.recordingLabel}><span className={styles.recordingPulse} aria-hidden="true" /><CloserGlyphText text={`Recording ${recordingTime}`} label={`Recording ${recordingTime}`} /></span> : <CloserGlyphText className={styles.sendVoiceLabel} text={`Send ${state.connection.names[1]} a voice message`} label={`Send ${state.connection.names[1]} a voice message`} />}
       </button>
-      <button className={styles.textButton} onClick={() => void unlink()} disabled={busy}><CloserGlyphText className={styles.unlinkLabel} text={busy ? "Unlinking" : "Unlink our plushies"} label={busy ? "Unlinking" : "Unlink our plushies"} /></button>
+      <button className={styles.textButton} onClick={() => setShowUnlinkConfirm(true)} disabled={busy}><CloserGlyphText className={styles.unlinkLabel} text="Unlink our plushies" label="Unlink our plushies" /></button>
       {showPhotoPicker && <section className={`${styles.card} ${styles.photoPicker}`} role="dialog" aria-modal="true" aria-label="Add a shared photo"><button type="button" className={styles.closeButton} onClick={() => setShowPhotoPicker(false)} aria-label="Close">×</button><h1><CloserGlyphText className={styles.photoPickerTitle} text="Add a photo" label="Add a photo" /></h1><div className={styles.photoButtons}><button className={styles.primaryButton} disabled={busy} onClick={() => cameraPhotoInput.current?.click()}><CloserGlyphText className={styles.photoActionArt} text="Take photo" label="Take photo" /></button><button className={styles.primaryButton} disabled={busy} onClick={() => galleryPhotoInput.current?.click()}><CloserGlyphText className={styles.photoActionArt} text="Open gallery" label="Open gallery" /></button></div></section>}
+      {showUnlinkConfirm && <section className={`${styles.card} ${styles.unlinkDialog}`} role="dialog" aria-modal="true" aria-label="Unlink our plushies"><button type="button" className={styles.closeButton} onClick={() => setShowUnlinkConfirm(false)} aria-label="Close">×</button><h1><CloserGlyphText className={styles.unlinkDialogTitle} text="Unlink our plushies" label="Unlink our plushies" /></h1><p><CloserGlyphText className={styles.unlinkDialogMessage} text="Your shared space will close" label="Your shared space will close" /></p><div className={styles.actions}><button className={styles.primaryButton} disabled={busy} onClick={() => void unlink()}><CloserGlyphText className={styles.unlinkConfirmLabel} text={busy ? "Unlinking" : "Unlink"} label={busy ? "Unlinking" : "Unlink"} /></button><button className={styles.secondaryButton} disabled={busy} onClick={() => setShowUnlinkConfirm(false)}><CloserGlyphText className={styles.unlinkConfirmLabel} text="Cancel" label="Cancel" /></button></div></section>}
     </section>}
   </div></main>;
 }
