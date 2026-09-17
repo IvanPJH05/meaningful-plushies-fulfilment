@@ -54,6 +54,7 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
   const [name, setName] = useState("");
   const [partnerCertificateId, setPartnerCertificateId] = useState("");
   const [recording, setRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [mediaVersion, setMediaVersion] = useState(0);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [theme, setTheme] = useState<CloserTheme>(defaultTheme);
@@ -125,6 +126,14 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
       })
       .catch(() => undefined);
   }, [isDemo, themePath]);
+
+  useEffect(() => {
+    if (!recording) return;
+    const startedAt = Date.now();
+    setRecordingSeconds(0);
+    const interval = window.setInterval(() => setRecordingSeconds(Math.floor((Date.now() - startedAt) / 1000)), 250);
+    return () => window.clearInterval(interval);
+  }, [recording]);
 
   async function recoverFromTransportIssue(caught: unknown) {
     const message = messageFrom(caught);
@@ -214,6 +223,7 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
   }
 
   const mediaUrl = (type: "photo" | "voice") => `${mediaPath}?certificate=${encodeURIComponent(certificateId)}&key=${encodeURIComponent(accessKey)}&adminPreview=${encodeURIComponent(adminPreview)}&type=${type}&v=${mediaVersion}`;
+  const recordingTime = `${Math.floor(recordingSeconds / 60)}:${String(recordingSeconds % 60).padStart(2, "0")}`;
 
   async function sendMedia(mediaType: "photo" | "voice", data: string) {
     setBusy(true);
@@ -321,18 +331,21 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
         {!showRequest ? <button className={styles.primaryButton} onClick={() => setShowRequest(true)}><CloserWordArt asset="pair-snowy" label="Pair Snowy" /></button> : <section className={styles.card} role="dialog" aria-modal="true" aria-label="Pair your plushie"><button type="button" className={styles.closeButton} onClick={() => setShowRequest(false)} aria-label="Close">×</button><p className={styles.eyebrow}><CloserWordArt asset="your-nickname" label="Your nickname" /></p><form className={styles.form} onSubmit={submitRequest}><label><input value={name} maxLength={60} onChange={(event) => setName(event.target.value)} placeholder="Your nickname" required /></label><label><CloserWordArt asset="partners-id" label="Your partner's ID" /><input value={partnerCertificateId} maxLength={100} onChange={(event) => setPartnerCertificateId(event.target.value)} placeholder="For example: 124" required /></label><button className={styles.primaryButton} disabled={busy}>{busy ? "Sending…" : <CloserWordArt asset="pair-now" label="Pair now" />}</button></form></section>}
       </>}
     </section> : <section className={styles.sharedSpace}>
+      <div className={styles.namesPill}><CloserGlyphText text={`${state.connection.names[0]} + ${state.connection.names[1]}`} /></div>
       <button type="button" className={styles.photoFrame} disabled={busy || !state.connection.canUploadNextPhoto} onClick={() => setShowPhotoPicker(true)} aria-label={state.connection.canUploadNextPhoto ? "Add or replace the shared photo" : `Waiting for ${state.connection.names[1]} to add the next photo`}>
         {state.connection.hasPhoto ? <img className={styles.photo} src={mediaUrl("photo")} alt={`A shared memory from ${state.connection.names.join(" and ")}`} onLoad={() => setUploadingPhoto(false)} onError={() => { setUploadingPhoto(false); setError("We could not load the shared photo. Please refresh and try again."); }} /> : <span className={styles.photoEmpty} aria-hidden="true" />}
         {uploadingPhoto && <span className={styles.photoUploading} role="status" aria-live="polite"><CloserGlyphText text="Updating" label="Updating shared photo" /><span className={styles.uploadDots} aria-hidden="true"><i /><i /><i /></span></span>}
       </button>
-      <div className={styles.namesPill}><CloserGlyphText text={`${state.connection.names[0]} + ${state.connection.names[1]}`} /></div>
       <input ref={cameraPhotoInput} type="file" accept="image/*" capture="environment" onChange={selectPhoto} hidden />
       <input ref={galleryPhotoInput} type="file" accept="image/*" onChange={selectPhoto} hidden />
       <div className={styles.voiceCard}>
-        {state.connection.hasVoice ? <><audio className={styles.audio} controls src={mediaUrl("voice")}>Your browser cannot play this voice note.</audio><h2>“{state.connection.names[1]}” left you a message</h2></> : <h2>Leave “{state.connection.names[1]}” a message</h2>}
+        <h2><CloserGlyphText className={styles.voiceMessageTitle} text="Voice message" label="Voice message" /></h2>
+        {state.connection.hasVoice && <audio className={styles.audio} controls src={mediaUrl("voice")}>Your browser cannot play this voice note.</audio>}
       </div>
-      <button className={styles.primaryButton} onClick={() => void toggleRecording()} disabled={busy}>{recording ? "Stop and send voice message" : "Send them a voice message"}</button>
-      <button className={styles.textButton} onClick={() => void unlink()} disabled={busy}>{busy ? "Unlinking…" : "Unlink our plushies"}</button>
+      <button className={`${styles.primaryButton} ${recording ? styles.recordingButton : ""}`} onClick={() => void toggleRecording()} disabled={busy} aria-label={recording ? "Stop and send voice message" : `Send ${state.connection.names[1]} a voice message`}>
+        {recording ? <span className={styles.recordingLabel}><span className={styles.recordingPulse} aria-hidden="true" /><CloserGlyphText text={`Recording ${recordingTime}`} label={`Recording ${recordingTime}`} /></span> : <CloserGlyphText className={styles.sendVoiceLabel} text={`Send ${state.connection.names[1]} a voice message`} label={`Send ${state.connection.names[1]} a voice message`} />}
+      </button>
+      <button className={styles.textButton} onClick={() => void unlink()} disabled={busy}><CloserGlyphText className={styles.unlinkLabel} text={busy ? "Unlinking" : "Unlink our plushies"} label={busy ? "Unlinking" : "Unlink our plushies"} /></button>
       {showPhotoPicker && <section className={`${styles.card} ${styles.photoPicker}`} role="dialog" aria-modal="true" aria-label="Add a shared photo"><button type="button" className={styles.closeButton} onClick={() => setShowPhotoPicker(false)} aria-label="Close">×</button><h1><CloserGlyphText className={styles.photoPickerTitle} text="Add a photo" label="Add a photo" /></h1><div className={styles.photoButtons}><button className={styles.primaryButton} disabled={busy} onClick={() => cameraPhotoInput.current?.click()}><CloserGlyphText className={styles.photoActionArt} text="Take photo" label="Take photo" /></button><button className={styles.primaryButton} disabled={busy} onClick={() => galleryPhotoInput.current?.click()}><CloserGlyphText className={styles.photoActionArt} text="Open gallery" label="Open gallery" /></button></div></section>}
     </section>}
   </div></main>;
