@@ -7,7 +7,7 @@ import { deleteCloserMedia, storeCloserMedia } from "@/src/modules/closer/media-
 const nameLimit = 60;
 
 type Certificate = { id: string; certificate_id: string; access_key_hash: string; connection_id: string | null; created_at: string };
-type Connection = { id: string; first_certificate_id: string; second_certificate_id: string; first_name: string; second_name: string; next_photo_certificate_id: string; photo_path: string | null; photo_content_type: string | null; voice_path: string | null; voice_content_type: string | null; created_at: string; updated_at: string };
+type Connection = { id: string; first_certificate_id: string; second_certificate_id: string; first_name: string; second_name: string; next_photo_certificate_id: string; photo_path: string | null; photo_content_type: string | null; voice_path: string | null; voice_content_type: string | null; first_voice_path: string | null; first_voice_content_type: string | null; second_voice_path: string | null; second_voice_content_type: string | null; created_at: string; updated_at: string };
 type PairingRequest = { id: string; from_certificate_id: string; to_certificate_id: string; requester_name: string; status: "PENDING" | "ACCEPTED" | "REJECTED" | "CANCELLED"; created_at: string };
 type AdminCertificate = Pick<Certificate, "certificate_id" | "connection_id" | "created_at">;
 type AdminActivity = { id: string; action: string; actor_certificate_id: string; created_at: string };
@@ -137,6 +137,15 @@ export async function closerConnectionForCertificate(certificateId: string) {
   return connectionForCertificate(certificate);
 }
 
+export function closerIncomingVoice(connection: Pick<Connection, "first_certificate_id" | "first_voice_path" | "first_voice_content_type" | "second_voice_path" | "second_voice_content_type" | "voice_path" | "voice_content_type">, certificateId: string) {
+  const isFirst = connection.first_certificate_id === certificateId;
+  const path = isFirst ? connection.first_voice_path : connection.second_voice_path;
+  const contentType = isFirst ? connection.first_voice_content_type : connection.second_voice_content_type;
+  // Connections created before directional voice notes used one shared file.
+  // Keep that note available until each side receives a newer personal message.
+  return { path: path || connection.voice_path, contentType: contentType || connection.voice_content_type };
+}
+
 export async function closerTheme() {
   const { data, error } = await database().from("closer_app_settings").select("theme").eq("id", "default").maybeSingle<{ theme: unknown }>();
   throwDatabaseError(error);
@@ -149,7 +158,7 @@ export async function closerTheme() {
 export async function loadCloserAdminDashboard() {
   const [certificatesResult, connectionsResult, activityResult, settingsResult] = await Promise.all([
     database().from("closer_app_certificates").select("certificate_id,connection_id,created_at").order("created_at", { ascending: false }).limit(100).returns<AdminCertificate[]>(),
-    database().from("closer_app_connections").select("id,first_certificate_id,second_certificate_id,first_name,second_name,photo_path,voice_path,created_at,updated_at").order("updated_at", { ascending: false }).limit(100).returns<Array<Pick<Connection, "id" | "first_certificate_id" | "second_certificate_id" | "first_name" | "second_name" | "photo_path" | "voice_path" | "created_at" | "updated_at">>>(),
+    database().from("closer_app_connections").select("id,first_certificate_id,second_certificate_id,first_name,second_name,photo_path,voice_path,first_voice_path,second_voice_path,created_at,updated_at").order("updated_at", { ascending: false }).limit(100).returns<Array<Pick<Connection, "id" | "first_certificate_id" | "second_certificate_id" | "first_name" | "second_name" | "photo_path" | "voice_path" | "first_voice_path" | "second_voice_path" | "created_at" | "updated_at">>>(),
     database().from("closer_app_activity").select("id,action,actor_certificate_id,created_at").order("created_at", { ascending: false }).limit(100).returns<AdminActivity[]>(),
     database().from("closer_app_settings").select("theme").eq("id", "default").maybeSingle<{ theme: unknown }>(),
   ]);
@@ -219,10 +228,10 @@ export async function clearCloserConnectionMedia(connectionIdValue: unknown, typ
   if (type !== "photo" && type !== "voice") throw new CloserError("That media type is not supported.");
   const connection = await connectionById(connectionId);
   if (!connection) throw new CloserError("That active pair was not found.", 404);
-  const patch = type === "photo" ? { photo_path: null, photo_content_type: null } : { voice_path: null, voice_content_type: null };
+  const patch = type === "photo" ? { photo_path: null, photo_content_type: null } : { voice_path: null, voice_content_type: null, first_voice_path: null, first_voice_content_type: null, second_voice_path: null, second_voice_content_type: null };
   const { error } = await database().from("closer_app_connections").update(patch).eq("id", connectionId);
   throwDatabaseError(error);
-  return { mediaPaths: [type === "photo" ? connection.photo_path : connection.voice_path] };
+  return { mediaPaths: type === "photo" ? [connection.photo_path] : [connection.voice_path, connection.first_voice_path, connection.second_voice_path] };
 }
 
 export async function saveCloserTheme(theme: Record<string, unknown>) {
@@ -245,7 +254,8 @@ export async function closerState(certificateId: string) {
     outgoingRequest: outgoingRequestResult.data ? { id: outgoingRequestResult.data.id, partnerCertificateId: outgoingRequestResult.data.to_certificate_id } : null,
   };
   const isFirst = connection.first_certificate_id === certificateId;
-  return { status: "linked" as const, connection: { id: connection.id, names: (isFirst ? [connection.first_name, connection.second_name] : [connection.second_name, connection.first_name]) as [string, string], partnerCertificateId: isFirst ? connection.second_certificate_id : connection.first_certificate_id, canUploadNextPhoto: connection.next_photo_certificate_id === certificateId, hasPhoto: Boolean(connection.photo_path), hasVoice: Boolean(connection.voice_path) } };
+  const incomingVoice = closerIncomingVoice(connection, certificateId);
+  return { status: "linked" as const, connection: { id: connection.id, names: (isFirst ? [connection.first_name, connection.second_name] : [connection.second_name, connection.first_name]) as [string, string], partnerCertificateId: isFirst ? connection.second_certificate_id : connection.first_certificate_id, canUploadNextPhoto: connection.next_photo_certificate_id === certificateId, hasPhoto: Boolean(connection.photo_path), hasVoice: Boolean(incomingVoice.path), voiceVersion: incomingVoice.path || "none" } };
 }
 
 export async function requestCloserConnection(fromCertificateId: string, toCertificateIdValue: unknown, requesterNameValue: unknown) {
@@ -335,7 +345,7 @@ export async function unlinkCloserConnection(certificateId: string) {
   const { error: secondError } = await database().from("closer_app_certificates").update({ connection_id: null }).eq("certificate_id", connection.second_certificate_id);
   const { error: deleteError } = await database().from("closer_app_connections").delete().eq("id", connection.id);
   throwDatabaseError(firstError); throwDatabaseError(secondError); throwDatabaseError(deleteError);
-  return { mediaPaths: [connection.photo_path, connection.voice_path] };
+  return { mediaPaths: [connection.photo_path, connection.voice_path, connection.first_voice_path, connection.second_voice_path] };
 }
 
 export async function uploadCloserMedia(args: { certificateId: string; type: "photo" | "voice"; bytes: ArrayBuffer; contentType: string }) {
@@ -348,14 +358,20 @@ export async function uploadCloserMedia(args: { certificateId: string; type: "ph
   await storeCloserMedia(path, args.bytes, args.contentType);
   try {
     const partnerCertificateId = connection.first_certificate_id === args.certificateId ? connection.second_certificate_id : connection.first_certificate_id;
-    const update = args.type === "photo" ? { photo_path: path, photo_content_type: args.contentType, next_photo_certificate_id: partnerCertificateId } : { voice_path: path, voice_content_type: args.contentType };
+    const isFirst = connection.first_certificate_id === args.certificateId;
+    const previousVoicePath = isFirst ? connection.second_voice_path : connection.first_voice_path;
+    const update = args.type === "photo"
+      ? { photo_path: path, photo_content_type: args.contentType, next_photo_certificate_id: partnerCertificateId }
+      : isFirst
+        ? { second_voice_path: path, second_voice_content_type: args.contentType }
+        : { first_voice_path: path, first_voice_content_type: args.contentType };
     let updateQuery = database().from("closer_app_connections").update(update).eq("id", connection.id);
     if (args.type === "photo") updateQuery = updateQuery.eq("next_photo_certificate_id", args.certificateId);
     const { data, error } = await updateQuery.select("id");
     throwDatabaseError(error);
     if (!data?.length) throw new CloserError("Your partner just shared a photo. Please wait for your turn.", 409);
     await logActivity(connection.id, args.certificateId, `${args.type}_updated`);
-    await deleteCloserMedia([args.type === "photo" ? connection.photo_path : connection.voice_path]);
+    await deleteCloserMedia([args.type === "photo" ? connection.photo_path : previousVoicePath]);
   } catch (error) {
     await deleteCloserMedia([path]);
     throw error;

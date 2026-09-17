@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     const dashboard = await loadCloserAdminDashboard();
     return NextResponse.json({
       certificates: dashboard.certificates.map((certificate) => ({ certificateId: certificate.certificate_id, connectionId: certificate.connection_id, createdAt: certificate.created_at })),
-      connections: dashboard.connections.map((connection) => ({ id: connection.id, firstCertificateId: connection.first_certificate_id, secondCertificateId: connection.second_certificate_id, firstName: connection.first_name, secondName: connection.second_name, hasPhoto: Boolean(connection.photo_path), hasVoice: Boolean(connection.voice_path), createdAt: connection.created_at, updatedAt: connection.updated_at })),
+      connections: dashboard.connections.map((connection) => ({ id: connection.id, firstCertificateId: connection.first_certificate_id, secondCertificateId: connection.second_certificate_id, firstName: connection.first_name, secondName: connection.second_name, hasPhoto: Boolean(connection.photo_path), hasVoice: Boolean(connection.voice_path || connection.first_voice_path || connection.second_voice_path), createdAt: connection.created_at, updatedAt: connection.updated_at })),
       activity: dashboard.activity.map((item) => ({ id: item.id, action: item.action, actorCertificateId: item.actor_certificate_id, createdAt: item.created_at })),
       theme: dashboard.theme,
     });
