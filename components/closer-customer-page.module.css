@@ -5,6 +5,7 @@
 
 .header { left:7%; position:absolute; right:7%; top:35px; z-index:2; }
 .logo { display:block; height:auto; margin:0 auto; max-width:100%; width:86%; }
+.logoButton { background:transparent; border:0; cursor:pointer; display:block; max-width:100%; padding:0; width:100%; }.logoButton:disabled { cursor:wait; }
 .languageSwitch { display:grid; gap:9%; grid-template-columns:1fr 1fr; margin:clamp(28px,7cqw,62px) auto 0; width:84%; }
 .languageSwitch button,.primaryButton,.secondaryButton { -webkit-text-stroke:.65px var(--ink); border:0; cursor:pointer; font:inherit; font-weight:400; paint-order:stroke fill; text-transform:uppercase; }
 .languageSwitch button { background:#fff; border-radius:999px; color:var(--ink); font-size:clamp(.72rem,2.8cqw,1.35rem); letter-spacing:.17em; min-height:clamp(50px,10cqw,82px); padding:9px 12px; }
