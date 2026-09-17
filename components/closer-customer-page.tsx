@@ -14,7 +14,7 @@ type UnlinkedState = {
 
 type LinkedState = {
   status: "linked";
-  connection: { id: string; names: [string, string]; partnerCertificateId: string; canUploadNextPhoto: boolean; hasPhoto: boolean; hasVoice: boolean };
+  connection: { id: string; names: [string, string]; partnerCertificateId: string; canUploadNextPhoto: boolean; hasPhoto: boolean; hasVoice: boolean; voiceVersion: string };
 };
 
 type CloserState = UnlinkedState | LinkedState;
@@ -98,7 +98,7 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
     setError("");
     if (isDemo) {
       setState(demoMode === "shared"
-        ? { status: "linked", connection: { id: "demo", names: ["Snowy", "Honey"], partnerCertificateId: "102332", canUploadNextPhoto: true, hasPhoto: false, hasVoice: false } }
+        ? { status: "linked", connection: { id: "demo", names: ["Snowy", "Honey"], partnerCertificateId: "102332", canUploadNextPhoto: true, hasPhoto: false, hasVoice: false, voiceVersion: "none" } }
         : { status: "unlinked", request: null, outgoingRequest: null });
       setLoading(false);
       return;
@@ -227,7 +227,10 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
     }
   }
 
-  const mediaUrl = (type: "photo" | "voice") => `${mediaPath}?certificate=${encodeURIComponent(certificateId)}&key=${encodeURIComponent(accessKey)}&adminPreview=${encodeURIComponent(adminPreview)}&type=${type}&v=${mediaVersion}`;
+  const mediaUrl = (type: "photo" | "voice") => {
+    const version = type === "voice" && state?.status === "linked" ? state.connection.voiceVersion : mediaVersion;
+    return `${mediaPath}?certificate=${encodeURIComponent(certificateId)}&key=${encodeURIComponent(accessKey)}&adminPreview=${encodeURIComponent(adminPreview)}&type=${type}&v=${encodeURIComponent(String(version))}`;
+  };
   const recordingTime = `${Math.floor(recordingSeconds / 60)}:${String(recordingSeconds % 60).padStart(2, "0")}`;
 
   async function toggleVoicePlayback() {
