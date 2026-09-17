@@ -57,11 +57,15 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [mediaVersion, setMediaVersion] = useState(0);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [voicePlaying, setVoicePlaying] = useState(false);
+  const [voiceCurrentTime, setVoiceCurrentTime] = useState(0);
+  const [voiceDuration, setVoiceDuration] = useState(0);
   const [theme, setTheme] = useState<CloserTheme>(defaultTheme);
   const recorder = useRef<MediaRecorder | null>(null);
   const recordingStream = useRef<MediaStream | null>(null);
   const cameraPhotoInput = useRef<HTMLInputElement | null>(null);
   const galleryPhotoInput = useRef<HTMLInputElement | null>(null);
+  const voiceAudio = useRef<HTMLAudioElement | null>(null);
 
   const call = useCallback(async (action: string, payload: Record<string, unknown> = {}) => {
     if (!certificateId || (!accessKey && !adminPreview)) throw new Error("This NFC link is incomplete. Please scan the tag again.");
@@ -224,6 +228,17 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
 
   const mediaUrl = (type: "photo" | "voice") => `${mediaPath}?certificate=${encodeURIComponent(certificateId)}&key=${encodeURIComponent(accessKey)}&adminPreview=${encodeURIComponent(adminPreview)}&type=${type}&v=${mediaVersion}`;
   const recordingTime = `${Math.floor(recordingSeconds / 60)}:${String(recordingSeconds % 60).padStart(2, "0")}`;
+  const voiceTime = (seconds: number) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
+
+  async function toggleVoicePlayback() {
+    const audio = voiceAudio.current;
+    if (!audio) return;
+    if (audio.paused) {
+      try { await audio.play(); } catch { setError("We could not play this voice message."); }
+    } else {
+      audio.pause();
+    }
+  }
 
   async function sendMedia(mediaType: "photo" | "voice", data: string) {
     setBusy(true);
@@ -339,8 +354,13 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
       <input ref={cameraPhotoInput} type="file" accept="image/*" capture="environment" onChange={selectPhoto} hidden />
       <input ref={galleryPhotoInput} type="file" accept="image/*" onChange={selectPhoto} hidden />
       <div className={styles.voiceCard}>
-        <h2><CloserGlyphText className={styles.voiceMessageTitle} text="Voice message" label="Voice message" /></h2>
-        {state.connection.hasVoice && <audio className={styles.audio} controls src={mediaUrl("voice")}>Your browser cannot play this voice note.</audio>}
+        <h2><CloserGlyphText className={styles.voiceMessageTitle} text={`Message from ${state.connection.names[1]}`} label={`Message from ${state.connection.names[1]}`} /></h2>
+        {state.connection.hasVoice && <div className={styles.voicePlayer}>
+          <audio ref={voiceAudio} className={styles.audio} src={mediaUrl("voice")} onLoadedMetadata={(event) => setVoiceDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)} onTimeUpdate={(event) => setVoiceCurrentTime(event.currentTarget.currentTime)} onPlay={() => setVoicePlaying(true)} onPause={() => setVoicePlaying(false)} onEnded={(event) => { event.currentTarget.currentTime = 0; setVoicePlaying(false); setVoiceCurrentTime(0); }} />
+          <button type="button" className={styles.voicePlayButton} onClick={() => void toggleVoicePlayback()} aria-label={voicePlaying ? "Pause voice message" : "Play voice message"}><CloserGlyphText text={voicePlaying ? "Pause" : "Play"} label={voicePlaying ? "Pause" : "Play"} /></button>
+          <input className={styles.voiceProgress} type="range" min="0" max={voiceDuration || 0} step="0.1" value={Math.min(voiceCurrentTime, voiceDuration || 0)} onChange={(event) => { const time = Number(event.target.value); if (voiceAudio.current) voiceAudio.current.currentTime = time; setVoiceCurrentTime(time); }} aria-label="Voice message progress" />
+          <CloserGlyphText className={styles.voiceTime} text={`${voiceTime(voiceCurrentTime)} ${voiceTime(voiceDuration)}`} label={`${voiceTime(voiceCurrentTime)} of ${voiceTime(voiceDuration)}`} />
+        </div>}
       </div>
       <button className={`${styles.primaryButton} ${recording ? styles.recordingButton : ""}`} onClick={() => void toggleRecording()} disabled={busy} aria-label={recording ? "Stop and send voice message" : `Send ${state.connection.names[1]} a voice message`}>
         {recording ? <span className={styles.recordingLabel}><span className={styles.recordingPulse} aria-hidden="true" /><CloserGlyphText text={`Recording ${recordingTime}`} label={`Recording ${recordingTime}`} /></span> : <CloserGlyphText className={styles.sendVoiceLabel} text={`Send ${state.connection.names[1]} a voice message`} label={`Send ${state.connection.names[1]} a voice message`} />}
