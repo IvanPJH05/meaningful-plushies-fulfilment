@@ -255,7 +255,7 @@ export async function closerState(certificateId: string) {
   };
   const isFirst = connection.first_certificate_id === certificateId;
   const incomingVoice = closerIncomingVoice(connection, certificateId);
-  return { status: "linked" as const, connection: { id: connection.id, names: (isFirst ? [connection.first_name, connection.second_name] : [connection.second_name, connection.first_name]) as [string, string], partnerCertificateId: isFirst ? connection.second_certificate_id : connection.first_certificate_id, canUploadNextPhoto: connection.next_photo_certificate_id === certificateId, hasPhoto: Boolean(connection.photo_path), hasVoice: Boolean(incomingVoice.path), voiceVersion: incomingVoice.path || "none" } };
+  return { status: "linked" as const, connection: { id: connection.id, names: (isFirst ? [connection.first_name, connection.second_name] : [connection.second_name, connection.first_name]) as [string, string], partnerCertificateId: isFirst ? connection.second_certificate_id : connection.first_certificate_id, canUploadNextPhoto: connection.next_photo_certificate_id === certificateId, hasPhoto: Boolean(connection.photo_path), photoVersion: connection.photo_path || "none", hasVoice: Boolean(incomingVoice.path), voiceVersion: incomingVoice.path || "none" } };
 }
 
 export async function requestCloserConnection(fromCertificateId: string, toCertificateIdValue: unknown, requesterNameValue: unknown) {
