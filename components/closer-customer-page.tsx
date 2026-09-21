@@ -3,7 +3,7 @@
 import { ChangeEvent, CSSProperties, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
-import { CloserGlyphText, CloserWordArt } from "./closer-art-text";
+import { CloserGlyphText } from "./closer-art-text";
 import styles from "./closer-customer-page.module.css";
 
 type UnlinkedState = {
@@ -19,8 +19,41 @@ type LinkedState = {
 
 type CloserState = UnlinkedState | LinkedState;
 type CloserTheme = { heading: string; accent: string; background: string };
+type Language = "en" | "ms";
 
 const defaultTheme: CloserTheme = { heading: "Your shared space", accent: "#d76b83", background: "#e7eedf" };
+const languageStorageKey = "meaningful-plushies-closer-language";
+
+const translations = {
+  en: {
+    settings: "Settings", language: "Language", english: "English", malay: "Malay",
+    pair: "Pair Snowy", nickname: "Your nickname", partnerId: "Your partner ID", pairNow: "Pair now",
+    connectionRequest: "Connection request", connectionRequestSent: "Connection request sent",
+    wantsToPair: "Wants to pair with you", accept: "Accept", reject: "Reject", cancel: "Cancel",
+    createSpace: "Create our shared space", waiting: "Waiting for your partner to accept",
+    requestSentTo: "Your request was sent to", cancelRequest: "Cancel request",
+    messageFrom: "Message from", sendVoice: "Send a voice message", addPhoto: "Add a photo",
+    takePhoto: "Take photo", openGallery: "Open gallery", updating: "Updating", loading: "Loading",
+    play: "Play", pause: "Pause", recording: "Recording", sending: "Sending",
+    unlink: "Unlink our plushies", unlinkDescription: "Your shared space will close", unlinkAction: "Unlink",
+    opening: "Opening your shared space", couldNotOpen: "We could not open this plushie", tryAgain: "Try again",
+    connecting: "Connecting", requestSending: "Sending",
+  },
+  ms: {
+    settings: "Tetapan", language: "Bahasa", english: "English", malay: "Bahasa Melayu",
+    pair: "Pasangkan Snowy", nickname: "Nama panggilan anda", partnerId: "ID pasangan anda", pairNow: "Pasangkan",
+    connectionRequest: "Permintaan sambungan", connectionRequestSent: "Permintaan sambungan dihantar",
+    wantsToPair: "Mahu berpasangan dengan anda", accept: "Terima", reject: "Tolak", cancel: "Batal",
+    createSpace: "Cipta ruang bersama kami", waiting: "Menunggu pasangan anda menerima",
+    requestSentTo: "Permintaan anda dihantar kepada", cancelRequest: "Batalkan permintaan",
+    messageFrom: "Mesej daripada", sendVoice: "Hantar mesej suara", addPhoto: "Tambah foto",
+    takePhoto: "Ambil foto", openGallery: "Buka galeri", updating: "Mengemas kini", loading: "Memuatkan",
+    play: "Main", pause: "Jeda", recording: "Merakam", sending: "Menghantar",
+    unlink: "Nyahpaut plushies kami", unlinkDescription: "Ruang bersama anda akan ditutup", unlinkAction: "Nyahpaut",
+    opening: "Membuka ruang bersama anda", couldNotOpen: "Kami tidak dapat membuka plushie ini", tryAgain: "Cuba lagi",
+    connecting: "Menyambung", requestSending: "Menghantar",
+  },
+} as const;
 
 function messageFrom(error: unknown) {
   return error instanceof Error ? error.message : "Something went wrong. Please try again.";
@@ -50,8 +83,8 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
   const [showRequest, setShowRequest] = useState(false);
   const [showAccept, setShowAccept] = useState(false);
   const [showPhotoPicker, setShowPhotoPicker] = useState(false);
-  const [showUnlinkConfirm, setShowUnlinkConfirm] = useState(false);
-  const [language, setLanguage] = useState<"en" | "ms">("en");
+  const [showSettings, setShowSettings] = useState(false);
+  const [language, setLanguage] = useState<Language>("en");
   const [name, setName] = useState("");
   const [partnerCertificateId, setPartnerCertificateId] = useState("");
   const [recording, setRecording] = useState(false);
@@ -136,6 +169,15 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
   }, [isDemo, themePath]);
 
   useEffect(() => {
+    try {
+      const savedLanguage = window.localStorage.getItem(languageStorageKey);
+      if (savedLanguage === "en" || savedLanguage === "ms") setLanguage(savedLanguage);
+    } catch {
+      // Language selection remains available if browser storage is unavailable.
+    }
+  }, []);
+
+  useEffect(() => {
     if (!recording) return;
     const startedAt = Date.now();
     setRecordingSeconds(0);
@@ -153,6 +195,12 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
     "--closer-background": theme.background,
     "--closer-accent": theme.accent,
   } as CSSProperties;
+  const copy = translations[language];
+
+  function selectLanguage(nextLanguage: Language) {
+    setLanguage(nextLanguage);
+    try { window.localStorage.setItem(languageStorageKey, nextLanguage); } catch { /* ignore unavailable storage */ }
+  }
 
   async function submitRequest(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -222,7 +270,7 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
     try {
       const data = await call("unlink");
       setState(data.state || null);
-      setShowUnlinkConfirm(false);
+      setShowSettings(false);
     } catch (caught) {
       setError(messageFrom(caught));
     } finally {
@@ -326,19 +374,16 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
       };
       activeRecorder.start();
       setRecording(true);
-    } catch (caught) { setError("Microphone access is needed to record a voice note."); }
+    } catch { setError("Microphone access is needed to record a voice note."); }
   }
 
-  if (loading) return <main className={styles.page} style={themedStyle}><div className={`${styles.scene} ${styles.loadingScene}`}><div className={styles.loading} role="status" aria-live="polite"><div className={styles.loadingContent}><CloserGlyphText className={styles.loadingLabel} text="Opening your" label="Opening your shared space" /><CloserGlyphText className={styles.loadingLabel} text="Shared space" label="" /><span className={styles.loadingDots} aria-hidden="true"><i /><i /><i /></span></div></div></div></main>;
-  if (error && !state) return <main className={styles.page} style={themedStyle}><div className={styles.scene}><section className={styles.card}><p className={styles.eyebrow}>closer ♥</p><h1>We couldn’t open this plushie.</h1><p>{error}</p><button className={styles.secondaryButton} onClick={() => void refresh()}>Try again</button></section></div></main>;
+  if (loading) return <main className={styles.page} style={themedStyle}><div className={`${styles.scene} ${styles.loadingScene}`}><div className={styles.loading} role="status" aria-live="polite"><div className={styles.loadingContent}><CloserGlyphText className={styles.loadingLabel} text={copy.opening} label={copy.opening} /><span className={styles.loadingDots} aria-hidden="true"><i /><i /><i /></span></div></div></div></main>;
+  if (error && !state) return <main className={styles.page} style={themedStyle}><div className={styles.scene}><section className={styles.card}><p className={styles.eyebrow}>closer ♥</p><h1><CloserGlyphText text={copy.couldNotOpen} label={copy.couldNotOpen} /></h1><p>{error}</p><button className={styles.secondaryButton} onClick={() => void refresh()}><CloserGlyphText text={copy.tryAgain} label={copy.tryAgain} /></button></section></div></main>;
   if (!state) return null;
 
   return <main className={styles.page} style={themedStyle}><div className={styles.scene}>
     <header className={styles.header}>
-      {state.status === "linked"
-        ? <button type="button" className={styles.logoButton} disabled={busy} onClick={() => setShowUnlinkConfirm(true)} aria-label="Open unlink plushies dialog" aria-haspopup="dialog"><img className={styles.logo} src="https://meaningful-plushies-fulfilment.vercel.app/closer/meaningful-plushies-logo.png" alt="Meaningful Plushies" /></button>
-        : <img className={styles.logo} src="https://meaningful-plushies-fulfilment.vercel.app/closer/meaningful-plushies-logo.png" alt="Meaningful Plushies" />}
-      {state.status === "unlinked" && <div className={styles.languageSwitch}><button className={language === "en" ? styles.selectedLanguage : ""} onClick={() => setLanguage("en")}><CloserWordArt asset="english" label="English" /></button><button className={language === "ms" ? styles.selectedLanguage : ""} onClick={() => setLanguage("ms")}><CloserWordArt asset="malay" label="Malay" /></button></div>}
+      <button type="button" className={styles.logoButton} disabled={busy} onClick={() => setShowSettings(true)} aria-label={copy.settings} aria-haspopup="dialog"><img className={styles.logo} src="https://meaningful-plushies-fulfilment.vercel.app/closer/meaningful-plushies-logo.png" alt="Meaningful Plushies" /></button>
     </header>
     {isDemo && <p className={styles.demoNotice}>Demo preview · No customer data is connected.</p>}
     {error && <p className={styles.error}>{error}</p>}
@@ -348,43 +393,41 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
       <div className={styles.idPill}><CloserGlyphText text={`ID: ${certificateId}`} /></div>
       {state.request ? <>
         <section className={styles.card}>
-          <p className={`${styles.eyebrow} ${styles.requestEyebrow}`}><CloserWordArt asset="connection-request" label="Connection request" /></p>
-          {!showAccept ? <><h1 className={styles.requestHeading}><CloserGlyphText className={styles.requestName} text={state.request.requesterName} label={state.request.requesterName} /><CloserWordArt className={styles.requestPhrase} asset="wants-to-pair-with-you" label="Wants to pair with you" /></h1><div className={styles.actions}><button className={styles.primaryButton} disabled={busy} onClick={() => setShowAccept(true)}><CloserWordArt className={styles.acceptWord} asset="accept" label="Accept" /></button><button className={styles.secondaryButton} disabled={busy} onClick={() => void rejectRequest()}><CloserWordArt className={styles.actionWord} asset="reject" label="Reject" /></button></div></> : <form className={styles.form} onSubmit={submitAccept}><label><CloserWordArt className={styles.formLabelArt} asset="your-nickname" label="Your nickname" /><input value={name} maxLength={60} onChange={(event) => setName(event.target.value)} placeholder="Your nickname" required /></label><button className={styles.primaryButton} disabled={busy}>{busy ? "Connecting…" : <CloserWordArt className={styles.createSpaceWord} asset="create-our-shared-space" label="Create our shared space" />}</button><button type="button" className={styles.textButton} onClick={() => setShowAccept(false)}><CloserWordArt className={styles.actionWord} asset="cancel" label="Cancel" /></button></form>}
+          <p className={`${styles.eyebrow} ${styles.requestEyebrow}`}><CloserGlyphText text={copy.connectionRequest} label={copy.connectionRequest} /></p>
+          {!showAccept ? <><h1 className={styles.requestHeading}><CloserGlyphText className={styles.requestName} text={state.request.requesterName} label={state.request.requesterName} /><CloserGlyphText className={styles.requestPhrase} text={copy.wantsToPair} label={copy.wantsToPair} /></h1><div className={styles.actions}><button className={styles.primaryButton} disabled={busy} onClick={() => setShowAccept(true)}><CloserGlyphText className={styles.acceptWord} text={copy.accept} label={copy.accept} /></button><button className={styles.secondaryButton} disabled={busy} onClick={() => void rejectRequest()}><CloserGlyphText className={styles.actionWord} text={copy.reject} label={copy.reject} /></button></div></> : <form className={styles.form} onSubmit={submitAccept}><label><CloserGlyphText className={styles.formLabelArt} text={copy.nickname} label={copy.nickname} /><input value={name} maxLength={60} onChange={(event) => setName(event.target.value)} placeholder={copy.nickname} required /></label><button className={styles.primaryButton} disabled={busy}><CloserGlyphText className={styles.createSpaceWord} text={busy ? copy.connecting : copy.createSpace} label={busy ? copy.connecting : copy.createSpace} /></button><button type="button" className={styles.textButton} onClick={() => setShowAccept(false)}><CloserGlyphText className={styles.actionWord} text={copy.cancel} label={copy.cancel} /></button></form>}
         </section>
       </> : state.outgoingRequest ? <section className={`${styles.card} ${styles.waitingCard}`}>
-        <p className={`${styles.eyebrow} ${styles.waitingEyebrow}`}><CloserWordArt asset="connection-request-sent" label="Connection request sent" /></p>
-        <div className={styles.waitingAnimation} role="img" aria-label="Waiting for your partner to accept">
-          {["waiting-0", "waiting-1", "waiting-2", "waiting-3"].map((asset, index) => <CloserWordArt className={`${styles.waitingFrame} ${styles[`waitingFrame${index}`]}`} asset={asset} label="" key={asset} />)}
-        </div>
+        <p className={`${styles.eyebrow} ${styles.waitingEyebrow}`}><CloserGlyphText text={copy.connectionRequestSent} label={copy.connectionRequestSent} /></p>
+        <div className={styles.waitingAnimation} role="img" aria-label={copy.waiting}><CloserGlyphText className={styles.waitingText} text={copy.waiting} label={copy.waiting} /><span className={styles.loadingDots} aria-hidden="true"><i /><i /><i /></span></div>
         <div className={styles.sentTo}>
-          <CloserGlyphText className={styles.sentToLabel} text="Your request was sent to" label="Your request was sent to" />
+          <CloserGlyphText className={styles.sentToLabel} text={copy.requestSentTo} label={copy.requestSentTo} />
           <CloserGlyphText className={styles.partnerId} text={state.outgoingRequest.partnerCertificateId} label={`Partner ID ${state.outgoingRequest.partnerCertificateId}`} />
         </div>
-        <button type="button" className={styles.textButton} disabled={busy} onClick={() => void cancelOutgoingRequest()}><CloserWordArt className={styles.actionWord} asset="cancel" label="Cancel request" /></button>
+        <button type="button" className={styles.textButton} disabled={busy} onClick={() => void cancelOutgoingRequest()}><CloserGlyphText className={styles.actionWord} text={copy.cancelRequest} label={copy.cancelRequest} /></button>
       </section> : <>
-        {!showRequest ? <button className={styles.primaryButton} onClick={() => setShowRequest(true)}><CloserWordArt asset="pair-snowy" label="Pair Snowy" /></button> : <section className={styles.card} role="dialog" aria-modal="true" aria-label="Pair your plushie"><button type="button" className={styles.closeButton} onClick={() => setShowRequest(false)} aria-label="Close">×</button><p className={styles.eyebrow}><CloserWordArt asset="your-nickname" label="Your nickname" /></p><form className={styles.form} onSubmit={submitRequest}><label><input value={name} maxLength={60} onChange={(event) => setName(event.target.value)} placeholder="Your nickname" required /></label><label><CloserWordArt asset="partners-id" label="Your partner's ID" /><input value={partnerCertificateId} maxLength={100} onChange={(event) => setPartnerCertificateId(event.target.value)} placeholder="For example: 124" required /></label><button className={styles.primaryButton} disabled={busy}>{busy ? "Sending…" : <CloserWordArt asset="pair-now" label="Pair now" />}</button></form></section>}
+        {!showRequest ? <button className={styles.primaryButton} onClick={() => setShowRequest(true)}><CloserGlyphText text={copy.pair} label={copy.pair} /></button> : <section className={styles.card} role="dialog" aria-modal="true" aria-label={copy.pair}><button type="button" className={styles.closeButton} onClick={() => setShowRequest(false)} aria-label={copy.cancel}>×</button><p className={styles.eyebrow}><CloserGlyphText text={copy.nickname} label={copy.nickname} /></p><form className={styles.form} onSubmit={submitRequest}><label><input value={name} maxLength={60} onChange={(event) => setName(event.target.value)} placeholder={copy.nickname} required /></label><label><CloserGlyphText text={copy.partnerId} label={copy.partnerId} /><input value={partnerCertificateId} maxLength={100} onChange={(event) => setPartnerCertificateId(event.target.value)} placeholder="124" required /></label><button className={styles.primaryButton} disabled={busy}><CloserGlyphText text={busy ? copy.requestSending : copy.pairNow} label={busy ? copy.requestSending : copy.pairNow} /></button></form></section>}
       </>}
     </section> : <section className={styles.sharedSpace}>
       <div className={styles.namesPill} style={{ "--glyph-count": Math.max(Array.from(`${state.connection.names[0]} + ${state.connection.names[1]}`).length, 1) } as CSSProperties}><CloserGlyphText text={`${state.connection.names[0]} + ${state.connection.names[1]}`} /></div>
       <button type="button" className={styles.photoFrame} disabled={busy} onClick={() => setShowPhotoPicker(true)} aria-label="Add or replace the shared photo">
         {state.connection.hasPhoto ? <img className={styles.photo} src={mediaUrl("photo")} alt={`A shared memory from ${state.connection.names.join(" and ")}`} onLoad={() => { setUploadingPhoto(false); setLoadedPhotoVersion(state.connection.photoVersion); }} onError={() => { setUploadingPhoto(false); setLoadedPhotoVersion(state.connection.photoVersion); setError("We could not load the shared photo. Please refresh and try again."); }} /> : <span className={styles.photoEmpty} aria-hidden="true" />}
-        {(uploadingPhoto || photoIsLoading) && <span className={styles.photoUploading} role="status" aria-live="polite"><CloserGlyphText text={uploadingPhoto ? "Updating" : "Loading"} label={uploadingPhoto ? "Updating shared photo" : "Loading shared photo"} /><span className={styles.uploadDots} aria-hidden="true"><i /><i /><i /></span></span>}
+        {(uploadingPhoto || photoIsLoading) && <span className={styles.photoUploading} role="status" aria-live="polite"><CloserGlyphText text={uploadingPhoto ? copy.updating : copy.loading} label={uploadingPhoto ? copy.updating : copy.loading} /><span className={styles.uploadDots} aria-hidden="true"><i /><i /><i /></span></span>}
       </button>
       <input ref={cameraPhotoInput} type="file" accept="image/*" capture="environment" onChange={selectPhoto} hidden />
       <input ref={galleryPhotoInput} type="file" accept="image/*" onChange={selectPhoto} hidden />
       <div className={styles.voiceCard}>
-        <h2><CloserGlyphText className={styles.voiceMessageTitle} text={`Message from ${state.connection.names[1]}`} label={`Message from ${state.connection.names[1]}`} /></h2>
+        <h2><CloserGlyphText className={styles.voiceMessageTitle} text={`${copy.messageFrom} ${state.connection.names[1]}`} label={`${copy.messageFrom} ${state.connection.names[1]}`} /></h2>
         {state.connection.hasVoice && <div className={styles.voicePlayer}>
           <audio ref={voiceAudio} className={styles.audio} preload="metadata" src={mediaUrl("voice")} onLoadStart={() => setVoiceLoading(true)} onCanPlay={() => setVoiceLoading(false)} onWaiting={() => setVoiceLoading(true)} onPlaying={() => { setVoicePlaying(true); setVoiceLoading(false); }} onError={() => { setVoiceLoading(false); setError("We could not load this voice message. Please refresh and try again."); }} onLoadedMetadata={(event) => setVoiceDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)} onTimeUpdate={(event) => setVoiceCurrentTime(event.currentTarget.currentTime)} onPause={() => setVoicePlaying(false)} onEnded={(event) => { event.currentTarget.currentTime = 0; setVoicePlaying(false); setVoiceLoading(false); setVoiceCurrentTime(0); }} />
-          <button type="button" className={`${styles.voicePlayButton} ${voiceLoading ? styles.voiceLoadingButton : ""}`} onClick={() => void toggleVoicePlayback()} aria-label={voiceLoading ? "Loading voice message" : voicePlaying ? "Pause voice message" : "Play voice message"}>{voiceLoading ? <span className={styles.voiceLoadingLabel}><CloserGlyphText text="Loading" label="Loading voice message" /><span className={styles.voiceLoadingDots} aria-hidden="true"><i /><i /><i /></span></span> : <CloserGlyphText text={voicePlaying ? "Pause" : "Play"} label={voicePlaying ? "Pause" : "Play"} />}</button>
+          <button type="button" className={`${styles.voicePlayButton} ${voiceLoading ? styles.voiceLoadingButton : ""}`} onClick={() => void toggleVoicePlayback()} aria-label={voiceLoading ? copy.loading : voicePlaying ? copy.pause : copy.play}>{voiceLoading ? <span className={styles.voiceLoadingLabel}><CloserGlyphText text={copy.loading} label={copy.loading} /><span className={styles.voiceLoadingDots} aria-hidden="true"><i /><i /><i /></span></span> : <CloserGlyphText text={voicePlaying ? copy.pause : copy.play} label={voicePlaying ? copy.pause : copy.play} />}</button>
           <input className={styles.voiceProgress} type="range" min="0" max={voiceDuration || 0} step="0.1" value={Math.min(voiceCurrentTime, voiceDuration || 0)} onChange={(event) => { const time = Number(event.target.value); if (voiceAudio.current) voiceAudio.current.currentTime = time; setVoiceCurrentTime(time); }} aria-label="Voice message progress" />
         </div>}
       </div>
-      <button className={`${styles.primaryButton} ${recording ? styles.recordingButton : ""} ${sendingVoice ? styles.sendingVoiceButton : ""}`} onClick={() => void toggleRecording()} disabled={busy || sendingVoice} aria-label={recording ? "Stop and send voice message" : sendingVoice ? "Sending voice message" : `Send ${state.connection.names[1]} a voice message`}>
-        {recording ? <span className={styles.recordingLabel}><span className={styles.recordingPulse} aria-hidden="true" /><CloserGlyphText text={`Recording ${recordingTime}`} label={`Recording ${recordingTime}`} /></span> : sendingVoice ? <span className={styles.sendingVoiceLabel}><CloserGlyphText text="Sending" label="Sending voice message" /><span className={styles.sendingDots} aria-hidden="true"><i /><i /><i /></span></span> : <CloserGlyphText className={styles.sendVoiceLabel} text={`Send ${state.connection.names[1]} a voice message`} label={`Send ${state.connection.names[1]} a voice message`} />}
+      <button className={`${styles.primaryButton} ${recording ? styles.recordingButton : ""} ${sendingVoice ? styles.sendingVoiceButton : ""}`} onClick={() => void toggleRecording()} disabled={busy || sendingVoice} aria-label={recording ? copy.recording : sendingVoice ? copy.sending : `${copy.sendVoice} ${state.connection.names[1]}`}>
+        {recording ? <span className={styles.recordingLabel}><span className={styles.recordingPulse} aria-hidden="true" /><CloserGlyphText text={`${copy.recording} ${recordingTime}`} label={`${copy.recording} ${recordingTime}`} /></span> : sendingVoice ? <span className={styles.sendingVoiceLabel}><CloserGlyphText text={copy.sending} label={copy.sending} /><span className={styles.sendingDots} aria-hidden="true"><i /><i /><i /></span></span> : <CloserGlyphText className={styles.sendVoiceLabel} text={`${copy.sendVoice} ${state.connection.names[1]}`} label={`${copy.sendVoice} ${state.connection.names[1]}`} />}
       </button>
-      {showPhotoPicker && <section className={`${styles.card} ${styles.photoPicker}`} role="dialog" aria-modal="true" aria-label="Add a shared photo"><button type="button" className={styles.closeButton} onClick={() => setShowPhotoPicker(false)} aria-label="Close">×</button><h1><CloserGlyphText className={styles.photoPickerTitle} text="Add a photo" label="Add a photo" /></h1><div className={styles.photoButtons}><button className={styles.primaryButton} disabled={busy} onClick={() => cameraPhotoInput.current?.click()}><CloserGlyphText className={styles.photoActionArt} text="Take photo" label="Take photo" /></button><button className={styles.primaryButton} disabled={busy} onClick={() => galleryPhotoInput.current?.click()}><CloserGlyphText className={styles.photoActionArt} text="Open gallery" label="Open gallery" /></button></div></section>}
-      {showUnlinkConfirm && <section className={`${styles.card} ${styles.unlinkDialog}`} role="dialog" aria-modal="true" aria-label="Unlink our plushies"><button type="button" className={styles.closeButton} onClick={() => setShowUnlinkConfirm(false)} aria-label="Close">×</button><h1><CloserGlyphText className={styles.unlinkDialogTitle} text="Unlink our plushies" label="Unlink our plushies" /></h1><p><CloserGlyphText className={styles.unlinkDialogMessage} text="Your shared space will close" label="Your shared space will close" /></p><div className={styles.actions}><button className={styles.primaryButton} disabled={busy} onClick={() => void unlink()}><CloserGlyphText className={styles.unlinkConfirmLabel} text={busy ? "Unlinking" : "Unlink"} label={busy ? "Unlinking" : "Unlink"} /></button><button className={styles.secondaryButton} disabled={busy} onClick={() => setShowUnlinkConfirm(false)}><CloserGlyphText className={styles.unlinkConfirmLabel} text="Cancel" label="Cancel" /></button></div></section>}
     </section>}
+    {showPhotoPicker && state.status === "linked" && <section className={`${styles.card} ${styles.photoPicker}`} role="dialog" aria-modal="true" aria-label={copy.addPhoto}><button type="button" className={styles.closeButton} onClick={() => setShowPhotoPicker(false)} aria-label={copy.cancel}>×</button><h1><CloserGlyphText className={styles.photoPickerTitle} text={copy.addPhoto} label={copy.addPhoto} /></h1><div className={styles.photoButtons}><button className={styles.primaryButton} disabled={busy} onClick={() => cameraPhotoInput.current?.click()}><CloserGlyphText className={styles.photoActionArt} text={copy.takePhoto} label={copy.takePhoto} /></button><button className={styles.primaryButton} disabled={busy} onClick={() => galleryPhotoInput.current?.click()}><CloserGlyphText className={styles.photoActionArt} text={copy.openGallery} label={copy.openGallery} /></button></div></section>}
+    {showSettings && <section className={`${styles.card} ${styles.settingsDialog}`} role="dialog" aria-modal="true" aria-label={copy.settings}><button type="button" className={styles.closeButton} onClick={() => setShowSettings(false)} aria-label={copy.cancel}>×</button><h1><CloserGlyphText className={styles.unlinkDialogTitle} text={copy.settings} label={copy.settings} /></h1><div className={styles.settingsLanguage}><CloserGlyphText className={styles.settingsLabel} text={copy.language} label={copy.language} /><div className={styles.languageSwitch}><button type="button" className={language === "en" ? styles.selectedLanguage : ""} onClick={() => selectLanguage("en")}><CloserGlyphText text={copy.english} label="English" /></button><button type="button" className={language === "ms" ? styles.selectedLanguage : ""} onClick={() => selectLanguage("ms")}><CloserGlyphText text={copy.malay} label="Malay" /></button></div></div>{state.status === "linked" && <div className={styles.unlinkSettings}><CloserGlyphText className={styles.unlinkDialogMessage} text={copy.unlinkDescription} label={copy.unlinkDescription} /><button className={styles.secondaryButton} disabled={busy} onClick={() => void unlink()}><CloserGlyphText className={styles.unlinkConfirmLabel} text={copy.unlinkAction} label={copy.unlinkAction} /></button></div>}</section>}
   </div></main>;
 }
