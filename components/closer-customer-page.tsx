@@ -327,7 +327,7 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
     } catch (caught) { setError("Microphone access is needed to record a voice note."); }
   }
 
-  if (loading) return <main className={styles.page} style={themedStyle}><div className={styles.scene}><div className={styles.loading}><CloserGlyphText className={styles.loadingLabel} text="Opening your shared space" label="Opening your shared space" /></div></div></main>;
+  if (loading) return <main className={styles.page} style={themedStyle}><div className={`${styles.scene} ${styles.loadingScene}`}><div className={styles.loading} role="status" aria-live="polite"><div className={styles.loadingContent}><CloserGlyphText className={styles.loadingLabel} text="Opening your" label="Opening your shared space" /><CloserGlyphText className={styles.loadingLabel} text="Shared space" label="" /><span className={styles.loadingDots} aria-hidden="true"><i /><i /><i /></span></div></div></div></main>;
   if (error && !state) return <main className={styles.page} style={themedStyle}><div className={styles.scene}><section className={styles.card}><p className={styles.eyebrow}>closer ♥</p><h1>We couldn’t open this plushie.</h1><p>{error}</p><button className={styles.secondaryButton} onClick={() => void refresh()}>Try again</button></section></div></main>;
   if (!state) return null;
 
