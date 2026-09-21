@@ -61,6 +61,7 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [loadedPhotoVersion, setLoadedPhotoVersion] = useState<string | null>(null);
   const [voicePlaying, setVoicePlaying] = useState(false);
+  const [voiceLoading, setVoiceLoading] = useState(false);
   const [voiceCurrentTime, setVoiceCurrentTime] = useState(0);
   const [voiceDuration, setVoiceDuration] = useState(0);
   const [theme, setTheme] = useState<CloserTheme>(defaultTheme);
@@ -242,7 +243,8 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
     const audio = voiceAudio.current;
     if (!audio) return;
     if (audio.paused) {
-      try { await audio.play(); } catch { setError("We could not play this voice message."); }
+      setVoiceLoading(true);
+      try { await audio.play(); } catch { setVoiceLoading(false); setError("We could not play this voice message."); }
     } else {
       audio.pause();
     }
@@ -373,8 +375,8 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
       <div className={styles.voiceCard}>
         <h2><CloserGlyphText className={styles.voiceMessageTitle} text={`Message from ${state.connection.names[1]}`} label={`Message from ${state.connection.names[1]}`} /></h2>
         {state.connection.hasVoice && <div className={styles.voicePlayer}>
-          <audio ref={voiceAudio} className={styles.audio} src={mediaUrl("voice")} onLoadedMetadata={(event) => setVoiceDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)} onTimeUpdate={(event) => setVoiceCurrentTime(event.currentTarget.currentTime)} onPlay={() => setVoicePlaying(true)} onPause={() => setVoicePlaying(false)} onEnded={(event) => { event.currentTarget.currentTime = 0; setVoicePlaying(false); setVoiceCurrentTime(0); }} />
-          <button type="button" className={styles.voicePlayButton} onClick={() => void toggleVoicePlayback()} aria-label={voicePlaying ? "Pause voice message" : "Play voice message"}><CloserGlyphText text={voicePlaying ? "Pause" : "Play"} label={voicePlaying ? "Pause" : "Play"} /></button>
+          <audio ref={voiceAudio} className={styles.audio} preload="metadata" src={mediaUrl("voice")} onLoadStart={() => setVoiceLoading(true)} onCanPlay={() => setVoiceLoading(false)} onWaiting={() => setVoiceLoading(true)} onPlaying={() => { setVoicePlaying(true); setVoiceLoading(false); }} onError={() => { setVoiceLoading(false); setError("We could not load this voice message. Please refresh and try again."); }} onLoadedMetadata={(event) => setVoiceDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)} onTimeUpdate={(event) => setVoiceCurrentTime(event.currentTarget.currentTime)} onPause={() => setVoicePlaying(false)} onEnded={(event) => { event.currentTarget.currentTime = 0; setVoicePlaying(false); setVoiceLoading(false); setVoiceCurrentTime(0); }} />
+          <button type="button" className={`${styles.voicePlayButton} ${voiceLoading ? styles.voiceLoadingButton : ""}`} onClick={() => void toggleVoicePlayback()} aria-label={voiceLoading ? "Loading voice message" : voicePlaying ? "Pause voice message" : "Play voice message"}>{voiceLoading ? <span className={styles.voiceLoadingLabel}><CloserGlyphText text="Loading" label="Loading voice message" /><span className={styles.voiceLoadingDots} aria-hidden="true"><i /><i /><i /></span></span> : <CloserGlyphText text={voicePlaying ? "Pause" : "Play"} label={voicePlaying ? "Pause" : "Play"} />}</button>
           <input className={styles.voiceProgress} type="range" min="0" max={voiceDuration || 0} step="0.1" value={Math.min(voiceCurrentTime, voiceDuration || 0)} onChange={(event) => { const time = Number(event.target.value); if (voiceAudio.current) voiceAudio.current.currentTime = time; setVoiceCurrentTime(time); }} aria-label="Voice message progress" />
         </div>}
       </div>
