@@ -55,6 +55,7 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
   const [name, setName] = useState("");
   const [partnerCertificateId, setPartnerCertificateId] = useState("");
   const [recording, setRecording] = useState(false);
+  const [sendingVoice, setSendingVoice] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [mediaVersion, setMediaVersion] = useState(0);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
@@ -304,10 +305,17 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
       activeRecorder.onstop = async () => {
         stream.getTracks().forEach((track) => track.stop());
         setRecording(false);
+        setSendingVoice(true);
         const blob = new Blob(chunks, { type: activeRecorder.mimeType || "audio/webm" });
         const reader = new FileReader();
-        reader.onload = () => void sendMedia("voice", String(reader.result));
-        reader.onerror = () => setError("We could not save that voice note.");
+        reader.onload = async () => {
+          await sendMedia("voice", String(reader.result));
+          setSendingVoice(false);
+        };
+        reader.onerror = () => {
+          setSendingVoice(false);
+          setError("We could not save that voice note.");
+        };
         reader.readAsDataURL(blob);
       };
       activeRecorder.start();
@@ -343,7 +351,7 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
           {["waiting-0", "waiting-1", "waiting-2", "waiting-3"].map((asset, index) => <CloserWordArt className={`${styles.waitingFrame} ${styles[`waitingFrame${index}`]}`} asset={asset} label="" key={asset} />)}
         </div>
         <div className={styles.sentTo}>
-          <CloserWordArt className={styles.sentToArt} asset="your-request-was-sent-to" label="Your request was sent to" />
+          <CloserGlyphText className={styles.sentToLabel} text="Your request was sent to" label="Your request was sent to" />
           <CloserGlyphText className={styles.partnerId} text={state.outgoingRequest.partnerCertificateId} label={`Partner ID ${state.outgoingRequest.partnerCertificateId}`} />
         </div>
         <button type="button" className={styles.textButton} disabled={busy} onClick={() => void cancelOutgoingRequest()}><CloserWordArt className={styles.actionWord} asset="cancel" label="Cancel request" /></button>
@@ -366,8 +374,8 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
           <input className={styles.voiceProgress} type="range" min="0" max={voiceDuration || 0} step="0.1" value={Math.min(voiceCurrentTime, voiceDuration || 0)} onChange={(event) => { const time = Number(event.target.value); if (voiceAudio.current) voiceAudio.current.currentTime = time; setVoiceCurrentTime(time); }} aria-label="Voice message progress" />
         </div>}
       </div>
-      <button className={`${styles.primaryButton} ${recording ? styles.recordingButton : ""}`} onClick={() => void toggleRecording()} disabled={busy} aria-label={recording ? "Stop and send voice message" : `Send ${state.connection.names[1]} a voice message`}>
-        {recording ? <span className={styles.recordingLabel}><span className={styles.recordingPulse} aria-hidden="true" /><CloserGlyphText text={`Recording ${recordingTime}`} label={`Recording ${recordingTime}`} /></span> : <CloserGlyphText className={styles.sendVoiceLabel} text={`Send ${state.connection.names[1]} a voice message`} label={`Send ${state.connection.names[1]} a voice message`} />}
+      <button className={`${styles.primaryButton} ${recording ? styles.recordingButton : ""} ${sendingVoice ? styles.sendingVoiceButton : ""}`} onClick={() => void toggleRecording()} disabled={busy || sendingVoice} aria-label={recording ? "Stop and send voice message" : sendingVoice ? "Sending voice message" : `Send ${state.connection.names[1]} a voice message`}>
+        {recording ? <span className={styles.recordingLabel}><span className={styles.recordingPulse} aria-hidden="true" /><CloserGlyphText text={`Recording ${recordingTime}`} label={`Recording ${recordingTime}`} /></span> : sendingVoice ? <span className={styles.sendingVoiceLabel}><CloserGlyphText text="Sending" label="Sending voice message" /><span className={styles.sendingDots} aria-hidden="true"><i /><i /><i /></span></span> : <CloserGlyphText className={styles.sendVoiceLabel} text={`Send ${state.connection.names[1]} a voice message`} label={`Send ${state.connection.names[1]} a voice message`} />}
       </button>
       {showPhotoPicker && <section className={`${styles.card} ${styles.photoPicker}`} role="dialog" aria-modal="true" aria-label="Add a shared photo"><button type="button" className={styles.closeButton} onClick={() => setShowPhotoPicker(false)} aria-label="Close">×</button><h1><CloserGlyphText className={styles.photoPickerTitle} text="Add a photo" label="Add a photo" /></h1><div className={styles.photoButtons}><button className={styles.primaryButton} disabled={busy} onClick={() => cameraPhotoInput.current?.click()}><CloserGlyphText className={styles.photoActionArt} text="Take photo" label="Take photo" /></button><button className={styles.primaryButton} disabled={busy} onClick={() => galleryPhotoInput.current?.click()}><CloserGlyphText className={styles.photoActionArt} text="Open gallery" label="Open gallery" /></button></div></section>}
       {showUnlinkConfirm && <section className={`${styles.card} ${styles.unlinkDialog}`} role="dialog" aria-modal="true" aria-label="Unlink our plushies"><button type="button" className={styles.closeButton} onClick={() => setShowUnlinkConfirm(false)} aria-label="Close">×</button><h1><CloserGlyphText className={styles.unlinkDialogTitle} text="Unlink our plushies" label="Unlink our plushies" /></h1><p><CloserGlyphText className={styles.unlinkDialogMessage} text="Your shared space will close" label="Your shared space will close" /></p><div className={styles.actions}><button className={styles.primaryButton} disabled={busy} onClick={() => void unlink()}><CloserGlyphText className={styles.unlinkConfirmLabel} text={busy ? "Unlinking" : "Unlink"} label={busy ? "Unlinking" : "Unlink"} /></button><button className={styles.secondaryButton} disabled={busy} onClick={() => setShowUnlinkConfirm(false)}><CloserGlyphText className={styles.unlinkConfirmLabel} text="Cancel" label="Cancel" /></button></div></section>}
