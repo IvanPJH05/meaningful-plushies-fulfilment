@@ -14,7 +14,7 @@ type UnlinkedState = {
 
 type LinkedState = {
   status: "linked";
-  connection: { id: string; names: [string, string]; partnerCertificateId: string; canUploadNextPhoto: boolean; hasPhoto: boolean; hasVoice: boolean; voiceVersion: string };
+  connection: { id: string; names: [string, string]; partnerCertificateId: string; canUploadNextPhoto: boolean; hasPhoto: boolean; photoVersion: string; hasVoice: boolean; voiceVersion: string };
 };
 
 type CloserState = UnlinkedState | LinkedState;
@@ -59,6 +59,7 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [mediaVersion, setMediaVersion] = useState(0);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [loadedPhotoVersion, setLoadedPhotoVersion] = useState<string | null>(null);
   const [voicePlaying, setVoicePlaying] = useState(false);
   const [voiceCurrentTime, setVoiceCurrentTime] = useState(0);
   const [voiceDuration, setVoiceDuration] = useState(0);
@@ -99,7 +100,7 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
     setError("");
     if (isDemo) {
       setState(demoMode === "shared"
-        ? { status: "linked", connection: { id: "demo", names: ["Snowy", "Honey"], partnerCertificateId: "102332", canUploadNextPhoto: true, hasPhoto: false, hasVoice: false, voiceVersion: "none" } }
+        ? { status: "linked", connection: { id: "demo", names: ["Snowy", "Honey"], partnerCertificateId: "102332", canUploadNextPhoto: true, hasPhoto: false, photoVersion: "none", hasVoice: false, voiceVersion: "none" } }
         : { status: "unlinked", request: null, outgoingRequest: null });
       setLoading(false);
       return;
@@ -229,9 +230,12 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
   }
 
   const mediaUrl = (type: "photo" | "voice") => {
-    const version = type === "voice" && state?.status === "linked" ? state.connection.voiceVersion : mediaVersion;
+    const version = state?.status === "linked"
+      ? type === "voice" ? state.connection.voiceVersion : state.connection.photoVersion
+      : mediaVersion;
     return `${mediaPath}?certificate=${encodeURIComponent(certificateId)}&key=${encodeURIComponent(accessKey)}&adminPreview=${encodeURIComponent(adminPreview)}&type=${type}&v=${encodeURIComponent(String(version))}`;
   };
+  const photoIsLoading = state?.status === "linked" && state.connection.hasPhoto && loadedPhotoVersion !== state.connection.photoVersion;
   const recordingTime = `${Math.floor(recordingSeconds / 60)}:${String(recordingSeconds % 60).padStart(2, "0")}`;
 
   async function toggleVoicePlayback() {
@@ -323,7 +327,7 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
     } catch (caught) { setError("Microphone access is needed to record a voice note."); }
   }
 
-  if (loading) return <main className={styles.page} style={themedStyle}><div className={styles.scene}><div className={styles.loading}>Opening your shared space…</div></div></main>;
+  if (loading) return <main className={styles.page} style={themedStyle}><div className={styles.scene}><div className={styles.loading}><CloserGlyphText className={styles.loadingLabel} text="Opening your shared space" label="Opening your shared space" /></div></div></main>;
   if (error && !state) return <main className={styles.page} style={themedStyle}><div className={styles.scene}><section className={styles.card}><p className={styles.eyebrow}>closer ♥</p><h1>We couldn’t open this plushie.</h1><p>{error}</p><button className={styles.secondaryButton} onClick={() => void refresh()}>Try again</button></section></div></main>;
   if (!state) return null;
 
@@ -361,8 +365,8 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
     </section> : <section className={styles.sharedSpace}>
       <div className={styles.namesPill} style={{ "--glyph-count": Math.max(Array.from(`${state.connection.names[0]} + ${state.connection.names[1]}`).length, 1) } as CSSProperties}><CloserGlyphText text={`${state.connection.names[0]} + ${state.connection.names[1]}`} /></div>
       <button type="button" className={styles.photoFrame} disabled={busy || !state.connection.canUploadNextPhoto} onClick={() => setShowPhotoPicker(true)} aria-label={state.connection.canUploadNextPhoto ? "Add or replace the shared photo" : `Waiting for ${state.connection.names[1]} to add the next photo`}>
-        {state.connection.hasPhoto ? <img className={styles.photo} src={mediaUrl("photo")} alt={`A shared memory from ${state.connection.names.join(" and ")}`} onLoad={() => setUploadingPhoto(false)} onError={() => { setUploadingPhoto(false); setError("We could not load the shared photo. Please refresh and try again."); }} /> : <span className={styles.photoEmpty} aria-hidden="true" />}
-        {uploadingPhoto && <span className={styles.photoUploading} role="status" aria-live="polite"><CloserGlyphText text="Updating" label="Updating shared photo" /><span className={styles.uploadDots} aria-hidden="true"><i /><i /><i /></span></span>}
+        {state.connection.hasPhoto ? <img className={styles.photo} src={mediaUrl("photo")} alt={`A shared memory from ${state.connection.names.join(" and ")}`} onLoad={() => { setUploadingPhoto(false); setLoadedPhotoVersion(state.connection.photoVersion); }} onError={() => { setUploadingPhoto(false); setLoadedPhotoVersion(state.connection.photoVersion); setError("We could not load the shared photo. Please refresh and try again."); }} /> : <span className={styles.photoEmpty} aria-hidden="true" />}
+        {(uploadingPhoto || photoIsLoading) && <span className={styles.photoUploading} role="status" aria-live="polite"><CloserGlyphText text={uploadingPhoto ? "Updating" : "Loading"} label={uploadingPhoto ? "Updating shared photo" : "Loading shared photo"} /><span className={styles.uploadDots} aria-hidden="true"><i /><i /><i /></span></span>}
       </button>
       <input ref={cameraPhotoInput} type="file" accept="image/*" capture="environment" onChange={selectPhoto} hidden />
       <input ref={galleryPhotoInput} type="file" accept="image/*" onChange={selectPhoto} hidden />
