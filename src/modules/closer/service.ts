@@ -255,7 +255,7 @@ export async function closerState(certificateId: string) {
   };
   const isFirst = connection.first_certificate_id === certificateId;
   const incomingVoice = closerIncomingVoice(connection, certificateId);
-  return { status: "linked" as const, connection: { id: connection.id, names: (isFirst ? [connection.first_name, connection.second_name] : [connection.second_name, connection.first_name]) as [string, string], partnerCertificateId: isFirst ? connection.second_certificate_id : connection.first_certificate_id, canUploadNextPhoto: connection.next_photo_certificate_id === certificateId, hasPhoto: Boolean(connection.photo_path), photoVersion: connection.photo_path || "none", hasVoice: Boolean(incomingVoice.path), voiceVersion: incomingVoice.path || "none" } };
+  return { status: "linked" as const, connection: { id: connection.id, names: (isFirst ? [connection.first_name, connection.second_name] : [connection.second_name, connection.first_name]) as [string, string], partnerCertificateId: isFirst ? connection.second_certificate_id : connection.first_certificate_id, hasPhoto: Boolean(connection.photo_path), photoVersion: connection.photo_path || "none", hasVoice: Boolean(incomingVoice.path), voiceVersion: incomingVoice.path || "none" } };
 }
 
 export async function requestCloserConnection(fromCertificateId: string, toCertificateIdValue: unknown, requesterNameValue: unknown) {
@@ -352,24 +352,20 @@ export async function uploadCloserMedia(args: { certificateId: string; type: "ph
   const certificate = await certificateById(args.certificateId);
   const connection = await connectionForCertificate(certificate);
   if (!connection) throw new CloserError("Link your plushies before sharing media.", 409);
-  if (args.type === "photo" && connection.next_photo_certificate_id !== args.certificateId) throw new CloserError("It is your partner’s turn to upload the next photo.", 409);
   const extension = args.type === "photo" ? "jpg" : args.contentType === "audio/mp4" ? "m4a" : "webm";
   const path = `${connection.id}/${args.type}-${randomUUID()}.${extension}`;
   await storeCloserMedia(path, args.bytes, args.contentType);
   try {
-    const partnerCertificateId = connection.first_certificate_id === args.certificateId ? connection.second_certificate_id : connection.first_certificate_id;
     const isFirst = connection.first_certificate_id === args.certificateId;
     const previousVoicePath = isFirst ? connection.second_voice_path : connection.first_voice_path;
     const update = args.type === "photo"
-      ? { photo_path: path, photo_content_type: args.contentType, next_photo_certificate_id: partnerCertificateId }
+      ? { photo_path: path, photo_content_type: args.contentType }
       : isFirst
         ? { second_voice_path: path, second_voice_content_type: args.contentType }
         : { first_voice_path: path, first_voice_content_type: args.contentType };
-    let updateQuery = database().from("closer_app_connections").update(update).eq("id", connection.id);
-    if (args.type === "photo") updateQuery = updateQuery.eq("next_photo_certificate_id", args.certificateId);
-    const { data, error } = await updateQuery.select("id");
+    const { data, error } = await database().from("closer_app_connections").update(update).eq("id", connection.id).select("id");
     throwDatabaseError(error);
-    if (!data?.length) throw new CloserError("Your partner just shared a photo. Please wait for your turn.", 409);
+    if (!data?.length) throw new CloserError("This shared space is no longer available.", 404);
     await logActivity(connection.id, args.certificateId, `${args.type}_updated`);
     await deleteCloserMedia([args.type === "photo" ? connection.photo_path : previousVoicePath]);
   } catch (error) {

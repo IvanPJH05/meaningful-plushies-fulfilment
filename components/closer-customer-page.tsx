@@ -14,7 +14,7 @@ type UnlinkedState = {
 
 type LinkedState = {
   status: "linked";
-  connection: { id: string; names: [string, string]; partnerCertificateId: string; canUploadNextPhoto: boolean; hasPhoto: boolean; photoVersion: string; hasVoice: boolean; voiceVersion: string };
+  connection: { id: string; names: [string, string]; partnerCertificateId: string; hasPhoto: boolean; photoVersion: string; hasVoice: boolean; voiceVersion: string };
 };
 
 type CloserState = UnlinkedState | LinkedState;
@@ -101,7 +101,7 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
     setError("");
     if (isDemo) {
       setState(demoMode === "shared"
-        ? { status: "linked", connection: { id: "demo", names: ["Snowy", "Honey"], partnerCertificateId: "102332", canUploadNextPhoto: true, hasPhoto: false, photoVersion: "none", hasVoice: false, voiceVersion: "none" } }
+        ? { status: "linked", connection: { id: "demo", names: ["Snowy", "Honey"], partnerCertificateId: "102332", hasPhoto: false, photoVersion: "none", hasVoice: false, voiceVersion: "none" } }
         : { status: "unlinked", request: null, outgoingRequest: null });
       setLoading(false);
       return;
@@ -366,7 +366,7 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
       </>}
     </section> : <section className={styles.sharedSpace}>
       <div className={styles.namesPill} style={{ "--glyph-count": Math.max(Array.from(`${state.connection.names[0]} + ${state.connection.names[1]}`).length, 1) } as CSSProperties}><CloserGlyphText text={`${state.connection.names[0]} + ${state.connection.names[1]}`} /></div>
-      <button type="button" className={styles.photoFrame} disabled={busy || !state.connection.canUploadNextPhoto} onClick={() => setShowPhotoPicker(true)} aria-label={state.connection.canUploadNextPhoto ? "Add or replace the shared photo" : `Waiting for ${state.connection.names[1]} to add the next photo`}>
+      <button type="button" className={styles.photoFrame} disabled={busy} onClick={() => setShowPhotoPicker(true)} aria-label="Add or replace the shared photo">
         {state.connection.hasPhoto ? <img className={styles.photo} src={mediaUrl("photo")} alt={`A shared memory from ${state.connection.names.join(" and ")}`} onLoad={() => { setUploadingPhoto(false); setLoadedPhotoVersion(state.connection.photoVersion); }} onError={() => { setUploadingPhoto(false); setLoadedPhotoVersion(state.connection.photoVersion); setError("We could not load the shared photo. Please refresh and try again."); }} /> : <span className={styles.photoEmpty} aria-hidden="true" />}
         {(uploadingPhoto || photoIsLoading) && <span className={styles.photoUploading} role="status" aria-live="polite"><CloserGlyphText text={uploadingPhoto ? "Updating" : "Loading"} label={uploadingPhoto ? "Updating shared photo" : "Loading shared photo"} /><span className={styles.uploadDots} aria-hidden="true"><i /><i /><i /></span></span>}
       </button>
