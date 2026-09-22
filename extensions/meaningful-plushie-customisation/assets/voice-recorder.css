@@ -39,6 +39,21 @@
   background: #f8fcfe;
 }
 
+.mp-deferred-customisation [data-voice-upload-control][hidden],
+.mp-deferred-customisation [data-voice-record-control][hidden],
+.mp-deferred-customisation__upload-progress[hidden] {
+  display: none !important;
+}
+
+.mp-deferred-customisation [data-voice-record-control] {
+  display: flex;
+  justify-content: center;
+}
+
+.mp-deferred-customisation [data-voice-record-control] .mp-deferred-customisation__record {
+  width: min(100%, 460px);
+}
+
 .mp-deferred-customisation__record.is-recording {
   background: #c75e76;
   border-color: #c75e76;
