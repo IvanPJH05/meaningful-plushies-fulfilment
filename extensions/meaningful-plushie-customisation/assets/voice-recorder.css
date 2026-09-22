@@ -54,6 +54,103 @@
   width: min(100%, 460px);
 }
 
+.mp-deferred-customisation__record-dialog {
+  position: fixed;
+  z-index: 2147483647;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  min-height: 100dvh;
+  padding: 24px;
+  background: #cceeff;
+  color: #132d50;
+}
+
+.mp-deferred-customisation__record-dialog[hidden] {
+  display: none !important;
+}
+
+.mp-deferred-customisation__record-dialog-card {
+  display: grid;
+  justify-items: center;
+  gap: 20px;
+  width: min(100%, 560px);
+  padding: 42px 28px;
+  border: 3px solid #86aecc;
+  border-radius: 30px;
+  background: #fff;
+  text-align: center;
+}
+
+.mp-deferred-customisation__record-dialog-card p,
+.mp-deferred-customisation__record-dialog-card h2 {
+  margin: 0;
+}
+
+.mp-deferred-customisation__record-dialog-card p:first-child {
+  color: #668da4;
+  font-size: .8em;
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+
+.mp-deferred-customisation__record-dialog-card > strong {
+  color: #7098ae;
+  font-size: clamp(3rem, 18vw, 7rem);
+  line-height: 1;
+}
+
+.mp-deferred-customisation__record-dialog-card h2 {
+  color: #132d50;
+  font-size: clamp(1.3rem, 6vw, 2.2rem);
+}
+
+.mp-deferred-customisation__record-dialog-card [data-record-dialog-time] {
+  color: #53798f;
+  font-size: 1.1em;
+  font-weight: 800;
+}
+
+.mp-deferred-customisation__record-dialog-bar {
+  width: 100%;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #dbe8ee;
+}
+
+.mp-deferred-customisation__record-dialog-bar i {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: #7098ae;
+  transition: width .1s linear;
+}
+
+.mp-deferred-customisation__record-dialog-card button {
+  width: min(100%, 380px);
+  min-height: 60px;
+  padding: 14px 22px;
+  border: 0;
+  border-radius: 999px;
+  background: #7098ae;
+  color: #fff;
+  font: inherit;
+  font-weight: 800;
+  letter-spacing: .08em;
+  cursor: pointer;
+}
+
+.mp-deferred-customisation__record-dialog-card [data-record-cancel] {
+  min-height: auto;
+  padding: 8px;
+  background: transparent;
+  color: #53798f;
+  text-decoration: underline;
+}
+
 .mp-deferred-customisation__record.is-recording {
   background: #c75e76;
   border-color: #c75e76;
