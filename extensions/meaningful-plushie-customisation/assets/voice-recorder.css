@@ -88,14 +88,95 @@
 .mp-deferred-customisation__recording > span { grid-column: 2; }
 
 .mp-deferred-customisation__voice-preview {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
   width: 100%;
-  margin-top: 2px;
+  min-height: 58px;
+  padding: 8px 10px;
+  border: 2px solid #d7e6ee;
+  border-radius: 999px;
+  box-sizing: border-box;
+  background: #fff;
+}
+
+.mp-deferred-customisation__voice-preview[hidden] {
+  display: none !important;
+}
+
+.mp-deferred-customisation__voice-preview audio {
+  display: none;
+}
+
+.mp-deferred-customisation__voice-preview button {
+  min-width: 82px;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: #7098ae;
+  color: #fff;
+  font: inherit;
+  font-size: .8em;
+  font-weight: 800;
+  letter-spacing: .06em;
+  cursor: pointer;
+}
+
+.mp-deferred-customisation__voice-preview button:disabled {
+  cursor: wait;
+  opacity: .75;
+}
+
+.mp-deferred-customisation__voice-preview input[type="range"] {
+  width: 100%;
+  min-width: 0;
+  accent-color: #7098ae;
+  cursor: pointer;
+}
+
+.mp-deferred-customisation__voice-preview > span:last-child {
+  min-width: 72px;
+  color: #53798f;
+  font-size: .75em;
+  font-weight: 800;
+  text-align: right;
+}
+
+.mp-deferred-customisation__voice-loading {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 5px;
+  vertical-align: middle;
+}
+
+.mp-deferred-customisation__voice-loading[hidden] {
+  display: none;
+}
+
+.mp-deferred-customisation__voice-loading i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: mp-voice-dot 1s ease-in-out infinite;
+}
+
+.mp-deferred-customisation__voice-loading i:nth-child(2) { animation-delay: .14s; }
+.mp-deferred-customisation__voice-loading i:nth-child(3) { animation-delay: .28s; }
 }
 
 @keyframes mp-recording-pulse {
   50% { transform: scale(1.55); opacity: .45; }
 }
 
+@keyframes mp-voice-dot {
+  50% { transform: translateY(-3px); opacity: .4; }
+}
+
 @media (max-width: 420px) {
   .mp-deferred-customisation__voice-panel { padding: 16px; }
+  .mp-deferred-customisation__voice-preview { grid-template-columns: auto minmax(0, 1fr); }
+  .mp-deferred-customisation__voice-preview > span:last-child { grid-column: 2; }
 }

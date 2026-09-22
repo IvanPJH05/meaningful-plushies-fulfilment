@@ -13,7 +13,6 @@
     const voiceButton = block.querySelector("[data-voice-button]");
     const recordVoiceButton = block.querySelector("[data-record-voice]");
     const recordVoiceLabel = block.querySelector("[data-record-label]");
-    const voiceSourceChoice = block.querySelector("[data-voice-source-choice]");
     const selectRecordVoice = block.querySelector("[data-select-record]");
     const selectUploadVoice = block.querySelector("[data-select-upload]");
     const voiceUploadControl = block.querySelector("[data-voice-upload-control]");
@@ -22,6 +21,12 @@
     const recordingPanel = block.querySelector("[data-recording]");
     const recordingTime = block.querySelector("[data-recording-time]");
     const voicePreview = block.querySelector("[data-voice-preview]");
+    const voiceAudio = block.querySelector("[data-voice-audio]");
+    const voicePlayButton = block.querySelector("[data-voice-play]");
+    const voicePlayLabel = block.querySelector("[data-voice-play-label]");
+    const voiceLoading = block.querySelector("[data-voice-loading]");
+    const voiceSeek = block.querySelector("[data-voice-seek]");
+    const voiceTime = block.querySelector("[data-voice-time]");
     const birthDate = block.querySelector("[data-birth-date]");
     const dateDisplay = block.querySelector("[data-date-display]");
     const dateBox = block.querySelector(".mp-deferred-customisation__date");
@@ -52,10 +57,10 @@
     const language = /^ms(?:-|$)/i.test(block.dataset.locale || "") ? "ms" : "en";
     const translations = {
       en: {
-        completeNow: "Complete it now", fillLater: "Fill it in later", plushNameLabel: "Plushie's Name", plushNamePlaceholder: "NAME YOUR PLUSHIE", genderLabel: "Plushie's Gender", male: "Male", female: "Female", birthDateLabel: "Plushie's Birth Date", meaningfulDate: "A meaningful date", birthPlaceLabel: "Plushie's Birth Place", meaningfulPlace: "A meaningful place", favouritePersonLabel: "Plushie's Favourite Person", meaningfulPerson: "A meaningful person", belongsToLabel: "Plushie Belongs To", plushOwner: "The plushie's owner", meaningfulNoteLabel: "Meaningful Note", meaningfulNotePlaceholder: "A message for the plushie's owner", chooseRecordVoice: "Record voice", chooseUploadVoice: "Upload audio", uploadVoiceLabel: "Choose your audio file", uploadVoiceButton: "CHOOSE AUDIO FILE", recordVoiceStart: "Record voice", recordVoiceStop: "Stop recording", recording: "Recording", recordingHint: "Tap stop recording when you are done.", completeFirst: "PLEASE COMPLETE CUSTOMISATION FIRST", enterWhatsApp: "ENTER A VALID WHATSAPP NUMBER FIRST", enterEmail: "ENTER A VALID EMAIL ADDRESS FIRST", incompleteError: "Please complete every birth certificate field and upload your voice recording before adding to cart or checking out.", contactError: "Please enter a valid {contact} before adding to cart or checking out.", whatsappNumber: "WhatsApp number", emailAddress: "email address", notConfigured: "Customisation is not configured yet. Please contact us.", preparingLink: "Preparing your secure customisation link…", paired: "Your link will be paired with this order after checkout.", saving: "Saving your customisation…", saved: "Your customisation is saved and will be linked to this order.", uploadVoiceError: "Please upload your voice recording.", unavailable: "This customisation link is no longer available.",
+        completeNow: "Complete it now", fillLater: "Fill it in later", plushNameLabel: "Plushie's Name", plushNamePlaceholder: "NAME YOUR PLUSHIE", genderLabel: "Plushie's Gender", male: "Male", female: "Female", birthDateLabel: "Plushie's Birth Date", meaningfulDate: "A meaningful date", birthPlaceLabel: "Plushie's Birth Place", meaningfulPlace: "A meaningful place", favouritePersonLabel: "Plushie's Favourite Person", meaningfulPerson: "A meaningful person", belongsToLabel: "Plushie Belongs To", plushOwner: "The plushie's owner", meaningfulNoteLabel: "Meaningful Note", meaningfulNotePlaceholder: "A message for the plushie's owner", chooseRecordVoice: "Record voice", chooseUploadVoice: "Upload audio", uploadVoiceLabel: "Choose your audio file", uploadVoiceButton: "CHOOSE AUDIO FILE", recordVoiceStart: "Record voice", recordVoiceStop: "Stop recording", playVoice: "PLAY", pauseVoice: "PAUSE", loadingVoice: "LOADING", recording: "Recording", recordingHint: "Tap stop recording when you are done.", completeFirst: "PLEASE COMPLETE CUSTOMISATION FIRST", enterWhatsApp: "ENTER A VALID WHATSAPP NUMBER FIRST", enterEmail: "ENTER A VALID EMAIL ADDRESS FIRST", incompleteError: "Please complete every birth certificate field and upload your voice recording before adding to cart or checking out.", contactError: "Please enter a valid {contact} before adding to cart or checking out.", whatsappNumber: "WhatsApp number", emailAddress: "email address", notConfigured: "Customisation is not configured yet. Please contact us.", preparingLink: "Preparing your secure customisation link…", paired: "Your link will be paired with this order after checkout.", saving: "Saving your customisation…", saved: "Your customisation is saved and will be linked to this order.", uploadVoiceError: "Please upload your voice recording.", unavailable: "This customisation link is no longer available.",
       },
       ms: {
-        completeNow: "Lengkapkan sekarang", fillLater: "Isi kemudian", plushNameLabel: "Nama Plushie", plushNamePlaceholder: "NAMA PLUSHIE ANDA", genderLabel: "Jantina Plushie", male: "Lelaki", female: "Perempuan", birthDateLabel: "Tarikh Lahir Plushie", meaningfulDate: "Tarikh yang bermakna", birthPlaceLabel: "Tempat Lahir Plushie", meaningfulPlace: "Tempat yang bermakna", favouritePersonLabel: "Orang Kegemaran Plushie", meaningfulPerson: "Orang yang bermakna", belongsToLabel: "Plushie Milik", plushOwner: "Pemilik plushie", meaningfulNoteLabel: "Nota Bermakna", meaningfulNotePlaceholder: "Mesej untuk pemilik plushie", chooseRecordVoice: "Rakam suara", chooseUploadVoice: "Muat naik audio", uploadVoiceLabel: "Pilih fail audio anda", uploadVoiceButton: "PILIH FAIL AUDIO", recordVoiceStart: "Rakam suara", recordVoiceStop: "Hentikan rakaman", recording: "Merakam", recordingHint: "Tekan hentikan rakaman apabila anda selesai.", completeFirst: "SILA LENGKAPKAN PENYESUAIAN DAHULU", enterWhatsApp: "MASUKKAN NOMBOR WHATSAPP YANG SAH", enterEmail: "MASUKKAN ALAMAT E-MEL YANG SAH", incompleteError: "Sila lengkapkan semua maklumat sijil kelahiran dan muat naik rakaman suara sebelum menambah ke troli atau membuat pembayaran.", contactError: "Sila masukkan {contact} yang sah sebelum menambah ke troli atau membuat pembayaran.", whatsappNumber: "nombor WhatsApp", emailAddress: "alamat e-mel", notConfigured: "Penyesuaian belum disediakan. Sila hubungi kami.", preparingLink: "Menyediakan pautan penyesuaian selamat anda…", paired: "Pautan anda akan dipadankan dengan pesanan ini selepas pembayaran.", saving: "Menyimpan penyesuaian anda…", saved: "Penyesuaian anda telah disimpan dan akan dipadankan dengan pesanan ini.", uploadVoiceError: "Sila muat naik rakaman suara anda.", unavailable: "Pautan penyesuaian ini tidak lagi tersedia.",
+        completeNow: "Lengkapkan sekarang", fillLater: "Isi kemudian", plushNameLabel: "Nama Plushie", plushNamePlaceholder: "NAMA PLUSHIE ANDA", genderLabel: "Jantina Plushie", male: "Lelaki", female: "Perempuan", birthDateLabel: "Tarikh Lahir Plushie", meaningfulDate: "Tarikh yang bermakna", birthPlaceLabel: "Tempat Lahir Plushie", meaningfulPlace: "Tempat yang bermakna", favouritePersonLabel: "Orang Kegemaran Plushie", meaningfulPerson: "Orang yang bermakna", belongsToLabel: "Plushie Milik", plushOwner: "Pemilik plushie", meaningfulNoteLabel: "Nota Bermakna", meaningfulNotePlaceholder: "Mesej untuk pemilik plushie", chooseRecordVoice: "Rakam suara", chooseUploadVoice: "Muat naik audio", uploadVoiceLabel: "Pilih fail audio anda", uploadVoiceButton: "PILIH FAIL AUDIO", recordVoiceStart: "Rakam suara", recordVoiceStop: "Hentikan rakaman", playVoice: "MAIN", pauseVoice: "JEDA", loadingVoice: "MEMUAT", recording: "Merakam", recordingHint: "Tekan hentikan rakaman apabila anda selesai.", completeFirst: "SILA LENGKAPKAN PENYESUAIAN DAHULU", enterWhatsApp: "MASUKKAN NOMBOR WHATSAPP YANG SAH", enterEmail: "MASUKKAN ALAMAT E-MEL YANG SAH", incompleteError: "Sila lengkapkan semua maklumat sijil kelahiran dan muat naik rakaman suara sebelum menambah ke troli atau membuat pembayaran.", contactError: "Sila masukkan {contact} yang sah sebelum menambah ke troli atau membuat pembayaran.", whatsappNumber: "nombor WhatsApp", emailAddress: "alamat e-mel", notConfigured: "Penyesuaian belum disediakan. Sila hubungi kami.", preparingLink: "Menyediakan pautan penyesuaian selamat anda…", paired: "Pautan anda akan dipadankan dengan pesanan ini selepas pembayaran.", saving: "Menyimpan penyesuaian anda…", saved: "Penyesuaian anda telah disimpan dan akan dipadankan dengan pesanan ini.", uploadVoiceError: "Sila muat naik rakaman suara anda.", unavailable: "Pautan penyesuaian ini tidak lagi tersedia.",
       },
     };
     const t = (key, values = {}) => String(translations[language][key] || translations.en[key] || key).replace(/\{(\w+)\}/g, (_, name) => String(values[name] || ""));
@@ -77,6 +82,16 @@
     let voiceSource = "record";
 
     const selectedVoice = () => recordedVoiceFile || voiceInput.files?.[0] || restoredVoiceFile || null;
+    const audioMimeType = (file) => {
+      const extension = file.name.split(".").pop()?.toLowerCase();
+      const byExtension = { mp3: "audio/mpeg", mp4: "audio/mp4", m4a: "audio/mp4", ogg: "audio/ogg", oga: "audio/ogg", wav: "audio/wav", webm: "audio/webm" };
+      return byExtension[extension] || (file.type.startsWith("audio/") ? file.type : "");
+    };
+    const normaliseAudioFile = (file) => {
+      if (!file) return null;
+      const type = audioMimeType(file);
+      return type && file.type !== type ? new File([file], file.name, { type, lastModified: file.lastModified }) : file;
+    };
     const setVoiceSource = (source) => {
       voiceSource = source;
       selectRecordVoice.classList.toggle("is-active", source === "record");
@@ -87,18 +102,32 @@
       voiceRecordControl.hidden = source !== "record";
     };
     const updateVoiceLabel = () => { voiceButton.textContent = selectedVoice()?.name || voiceInput.value.split(/[/\\\\]/).pop() || t("uploadVoiceButton"); };
+    const formatPlaybackTime = (seconds) => Number.isFinite(seconds) ? `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}` : "0:00";
+    const setVoicePlaybackUi = ({ playing = false, loading = false } = {}) => {
+      voicePlayLabel.textContent = loading ? t("loadingVoice") : playing ? t("pauseVoice") : t("playVoice");
+      voiceLoading.hidden = !loading;
+      voicePlayButton.disabled = loading;
+      voicePlayButton.setAttribute("aria-label", loading ? t("loadingVoice") : playing ? t("pauseVoice") : t("playVoice"));
+    };
     const updateVoicePreview = () => {
       const voice = selectedVoice();
-      if (!voice || !voicePreview) return;
+      if (!voice || !voicePreview || !voiceAudio) return;
       if (previewUrl) URL.revokeObjectURL(previewUrl);
       previewUrl = URL.createObjectURL(voice);
-      voicePreview.src = previewUrl;
+      voiceAudio.src = previewUrl;
+      voiceAudio.load();
+      voiceSeek.value = "0";
+      voiceSeek.max = "0";
+      voiceTime.textContent = "0:00 / 0:00";
+      setVoicePlaybackUi();
       voicePreview.hidden = false;
     };
     const clearVoiceSelection = () => {
       if (previewUrl) URL.revokeObjectURL(previewUrl);
       previewUrl = "";
-      voicePreview.removeAttribute("src");
+      voiceAudio.pause();
+      voiceAudio.removeAttribute("src");
+      voiceAudio.load();
       voicePreview.hidden = true;
       recordedVoiceFile = null;
       restoredVoiceFile = null;
@@ -115,6 +144,21 @@
       recordVoiceLabel.textContent = recording ? t("recordVoiceStop") : t("recordVoiceStart");
       recordingPanel.hidden = !recording;
     };
+    voicePlayButton?.addEventListener("click", async () => {
+      if (voiceAudio.paused) {
+        setVoicePlaybackUi({ loading: true });
+        try { await voiceAudio.play(); } catch { setVoicePlaybackUi(); notice.textContent = "This audio could not be played on this device. Try MP3, MP4/M4A, OGG, WAV, or WebM audio."; }
+      } else voiceAudio.pause();
+    });
+    voiceSeek?.addEventListener("input", () => { voiceAudio.currentTime = Number(voiceSeek.value); });
+    voiceAudio?.addEventListener("loadedmetadata", () => { const duration = Number.isFinite(voiceAudio.duration) ? voiceAudio.duration : 0; voiceSeek.max = String(duration); voiceTime.textContent = `${formatPlaybackTime(voiceAudio.currentTime)} / ${formatPlaybackTime(duration)}`; });
+    voiceAudio?.addEventListener("timeupdate", () => { voiceSeek.value = String(voiceAudio.currentTime); voiceTime.textContent = `${formatPlaybackTime(voiceAudio.currentTime)} / ${formatPlaybackTime(voiceAudio.duration)}`; });
+    voiceAudio?.addEventListener("waiting", () => setVoicePlaybackUi({ loading: true }));
+    voiceAudio?.addEventListener("canplay", () => setVoicePlaybackUi({ playing: !voiceAudio.paused }));
+    voiceAudio?.addEventListener("playing", () => setVoicePlaybackUi({ playing: true }));
+    voiceAudio?.addEventListener("pause", () => setVoicePlaybackUi());
+    voiceAudio?.addEventListener("ended", () => { voiceAudio.currentTime = 0; voiceSeek.value = "0"; setVoicePlaybackUi(); });
+    voiceAudio?.addEventListener("error", () => { setVoicePlaybackUi(); notice.textContent = "This audio could not be played on this device. Try MP3, MP4/M4A, OGG, WAV, or WebM audio."; });
     const uploadVoiceEarly = async () => {
       const voice = selectedVoice();
       if (!voice || isLater() || !apiUrl) return null;
@@ -188,7 +232,7 @@
       const voiceDraft = await loadVoiceDraft();
       // Keep one day of local recovery only. This is browser-local and is not uploaded.
       if (voiceDraft?.file && Date.now() - voiceDraft.savedAt < 24 * 60 * 60 * 1000) {
-        restoredVoiceFile = voiceDraft.file;
+        restoredVoiceFile = normaliseAudioFile(voiceDraft.file);
         setVoiceSource("upload");
         updateVoiceLabel();
         updateVoicePreview();
@@ -298,7 +342,7 @@
       setVoiceSource("upload");
       voiceInput.click();
     });
-    voiceInput.addEventListener("change", () => { recordedVoiceFile = null; restoredVoiceFile = voiceInput.files?.[0] || null; preparedUpload = null; savedCompleteNowFingerprint = ""; setVoiceSource("upload"); updateVoiceLabel(); updateVoicePreview(); saveVoiceDraft(restoredVoiceFile); saveDraft(); syncPurchaseBlockers(); void uploadVoiceEarly().then(() => scheduleCompleteNowSave()).catch((error) => { notice.textContent = error instanceof Error ? error.message : "Could not upload your file."; }); });
+    voiceInput.addEventListener("change", () => { recordedVoiceFile = null; restoredVoiceFile = normaliseAudioFile(voiceInput.files?.[0] || null); voiceInput.value = ""; preparedUpload = null; savedCompleteNowFingerprint = ""; setVoiceSource("upload"); updateVoiceLabel(); updateVoicePreview(); saveVoiceDraft(restoredVoiceFile); saveDraft(); syncPurchaseBlockers(); void uploadVoiceEarly().then(() => scheduleCompleteNowSave()).catch((error) => { notice.textContent = error instanceof Error ? error.message : "Could not upload your file."; }); });
     recordVoiceButton?.addEventListener("click", async () => {
       if (recorder?.state === "recording") { recorder.stop(); return; }
       try {
