@@ -1,0 +1,40 @@
+{{ 'snowy-charm-voice.css' | asset_url | stylesheet_tag }}
+<script src="{{ 'snowy-charm-voice.js' | asset_url }}" defer="defer"></script>
+
+{%- if product.id == 8426384719943 -%}
+  <section
+    class="mp-snowy-charm-voice"
+    data-snowy-charm-voice
+    data-api-url="{{ block.settings.app_url | default: 'https://meaningful-plushies-fulfilment.vercel.app' | escape }}"
+    {{ block.shopify_attributes }}
+  >
+    <h2>Send a voice message</h2>
+    <p class="mp-snowy-charm-voice__intro">Record a message for your Snowy Plush Charm, or choose an audio file from your phone.</p>
+
+    <div class="mp-snowy-charm-voice__actions">
+      <button type="button" class="mp-snowy-charm-voice__record" data-record>Record voice message</button>
+      <label class="mp-snowy-charm-voice__upload">Choose audio file<input type="file" accept="audio/*" data-audio-file><span>Upload audio file</span></label>
+    </div>
+
+    <div class="mp-snowy-charm-voice__recording" data-recording hidden aria-live="polite">
+      <span class="mp-snowy-charm-voice__pulse" aria-hidden="true"></span>
+      <strong>Recording <span data-recording-time>0:00</span></strong>
+      <span>Tap “Stop recording” when you are done.</span>
+    </div>
+    <audio class="mp-snowy-charm-voice__preview" data-preview controls hidden></audio>
+    <p class="mp-snowy-charm-voice__file" data-file-name aria-live="polite">No audio selected yet.</p>
+    <div class="mp-snowy-charm-voice__progress" data-progress hidden aria-live="polite"><div><span data-progress-label>Preparing your audio…</span><strong data-progress-percent>0%</strong></div><span><i data-progress-bar></i></span></div>
+    <p class="mp-snowy-charm-voice__notice" data-notice aria-live="polite"></p>
+  </section>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Snowy Charm voice message",
+  "target": "section",
+  "enabled_on": { "templates": ["product"] },
+  "settings": [
+    { "type": "url", "id": "app_url", "label": "Fulfilment app URL", "info": "Example: https://meaningful-plushies-fulfilment.vercel.app" }
+  ]
+}
+{% endschema %}
