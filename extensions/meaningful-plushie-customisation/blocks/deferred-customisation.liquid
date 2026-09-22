@@ -1,4 +1,5 @@
 {{ 'deferred-customisation.css' | asset_url | stylesheet_tag }}
+{{ 'voice-recorder.css' | asset_url | stylesheet_tag }}
 {{ 'customisation-polish.css' | asset_url | stylesheet_tag }}
 <script src="{{ 'deferred-customisation.js' | asset_url }}" defer="defer"></script>
 
@@ -30,7 +31,12 @@
     <label><span data-i18n="favouritePersonLabel">Plushie's Favourite Person</span><input required type="text" maxlength="20" placeholder="A meaningful person" data-i18n-placeholder="meaningfulPerson" data-favourite-person></label>
     <label><span data-i18n="belongsToLabel">Plushie Belongs To</span><input required type="text" maxlength="20" placeholder="The plushie's owner" data-i18n-placeholder="plushOwner" data-belongs-to></label>
     <label><span data-i18n="meaningfulNoteLabel">Meaningful Note</span><textarea required placeholder="A message for the plushie's owner" data-i18n-placeholder="meaningfulNotePlaceholder" data-meaningful-note></textarea></label>
-    <label class="mp-deferred-customisation__voice"><span data-i18n="uploadVoiceLabel">Upload Your Voice Here</span><input required type="file" data-voice><span data-voice-button data-i18n="uploadVoiceButton">UPLOAD VOICE (MP4/MP3)</span></label>
+    <div class="mp-deferred-customisation__voice-tools">
+      <label class="mp-deferred-customisation__voice"><span data-i18n="uploadVoiceLabel">Upload Your Voice Here</span><input required type="file" accept="audio/*" data-voice><span data-voice-button data-i18n="uploadVoiceButton">UPLOAD AUDIO FILE</span></label>
+      <button class="mp-deferred-customisation__record" type="button" data-record-voice><span data-record-label data-i18n="recordVoiceStart">Record voice message</span></button>
+    </div>
+    <div class="mp-deferred-customisation__recording" data-recording hidden aria-live="polite"><i aria-hidden="true"></i><strong><span data-i18n="recording">Recording</span> <span data-recording-time>0:00</span></strong><span data-i18n="recordingHint">Tap stop recording when you are done.</span></div>
+    <audio class="mp-deferred-customisation__voice-preview" data-voice-preview controls hidden></audio>
   </div>
 
   <div class="mp-deferred-customisation__later" hidden>
