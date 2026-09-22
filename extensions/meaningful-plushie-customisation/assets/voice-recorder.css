@@ -2,6 +2,7 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+  margin-top: 2px;
 }
 
 .mp-deferred-customisation__voice-option,
@@ -9,7 +10,7 @@
   min-height: 58px;
   padding: 12px 18px;
   border: 2px solid #668da4;
-  border-radius: 8px;
+  border-radius: 999px;
   background: #fff;
   color: #1a365d;
   font: inherit;
@@ -19,7 +20,23 @@
 }
 
 .mp-deferred-customisation__voice-option {
-  min-height: 72px;
+  min-height: 68px;
+  color: #668da4;
+}
+
+.mp-deferred-customisation__voice-option.is-active {
+  border-color: #668da4;
+  background: #7098ae;
+  color: #fff;
+}
+
+.mp-deferred-customisation__voice-panel {
+  display: grid;
+  gap: 12px;
+  padding: 22px;
+  border: 2px solid #d7e6ee;
+  border-radius: 16px;
+  background: #f8fcfe;
 }
 
 .mp-deferred-customisation__record.is-recording {
@@ -60,22 +77,10 @@
   margin-top: 2px;
 }
 
-.mp-deferred-customisation__change-voice {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #53798f;
-  font: inherit;
-  font-size: .9em;
-  font-weight: 700;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
 @keyframes mp-recording-pulse {
   50% { transform: scale(1.55); opacity: .45; }
 }
 
 @media (max-width: 420px) {
-  .mp-deferred-customisation__voice-choice { grid-template-columns: 1fr; }
+  .mp-deferred-customisation__voice-panel { padding: 16px; }
 }
