@@ -12,14 +12,11 @@
     const voiceInput = block.querySelector("[data-voice]");
     const voiceButton = block.querySelector("[data-voice-button]");
     const recordVoiceButton = block.querySelector("[data-record-voice]");
-    const recordVoiceLabel = block.querySelector("[data-record-label]");
     const selectRecordVoice = block.querySelector("[data-select-record]");
     const selectUploadVoice = block.querySelector("[data-select-upload]");
     const voiceUploadControl = block.querySelector("[data-voice-upload-control]");
     const voiceRecordControl = block.querySelector("[data-voice-record-control]");
     const voiceFeedbackAnchor = block.querySelector("[data-voice-feedback-anchor]");
-    const recordingPanel = block.querySelector("[data-recording]");
-    const recordingTime = block.querySelector("[data-recording-time]");
     const voicePreview = block.querySelector("[data-voice-preview]");
     const voiceAudio = block.querySelector("[data-voice-audio]");
     const voicePlayButton = block.querySelector("[data-voice-play]");
@@ -27,6 +24,13 @@
     const voiceLoading = block.querySelector("[data-voice-loading]");
     const voiceSeek = block.querySelector("[data-voice-seek]");
     const voiceTime = block.querySelector("[data-voice-time]");
+    const recordDialog = block.querySelector("[data-record-dialog]");
+    const recordDialogCountdown = block.querySelector("[data-record-dialog-countdown]");
+    const recordDialogStatus = block.querySelector("[data-record-dialog-status]");
+    const recordDialogTime = block.querySelector("[data-record-dialog-time]");
+    const recordDialogProgress = block.querySelector("[data-record-dialog-progress]");
+    const recordStopButton = block.querySelector("[data-record-stop]");
+    const recordCancelButton = block.querySelector("[data-record-cancel]");
     const birthDate = block.querySelector("[data-birth-date]");
     const dateDisplay = block.querySelector("[data-date-display]");
     const dateBox = block.querySelector(".mp-deferred-customisation__date");
@@ -72,7 +76,8 @@
     let recordedVoiceFile = null;
     let recorder = null;
     let recordingStream = null;
-    let recordingTimer = null;
+    let countdownTimer = null;
+    let recordLimitTimer = null;
     let previewUrl = "";
     let preparedUpload = null;
     let uploadPromise = null;
@@ -138,12 +143,6 @@
       syncPurchaseBlockers();
     };
     const formatRecordingTime = (seconds) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-    const setRecordingUi = (recording) => {
-      if (!recordVoiceButton || !recordVoiceLabel || !recordingPanel) return;
-      recordVoiceButton.classList.toggle("is-recording", recording);
-      recordVoiceLabel.textContent = recording ? t("recordVoiceStop") : t("recordVoiceStart");
-      recordingPanel.hidden = !recording;
-    };
     voicePlayButton?.addEventListener("click", async () => {
       if (voiceAudio.paused) {
         setVoicePlaybackUi({ loading: true });
@@ -343,43 +342,100 @@
       voiceInput.click();
     });
     voiceInput.addEventListener("change", () => { recordedVoiceFile = null; restoredVoiceFile = normaliseAudioFile(voiceInput.files?.[0] || null); voiceInput.value = ""; preparedUpload = null; savedCompleteNowFingerprint = ""; setVoiceSource("upload"); updateVoiceLabel(); updateVoicePreview(); saveVoiceDraft(restoredVoiceFile); saveDraft(); syncPurchaseBlockers(); void uploadVoiceEarly().then(() => scheduleCompleteNowSave()).catch((error) => { notice.textContent = error instanceof Error ? error.message : "Could not upload your file."; }); });
-    recordVoiceButton?.addEventListener("click", async () => {
+    const selectedVoiceLimit = () => {
+      const selected = form.querySelector("[name='id']:checked") || form.querySelector("select[name='id']") || form.querySelector("[name='id']");
+      const selectedId = selected?.value || "";
+      const variantsNode = block.previousElementSibling?.matches("script[data-voice-variants]") ? block.previousElementSibling : document.querySelector("script[data-voice-variants]");
+      try {
+        const variants = JSON.parse(variantsNode?.textContent || "[]");
+        const variant = variants.find((item) => String(item.id) === String(selectedId));
+        const matched = String(variant?.title || "").match(/\b(5|10|20)\s*(?:seconds?|s)\b/i);
+        if (matched) return Number(matched[1]);
+      } catch { /* Use the standard limit when theme variant data is unavailable. */ }
+      const visibleText = selected?.selectedOptions?.[0]?.textContent || selected?.closest("label")?.textContent || "";
+      return Number(visibleText.match(/\b(5|10|20)\s*(?:seconds?|s)\b/i)?.[1] || 20);
+    };
+    const closeRecordDialog = () => {
+      if (countdownTimer) window.clearInterval(countdownTimer);
+      if (recordLimitTimer) window.clearInterval(recordLimitTimer);
+      countdownTimer = null;
+      recordLimitTimer = null;
+      recordDialog.hidden = true;
+      recordStopButton.hidden = true;
+      recordCancelButton.hidden = false;
+    };
+    const releaseRecordingStream = () => {
+      recordingStream?.getTracks().forEach((track) => track.stop());
+      recordingStream = null;
+    };
+    const stopVoiceRecording = () => {
       if (recorder?.state === "recording") { recorder.stop(); return; }
+      releaseRecordingStream();
+      closeRecordDialog();
+    };
+    const startVoiceRecording = (limit) => {
+      const type = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
+      const chunks = [];
+      recorder = new MediaRecorder(recordingStream, { mimeType: type });
+      recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
+      recorder.onstop = () => {
+        releaseRecordingStream();
+        closeRecordDialog();
+        const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+        if (!blob.size) return;
+        recordedVoiceFile = new File([blob], `meaningful-plushie-voice-${Date.now()}.webm`, { type: blob.type });
+        restoredVoiceFile = null;
+        voiceInput.value = "";
+        setVoiceSource("record");
+        preparedUpload = null;
+        savedCompleteNowFingerprint = "";
+        updateVoiceLabel();
+        updateVoicePreview();
+        saveVoiceDraft(recordedVoiceFile);
+        saveDraft();
+        syncPurchaseBlockers();
+        void uploadVoiceEarly().then(() => scheduleCompleteNowSave()).catch((error) => { notice.textContent = error instanceof Error ? error.message : "Could not upload your recording."; });
+      };
+      recorder.start();
+      const startedAt = Date.now();
+      recordDialogCountdown.textContent = language === "ms" ? "RAKAM SEKARANG" : "SPEAK NOW";
+      recordDialogStatus.textContent = language === "ms" ? "Merakam mesej suara anda" : "Recording your voice message";
+      recordStopButton.hidden = false;
+      recordCancelButton.hidden = true;
+      recordLimitTimer = window.setInterval(() => {
+        const elapsed = (Date.now() - startedAt) / 1000;
+        const remaining = Math.max(0, limit - elapsed);
+        recordDialogTime.textContent = `${formatRecordingTime(Math.ceil(remaining))} ${language === "ms" ? "lagi" : "left"}`;
+        recordDialogProgress.style.width = `${Math.min(100, (elapsed / limit) * 100)}%`;
+        if (remaining <= 0) recorder.stop();
+      }, 100);
+    };
+    const openRecordDialog = async () => {
+      if (recorder?.state === "recording" || countdownTimer) return;
       try {
         recordingStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const type = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
-        const chunks = [];
-        recorder = new MediaRecorder(recordingStream, { mimeType: type });
-        recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
-        recorder.onstop = () => {
-          recordingStream?.getTracks().forEach((track) => track.stop());
-          recordingStream = null;
-          if (recordingTimer) window.clearInterval(recordingTimer);
-          recordingTimer = null;
-          setRecordingUi(false);
-          const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
-          recordedVoiceFile = new File([blob], `meaningful-plushie-voice-${Date.now()}.webm`, { type: blob.type });
-          restoredVoiceFile = null;
-          voiceInput.value = "";
-          setVoiceSource("record");
-          preparedUpload = null;
-          savedCompleteNowFingerprint = "";
-          updateVoiceLabel();
-          updateVoicePreview();
-          saveVoiceDraft(recordedVoiceFile);
-          saveDraft();
-          syncPurchaseBlockers();
-          void uploadVoiceEarly().then(() => scheduleCompleteNowSave()).catch((error) => { notice.textContent = error instanceof Error ? error.message : "Could not upload your recording."; });
-        };
-        recorder.start();
-        const startedAt = Date.now();
-        recordingTime.textContent = "0:00";
-        setRecordingUi(true);
-        recordingTimer = window.setInterval(() => { recordingTime.textContent = formatRecordingTime(Math.floor((Date.now() - startedAt) / 1000)); }, 250);
+        const limit = selectedVoiceLimit();
+        recordDialog.hidden = false;
+        recordDialogCountdown.textContent = "3";
+        recordDialogStatus.textContent = language === "ms" ? "Bersedia untuk merakam" : "Get ready to record";
+        recordDialogTime.textContent = `${formatRecordingTime(limit)} ${language === "ms" ? "lagi" : "left"}`;
+        recordDialogProgress.style.width = "0%";
+        let countdown = 3;
+        countdownTimer = window.setInterval(() => {
+          countdown -= 1;
+          if (countdown > 0) { recordDialogCountdown.textContent = String(countdown); return; }
+          window.clearInterval(countdownTimer);
+          countdownTimer = null;
+          startVoiceRecording(limit);
+        }, 1000);
       } catch {
+        releaseRecordingStream();
         notice.textContent = language === "ms" ? "Sila benarkan akses mikrofon untuk merakam mesej suara." : "Please allow microphone access to record a voice message.";
       }
-    });
+    };
+    recordVoiceButton?.addEventListener("click", () => { void openRecordDialog(); });
+    recordStopButton?.addEventListener("click", stopVoiceRecording);
+    recordCancelButton?.addEventListener("click", stopVoiceRecording);
     const calendar = document.createElement("div");
     calendar.className = "mp-deferred-customisation__calendar";
     calendar.hidden = true;

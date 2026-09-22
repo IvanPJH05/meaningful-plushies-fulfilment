@@ -2,6 +2,7 @@
 {{ 'voice-recorder.css' | asset_url | stylesheet_tag }}
 {{ 'customisation-polish.css' | asset_url | stylesheet_tag }}
 <script src="{{ 'deferred-customisation.js' | asset_url }}" defer="defer"></script>
+<script type="application/json" data-voice-variants>{{ product.variants | json }}</script>
 
 <div
   class="mp-deferred-customisation"
@@ -37,8 +38,7 @@
     </div>
     <div class="mp-deferred-customisation__voice-panel" data-voice-panel>
       <label class="mp-deferred-customisation__voice" data-voice-upload-control hidden><span data-i18n="uploadVoiceLabel">Choose your audio file</span><input type="file" accept="audio/*,.mp3,.mp4,.m4a,.ogg,.oga,.wav,.webm" data-voice><span data-voice-button data-i18n="uploadVoiceButton">CHOOSE AUDIO FILE</span></label>
-      <div data-voice-record-control hidden><button class="mp-deferred-customisation__record" type="button" data-record-voice><span data-record-label data-i18n="recordVoiceStart">Start recording</span></button></div>
-      <div class="mp-deferred-customisation__recording" data-recording hidden aria-live="polite"><i aria-hidden="true"></i><strong><span data-i18n="recording">Recording</span> <span data-recording-time>0:00</span></strong><span data-i18n="recordingHint">Tap stop recording when you are done.</span></div>
+      <div data-voice-record-control hidden><button class="mp-deferred-customisation__record" type="button" data-record-voice><span data-i18n="recordVoiceStart">Record voice</span></button></div>
       <div class="mp-deferred-customisation__voice-preview" data-voice-preview hidden>
         <audio data-voice-audio preload="metadata"></audio>
         <button type="button" data-voice-play aria-label="Play voice message"><span data-voice-play-label>PLAY</span><span class="mp-deferred-customisation__voice-loading" data-voice-loading hidden aria-hidden="true"><i></i><i></i><i></i></span></button>
@@ -46,6 +46,17 @@
         <span data-voice-time>0:00 / 0:00</span>
       </div>
       <span data-voice-feedback-anchor></span>
+    </div>
+    <div class="mp-deferred-customisation__record-dialog" data-record-dialog hidden role="dialog" aria-modal="true" aria-labelledby="mp-record-dialog-title">
+      <div class="mp-deferred-customisation__record-dialog-card">
+        <p data-record-dialog-eyebrow>YOUR VOICE MESSAGE</p>
+        <strong id="mp-record-dialog-title" data-record-dialog-countdown>3</strong>
+        <h2 data-record-dialog-status>Get ready</h2>
+        <p data-record-dialog-time>0:20 left</p>
+        <span class="mp-deferred-customisation__record-dialog-bar"><i data-record-dialog-progress></i></span>
+        <button type="button" data-record-stop hidden>STOP RECORDING</button>
+        <button type="button" data-record-cancel>CANCEL</button>
+      </div>
     </div>
   </div>
 
