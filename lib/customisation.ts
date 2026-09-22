@@ -209,6 +209,24 @@ export async function createCompleteNowSession() {
   return { id: String(data.id), token };
 }
 
+/** Saves an audio-only Snowy Charm message without creating certificate details. */
+export async function saveSnowyCharmVoice(token: string, voiceStoragePath: string) {
+  const session = await sessionByToken(token);
+  if (!session || !["pending_payment", "submitted"].includes(session.status) || (session.status === "submitted" && session.order_number)) throw new Error("This Snowy Charm audio session is no longer available.");
+  if (!voiceStoragePath.startsWith(`${session.id}/`)) throw new Error("Please upload your voice recording first.");
+
+  const completedAt = new Date().toISOString();
+  const { error } = await serviceClient().from(SESSION_TABLE).update({
+    form_data: { ...session.form_data, productType: "snowy_charm" },
+    voice_storage_path: voiceStoragePath,
+    status: "submitted",
+    completed_at: completedAt,
+    updated_at: completedAt,
+  }).eq("id", session.id);
+  if (error) throw new Error(error.message);
+  return { sessionId: session.id };
+}
+
 async function sessionByToken(token: string) {
   if (!/^[A-Za-z0-9_-]{40,100}$/.test(token)) return null;
   const { data, error } = await serviceClient().from(SESSION_TABLE).select("*").eq("token_hash", hashToken(token)).maybeSingle();
