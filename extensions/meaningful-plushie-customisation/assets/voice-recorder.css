@@ -1,9 +1,10 @@
-.mp-deferred-customisation__voice-tools {
+.mp-deferred-customisation__voice-choice {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
+.mp-deferred-customisation__voice-option,
 .mp-deferred-customisation__record {
   min-height: 58px;
   padding: 12px 18px;
@@ -15,6 +16,10 @@
   font-weight: 800;
   letter-spacing: .04em;
   cursor: pointer;
+}
+
+.mp-deferred-customisation__voice-option {
+  min-height: 72px;
 }
 
 .mp-deferred-customisation__record.is-recording {
@@ -55,10 +60,22 @@
   margin-top: 2px;
 }
 
+.mp-deferred-customisation__change-voice {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #53798f;
+  font: inherit;
+  font-size: .9em;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 @keyframes mp-recording-pulse {
   50% { transform: scale(1.55); opacity: .45; }
 }
 
 @media (max-width: 420px) {
-  .mp-deferred-customisation__voice-tools { grid-template-columns: 1fr; }
+  .mp-deferred-customisation__voice-choice { grid-template-columns: 1fr; }
 }
