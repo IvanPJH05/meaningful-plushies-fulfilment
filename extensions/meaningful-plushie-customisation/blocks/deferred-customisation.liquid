@@ -31,12 +31,16 @@
     <label><span data-i18n="favouritePersonLabel">Plushie's Favourite Person</span><input required type="text" maxlength="20" placeholder="A meaningful person" data-i18n-placeholder="meaningfulPerson" data-favourite-person></label>
     <label><span data-i18n="belongsToLabel">Plushie Belongs To</span><input required type="text" maxlength="20" placeholder="The plushie's owner" data-i18n-placeholder="plushOwner" data-belongs-to></label>
     <label><span data-i18n="meaningfulNoteLabel">Meaningful Note</span><textarea required placeholder="A message for the plushie's owner" data-i18n-placeholder="meaningfulNotePlaceholder" data-meaningful-note></textarea></label>
-    <div class="mp-deferred-customisation__voice-tools">
-      <label class="mp-deferred-customisation__voice"><span data-i18n="uploadVoiceLabel">Upload Your Voice Here</span><input required type="file" accept="audio/*" data-voice><span data-voice-button data-i18n="uploadVoiceButton">UPLOAD AUDIO FILE</span></label>
-      <button class="mp-deferred-customisation__record" type="button" data-record-voice><span data-record-label data-i18n="recordVoiceStart">Record voice message</span></button>
+    <div class="mp-deferred-customisation__voice-choice" data-voice-source-choice>
+      <button class="mp-deferred-customisation__voice-option" type="button" data-select-record><span data-i18n="chooseRecordVoice">Record voice message</span></button>
+      <button class="mp-deferred-customisation__voice-option" type="button" data-select-upload><span data-i18n="chooseUploadVoice">Upload audio file</span></button>
     </div>
+    <label class="mp-deferred-customisation__voice" data-voice-upload-control hidden><span data-i18n="uploadVoiceLabel">Choose your audio file</span><input type="file" accept="audio/*" data-voice><span data-voice-button data-i18n="uploadVoiceButton">CHOOSE AUDIO FILE</span></label>
+    <div data-voice-record-control hidden><button class="mp-deferred-customisation__record" type="button" data-record-voice><span data-record-label data-i18n="recordVoiceStart">Start recording</span></button></div>
     <div class="mp-deferred-customisation__recording" data-recording hidden aria-live="polite"><i aria-hidden="true"></i><strong><span data-i18n="recording">Recording</span> <span data-recording-time>0:00</span></strong><span data-i18n="recordingHint">Tap stop recording when you are done.</span></div>
     <audio class="mp-deferred-customisation__voice-preview" data-voice-preview controls hidden></audio>
+    <button class="mp-deferred-customisation__change-voice" type="button" data-change-voice hidden><span data-i18n="changeVoiceOption">Choose a different option</span></button>
+    <span data-voice-feedback-anchor></span>
   </div>
 
   <div class="mp-deferred-customisation__later" hidden>
