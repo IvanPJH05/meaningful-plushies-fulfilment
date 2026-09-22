@@ -110,8 +110,6 @@
         const result = await uploadAudio();
         const audioLink = `${apiUrl}/api/customisation/audio-download?path=${encodeURIComponent(result.voiceStoragePath)}&filename=${encodeURIComponent(selectedFile.name)}`;
         addProperty("Meaningful Message", audioLink);
-        addProperty("customisation_session_id", result.session.sessionId);
-        addProperty("_snowy_charm_audio_token", result.session.token);
         setNotice("Your voice message is saved and ready for Snowy Charm.", true);
         if (/buy\s*it\s*now/i.test(submitter?.textContent || "")) {
           let returnTo = form.querySelector('input[name="return_to"]');
@@ -127,11 +125,12 @@
     };
     const interceptPurchase = (event) => {
       const target = event.target instanceof Element ? event.target.closest("button, input[type='submit']") : null;
-      if (!target || saving) return;
+      if (!target) return;
       const owner = target.form || target.closest("form");
       if (owner !== form && !target.closest(".shopify-payment-button")) return;
       event.preventDefault();
       event.stopImmediatePropagation();
+      if (saving) return;
       void submitPurchase(target);
     };
     document.addEventListener("pointerdown", interceptPurchase, true);
