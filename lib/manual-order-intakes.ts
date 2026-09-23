@@ -7,14 +7,17 @@ import { shopifyManualOrderCustomerName } from "./manual-order-customer-name";
 import { manualOrderProductByKey } from "./manual-order-products";
 import { normalizeManualOrderPhone, shopifyManualOrderPhone } from "./manual-order-phone";
 import { manualOrderSpeakerSeconds, normalizeManualOrderCharacter } from "./manual-order-product-paths";
+import { readPaymentReceiptDetails } from "./payment-receipt-reader";
 import { shopDomain, shopifyGraphql, shopifyRest, textValue } from "./shopify-orders";
 import { saveManualOrder } from "./supabase";
 import type { ManualOrder } from "./types";
+import { ensureDefaultBusiness } from "@/src/modules/businesses/default-business";
+import { readMediaAssetVariant } from "@/src/modules/whatsapp/media-assets";
 
 const TABLE = "manual_order_intakes";
 const COD_PAYMENT_MARKER = "manual-order://cash-on-delivery";
 
-export type PaymentReceipt = { fileName: string; url: string };
+export type PaymentReceipt = { fileName: string; url: string; paidAt?: string; reference?: string; amount?: number | null };
 export type ShippingAddress = {
   address1: string;
   address2?: string;
@@ -45,6 +48,10 @@ export type ManualOrderIntake = {
   createdAt: string;
   updatedAt: string;
   paidAt: string;
+  receiptPaidAt: string;
+  receiptReference: string;
+  receiptAmount: number | null;
+  paymentApprovedAt: string;
   createdByOrderAt: string;
 };
 
@@ -99,6 +106,8 @@ function validAddress(value: ShippingAddress): ShippingAddress {
 
 function rowToIntake(row: Record<string, unknown>): ManualOrderIntake {
   const address = (row.shipping_address && typeof row.shipping_address === "object" ? row.shipping_address : {}) as ShippingAddress;
+  const paymentReceipts = Array.isArray(row.payment_receipts) ? row.payment_receipts as PaymentReceipt[] : [];
+  const persistedSummary = receiptSummary(paymentReceipts);
   return {
     id: String(row.id || ""),
     customerName: String(row.customer_name || ""),
@@ -112,14 +121,18 @@ function rowToIntake(row: Record<string, unknown>): ManualOrderIntake {
     shippingRegion: row.shipping_region === "EAST" ? "EAST" : "WEST",
     shippingAddress: validAddress(address),
     customisationSessionId: String(row.customisation_session_id || ""),
-    paymentReceipts: Array.isArray(row.payment_receipts) ? row.payment_receipts as PaymentReceipt[] : [],
-    isCod: Array.isArray(row.payment_receipts) && (row.payment_receipts as PaymentReceipt[]).some((receipt) => receipt.url === COD_PAYMENT_MARKER),
+    paymentReceipts,
+    isCod: paymentReceipts.some((receipt) => receipt.url === COD_PAYMENT_MARKER),
     status: ["awaiting_payment", "ready_to_create", "created", "cancelled"].includes(String(row.status)) ? String(row.status) as ManualOrderIntake["status"] : "awaiting_payment",
     shopifyOrderId: String(row.shopify_order_id || ""),
     shopifyOrderName: String(row.shopify_order_name || ""),
     createdAt: String(row.created_at || ""),
     updatedAt: String(row.updated_at || ""),
     paidAt: String(row.paid_at || ""),
+    receiptPaidAt: String(row.receipt_paid_at || persistedSummary.receiptPaidAt || ""),
+    receiptReference: String(row.receipt_reference || persistedSummary.receiptReference || ""),
+    receiptAmount: row.receipt_amount === null || row.receipt_amount === undefined || row.receipt_amount === "" ? persistedSummary.receiptAmount : Number(row.receipt_amount),
+    paymentApprovedAt: String(row.payment_approved_at || row.paid_at || ""),
     createdByOrderAt: String(row.created_by_order_at || ""),
   };
 }
@@ -381,10 +394,67 @@ export async function deleteManualOrderIntake(id: string) {
   if (!data) throw new Error("This Manual Order submission was not found or was already removed.");
 }
 
+function mediaAssetHash(receiptUrl: string) {
+  try {
+    const segments = new URL(receiptUrl).pathname.split("/").filter(Boolean);
+    const index = segments.indexOf("media-assets");
+    const hash = index >= 0 ? segments[index + 1] : "";
+    return /^[a-f0-9]{64}$/i.test(hash) ? hash : "";
+  } catch {
+    return "";
+  }
+}
+
+async function readReceiptDetails(receipt: PaymentReceipt): Promise<PaymentReceipt> {
+  const hash = mediaAssetHash(receipt.url);
+  if (!hash) return receipt;
+  try {
+    const business = await ensureDefaultBusiness();
+    const media = await readMediaAssetVariant({ businessId: business.id, contentHash: hash, variant: "original" });
+    if (!media) return receipt;
+    const details = await readPaymentReceiptDetails(Buffer.from(media.bytes), media.contentType);
+    return {
+      ...receipt,
+      paidAt: details.paidAt || receipt.paidAt || "",
+      reference: details.reference || receipt.reference || "",
+      amount: details.amount ?? receipt.amount ?? null,
+    };
+  } catch (error) {
+    console.warn("Payment receipt could not be read", { fileName: receipt.fileName, message: error instanceof Error ? error.message : String(error) });
+    return receipt;
+  }
+}
+
+function receiptSummary(receipts: PaymentReceipt[]) {
+  const details = receipts
+    .filter((receipt) => receipt.url !== COD_PAYMENT_MARKER)
+    .map((receipt) => ({ paidAt: receipt.paidAt || "", reference: receipt.reference || "", amount: receipt.amount ?? null }));
+  const paymentDates = details.map((receipt) => receipt.paidAt).filter(Boolean).sort();
+  const first = details.find((receipt) => receipt.reference || receipt.amount !== null) ?? details[0];
+  return {
+    receiptPaidAt: paymentDates[0] || "",
+    receiptReference: first?.reference || "",
+    receiptAmount: first?.amount ?? null,
+  };
+}
+
+async function receiptDetailsFor(receipts: PaymentReceipt[]) {
+  const details: PaymentReceipt[] = [];
+  for (const receipt of receipts) details.push(await readReceiptDetails(receipt));
+  return details;
+}
+
 export async function attachManualOrderReceipt(id: string, receipts: PaymentReceipt[]) {
   if (!id || !receipts.length) throw new Error("Attach at least one payment receipt.");
   const now = new Date().toISOString();
-  const { data, error } = await serviceClient().from(TABLE).update({ payment_receipts: receipts, status: "ready_to_create", paid_at: now, updated_at: now }).eq("id", id).eq("status", "awaiting_payment").select("*").maybeSingle();
+  const analysedReceipts = await receiptDetailsFor(receipts);
+  const summary = receiptSummary(analysedReceipts);
+  const { data, error } = await serviceClient().from(TABLE).update({
+    payment_receipts: analysedReceipts,
+    status: "ready_to_create",
+    paid_at: now,
+    updated_at: now,
+  }).eq("id", id).eq("status", "awaiting_payment").select("*").maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) throw new Error("This submission is no longer waiting for payment.");
   return rowToIntake(data as Record<string, unknown>);
@@ -400,6 +470,24 @@ export async function approveManualOrderCod(id: string) {
   if (error) throw new Error(error.message);
   if (!data) throw new Error("This submission is no longer waiting for approval.");
   return rowToIntake(data as Record<string, unknown>);
+}
+
+export async function backfillManualOrderReceiptDetails() {
+  const { data, error } = await serviceClient().from(TABLE).select("*");
+  if (error) throw new Error(error.message);
+  let updated = 0;
+  let skipped = 0;
+  for (const row of data || []) {
+    const intake = rowToIntake(row as Record<string, unknown>);
+    if (intake.isCod || !intake.paymentReceipts.length || intake.receiptPaidAt) { skipped += 1; continue; }
+    const receipts = await receiptDetailsFor(intake.paymentReceipts);
+    const summary = receiptSummary(receipts);
+    if (!summary.receiptPaidAt && !summary.receiptReference && summary.receiptAmount === null) { skipped += 1; continue; }
+    const result = await serviceClient().from(TABLE).update({ payment_receipts: receipts, updated_at: new Date().toISOString() }).eq("id", intake.id);
+    if (result.error) throw new Error(result.error.message);
+    updated += 1;
+  }
+  return { updated, skipped };
 }
 
 export async function createPaidShopifyOrder(intakeId: string) {
