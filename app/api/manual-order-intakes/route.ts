@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { approveManualOrderCod, attachManualOrderReceipt, backfillManualOrderReceiptDetails, createPaidShopifyOrder, deleteManualOrderIntake, isDashboardAdmin, listManualOrderIntakes, repairManualOrderShipping, type PaymentReceipt } from "@/lib/manual-order-intakes";
+import { approveManualOrderCod, attachManualOrderReceipt, createPaidShopifyOrder, deleteManualOrderIntake, isDashboardAdmin, listManualOrderIntakes, repairManualOrderShipping, type PaymentReceipt } from "@/lib/manual-order-intakes";
 
 export const runtime = "nodejs";
 
@@ -19,7 +19,6 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json() as { action?: string; id?: string; paymentReceipts?: PaymentReceipt[] };
     if (body.action === "attach_receipt") return NextResponse.json({ ok: true, intake: await attachManualOrderReceipt(String(body.id || ""), Array.isArray(body.paymentReceipts) ? body.paymentReceipts : []) });
-    if (body.action === "read_receipt_history") return NextResponse.json({ ok: true, ...(await backfillManualOrderReceiptDetails()) });
     if (body.action === "approve_cod") return NextResponse.json({ ok: true, intake: await approveManualOrderCod(String(body.id || "")) });
     if (body.action === "create_shopify_order") return NextResponse.json({ ok: true, order: await createPaidShopifyOrder(String(body.id || "")) });
     if (body.action === "repair_shipping") return NextResponse.json({ ok: true, order: await repairManualOrderShipping(String(body.id || "")) });

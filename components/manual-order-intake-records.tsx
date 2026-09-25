@@ -27,7 +27,7 @@ export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: strin
 
   const request = useCallback(async (body?: Record<string, unknown>) => {
     const response = await fetch("/api/manual-order-intakes", { method: body ? "POST" : "GET", cache: "no-store", headers: { "Content-Type": "application/json", "x-dashboard-session": sessionToken }, body: body ? JSON.stringify(body) : undefined });
-    const data = await response.json() as { ok?: boolean; intakes?: ManualOrderIntake[]; intake?: ManualOrderIntake; order?: { shopifyOrderName?: string }; updated?: number; skipped?: number; error?: string };
+    const data = await response.json() as { ok?: boolean; intakes?: ManualOrderIntake[]; intake?: ManualOrderIntake; order?: { shopifyOrderName?: string }; error?: string };
     if (!response.ok || !data.ok) throw new Error(data.error || "The Manual Order Collection could not be updated.");
     return data;
   }, [sessionToken]);
@@ -99,16 +99,6 @@ export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: strin
     finally { setBusy(""); }
   }
 
-  async function readExistingReceiptHistory() {
-    setBusy("history");
-    try {
-      const result = await request({ action: "read_receipt_history" });
-      setNotice(`Transaction history updated: ${result.updated || 0} receipt${result.updated === 1 ? "" : "s"} read${result.skipped ? `, ${result.skipped} unchanged` : ""}.`);
-      await load();
-    } catch (error) { setNotice(error instanceof Error ? error.message : "Existing receipts could not be read."); }
-    finally { setBusy(""); }
-  }
-
   function receiptLinks(intake: ManualOrderIntake) {
     if (intake.isCod) return null;
     const receipts = intake.paymentReceipts
@@ -169,7 +159,7 @@ export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: strin
   const tableHead = <thead><tr><th>Reference</th><th>Submitted</th><th>Customer</th><th>Plushie</th><th>Address</th><th>Status</th><th>Receipt & order</th></tr></thead>;
 
   return <section className="card accounting-table-card manual-order-table-card">
-    <div className="manual-order-table-toolbar"><div><h3>Customer collection submissions</h3><p>Approve a payment by dropping in its verified receipt. The transaction history reads the payment date, reference, and amount from the receipt.</p></div><div className="manual-order-search-actions"><button className="button secondary" type="button" disabled={busy === "history"} onClick={() => void readExistingReceiptHistory()}>{busy === "history" ? "READING RECEIPTS..." : "READ EXISTING RECEIPTS"}</button><button className="button secondary" type="button" onClick={() => void load()}>Refresh</button></div></div>
+    <div className="manual-order-table-toolbar"><div><h3>Customer collection submissions</h3><p>Approve a payment by dropping in its verified receipt. The transaction history reads the payment date, reference, and amount from the receipt.</p></div><div className="manual-order-search-actions"><button className="button secondary" type="button" onClick={() => void load()}>Refresh</button></div></div>
     {notice && <p className="inline-notice">{notice}</p>}
     <section className="manual-order-list-section"><div className="manual-order-list-heading"><h4>Awaiting approval</h4><span>{awaitingApproval.length}</span></div><div className="table-scroll"><table className="orders-table manual-orders-records-table">{tableHead}<tbody>{submissionRows(awaitingApproval, "No orders are waiting for payment approval.")}</tbody></table></div></section>
     <section className="manual-order-list-section"><div className="manual-order-list-heading"><div><h4>Transaction history</h4><small>Match each approved order to the payment date printed on its receipt. Receipts are shown here automatically.</small></div><div className="manual-order-search-actions"><select aria-label="Sort transaction history" value={historySort} onChange={(event) => setHistorySort(event.target.value as typeof historySort)}><option value="receipt_desc">Receipt payment date: newest</option><option value="receipt_asc">Receipt payment date: oldest</option><option value="approval_desc">Approved: newest</option><option value="approval_asc">Approved: oldest</option></select><span>{paidOrders.length}</span></div></div><div className="table-scroll"><table className="orders-table manual-orders-records-table"><thead><tr><th>Reference</th><th>Receipt payment date</th><th>Approved</th><th>Customer</th><th>Bank details</th><th>Status</th><th>Receipt</th><th>Order actions</th></tr></thead><tbody>{transactionRows(sortedTransactions)}</tbody></table></div></section>
