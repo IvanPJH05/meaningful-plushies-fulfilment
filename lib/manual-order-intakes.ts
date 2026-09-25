@@ -472,24 +472,6 @@ export async function approveManualOrderCod(id: string) {
   return rowToIntake(data as Record<string, unknown>);
 }
 
-export async function backfillManualOrderReceiptDetails() {
-  const { data, error } = await serviceClient().from(TABLE).select("*");
-  if (error) throw new Error(error.message);
-  let updated = 0;
-  let skipped = 0;
-  for (const row of data || []) {
-    const intake = rowToIntake(row as Record<string, unknown>);
-    if (intake.isCod || !intake.paymentReceipts.length || intake.receiptPaidAt) { skipped += 1; continue; }
-    const receipts = await receiptDetailsFor(intake.paymentReceipts);
-    const summary = receiptSummary(receipts);
-    if (!summary.receiptPaidAt && !summary.receiptReference && summary.receiptAmount === null) { skipped += 1; continue; }
-    const result = await serviceClient().from(TABLE).update({ payment_receipts: receipts, updated_at: new Date().toISOString() }).eq("id", intake.id);
-    if (result.error) throw new Error(result.error.message);
-    updated += 1;
-  }
-  return { updated, skipped };
-}
-
 export async function createPaidShopifyOrder(intakeId: string) {
   const { data, error } = await serviceClient().from(TABLE).select("*").eq("id", intakeId).maybeSingle();
   if (error) throw new Error(error.message);
