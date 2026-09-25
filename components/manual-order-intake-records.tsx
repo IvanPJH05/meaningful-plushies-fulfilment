@@ -23,7 +23,7 @@ export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: strin
   const [busy, setBusy] = useState("");
   const [draggingReceiptFor, setDraggingReceiptFor] = useState("");
   const [receiptPreview, setReceiptPreview] = useState<{ url: string; fileName: string } | null>(null);
-  const [historySort, setHistorySort] = useState<"receipt_desc" | "receipt_asc" | "approval_desc" | "approval_asc">("receipt_desc");
+  const [historySort, setHistorySort] = useState<"approval_desc" | "approval_asc">("approval_desc");
 
   const request = useCallback(async (body?: Record<string, unknown>) => {
     const response = await fetch("/api/manual-order-intakes", { method: body ? "POST" : "GET", cache: "no-store", headers: { "Content-Type": "application/json", "x-dashboard-session": sessionToken }, body: body ? JSON.stringify(body) : undefined });
@@ -47,10 +47,9 @@ export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: strin
         if (!response.ok || !data.ok || !data.asset?.originalUrl) throw new Error(data.error || `Could not upload ${file.name}.`);
         receipts.push({ fileName: file.name, url: data.asset.originalUrl });
       }
-      const attached = await request({ action: "attach_receipt", id: intake.id, paymentReceipts: receipts });
+      await request({ action: "attach_receipt", id: intake.id, paymentReceipts: receipts });
       const created = await request({ action: "create_shopify_order", id: intake.id });
-      const receiptDate = attached.intake?.receiptPaidAt ? ` Receipt payment date: ${formatDateTime(attached.intake.receiptPaidAt)}.` : " The receipt was attached, but its payment date could not be read.";
-      setNotice(`${intake.customerName}'s Shopify order ${created.order?.shopifyOrderName || "was created"}.${receiptDate}`);
+      setNotice(`${intake.customerName}'s Shopify order ${created.order?.shopifyOrderName || "was created"}. The receipt was attached.`);
       await load();
     } catch (error) { setNotice(error instanceof Error ? error.message : "The Shopify order could not be created."); }
     finally { setBusy(""); }
@@ -134,13 +133,11 @@ export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: strin
   }
 
   function transactionRows(rows: ManualOrderIntake[]) {
-    if (!rows.length) return <tr><td colSpan={8}>No paid collection orders yet.</td></tr>;
+    if (!rows.length) return <tr><td colSpan={6}>No paid collection orders yet.</td></tr>;
     return rows.map((intake) => <tr key={intake.id}>
       <td><strong>{manualOrderIntakeReference(intake.id)}</strong><small>{intake.shopifyOrderName || "Shopify order pending"}</small></td>
-      <td>{intake.isCod ? "Cash on delivery" : formatDateTime(intake.receiptPaidAt)}</td>
       <td>{formatDateTime(intake.paymentApprovedAt)}</td>
       <td><strong>{intake.customerName}</strong><small>{intake.phoneOriginal}</small></td>
-      <td>{intake.isCod ? "COD" : <><strong>{intake.receiptAmount === null ? "Amount not read" : `RM ${intake.receiptAmount.toFixed(2)}`}</strong><small>{intake.receiptReference ? `Ref ${intake.receiptReference}` : "Reference not read"}</small></>}</td>
       <td><span className={`manual-order-status ${intake.isCod ? "active" : "used"}`}>{intake.isCod ? "COD" : "Paid"}</span></td>
       <td>{receiptPreviews(intake)}</td>
       <td><div className="manual-order-approval-actions"><button className="manual-order-receipt-drop" type="button" disabled={busy === intake.id} onClick={() => void repairShipping(intake)}>{busy === intake.id ? "SAVING SHIPPING..." : "CHECK / FIX SHIPPING"}</button><button className="button danger small" type="button" disabled={busy === intake.id} onClick={() => void deleteManualOrder(intake)}>{busy === intake.id ? "REMOVING..." : "DELETE"}</button></div></td>
@@ -150,19 +147,18 @@ export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: strin
   const awaitingApproval = intakes.filter((intake) => intake.status !== "created");
   const paidOrders = intakes.filter((intake) => intake.status === "created");
   const sortedTransactions = [...paidOrders].sort((left, right) => {
-    const field = historySort.startsWith("receipt") ? "receiptPaidAt" : "paymentApprovedAt";
     const direction = historySort.endsWith("asc") ? 1 : -1;
-    const leftValue = Date.parse(left[field]) || 0;
-    const rightValue = Date.parse(right[field]) || 0;
+    const leftValue = Date.parse(left.paymentApprovedAt) || 0;
+    const rightValue = Date.parse(right.paymentApprovedAt) || 0;
     return (leftValue - rightValue) * direction;
   });
   const tableHead = <thead><tr><th>Reference</th><th>Submitted</th><th>Customer</th><th>Plushie</th><th>Address</th><th>Status</th><th>Receipt & order</th></tr></thead>;
 
   return <section className="card accounting-table-card manual-order-table-card">
-    <div className="manual-order-table-toolbar"><div><h3>Customer collection submissions</h3><p>Approve a payment by dropping in its verified receipt. The transaction history reads the payment date, reference, and amount from the receipt.</p></div><div className="manual-order-search-actions"><button className="button secondary" type="button" onClick={() => void load()}>Refresh</button></div></div>
+    <div className="manual-order-table-toolbar"><div><h3>Customer collection submissions</h3><p>Approve a payment by attaching its verified receipt. Receipts are stored for your own review.</p></div><div className="manual-order-search-actions"><button className="button secondary" type="button" onClick={() => void load()}>Refresh</button></div></div>
     {notice && <p className="inline-notice">{notice}</p>}
     <section className="manual-order-list-section"><div className="manual-order-list-heading"><h4>Awaiting approval</h4><span>{awaitingApproval.length}</span></div><div className="table-scroll"><table className="orders-table manual-orders-records-table">{tableHead}<tbody>{submissionRows(awaitingApproval, "No orders are waiting for payment approval.")}</tbody></table></div></section>
-    <section className="manual-order-list-section"><div className="manual-order-list-heading"><div><h4>Transaction history</h4><small>Match each approved order to the payment date printed on its receipt. Receipts are shown here automatically.</small></div><div className="manual-order-search-actions"><select aria-label="Sort transaction history" value={historySort} onChange={(event) => setHistorySort(event.target.value as typeof historySort)}><option value="receipt_desc">Receipt payment date: newest</option><option value="receipt_asc">Receipt payment date: oldest</option><option value="approval_desc">Approved: newest</option><option value="approval_asc">Approved: oldest</option></select><span>{paidOrders.length}</span></div></div><div className="table-scroll"><table className="orders-table manual-orders-records-table"><thead><tr><th>Reference</th><th>Receipt payment date</th><th>Approved</th><th>Customer</th><th>Bank details</th><th>Status</th><th>Receipt</th><th>Order actions</th></tr></thead><tbody>{transactionRows(sortedTransactions)}</tbody></table></div></section>
+    <section className="manual-order-list-section"><div className="manual-order-list-heading"><div><h4>Transaction history</h4><small>Review the attached receipt alongside the approval time.</small></div><div className="manual-order-search-actions"><select aria-label="Sort transaction history" value={historySort} onChange={(event) => setHistorySort(event.target.value as typeof historySort)}><option value="approval_desc">Approved: newest</option><option value="approval_asc">Approved: oldest</option></select><span>{paidOrders.length}</span></div></div><div className="table-scroll"><table className="orders-table manual-orders-records-table"><thead><tr><th>Reference</th><th>Approved</th><th>Customer</th><th>Status</th><th>Receipt</th><th>Order actions</th></tr></thead><tbody>{transactionRows(sortedTransactions)}</tbody></table></div></section>
     {receiptPreview && <div className="document-preview-backdrop" role="dialog" aria-modal="true" aria-label="Payment receipt" onClick={() => setReceiptPreview(null)}><section className="document-preview-modal" onClick={(event) => event.stopPropagation()}><header><div><p>PAYMENT RECEIPT</p><h2>{receiptPreview.fileName || "Receipt"}</h2></div><button className="button secondary" type="button" onClick={() => setReceiptPreview(null)}>Close</button></header>{/\.pdf(?:$|\?)/i.test(receiptPreview.fileName || receiptPreview.url) ? <iframe className="document-preview-frame" src={receiptPreview.url} title={receiptPreview.fileName || "Payment receipt"} /> : <img className="document-preview-image" src={receiptPreview.url} alt={receiptPreview.fileName || "Payment receipt"} />}</section></div>}
   </section>;
 }

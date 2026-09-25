@@ -4,10 +4,6 @@ import path from "node:path";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   outputFileTracingRoot: path.resolve(__dirname),
-  // Receipt reading runs only on the server. Keep its native canvas and OCR
-  // runtimes external so Next traces the binaries instead of trying to bundle
-  // them into browser code.
-  serverExternalPackages: ["@napi-rs/canvas", "pdfjs-dist", "tesseract.js"],
   // Shopify forwards the root app-proxy URL with a trailing slash. Preserve it
   // instead of sending Shopify an internal redirect that becomes a storefront 404.
   skipTrailingSlashRedirect: true,
