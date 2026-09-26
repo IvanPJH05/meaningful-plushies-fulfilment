@@ -2,7 +2,15 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import type { CustomisationForm } from "@/lib/customisation";
 import type { ManualOrderIntake } from "@/lib/manual-order-intakes";
+
+type ManualOrderDetails = {
+  intake: ManualOrderIntake;
+  form: CustomisationForm | null;
+  voiceUrl: string;
+  voiceFileName: string;
+};
 
 function manualOrderIntakeReference(id: string) {
   return `MP-${id.toUpperCase()}`;
@@ -23,12 +31,12 @@ export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: strin
   const [busy, setBusy] = useState("");
   const [draggingReceiptFor, setDraggingReceiptFor] = useState("");
   const [receiptPreview, setReceiptPreview] = useState<{ url: string; fileName: string } | null>(null);
-  const [detailsPreview, setDetailsPreview] = useState<ManualOrderIntake | null>(null);
+  const [detailsPreview, setDetailsPreview] = useState<ManualOrderDetails | null>(null);
   const [historySort, setHistorySort] = useState<"approval_desc" | "approval_asc">("approval_desc");
 
   const request = useCallback(async (body?: Record<string, unknown>) => {
     const response = await fetch("/api/manual-order-intakes", { method: body ? "POST" : "GET", cache: "no-store", headers: { "Content-Type": "application/json", "x-dashboard-session": sessionToken }, body: body ? JSON.stringify(body) : undefined });
-    const data = await response.json() as { ok?: boolean; intakes?: ManualOrderIntake[]; intake?: ManualOrderIntake; order?: { shopifyOrderName?: string }; error?: string };
+    const data = await response.json() as { ok?: boolean; intakes?: ManualOrderIntake[]; intake?: ManualOrderIntake; details?: ManualOrderDetails; order?: { shopifyOrderName?: string }; error?: string };
     if (!response.ok || !data.ok) throw new Error(data.error || "The Manual Order Collection could not be updated.");
     return data;
   }, [sessionToken]);
@@ -128,8 +136,19 @@ export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: strin
     return Number.isNaN(date.getTime()) ? "Not read" : new Intl.DateTimeFormat("en-MY", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kuala_Lumpur" }).format(date);
   }
 
+  async function openDetails(intake: ManualOrderIntake) {
+    setBusy(`details-${intake.id}`);
+    try {
+      const data = await request({ action: "details", id: intake.id });
+      if (!data.details) throw new Error("The full submission details could not be loaded.");
+      setDetailsPreview(data.details);
+    } catch (error) { setNotice(error instanceof Error ? error.message : "The full submission details could not be loaded."); }
+    finally { setBusy(""); }
+  }
+
   function detailsButton(intake: ManualOrderIntake) {
-    return <button className="manual-order-receipt-view" type="button" onClick={() => setDetailsPreview(intake)}>VIEW DETAILS</button>;
+    const isLoading = busy === `details-${intake.id}`;
+    return <button className="manual-order-receipt-view" type="button" disabled={isLoading} onClick={() => void openDetails(intake)}>{isLoading ? "OPENING DETAILS..." : "VIEW DETAILS"}</button>;
   }
 
   function submissionRows(rows: ManualOrderIntake[], emptyText: string) {
@@ -165,6 +184,6 @@ export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: strin
     <section className="manual-order-list-section"><div className="manual-order-list-heading"><h4>Awaiting approval</h4><span>{awaitingApproval.length}</span></div><div className="table-scroll"><table className="orders-table manual-orders-records-table">{tableHead}<tbody>{submissionRows(awaitingApproval, "No orders are waiting for payment approval.")}</tbody></table></div></section>
     <section className="manual-order-list-section"><div className="manual-order-list-heading"><div><h4>Transaction history</h4><small>Review the attached receipt alongside the approval time.</small></div><div className="manual-order-search-actions"><select aria-label="Sort transaction history" value={historySort} onChange={(event) => setHistorySort(event.target.value as typeof historySort)}><option value="approval_desc">Approved: newest</option><option value="approval_asc">Approved: oldest</option></select><span>{paidOrders.length}</span></div></div><div className="table-scroll"><table className="orders-table manual-orders-records-table"><thead><tr><th>Reference</th><th>Approved</th><th>Customer</th><th>Status</th><th>Receipt</th><th>Order actions</th></tr></thead><tbody>{transactionRows(sortedTransactions)}</tbody></table></div></section>
     {receiptPreview && <div className="document-preview-backdrop" role="dialog" aria-modal="true" aria-label="Payment receipt" onClick={() => setReceiptPreview(null)}><section className="document-preview-modal" onClick={(event) => event.stopPropagation()}><header><div><p>PAYMENT RECEIPT</p><h2>{receiptPreview.fileName || "Receipt"}</h2></div><button className="button secondary" type="button" onClick={() => setReceiptPreview(null)}>Close</button></header>{/\.pdf(?:$|\?)/i.test(receiptPreview.fileName || receiptPreview.url) ? <iframe className="document-preview-frame" src={receiptPreview.url} title={receiptPreview.fileName || "Payment receipt"} /> : <img className="document-preview-image" src={receiptPreview.url} alt={receiptPreview.fileName || "Payment receipt"} />}</section></div>}
-    {detailsPreview && <div className="document-preview-backdrop" role="dialog" aria-modal="true" aria-label="Manual Order details" onClick={() => setDetailsPreview(null)}><section className="linked-transaction-modal" onClick={(event) => event.stopPropagation()}><header><div><p>MANUAL ORDER DETAILS</p><h2>{detailsPreview.customerName || "Customer"}</h2><span>{manualOrderIntakeReference(detailsPreview.id)}</span></div><button className="button secondary" type="button" onClick={() => setDetailsPreview(null)}>Close</button></header><div className="linked-transaction-body"><div className="linked-summary-grid"><div><span>Customer</span><strong>{detailsPreview.customerName || "-"}</strong></div><div><span>Phone</span><strong>{detailsPreview.phoneOriginal || "-"}</strong></div><div><span>Email</span><strong>{detailsPreview.customerEmail || "-"}</strong></div><div><span>Character</span><strong>{detailsPreview.character || "-"}</strong></div><div><span>Plushie</span><strong>{detailsPreview.productDisplayName || "-"}</strong></div><div><span>Submitted</span><strong>{formatDateTime(detailsPreview.createdAt)}</strong></div></div><div className="linked-note-panel"><span>Delivery address</span><p>{[detailsPreview.shippingAddress.address1, detailsPreview.shippingAddress.address2, detailsPreview.shippingAddress.city, detailsPreview.shippingAddress.province, detailsPreview.shippingAddress.zip, detailsPreview.shippingAddress.countryCode].filter(Boolean).join(", ") || "-"}</p></div><div className="linked-summary-grid"><div><span>Payment status</span><strong>{detailsPreview.isCod ? "Cash on delivery" : detailsPreview.status === "awaiting_payment" ? "Awaiting receipt" : "Receipt attached"}</strong></div><div><span>Shopify order</span><strong>{detailsPreview.shopifyOrderName || "Not created yet"}</strong></div><div><span>Order status</span><strong>{detailsPreview.status.replace(/_/g, " ")}</strong></div></div></div></section></div>}
+    {detailsPreview && <div className="document-preview-backdrop" role="dialog" aria-modal="true" aria-label="Manual Order details" onClick={() => setDetailsPreview(null)}><section className="linked-transaction-modal" onClick={(event) => event.stopPropagation()}><header><div><p>COMPLETE MANUAL ORDER</p><h2>{detailsPreview.intake.customerName || "Customer"}</h2><span>{manualOrderIntakeReference(detailsPreview.intake.id)}</span></div><button className="button secondary" type="button" onClick={() => setDetailsPreview(null)}>Close</button></header><div className="linked-transaction-body"><div className="linked-summary-grid"><div><span>Customer</span><strong>{detailsPreview.intake.customerName || "-"}</strong></div><div><span>Phone</span><strong>{detailsPreview.intake.phoneOriginal || "-"}</strong></div><div><span>Email</span><strong>{detailsPreview.intake.customerEmail || "-"}</strong></div><div><span>Character</span><strong>{detailsPreview.intake.character || "-"}</strong></div><div><span>Plushie</span><strong>{detailsPreview.intake.productDisplayName || "-"}</strong></div><div><span>Submitted</span><strong>{formatDateTime(detailsPreview.intake.createdAt)}</strong></div></div><div className="linked-note-panel"><span>Delivery address</span><p>{[detailsPreview.intake.shippingAddress.address1, detailsPreview.intake.shippingAddress.address2, detailsPreview.intake.shippingAddress.city, detailsPreview.intake.shippingAddress.province, detailsPreview.intake.shippingAddress.zip, detailsPreview.intake.shippingAddress.countryCode].filter(Boolean).join(", ") || "-"}</p></div><div className="linked-summary-grid"><div><span>Plush name</span><strong>{detailsPreview.form?.plushName || "-"}</strong></div><div><span>Gender</span><strong>{detailsPreview.form?.gender || "-"}</strong></div><div><span>Born on</span><strong>{detailsPreview.form?.birthDate || "-"}</strong></div><div><span>Birthplace</span><strong>{detailsPreview.form?.birthPlace || "-"}</strong></div><div><span>Favourite person</span><strong>{detailsPreview.form?.favouritePerson || "-"}</strong></div><div><span>Belongs to</span><strong>{detailsPreview.form?.belongsTo || "-"}</strong></div></div><div className="linked-note-panel"><span>Meaningful note</span><p>{detailsPreview.form?.meaningfulNote || "-"}</p></div><div className="linked-document-panel"><h3>Uploaded voice message</h3>{detailsPreview.voiceUrl ? <div className="linked-document-card"><div><strong>{detailsPreview.voiceFileName || "Voice message"}</strong><span>Uploaded by the customer</span></div><a className="button secondary" href={detailsPreview.voiceUrl} target="_blank" rel="noreferrer">Open audio file</a></div> : <p>No voice file is available for this submission.</p>}</div><div className="linked-summary-grid"><div><span>Payment status</span><strong>{detailsPreview.intake.isCod ? "Cash on delivery" : detailsPreview.intake.status === "awaiting_payment" ? "Awaiting receipt" : "Receipt attached"}</strong></div><div><span>Shopify order</span><strong>{detailsPreview.intake.shopifyOrderName || "Not created yet"}</strong></div><div><span>Order status</span><strong>{detailsPreview.intake.status.replace(/_/g, " ")}</strong></div></div></div></section></div>}
   </section>;
 }
