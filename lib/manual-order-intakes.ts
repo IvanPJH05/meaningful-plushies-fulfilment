@@ -49,6 +49,13 @@ export type ManualOrderIntake = {
   createdByOrderAt: string;
 };
 
+export type ManualOrderIntakeDetails = {
+  intake: ManualOrderIntake;
+  form: CustomisationForm | null;
+  voiceUrl: string;
+  voiceFileName: string;
+};
+
 export type ManualOrderIntakeSubmission = {
   customerName: string;
   customerEmail: string;
@@ -368,6 +375,24 @@ export async function listManualOrderIntakes() {
   // particular, customer permission changes must not make the list appear
   // empty even though every submission remains safely stored in Supabase.
   return (data || []).map((row) => rowToIntake(row as Record<string, unknown>));
+}
+
+export async function getManualOrderIntakeDetails(id: string): Promise<ManualOrderIntakeDetails> {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("Choose a valid Manual Order submission.");
+  const { data, error } = await serviceClient().from(TABLE).select("*").eq("id", id).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("This Manual Order submission could not be found.");
+
+  const intake = rowToIntake(data as Record<string, unknown>);
+  const submitted = await submittedCustomisationsForSessionIds([intake.customisationSessionId]);
+  const customisation = submitted.get(intake.customisationSessionId);
+  const voiceStoragePath = customisation?.voiceStoragePath || "";
+  return {
+    intake,
+    form: customisation?.form || null,
+    voiceUrl: voiceStoragePath ? voiceDownloadUrl(voiceStoragePath) : "",
+    voiceFileName: voiceStoragePath.split("/").at(-1) || "",
+  };
 }
 
 export async function deleteManualOrderIntake(id: string) {
