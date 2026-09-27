@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "mobile:build": "vite build mobile",
+    "mobile:sync": "npm run mobile:build && cap sync android",
     "postinstall": "prisma generate",
     "start": "next start",
     "lint": "eslint .",
@@ -15,6 +17,9 @@
     "db:seed": "node --experimental-strip-types prisma/seed.ts"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/barcode-scanner": "^3.1.2",
+    "@capacitor/core": "^8.5.2",
     "@pdf-lib/fontkit": "^1.1.1",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
@@ -33,14 +38,17 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.2",
     "@types/node": "^22.13.0",
     "@types/pdf-parse": "^1.1.5",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.0.4",
     "eslint": "^9.0.0",
     "eslint-config-next": "^15.2.0",
     "prisma": "^7.8.0",
     "typescript": "^5.7.0",
+    "vite": "^7.1.7",
     "vitest": "^4.1.10"
   },
   "overrides": {
