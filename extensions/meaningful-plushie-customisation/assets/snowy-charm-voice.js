@@ -38,7 +38,7 @@
     const setProgress = (percent, label, complete = false) => { progress.hidden = false; progressLabel.textContent = label; progressPercent.textContent = `${Math.round(percent)}%`; progressBar.style.width = `${percent}%`; progressBar.style.background = complete ? "#2f9c70" : "#7098ae"; };
     const normaliseFile = (file) => { if (!file) return null; const extension = file.name.split(".").pop()?.toLowerCase(); const type = audioTypes[extension] || (file.type.startsWith("audio/") ? file.type : ""); return type && file.type !== type ? new File([file], file.name, { type, lastModified: file.lastModified }) : file; };
     const setSource = (value) => { source = value; recordChoice.classList.toggle("is-active", value === "record"); uploadChoice.classList.toggle("is-active", value === "upload"); recordChoice.setAttribute("aria-pressed", String(value === "record")); uploadChoice.setAttribute("aria-pressed", String(value === "upload")); recordControl.hidden = value !== "record"; uploadControl.hidden = value !== "upload"; };
-    const setPlayback = ({ playing = false, waiting = false } = {}) => { playLabel.textContent = waiting ? "…" : playing ? "Ⅱ" : "▶"; playButton.setAttribute("aria-label", waiting ? "Loading voice message" : playing ? "Pause voice message" : "Play voice message"); playButton.classList.toggle("is-playing", playing); loading.hidden = !waiting; playButton.disabled = waiting; };
+    const setPlayback = ({ playing = false, waiting = false } = {}) => { playLabel.textContent = waiting ? "LOADING" : playing ? "PAUSE" : "PLAY"; playButton.setAttribute("aria-label", waiting ? "Loading voice message" : playing ? "Pause voice message" : "Play voice message"); loading.hidden = !waiting; playButton.disabled = waiting; };
     const updatePreview = () => { if (previewUrl) URL.revokeObjectURL(previewUrl); previewUrl = ""; previewWrap.hidden = !selectedFile; fileName.textContent = selectedFile ? selectedFile.name : ""; if (!selectedFile) return; previewUrl = URL.createObjectURL(selectedFile); preview.src = previewUrl; preview.load(); seek.value = "0"; seek.max = "0"; playbackTime.textContent = "0:00 / 0:00"; setPlayback(); };
     const setSelectedFile = (file) => {
       selectedFile = normaliseFile(file);
@@ -73,9 +73,10 @@
         }, 1000);
       } catch { cleanRecording(); setNotice("Please allow microphone access to record your voice message."); }
     };
-    recordChoice.addEventListener("click", () => setSource("record")); uploadChoice.addEventListener("click", () => setSource("upload"));
+    recordChoice.addEventListener("click", () => { if (source !== "record") setSelectedFile(null); setSource("record"); });
+    uploadChoice.addEventListener("click", () => { if (source !== "upload") setSelectedFile(null); setSource("upload"); fileInput.click(); });
     recordButton.addEventListener("click", beginRecording); stopButton.addEventListener("click", stopRecording); cancelButton.addEventListener("click", cleanRecording);
-    fileInput.addEventListener("change", () => setSelectedFile(fileInput.files?.[0] || null));
+    fileInput.addEventListener("change", () => { setSelectedFile(fileInput.files?.[0] || null); fileInput.value = ""; });
     playButton.addEventListener("click", async () => { if (preview.paused) { setPlayback({ waiting: true }); try { await preview.play(); } catch { setPlayback(); setNotice("This audio could not be played on this device. Please try MP3, MP4/M4A, OGG, WAV, or WebM audio."); } } else preview.pause(); });
     seek.addEventListener("input", () => { preview.currentTime = Number(seek.value); });
     preview.addEventListener("loadedmetadata", () => { const duration = Number.isFinite(preview.duration) ? preview.duration : 0; seek.max = String(duration); playbackTime.textContent = `${formatTime(0)} / ${formatTime(duration)}`; });
