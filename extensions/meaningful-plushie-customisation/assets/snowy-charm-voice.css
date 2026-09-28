@@ -12,7 +12,7 @@
   color: inherit;
 }
 .mp-snowy-charm-voice button,.mp-snowy-charm-voice input { font: inherit; }
-.mp-snowy-charm-voice__choices { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin-top:2px; }
+.mp-snowy-charm-voice__choices { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin:2px 0 10px; }
 .mp-snowy-charm-voice__choices button,.mp-snowy-charm-voice__record-control button,.mp-snowy-charm-voice__upload strong { display:flex; align-items:center; justify-content:center; min-height:60px; padding:12px 18px; border:2px solid #668da4; border-radius:999px; background:#fff; color:#668da4; font-weight:800; letter-spacing:.03em; cursor:pointer; text-align:center; }
 .mp-snowy-charm-voice__choices button.is-active,.mp-snowy-charm-voice__record-control button,.mp-snowy-charm-voice__upload strong { background:#7098ae; color:#fff; }
 .mp-snowy-charm-voice__panel { display:grid; gap:12px; width:100%; box-sizing:border-box; padding:22px; border:2px solid #d7e6ee; border-radius:16px; background:#f8fcfe; }
