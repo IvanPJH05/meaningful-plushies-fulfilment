@@ -1,8 +1,7 @@
 {{ 'snowy-charm-voice.css' | asset_url | stylesheet_tag }}
 <script src="{{ 'snowy-charm-voice.js' | asset_url }}" defer="defer"></script>
 
-{%- if product.id == 8426384719943 -%}
-  <section class="mp-snowy-charm-voice" data-snowy-charm-voice data-api-url="{{ block.settings.app_url | default: 'https://meaningful-plushies-fulfilment.vercel.app' | escape }}" {{ block.shopify_attributes }}>
+<section class="mp-snowy-charm-voice" data-snowy-charm-voice data-api-url="{{ block.settings.app_url | default: 'https://meaningful-plushies-fulfilment.vercel.app' | escape }}" {{ block.shopify_attributes }}>
     <div class="mp-snowy-charm-voice__choices" role="group" aria-label="Voice message source">
       <button type="button" class="is-active" data-select-record aria-pressed="true">Record voice</button>
       <button type="button" data-select-upload aria-pressed="false">Upload audio</button>
@@ -16,8 +15,7 @@
       <p class="mp-snowy-charm-voice__notice" data-notice aria-live="polite"></p>
     </div>
     <div class="mp-snowy-charm-voice__dialog" data-record-dialog hidden role="dialog" aria-modal="true" aria-labelledby="mp-snowy-record-title"><div class="mp-snowy-charm-voice__dialog-card"><p>Your voice message</p><strong data-record-countdown>3</strong><h2 id="mp-snowy-record-title" data-record-status>Get ready</h2><span data-record-time>0:20 left</span><span class="mp-snowy-charm-voice__dialog-bar"><i data-record-progress></i></span><button type="button" data-record-stop hidden>Stop recording</button><button type="button" data-record-cancel>Cancel</button></div></div>
-  </section>
-{%- endif -%}
+</section>
 
 {% schema %}
 {
