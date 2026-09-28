@@ -32,11 +32,51 @@
     if (dialog?.parentElement !== document.body) document.body.appendChild(dialog);
 
     let source = "record", selectedFile = null, recorder = null, stream = null, recording = false, saving = false, uploading = false, uploaded = null, uploadPromise = null, uploadFile = null, selectionVersion = 0, previewUrl = "", countdownTimer = 0, recordTimer = 0, recordLimitTimer = 0;
+    const draftKey = `mp-plush-charm-voice:${location.pathname}`;
+    const draftLifetime = 10 * 60 * 1000;
     const audioTypes = { mp3: "audio/mpeg", mp4: "audio/mp4", m4a: "audio/mp4", ogg: "audio/ogg", oga: "audio/ogg", wav: "audio/wav", webm: "audio/webm" };
     const formatTime = (seconds) => `${Math.floor(seconds / 60)}:${String(Math.max(0, Math.floor(seconds % 60))).padStart(2, "0")}`;
     const setNotice = (message, success = false) => { notice.textContent = message; notice.classList.toggle("is-success", success); };
     const setProgress = (percent, label, complete = false) => { progress.hidden = false; progressLabel.textContent = label; progressPercent.textContent = `${Math.round(percent)}%`; progressBar.style.width = `${percent}%`; progressBar.style.background = complete ? "#2f9c70" : "#7098ae"; };
     const normaliseFile = (file) => { if (!file) return null; const extension = file.name.split(".").pop()?.toLowerCase(); const type = audioTypes[extension] || (file.type.startsWith("audio/") ? file.type : ""); return type && file.type !== type ? new File([file], file.name, { type, lastModified: file.lastModified }) : file; };
+    const openDraftDatabase = () => new Promise((resolve, reject) => {
+      const databaseRequest = indexedDB.open("meaningful-plushies-plush-charm", 1);
+      databaseRequest.onupgradeneeded = () => {
+        if (!databaseRequest.result.objectStoreNames.contains("voice-drafts")) databaseRequest.result.createObjectStore("voice-drafts");
+      };
+      databaseRequest.onsuccess = () => resolve(databaseRequest.result);
+      databaseRequest.onerror = () => reject(databaseRequest.error);
+    });
+    const readVoiceDraft = async () => {
+      try {
+        const database = await openDraftDatabase();
+        return await new Promise((resolve, reject) => {
+          const transaction = database.transaction("voice-drafts", "readonly");
+          const request = transaction.objectStore("voice-drafts").get(draftKey);
+          request.onsuccess = () => resolve(request.result || null);
+          request.onerror = () => reject(request.error);
+        });
+      } catch { return null; }
+    };
+    const saveVoiceDraft = async (file, result) => {
+      try {
+        const database = await openDraftDatabase();
+        const transaction = database.transaction("voice-drafts", "readwrite");
+        transaction.objectStore("voice-drafts").put({
+          file,
+          source,
+          savedAt: Date.now(),
+          session: { token: result.session.token },
+          voiceStoragePath: result.voiceStoragePath
+        }, draftKey);
+      } catch {}
+    };
+    const clearVoiceDraft = async () => {
+      try {
+        const database = await openDraftDatabase();
+        database.transaction("voice-drafts", "readwrite").objectStore("voice-drafts").delete(draftKey);
+      } catch {}
+    };
     const setSource = (value) => { source = value; recordChoice.classList.toggle("is-active", value === "record"); uploadChoice.classList.toggle("is-active", value === "upload"); recordChoice.setAttribute("aria-pressed", String(value === "record")); uploadChoice.setAttribute("aria-pressed", String(value === "upload")); recordControl.hidden = value !== "record"; uploadControl.hidden = value !== "upload"; };
     const setPlayback = ({ playing = false, waiting = false } = {}) => { playLabel.textContent = waiting ? "LOADING" : playing ? "PAUSE" : "PLAY"; playButton.setAttribute("aria-label", waiting ? "Loading voice message" : playing ? "Pause voice message" : "Play voice message"); loading.hidden = !waiting; playButton.disabled = waiting; };
     const updatePreview = () => { if (previewUrl) URL.revokeObjectURL(previewUrl); previewUrl = ""; previewWrap.hidden = !selectedFile; fileName.textContent = selectedFile ? selectedFile.name : ""; if (!selectedFile) return; previewUrl = URL.createObjectURL(selectedFile); preview.src = previewUrl; preview.load(); seek.value = "0"; seek.max = "0"; playbackTime.textContent = "0:00 / 0:00"; setPlayback(); };
@@ -45,9 +85,13 @@
       uploaded = null;
       selectionVersion += 1;
       updatePreview();
-      if (!selectedFile) { setNotice(""); syncPurchaseBlockers(); return; }
+      if (!selectedFile) { void clearVoiceDraft(); setNotice(""); syncPurchaseBlockers(); return; }
+      const fileToSave = selectedFile;
+      const versionToSave = selectionVersion;
       setNotice("Saving your voice message…");
-      void saveVoiceEarly(selectedFile, selectionVersion);
+      void clearVoiceDraft().then(() => {
+        if (selectedFile === fileToSave && selectionVersion === versionToSave) void saveVoiceEarly(fileToSave, versionToSave);
+      });
     };
     const selectedLimit = () => { const selected = form.querySelector("[name='id']"); const text = selected?.selectedOptions?.[0]?.textContent || selected?.value || ""; const match = text.match(/(\d+)\s*(?:second|sec|s)\b/i); return Math.max(1, Number(match?.[1] || 20)); };
     const cleanRecording = () => { window.clearInterval(countdownTimer); window.clearInterval(recordTimer); window.clearTimeout(recordLimitTimer); countdownTimer = recordTimer = recordLimitTimer = 0; stream?.getTracks().forEach((track) => track.stop()); stream = null; recording = false; dialog.hidden = true; stopButton.hidden = true; cancelButton.hidden = false; };
@@ -102,7 +146,7 @@
       syncPurchaseBlockers();
       try {
         const result = await uploadAudio(file);
-        if (selectedFile === file && selectionVersion === version) { uploaded = result; setProgress(100, "Voice message saved", true); setNotice("Your voice message is saved and ready for Plush Charm.", true); }
+        if (selectedFile === file && selectionVersion === version) { uploaded = result; void saveVoiceDraft(file, result); setProgress(100, "Voice message saved", true); setNotice("Your voice message is saved and ready for Plush Charm.", true); }
       } catch (error) {
         if (selectedFile === file && selectionVersion === version) { setNotice(error instanceof Error ? error.message : "Could not save your voice message."); }
       } finally {
@@ -153,12 +197,30 @@
       });
       positionPurchaseBlockers();
     };
-    const submitPurchase = async (submitter) => { if (saving || uploading) return; if (!selectedFile || uploaded?.file !== selectedFile) { syncPurchaseBlockers(); return; } saving = true; clearPurchaseBlockers(); purchaseControls().forEach((control) => { control.disabled = true; }); try { const result = uploaded; const audioLink = `${apiUrl}/api/customisation/audio-download?path=${encodeURIComponent(result.voiceStoragePath)}&filename=${encodeURIComponent(selectedFile.name)}`; addProperty("Meaningful Message", audioLink); addProperty("_customisation_token", result.session.token); if (/buy\s*it\s*now/i.test(submitter?.textContent || "")) { let returnTo = form.querySelector('input[name="return_to"]'); if (!returnTo) { returnTo = document.createElement("input"); returnTo.type = "hidden"; returnTo.name = "return_to"; form.appendChild(returnTo); } returnTo.value = "/checkout"; } form.submit(); } catch (error) { setNotice(error instanceof Error ? error.message : "Could not save your voice message."); purchaseControls().forEach((control) => { control.disabled = false; }); saving = false; syncPurchaseBlockers(); } };
+    const submitPurchase = async (submitter) => { if (saving || uploading) return; if (!selectedFile || uploaded?.file !== selectedFile) { syncPurchaseBlockers(); return; } saving = true; clearPurchaseBlockers(); purchaseControls().forEach((control) => { control.disabled = true; }); try { const result = uploaded; const audioLink = `${apiUrl}/api/customisation/audio-download?path=${encodeURIComponent(result.voiceStoragePath)}&filename=${encodeURIComponent(selectedFile.name)}`; addProperty("Meaningful Message", audioLink); addProperty("_customisation_token", result.session.token); if (/buy\s*it\s*now/i.test(submitter?.textContent || "")) { let returnTo = form.querySelector('input[name="return_to"]'); if (!returnTo) { returnTo = document.createElement("input"); returnTo.type = "hidden"; returnTo.name = "return_to"; form.appendChild(returnTo); } returnTo.value = "/checkout"; } void clearVoiceDraft(); form.submit(); } catch (error) { setNotice(error instanceof Error ? error.message : "Could not save your voice message."); purchaseControls().forEach((control) => { control.disabled = false; }); saving = false; syncPurchaseBlockers(); } };
     const interceptPurchase = (event) => { const target = event.target instanceof Element ? event.target : null; const purchaseTarget = target && purchaseControls().find((control) => control === target || control.contains(target)); if (!purchaseTarget) return; event.preventDefault(); event.stopImmediatePropagation(); if (!saving) void submitPurchase(purchaseTarget); };
-    document.addEventListener("pointerdown", interceptPurchase, true); document.addEventListener("click", interceptPurchase, true); form.addEventListener("submit", (event) => { event.preventDefault(); event.stopImmediatePropagation(); void submitPurchase(event.submitter); }, true);
+    document.addEventListener("click", interceptPurchase, true); form.addEventListener("submit", (event) => { event.preventDefault(); event.stopImmediatePropagation(); syncPurchaseBlockers(); }, true);
     window.addEventListener("resize", positionPurchaseBlockers);
     window.addEventListener("scroll", positionPurchaseBlockers, true);
+    const restoreVoiceDraft = async () => {
+      const draft = await readVoiceDraft();
+      if (!draft || Date.now() - Number(draft.savedAt) > draftLifetime || !(draft.file instanceof Blob) || !draft.session?.token || !draft.voiceStoragePath) {
+        if (draft) void clearVoiceDraft();
+        return;
+      }
+      const restoredFile = normaliseFile(draft.file);
+      if (!restoredFile) { void clearVoiceDraft(); return; }
+      source = draft.source === "upload" ? "upload" : "record";
+      selectedFile = restoredFile;
+      uploaded = { file: restoredFile, session: draft.session, voiceStoragePath: draft.voiceStoragePath };
+      setSource(source);
+      updatePreview();
+      setProgress(100, "Voice message saved", true);
+      setNotice("Your saved voice message is ready for Plush Charm.", true);
+      syncPurchaseBlockers();
+    };
     syncPurchaseBlockers();
+    void restoreVoiceDraft();
     window.setInterval(syncPurchaseBlockers, 400);
   });
 })();
