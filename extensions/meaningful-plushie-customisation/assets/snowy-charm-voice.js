@@ -38,7 +38,7 @@
     const setProgress = (percent, label, complete = false) => { progress.hidden = false; progressLabel.textContent = label; progressPercent.textContent = `${Math.round(percent)}%`; progressBar.style.width = `${percent}%`; progressBar.style.background = complete ? "#2f9c70" : "#7098ae"; };
     const normaliseFile = (file) => { if (!file) return null; const extension = file.name.split(".").pop()?.toLowerCase(); const type = audioTypes[extension] || (file.type.startsWith("audio/") ? file.type : ""); return type && file.type !== type ? new File([file], file.name, { type, lastModified: file.lastModified }) : file; };
     const setSource = (value) => { source = value; recordChoice.classList.toggle("is-active", value === "record"); uploadChoice.classList.toggle("is-active", value === "upload"); recordChoice.setAttribute("aria-pressed", String(value === "record")); uploadChoice.setAttribute("aria-pressed", String(value === "upload")); recordControl.hidden = value !== "record"; uploadControl.hidden = value !== "upload"; };
-    const setPlayback = ({ playing = false, waiting = false } = {}) => { playLabel.textContent = waiting ? "Loading" : playing ? "Pause" : "Play"; loading.hidden = !waiting; playButton.disabled = waiting; };
+    const setPlayback = ({ playing = false, waiting = false } = {}) => { playLabel.textContent = waiting ? "…" : playing ? "Ⅱ" : "▶"; playButton.setAttribute("aria-label", waiting ? "Loading voice message" : playing ? "Pause voice message" : "Play voice message"); playButton.classList.toggle("is-playing", playing); loading.hidden = !waiting; playButton.disabled = waiting; };
     const updatePreview = () => { if (previewUrl) URL.revokeObjectURL(previewUrl); previewUrl = ""; previewWrap.hidden = !selectedFile; fileName.textContent = selectedFile ? selectedFile.name : ""; if (!selectedFile) return; previewUrl = URL.createObjectURL(selectedFile); preview.src = previewUrl; preview.load(); seek.value = "0"; seek.max = "0"; playbackTime.textContent = "0:00 / 0:00"; setPlayback(); };
     const setSelectedFile = (file) => {
       selectedFile = normaliseFile(file);
@@ -109,7 +109,11 @@
       }
     };
     const addProperty = (key, value) => { const name = `properties[${key}]`; let input = form.querySelector(`input[name="${CSS.escape(name)}"]`); if (!input) { input = document.createElement("input"); input.type = "hidden"; input.name = name; form.appendChild(input); } input.value = value; };
-    const purchaseControls = () => [...form.querySelectorAll("button, input[type='submit']")].filter((control) => (control.form || control.closest("form")) === form && (control.type === "submit" || control.name === "add" || Boolean(control.closest(".shopify-payment-button"))));
+    const purchaseControls = () => {
+      const paymentWidgets = [...form.querySelectorAll(".shopify-payment-button, shopify-accelerated-checkout, [data-shopify=payment-button]")];
+      const buttons = [...form.querySelectorAll("button, input[type='submit']")].filter((control) => (control.form || control.closest("form")) === form && (control.type === "submit" || control.name === "add") && !paymentWidgets.some((widget) => widget.contains(control)));
+      return [...new Set([...buttons, ...paymentWidgets])];
+    };
     let purchaseBlockers = [];
     const clearPurchaseBlockers = () => {
       purchaseBlockers.forEach(({ blocker, control, wasDisabled }) => {
@@ -149,7 +153,7 @@
       positionPurchaseBlockers();
     };
     const submitPurchase = async (submitter) => { if (saving || uploading) return; if (!selectedFile || uploaded?.file !== selectedFile) { syncPurchaseBlockers(); return; } saving = true; clearPurchaseBlockers(); purchaseControls().forEach((control) => { control.disabled = true; }); try { const result = uploaded; const audioLink = `${apiUrl}/api/customisation/audio-download?path=${encodeURIComponent(result.voiceStoragePath)}&filename=${encodeURIComponent(selectedFile.name)}`; addProperty("Meaningful Message", audioLink); addProperty("_customisation_token", result.session.token); if (/buy\s*it\s*now/i.test(submitter?.textContent || "")) { let returnTo = form.querySelector('input[name="return_to"]'); if (!returnTo) { returnTo = document.createElement("input"); returnTo.type = "hidden"; returnTo.name = "return_to"; form.appendChild(returnTo); } returnTo.value = "/checkout"; } form.submit(); } catch (error) { setNotice(error instanceof Error ? error.message : "Could not save your voice message."); purchaseControls().forEach((control) => { control.disabled = false; }); saving = false; syncPurchaseBlockers(); } };
-    const interceptPurchase = (event) => { const target = event.target instanceof Element ? event.target.closest("button, input[type='submit']") : null; if (!target) return; const owner = target.form || target.closest("form"); if (owner !== form && !target.closest(".shopify-payment-button")) return; event.preventDefault(); event.stopImmediatePropagation(); if (!saving) void submitPurchase(target); };
+    const interceptPurchase = (event) => { const target = event.target instanceof Element ? event.target : null; const purchaseTarget = target && purchaseControls().find((control) => control === target || control.contains(target)); if (!purchaseTarget) return; event.preventDefault(); event.stopImmediatePropagation(); if (!saving) void submitPurchase(purchaseTarget); };
     document.addEventListener("pointerdown", interceptPurchase, true); document.addEventListener("click", interceptPurchase, true); form.addEventListener("submit", (event) => { event.preventDefault(); event.stopImmediatePropagation(); void submitPurchase(event.submitter); }, true);
     window.addEventListener("resize", positionPurchaseBlockers);
     window.addEventListener("scroll", positionPurchaseBlockers, true);

@@ -19,15 +19,20 @@
 .mp-snowy-charm-voice__upload { display:grid; gap:10px; color:#53798f; font-weight:700; }
 .mp-snowy-charm-voice__upload input { position:absolute; inline-size:1px; block-size:1px; opacity:0; pointer-events:none; }
 .mp-snowy-charm-voice__upload:focus-within strong { outline:3px solid #1a365d; outline-offset:3px; }
-.mp-snowy-charm-voice__preview { display:grid; grid-template-columns:62px minmax(0,1fr); grid-template-areas:"play track"; align-items:center; gap:12px; width:100%; box-sizing:border-box; padding:14px; border:2px solid #d7e6ee; border-radius:22px; background:linear-gradient(135deg,#fff 0%,#f2f9fc 100%); box-shadow:0 8px 20px rgba(40,82,111,.09); }
+.mp-snowy-charm-voice__preview { display:grid; grid-template-columns:62px minmax(0,1fr); grid-template-areas:"play track"; align-items:center; gap:12px; width:100%; min-height:90px; box-sizing:border-box; padding:14px; border:2px solid #d7e6ee; border-radius:22px; background:linear-gradient(135deg,#fff 0%,#f2f9fc 100%); box-shadow:0 8px 20px rgba(40,82,111,.09); }
 .mp-snowy-charm-voice__preview[hidden],.mp-snowy-charm-voice [hidden] { display:none!important; }
 .mp-snowy-charm-voice__preview audio { display:none; }
-.mp-snowy-charm-voice__preview button { grid-area:play; display:grid; place-items:center; align-content:center; gap:2px; width:62px; min-width:0; height:62px; padding:5px; border:0; border-radius:50%; background:#7098ae; color:#fff; font-size:.7em; font-weight:800; cursor:pointer; box-shadow:0 5px 12px rgba(51,100,129,.25); }
-.mp-snowy-charm-voice__play-icon { font-size:1.2em; line-height:1; transform:translateX(1px); }
+.mp-snowy-charm-voice__preview button { grid-area:play; display:grid; place-items:center; width:62px; min-width:0; height:62px; padding:5px; border:0; border-radius:50%; background:#7098ae; color:#fff; font-size:1.35em; font-weight:800; line-height:1; cursor:pointer; box-shadow:0 5px 12px rgba(51,100,129,.25); outline:0; -webkit-tap-highlight-color:transparent; transition:transform .18s ease,background .18s ease,box-shadow .18s ease; }
+.mp-snowy-charm-voice__preview button:hover { transform:scale(1.04); box-shadow:0 7px 16px rgba(51,100,129,.3); }
+.mp-snowy-charm-voice__preview button:active { transform:scale(.96); }
+.mp-snowy-charm-voice__preview button:focus,.mp-snowy-charm-voice__preview button:focus-visible { outline:0; }
+.mp-snowy-charm-voice__preview button [data-play-label] { display:block; width:1em; transition:opacity .14s ease,transform .14s ease; }
+.mp-snowy-charm-voice__preview button.is-playing [data-play-label] { transform:scale(.86); }
 .mp-snowy-charm-voice__preview button:disabled { opacity:.7; cursor:wait; }
 .mp-snowy-charm-voice__track { grid-area:track; display:grid; grid-template-columns:1fr auto; align-items:center; gap:8px; min-width:0; }
 .mp-snowy-charm-voice__preview input { grid-column:1 / -1; width:100%; min-width:0; margin:0; accent-color:#7098ae; }
 .mp-snowy-charm-voice__preview [data-time] { grid-column:2; color:#53798f; font-size:.72em; font-weight:800; text-align:right; }
+.mp-snowy-charm-voice__preview[hidden] { display:grid!important; visibility:hidden; pointer-events:none; }
 .mp-snowy-charm-voice__file,.mp-snowy-charm-voice__notice { min-height:1.2em; margin:0; overflow-wrap:anywhere; font-size:.9em; font-weight:700; }
 .mp-snowy-charm-voice__file { color:#53798f; }
 .mp-snowy-charm-voice__notice { color:#b44327; }
@@ -38,6 +43,7 @@
 .mp-snowy-charm-voice__purchase-blocker:active { transform:none; }
 form[action*='/cart/add'] [data-mp-snowy-voice-locked] { opacity:.35!important; cursor:not-allowed!important; }
 .mp-snowy-charm-voice__progress { display:grid; gap:7px; color:#53798f; font-size:.85em; font-weight:700; }
+.mp-snowy-charm-voice__progress[hidden] { display:grid!important; visibility:hidden; }
 .mp-snowy-charm-voice__progress>div { display:flex; justify-content:space-between; gap:10px; }
 .mp-snowy-charm-voice__progress>span,.mp-snowy-charm-voice__dialog-bar { display:block; height:8px; overflow:hidden; border-radius:999px; background:#dbe8ee; }
 .mp-snowy-charm-voice__progress i,.mp-snowy-charm-voice__dialog-bar i { display:block; width:0; height:100%; border-radius:inherit; background:#7098ae; transition:width .15s linear; }
