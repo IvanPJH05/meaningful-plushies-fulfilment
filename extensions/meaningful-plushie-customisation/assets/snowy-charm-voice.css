@@ -2,11 +2,13 @@
   display: grid;
   gap: 10px;
   box-sizing: border-box;
-  width: 100vw;
-  max-width: 100vw;
-  margin: 0 0 0 50%;
+  grid-column: 1 / -1;
+  align-self: stretch;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
   padding-inline: 12px;
-  transform: translateX(-50%);
   color: #1a365d;
 }
 .mp-snowy-charm-voice button,.mp-snowy-charm-voice input { font: inherit; }
@@ -47,3 +49,4 @@
 .mp-snowy-charm-voice [data-loading] { display:inline-block; width:7px; height:7px; margin-left:5px; border-radius:50%; background:currentColor; animation:mpSnowyDot .8s ease-in-out infinite; }
 @keyframes mpSnowyDot { 50% { transform:translateY(-3px); opacity:.35; } }
 @media(max-width:420px){.mp-snowy-charm-voice{padding-inline:8px}.mp-snowy-charm-voice__panel{padding:16px}.mp-snowy-charm-voice__preview{grid-template-columns:auto minmax(0,1fr)}.mp-snowy-charm-voice__preview>span{grid-column:2}.mp-snowy-charm-voice__choices{gap:8px}.mp-snowy-charm-voice__choices button{min-height:54px;padding-inline:9px;font-size:.9em}}
+@media(max-width:320px){.mp-snowy-charm-voice__choices{grid-template-columns:1fr}.mp-snowy-charm-voice__panel{padding:12px}.mp-snowy-charm-voice__preview{gap:7px;padding:7px}.mp-snowy-charm-voice__preview button{min-width:64px}.mp-snowy-charm-voice__preview>span{min-width:0;font-size:.68em}}
