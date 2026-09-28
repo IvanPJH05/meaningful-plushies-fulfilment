@@ -1,4 +1,9 @@
 .mp-snowy-charm-voice {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-self: center;
+  width: min(calc(100vw - 32px), 520px)!important;
+  max-width: calc(100vw - 32px)!important;
   margin: 0;
   padding: 0;
   border: 0;
