@@ -87,7 +87,10 @@
     const purchaseControls = () => [...form.querySelectorAll("button, input[type='submit']")].filter((control) => (control.form || control.closest("form")) === form && (control.type === "submit" || control.name === "add" || Boolean(control.closest(".shopify-payment-button"))));
     let purchaseBlockers = [];
     const clearPurchaseBlockers = () => {
-      purchaseBlockers.forEach(({ blocker }) => blocker.remove());
+      purchaseBlockers.forEach(({ blocker, control, wasDisabled }) => {
+        blocker.remove();
+        if (!wasDisabled) control.disabled = false;
+      });
       purchaseBlockers = [];
       purchaseControls().forEach((control) => {
         control.removeAttribute("aria-disabled");
@@ -107,16 +110,16 @@
       clearPurchaseBlockers();
       if (selectedFile || saving) return;
       purchaseControls().forEach((control) => {
+        const wasDisabled = Boolean(control.disabled);
+        control.disabled = true;
         control.setAttribute("aria-disabled", "true");
         control.setAttribute("data-mp-snowy-voice-locked", "");
-        const blocker = document.createElement("button");
-        blocker.type = "button";
+        const blocker = document.createElement("div");
         blocker.className = "mp-snowy-charm-voice__purchase-blocker";
-        blocker.setAttribute("aria-label", "Record or upload a voice message before purchasing");
+        blocker.setAttribute("aria-hidden", "true");
         blocker.innerHTML = '<span class="mp-snowy-charm-voice__purchase-lock" aria-hidden="true">🔒</span><span>PLEASE COMPLETE CUSTOMISATION FIRST</span>';
-        blocker.addEventListener("click", () => setNotice("Please record or choose an audio file before purchasing Snowy Charm."));
         document.body.appendChild(blocker);
-        purchaseBlockers.push({ blocker, control });
+        purchaseBlockers.push({ blocker, control, wasDisabled });
       });
       positionPurchaseBlockers();
     };
