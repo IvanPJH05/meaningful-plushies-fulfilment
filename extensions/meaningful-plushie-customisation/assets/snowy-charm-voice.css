@@ -30,6 +30,8 @@
 .mp-snowy-charm-voice__file { color:#53798f; }
 .mp-snowy-charm-voice__notice { color:#b44327; }
 .mp-snowy-charm-voice__notice.is-success { color:#27805a; }
+.mp-snowy-charm-voice__purchase-blocker { position:fixed; z-index:2147483646; display:flex; align-items:center; justify-content:center; gap:8px; box-sizing:border-box; border:0; border-radius:inherit; padding:8px 12px; background:rgba(81,121,143,.96); color:#fff; font:inherit; font-size:clamp(.68rem,2.8vw,.85rem); font-weight:800; line-height:1.15; letter-spacing:.02em; text-align:center; cursor:pointer; }
+.mp-snowy-charm-voice__purchase-blocker:focus-visible { outline:3px solid #132d50; outline-offset:3px; }
 .mp-snowy-charm-voice__progress { display:grid; gap:7px; color:#53798f; font-size:.85em; font-weight:700; }
 .mp-snowy-charm-voice__progress>div { display:flex; justify-content:space-between; gap:10px; }
 .mp-snowy-charm-voice__progress>span,.mp-snowy-charm-voice__dialog-bar { display:block; height:8px; overflow:hidden; border-radius:999px; background:#dbe8ee; }
