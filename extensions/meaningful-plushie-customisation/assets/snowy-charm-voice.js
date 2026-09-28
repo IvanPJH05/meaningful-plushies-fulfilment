@@ -31,7 +31,7 @@
     if (!form || !recordChoice || !uploadChoice || !recordButton || !fileInput || !preview) return;
     if (dialog?.parentElement !== document.body) document.body.appendChild(dialog);
 
-    let source = "record", selectedFile = null, recorder = null, stream = null, recording = false, saving = false, uploaded = null, previewUrl = "", countdownTimer = 0, recordTimer = 0, recordLimitTimer = 0;
+    let source = "record", selectedFile = null, recorder = null, stream = null, recording = false, saving = false, uploading = false, uploaded = null, uploadPromise = null, uploadFile = null, selectionVersion = 0, previewUrl = "", countdownTimer = 0, recordTimer = 0, recordLimitTimer = 0;
     const audioTypes = { mp3: "audio/mpeg", mp4: "audio/mp4", m4a: "audio/mp4", ogg: "audio/ogg", oga: "audio/ogg", wav: "audio/wav", webm: "audio/webm" };
     const formatTime = (seconds) => `${Math.floor(seconds / 60)}:${String(Math.max(0, Math.floor(seconds % 60))).padStart(2, "0")}`;
     const setNotice = (message, success = false) => { notice.textContent = message; notice.classList.toggle("is-success", success); };
@@ -40,7 +40,15 @@
     const setSource = (value) => { source = value; recordChoice.classList.toggle("is-active", value === "record"); uploadChoice.classList.toggle("is-active", value === "upload"); recordChoice.setAttribute("aria-pressed", String(value === "record")); uploadChoice.setAttribute("aria-pressed", String(value === "upload")); recordControl.hidden = value !== "record"; uploadControl.hidden = value !== "upload"; };
     const setPlayback = ({ playing = false, waiting = false } = {}) => { playLabel.textContent = waiting ? "Loading" : playing ? "Pause" : "Play"; loading.hidden = !waiting; playButton.disabled = waiting; };
     const updatePreview = () => { if (previewUrl) URL.revokeObjectURL(previewUrl); previewUrl = ""; previewWrap.hidden = !selectedFile; fileName.textContent = selectedFile ? selectedFile.name : ""; if (!selectedFile) return; previewUrl = URL.createObjectURL(selectedFile); preview.src = previewUrl; preview.load(); seek.value = "0"; seek.max = "0"; playbackTime.textContent = "0:00 / 0:00"; setPlayback(); };
-    const setSelectedFile = (file) => { selectedFile = normaliseFile(file); uploaded = null; updatePreview(); setNotice(""); syncPurchaseBlockers(); };
+    const setSelectedFile = (file) => {
+      selectedFile = normaliseFile(file);
+      uploaded = null;
+      selectionVersion += 1;
+      updatePreview();
+      if (!selectedFile) { setNotice(""); syncPurchaseBlockers(); return; }
+      setNotice("Saving your voice message…");
+      void saveVoiceEarly(selectedFile, selectionVersion);
+    };
     const selectedLimit = () => { const selected = form.querySelector("[name='id']"); const text = selected?.selectedOptions?.[0]?.textContent || selected?.value || ""; const match = text.match(/(\d+)\s*(?:second|sec|s)\b/i); return Math.max(1, Number(match?.[1] || 20)); };
     const cleanRecording = () => { window.clearInterval(countdownTimer); window.clearInterval(recordTimer); window.clearTimeout(recordLimitTimer); countdownTimer = recordTimer = recordLimitTimer = 0; stream?.getTracks().forEach((track) => track.stop()); stream = null; recording = false; dialog.hidden = true; stopButton.hidden = true; cancelButton.hidden = false; };
     const stopRecording = () => { if (recorder?.state === "recording") recorder.stop(); else cleanRecording(); };
@@ -74,14 +82,31 @@
     preview.addEventListener("timeupdate", () => { seek.value = String(preview.currentTime); playbackTime.textContent = `${formatTime(preview.currentTime)} / ${formatTime(preview.duration)}`; });
     preview.addEventListener("waiting", () => setPlayback({ waiting: true })); preview.addEventListener("canplay", () => setPlayback({ playing: !preview.paused })); preview.addEventListener("playing", () => setPlayback({ playing: true })); preview.addEventListener("pause", () => setPlayback()); preview.addEventListener("ended", () => { preview.currentTime = 0; seek.value = "0"; setPlayback(); }); preview.addEventListener("error", () => { setPlayback(); setNotice("This audio could not be played on this device. Please try MP3, MP4/M4A, OGG, WAV, or WebM audio."); });
     const request = async (path, options) => { const response = await fetch(`${apiUrl}${path}`, options); const result = await response.json().catch(() => ({})); if (!response.ok || !result.ok) throw new Error(result.error || "Could not save your voice message."); return result; };
-    const uploadAudio = async () => {
-      if (uploaded?.file === selectedFile) return uploaded;
-      if (!selectedFile) throw new Error("Please record or choose an audio file first.");
+    const uploadAudio = async (file = selectedFile) => {
+      if (uploaded?.file === file) return uploaded;
+      if (uploadPromise && uploadFile === file) return uploadPromise;
+      if (!file) throw new Error("Please record or choose an audio file first.");
       if (!apiUrl) throw new Error("Voice message setup is unavailable. Please refresh and try again.");
-      setProgress(3, "Preparing secure upload…"); const session = await request("/api/snowy-charm/sessions", { method: "POST" }); setProgress(8, "Uploading your voice message…");
-      const prepared = await request(`/api/customisation/${encodeURIComponent(session.token)}/upload`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileName: selectedFile.name, contentType: selectedFile.type }) });
-      await new Promise((resolve, reject) => { const transfer = new XMLHttpRequest(); transfer.open("PUT", prepared.upload.signedUrl); transfer.setRequestHeader("x-upsert", "false"); transfer.setRequestHeader("Content-Type", selectedFile.type || "application/octet-stream"); transfer.upload.onprogress = (event) => { if (event.lengthComputable) setProgress(8 + event.loaded / event.total * 87, "Uploading your voice message…"); }; transfer.onload = () => transfer.status >= 200 && transfer.status < 300 ? resolve() : reject(new Error("Could not upload your audio file.")); transfer.onerror = () => reject(new Error("Could not upload your audio file.")); transfer.send(selectedFile); });
-      await request(`/api/snowy-charm/${encodeURIComponent(session.token)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ voiceStoragePath: prepared.upload.path }) }); uploaded = { file: selectedFile, session, voiceStoragePath: prepared.upload.path }; setProgress(100, "Voice message saved", true); return uploaded;
+      uploadFile = file;
+      uploadPromise = (async () => {
+        setProgress(3, "Preparing secure upload…"); const session = await request("/api/snowy-charm/sessions", { method: "POST" }); setProgress(8, "Saving your voice message…");
+        const prepared = await request(`/api/customisation/${encodeURIComponent(session.token)}/upload`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileName: file.name, contentType: file.type }) });
+        await new Promise((resolve, reject) => { const transfer = new XMLHttpRequest(); transfer.open("PUT", prepared.upload.signedUrl); transfer.setRequestHeader("x-upsert", "false"); transfer.setRequestHeader("Content-Type", file.type || "application/octet-stream"); transfer.upload.onprogress = (event) => { if (event.lengthComputable) setProgress(8 + event.loaded / event.total * 87, "Saving your voice message…"); }; transfer.onload = () => transfer.status >= 200 && transfer.status < 300 ? resolve() : reject(new Error("Could not upload your audio file.")); transfer.onerror = () => reject(new Error("Could not upload your audio file.")); transfer.send(file); });
+        await request(`/api/snowy-charm/${encodeURIComponent(session.token)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ voiceStoragePath: prepared.upload.path }) }); return { file, session, voiceStoragePath: prepared.upload.path };
+      })();
+      try { return await uploadPromise; } finally { if (uploadFile === file) { uploadPromise = null; uploadFile = null; } }
+    };
+    const saveVoiceEarly = async (file, version) => {
+      uploading = true;
+      syncPurchaseBlockers();
+      try {
+        const result = await uploadAudio(file);
+        if (selectedFile === file && selectionVersion === version) { uploaded = result; setProgress(100, "Voice message saved", true); setNotice("Your voice message is saved and ready for Snowy Charm.", true); }
+      } catch (error) {
+        if (selectedFile === file && selectionVersion === version) { setNotice(error instanceof Error ? error.message : "Could not save your voice message."); }
+      } finally {
+        if (selectedFile === file && selectionVersion === version) { uploading = false; syncPurchaseBlockers(); }
+      }
     };
     const addProperty = (key, value) => { const name = `properties[${key}]`; let input = form.querySelector(`input[name="${CSS.escape(name)}"]`); if (!input) { input = document.createElement("input"); input.type = "hidden"; input.name = name; form.appendChild(input); } input.value = value; };
     const purchaseControls = () => [...form.querySelectorAll("button, input[type='submit']")].filter((control) => (control.form || control.closest("form")) === form && (control.type === "submit" || control.name === "add" || Boolean(control.closest(".shopify-payment-button"))));
@@ -108,7 +133,7 @@
     };
     const syncPurchaseBlockers = () => {
       clearPurchaseBlockers();
-      if (selectedFile || saving) return;
+      if (uploaded?.file === selectedFile && !uploading && !saving) return;
       purchaseControls().forEach((control) => {
         const wasDisabled = Boolean(control.disabled);
         control.disabled = true;
@@ -123,7 +148,7 @@
       });
       positionPurchaseBlockers();
     };
-    const submitPurchase = async (submitter) => { if (saving) return; if (!selectedFile) { setNotice("Please record or choose an audio file before adding Snowy Charm to your cart."); syncPurchaseBlockers(); return; } saving = true; clearPurchaseBlockers(); purchaseControls().forEach((control) => { control.disabled = true; }); try { const result = await uploadAudio(); const audioLink = `${apiUrl}/api/customisation/audio-download?path=${encodeURIComponent(result.voiceStoragePath)}&filename=${encodeURIComponent(selectedFile.name)}`; addProperty("Meaningful Message", audioLink); addProperty("_customisation_token", result.session.token); setNotice("Your voice message is saved and ready for Snowy Charm.", true); if (/buy\s*it\s*now/i.test(submitter?.textContent || "")) { let returnTo = form.querySelector('input[name="return_to"]'); if (!returnTo) { returnTo = document.createElement("input"); returnTo.type = "hidden"; returnTo.name = "return_to"; form.appendChild(returnTo); } returnTo.value = "/checkout"; } form.submit(); } catch (error) { setNotice(error instanceof Error ? error.message : "Could not save your voice message."); purchaseControls().forEach((control) => { control.disabled = false; }); saving = false; syncPurchaseBlockers(); } };
+    const submitPurchase = async (submitter) => { if (saving || uploading) return; if (!selectedFile || uploaded?.file !== selectedFile) { syncPurchaseBlockers(); return; } saving = true; clearPurchaseBlockers(); purchaseControls().forEach((control) => { control.disabled = true; }); try { const result = uploaded; const audioLink = `${apiUrl}/api/customisation/audio-download?path=${encodeURIComponent(result.voiceStoragePath)}&filename=${encodeURIComponent(selectedFile.name)}`; addProperty("Meaningful Message", audioLink); addProperty("_customisation_token", result.session.token); if (/buy\s*it\s*now/i.test(submitter?.textContent || "")) { let returnTo = form.querySelector('input[name="return_to"]'); if (!returnTo) { returnTo = document.createElement("input"); returnTo.type = "hidden"; returnTo.name = "return_to"; form.appendChild(returnTo); } returnTo.value = "/checkout"; } form.submit(); } catch (error) { setNotice(error instanceof Error ? error.message : "Could not save your voice message."); purchaseControls().forEach((control) => { control.disabled = false; }); saving = false; syncPurchaseBlockers(); } };
     const interceptPurchase = (event) => { const target = event.target instanceof Element ? event.target.closest("button, input[type='submit']") : null; if (!target) return; const owner = target.form || target.closest("form"); if (owner !== form && !target.closest(".shopify-payment-button")) return; event.preventDefault(); event.stopImmediatePropagation(); if (!saving) void submitPurchase(target); };
     document.addEventListener("pointerdown", interceptPurchase, true); document.addEventListener("click", interceptPurchase, true); form.addEventListener("submit", (event) => { event.preventDefault(); event.stopImmediatePropagation(); void submitPurchase(event.submitter); }, true);
     window.addEventListener("resize", positionPurchaseBlockers);
