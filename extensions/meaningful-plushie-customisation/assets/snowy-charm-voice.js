@@ -29,6 +29,7 @@
     const stopButton = block.querySelector("[data-record-stop]");
     const cancelButton = block.querySelector("[data-record-cancel]");
     if (!form || !recordChoice || !uploadChoice || !recordButton || !fileInput || !preview) return;
+    if (dialog?.parentElement !== document.body) document.body.appendChild(dialog);
 
     let source = "record", selectedFile = null, recorder = null, stream = null, recording = false, saving = false, uploaded = null, previewUrl = "", countdownTimer = 0, recordTimer = 0, recordLimitTimer = 0;
     const audioTypes = { mp3: "audio/mpeg", mp4: "audio/mp4", m4a: "audio/mp4", ogg: "audio/ogg", oga: "audio/ogg", wav: "audio/wav", webm: "audio/webm" };
@@ -112,7 +113,7 @@
         blocker.type = "button";
         blocker.className = "mp-snowy-charm-voice__purchase-blocker";
         blocker.setAttribute("aria-label", "Record or upload a voice message before purchasing");
-        blocker.innerHTML = '<span aria-hidden="true">🔒</span><span>RECORD OR UPLOAD YOUR VOICE FIRST</span>';
+        blocker.innerHTML = '<span class="mp-snowy-charm-voice__purchase-lock" aria-hidden="true">🔒</span><span>PLEASE COMPLETE CUSTOMISATION FIRST</span>';
         blocker.addEventListener("click", () => setNotice("Please record or choose an audio file before purchasing Snowy Charm."));
         document.body.appendChild(blocker);
         purchaseBlockers.push({ blocker, control });
