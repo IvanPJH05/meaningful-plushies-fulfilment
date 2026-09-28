@@ -66,7 +66,7 @@
           const type = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
           const chunks = []; recorder = new MediaRecorder(stream, { mimeType: type });
           recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
-          recorder.onstop = () => { const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" }); cleanRecording(); setSelectedFile(new File([blob], `snowy-charm-voice-${Date.now()}.webm`, { type: blob.type })); };
+          recorder.onstop = () => { const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" }); cleanRecording(); setSelectedFile(new File([blob], `plush-charm-voice-${Date.now()}.webm`, { type: blob.type })); };
           recorder.start(); recording = true;
           recordTimer = window.setInterval(() => { remaining -= 0.1; const safe = Math.max(0, remaining); recordTime.textContent = `${formatTime(Math.ceil(safe))} left`; recordProgress.style.width = `${((limit - safe) / limit) * 100}%`; }, 100);
           recordLimitTimer = window.setTimeout(stopRecording, limit * 1000);
@@ -101,7 +101,7 @@
       syncPurchaseBlockers();
       try {
         const result = await uploadAudio(file);
-        if (selectedFile === file && selectionVersion === version) { uploaded = result; setProgress(100, "Voice message saved", true); setNotice("Your voice message is saved and ready for Snowy Charm.", true); }
+        if (selectedFile === file && selectionVersion === version) { uploaded = result; setProgress(100, "Voice message saved", true); setNotice("Your voice message is saved and ready for Plush Charm.", true); }
       } catch (error) {
         if (selectedFile === file && selectionVersion === version) { setNotice(error instanceof Error ? error.message : "Could not save your voice message."); }
       } finally {
