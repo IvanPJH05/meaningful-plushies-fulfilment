@@ -73,8 +73,8 @@
         }, 1000);
       } catch { cleanRecording(); setNotice("Please allow microphone access to record your voice message."); }
     };
-    recordChoice.addEventListener("click", () => { if (source !== "record") setSelectedFile(null); setSource("record"); });
-    uploadChoice.addEventListener("click", () => { if (source !== "upload") setSelectedFile(null); setSource("upload"); fileInput.click(); });
+    recordChoice.addEventListener("click", () => { setSource("record"); });
+    uploadChoice.addEventListener("click", () => { setSource("upload"); fileInput.click(); });
     recordButton.addEventListener("click", beginRecording); stopButton.addEventListener("click", stopRecording); cancelButton.addEventListener("click", cleanRecording);
     fileInput.addEventListener("change", () => { setSelectedFile(fileInput.files?.[0] || null); fileInput.value = ""; });
     playButton.addEventListener("click", async () => { if (preview.paused) { setPlayback({ waiting: true }); try { await preview.play(); } catch { setPlayback(); setNotice("This audio could not be played on this device. Please try MP3, MP4/M4A, OGG, WAV, or WebM audio."); } } else preview.pause(); });

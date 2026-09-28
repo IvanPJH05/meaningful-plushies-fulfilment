@@ -57,5 +57,5 @@ form[action*='/cart/add'] [data-mp-snowy-voice-locked] { opacity:.35!important; 
 .mp-snowy-charm-voice__loading i { width:4px; height:4px; border-radius:50%; background:currentColor; animation:mpSnowyDot 1s ease-in-out infinite; }
 .mp-snowy-charm-voice__loading i:nth-child(2) { animation-delay:.14s; }.mp-snowy-charm-voice__loading i:nth-child(3) { animation-delay:.28s; }
 @keyframes mpSnowyDot { 50% { transform:translateY(-3px); opacity:.4; } }
-@media(max-width:420px){.mp-snowy-charm-voice__panel{padding:16px}.mp-snowy-charm-voice__choices{gap:8px}.mp-snowy-charm-voice__choices button{min-height:54px;padding-inline:9px;font-size:.9em}.mp-snowy-charm-voice__purchase-blocker{font-size:.67rem}}
+@media(max-width:420px){.mp-snowy-charm-voice__panel{padding:16px}.mp-snowy-charm-voice__choices{gap:10px}.mp-snowy-charm-voice__choices button{min-height:54px;padding-inline:9px;font-size:.9em}.mp-snowy-charm-voice__purchase-blocker{font-size:.67rem}}
 @media(max-width:320px){.mp-snowy-charm-voice__choices{grid-template-columns:1fr}.mp-snowy-charm-voice__panel{padding:12px}.mp-snowy-charm-voice__preview{gap:7px;padding:7px}.mp-snowy-charm-voice__preview button{min-width:64px}.mp-snowy-charm-voice__preview>span{min-width:0;font-size:.68em}}
