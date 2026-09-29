@@ -541,7 +541,8 @@
       appendOrderProperty("Meaningful Note", details.meaningfulNote);
       const fileName = selectedVoice()?.name || "meaningful-plushie-voice";
       const voiceLink = `${apiUrl}/api/customisation/audio-download?path=${encodeURIComponent(voiceStoragePath)}&filename=${encodeURIComponent(fileName)}`;
-      appendOrderProperty("Meaningful Message", voiceLink);
+      appendOrderProperty("Meaningful Message", "Customised");
+      appendOrderProperty("_meaningful_message_url", voiceLink);
       // Retain the token only as an internal property for recovery/support.
       appendOrderProperty("_customisation_token", token);
     };

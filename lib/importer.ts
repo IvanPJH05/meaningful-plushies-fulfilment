@@ -244,7 +244,7 @@ export function shopifyLinePersonalization(lineItem: unknown): ShopifyPersonaliz
     favouritePerson: shopifyLineAttributeValue(lineItem, ["Favourite Person", "Favorite Person", "Plushie's Favourite Person", "Plushie's Favorite Person"]),
     belongsTo: shopifyLineAttributeValue(lineItem, ["Belongs To", "Plushie Belongs To", "Plushie's Belongs To"]),
     meaningfulNote: shopifyLineAttributeValue(lineItem, ["Meaningful Note", "Note"]),
-    meaningfulMessage: shopifyLineAttributeValue(lineItem, ["Meaningful Message", "Message", "Voice Message"]),
+    meaningfulMessage: shopifyLineAttributeValue(lineItem, ["_meaningful_message_url", "Meaningful Message", "Message", "Voice Message"]),
   };
 }
 
