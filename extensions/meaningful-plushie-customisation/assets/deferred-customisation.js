@@ -18,6 +18,7 @@
     const voiceRecordControl = block.querySelector("[data-voice-record-control]");
     const voiceFeedbackAnchor = block.querySelector("[data-voice-feedback-anchor]");
     const voicePreview = block.querySelector("[data-voice-preview]");
+    const voiceFileName = block.querySelector("[data-voice-file-name]");
     const voiceAudio = block.querySelector("[data-voice-audio]");
     const voicePlayButton = block.querySelector("[data-voice-play]");
     const voicePlayLabel = block.querySelector("[data-voice-play-label]");
@@ -42,8 +43,8 @@
     const voiceProgress = document.createElement("div");
     voiceProgress.className = "mp-deferred-customisation__upload-progress";
     voiceProgress.hidden = true;
-    voiceProgress.style.cssText = "display:grid;gap:6px;margin-top:9px;color:#53798f;font-size:.83em;font-weight:700";
-    voiceProgress.innerHTML = '<div style="display:flex;justify-content:space-between;gap:12px"><span data-upload-status>Preparing upload…</span><strong data-upload-percent>0%</strong></div><div style="height:8px;overflow:hidden;border-radius:999px;background:#dbe8ee"><span data-upload-bar style="display:block;width:0;height:100%;border-radius:inherit;background:#668da4;transition:width .18s ease"></span></div>';
+    voiceProgress.style.cssText = "display:grid;gap:7px;color:#53798f;font-size:.85em;font-weight:700";
+    voiceProgress.innerHTML = '<div style="display:flex;justify-content:space-between;gap:12px"><span data-upload-status>Preparing upload…</span><strong data-upload-percent>0%</strong></div><div style="height:8px;overflow:hidden;border-radius:999px;background:#dbe8ee"><span data-upload-bar style="display:block;width:0;height:100%;border-radius:inherit;background:#7098ae;transition:width .18s ease"></span></div>';
     voiceFeedbackAnchor.insertAdjacentElement("afterend", voiceProgress);
     const voiceProgressStatus = voiceProgress.querySelector("[data-upload-status]");
     const voiceProgressPercent = voiceProgress.querySelector("[data-upload-percent]");
@@ -106,7 +107,11 @@
       voiceUploadControl.hidden = source !== "upload";
       voiceRecordControl.hidden = source !== "record";
     };
-    const updateVoiceLabel = () => { voiceButton.textContent = selectedVoice()?.name || voiceInput.value.split(/[/\\\\]/).pop() || t("uploadVoiceButton"); };
+    const updateVoiceLabel = () => {
+      const fileName = selectedVoice()?.name || voiceInput.value.split(/[/\\\\]/).pop() || "";
+      voiceButton.textContent = fileName || t("uploadVoiceButton");
+      voiceFileName.textContent = fileName;
+    };
     const formatPlaybackTime = (seconds) => Number.isFinite(seconds) ? `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}` : "0:00";
     const setVoicePlaybackUi = ({ playing = false, loading = false } = {}) => {
       voicePlayLabel.textContent = loading ? t("loadingVoice") : playing ? t("pauseVoice") : t("playVoice");
@@ -134,6 +139,7 @@
       voiceAudio.removeAttribute("src");
       voiceAudio.load();
       voicePreview.hidden = true;
+      voiceFileName.textContent = "";
       recordedVoiceFile = null;
       restoredVoiceFile = null;
       voiceInput.value = "";

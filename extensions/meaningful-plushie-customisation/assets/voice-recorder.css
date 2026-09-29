@@ -7,6 +7,9 @@
 
 .mp-deferred-customisation__voice-option,
 .mp-deferred-customisation__record {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   min-height: 60px;
   padding: 12px 18px;
   border: 2px solid #668da4;
@@ -55,6 +58,12 @@
   width: min(100%, 460px);
 }
 
+.mp-deferred-customisation__record,
+.mp-deferred-customisation [data-voice-upload-control] [data-voice-button] {
+  background: #7098ae;
+  color: #fff;
+}
+
 .mp-deferred-customisation [data-voice-upload-control] {
   display: grid;
   gap: 10px;
@@ -72,8 +81,28 @@
 }
 
 .mp-deferred-customisation [data-voice-upload-control] [data-voice-button] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   min-height: 60px;
+  padding: 12px 18px;
+  border: 2px solid #668da4;
   border-radius: 999px;
+  cursor: pointer;
+  text-align: center;
+}
+
+.mp-deferred-customisation__voice-file {
+  min-height: 1.2em;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #53798f;
+  font-size: .9em;
+  font-weight: 700;
+}
+
+.mp-deferred-customisation__voice-file:empty {
+  display: none;
 }
 
 .mp-deferred-customisation__record-dialog {
