@@ -1,12 +1,16 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Order, OrderStatus, UserRole } from "./types";
 
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://joaoirpegnkexmktylop.supabase.co";
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 function adminClient() {
   if (!url || !serviceRoleKey) throw new Error("Mobile fulfilment service is not configured.");
   return createClient(url, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
+}
+
+export function mobileServiceClient() {
+  return adminClient();
 }
 
 export type MobileSession = { token: string; displayName: string; username: string; role: UserRole };

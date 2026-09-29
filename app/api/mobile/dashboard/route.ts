@@ -1,43 +1,37 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { fetchCreatorFreeSamples, fetchCreatorProfiles, fetchManualOrders, fetchPaymentProcessorSettings, fetchSalesFeeSettings } from "../../../../lib/supabase";
-import { summarizeSales } from "../../../../lib/sales";
-import { mobileOrder, requireMobileSession } from "../../../../lib/mobile-api";
-import type { Order } from "../../../../lib/types";
+import { mobileServiceClient, requireMobileSession } from "../../../../lib/mobile-api";
+
+type MobileRow = Record<string, unknown>;
+function text(row: MobileRow, key: string) { return typeof row[key] === "string" ? row[key] : ""; }
+function number(row: MobileRow, key: string) { const value = Number(row[key]); return Number.isFinite(value) ? value : 0; }
 
 export async function GET(request: Request) {
   try {
-    const session = await requireMobileSession(request);
-    const client = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } });
-    // Staff must see the complete fulfilment queue, not only the latest 80.
-    const { data, error } = await client.from("fulfilment_orders").select("data,status,order_number,updated_at").order("updated_at", { ascending: false });
+    await requireMobileSession(request);
+    // The full `data` JSON can include uploaded media. Only extract the small
+    // order fields needed by the phone, so the query is fast and reliable.
+    const { data, error } = await mobileServiceClient()
+      .from("fulfilment_orders")
+      .select("id,status,order_number,updated_at,orderNumber:data->>orderNumber,orderDate:data->>orderDate,customerName:data->>customerName,phone:data->>phone,address:data->>address,plushName:data->>plushName,character:data->>character,product:data->>product,voiceLength:data->>voiceLength,voiceUploadStatus:data->>voiceUploadStatus,salesChannel:data->>salesChannel,paymentProcessor:data->>paymentProcessor,totalAmount:data->>totalAmount,courier:data->>courier,trackingNumber:data->>trackingNumber")
+      .order("updated_at", { ascending: false });
     if (error) throw error;
-    const fullOrders = (data ?? []).map((row) => row.data as Order);
-    const orders = fullOrders.map(mobileOrder);
-    const counts = (data ?? []).reduce<Record<string, number>>((all, row) => ({ ...all, [row.status]: (all[row.status] || 0) + 1 }), {});
-
-    // Reporting is useful, but it must never prevent warehouse staff from
-    // receiving the order queue. These optional existing-system lookups can
-    // be unavailable while a schema upgrade is in progress.
-    const reportingSources = await Promise.allSettled([
-      fetchPaymentProcessorSettings(), fetchSalesFeeSettings(), fetchManualOrders(),
-      session.role === "admin" ? fetchCreatorProfiles(session.token) : Promise.resolve(undefined),
-      session.role === "admin" ? fetchCreatorFreeSamples(session.token) : Promise.resolve([]),
-    ]);
-    const value = <T,>(index: number, fallback: T): T => reportingSources[index]?.status === "fulfilled"
-      ? reportingSources[index].value as T
-      : fallback;
-    const processorSettings = value(0, []);
-    const feeSettings = value(1, { shopifyPercentage: 0 });
-    const manualOrders = value(2, []);
-    const creatorProfiles = value(3, undefined);
-    const creatorSamples = value<{ sampleCode: string }[]>(4, []);
-    const report = summarizeSales(fullOrders, processorSettings, feeSettings.shopifyPercentage, manualOrders, creatorProfiles, creatorSamples.map((sample) => sample.sampleCode));
-    const reportAvailable = reportingSources.every((result) => result.status === "fulfilled");
-    return NextResponse.json({ counts, orders, report, reportAvailable, refreshedAt: new Date().toISOString() });
+    const rows = (data ?? []) as MobileRow[];
+    const orders = rows.map((row) => ({
+      id: text(row, "id"), orderNumber: text(row, "orderNumber") || text(row, "order_number"), orderDate: text(row, "orderDate"),
+      customerName: text(row, "customerName"), phone: text(row, "phone"), address: text(row, "address"), plushName: text(row, "plushName"),
+      character: text(row, "character"), product: text(row, "product"), voiceLength: number(row, "voiceLength"), voiceUploadStatus: text(row, "voiceUploadStatus"),
+      status: text(row, "status"), salesChannel: text(row, "salesChannel") || undefined, paymentProcessor: text(row, "paymentProcessor"), totalAmount: number(row, "totalAmount"),
+      courier: text(row, "courier"), trackingNumber: text(row, "trackingNumber"), updatedAt: text(row, "updated_at"),
+    }));
+    const counts = rows.reduce<Record<string, number>>((all, row) => {
+      const status = text(row, "status");
+      return status ? { ...all, [status]: (all[status] || 0) + 1 } : all;
+    }, {});
+    return NextResponse.json({ counts, orders, refreshedAt: new Date().toISOString() });
   } catch (error) {
     const message = error instanceof Error ? error.message : "DASHBOARD_FAILED";
     return NextResponse.json({ error: message }, { status: message.includes("REQUIRED") ? 401 : 500 });
   }
 }
+
 export function OPTIONS() { return new NextResponse(null, { status: 204 }); }
