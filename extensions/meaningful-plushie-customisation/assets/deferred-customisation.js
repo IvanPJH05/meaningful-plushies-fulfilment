@@ -86,6 +86,7 @@
     let earlySaveTimer = null;
     let savedCompleteNowFingerprint = "";
     let voiceSource = "record";
+    let voicePlayLabelFrame = 0;
 
     const selectedVoice = () => recordedVoiceFile || voiceInput.files?.[0] || restoredVoiceFile || null;
     const audioMimeType = (file) => {
@@ -114,9 +115,18 @@
     };
     const formatPlaybackTime = (seconds) => Number.isFinite(seconds) ? `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}` : "0:00";
     const setVoicePlaybackUi = ({ playing = false, loading = false } = {}) => {
-      voicePlayLabel.textContent = loading ? t("loadingVoice") : playing ? t("pauseVoice") : t("playVoice");
+      const label = playing ? t("pauseVoice") : t("playVoice");
+      if (!loading && voicePlayLabel.textContent !== label) {
+        cancelAnimationFrame(voicePlayLabelFrame);
+        voicePlayLabel.classList.add("is-changing");
+        voicePlayLabelFrame = requestAnimationFrame(() => {
+          voicePlayLabel.textContent = label;
+          voicePlayLabelFrame = requestAnimationFrame(() => voicePlayLabel.classList.remove("is-changing"));
+        });
+      }
       voiceLoading.hidden = !loading;
       voicePlayButton.disabled = loading;
+      voicePlayButton.classList.toggle("is-playing", playing && !loading);
       voicePlayButton.setAttribute("aria-label", loading ? t("loadingVoice") : playing ? t("pauseVoice") : t("playVoice"));
     };
     const updateVoicePreview = () => {
