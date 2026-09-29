@@ -109,7 +109,7 @@
     };
     const updateVoiceLabel = () => {
       const fileName = selectedVoice()?.name || voiceInput.value.split(/[/\\\\]/).pop() || "";
-      voiceButton.textContent = fileName || t("uploadVoiceButton");
+      voiceButton.textContent = t("uploadVoiceButton");
       voiceFileName.textContent = fileName;
     };
     const formatPlaybackTime = (seconds) => Number.isFinite(seconds) ? `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}` : "0:00";

@@ -325,6 +325,4 @@
 
 @media (max-width: 420px) {
   .mp-deferred-customisation__voice-panel { padding: 16px; }
-  .mp-deferred-customisation__voice-preview { grid-template-columns: auto minmax(0, 1fr); }
-  .mp-deferred-customisation__voice-preview > span:last-child { grid-column: 2; }
 }
