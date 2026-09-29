@@ -11,6 +11,15 @@ function adminClient() {
 
 export type MobileSession = { token: string; displayName: string; username: string; role: UserRole };
 
+// Never put attached voice/image files into the app cache. The mobile app only
+// needs the fulfilment fields below to show and process an order.
+export type MobileOrder = Pick<Order, "id" | "orderNumber" | "orderDate" | "customerName" | "phone" | "address" | "plushName" | "character" | "product" | "voiceLength" | "voiceUploadStatus" | "status" | "salesChannel" | "paymentProcessor" | "totalAmount" | "courier" | "trackingNumber" | "updatedAt">;
+
+export function mobileOrder(order: Order): MobileOrder {
+  const { id, orderNumber, orderDate, customerName, phone, address, plushName, character, product, voiceLength, voiceUploadStatus, status, salesChannel, paymentProcessor, totalAmount, courier, trackingNumber, updatedAt } = order;
+  return { id, orderNumber, orderDate, customerName, phone, address, plushName, character, product, voiceLength, voiceUploadStatus, status, salesChannel, paymentProcessor, totalAmount, courier, trackingNumber, updatedAt };
+}
+
 export async function requireMobileSession(request: Request): Promise<MobileSession> {
   const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
   if (!/^[0-9a-f-]{36}$/i.test(token)) throw new Error("SIGN_IN_REQUIRED");
@@ -45,5 +54,5 @@ export async function transitionMobileOrder(orderId: string, fromStatus: OrderSt
   const { data: changed, error } = await client.from("fulfilment_orders").update({ status: toStatus, updated_at: changedAt, data: updated }).eq("id", orderId).eq("status", fromStatus).eq("updated_at", row.updated_at).select("data").maybeSingle();
   if (error) throw error;
   if (!changed) throw new Error("ORDER_CHANGED");
-  return changed.data as Order;
+  return mobileOrder(changed.data as Order);
 }
