@@ -349,11 +349,9 @@
       field.addEventListener("blur", () => { syncPurchaseBlockers(); saveDraft(); });
     });
     selectRecordVoice?.addEventListener("click", () => {
-      if (voiceSource !== "record") clearVoiceSelection();
       setVoiceSource("record");
     });
     selectUploadVoice?.addEventListener("click", () => {
-      if (voiceSource !== "upload") clearVoiceSelection();
       setVoiceSource("upload");
       voiceInput.click();
     });
