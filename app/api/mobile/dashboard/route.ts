@@ -8,12 +8,17 @@ function number(row: MobileRow, key: string) { const value = Number(row[key]); r
 export async function GET(request: Request) {
   try {
     await requireMobileSession(request);
+    const url = new URL(request.url);
+    const page = Math.max(0, Number.parseInt(url.searchParams.get("page") || "0", 10) || 0);
+    const pageSize = Math.min(100, Math.max(1, Number.parseInt(url.searchParams.get("pageSize") || "100", 10) || 100));
+    const from = page * pageSize;
     // The full `data` JSON can include uploaded media. Only extract the small
     // order fields needed by the phone, so the query is fast and reliable.
-    const { data, error } = await mobileServiceClient()
+    const { data, error, count } = await mobileServiceClient()
       .from("fulfilment_orders")
-      .select("id,status,order_number,updated_at,orderNumber:data->>orderNumber,orderDate:data->>orderDate,customerName:data->>customerName,phone:data->>phone,address:data->>address,plushName:data->>plushName,character:data->>character,product:data->>product,voiceLength:data->>voiceLength,voiceUploadStatus:data->>voiceUploadStatus,salesChannel:data->>salesChannel,paymentProcessor:data->>paymentProcessor,totalAmount:data->>totalAmount,courier:data->>courier,trackingNumber:data->>trackingNumber")
-      .order("updated_at", { ascending: false });
+      .select("id,status,order_number,updated_at,orderNumber:data->>orderNumber,orderDate:data->>orderDate,customerName:data->>customerName,phone:data->>phone,address:data->>address,plushName:data->>plushName,character:data->>character,product:data->>product,voiceLength:data->>voiceLength,voiceUploadStatus:data->>voiceUploadStatus,salesChannel:data->>salesChannel,paymentProcessor:data->>paymentProcessor,totalAmount:data->>totalAmount,courier:data->>courier,trackingNumber:data->>trackingNumber", { count: "exact" })
+      .order("updated_at", { ascending: false })
+      .range(from, from + pageSize - 1);
     if (error) throw error;
     const rows = (data ?? []) as MobileRow[];
     const orders = rows.map((row) => ({
@@ -27,7 +32,8 @@ export async function GET(request: Request) {
       const status = text(row, "status");
       return status ? { ...all, [status]: (all[status] || 0) + 1 } : all;
     }, {});
-    return NextResponse.json({ counts, orders, refreshedAt: new Date().toISOString() });
+    const totalCount = Math.max(0, Number(count) || 0);
+    return NextResponse.json({ counts, orders, page, pageSize, totalCount, hasMore: from + orders.length < totalCount, refreshedAt: new Date().toISOString() });
   } catch (error) {
     const message = error instanceof Error ? error.message : "DASHBOARD_FAILED";
     return NextResponse.json({ error: message }, { status: message.includes("REQUIRED") ? 401 : 500 });
