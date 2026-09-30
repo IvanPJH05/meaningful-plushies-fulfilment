@@ -512,15 +512,29 @@ async function applySubmittedSessionToFulfilmentOrder(fulfilmentOrderId: string,
 }
 
 export function customisationSessionIds(order: Record<string, unknown>) {
-  const lineItems = Array.isArray(order.lineItems) ? order.lineItems : [];
-  return lineItems.flatMap((line) => {
-    const item = line && typeof line === "object" ? line as Record<string, unknown> : {};
-    const attributes = Array.isArray(item.customAttributes) ? item.customAttributes : Array.isArray(item.properties) ? item.properties : [];
-    return attributes.flatMap((attribute) => {
-      const value = attribute && typeof attribute === "object" ? attribute as Record<string, unknown> : {};
-      return String(value.key || value.name || "") === "customisation_session_id" && String(value.value || "") ? [String(value.value)] : [];
-    });
+  const lineItems = Array.isArray(order.lineItems)
+    ? order.lineItems
+    : Array.isArray(order.line_items)
+      ? order.line_items
+      : [];
+  const sessionKeys = new Set(["customisation_session_id", "mp_customisation_session_id"]);
+  const idsFromAttributes = (attributes: unknown) => (Array.isArray(attributes) ? attributes : []).flatMap((attribute) => {
+    const value = attribute && typeof attribute === "object" ? attribute as Record<string, unknown> : {};
+    const key = String(value.key || value.name || "").trim().toLowerCase();
+    const id = String(value.value || "").trim();
+    return sessionKeys.has(key) && id ? [id] : [];
   });
+
+  // A line-item property is the preferred link. Cart attributes are a
+  // deliberate fallback for accelerated checkout/theme Ajax flows which can
+  // submit the product before dynamically-added form inputs are serialized.
+  return [...new Set([
+    ...lineItems.flatMap((line) => {
+      const item = line && typeof line === "object" ? line as Record<string, unknown> : {};
+      return idsFromAttributes(item.customAttributes ?? item.custom_attributes ?? item.properties);
+    }),
+    ...idsFromAttributes(order.customAttributes ?? order.custom_attributes ?? order.note_attributes),
+  ])];
 }
 
 /**

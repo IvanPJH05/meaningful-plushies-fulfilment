@@ -154,6 +154,18 @@
       }
     };
     const addProperty = (key, value) => { const name = `properties[${key}]`; let input = form.querySelector(`input[name="${CSS.escape(name)}"]`); if (!input) { input = document.createElement("input"); input.type = "hidden"; input.name = name; form.appendChild(input); } input.value = value; };
+    const saveCartCustomisationReference = async (sessionId) => {
+      // A cart attribute is retained even when an accelerated checkout or the
+      // theme's Ajax handler serializes the product form before its hidden
+      // customisation inputs are picked up.
+      const response = await fetch("/cart/update.js", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ attributes: { mp_customisation_session_id: sessionId } }),
+      });
+      if (!response.ok) throw new Error("Could not link your voice message to the cart. Please try again.");
+    };
     const purchaseControls = () => {
       const paymentWidgets = [...form.querySelectorAll(".shopify-payment-button, shopify-accelerated-checkout, [data-shopify=payment-button]")];
       const buttons = [...form.querySelectorAll("button, input[type='submit']")].filter((control) => (control.form || control.closest("form")) === form && (control.type === "submit" || control.name === "add") && !paymentWidgets.some((widget) => widget.contains(control)));
@@ -198,7 +210,7 @@
       positionPurchaseBlockers();
     };
     let allowNativeAddToCart = false;
-    const submitPurchase = async (submitter) => { if (saving || uploading) return; if (!selectedFile || uploaded?.file !== selectedFile) { syncPurchaseBlockers(); return; } saving = true; clearPurchaseBlockers(); try { const result = uploaded; const audioLink = `${apiUrl}/api/customisation/audio-download?path=${encodeURIComponent(result.voiceStoragePath)}&filename=${encodeURIComponent(selectedFile.name)}`; addProperty("Voice message", "Attached ✓"); addProperty("_meaningful_message_url", audioLink); addProperty("_customisation_token", result.session.token); const buyNow = /buy\s*it\s*now/i.test(submitter?.textContent || ""); const nativeSubmitter = submitter instanceof HTMLButtonElement || submitter instanceof HTMLInputElement ? submitter : null; if (!buyNow && nativeSubmitter && typeof form.requestSubmit === "function") { saving = false; allowNativeAddToCart = true; void clearVoiceDraft(); form.requestSubmit(nativeSubmitter); return; } purchaseControls().forEach((control) => { control.disabled = true; }); if (buyNow) { let returnTo = form.querySelector('input[name="return_to"]'); if (!returnTo) { returnTo = document.createElement("input"); returnTo.type = "hidden"; returnTo.name = "return_to"; form.appendChild(returnTo); } returnTo.value = "/checkout"; } void clearVoiceDraft(); form.submit(); } catch (error) { setNotice(error instanceof Error ? error.message : "Could not save your voice message."); purchaseControls().forEach((control) => { control.disabled = false; }); saving = false; syncPurchaseBlockers(); } };
+    const submitPurchase = async (submitter) => { if (saving || uploading) return; if (!selectedFile || uploaded?.file !== selectedFile) { syncPurchaseBlockers(); return; } saving = true; clearPurchaseBlockers(); try { const result = uploaded; const audioLink = `${apiUrl}/api/customisation/audio-download?path=${encodeURIComponent(result.voiceStoragePath)}&filename=${encodeURIComponent(selectedFile.name)}`; addProperty("Voice message", "Attached ✓"); addProperty("_meaningful_message_url", audioLink); addProperty("_customisation_token", result.session.token); addProperty("customisation_session_id", result.session.sessionId || ""); await saveCartCustomisationReference(result.session.sessionId); const buyNow = /buy\s*it\s*now/i.test(submitter?.textContent || ""); const nativeSubmitter = submitter instanceof HTMLButtonElement || submitter instanceof HTMLInputElement ? submitter : null; if (!buyNow && nativeSubmitter && typeof form.requestSubmit === "function") { saving = false; allowNativeAddToCart = true; void clearVoiceDraft(); form.requestSubmit(nativeSubmitter); return; } purchaseControls().forEach((control) => { control.disabled = true; }); if (buyNow) { let returnTo = form.querySelector('input[name="return_to"]'); if (!returnTo) { returnTo = document.createElement("input"); returnTo.type = "hidden"; returnTo.name = "return_to"; form.appendChild(returnTo); } returnTo.value = "/checkout"; } void clearVoiceDraft(); form.submit(); } catch (error) { setNotice(error instanceof Error ? error.message : "Could not save your voice message."); purchaseControls().forEach((control) => { control.disabled = false; }); saving = false; syncPurchaseBlockers(); } };
     const interceptPurchase = (event) => { const target = event.target instanceof Element ? event.target : null; const purchaseTarget = target && purchaseControls().find((control) => control === target || control.contains(target)); if (!purchaseTarget) return; event.preventDefault(); event.stopImmediatePropagation(); if (!saving) void submitPurchase(purchaseTarget); };
     document.addEventListener("click", interceptPurchase, true); form.addEventListener("submit", (event) => { if (allowNativeAddToCart) { allowNativeAddToCart = false; return; } event.preventDefault(); event.stopImmediatePropagation(); syncPurchaseBlockers(); }, true);
     window.addEventListener("resize", positionPurchaseBlockers);

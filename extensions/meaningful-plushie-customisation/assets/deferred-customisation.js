@@ -546,6 +546,18 @@
       // Retain the token only as an internal property for recovery/support.
       appendOrderProperty("_customisation_token", token);
     };
+    const saveCartCustomisationReference = async (sessionId) => {
+      // Keep a cart-level copy as a fallback for accelerated checkout and
+      // theme Ajax handlers that can serialize the product form before its
+      // dynamically-added line-item properties are included.
+      const response = await fetch("/cart/update.js", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ attributes: { mp_customisation_session_id: sessionId } }),
+      });
+      if (!response.ok) throw new Error("Could not link your customisation to the cart. Please try again.");
+    };
     const request = async (path, options) => {
       const response = await fetch(`${apiUrl}${path}`, options);
       const result = await response.json();
@@ -684,6 +696,7 @@
           }
           appendSessionId(upload.session.sessionId);
           appendCompleteNowProperties(details, upload.voiceStoragePath, upload.session.token);
+          await saveCartCustomisationReference(upload.session.sessionId);
           notice.textContent = t("saved");
         }
         // Preserve the two storefront actions: Add to cart opens the cart,
