@@ -1167,6 +1167,12 @@ function packingSlipOrderLabel(order: Order) {
 function meaningfulMessageLink(order: Order) {
   if (order.salesChannel !== "tiktok") {
     const link = order.meaningfulMessage || "";
+    if (link.startsWith("supabase-storage:")) {
+      const path = link.slice("supabase-storage:".length);
+      if (!path) return "";
+      const fileName = voiceBackupFileName(order, mediaFileExtension(path));
+      return `/api/customisation/audio-download?path=${encodeURIComponent(path)}&filename=${encodeURIComponent(fileName)}`;
+    }
     const downloadName = meaningfulMessageDownloadName(order);
     if (!link || !downloadName) return link;
     try {
@@ -1192,7 +1198,11 @@ function meaningfulMessageDownloadName(order: Order) {
     if (!order.tikTokFileDataUrl && !order.tikTokFileName) return undefined;
     return voiceBackupFileName(order, mediaFileExtension(order.tikTokFileName, order.tikTokFileType, order.tikTokFileDataUrl));
   }
-  if (!/^https?:\/\//i.test(order.meaningfulMessage || "")) return undefined;
+  const storedMessage = order.meaningfulMessage || "";
+  if (storedMessage.startsWith("supabase-storage:")) {
+    return voiceBackupFileName(order, mediaFileExtension(storedMessage.slice("supabase-storage:".length)));
+  }
+  if (!/^https?:\/\//i.test(storedMessage)) return undefined;
   try {
     const messageUrl = new URL(order.meaningfulMessage);
     const uploadedName = messageUrl.searchParams.get("filename") || messageUrl.pathname.split("/").at(-1) || "";

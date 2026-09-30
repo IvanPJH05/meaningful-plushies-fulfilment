@@ -17,7 +17,12 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     if (error) throw error;
     if (!data?.data) return NextResponse.json({ error: "Order not found." }, { status: 404 });
     const order = data.data as Order;
-    const externalVoice = /^https?:\/\//i.test(order.meaningfulMessage || "") ? order.meaningfulMessage : "";
+    const voiceReference = order.meaningfulMessage || "";
+    const externalVoice = /^https?:\/\//i.test(voiceReference) ? voiceReference : "";
+    const storedPath = voiceReference.startsWith("supabase-storage:") ? voiceReference.slice("supabase-storage:".length) : "";
+    const storedVoice = storedPath
+      ? `${new URL(request.url).origin}/api/customisation/audio-download?path=${encodeURIComponent(storedPath)}&filename=${encodeURIComponent(storedPath.split("/").at(-1) || "Voice message")}`
+      : "";
     const embeddedVoice = typeof order.tikTokFileDataUrl === "string" && order.tikTokFileDataUrl.startsWith("data:audio/") ? order.tikTokFileDataUrl : "";
     return NextResponse.json({
       order: mobileOrder(order),
@@ -28,7 +33,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
         remark: order.remark, plushGender: order.plushGender, plushBirthDate: order.plushBirthDate, plushBirthPlace: order.plushBirthPlace,
         plushFavouritePerson: order.plushFavouritePerson, plushBelongsTo: order.plushBelongsTo, certificateCode: order.certificateCode,
         idWebsiteLink: order.idWebsiteLink, shippingMethod: order.shippingMethod, discountCodes: order.discountCodes ?? [],
-        voice: (externalVoice || embeddedVoice) ? { url: externalVoice || embeddedVoice, fileName: order.tikTokFileName || "Voice message" } : null,
+        voice: (externalVoice || storedVoice || embeddedVoice) ? { url: externalVoice || storedVoice || embeddedVoice, fileName: order.tikTokFileName || storedPath.split("/").at(-1) || "Voice message" } : null,
       },
     });
   } catch (error) {
