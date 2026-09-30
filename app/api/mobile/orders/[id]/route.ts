@@ -6,10 +6,14 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   try {
     await requireMobileSession(request);
     const { id } = await context.params;
-    if (!/^[0-9a-f-]{36}$/i.test(id)) return NextResponse.json({ error: "Invalid order." }, { status: 400 });
+    // Fulfilment orders can use Shopify numeric IDs, TikTok IDs, or UUIDs.
+    // The list already returns the database ID, so do not reject valid
+    // non-UUID orders before looking them up.
+    const orderId = decodeURIComponent(id).trim();
+    if (!orderId || orderId.length > 160) return NextResponse.json({ error: "Invalid order." }, { status: 400 });
     // A full row is read only after staff explicitly open one order. This keeps
     // the list fast while preserving every useful customer and payment detail.
-    const { data, error } = await mobileServiceClient().from("fulfilment_orders").select("data").eq("id", id).maybeSingle();
+    const { data, error } = await mobileServiceClient().from("fulfilment_orders").select("data").eq("id", orderId).maybeSingle();
     if (error) throw error;
     if (!data?.data) return NextResponse.json({ error: "Order not found." }, { status: 404 });
     const order = data.data as Order;
