@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { CapacitorBarcodeScanner, CapacitorBarcodeScannerTypeHint } from "@capacitor/barcode-scanner";
+import { Capacitor } from "@capacitor/core";
+import { PushNotifications } from "@capacitor/push-notifications";
 import "./style.css";
 
 const API = "https://meaningful-plushies-fulfilment.vercel.app/api/mobile";
@@ -46,6 +48,52 @@ function App() {
   }
   async function refresh(force = false) { if (!session || (!force && dashboard.savedAt && Date.now() - dashboard.savedAt < CACHE_MAX_AGE)) return; setBusy(true); try { await fetchPage(0, true); } catch (error) { const message = error instanceof Error ? error.message : "Could not load orders."; if (message.includes("REQUIRED")) { localStorage.removeItem(SESSION_KEY); setSession(null); } else setNotice(message); } finally { setBusy(false); } }
   useEffect(() => { void refresh(); }, [session]);
+  useEffect(() => {
+    if (!session || Capacitor.getPlatform() === "web") return;
+    const activeSession = session;
+    let cancelled = false;
+    let registrationListener: Awaited<ReturnType<typeof PushNotifications.addListener>> | undefined;
+    let receivedListener: Awaited<ReturnType<typeof PushNotifications.addListener>> | undefined;
+    let actionListener: Awaited<ReturnType<typeof PushNotifications.addListener>> | undefined;
+
+    async function registerDevice(token: string) {
+      const response = await fetch(`${API}/notifications/register`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${activeSession.token}` },
+        body: JSON.stringify({ token, platform: Capacitor.getPlatform() }),
+      });
+      if (!response.ok) throw new Error("Could not enable notifications on this device.");
+    }
+
+    async function setUpNotifications() {
+      try {
+        registrationListener = await PushNotifications.addListener("registration", (token) => {
+          if (!cancelled) void registerDevice(token.value).catch(() => setNotice("Notifications could not be enabled. Try reopening the app."));
+        });
+        receivedListener = await PushNotifications.addListener("pushNotificationReceived", (notification) => {
+          if (!cancelled) setNotice(notification.body || notification.title || "A new Manual Order was received.");
+        });
+        actionListener = await PushNotifications.addListener("pushNotificationActionPerformed", () => {
+          if (cancelled) return;
+          setWorkspace("manual_orders");
+          void loadManualOrders();
+        });
+        const permission = await PushNotifications.checkPermissions();
+        const result = permission.receive === "prompt" ? await PushNotifications.requestPermissions() : permission;
+        if (result.receive === "granted") await PushNotifications.register();
+      } catch {
+        if (!cancelled) setNotice("Notifications are unavailable on this device.");
+      }
+    }
+
+    void setUpNotifications();
+    return () => {
+      cancelled = true;
+      registrationListener?.remove();
+      receivedListener?.remove();
+      actionListener?.remove();
+    };
+  }, [session?.token]);
   async function login(event: React.FormEvent) { event.preventDefault(); setBusy(true); try { const response = await fetch(`${API}/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username, password }) }); const data = await response.json(); if (!response.ok) throw Error(data.error); setSession(data); save(SESSION_KEY, data); setPassword(""); setNotice(""); } catch (error) { setNotice(error instanceof Error ? error.message : "Unable to sign in."); } finally { setBusy(false); } }
   async function loadMore() { if (!session || loadingMore || !dashboard.hasMore) return; setLoadingMore(true); try { await fetchPage(Math.floor(dashboard.orders.length / PAGE_SIZE), false); } catch (error) { setNotice(error instanceof Error ? error.message : "Could not load more orders."); } finally { setLoadingMore(false); } }
   async function openOrder(id: string) { if (!session) return; setOpening(true); setNotice(""); try { const response = await fetch(`${API}/orders/${id}`, { headers: { authorization: `Bearer ${session.token}` } }); const data = await response.json(); if (!response.ok) throw Error(data.error); setSelected(data); } catch (error) { setNotice(error instanceof Error ? error.message : "Could not open this order."); } finally { setOpening(false); } }

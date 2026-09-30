@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 
 import { createCompleteNowSession, createVoiceUpload, saveSubmittedSession, submittedCustomisationsForSessionIds, type CustomisationForm } from "./customisation";
+import { notifyNewManualOrder } from "./mobile-push-notifications";
 import { shopifyManualOrderCustomerName } from "./manual-order-customer-name";
 import { manualOrderProductByKey } from "./manual-order-products";
 import { normalizeManualOrderPhone, shopifyManualOrderPhone } from "./manual-order-phone";
@@ -365,6 +366,7 @@ export async function submitManualOrderIntake(input: ManualOrderIntakeSubmission
   }).select("*").single();
   if (error || !data) throw new Error(error?.message || "Your details could not be saved.");
   const intake = rowToIntake(data as Record<string, unknown>);
+  await notifyNewManualOrder({ id: intake.id, reference: manualOrderIntakeReference(intake.id), product: intake.productDisplayName });
   return { ...intake, reference: manualOrderIntakeReference(intake.id), whatsAppUrl: collectionWhatsAppUrl(manualOrderIntakeReference(intake.id)) };
 }
 
