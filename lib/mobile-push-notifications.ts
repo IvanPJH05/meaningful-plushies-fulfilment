@@ -2,10 +2,17 @@ import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getMessaging } from "firebase-admin/messaging";
 import { mobileServiceClient } from "./mobile-api";
 
+type FirebaseCredential = { project_id?: string; client_email?: string; private_key?: string };
+
 function firebaseApp() {
-  const projectId = process.env.FIREBASE_PROJECT_ID;
-  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+  const encodedCredential = process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
+  let savedCredential: FirebaseCredential | null = null;
+  if (encodedCredential) {
+    try { savedCredential = JSON.parse(Buffer.from(encodedCredential, "base64").toString("utf8")) as FirebaseCredential; } catch { return null; }
+  }
+  const projectId = savedCredential?.project_id || process.env.FIREBASE_PROJECT_ID;
+  const clientEmail = savedCredential?.client_email || process.env.FIREBASE_CLIENT_EMAIL;
+  const privateKey = (savedCredential?.private_key || process.env.FIREBASE_PRIVATE_KEY)?.replace(/\\n/g, "\n");
   if (!projectId || !clientEmail || !privateKey) return null;
   return getApps()[0] || initializeApp({ credential: cert({ projectId, clientEmail, privateKey }) });
 }
