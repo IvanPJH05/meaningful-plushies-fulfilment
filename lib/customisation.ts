@@ -618,6 +618,9 @@ export async function bindSessionsToOrders(input: { orderId: string; orderNumber
     const certificateCode = certificate?.code || session.certificate_code || "";
     return {
       ...order,
+      // A linked customisation changes the order payload. Mark it as newly
+      // updated so browser and mobile caches retrieve the restored details.
+      updatedAt: now,
       status: submitted ? "new_order" : "awaiting_customisation",
       plushName: submitted ? form.plushName || order.plushName : order.plushName,
       plushGender: submitted ? form.gender || order.plushGender : order.plushGender,
