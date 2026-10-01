@@ -9,9 +9,22 @@ export async function GET(request: Request) {
   try {
     await requireMobileSession(request);
     const url = new URL(request.url);
+    const checkOnly = url.searchParams.get("check") === "1";
     const page = Math.max(0, Number.parseInt(url.searchParams.get("page") || "0", 10) || 0);
     const pageSize = Math.min(100, Math.max(1, Number.parseInt(url.searchParams.get("pageSize") || "100", 10) || 100));
     const from = page * pageSize;
+    if (checkOnly) {
+      const [{ data: latest, error: latestError }, { count, error: countError }] = await Promise.all([
+        mobileServiceClient().from("fulfilment_orders").select("updated_at").order("updated_at", { ascending: false }).limit(1).maybeSingle(),
+        mobileServiceClient().from("fulfilment_orders").select("id", { count: "exact", head: true }),
+      ]);
+      if (latestError) throw latestError;
+      if (countError) throw countError;
+      return NextResponse.json(
+        { totalCount: Math.max(0, Number(count) || 0), latestUpdatedAt: latest?.updated_at || null, checkedAt: new Date().toISOString() },
+        { headers: { "cache-control": "no-store, max-age=0" } },
+      );
+    }
     // The full `data` JSON can include uploaded media. Only extract the small
     // order fields needed by the phone, so the query is fast and reliable.
     const { data, error, count } = await mobileServiceClient()
@@ -33,7 +46,7 @@ export async function GET(request: Request) {
       return status ? { ...all, [status]: (all[status] || 0) + 1 } : all;
     }, {});
     const totalCount = Math.max(0, Number(count) || 0);
-    return NextResponse.json({ counts, orders, page, pageSize, totalCount, hasMore: from + orders.length < totalCount, refreshedAt: new Date().toISOString() });
+    return NextResponse.json({ counts, orders, page, pageSize, totalCount, hasMore: from + orders.length < totalCount, latestUpdatedAt: rows[0]?.updated_at || null, refreshedAt: new Date().toISOString() }, { headers: { "cache-control": "no-store, max-age=0" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "DASHBOARD_FAILED";
     return NextResponse.json({ error: message }, { status: message.includes("REQUIRED") ? 401 : 500 });

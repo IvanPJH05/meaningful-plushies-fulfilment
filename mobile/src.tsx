@@ -7,7 +7,7 @@ import "./style.css";
 
 const API = "https://meaningful-plushies-fulfilment.vercel.app/api/mobile";
 const SESSION_KEY = "meaningful-fulfilment-mobile-session-v1";
-const DASHBOARD_KEY = "meaningful-fulfilment-mobile-dashboard-v2";
+const DASHBOARD_KEY = "meaningful-fulfilment-mobile-dashboard-v3";
 const PAGE_SIZE = 100;
 const CACHE_MAX_AGE = 5 * 60 * 1000;
 const UPDATE_URL = "https://github.com/IvanPJH05/meaningful-plushies-fulfilment/releases/latest/download/app-debug.apk";
@@ -17,7 +17,7 @@ type Session = { token: string; username: string; displayName: string; role: "ad
 type Order = { id: string; orderNumber: string; orderDate: string; customerName: string; phone: string; address: string; plushName: string; status: string; character: string; product: string; voiceLength: number; paymentProcessor: string; totalAmount: number; courier: string; trackingNumber: string };
 type OrderDetails = { email: string; subtotalAmount: number; shippingAmount: number; discountAmount: number; outstandingBalance: number; meaningfulNote: string; plushGender?: string; plushBirthDate?: string; plushBelongsTo?: string; voice: { url: string; fileName: string } | null };
 type Detail = { order: Order; details: OrderDetails };
-type Dashboard = { counts: Record<string, number>; orders: Order[]; totalCount: number; hasMore: boolean; savedAt: number };
+type Dashboard = { counts: Record<string, number>; orders: Order[]; totalCount: number; hasMore: boolean; latestUpdatedAt: string | null; savedAt: number };
 type ManualOrder = { id: string; customerName: string; customerEmail: string; phoneOriginal: string; character: string; productDisplayName: string; shippingAddress: { address1: string; address2?: string; city: string; province: string; zip: string }; paymentReceipts: Array<{ fileName: string; url: string }>; isCod: boolean; status: "awaiting_payment" | "ready_to_create" | "created" | "cancelled"; shopifyOrderName: string; createdAt: string; paymentApprovedAt: string };
 type ManualDetail = { intake: ManualOrder; form: { plushName?: string; gender?: string; birthDate?: string; belongsTo?: string; meaningfulNote?: string } | null; voiceUrl: string; voiceFileName: string };
 type Workspace = "fulfilment" | "manual_orders" | "updates";
@@ -33,21 +33,48 @@ function manualAddress(order: ManualOrder) { const a = order.shippingAddress; re
 function App() {
   const [session, setSession] = useState<Session | null>(() => stored<Session | null>(SESSION_KEY, null));
   const [username, setUsername] = useState(""); const [password, setPassword] = useState("");
-  const [dashboard, setDashboard] = useState<Dashboard>(() => stored<Dashboard>(DASHBOARD_KEY, { counts: {}, orders: [], totalCount: 0, hasMore: false, savedAt: 0 }));
+  const [dashboard, setDashboard] = useState<Dashboard>(() => stored<Dashboard>(DASHBOARD_KEY, { counts: {}, orders: [], totalCount: 0, hasMore: false, latestUpdatedAt: null, savedAt: 0 }));
   const [selected, setSelected] = useState<Detail | null>(null); const [manualDetail, setManualDetail] = useState<ManualDetail | null>(null);
   const [workspace, setWorkspace] = useState<Workspace>("fulfilment"); const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [manualOrders, setManualOrders] = useState<ManualOrder[]>([]);
   const [notice, setNotice] = useState(""); const [busy, setBusy] = useState(false); const [loadingMore, setLoadingMore] = useState(false); const [opening, setOpening] = useState(false);
+  const [updatesAvailable, setUpdatesAvailable] = useState(false); const [pullDistance, setPullDistance] = useState(0);
 
   async function fetchPage(page: number, replace = false) {
     if (!session) return;
-    const response = await fetch(`${API}/dashboard?page=${page}&pageSize=${PAGE_SIZE}`, { headers: { authorization: `Bearer ${session.token}` } });
+    const response = await fetch(`${API}/dashboard?page=${page}&pageSize=${PAGE_SIZE}`, { cache: "no-store", headers: { authorization: `Bearer ${session.token}` } });
     const data = await response.json(); if (!response.ok) throw new Error(data.error);
-    const fresh: Dashboard = { counts: data.counts || {}, orders: replace ? data.orders || [] : [...dashboard.orders, ...(data.orders || [])], totalCount: data.totalCount || 0, hasMore: data.hasMore === true, savedAt: Date.now() };
-    setDashboard(fresh); save(DASHBOARD_KEY, fresh); setNotice("");
+    const fresh: Dashboard = { counts: data.counts || {}, orders: replace ? data.orders || [] : [...dashboard.orders, ...(data.orders || [])], totalCount: data.totalCount || 0, hasMore: data.hasMore === true, latestUpdatedAt: data.latestUpdatedAt || null, savedAt: Date.now() };
+    setDashboard(fresh); save(DASHBOARD_KEY, fresh); setUpdatesAvailable(false); setNotice("");
   }
   async function refresh(force = false) { if (!session || (!force && dashboard.savedAt && Date.now() - dashboard.savedAt < CACHE_MAX_AGE)) return; setBusy(true); try { await fetchPage(0, true); } catch (error) { const message = error instanceof Error ? error.message : "Could not load orders."; if (message.includes("REQUIRED")) { localStorage.removeItem(SESSION_KEY); setSession(null); } else setNotice(message); } finally { setBusy(false); } }
-  useEffect(() => { void refresh(); }, [session]);
+  async function checkForUpdates() {
+    if (!session || document.visibilityState !== "visible") return;
+    try {
+      const response = await fetch(`${API}/dashboard?check=1`, { cache: "no-store", headers: { authorization: `Bearer ${session.token}` } });
+      const data = await response.json();
+      if (!response.ok) return;
+      if ((dashboard.latestUpdatedAt && data.latestUpdatedAt && data.latestUpdatedAt !== dashboard.latestUpdatedAt) || Number(data.totalCount || 0) > dashboard.totalCount) setUpdatesAvailable(true);
+    } catch { /* Existing saved orders remain available when temporarily offline. */ }
+  }
+  useEffect(() => {
+    void refresh();
+    void checkForUpdates();
+    const interval = window.setInterval(() => void checkForUpdates(), 30000);
+    const onVisible = () => { if (document.visibilityState === "visible") void checkForUpdates(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { window.clearInterval(interval); document.removeEventListener("visibilitychange", onVisible); };
+  }, [session?.token, dashboard.latestUpdatedAt, dashboard.totalCount]);
+  useEffect(() => {
+    let startY = 0;
+    const start = (event: TouchEvent) => { if (window.scrollY <= 0 && !busy) startY = event.touches[0]?.clientY || 0; };
+    const move = (event: TouchEvent) => { if (!startY || window.scrollY > 0) return; setPullDistance(Math.min(90, Math.max(0, (event.touches[0]?.clientY || 0) - startY))); };
+    const end = () => { const shouldRefresh = pullDistance >= 56; startY = 0; setPullDistance(0); if (shouldRefresh) void refresh(true); };
+    window.addEventListener("touchstart", start, { passive: true });
+    window.addEventListener("touchmove", move, { passive: true });
+    window.addEventListener("touchend", end, { passive: true });
+    return () => { window.removeEventListener("touchstart", start); window.removeEventListener("touchmove", move); window.removeEventListener("touchend", end); };
+  }, [busy, pullDistance, session?.token]);
   useEffect(() => {
     if (!session || Capacitor.getPlatform() === "web") return;
     const activeSession = session;
@@ -112,7 +139,16 @@ function App() {
   if (manualDetail) return <main><header className="topbar"><div>{picker}<button className="back" onClick={() => setManualDetail(null)}>‹ Back to Manual Orders</button></div><span className="shopify-mark">MP</span></header><div className="detail-title"><div><span className="eyebrow">MANUAL ORDER</span><h1>{manualDetail.intake.customerName || "Customer"}</h1><p>{manualStatus(manualDetail.intake)}</p></div></div><section className="card"><h2>Order</h2><p><strong>{manualDetail.intake.character} · {manualDetail.intake.productDisplayName}</strong><br />Submitted {date(manualDetail.intake.createdAt)}<br />{manualDetail.intake.shopifyOrderName || "Not created in Shopify yet"}</p></section><section className="card"><h2>Customer and delivery</h2><p><strong>{manualDetail.intake.customerName}</strong><br />{manualDetail.intake.phoneOriginal}<br />{manualDetail.intake.customerEmail}</p><p>{manualAddress(manualDetail.intake)}</p></section><section className="card"><h2>Customisation</h2><div className="detail-grid"><div><span>Plush name</span><strong>{manualDetail.form?.plushName || "—"}</strong></div><div><span>Gender</span><strong>{manualDetail.form?.gender || "—"}</strong></div><div><span>Born on</span><strong>{manualDetail.form?.birthDate || "—"}</strong></div><div><span>Belongs to</span><strong>{manualDetail.form?.belongsTo || "—"}</strong></div></div>{manualDetail.form?.meaningfulNote && <p className="note">{manualDetail.form.meaningfulNote}</p>}{manualDetail.voiceUrl && <div className="voice-card"><strong>Voice message</strong><small>{manualDetail.voiceFileName || "Voice message"}</small><audio controls src={manualDetail.voiceUrl} /></div>}</section><section className="card"><h2>Payment</h2><p><strong>{manualStatus(manualDetail.intake)}</strong><br />{manualDetail.intake.paymentApprovedAt ? `Approved ${date(manualDetail.intake.paymentApprovedAt)}` : "No receipt approved yet"}</p>{manualDetail.intake.paymentReceipts.filter((receipt) => !receipt.url.startsWith("manual-order:")).map((receipt) => <a className="receipt-link" key={receipt.url} href={receipt.url} target="_blank" rel="noreferrer">Open receipt: {receipt.fileName || "Receipt"}</a>)}</section>{notice && <p className="error">{notice}</p>}</main>;
   if (workspace === "updates") return <main><header className="topbar"><div>{picker}<p className="eyebrow">MOBILE APP</p><h1>Updates</h1></div><button className="avatar" onClick={signOut}>{session.displayName.slice(0, 1).toUpperCase()}</button></header><section className="card update-card"><span className="update-dot" /><div><h2>Latest mobile app</h2><p>Download the newest version when an update is available.</p></div><a className="update-button" href={UPDATE_URL}>Download and install update</a><small>Android will ask you to confirm installation. Your saved sign-in and order cache stay on your phone.</small></section></main>;
   if (workspace === "manual_orders") return <main><header className="topbar"><div>{picker}<p className="eyebrow">MANUAL ORDERS</p><h1>Payment approvals</h1><p>{manualOrders.length} submissions</p></div><div className="header-actions"><button className="quiet refresh" onClick={() => void loadManualOrders()} disabled={busy}>Refresh</button><button className="avatar" onClick={signOut}>{session.displayName.slice(0, 1).toUpperCase()}</button></div></header><section className="order-list"><div className="list-heading"><h2>Awaiting approval</h2><span>{manualOrders.filter((order) => order.status === "awaiting_payment").length}</span></div>{manualOrders.filter((order) => order.status === "awaiting_payment").map((order) => <button className="order-row" key={order.id} onClick={() => void openManualOrder(order.id)}><div><strong>{order.customerName || "Customer"}</strong><span>{order.character} · {order.productDisplayName}</span><small>{date(order.createdAt)}</small></div><div><span className="status status-awaiting_customisation">Awaiting payment</span><b>›</b></div></button>)}{!manualOrders.some((order) => order.status === "awaiting_payment") && <p className="empty">No orders are awaiting approval.</p>}</section><section className="order-list workspace-section"><div className="list-heading"><h2>Transaction history</h2><span>{manualOrders.filter((order) => order.status !== "awaiting_payment").length}</span></div>{manualOrders.filter((order) => order.status !== "awaiting_payment").map((order) => <button className="order-row" key={order.id} onClick={() => void openManualOrder(order.id)}><div><strong>{order.customerName || "Customer"}</strong><span>{order.shopifyOrderName || order.productDisplayName}</span><small>{order.paymentApprovedAt ? `Approved ${date(order.paymentApprovedAt)}` : date(order.createdAt)}</small></div><div><span className="status status-packed">{manualStatus(order)}</span><b>›</b></div></button>)}</section>{notice && <p className="error">{notice}</p>}</main>;
-  return <main><header className="topbar"><div>{picker}<p className="eyebrow">FULFILMENT</p><h1>Orders</h1><p>{dashboard.orders.length} of {dashboard.totalCount || "…"} orders loaded</p></div><button className="avatar" onClick={signOut}>{session.displayName.slice(0, 1).toUpperCase()}</button></header><div className="metrics"><article><span>New</span><strong>{dashboard.counts.new_order || 0}</strong></article><article><span>In production</span><strong>{dashboard.counts.sent_for_sewing || 0}</strong></article><article><span>Packed</span><strong>{dashboard.counts.packed || 0}</strong></article></div><div className="toolbar"><button className="scan" onClick={scan} disabled={busy}>Scan order</button><button className="quiet refresh" onClick={() => void refresh(true)} disabled={busy}>Refresh</button></div><form className="search" onSubmit={(event) => { event.preventDefault(); void lookup(new FormData(event.currentTarget).get("code") as string); }}><input name="code" placeholder="Search order number" /><button disabled={busy}>Search</button></form><section className="order-list"><div className="list-heading"><h2>All orders</h2><span>{dashboard.totalCount}</span></div>{dashboard.orders.map((order) => <button className="order-row" key={order.id} onClick={() => void openOrder(order.id)}><div><strong>#{order.orderNumber}</strong><span>{order.customerName || "Customer"} · {order.plushName || order.product || "Plushie"}</span><small>{date(order.orderDate)}</small></div><div><span className={`status status-${order.status}`}>{labels[order.status] || order.status}</span><b>›</b></div></button>)}{!dashboard.orders.length && <p className="empty">No saved orders yet. Tap Refresh while connected.</p>}{dashboard.hasMore && <button className="load-more" onClick={() => void loadMore()} disabled={loadingMore}>{loadingMore ? "Loading orders…" : "Load next 100 orders"}</button>}</section>{opening && <div className="loading">Opening order…</div>}{notice && <p className="error">{notice}</p>}</main>;
+  return <main>
+    <div className={`pull-to-refresh ${pullDistance ? "visible" : ""}`} style={{ height: pullDistance }} aria-hidden="true">{pullDistance >= 56 ? "Release to refresh" : "Pull down to refresh"}</div>
+    <header className="topbar"><div>{picker}<p className="eyebrow">FULFILMENT</p><h1>Orders</h1><p>{dashboard.orders.length} of {dashboard.totalCount || "…"} orders loaded</p></div><button className="avatar" onClick={signOut}>{session.displayName.slice(0, 1).toUpperCase()}</button></header>
+    {updatesAvailable && <button className="updates-banner" onClick={() => void refresh(true)} disabled={busy}><span>New orders or changes are ready.</span><strong>{busy ? "Refreshing…" : "Refresh now"}</strong></button>}
+    <div className="metrics"><article><span>New</span><strong>{dashboard.counts.new_order || 0}</strong></article><article><span>In production</span><strong>{dashboard.counts.sent_for_sewing || 0}</strong></article><article><span>Packed</span><strong>{dashboard.counts.packed || 0}</strong></article></div>
+    <div className="toolbar"><button className="scan" onClick={scan} disabled={busy}>Scan order</button><button className="quiet refresh" onClick={() => void refresh(true)} disabled={busy}>{busy ? "Refreshing…" : "Refresh"}</button></div>
+    <form className="search" onSubmit={(event) => { event.preventDefault(); void lookup(new FormData(event.currentTarget).get("code") as string); }}><input name="code" placeholder="Search order number" /><button disabled={busy}>Search</button></form>
+    <section className="order-list"><div className="list-heading"><h2>All orders</h2><span>{dashboard.totalCount}</span></div>{dashboard.orders.map((order) => <button className="order-row" key={order.id} onClick={() => void openOrder(order.id)}><div><strong>#{order.orderNumber}</strong><span>{order.customerName || "Customer"} · {order.plushName || order.product || "Plushie"}</span><small>{date(order.orderDate)}</small></div><div><span className={`status status-${order.status}`}>{labels[order.status] || order.status}</span><b>›</b></div></button>)}{!dashboard.orders.length && <p className="empty">No saved orders yet. Pull down or tap Refresh while connected.</p>}{dashboard.hasMore && <button className="load-more" onClick={() => void loadMore()} disabled={loadingMore}>{loadingMore ? "Loading orders…" : "Load next 100 orders"}</button>}</section>
+    {opening && <div className="loading">Opening order…</div>}{notice && <p className="error">{notice}</p>}
+  </main>;
 }
 
 createRoot(document.getElementById("root")!).render(<App />);
