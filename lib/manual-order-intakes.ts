@@ -57,6 +57,11 @@ export type ManualOrderIntakeDetails = {
   voiceFileName: string;
 };
 
+export type ManualOrderIntakeApproval = ManualOrderIntake & {
+  speakerSeconds: number;
+  amountToCollect: number | null;
+};
+
 export type ManualOrderIntakeSubmission = {
   customerName: string;
   customerEmail: string;
@@ -377,6 +382,34 @@ export async function listManualOrderIntakes() {
   // particular, customer permission changes must not make the list appear
   // empty even though every submission remains safely stored in Supabase.
   return (data || []).map((row) => rowToIntake(row as Record<string, unknown>));
+}
+
+/** Compact data for the approval queue. It deliberately excludes transaction
+ * history and uploaded media, so opening Manual Orders on a phone stays fast. */
+export async function listManualOrderIntakeApprovals(): Promise<ManualOrderIntakeApproval[]> {
+  const { data, error } = await serviceClient().from(TABLE).select("*").eq("status", "awaiting_payment").order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  const intakes = (data || []).map((row) => rowToIntake(row as Record<string, unknown>));
+  const variants = [...new Set(intakes.map(currentVariantIdForIntake).filter(Boolean))];
+  const prices = new Map<string, number>();
+  if (variants.length) {
+    try {
+      const domain = shopDomain();
+      if (domain) {
+        const result = await shopifyGraphql<{ data?: { nodes?: Array<{ id?: string; price?: string }> } }>(domain, `
+          query ManualOrderVariantPrices($ids: [ID!]!) { nodes(ids: $ids) { ... on ProductVariant { id price } } }
+        `, { ids: variants });
+        for (const variant of result?.data?.nodes ?? []) {
+          const price = Number(variant.price);
+          if (variant.id && Number.isFinite(price)) prices.set(variant.id, price);
+        }
+      }
+    } catch { /* The queue must remain usable if Shopify price lookup is briefly unavailable. */ }
+  }
+  return intakes.map((intake) => {
+    const price = prices.get(currentVariantIdForIntake(intake));
+    return { ...intake, speakerSeconds: Number(manualOrderSpeakerSeconds(manualOrderProductByKey(intake.productKey) || { key: intake.productKey, displayName: intake.productDisplayName })) || 0, amountToCollect: price === undefined ? null : price + (intake.shippingRegion === "EAST" ? 20 : 0) };
+  });
 }
 
 export async function getManualOrderIntakeDetails(id: string): Promise<ManualOrderIntakeDetails> {

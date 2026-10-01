@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
-import { approveManualOrderCod, getManualOrderIntakeDetails, listManualOrderIntakes } from "../../../../lib/manual-order-intakes";
+import { approveManualOrderCod, getManualOrderIntakeDetails, listManualOrderIntakeApprovals, listManualOrderIntakes } from "../../../../lib/manual-order-intakes";
 import { requireMobileSession } from "../../../../lib/mobile-api";
 
 export async function GET(request: Request) {
   try {
     const session = await requireMobileSession(request);
     if (session.role !== "admin") return NextResponse.json({ error: "Administrator access is required." }, { status: 403 });
+    const scope = new URL(request.url).searchParams.get("scope");
+    if (scope === "awaiting") return NextResponse.json({ intakes: await listManualOrderIntakeApprovals() }, { headers: { "cache-control": "no-store, max-age=0" } });
+    if (scope === "history") return NextResponse.json({ intakes: (await listManualOrderIntakes()).filter((intake) => intake.status !== "awaiting_payment") }, { headers: { "cache-control": "no-store, max-age=0" } });
     return NextResponse.json({ intakes: await listManualOrderIntakes() });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "MANUAL_ORDERS_FAILED" }, { status: 500 }); }
 }

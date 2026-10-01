@@ -10,6 +10,10 @@ export async function GET(request: Request) {
     await requireMobileSession(request);
     const url = new URL(request.url);
     const checkOnly = url.searchParams.get("check") === "1";
+    const status = url.searchParams.get("status") || "all";
+    const source = url.searchParams.get("source") || "all";
+    const fromDate = url.searchParams.get("from") || "";
+    const toDate = url.searchParams.get("to") || "";
     const page = Math.max(0, Number.parseInt(url.searchParams.get("page") || "0", 10) || 0);
     const pageSize = Math.min(100, Math.max(1, Number.parseInt(url.searchParams.get("pageSize") || "100", 10) || 100));
     const from = page * pageSize;
@@ -27,11 +31,16 @@ export async function GET(request: Request) {
     }
     // The full `data` JSON can include uploaded media. Only extract the small
     // order fields needed by the phone, so the query is fast and reliable.
-    const { data, error, count } = await mobileServiceClient()
+    let query = mobileServiceClient()
       .from("fulfilment_orders")
       .select("id,status,order_number,updated_at,orderNumber:data->>orderNumber,orderDate:data->>orderDate,customerName:data->>customerName,phone:data->>phone,address:data->>address,plushName:data->>plushName,character:data->>character,product:data->>product,voiceLength:data->>voiceLength,voiceUploadStatus:data->>voiceUploadStatus,salesChannel:data->>salesChannel,paymentProcessor:data->>paymentProcessor,totalAmount:data->>totalAmount,courier:data->>courier,trackingNumber:data->>trackingNumber", { count: "exact" })
-      .order("updated_at", { ascending: false })
-      .range(from, from + pageSize - 1);
+      .order("updated_at", { ascending: false });
+    if (status !== "all") query = query.eq("status", status);
+    if (fromDate) query = query.gte("order_date", `${fromDate}T00:00:00.000Z`);
+    if (toDate) query = query.lte("order_date", `${toDate}T23:59:59.999Z`);
+    if (source === "tiktok") query = query.eq("data->>salesChannel", "tiktok");
+    if (source === "shopify") query = query.or("data->>salesChannel.eq.shopify,data->>salesChannel.is.null");
+    const { data, error, count } = await query.range(from, from + pageSize - 1);
     if (error) throw error;
     const rows = (data ?? []) as MobileRow[];
     const orders = rows.map((row) => ({
