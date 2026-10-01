@@ -18,8 +18,11 @@
   },
   "dependencies": {
     "@capacitor/android": "^8.5.2",
+    "@capacitor/background-runner": "^3.0.0",
     "@capacitor/barcode-scanner": "^3.1.2",
     "@capacitor/core": "^8.5.2",
+    "@capacitor/filesystem": "^8.1.3",
+    "@capacitor/preferences": "^8.0.1",
     "@capacitor/push-notifications": "^8.1.2",
     "@pdf-lib/fontkit": "^1.1.1",
     "@prisma/adapter-pg": "^7.8.0",

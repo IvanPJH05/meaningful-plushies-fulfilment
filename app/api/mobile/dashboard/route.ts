@@ -33,7 +33,7 @@ export async function GET(request: Request) {
     // order fields needed by the phone, so the query is fast and reliable.
     let query = mobileServiceClient()
       .from("fulfilment_orders")
-      .select("id,status,order_number,updated_at,orderNumber:data->>orderNumber,orderDate:data->>orderDate,customerName:data->>customerName,phone:data->>phone,address:data->>address,plushName:data->>plushName,character:data->>character,product:data->>product,voiceLength:data->>voiceLength,voiceUploadStatus:data->>voiceUploadStatus,salesChannel:data->>salesChannel,paymentProcessor:data->>paymentProcessor,totalAmount:data->>totalAmount,courier:data->>courier,trackingNumber:data->>trackingNumber", { count: "exact" })
+      .select("id,status,order_number,updated_at,orderNumber:data->>orderNumber,orderDate:data->>orderDate,customerName:data->>customerName,phone:data->>phone,address:data->>address,plushName:data->>plushName,character:data->>character,product:data->>product,voiceLength:data->>voiceLength,voiceUploadStatus:data->>voiceUploadStatus,salesChannel:data->>salesChannel,paymentProcessor:data->>paymentProcessor,totalAmount:data->>totalAmount,courier:data->>courier,trackingNumber:data->>trackingNumber,meaningfulMessage:data->>meaningfulMessage,photoName:data->>photoName,tikTokFileName:data->>tikTokFileName,shippingLabelFileName:data->>shippingLabelFileName", { count: "exact" })
       .order("updated_at", { ascending: false });
     if (status !== "all") query = query.eq("status", status);
     if (fromDate) query = query.gte("order_date", `${fromDate}T00:00:00.000Z`);
@@ -49,6 +49,7 @@ export async function GET(request: Request) {
       character: text(row, "character"), product: text(row, "product"), voiceLength: number(row, "voiceLength"), voiceUploadStatus: text(row, "voiceUploadStatus"),
       status: text(row, "status"), salesChannel: text(row, "salesChannel") || undefined, paymentProcessor: text(row, "paymentProcessor"), totalAmount: number(row, "totalAmount"),
       courier: text(row, "courier"), trackingNumber: text(row, "trackingNumber"), updatedAt: text(row, "updated_at"),
+      offlineMedia: { voice: Boolean(text(row, "meaningfulMessage")), photo: Boolean(text(row, "photoName")), attachment: Boolean(text(row, "tikTokFileName")), shippingLabel: Boolean(text(row, "shippingLabelFileName")) },
     }));
     const counts = rows.reduce<Record<string, number>>((all, row) => {
       const status = text(row, "status");
