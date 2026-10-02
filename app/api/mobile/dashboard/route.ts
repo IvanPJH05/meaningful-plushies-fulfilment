@@ -10,6 +10,7 @@ export async function GET(request: Request) {
     await requireMobileSession(request);
     const url = new URL(request.url);
     const checkOnly = url.searchParams.get("check") === "1";
+    const includeTotal = url.searchParams.get("includeTotal") !== "0";
     const status = url.searchParams.get("status") || "all";
     const source = url.searchParams.get("source") || "all";
     const fromDate = url.searchParams.get("from") || "";
@@ -18,14 +19,10 @@ export async function GET(request: Request) {
     const pageSize = Math.min(100, Math.max(1, Number.parseInt(url.searchParams.get("pageSize") || "100", 10) || 100));
     const from = page * pageSize;
     if (checkOnly) {
-      const [{ data: latest, error: latestError }, { count, error: countError }] = await Promise.all([
-        mobileServiceClient().from("fulfilment_orders").select("updated_at").order("updated_at", { ascending: false }).limit(1).maybeSingle(),
-        mobileServiceClient().from("fulfilment_orders").select("id", { count: "exact", head: true }),
-      ]);
+      const { data: latest, error: latestError } = await mobileServiceClient().from("fulfilment_orders").select("updated_at").order("updated_at", { ascending: false }).limit(1).maybeSingle();
       if (latestError) throw latestError;
-      if (countError) throw countError;
       return NextResponse.json(
-        { totalCount: Math.max(0, Number(count) || 0), latestUpdatedAt: latest?.updated_at || null, checkedAt: new Date().toISOString() },
+        { latestUpdatedAt: latest?.updated_at || null, checkedAt: new Date().toISOString() },
         { headers: { "cache-control": "no-store, max-age=0" } },
       );
     }
@@ -33,7 +30,7 @@ export async function GET(request: Request) {
     // order fields needed by the phone, so the query is fast and reliable.
     let query = mobileServiceClient()
       .from("fulfilment_orders")
-      .select("id,status,order_number,updated_at,orderNumber:data->>orderNumber,orderDate:data->>orderDate,customerName:data->>customerName,phone:data->>phone,address:data->>address,plushName:data->>plushName,character:data->>character,product:data->>product,voiceLength:data->>voiceLength,voiceUploadStatus:data->>voiceUploadStatus,salesChannel:data->>salesChannel,paymentProcessor:data->>paymentProcessor,totalAmount:data->>totalAmount,courier:data->>courier,trackingNumber:data->>trackingNumber,meaningfulMessage:data->>meaningfulMessage,photoName:data->>photoName,tikTokFileName:data->>tikTokFileName,shippingLabelFileName:data->>shippingLabelFileName", { count: "exact" })
+      .select("id,status,order_number,updated_at,orderNumber:data->>orderNumber,orderDate:data->>orderDate,customerName:data->>customerName,phone:data->>phone,address:data->>address,plushName:data->>plushName,character:data->>character,product:data->>product,voiceLength:data->>voiceLength,voiceUploadStatus:data->>voiceUploadStatus,salesChannel:data->>salesChannel,paymentProcessor:data->>paymentProcessor,totalAmount:data->>totalAmount,courier:data->>courier,trackingNumber:data->>trackingNumber,meaningfulMessage:data->>meaningfulMessage,photoName:data->>photoName,tikTokFileName:data->>tikTokFileName,shippingLabelFileName:data->>shippingLabelFileName", includeTotal ? { count: "exact" } : undefined)
       .order("updated_at", { ascending: false });
     if (status !== "all") query = query.eq("status", status);
     if (fromDate) query = query.gte("order_date", `${fromDate}T00:00:00.000Z`);
@@ -55,8 +52,8 @@ export async function GET(request: Request) {
       const status = text(row, "status");
       return status ? { ...all, [status]: (all[status] || 0) + 1 } : all;
     }, {});
-    const totalCount = Math.max(0, Number(count) || 0);
-    return NextResponse.json({ counts, orders, page, pageSize, totalCount, hasMore: from + orders.length < totalCount, latestUpdatedAt: rows[0]?.updated_at || null, refreshedAt: new Date().toISOString() }, { headers: { "cache-control": "no-store, max-age=0" } });
+    const totalCount = includeTotal ? Math.max(0, Number(count) || 0) : null;
+    return NextResponse.json({ counts, orders, page, pageSize, totalCount, hasMore: includeTotal ? from + orders.length < (totalCount ?? 0) : orders.length === pageSize, latestUpdatedAt: rows[0]?.updated_at || null, refreshedAt: new Date().toISOString() }, { headers: { "cache-control": "no-store, max-age=0" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "DASHBOARD_FAILED";
     return NextResponse.json({ error: message }, { status: message.includes("REQUIRED") ? 401 : 500 });
