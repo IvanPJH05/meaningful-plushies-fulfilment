@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { AccountingBankStatementLine, AccountingCategory, AccountingDocument, AccountingLedgerEntry, AccountingTransaction, AiAccountantReview, CommissionStatus, ContentIdeaItem, ContentIdeaReference, ContentPlanItem, CreatorCommission, CreatorPayout, CreatorProfile, CreatorStatus, CreatorTier, DashboardAccount, EnvelopePrintSettings, ManualOrder, MetaCapiLog, MetaCapiSettings, Order, PaymentProcessorSetting, SalesConsumptionMapping, SalesFeeSetting, StockSetting, UserRole, WhatsAppLead } from "./types";
 
 export type DashboardSession = DashboardAccount & { token: string };
@@ -86,8 +86,8 @@ export async function fetchSharedOrders(): Promise<Order[]> {
 // A Shopify webhook or manual refresh only needs the existing rows for that
 // order to preserve its fulfilment status and other staff edits. Avoid loading
 // every historical order (including large media payloads) during a live sale.
-export async function fetchSharedOrdersByOrderNumber(orderNumber: string): Promise<Order[]> {
-  const { data, error } = await requireSupabase()
+export async function fetchSharedOrdersByOrderNumber(orderNumber: string, client: SupabaseClient = requireSupabase()): Promise<Order[]> {
+  const { data, error } = await client
     .from("fulfilment_orders")
     .select("data")
     .eq("order_number", orderNumber);
@@ -205,9 +205,12 @@ export async function syncFulfilmentSalesToMonthlyJournal(orders: Order[]) {
   }
 }
 
-export async function upsertSharedOrders(orders: Order[], options?: { syncSales?: boolean }) {
+export async function upsertSharedOrders(
+  orders: Order[],
+  options?: { syncSales?: boolean },
+  client: SupabaseClient = requireSupabase(),
+) {
   if (!orders.length) return;
-  const client = requireSupabase();
   // The browser cache deliberately excludes inline files. When a cached order
   // is later moved to another fulfilment stage, keep any server-side file
   // instead of treating that lightweight cache entry as a file removal.

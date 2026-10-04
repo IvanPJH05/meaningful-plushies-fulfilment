@@ -36,7 +36,7 @@ export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: strin
 
   const request = useCallback(async (body?: Record<string, unknown>) => {
     const response = await fetch("/api/manual-order-intakes", { method: body ? "POST" : "GET", cache: "no-store", headers: { "Content-Type": "application/json", "x-dashboard-session": sessionToken }, body: body ? JSON.stringify(body) : undefined });
-    const data = await response.json() as { ok?: boolean; intakes?: ManualOrderIntake[]; intake?: ManualOrderIntake; details?: ManualOrderDetails; order?: { shopifyOrderName?: string }; error?: string };
+    const data = await response.json() as { ok?: boolean; intakes?: ManualOrderIntake[]; intake?: ManualOrderIntake; details?: ManualOrderDetails; order?: { shopifyOrderName?: string }; restoration?: { checked: number; restored: number; failed: number }; error?: string };
     if (!response.ok || !data.ok) throw new Error(data.error || "The Manual Order Collection could not be updated.");
     return data;
   }, [sessionToken]);
@@ -93,6 +93,18 @@ export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: strin
       setNotice(`${intake.customerName}'s shipping address was saved to Shopify order ${repaired.order?.shopifyOrderName || ""}.`.trim());
       await load();
     } catch (error) { setNotice(error instanceof Error ? error.message : "The Shopify shipping address could not be saved."); }
+    finally { setBusy(""); }
+  }
+
+  async function restoreFulfilment() {
+    setBusy("restore-fulfilment");
+    try {
+      const result = await request({ action: "restore_fulfilment" });
+      const restoration = result.restoration;
+      if (!restoration) throw new Error("The fulfilment restoration did not return a result.");
+      setNotice(`Fulfilment restored for ${restoration.restored} order${restoration.restored === 1 ? "" : "s"}. ${restoration.failed ? `${restoration.failed} need a retry.` : ""}`.trim());
+      await load();
+    } catch (error) { setNotice(error instanceof Error ? error.message : "The fulfilment restoration could not be completed."); }
     finally { setBusy(""); }
   }
 
@@ -179,7 +191,7 @@ export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: strin
   const tableHead = <thead><tr><th>Reference</th><th>Submitted</th><th>Customer</th><th>Plushie</th><th>Address</th><th>Status</th><th>Receipt & order</th></tr></thead>;
 
   return <section className="card accounting-table-card manual-order-table-card">
-    <div className="manual-order-table-toolbar"><div><h3>Customer collection submissions</h3><p>Approve a payment by attaching its verified receipt. Receipts are stored for your own review.</p></div><div className="manual-order-search-actions"><button className="button secondary" type="button" onClick={() => void load()}>Refresh</button></div></div>
+    <div className="manual-order-table-toolbar"><div><h3>Customer collection submissions</h3><p>Approve a payment by attaching its verified receipt. Receipts are stored for your own review.</p></div><div className="manual-order-search-actions"><button className="button secondary" type="button" disabled={busy === "restore-fulfilment"} onClick={() => void restoreFulfilment()}>{busy === "restore-fulfilment" ? "RESTORING..." : "Restore fulfilment orders"}</button><button className="button secondary" type="button" onClick={() => void load()}>Refresh</button></div></div>
     {notice && <p className="inline-notice">{notice}</p>}
     <section className="manual-order-list-section"><div className="manual-order-list-heading"><h4>Awaiting approval</h4><span>{awaitingApproval.length}</span></div><div className="table-scroll"><table className="orders-table manual-orders-records-table">{tableHead}<tbody>{submissionRows(awaitingApproval, "No orders are waiting for payment approval.")}</tbody></table></div></section>
     <section className="manual-order-list-section"><div className="manual-order-list-heading"><div><h4>Transaction history</h4><small>Review the attached receipt alongside the approval time.</small></div><div className="manual-order-search-actions"><select aria-label="Sort transaction history" value={historySort} onChange={(event) => setHistorySort(event.target.value as typeof historySort)}><option value="approval_desc">Approved: newest</option><option value="approval_asc">Approved: oldest</option></select><span>{paidOrders.length}</span></div></div><div className="table-scroll"><table className="orders-table manual-orders-records-table"><thead><tr><th>Reference</th><th>Approved</th><th>Customer</th><th>Status</th><th>Receipt</th><th>Order actions</th></tr></thead><tbody>{transactionRows(sortedTransactions)}</tbody></table></div></section>
