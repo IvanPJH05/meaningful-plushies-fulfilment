@@ -684,6 +684,17 @@ export async function loginDashboardAccount(username: string, password: string):
   };
 }
 
+export async function refreshDashboardSession(token: string): Promise<DashboardSession | null> {
+  const response = await fetch("/api/dashboard/session", {
+    method: "POST",
+    headers: { "x-dashboard-session": token },
+  });
+  if (response.status === 401) return null;
+  if (!response.ok) throw new Error("Could not refresh your dashboard sign-in.");
+  const result = await response.json() as { session?: DashboardSession };
+  return result.session ?? null;
+}
+
 export async function fetchDashboardAccounts(token: string): Promise<DashboardAccount[]> {
   const { data, error } = await requireSupabase().rpc("dashboard_list_accounts", { p_session_token: token });
   if (error) throw error;

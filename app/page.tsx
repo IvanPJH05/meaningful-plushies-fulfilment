@@ -49,6 +49,7 @@ import {
   fetchStockSettings,
   insertSharedActivity,
   loginDashboardAccount,
+  refreshDashboardSession,
   importCreatorFreeSample,
   saveAccountingDocument,
   saveAccountingBankStatementLine,
@@ -2001,6 +2002,31 @@ export default function Home() {
   }, [session]);
 
   useEffect(() => {
+    const token = session?.token;
+    if (!token) return;
+    let cancelled = false;
+
+    // The session is also saved locally, but refresh its server expiry whenever
+    // this trusted browser opens the dashboard. A temporary network problem must
+    // never turn into an unexpected sign-out.
+    void refreshDashboardSession(token).then((refreshedSession) => {
+      if (cancelled) return;
+      if (!refreshedSession) {
+        removeStored(sessionStorageKey);
+        setSession(null);
+        return;
+      }
+      writeJson(sessionStorageKey, refreshedSession);
+      setSession((current) => current?.token === token ? refreshedSession : current);
+    }).catch(() => {
+      // Keep the saved session available while offline. The dashboard can use
+      // its cached data and will try to renew again on the next app opening.
+    });
+
+    return () => { cancelled = true; };
+  }, [session?.token]);
+
+  useEffect(() => {
     writeJson(uiStorageKey, {
       view: permittedView(view, session?.role),
       query,
@@ -2270,7 +2296,14 @@ export default function Home() {
     }))),
   ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [activity, orders]);
 
-  if (!session) return <Login onLogin={setSession} />;
+  function completeLogin(nextSession: Session) {
+    // Save before updating React state so an immediate deployment reload cannot
+    // race the normal persistence effect and lose a successful sign-in.
+    writeJson(sessionStorageKey, nextSession);
+    setSession(nextSession);
+  }
+
+  if (!session) return <Login onLogin={completeLogin} />;
   const currentSession = session;
 
   function signOut() {
