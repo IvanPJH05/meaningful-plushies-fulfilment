@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 
 import { isPlushCharmOrder } from "@/lib/plush-charm";
 import { fetchSharedOrders, upsertSharedOrders } from "@/lib/supabase";
-import { createCloserOrderLink, isFormattedPlushCharmLink } from "@/src/modules/closer/service";
+import { createCloserOrderLink, isFormattedPlushCharmLink, plushCharmSequenceFromLink } from "@/src/modules/closer/service";
 import { prisma } from "@/src/infrastructure/database/prisma";
 
 export const runtime = "nodejs";
@@ -20,18 +20,28 @@ export async function POST(request: NextRequest) {
   try {
     if (!await requireAdmin(request)) return NextResponse.json({ error: "Administrator access is required." }, { status: 403 });
 
-    const needsLink = (await fetchSharedOrders())
-      .filter(isPlushCharmOrder)
+    const charmOrders = (await fetchSharedOrders()).filter(isPlushCharmOrder);
+    const needsLink = charmOrders
       // Replace the earlier temporary `plush-charm-…` addresses as well, so
       // every Charm uses the staff-friendly yyyy g ccc ID format.
-      .filter((order) => !isFormattedPlushCharmLink(order.idWebsiteLink));
+      .filter((order) => !isFormattedPlushCharmLink(order.idWebsiteLink))
+      .sort((left, right) => String(left.orderDate || left.importedAt || "").localeCompare(String(right.orderDate || right.importedAt || "")));
+
+    // Allocate the running sales number from fulfilment rows already fetched
+    // for this action. This avoids an expensive scan of the media workspace.
+    let nextSequence = Math.max(
+      charmOrders.filter((order) => isFormattedPlushCharmLink(order.idWebsiteLink)).length,
+      ...charmOrders.map((order) => plushCharmSequenceFromLink(order.idWebsiteLink)),
+      0,
+    );
 
     const now = new Date().toISOString();
     const updated = [];
     // Sequential creation avoids a burst of writes against the same Supabase
     // project while still making every historical Charm order available.
     for (const order of needsLink) {
-      updated.push({ ...order, idWebsiteLink: await createCloserOrderLink(order), updatedAt: now });
+      nextSequence += 1;
+      updated.push({ ...order, idWebsiteLink: await createCloserOrderLink(order, nextSequence), updatedAt: now });
     }
     // A link update does not change sales. Skip needless accounting writes.
     await upsertSharedOrders(updated, { syncSales: false });

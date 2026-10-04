@@ -5,8 +5,8 @@ import { isPlushCharmOrder } from "../../../../../lib/plush-charm";
 import { submittedCustomisationForOrder } from "../../../../../lib/customisation";
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
 import { certificateMediaForLineItem, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrderByNumber, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
-import { fetchMetaCapiSettings, fetchSharedOrdersByOrderNumber, insertSharedActivity, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
-import { createCloserOrderLink, isFormattedPlushCharmLink } from "@/src/modules/closer/service";
+import { fetchMetaCapiSettings, fetchSharedOrders, fetchSharedOrdersByOrderNumber, insertSharedActivity, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
+import { createCloserOrderLink, isFormattedPlushCharmLink, nextPlushCharmSequence } from "@/src/modules/closer/service";
 import type { Order } from "../../../../../lib/types";
 
 export const runtime = "nodejs";
@@ -57,9 +57,11 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
     meaningfulNote: submitted.form.meaningfulNote,
     meaningfulMessage: `supabase-storage:${submitted.voiceStoragePath}`,
   } : uploadLiftCertificateFields(shopifyMetafieldValue(fullOrder));
+  const charmSequence = nextPlushCharmSequence((await fetchSharedOrders()).filter(isPlushCharmOrder));
+  let nextSequence = charmSequence;
   const ordersWithOurLinks = await Promise.all(importedOrders.map(async (order) => (
     isPlushCharmOrder(order) && !isFormattedPlushCharmLink(order.idWebsiteLink)
-      ? { ...order, idWebsiteLink: await createCloserOrderLink(order) }
+      ? { ...order, idWebsiteLink: await createCloserOrderLink(order, nextSequence++) }
       : order
   )));
   const certificates = looksLikePersonalizedPlushie(fullOrder)

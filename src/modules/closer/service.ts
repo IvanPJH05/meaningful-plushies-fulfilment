@@ -122,24 +122,21 @@ function plushCharmOrderPrefix(orderNumberValue: string) {
   return digits.slice(-4).padStart(4, "0");
 }
 
-async function nextPlushCharmSequence() {
-  // The final three digits are a running Charm-only sales number. Reading
-  // only the compact Our Link certificate IDs avoids looking through orders
-  // or classic-plushie birth certificates.
-  const { data, error } = await database()
-    .from("closer_app_certificates")
-    .select("certificate_id")
-    // certificate_id is unique/indexed. A bounded numeric range uses that
-    // index, whereas a wildcard length match can scan the complete Our Link
-    // table and time out as the account grows.
-    .gte("certificate_id", "00000000")
-    .lte("certificate_id", "99999999");
-  throwDatabaseError(error);
-  return (data || []).reduce((highest, row) => {
-    const certificateId = String((row as { certificate_id?: unknown }).certificate_id || "");
-    if (!/^\d{8}$/.test(certificateId)) return highest;
-    return Math.max(highest, Number(certificateId.slice(-3)) || 0);
-  }, 0);
+export function plushCharmSequenceFromLink(value: string | undefined) {
+  try {
+    const certificateId = new URL(value || "").searchParams.get("certificate") || "";
+    return /^\d{8}$/.test(certificateId) ? Number(certificateId.slice(-3)) || 0 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function nextPlushCharmSequence(orders: Array<{ idWebsiteLink?: string }>) {
+  return Math.max(
+    orders.length,
+    ...orders.map((order) => plushCharmSequenceFromLink(order.idWebsiteLink)),
+    0,
+  ) + 1;
 }
 
 /**
@@ -147,13 +144,14 @@ async function nextPlushCharmSequence() {
  * original four-digit order number, one random digit, then a Charm-only
  * three-digit running sales number.
  */
-export async function createCloserOrderLink(order: { id: string; orderNumber: string }) {
+export async function createCloserOrderLink(order: { id: string; orderNumber: string }, charmSequence: number) {
   if (!String(order.id || "").trim()) throw new CloserError("This order needs a valid ID before an Our Link can be created.");
   const prefix = plushCharmOrderPrefix(order.orderNumber);
-  let sequence = await nextPlushCharmSequence();
+  const sequence = Math.trunc(charmSequence);
+  if (sequence < 1 || sequence > 999) throw new CloserError("This Plush Charm needs a sales number from 001 to 999 before an Our Link can be created.");
 
-  for (; sequence < 999; sequence += 1) {
-    const charmOrderNumber = String(sequence + 1).padStart(3, "0");
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const charmOrderNumber = String(sequence).padStart(3, "0");
     const certificateId = `${prefix}${randomInt(0, 10)}${charmOrderNumber}`;
     const accessKey = randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, "").slice(0, 16);
     try {
