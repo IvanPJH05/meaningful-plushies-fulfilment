@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { shopifyOrderToFulfilmentOrders } from "@/lib/importer";
-import { fetchShopifyOrdersCreatedSince, shopifyMetafieldValue, textValue } from "@/lib/shopify-orders";
-import { fetchSharedOrders, insertSharedActivity, syncCreatorCommissions, upsertSharedOrders } from "@/lib/supabase";
+import { cleanShopifyOrderNumber, fetchShopifyOrdersCreatedSince, shopifyMetafieldValue, textValue } from "@/lib/shopify-orders";
+import { fetchSharedOrdersByOrderNumber, insertSharedActivity, syncCreatorCommissions, upsertSharedOrders } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 
@@ -19,21 +19,28 @@ export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({})) as { date?: string };
     const date = /^\d{4}-\d{2}-\d{2}$/.test(body.date || "") ? body.date as string : malaysiaDate();
-    const [existing, recentShopifyOrders] = await Promise.all([
-      fetchSharedOrders(),
-      fetchShopifyOrdersCreatedSince(date, request),
-    ]);
+    const recentShopifyOrders = await fetchShopifyOrdersCreatedSince(date, request);
     const startOfDay = Date.parse(`${date}T00:00:00+08:00`);
     const shopifyOrders = recentShopifyOrders.filter((order) => {
       const createdAt = Date.parse(textValue(order.createdAt));
       return Number.isFinite(createdAt) && createdAt >= startOfDay;
     });
-    const imported = shopifyOrders.flatMap((order) => shopifyOrderToFulfilmentOrders(
-      order,
-      shopifyMetafieldValue(order),
-      existing,
-      "Shopify catch-up",
-    ));
+    // A recovery must not read every historical fulfilment payload. Those rows
+    // can contain uploaded media, which is slow and needlessly consumes the
+    // database's Disk IO budget. Compare each recent Shopify order only with
+    // its own existing fulfilment row, preserving staff edits as before.
+    const imported = [];
+    for (const order of shopifyOrders) {
+      const orderNumber = cleanShopifyOrderNumber(textValue(order.name));
+      if (!orderNumber) continue;
+      const existing = await fetchSharedOrdersByOrderNumber(orderNumber);
+      imported.push(...shopifyOrderToFulfilmentOrders(
+        order,
+        shopifyMetafieldValue(order),
+        existing,
+        "Shopify catch-up",
+      ));
+    }
 
     if (imported.length) {
       await upsertSharedOrders(imported);
