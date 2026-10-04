@@ -6,7 +6,7 @@ import { submittedCustomisationForOrder } from "../../../../../lib/customisation
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
 import { certificateMediaForLineItem, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrderByNumber, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
 import { fetchMetaCapiSettings, fetchSharedOrdersByOrderNumber, insertSharedActivity, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
-import { createCloserOrderLink, isOurLinkUrl } from "@/src/modules/closer/service";
+import { createCloserOrderLink, isFormattedPlushCharmLink } from "@/src/modules/closer/service";
 import type { Order } from "../../../../../lib/types";
 
 export const runtime = "nodejs";
@@ -58,8 +58,8 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
     meaningfulMessage: `supabase-storage:${submitted.voiceStoragePath}`,
   } : uploadLiftCertificateFields(shopifyMetafieldValue(fullOrder));
   const ordersWithOurLinks = await Promise.all(importedOrders.map(async (order) => (
-    isPlushCharmOrder(order) && !isOurLinkUrl(order.idWebsiteLink)
-      ? { ...order, idWebsiteLink: await createCloserOrderLink(order.id) }
+    isPlushCharmOrder(order) && !isFormattedPlushCharmLink(order.idWebsiteLink)
+      ? { ...order, idWebsiteLink: await createCloserOrderLink(order) }
       : order
   )));
   const certificates = looksLikePersonalizedPlushie(fullOrder)

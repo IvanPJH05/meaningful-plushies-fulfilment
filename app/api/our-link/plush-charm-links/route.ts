@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 
 import { isPlushCharmOrder } from "@/lib/plush-charm";
 import { fetchSharedOrders, upsertSharedOrders } from "@/lib/supabase";
-import { createCloserOrderLink, isOurLinkUrl } from "@/src/modules/closer/service";
+import { createCloserOrderLink, isFormattedPlushCharmLink } from "@/src/modules/closer/service";
 import { prisma } from "@/src/infrastructure/database/prisma";
 
 export const runtime = "nodejs";
@@ -22,14 +22,16 @@ export async function POST(request: NextRequest) {
 
     const needsLink = (await fetchSharedOrders())
       .filter(isPlushCharmOrder)
-      .filter((order) => !isOurLinkUrl(order.idWebsiteLink));
+      // Replace the earlier temporary `plush-charm-…` addresses as well, so
+      // every Charm uses the staff-friendly yyyy g ccc ID format.
+      .filter((order) => !isFormattedPlushCharmLink(order.idWebsiteLink));
 
     const now = new Date().toISOString();
     const updated = [];
     // Sequential creation avoids a burst of writes against the same Supabase
     // project while still making every historical Charm order available.
     for (const order of needsLink) {
-      updated.push({ ...order, idWebsiteLink: await createCloserOrderLink(order.id), updatedAt: now });
+      updated.push({ ...order, idWebsiteLink: await createCloserOrderLink(order), updatedAt: now });
     }
     // A link update does not change sales. Skip needless accounting writes.
     await upsertSharedOrders(updated, { syncSales: false });

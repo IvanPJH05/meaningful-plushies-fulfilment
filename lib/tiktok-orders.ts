@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+import { isPlushCharmOrder } from "./plush-charm.ts";
 import type { Order, OrderStatus } from "./types";
 
 let cachedKnownOrderCount = 0;
@@ -230,8 +231,9 @@ export function tiktokApiOrderToFulfilmentOrder(apiOrder: Record<string, unknown
   const timestamp = new Date().toISOString();
   const assignedNumber = nextTikTokOrderNumber(existing, tikTokOrderId);
   const displayOrderNumber = `${assignedNumber} ${tikTokOrderId}`;
-  const code = current?.certificateCode || tikTokCertificateCode(assignedNumber, tikTokOrderId);
   const product = productInfo(apiOrder);
+  const plushCharm = isPlushCharmOrder({ product: product.product, productType: current?.productType || "", remark: "" });
+  const code = current?.certificateCode || tikTokCertificateCode(assignedNumber, tikTokOrderId);
   const shipping = shippingInfo(apiOrder);
   const discount = discountAmount(apiOrder);
   const total = totalAmount(apiOrder);
@@ -264,10 +266,12 @@ export function tiktokApiOrderToFulfilmentOrder(apiOrder: Record<string, unknown
     product: product.product || current?.product || "TikTok Shop Order",
     character: product.character || current?.character || "",
     setIndicator: current?.setIndicator || "",
-    idWebsiteLink: certificateLink(code),
+    // Charm orders use Our Link. Keep the stored Our Link through subsequent
+    // TikTok syncs instead of reconstructing a classic birth certificate.
+    idWebsiteLink: plushCharm ? current?.idWebsiteLink || "" : certificateLink(code),
     voiceLength: product.voiceLength || current?.voiceLength || 0,
     plushName: current?.plushName || "",
-    certificateCode: code,
+    certificateCode: plushCharm ? "" : code,
     meaningfulNote: current?.meaningfulNote || "",
     meaningfulMessage: current?.meaningfulMessage || "",
     remark: username ? `TikTok Shop username: ${username}` : current?.remark || "TikTok Shop order synced. Add plushie details manually.",

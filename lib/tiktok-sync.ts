@@ -1,6 +1,8 @@
 import { fetchSharedOrders, insertSharedActivity, upsertSharedOrders } from "./supabase";
+import { isPlushCharmOrder } from "./plush-charm";
 import { fetchTikTokOrderDetails, tiktokApiOrderToFulfilmentOrder, tiktokOrderIdFromValue } from "./tiktok-orders";
 import type { Order } from "./types";
+import { createCloserOrderLink, isFormattedPlushCharmLink } from "@/src/modules/closer/service";
 
 function comparableOrder(order: Order) {
   return { ...order, updatedAt: "" };
@@ -14,9 +16,18 @@ export async function syncTikTokOrdersByIds(orderIds: string[], actor = "TikTok 
 
   const existing = await fetchSharedOrders();
   const apiOrders = await fetchTikTokOrderDetails(uniqueOrderIds);
-  const syncedOrders = apiOrders
+  let syncedOrders = apiOrders
     .map((order) => tiktokApiOrderToFulfilmentOrder(order, existing, actor))
     .filter(Boolean) as Order[];
+
+  // TikTok mapping is deliberately synchronous. Add the server-only Our Link
+  // after conversion so a Charm receives its yyyy g ccc ID without ever
+  // entering the classic birth-certificate flow.
+  syncedOrders = await Promise.all(syncedOrders.map(async (order) => (
+    isPlushCharmOrder(order) && !isFormattedPlushCharmLink(order.idWebsiteLink)
+      ? { ...order, certificateCode: "", idWebsiteLink: await createCloserOrderLink(order) }
+      : order
+  )));
 
   const previousById = new Map(existing.map((order) => [order.id, order]));
   const changedOrders = syncedOrders.filter((order) => {

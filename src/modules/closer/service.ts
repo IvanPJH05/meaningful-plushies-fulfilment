@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
@@ -103,28 +103,68 @@ export function isOurLinkUrl(value: string | undefined) {
   }
 }
 
-/**
- * Creates a private Our Link address for one Plush Charm order. The order ID
- * is part of the certificate ID so a webhook retry cannot create duplicates.
- */
-export async function createCloserOrderLink(orderIdValue: string) {
-  const orderId = String(orderIdValue).replace(/[^A-Za-z0-9_-]/g, "-").slice(0, 80);
-  if (!orderId) throw new CloserError("This order needs a valid ID before an Our Link can be created.");
-  const certificateId = `plush-charm-${orderId}`;
-  const accessKey = randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, "").slice(0, 16);
+export function isFormattedPlushCharmLink(value: string | undefined) {
   try {
-    await createCloserCertificate(certificateId, accessKey);
-  } catch (error) {
-    // The link may have been created by a previous webhook attempt before the
-    // order record saved. Rotate to a new key so this retry returns a usable
-    // link instead of failing or creating a second certificate.
-    if (!await certificateById(certificateId)) throw error;
-    await rotateCloserCertificateAccessKey(certificateId, accessKey);
+    const url = new URL(value || "");
+    return isOurLinkUrl(value) && /^\d{8}$/.test(url.searchParams.get("certificate") || "");
+  } catch {
+    return false;
   }
-  const url = new URL(customerSpaceUrl);
-  url.searchParams.set("certificate", certificateId);
-  url.searchParams.set("key", accessKey);
-  return url.toString();
+}
+
+function plushCharmOrderPrefix(orderNumberValue: string) {
+  const orderNumber = String(orderNumberValue || "");
+  // TikTok display numbers are kept as “TT1234 <TikTok ID>”. Only the four
+  // digits immediately after TT are the original order number for Our Link.
+  const tikTok = orderNumber.match(/\bTT(\d{4,})\b/i)?.[1];
+  const digits = tikTok || orderNumber.replace(/\D/g, "");
+  if (!digits) throw new CloserError("This Plush Charm needs an order number before an Our Link can be created.");
+  return digits.slice(-4).padStart(4, "0");
+}
+
+async function nextPlushCharmSequence() {
+  // The final three digits are a running Charm-only sales number. Reading
+  // only the compact Our Link certificate IDs avoids looking through orders
+  // or classic-plushie birth certificates.
+  const { data, error } = await database()
+    .from("closer_app_certificates")
+    .select("certificate_id")
+    .like("certificate_id", "________");
+  throwDatabaseError(error);
+  return (data || []).reduce((highest, row) => {
+    const certificateId = String((row as { certificate_id?: unknown }).certificate_id || "");
+    if (!/^\d{8}$/.test(certificateId)) return highest;
+    return Math.max(highest, Number(certificateId.slice(-3)) || 0);
+  }, 0);
+}
+
+/**
+ * Creates a private Our Link address in the format yyyy g ccc:
+ * original four-digit order number, one random digit, then a Charm-only
+ * three-digit running sales number.
+ */
+export async function createCloserOrderLink(order: { id: string; orderNumber: string }) {
+  if (!String(order.id || "").trim()) throw new CloserError("This order needs a valid ID before an Our Link can be created.");
+  const prefix = plushCharmOrderPrefix(order.orderNumber);
+  let sequence = await nextPlushCharmSequence();
+
+  for (; sequence < 999; sequence += 1) {
+    const charmOrderNumber = String(sequence + 1).padStart(3, "0");
+    const certificateId = `${prefix}${randomInt(0, 10)}${charmOrderNumber}`;
+    const accessKey = randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, "").slice(0, 16);
+    try {
+      await createCloserCertificate(certificateId, accessKey);
+      const url = new URL(customerSpaceUrl);
+      url.searchParams.set("certificate", certificateId);
+      url.searchParams.set("key", accessKey);
+      return url.toString();
+    } catch (error) {
+      // A webhook retry or a simultaneous order may have reserved this exact
+      // ID. Move to the next Charm number; never overwrite an existing link.
+      if (!await certificateById(certificateId)) throw error;
+    }
+  }
+  throw new CloserError("The Plush Charm order counter has reached 999. Please contact support before creating another Our Link.", 409);
 }
 
 function previewSigningKey() {

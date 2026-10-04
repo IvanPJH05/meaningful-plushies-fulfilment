@@ -7,7 +7,7 @@ import { bindSessionsToOrders, customisationSessionIds, submittedCustomisationsF
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
 import { certificateMediaForLineItem, certificateMetaobjectForOrder, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrder, flowCertificateCode, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
 import { fetchMetaCapiSettings, fetchSharedOrdersByOrderNumber, insertSharedActivity, markManualOrderUsedByDiscountCode, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
-import { createCloserOrderLink, isOurLinkUrl } from "@/src/modules/closer/service";
+import { createCloserOrderLink, isFormattedPlushCharmLink } from "@/src/modules/closer/service";
 
 export const runtime = "nodejs";
 
@@ -120,8 +120,8 @@ export async function POST(request: Request) {
     // never a birth certificate. Classic plushies continue through the
     // certificate flow below without any change.
     ordersToSave = await Promise.all(ordersToSave.map(async (order) => (
-      isPlushCharmOrder(order) && !isOurLinkUrl(order.idWebsiteLink)
-        ? { ...order, idWebsiteLink: await createCloserOrderLink(order.id) }
+      isPlushCharmOrder(order) && !isFormattedPlushCharmLink(order.idWebsiteLink)
+        ? { ...order, idWebsiteLink: await createCloserOrderLink(order) }
         : order
     )));
     const createdAt = textValue(fullOrder.createdAt) || new Date().toISOString();
