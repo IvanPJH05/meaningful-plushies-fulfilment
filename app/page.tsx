@@ -49,6 +49,7 @@ import {
   fetchStockSettings,
   insertSharedActivity,
   loginDashboardAccount,
+  refreshDashboardSession,
   importCreatorFreeSample,
   saveAccountingDocument,
   saveAccountingBankStatementLine,
@@ -101,13 +102,14 @@ type View =
   | "monthly_journal_inbox" | "monthly_journal_import" | "monthly_journal_shopee" | "monthly_journal_shortcuts" | "monthly_journal_source_documents" | "monthly_journal_general_journal" | "monthly_journal_reports" | "monthly_journal_accounts" | "monthly_journal_account_activity"
   | "content_dashboard" | "content_plan" | "content_ideas"
   | "manual_orders_dashboard" | "manual_orders_preorders" | "manual_orders_leads"
-  | "creator_dashboard" | "creator_accounts" | "creator_sales" | "creator_commissions" | "creator_payouts" | "creator_analytics" | "creator_free_samples" | "shopify_app" | "audio_scanner";
+  | "creator_dashboard" | "creator_accounts" | "creator_sales" | "creator_commissions" | "creator_payouts" | "creator_analytics" | "creator_free_samples" | "plush_charm_orders" | "shopify_app" | "audio_scanner";
 type Workspace = "fulfilment" | "manual_orders" | "accounting" | "formal_accounting" | "monthly_journal" | "creator" | "inventory" | "reports" | "content" | "settings" | "shopify_app" | "audio_scanner";
 type SalesRange = "active" | "today" | "7d" | "30d" | "lifetime";
 type SortKey = "orderNumber" | "importedAt" | "updatedAt";
 type SortDirection = "asc" | "desc";
 type SortChoice = `${SortKey}:${SortDirection}`;
 type SourceFilter = "all" | "shopify" | "tiktok" | "whatsapp";
+type PackingProductFilter = "all" | "classic_plushies" | "plush_charms";
 type CollectedMetric = "bankTransfer" | "stripeCollected" | "xenditCollected" | "totalCollected";
 type DiscountMetric = "productDiscounted" | "shippingDiscounted";
 type FeeMetric = "processingFees" | "shopifyFees" | "totalFees";
@@ -147,6 +149,7 @@ type StoredUiPreferences = {
   query?: string;
   statusFilter?: "all" | OrderStatus;
   packingStatusFilter?: "all" | OrderStatus;
+  packingProductFilter?: PackingProductFilter;
   envelopeStatusFilter?: "all" | OrderStatus;
   tikTokStatusFilter?: "all" | OrderStatus;
   sourceFilter?: SourceFilter;
@@ -628,7 +631,7 @@ const manualOrderViews: readonly View[] = ["manual_orders_dashboard", "manual_or
 const manualOrderCharacters = ["Billy", "Tootsie", "Hunnie", "Dragon Warrior"] as const;
 const creatorViews: readonly View[] = ["creator_dashboard", "creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
 const creatorAdminViews: readonly View[] = ["creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
-const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "meta_capi", "stock", "sales_report", "shopify_app", "audio_scanner", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...creatorViews];
+const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "meta_capi", "stock", "sales_report", "plush_charm_orders", "shopify_app", "audio_scanner", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...creatorViews];
 const adminOnlyViews = new Set<View>(["history", "settings", "meta_capi", "stock", "sales_report", "shopify_app", "audio_scanner", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...creatorAdminViews]);
 const workspaceDefaultViews: Record<Workspace, View> = {
   fulfilment: "orders",
@@ -641,7 +644,7 @@ const workspaceDefaultViews: Record<Workspace, View> = {
   reports: "sales_report",
   content: "content_dashboard",
   settings: "settings",
-  shopify_app: "shopify_app",
+  shopify_app: "plush_charm_orders",
   audio_scanner: "audio_scanner",
 };
 const workspaceLabels: Record<Workspace, string> = {
@@ -655,11 +658,12 @@ const workspaceLabels: Record<Workspace, string> = {
   reports: "Reports",
   content: "Content Plan",
   settings: "Settings",
-  shopify_app: "Shopify App",
+  shopify_app: "Our Link",
   audio_scanner: "Audio Scanner",
 };
 const orderStatusFilterValues = ["all", ...orderStatuses] as const;
 const sourceFilterValues = ["all", "shopify", "tiktok", "whatsapp"] as const;
+const packingProductFilterValues = ["all", "classic_plushies", "plush_charms"] as const;
 const dashboardMetricValues = ["total", ...orderStatuses] as const;
 const salesRangeValues = ["active", "today", "7d", "30d", "lifetime"] as const;
 const collectedMetricValues = ["bankTransfer", "stripeCollected", "xenditCollected", "totalCollected"] as const;
@@ -870,7 +874,11 @@ const contentNavItems: NavItem[] = [
   { view: "content_plan", label: "Planned Content", icon: "calendar" },
   { view: "content_ideas", label: "Idea Brainstorming", icon: "idea" },
 ];
-const shopifyAppNavItems: NavItem[] = [{ view: "shopify_app", label: "Closer Certificates", icon: "settings" }];
+const shopifyAppNavItems: NavItem[] = [
+  { view: "plush_charm_orders", label: "Plush Charm Orders", icon: "fulfilment" },
+  { view: "shopify_app", label: "Our Link Settings", icon: "settings" },
+];
+const shopifyCharmStaffNavItems: NavItem[] = [{ view: "plush_charm_orders", label: "Plush Charm Orders", icon: "fulfilment" }];
 const manualOrderNavItems: NavItem[] = [
   { view: "manual_orders_dashboard", label: "Manual Orders", icon: "orders" },
   { view: "manual_orders_preorders", label: "Preorders", icon: "cash" },
@@ -1167,6 +1175,12 @@ function packingSlipOrderLabel(order: Order) {
 function meaningfulMessageLink(order: Order) {
   if (order.salesChannel !== "tiktok") {
     const link = order.meaningfulMessage || "";
+    if (link.startsWith("supabase-storage:")) {
+      const path = link.slice("supabase-storage:".length);
+      if (!path) return "";
+      const fileName = voiceBackupFileName(order, mediaFileExtension(path));
+      return `/api/customisation/audio-download?path=${encodeURIComponent(path)}&filename=${encodeURIComponent(fileName)}`;
+    }
     const downloadName = meaningfulMessageDownloadName(order);
     if (!link || !downloadName) return link;
     try {
@@ -1192,7 +1206,11 @@ function meaningfulMessageDownloadName(order: Order) {
     if (!order.tikTokFileDataUrl && !order.tikTokFileName) return undefined;
     return voiceBackupFileName(order, mediaFileExtension(order.tikTokFileName, order.tikTokFileType, order.tikTokFileDataUrl));
   }
-  if (!/^https?:\/\//i.test(order.meaningfulMessage || "")) return undefined;
+  const storedMessage = order.meaningfulMessage || "";
+  if (storedMessage.startsWith("supabase-storage:")) {
+    return voiceBackupFileName(order, mediaFileExtension(storedMessage.slice("supabase-storage:".length)));
+  }
+  if (!/^https?:\/\//i.test(storedMessage)) return undefined;
   try {
     const messageUrl = new URL(order.meaningfulMessage);
     const uploadedName = messageUrl.searchParams.get("filename") || messageUrl.pathname.split("/").at(-1) || "";
@@ -1262,6 +1280,33 @@ function packingSlipRemark(order: Order) {
   return order.remark?.trim() || "-";
 }
 
+function isPlushCharm(order: Pick<Order, "product" | "productType" | "remark">) {
+  if (["plush_charm", "snowy_charm"].includes(String(order.productType || "").toLowerCase())) return true;
+  // Existing orders were created before the explicit marker existed. Their
+  // Shopify line title remains a dependable way to keep them separated.
+  return /\b(?:snowy\s+)?plush\s*charm\b/i.test(`${order.product || ""} ${order.remark || ""}`);
+}
+
+function plushCharmCharacter(order: Pick<Order, "product" | "productType" | "remark" | "character">) {
+  if (!isPlushCharm(order)) return "";
+  // The leading code belongs to the Plush Charm product only. Resolve it
+  // before using saved data so P/R/B can never turn a charm into Billy.
+  const code = order.product.match(/^\s*\(\s*([PRB])\s*,\s*\d+\s*S\s*\)/i)?.[1]?.toUpperCase();
+  if (code === "P") return "PENNY";
+  if (code === "R") return "RENNY";
+  if (code === "B") return "BENNY";
+  return order.character || "";
+}
+
+function displayedCharacter(order: Pick<Order, "product" | "productType" | "remark" | "character">) {
+  return plushCharmCharacter(order) || order.character || "";
+}
+
+function packingProductMatches(order: Order, filter: PackingProductFilter) {
+  if (filter === "all") return true;
+  return filter === "plush_charms" ? isPlushCharm(order) : !isPlushCharm(order);
+}
+
 function OrderMarkers({ order, manualOrders }: { order: Order; manualOrders: ManualOrder[] }) {
   const creatorProfiles = useContext(CreatorProfilesContext);
   const freeCreatorSampleCodes = useContext(FreeCreatorSampleCodesContext);
@@ -1282,7 +1327,11 @@ function orderSourceMatches(order: Order, source: SourceFilter, manualOrders: Ma
 }
 
 function certificateLink(order: Order, includeProtocol = true) {
-  const link = order.certificateCode
+  // A Plush Charm has an Our Link rather than a birth certificate. Prefer its
+  // saved Our Link even if an older import left a legacy certificate code.
+  const link = isPlushCharm(order)
+    ? order.idWebsiteLink.replace(/^https?:\/\//i, "")
+    : order.certificateCode
     ? `meaningfulplushies.com/pages/certificate/${order.certificateCode.trim()}`
     : order.idWebsiteLink.replace(/^https?:\/\//i, "");
   return includeProtocol && link ? `https://${link}` : link;
@@ -1413,7 +1462,7 @@ function workspaceForView(view: View): Workspace {
   if (accountingViews.includes(view)) return "accounting";
   if (view === "stock") return "inventory";
   if (view === "sales_report") return "reports";
-  if (view === "shopify_app") return "shopify_app";
+  if (view === "plush_charm_orders" || view === "shopify_app") return "shopify_app";
   if (view === "audio_scanner") return "audio_scanner";
   if (view === "history" || view === "settings" || view === "meta_capi") return "settings";
   return "fulfilment";
@@ -1421,7 +1470,7 @@ function workspaceForView(view: View): Workspace {
 
 function navItemsForWorkspace(workspace: Workspace, role: UserRole): NavItem[] {
   if (role === "creator") return creatorNavItems;
-  if (role !== "admin") return fulfilmentNavItems;
+  if (role !== "admin") return workspace === "shopify_app" ? shopifyCharmStaffNavItems : fulfilmentNavItems;
   if (workspace === "accounting") return accountingNavItems;
   if (workspace === "formal_accounting") return formalAccountingNavItems;
   if (workspace === "monthly_journal") return monthlyJournalNavItems;
@@ -1450,9 +1499,11 @@ function viewTitle(view: View) {
     manual_orders_dashboard: "Manual Orders",
     manual_orders_preorders: "Preorders",
     manual_orders_leads: "Leads",
+    plush_charm_orders: "Plush Charm Orders",
+    shopify_app: "Our Link Settings",
   };
   if (titleOverrides[view]) return titleOverrides[view]!;
-  const item = [...fulfilmentNavItems, ...fulfilmentAdminNavItems, ...audioScannerNavItems, ...manualOrderNavItems, ...accountingNavItems, ...formalAccountingNavItems, ...monthlyJournalNavItems, ...creatorAdminNavItems, ...inventoryNavItems, ...reportsNavItems, ...contentNavItems, ...settingsNavItems]
+  const item = [...fulfilmentNavItems, ...fulfilmentAdminNavItems, ...audioScannerNavItems, ...shopifyAppNavItems, ...manualOrderNavItems, ...accountingNavItems, ...formalAccountingNavItems, ...monthlyJournalNavItems, ...creatorAdminNavItems, ...inventoryNavItems, ...reportsNavItems, ...contentNavItems, ...settingsNavItems]
     .find((navItem) => navItem.view === view);
   if (item) return item.label;
   return "Orders Dashboard";
@@ -1480,6 +1531,7 @@ export default function Home() {
   const [shippingLabelSummary, setShippingLabelSummary] = useState("");
   const [envelopeSelection, setEnvelopeSelection] = useState<string[]>([]);
   const [packingStatusFilter, setPackingStatusFilter] = useState<"all" | OrderStatus>(() => choice(storedUi.packingStatusFilter, "all", orderStatusFilterValues));
+  const [packingProductFilter, setPackingProductFilter] = useState<PackingProductFilter>(() => choice(storedUi.packingProductFilter, "all", packingProductFilterValues));
   const [envelopeStatusFilter, setEnvelopeStatusFilter] = useState<"all" | OrderStatus>(() => choice(storedUi.envelopeStatusFilter, "all", orderStatusFilterValues));
   const [tikTokStatusFilter, setTikTokStatusFilter] = useState<"all" | OrderStatus>(() => choice(storedUi.tikTokStatusFilter, "all", orderStatusFilterValues));
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>(() => choice(storedUi.sourceFilter, "all", sourceFilterValues));
@@ -1648,6 +1700,7 @@ export default function Home() {
   const [loadingOrders, setLoadingOrders] = useState(() => !initialOrdersCache);
   const [databaseError, setDatabaseError] = useState("");
   const [refreshingOrderNumber, setRefreshingOrderNumber] = useState("");
+  const [generatingPlushCharmLinks, setGeneratingPlushCharmLinks] = useState(false);
   const [nfcWritingOrderId, setNfcWritingOrderId] = useState("");
   const [nfcHelperStatus, setNfcHelperStatus] = useState<"unknown" | "checking" | "running" | "not_running" | "starting">("unknown");
   const [nfcUnlockPassword, setNfcUnlockPassword] = useState("");
@@ -1949,11 +2002,37 @@ export default function Home() {
   }, [session]);
 
   useEffect(() => {
+    const token = session?.token;
+    if (!token) return;
+    let cancelled = false;
+
+    // The session is also saved locally, but refresh its server expiry whenever
+    // this trusted browser opens the dashboard. A temporary network problem must
+    // never turn into an unexpected sign-out.
+    void refreshDashboardSession(token).then((refreshedSession) => {
+      if (cancelled) return;
+      if (!refreshedSession) {
+        removeStored(sessionStorageKey);
+        setSession(null);
+        return;
+      }
+      writeJson(sessionStorageKey, refreshedSession);
+      setSession((current) => current?.token === token ? refreshedSession : current);
+    }).catch(() => {
+      // Keep the saved session available while offline. The dashboard can use
+      // its cached data and will try to renew again on the next app opening.
+    });
+
+    return () => { cancelled = true; };
+  }, [session?.token]);
+
+  useEffect(() => {
     writeJson(uiStorageKey, {
       view: permittedView(view, session?.role),
       query,
       statusFilter,
       packingStatusFilter,
+      packingProductFilter,
       envelopeStatusFilter,
       tikTokStatusFilter,
       sourceFilter,
@@ -1977,6 +2056,7 @@ export default function Home() {
     query,
     statusFilter,
     packingStatusFilter,
+    packingProductFilter,
     envelopeStatusFilter,
     tikTokStatusFilter,
     sourceFilter,
@@ -2075,10 +2155,10 @@ export default function Home() {
   const envelopePages = Array.from({ length: envelopePageCount }, (_, index) => envelopeSlots.slice(index * 2, index * 2 + 2));
   const envelopePrintableNames = envelopeSlots.map((slot) => slot.name).filter(Boolean);
   const packingAvailableOrders = useMemo(() => sortOrderRecords(
-    orders.filter((order) => orderSourceMatches(order, sourceFilter, manualOrders) && (packingStatusFilter === "all" || order.status === packingStatusFilter)),
+    orders.filter((order) => orderSourceMatches(order, sourceFilter, manualOrders) && packingProductMatches(order, packingProductFilter) && (packingStatusFilter === "all" || order.status === packingStatusFilter)),
     "orderNumber",
     "desc",
-  ), [orders, manualOrders, packingStatusFilter, sourceFilter]);
+  ), [orders, manualOrders, packingProductFilter, packingStatusFilter, sourceFilter]);
   const envelopeAvailableOrders = useMemo(() => sortOrderRecords(
     orders.filter((order) => orderSourceMatches(order, sourceFilter, manualOrders) && (envelopeStatusFilter === "all" || order.status === envelopeStatusFilter)),
     "orderNumber",
@@ -2099,6 +2179,16 @@ export default function Home() {
         .join(" ").toLowerCase().includes(search));
     return sortOrderRecords(matching, sortKey, sortDirection);
   }, [orders, manualOrders, query, sourceFilter, statusFilter, view, sortKey, sortDirection, fulfilmentStartDate, fulfilmentEndDate]);
+  const plushCharmOrders = useMemo(() => {
+    const search = query.trim().toLowerCase();
+    const matching = orders
+      .filter(isPlushCharm)
+      .filter((order) => orderSourceMatches(order, sourceFilter, manualOrders))
+      .filter((order) => statusFilter === "all" || order.status === statusFilter)
+      .filter((order) => !search || [order.orderNumber, order.customerName, order.phone, order.plushName, order.product, displayedCharacter(order), order.idWebsiteLink]
+        .join(" ").toLowerCase().includes(search));
+    return sortOrderRecords(matching, sortKey, sortDirection);
+  }, [orders, manualOrders, query, sourceFilter, statusFilter, sortKey, sortDirection]);
   const fulfilmentDateRangeSales = useMemo(() => {
     const uniqueSales = new Map<string, Order>();
     for (const order of orders) {
@@ -2206,7 +2296,14 @@ export default function Home() {
     }))),
   ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [activity, orders]);
 
-  if (!session) return <Login onLogin={setSession} />;
+  function completeLogin(nextSession: Session) {
+    // Save before updating React state so an immediate deployment reload cannot
+    // race the normal persistence effect and lose a successful sign-in.
+    writeJson(sessionStorageKey, nextSession);
+    setSession(nextSession);
+  }
+
+  if (!session) return <Login onLogin={completeLogin} />;
   const currentSession = session;
 
   function signOut() {
@@ -2440,6 +2537,28 @@ export default function Home() {
       return;
     }
     await refreshShopifyOrderNumbers([order.orderNumber]);
+  }
+
+  async function generatePlushCharmOurLinks() {
+    if (currentSession.role !== "admin") return;
+    setGeneratingPlushCharmLinks(true);
+    try {
+      const response = await fetch("/api/our-link/plush-charm-links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-dashboard-session": currentSession.token },
+      });
+      const result = await response.json() as { ok?: boolean; updated?: number; orders?: Order[]; error?: string };
+      if (!response.ok || !result.ok) throw new Error(result.error || "Our Link IDs could not be generated.");
+      if (result.orders?.length) {
+        const byId = new Map(result.orders.map((order) => [order.id, order]));
+        setOrders((current) => current.map((order) => byId.get(order.id) || order));
+      }
+      setNotice(result.updated ? `${result.updated} Plush Charm order${result.updated === 1 ? " now has" : "s now have"} an Our Link ID.` : "Every Plush Charm order already has an Our Link ID.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Our Link IDs could not be generated.");
+    } finally {
+      setGeneratingPlushCharmLinks(false);
+    }
   }
 
   async function bulkRefreshShopifyOrders() {
@@ -3012,10 +3131,12 @@ export default function Home() {
       return;
     }
     const changedAt = new Date().toISOString();
-    const changed: Order[] = [];
-    const nextOrders = orders.map((order) => {
-      if (mode === "labels" || !packingSelection.includes(order.id) || order.status !== "new_order") return order;
-      const updated: Order = {
+    // Printing a packing slip starts the non-TikTok production workflow. A
+    // label-only print does not, and TikTok Shop follows its own workflow.
+    const shouldAdvance = mode !== "labels";
+    const changed = packingOrders
+      .filter((order) => shouldAdvance && order.salesChannel !== "tiktok" && order.status === "new_order")
+      .map((order): Order => ({
         ...order,
         status: "uploading_audio",
         updatedAt: changedAt,
@@ -3024,12 +3145,11 @@ export default function Home() {
           status: "uploading_audio",
           changedAt,
           changedBy: session ? `${session.displayName} (${session.username})` : "Staff",
-      note: "Packing slip printed",
+          note: "Packing slip printed",
         }],
-      };
-      changed.push(updated);
-      return updated;
-    });
+      }));
+    const changedById = new Map(changed.map((order) => [order.id, order]));
+    const nextOrders = orders.map((order) => changedById.get(order.id) ?? order);
     try { if (changed.length) await upsertSharedOrders(changed); }
     catch (error) { setNotice(error instanceof Error ? error.message : "Packing-slip changes could not be saved."); return; }
     setOrders(nextOrders);
@@ -5602,7 +5722,7 @@ export default function Home() {
       return link ? <a href={link} download={downloadName} target={downloadName ? undefined : "_blank"} rel="noreferrer">{downloadName ? "Download message" : "Open message"}</a> : "-";
     }
     if (column === "plushName") return <strong>{order.plushName || "-"}</strong>;
-    if (column === "character") return order.character || "-";
+    if (column === "character") return displayedCharacter(order) || "-";
     if (column === "idWebsiteLink") {
       const link = certificateLink(order);
       return link ? <div className="link-copy nfc-link-write"><a href={link} target="_blank" rel="noreferrer">{certificateLink(order, false)}</a><button type="button" className="nfc-write-button" disabled={nfcWritingOrderId === order.id} onClick={() => writeCertificateLinkToNfc(order)}>{nfcWritingOrderId === order.id ? "Writing..." : "Write"}</button></div> : "-";
@@ -5614,7 +5734,7 @@ export default function Home() {
   const workspace = workspaceForView(view);
   const availableWorkspaces: Workspace[] = session.role === "admin"
     ? ["fulfilment", "manual_orders", "accounting", "formal_accounting", "monthly_journal", "creator", "inventory", "reports", "content", "shopify_app", "audio_scanner", "settings"]
-    : session.role === "creator" ? ["creator"] : ["fulfilment"];
+    : session.role === "creator" ? ["creator"] : ["fulfilment", "shopify_app"];
   const sidebarNavItems = navItemsForWorkspace(workspace, session.role);
   const workspaceTitle = workspaceLabels[workspace];
 
@@ -5790,7 +5910,24 @@ export default function Home() {
 
       {workspace === "monthly_journal" && session.role === "admin" && <MonthlyJournalWorkspace initialView={view.replace("monthly_journal_", "") as "inbox" | "import" | "shopee" | "shortcuts" | "source_documents" | "general_journal" | "reports" | "account_activity" | "accounts"} />}
 
-      {workspace === "shopify_app" && session.role === "admin" && <ShopifyAppWorkspace sessionToken={session.token} />}
+      {view === "plush_charm_orders" && <section className="card orders-card plush-charm-orders-card">
+        <div className="toolbar">
+          <div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, character, customer or phone..." /></div>
+          <SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} />
+          <StatusFilterPills value={statusFilter} onChange={setStatusFilter} />
+          <SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} />
+          {session.role === "admin" && <button className="button primary" type="button" disabled={generatingPlushCharmLinks} onClick={() => void generatePlushCharmOurLinks()}>{generatingPlushCharmLinks ? "Generating Our Link IDs..." : "Generate Our Link IDs"}</button>}
+        </div>
+        <div className="plush-charm-orders-intro"><strong>All Plush Charm orders</strong><span>These orders are separated from classic plushies to make packing safer.</span></div>
+        <div className="table-scroll"><table className="orders-table plush-charm-orders-table"><thead><tr><th>Order ID</th><th>Meaningful Message</th><th>Character</th><th>ID Website Link</th><th>Customer Name</th><th>Phone Number</th><th>Status</th><th>View</th></tr></thead><tbody>{plushCharmOrders.map((order) => {
+          const messageLink = meaningfulMessageLink(order);
+          const downloadName = meaningfulMessageDownloadName(order);
+          const link = certificateLink(order);
+          return <tr key={order.id} className="plush-charm-row"><td><strong>{orderLabel(order)}</strong><OrderMarkers order={order} manualOrders={manualOrders} /></td><td>{messageLink ? <a href={messageLink} download={downloadName} target={downloadName ? undefined : "_blank"} rel="noreferrer">{downloadName ? "Download message" : "Open message"}</a> : "-"}</td><td><strong>{displayedCharacter(order) || "-"}</strong></td><td className="certificate-cell">{link ? <a href={link} target="_blank" rel="noreferrer">{certificateLink(order, false)}</a> : "-"}</td><td><strong>{order.customerName || "-"}</strong></td><td>{order.phone || "-"}</td><td><StatusPill status={order.status} /></td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>;
+        })}</tbody></table>{!plushCharmOrders.length && <div className="empty"><strong>No Plush Charm orders found</strong><p>Try another search or status filter.</p></div>}</div>
+        <div className="table-footer">Showing {plushCharmOrders.length} of {orders.filter(isPlushCharm).length} Plush Charm orders</div>
+      </section>}
+      {view === "shopify_app" && session.role === "admin" && <ShopifyAppWorkspace sessionToken={session.token} />}
       {workspace === "audio_scanner" && session.role === "admin" && <AudioScannerWorkspace orders={orders} audioSourceFor={meaningfulMessageLink} />}
 
       {workspace === "creator" && (session.role === "admin" || session.role === "creator") && <CreatorProgramWorkspacePage
@@ -5903,7 +6040,7 @@ export default function Home() {
             <div className="toolbar-row toolbar-filter-row"><div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, customer, phone or tracking..." /></div><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /></div>
             <div className="toolbar-row toolbar-action-row">{view === "orders" && <button className="button secondary" disabled={!selectedShopifyOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshShopifyOrders}>{refreshingOrderNumber === "bulk" ? "Refreshing..." : `Refresh ${selectedShopifyOrderCount} Shopify`}</button>}{view === "orders" && <button className="button secondary" disabled={!selectedTikTokOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshTikTokOrders}>{refreshingOrderNumber === "tiktok-bulk" ? "Syncing..." : `Sync ${selectedTikTokOrderCount} TikTok`}</button>}{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>Move {selectedOrders.length} to next status</button>}{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>Delete</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>Export CSV</button>}</div>
           </div>
-          <div className="table-scroll"><table className="orders-table"><thead><tr><th><input type="checkbox" aria-label="Select visible orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th>Order</th><th>Date</th><th>Customer</th><th>Phone</th><th>Character</th><th>Voice</th><th>Plush name</th><th>Status</th><th>Tracking number</th><th>Last updated</th><th>{view === "orders" ? "Actions" : "View"}</th></tr></thead><tbody>{filtered.map((order) => <tr key={order.id} className={isExpressShipping(order) ? "express-shipping-row" : ""}><td><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={selectedOrders.includes(order.id)} onChange={() => toggleOrderSelection(order.id)} /></td><td><strong>{orderLabel(order)}</strong><OrderMarkers order={order} manualOrders={manualOrders} /></td><td>{formatDate(order.orderDate)}</td><td><strong>{order.customerName || "-"}</strong></td><td>{order.phone || "-"}</td><td>{order.character || "-"}</td><td>{order.voiceLength ? `${order.voiceLength}s` : "-"}</td><td>{order.plushName || "-"}</td><td><StatusPill status={order.status} /></td><td><code>{order.trackingNumber || "-"}</code></td><td>{formatDate(order.updatedAt, true)}</td><td><div className="row-actions"><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button>{view === "orders" && (order.salesChannel ?? "shopify") === "shopify" && <button className="view-button refresh-order-button" disabled={refreshingOrderNumber === order.orderNumber} onClick={() => refreshShopifyOrder(order)}>{refreshingOrderNumber === order.orderNumber ? "Refreshing..." : "Refresh"}</button>}{view === "orders" && order.salesChannel === "tiktok" && <button className="view-button refresh-order-button" disabled={refreshingOrderNumber === tiktokOrderIdFromOrder(order)} onClick={() => refreshTikTokOrder(order)}>{refreshingOrderNumber === tiktokOrderIdFromOrder(order) ? "Syncing..." : "Sync"}</button>}</div></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No orders found</strong><p>Try another search or status filter.</p></div>}</div>
+          <div className="table-scroll"><table className="orders-table"><thead><tr><th><input type="checkbox" aria-label="Select visible orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th>Order</th><th>Date</th><th>Customer</th><th>Phone</th><th>Character</th><th>Voice</th><th>Plush name</th><th>Status</th><th>Tracking number</th><th>Last updated</th><th>{view === "orders" ? "Actions" : "View"}</th></tr></thead><tbody>{filtered.map((order) => <tr key={order.id} className={[isExpressShipping(order) ? "express-shipping-row" : "", isPlushCharm(order) ? "plush-charm-row" : ""].filter(Boolean).join(" ")}><td><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={selectedOrders.includes(order.id)} onChange={() => toggleOrderSelection(order.id)} /></td><td><strong>{orderLabel(order)}</strong><OrderMarkers order={order} manualOrders={manualOrders} /></td><td>{formatDate(order.orderDate)}</td><td><strong>{order.customerName || "-"}</strong></td><td>{order.phone || "-"}</td><td>{displayedCharacter(order) || "-"}</td><td>{order.voiceLength ? `${order.voiceLength}s` : "-"}</td><td>{order.plushName || "-"}</td><td><StatusPill status={order.status} /></td><td><code>{order.trackingNumber || "-"}</code></td><td>{formatDate(order.updatedAt, true)}</td><td><div className="row-actions"><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button>{view === "orders" && (order.salesChannel ?? "shopify") === "shopify" && <button className="view-button refresh-order-button" disabled={refreshingOrderNumber === order.orderNumber} onClick={() => refreshShopifyOrder(order)}>{refreshingOrderNumber === order.orderNumber ? "Refreshing..." : "Refresh"}</button>}{view === "orders" && order.salesChannel === "tiktok" && <button className="view-button refresh-order-button" disabled={refreshingOrderNumber === tiktokOrderIdFromOrder(order)} onClick={() => refreshTikTokOrder(order)}>{refreshingOrderNumber === tiktokOrderIdFromOrder(order) ? "Syncing..." : "Sync"}</button>}</div></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No orders found</strong><p>Try another search or status filter.</p></div>}</div>
           <div className="table-footer">Showing {filtered.length} of {view === "fulfilled" ? orders.filter((order) => order.status === "shipped").length : orders.length} orders</div>
         </section>}
 
@@ -5920,7 +6057,7 @@ export default function Home() {
               <button className="button secondary small" type="button" onClick={copyNfcHelperSetupCommand}>Copy setup command</button>
             </div>
           </div>
-          <div className="fulfilment-scroll table-scroll"><table className="orders-table fulfilment-table"><thead><tr><th className="select-column"><input type="checkbox" aria-label="Select visible fulfilment orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th className="locked-order-column">Order ID</th>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <th key={column} className={draggedColumn === column ? "dragging" : ""} draggable onDragStart={(event) => { setDraggedColumn(column); event.dataTransfer.setData("text/plain", column); }} onDragEnd={() => setDraggedColumn(null)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => reorderFulfilmentColumn(event.dataTransfer.getData("text/plain") as FulfilmentColumn, column)}><span className="drag-handle"><Icon name="drag" /></span>{fulfilmentColumnLabels[column]}</th>)}<th>Status</th><th>View</th></tr></thead><tbody>{filtered.map((order) => { const checked = selectedOrders.includes(order.id); const rowClass = [checked ? "selected-row" : "", isExpressShipping(order) ? "express-shipping-row" : ""].filter(Boolean).join(" "); return <tr key={order.id} className={rowClass} onClick={(event) => { if ((event.target as HTMLElement).closest("button,a,input")) return; toggleOrderSelection(order.id); }}><td className="select-column"><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={checked} onChange={() => toggleOrderSelection(order.id)} /></td><td className="locked-order-column"><strong>{orderLabel(order)}</strong><OrderMarkers order={order} manualOrders={manualOrders} /></td>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <td key={column} className={column === "idWebsiteLink" ? "certificate-cell" : ""}>{fulfilmentCell(order, column)}</td>)}<td><StatusPill status={order.status} /></td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>; })}</tbody></table>{!filtered.length && <div className="empty"><strong>No fulfilment orders found</strong><p>Try another search or status filter.</p></div>}</div>
+          <div className="fulfilment-scroll table-scroll"><table className="orders-table fulfilment-table"><thead><tr><th className="select-column"><input type="checkbox" aria-label="Select visible fulfilment orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th className="locked-order-column">Order ID</th>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <th key={column} className={draggedColumn === column ? "dragging" : ""} draggable onDragStart={(event) => { setDraggedColumn(column); event.dataTransfer.setData("text/plain", column); }} onDragEnd={() => setDraggedColumn(null)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => reorderFulfilmentColumn(event.dataTransfer.getData("text/plain") as FulfilmentColumn, column)}><span className="drag-handle"><Icon name="drag" /></span>{fulfilmentColumnLabels[column]}</th>)}<th>Status</th><th>View</th></tr></thead><tbody>{filtered.map((order) => { const checked = selectedOrders.includes(order.id); const rowClass = [checked ? "selected-row" : "", isExpressShipping(order) ? "express-shipping-row" : "", isPlushCharm(order) ? "plush-charm-row" : ""].filter(Boolean).join(" "); return <tr key={order.id} className={rowClass} onClick={(event) => { if ((event.target as HTMLElement).closest("button,a,input")) return; toggleOrderSelection(order.id); }}><td className="select-column"><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={checked} onChange={() => toggleOrderSelection(order.id)} /></td><td className="locked-order-column"><strong>{orderLabel(order)}</strong><OrderMarkers order={order} manualOrders={manualOrders} /></td>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <td key={column} className={column === "idWebsiteLink" ? "certificate-cell" : ""}>{fulfilmentCell(order, column)}</td>)}<td><StatusPill status={order.status} /></td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>; })}</tbody></table>{!filtered.length && <div className="empty"><strong>No fulfilment orders found</strong><p>Try another search or status filter.</p></div>}</div>
           <div className="table-footer">Showing {filtered.length} of {orders.length} orders</div>
         </section>}
       </>}
@@ -5957,8 +6094,8 @@ export default function Home() {
         <div className="packing-controls card">
           <div className="packing-manual"><div><h2>Choose orders to print</h2><p>Enter order IDs separated by commas or spaces, or select orders from the list below.</p></div><div className="manual-entry"><input value={manualOrderIds} onChange={(event) => setManualOrderIds(event.target.value)} onKeyDown={(event) => event.key === "Enter" && selectManualOrders()} placeholder="Example: 1359, 1360, 1361" /><button className="button primary" onClick={selectManualOrders}>Add order IDs</button></div></div>
           <div className="shipping-label-import"><div><h3>Import shipping-label PDF</h3><p>J&amp;T Shopify labels pair from the Remark order number; TikTok labels pair from the top-left Order ID.</p></div><FileDropZone accept="application/pdf,.pdf" title={shippingLabelImporting ? "Importing labels..." : "Drop label PDF or open files"} description={shippingLabelSummary || "Each paired label prints immediately after its packing slip."} onFile={(file) => void importShippingLabels(file)} className="compact-file-drop" /></div>
-          <div className="packing-list-header"><div><strong>Available orders</strong><span>Order number, descending</span></div><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><select value={packingStatusFilter} onChange={(event) => setPackingStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><div className="packing-list-actions"><button onClick={() => setPackingSelection((current) => [...new Set([...current, ...packingAvailableOrders.map((order) => order.id)])])}>Select shown</button><button onClick={() => setPackingSelection([])}>Clear</button></div></div>
-          <div className="packing-order-list">{packingAvailableOrders.map((order) => <label key={order.id}><input type="checkbox" checked={packingSelection.includes(order.id)} onChange={() => setPackingSelection((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><div><strong>{orderLabel(order)} | {order.plushName || "Unnamed plushie"}</strong><span>{order.customerName} | {order.character || "No character"}</span><OrderMarkers order={order} manualOrders={manualOrders} /></div><StatusPill status={order.status} /></label>)}</div>
+          <div className="packing-list-header"><div><strong>Available orders</strong><span>Order number, descending</span></div><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><select value={packingProductFilter} aria-label="Product type" onChange={(event) => setPackingProductFilter(event.target.value as PackingProductFilter)}><option value="all">All product types</option><option value="classic_plushies">Classic plushies</option><option value="plush_charms">Plush charms only</option></select><select value={packingStatusFilter} onChange={(event) => setPackingStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><div className="packing-list-actions"><button onClick={() => setPackingSelection((current) => [...new Set([...current, ...packingAvailableOrders.map((order) => order.id)])])}>Select shown</button><button onClick={() => setPackingSelection([])}>Clear</button></div></div>
+          <div className="packing-order-list">{packingAvailableOrders.map((order) => <label key={order.id} className={isPlushCharm(order) ? "plush-charm-packing-order" : ""}><input type="checkbox" checked={packingSelection.includes(order.id)} onChange={() => setPackingSelection((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><div><strong>{orderLabel(order)} | {order.plushName || "Unnamed plushie"}</strong><span>{order.customerName} | {displayedCharacter(order) || "No character"}</span><OrderMarkers order={order} manualOrders={manualOrders} /></div><StatusPill status={order.status} /></label>)}</div>
         </div>
         <div className="packing-preview"><div className="preview-heading"><div><h2>A6 print preview</h2><p>Every order is paired with either its actual shipping label or a clear manual-label instruction page.</p></div><span>{packingOrders.length} selected</span></div>{packingOrders.length ? <div className="slip-grid">{packingOrders.map((order) => <Fragment key={order.id}><PackingSlip order={order} manualOrders={manualOrders} /><ShippingLabelPage order={order} manualOrders={manualOrders} /></Fragment>)}</div> : <div className="preview-empty"><strong>No orders selected</strong><p>Enter order IDs or tick orders from the list.</p></div>}</div>
       </section>}
@@ -8952,8 +9089,6 @@ function CreatorProgramWorkspacePage({
     }
     setCreatingFreeCreatorSample(true);
     try {
-      // Save the shared ledger first. Shopify can reject an existing code, but that
-      // must never leave a real creator sample invisible on one device.
       const now = new Date().toISOString();
       const sample: FreeCreatorSample = {
         id: crypto.randomUUID(),
@@ -8965,23 +9100,21 @@ function CreatorProgramWorkspacePage({
         givenAt: now,
         notes: freeCreatorSampleForm.notes.trim(),
       };
-      await saveCreatorFreeSample(session.token, sample);
-      setFreeCreatorSamples((current) => [sample, ...current]);
-      setFreeCreatorSampleForm({ creatorName: "", creatorUrl: "", sampleCode: "", notes: "" });
-
       const response = await fetch("/api/shopify/creator-sample-discounts", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ code: sampleCode, creatorName }),
+        body: JSON.stringify({ sessionToken: session.token, sample }),
       });
-      const result = await response.json().catch(() => ({})) as { ok?: boolean; discountId?: string; error?: string };
+      const result = await response.json().catch(() => ({})) as { ok?: boolean; saved?: boolean; discountId?: string; sample?: FreeCreatorSample; error?: string };
+      if (result.saved && result.sample) {
+        setFreeCreatorSamples((current) => [result.sample!, ...current.filter((item) => item.id !== result.sample!.id)]);
+        setFreeCreatorSampleForm({ creatorName: "", creatorUrl: "", sampleCode: "", notes: "" });
+      }
       if (!response.ok || !result.ok || !result.discountId) {
+        if (!result.saved) throw new Error(result.error || "The creator sample could not be saved.");
         setMessage(`Creator sample saved in the shared ledger. Shopify could not create this discount code: ${result.error || "the code may already exist"}.`);
         return;
       }
-      const savedSample = { ...sample, shopifyDiscountId: result.discountId };
-      await saveCreatorFreeSample(session.token, savedSample);
-      setFreeCreatorSamples((current) => current.map((item) => item.id === sample.id ? savedSample : item));
       setMessage("Free creator sample saved and Shopify RM150 discount created.");
     } catch (error) {
       setMessage(readableError(error, "Free creator sample could not be saved in the shared ledger."));
@@ -9498,7 +9631,8 @@ function Editable({ label, value, onChange, disabled, placeholder, wide, textare
 
 function PackingSlip({ order, manualOrders }: { order: Order; manualOrders: ManualOrder[] }) {
   const isCod = isCodFulfilmentOrder(order, manualOrders);
-  return <article className={`a6-slip${isCod ? " is-cod" : ""}`}>{isCod && <div className="cod-watermark" aria-hidden="true">COD</div>}<header><div className="slip-header-main"><div><span>ORDER ID</span><strong>{packingSlipOrderLabel(order)}</strong></div><div className="slip-order-markers"><OrderMarkers order={order} manualOrders={manualOrders} /></div></div></header><div className="slip-fields"><div className="primary-slip-field"><label>CHARACTER:</label><p>{order.character || "-"}</p></div><div className="primary-slip-field"><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{packingSlipRemark(order)}</p></div></div><OrderBarcode value={orderBarcodeValue(order)} compact /></article>;
+  const charm = isPlushCharm(order);
+  return <article className={`a6-slip${isCod ? " is-cod" : ""}${charm ? " is-plush-charm" : ""}`}>{isCod && <div className="cod-watermark" aria-hidden="true">COD</div>}<header><div className="slip-header-main"><div><span>ORDER ID</span><strong>{packingSlipOrderLabel(order)}</strong></div><div className="slip-order-markers"><OrderMarkers order={order} manualOrders={manualOrders} /></div></div></header><div className="slip-fields"><div className="primary-slip-field"><label>CHARACTER:</label><p>{displayedCharacter(order) || "-"}</p></div><div className="primary-slip-field"><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{packingSlipRemark(order)}</p></div></div><OrderBarcode value={orderBarcodeValue(order)} compact /></article>;
 }
 
 function ShippingLabelPage({ order, manualOrders }: { order: Order; manualOrders: ManualOrder[] }) {

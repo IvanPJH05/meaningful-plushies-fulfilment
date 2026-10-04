@@ -17,6 +17,13 @@ const nextConfig: NextConfig = {
     return [{
       source: "/api/closer",
       headers: [{ key: "Access-Control-Allow-Origin", value: "https://meaningfulplushies.com" }],
+    }, {
+      source: "/api/mobile/:path*",
+      headers: [
+        { key: "Access-Control-Allow-Origin", value: "https://localhost" },
+        { key: "Access-Control-Allow-Methods", value: "GET, POST, OPTIONS" },
+        { key: "Access-Control-Allow-Headers", value: "Authorization, Content-Type" },
+      ],
     }];
   },
 };

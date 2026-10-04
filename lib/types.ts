@@ -338,6 +338,8 @@ export type Order = {
   creatorFreeOrder?: boolean;
   shippingMethod?: string;
   product: string;
+  /** Distinguishes the audio-only Plush Charm flow from a classic plushie. */
+  productType?: "plush_charm" | "classic_plushie" | string;
   character: string;
   setIndicator: string;
   idWebsiteLink: string;

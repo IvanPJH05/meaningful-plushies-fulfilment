@@ -3,6 +3,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 import { createClient } from "@supabase/supabase-js";
 
 import { certificateMediaForLineItem, certificateMetaobjectForOrder, createCertificateMetaobject, plushBackgroundForMeaningfulNote, setShopifyOrderMetafield, shopDomain, shopifyGraphql, updateCertificateMetaobject } from "./shopify-orders";
+import { isPlushCharmOrder } from "./plush-charm";
 import type { Order } from "./types";
 import { voiceBackupFileName } from "./voice-file-name";
 
@@ -55,7 +56,7 @@ type SessionRow = {
   contact_email: string | null;
   contact_phone: string | null;
   status: "draft" | "pending_payment" | "awaiting_customisation" | "submitted" | "expired" | "cancelled";
-  form_data: Partial<CustomisationForm> & { customisationPageUrl?: string };
+  form_data: Partial<CustomisationForm> & { customisationPageUrl?: string; productType?: "plush_charm" | "snowy_charm" | string };
   voice_storage_path: string | null;
   google_drive_file_id?: string | null;
   google_drive_file_name?: string | null;
@@ -217,7 +218,7 @@ export async function saveSnowyCharmVoice(token: string, voiceStoragePath: strin
 
   const completedAt = new Date().toISOString();
   const { error } = await serviceClient().from(SESSION_TABLE).update({
-    form_data: { ...session.form_data, productType: "snowy_charm" },
+    form_data: { ...session.form_data, productType: "plush_charm" },
     voice_storage_path: voiceStoragePath,
     status: "submitted",
     completed_at: completedAt,
@@ -512,15 +513,29 @@ async function applySubmittedSessionToFulfilmentOrder(fulfilmentOrderId: string,
 }
 
 export function customisationSessionIds(order: Record<string, unknown>) {
-  const lineItems = Array.isArray(order.lineItems) ? order.lineItems : [];
-  return lineItems.flatMap((line) => {
-    const item = line && typeof line === "object" ? line as Record<string, unknown> : {};
-    const attributes = Array.isArray(item.customAttributes) ? item.customAttributes : Array.isArray(item.properties) ? item.properties : [];
-    return attributes.flatMap((attribute) => {
-      const value = attribute && typeof attribute === "object" ? attribute as Record<string, unknown> : {};
-      return String(value.key || value.name || "") === "customisation_session_id" && String(value.value || "") ? [String(value.value)] : [];
-    });
+  const lineItems = Array.isArray(order.lineItems)
+    ? order.lineItems
+    : Array.isArray(order.line_items)
+      ? order.line_items
+      : [];
+  const sessionKeys = new Set(["customisation_session_id", "mp_customisation_session_id"]);
+  const idsFromAttributes = (attributes: unknown) => (Array.isArray(attributes) ? attributes : []).flatMap((attribute) => {
+    const value = attribute && typeof attribute === "object" ? attribute as Record<string, unknown> : {};
+    const key = String(value.key || value.name || "").trim().toLowerCase();
+    const id = String(value.value || "").trim();
+    return sessionKeys.has(key) && id ? [id] : [];
   });
+
+  // A line-item property is the preferred link. Cart attributes are a
+  // deliberate fallback for accelerated checkout/theme Ajax flows which can
+  // submit the product before dynamically-added form inputs are serialized.
+  return [...new Set([
+    ...lineItems.flatMap((line) => {
+      const item = line && typeof line === "object" ? line as Record<string, unknown> : {};
+      return idsFromAttributes(item.customAttributes ?? item.custom_attributes ?? item.properties);
+    }),
+    ...idsFromAttributes(order.customAttributes ?? order.custom_attributes ?? order.note_attributes),
+  ])];
 }
 
 /**
@@ -589,7 +604,11 @@ export async function bindSessionsToOrders(input: { orderId: string; orderNumber
   const sessions = (data ?? []) as SessionRow[];
   const byId = new Map(sessions.map((session) => [session.id, session]));
   const now = new Date().toISOString();
-  const needsCertificate = sessions.some((session) => session.status === "submitted");
+  const needsCertificate = sessions.some((session, index) => {
+    const order = input.orders[index] || input.orders[0];
+    const productType = session.form_data?.productType === "snowy_charm" ? "plush_charm" : String(session.form_data?.productType || order?.productType || "");
+    return session.status === "submitted" && Boolean(order) && !isPlushCharmOrder({ ...order, productType });
+  });
   const fallbackCertificate = !input.certificates?.length && needsCertificate
     ? await flowCertificateForOrder(input.orderNumber)
     : null;
@@ -600,11 +619,19 @@ export async function bindSessionsToOrders(input: { orderId: string; orderNumber
     if (!session) return order;
     const form = session.form_data || {};
     const submitted = session.status === "submitted";
+    const plushCharm = isPlushCharmOrder({ ...order, productType: form.productType === "snowy_charm" ? "plush_charm" : String(form.productType || order.productType || "") });
     const certificate = input.certificates?.[index] || fallbackCertificate;
     const certificateCode = certificate?.code || session.certificate_code || "";
     return {
       ...order,
+      // A linked customisation changes the order payload. Mark it as newly
+      // updated so browser and mobile caches retrieve the restored details.
+      updatedAt: now,
       status: submitted ? "new_order" : "awaiting_customisation",
+      // The Plush Charm storefront block records this on the session before
+      // checkout. Keep it on the fulfilment order so packing can safely keep
+      // charms separate from the classic plushies.
+      productType: form.productType === "snowy_charm" ? "plush_charm" : String(form.productType || order.productType || ""),
       plushName: submitted ? form.plushName || order.plushName : order.plushName,
       plushGender: submitted ? form.gender || order.plushGender : order.plushGender,
       plushBirthDate: submitted ? form.birthDate || order.plushBirthDate : order.plushBirthDate,
@@ -614,7 +641,9 @@ export async function bindSessionsToOrders(input: { orderId: string; orderNumber
       meaningfulNote: submitted ? form.meaningfulNote || order.meaningfulNote : order.meaningfulNote,
       meaningfulMessage: submitted && session.voice_storage_path ? `supabase-storage:${session.voice_storage_path}` : order.meaningfulMessage,
       certificateCode: certificateCode || order.certificateCode,
-      idWebsiteLink: submitted && certificateCode ? `https://meaningfulplushies.com/pages/certificate/${certificateCode}` : order.idWebsiteLink,
+      // Audio-only Plush Charms have an Our Link instead of a birth
+      // certificate. Never replace that link during session reconciliation.
+      idWebsiteLink: submitted && certificateCode && !plushCharm ? `https://meaningfulplushies.com/pages/certificate/${certificateCode}` : order.idWebsiteLink,
       voiceUploadStatus: submitted && session.voice_storage_path ? "received" : "missing",
       statusHistory: submitted
         ? [...order.statusHistory, { id: `${order.id}-customisation-${now}`, status: "new_order", changedAt: now, changedBy: "Customer", note: "Customisation submitted through secure link." }]

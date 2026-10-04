@@ -205,13 +205,19 @@ export async function syncFulfilmentSalesToMonthlyJournal(orders: Order[]) {
   }
 }
 
-export async function upsertSharedOrders(orders: Order[]) {
+export async function upsertSharedOrders(orders: Order[], options?: { syncSales?: boolean }) {
   if (!orders.length) return;
   const client = requireSupabase();
   // The browser cache deliberately excludes inline files. When a cached order
   // is later moved to another fulfilment stage, keep any server-side file
   // instead of treating that lightweight cache entry as a file removal.
-  const ordersNeedingAssetProtection = orders.filter((order) => !order.tikTokFileDataUrl || !order.photoDataUrl || !order.meaningfulMessage);
+  const ordersNeedingAssetProtection = orders.filter(
+    (order) =>
+      !order.tikTokFileDataUrl ||
+      !order.photoDataUrl ||
+      !order.meaningfulMessage ||
+      !order.shippingLabelUrl,
+  );
   const existingById = new Map<string, Order>();
   if (ordersNeedingAssetProtection.length) {
     const { data, error } = await client
@@ -234,6 +240,15 @@ export async function upsertSharedOrders(orders: Order[]) {
       tikTokFileName: order.tikTokFileDataUrl ? order.tikTokFileName : (order.tikTokFileName || existing.tikTokFileName),
       tikTokFileType: order.tikTokFileDataUrl ? order.tikTokFileType : (order.tikTokFileType || existing.tikTokFileType),
       meaningfulMessage: order.meaningfulMessage || existing.meaningfulMessage || "",
+      // Imports and Shopify refreshes do not include an already-paired PDF
+      // label. Keep it unless this update is explicitly bringing a new label.
+      shippingLabelUrl: order.shippingLabelUrl || existing.shippingLabelUrl || "",
+      shippingLabelFileName: order.shippingLabelUrl
+        ? order.shippingLabelFileName
+        : (order.shippingLabelFileName || existing.shippingLabelFileName),
+      shippingLabelSource: order.shippingLabelUrl
+        ? order.shippingLabelSource
+        : (order.shippingLabelSource || existing.shippingLabelSource),
     };
   });
   const rows = protectedOrders.map((order) => ({
@@ -260,7 +275,7 @@ export async function upsertSharedOrders(orders: Order[]) {
       .upsert(rows.slice(start, start + batchSize), { onConflict: "id" });
     if (error) throw error;
   }
-  await syncFulfilmentSalesToMonthlyJournal(orders);
+  if (options?.syncSales !== false) await syncFulfilmentSalesToMonthlyJournal(orders);
 }
 
 export async function deleteSharedOrders(ids: string[]) {
@@ -667,6 +682,17 @@ export async function loginDashboardAccount(username: string, password: string):
     role: account.role as UserRole,
     active: true,
   };
+}
+
+export async function refreshDashboardSession(token: string): Promise<DashboardSession | null> {
+  const response = await fetch("/api/dashboard/session", {
+    method: "POST",
+    headers: { "x-dashboard-session": token },
+  });
+  if (response.status === 401) return null;
+  if (!response.ok) throw new Error("Could not refresh your dashboard sign-in.");
+  const result = await response.json() as { session?: DashboardSession };
+  return result.session ?? null;
 }
 
 export async function fetchDashboardAccounts(token: string): Promise<DashboardAccount[]> {

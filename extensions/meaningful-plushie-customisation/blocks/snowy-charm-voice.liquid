@@ -1,36 +1,30 @@
 {{ 'snowy-charm-voice.css' | asset_url | stylesheet_tag }}
 <script src="{{ 'snowy-charm-voice.js' | asset_url }}" defer="defer"></script>
 
-{%- if product.id == 8426384719943 -%}
-  <section
-    class="mp-snowy-charm-voice"
-    data-snowy-charm-voice
-    data-api-url="{{ block.settings.app_url | default: 'https://meaningful-plushies-fulfilment.vercel.app' | escape }}"
-    {{ block.shopify_attributes }}
-  >
-    <h2>Send a voice message</h2>
-    <p class="mp-snowy-charm-voice__intro">Record a message for your Snowy Plush Charm, or choose an audio file from your phone.</p>
-
-    <div class="mp-snowy-charm-voice__actions">
-      <button type="button" class="mp-snowy-charm-voice__record" data-record>Record voice message</button>
-      <label class="mp-snowy-charm-voice__upload">Choose audio file<input type="file" accept="audio/*" data-audio-file><span>Upload audio file</span></label>
+<section class="mp-snowy-charm-voice" data-snowy-charm-voice data-api-url="{{ block.settings.app_url | default: 'https://meaningful-plushies-fulfilment.vercel.app' | escape }}" {{ block.shopify_attributes }}>
+    <div class="mp-snowy-charm-voice__choices" role="group" aria-label="Voice message source">
+      <button type="button" class="is-active" data-select-record aria-pressed="true">Record voice</button>
+      <button type="button" data-select-upload aria-pressed="false">Upload audio</button>
     </div>
-
-    <div class="mp-snowy-charm-voice__recording" data-recording hidden aria-live="polite">
-      <span class="mp-snowy-charm-voice__pulse" aria-hidden="true"></span>
-      <strong>Recording <span data-recording-time>0:00</span></strong>
-      <span>Tap “Stop recording” when you are done.</span>
+    <div class="mp-snowy-charm-voice__panel">
+      <div class="mp-snowy-charm-voice__record-control" data-record-control><button type="button" data-record>Record voice</button></div>
+      <label class="mp-snowy-charm-voice__upload" data-upload-control hidden><span>Choose your audio file</span><input type="file" accept="audio/*,.mp3,.mp4,.m4a,.ogg,.oga,.wav,.webm" data-audio-file><strong>Choose audio file</strong></label>
+      <div class="mp-snowy-charm-voice__preview" data-preview-wrap hidden>
+        <audio data-preview preload="metadata"></audio>
+        <button type="button" data-play aria-label="Play voice message"><span data-play-label>PLAY</span><span class="mp-snowy-charm-voice__loading" data-loading hidden aria-hidden="true"><i></i><i></i><i></i></span></button>
+        <input type="range" min="0" max="0" step="0.1" value="0" data-seek aria-label="Voice message progress">
+        <span data-time>0:00 / 0:00</span>
+      </div>
+      <p class="mp-snowy-charm-voice__file" data-file-name aria-live="polite"></p>
+      <div class="mp-snowy-charm-voice__progress" data-progress hidden aria-live="polite"><div><span data-progress-label>Preparing upload…</span><strong data-progress-percent>0%</strong></div><span><i data-progress-bar></i></span></div>
+      <p class="mp-snowy-charm-voice__notice" data-notice aria-live="polite"></p>
     </div>
-    <audio class="mp-snowy-charm-voice__preview" data-preview controls hidden></audio>
-    <p class="mp-snowy-charm-voice__file" data-file-name aria-live="polite">No audio selected yet.</p>
-    <div class="mp-snowy-charm-voice__progress" data-progress hidden aria-live="polite"><div><span data-progress-label>Preparing your audio…</span><strong data-progress-percent>0%</strong></div><span><i data-progress-bar></i></span></div>
-    <p class="mp-snowy-charm-voice__notice" data-notice aria-live="polite"></p>
-  </section>
-{%- endif -%}
+    <div class="mp-snowy-charm-voice__dialog" data-record-dialog hidden role="dialog" aria-modal="true" aria-labelledby="mp-snowy-record-title"><div class="mp-snowy-charm-voice__dialog-card"><p>Your voice message</p><strong data-record-countdown>3</strong><h2 id="mp-snowy-record-title" data-record-status>Get ready</h2><span data-record-time>0:20 left</span><span class="mp-snowy-charm-voice__dialog-bar"><i data-record-progress></i></span><button type="button" data-record-stop hidden>Stop recording</button><button type="button" data-record-cancel>Cancel</button></div></div>
+</section>
 
 {% schema %}
 {
-  "name": "Snowy Charm voice message",
+  "name": "Plush Charm voice message",
   "target": "section",
   "enabled_on": { "templates": ["product"] },
   "settings": [

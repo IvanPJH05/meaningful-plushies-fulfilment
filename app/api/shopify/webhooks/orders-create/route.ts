@@ -2,10 +2,12 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { shopifyLinePersonalization, shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
+import { isPlushCharmOrder } from "../../../../../lib/plush-charm";
 import { bindSessionsToOrders, customisationSessionIds, submittedCustomisationsForSessionIds } from "../../../../../lib/customisation";
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
 import { certificateMediaForLineItem, certificateMetaobjectForOrder, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrder, flowCertificateCode, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
-import { fetchMetaCapiSettings, fetchSharedOrdersByOrderNumber, insertSharedActivity, markManualOrderUsedByDiscountCode, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
+import { fetchMetaCapiSettings, fetchSharedOrders, fetchSharedOrdersByOrderNumber, insertSharedActivity, markManualOrderUsedByDiscountCode, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
+import { createCloserOrderLink, isFormattedPlushCharmLink, nextPlushCharmSequence } from "@/src/modules/closer/service";
 
 export const runtime = "nodejs";
 
@@ -114,12 +116,22 @@ export async function POST(request: Request) {
         voiceUploadStatus: certificateFields.meaningfulMessage ? "received" : order.voiceUploadStatus,
       };
     });
+    // Plush Charms are audio-only products. They receive an Our Link address,
+    // never a birth certificate. Classic plushies continue through the
+    // certificate flow below without any change.
+    let nextCharmSequence = nextPlushCharmSequence((await fetchSharedOrders()).filter(isPlushCharmOrder));
+    ordersToSave = await Promise.all(ordersToSave.map(async (order) => (
+      isPlushCharmOrder(order) && !isFormattedPlushCharmLink(order.idWebsiteLink)
+        ? { ...order, idWebsiteLink: await createCloserOrderLink(order, nextCharmSequence++) }
+        : order
+    )));
     const createdAt = textValue(fullOrder.createdAt) || new Date().toISOString();
     const existingCertificate = looksLikePersonalizedPlushie(fullOrder)
       ? await certificateMetaobjectForOrder(syncedNumber).catch(() => null)
       : null;
     const certificates = looksLikePersonalizedPlushie(fullOrder) && ordersToSave.length
       ? await Promise.all(ordersToSave.map((order, index) => {
+        if (isPlushCharmOrder(order)) return null;
         const lineItem = objectValue(orderLineItems[index]);
         const lineItemTitle = textValue(lineItem.title);
         const lineItemVariantTitle = textValue(lineItem.variantTitle);

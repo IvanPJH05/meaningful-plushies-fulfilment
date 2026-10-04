@@ -3,8 +3,10 @@ import { randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 
 import { createCompleteNowSession, createVoiceUpload, saveSubmittedSession, submittedCustomisationsForSessionIds, type CustomisationForm } from "./customisation";
+import { notifyNewManualOrder } from "./mobile-push-notifications";
 import { shopifyManualOrderCustomerName } from "./manual-order-customer-name";
 import { manualOrderProductByKey } from "./manual-order-products";
+import { manualOrderIntakeQuote as quoteManualOrderIntake } from "./manual-order-intake-pricing";
 import { normalizeManualOrderPhone, shopifyManualOrderPhone } from "./manual-order-phone";
 import { manualOrderSpeakerSeconds, normalizeManualOrderCharacter } from "./manual-order-product-paths";
 import { shopDomain, shopifyGraphql, shopifyRest, textValue } from "./shopify-orders";
@@ -54,6 +56,11 @@ export type ManualOrderIntakeDetails = {
   form: CustomisationForm | null;
   voiceUrl: string;
   voiceFileName: string;
+};
+
+export type ManualOrderIntakeApproval = ManualOrderIntake & {
+  speakerSeconds: number;
+  amountToCollect: number | null;
 };
 
 export type ManualOrderIntakeSubmission = {
@@ -154,6 +161,17 @@ function currentVariantIdForIntake(intake: ManualOrderIntake) {
   const seconds = Number(product ? manualOrderSpeakerSeconds(product) : 0);
   const currentVariant = character && seconds ? knownVariantId(character, seconds) : "";
   return currentVariant ? asVariantGid(currentVariant) : intake.shopifyVariantId;
+}
+
+function intakeConfiguredSpeakerSeconds(intake: Pick<ManualOrderIntake, "productKey" | "productDisplayName">) {
+  const configuredProduct = manualOrderProductByKey(intake.productKey);
+  const configuredSeconds = Number(configuredProduct ? manualOrderSpeakerSeconds(configuredProduct) : 0);
+  if (configuredSeconds) return configuredSeconds;
+  return 0;
+}
+
+export function manualOrderIntakeQuote(intake: Pick<ManualOrderIntake, "productKey" | "productDisplayName" | "shippingRegion">, storeVariantPrice?: number) {
+  return quoteManualOrderIntake(intake, intakeConfiguredSpeakerSeconds(intake), storeVariantPrice);
 }
 
 function voiceDownloadUrl(path: string) {
@@ -365,6 +383,7 @@ export async function submitManualOrderIntake(input: ManualOrderIntakeSubmission
   }).select("*").single();
   if (error || !data) throw new Error(error?.message || "Your details could not be saved.");
   const intake = rowToIntake(data as Record<string, unknown>);
+  await notifyNewManualOrder({ id: intake.id, reference: manualOrderIntakeReference(intake.id), product: intake.productDisplayName });
   return { ...intake, reference: manualOrderIntakeReference(intake.id), whatsAppUrl: collectionWhatsAppUrl(manualOrderIntakeReference(intake.id)) };
 }
 
@@ -375,6 +394,35 @@ export async function listManualOrderIntakes() {
   // particular, customer permission changes must not make the list appear
   // empty even though every submission remains safely stored in Supabase.
   return (data || []).map((row) => rowToIntake(row as Record<string, unknown>));
+}
+
+/** Compact data for the approval queue. It deliberately excludes transaction
+ * history and uploaded media, so opening Manual Orders on a phone stays fast. */
+export async function listManualOrderIntakeApprovals(): Promise<ManualOrderIntakeApproval[]> {
+  const { data, error } = await serviceClient().from(TABLE).select("*").eq("status", "awaiting_payment").order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  const intakes = (data || []).map((row) => rowToIntake(row as Record<string, unknown>));
+  const variants = [...new Set(intakes.map(currentVariantIdForIntake).filter(Boolean))];
+  const prices = new Map<string, number>();
+  if (variants.length) {
+    try {
+      const domain = shopDomain();
+      if (domain) {
+        const result = await shopifyGraphql<{ data?: { nodes?: Array<{ id?: string; price?: string }> } }>(domain, `
+          query ManualOrderVariantPrices($ids: [ID!]!) { nodes(ids: $ids) { ... on ProductVariant { id price } } }
+        `, { ids: variants });
+        for (const variant of result?.data?.nodes ?? []) {
+          const price = Number(variant.price);
+          if (variant.id && Number.isFinite(price)) prices.set(variant.id, price);
+        }
+      }
+    } catch { /* The queue must remain usable if Shopify price lookup is briefly unavailable. */ }
+  }
+  return intakes.map((intake) => {
+    const price = prices.get(currentVariantIdForIntake(intake));
+    const quote = manualOrderIntakeQuote(intake, price);
+    return { ...intake, speakerSeconds: quote.speakerSeconds, amountToCollect: quote.amountToCollect };
+  });
 }
 
 export async function getManualOrderIntakeDetails(id: string): Promise<ManualOrderIntakeDetails> {

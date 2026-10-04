@@ -297,7 +297,7 @@ export function uploadLiftCertificateFields(raw: string): Omit<CertificateMetaob
     favouritePerson: read("Favourite Person", "Favorite Person", "Plushie's Favourite Person", "Plushie's Favorite Person"),
     belongsTo: read("Belongs To", "Plushie Belongs To", "Plushie's Belongs To"),
     meaningfulNote: read("Meaningful Note"),
-    meaningfulMessage: read("Meaningful Message", "Voice Message", "Voice"),
+    meaningfulMessage: read("_meaningful_message_url", "Meaningful Message", "Voice Message", "Voice"),
   };
 }
 

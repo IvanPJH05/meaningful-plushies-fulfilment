@@ -18,6 +18,7 @@
     const voiceRecordControl = block.querySelector("[data-voice-record-control]");
     const voiceFeedbackAnchor = block.querySelector("[data-voice-feedback-anchor]");
     const voicePreview = block.querySelector("[data-voice-preview]");
+    const voiceFileName = block.querySelector("[data-voice-file-name]");
     const voiceAudio = block.querySelector("[data-voice-audio]");
     const voicePlayButton = block.querySelector("[data-voice-play]");
     const voicePlayLabel = block.querySelector("[data-voice-play-label]");
@@ -42,8 +43,8 @@
     const voiceProgress = document.createElement("div");
     voiceProgress.className = "mp-deferred-customisation__upload-progress";
     voiceProgress.hidden = true;
-    voiceProgress.style.cssText = "display:grid;gap:6px;margin-top:9px;color:#53798f;font-size:.83em;font-weight:700";
-    voiceProgress.innerHTML = '<div style="display:flex;justify-content:space-between;gap:12px"><span data-upload-status>Preparing upload…</span><strong data-upload-percent>0%</strong></div><div style="height:8px;overflow:hidden;border-radius:999px;background:#dbe8ee"><span data-upload-bar style="display:block;width:0;height:100%;border-radius:inherit;background:#668da4;transition:width .18s ease"></span></div>';
+    voiceProgress.style.cssText = "display:grid;gap:7px;color:#53798f;font-size:.85em;font-weight:700";
+    voiceProgress.innerHTML = '<div style="display:flex;justify-content:space-between;gap:12px"><span data-upload-status>Preparing upload…</span><strong data-upload-percent>0%</strong></div><div style="height:8px;overflow:hidden;border-radius:999px;background:#dbe8ee"><span data-upload-bar style="display:block;width:0;height:100%;border-radius:inherit;background:#7098ae;transition:width .18s ease"></span></div>';
     voiceFeedbackAnchor.insertAdjacentElement("afterend", voiceProgress);
     const voiceProgressStatus = voiceProgress.querySelector("[data-upload-status]");
     const voiceProgressPercent = voiceProgress.querySelector("[data-upload-percent]");
@@ -85,6 +86,7 @@
     let earlySaveTimer = null;
     let savedCompleteNowFingerprint = "";
     let voiceSource = "record";
+    let voicePlayLabelFrame = 0;
 
     const selectedVoice = () => recordedVoiceFile || voiceInput.files?.[0] || restoredVoiceFile || null;
     const audioMimeType = (file) => {
@@ -106,12 +108,25 @@
       voiceUploadControl.hidden = source !== "upload";
       voiceRecordControl.hidden = source !== "record";
     };
-    const updateVoiceLabel = () => { voiceButton.textContent = selectedVoice()?.name || voiceInput.value.split(/[/\\\\]/).pop() || t("uploadVoiceButton"); };
+    const updateVoiceLabel = () => {
+      const fileName = selectedVoice()?.name || voiceInput.value.split(/[/\\\\]/).pop() || "";
+      voiceButton.textContent = t("uploadVoiceButton");
+      voiceFileName.textContent = fileName;
+    };
     const formatPlaybackTime = (seconds) => Number.isFinite(seconds) ? `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}` : "0:00";
     const setVoicePlaybackUi = ({ playing = false, loading = false } = {}) => {
-      voicePlayLabel.textContent = loading ? t("loadingVoice") : playing ? t("pauseVoice") : t("playVoice");
+      const label = playing ? t("pauseVoice") : t("playVoice");
+      if (!loading && voicePlayLabel.textContent !== label) {
+        cancelAnimationFrame(voicePlayLabelFrame);
+        voicePlayLabel.classList.add("is-changing");
+        voicePlayLabelFrame = requestAnimationFrame(() => {
+          voicePlayLabel.textContent = label;
+          voicePlayLabelFrame = requestAnimationFrame(() => voicePlayLabel.classList.remove("is-changing"));
+        });
+      }
       voiceLoading.hidden = !loading;
       voicePlayButton.disabled = loading;
+      voicePlayButton.classList.toggle("is-playing", playing && !loading);
       voicePlayButton.setAttribute("aria-label", loading ? t("loadingVoice") : playing ? t("pauseVoice") : t("playVoice"));
     };
     const updateVoicePreview = () => {
@@ -134,6 +149,7 @@
       voiceAudio.removeAttribute("src");
       voiceAudio.load();
       voicePreview.hidden = true;
+      voiceFileName.textContent = "";
       recordedVoiceFile = null;
       restoredVoiceFile = null;
       voiceInput.value = "";
@@ -333,11 +349,9 @@
       field.addEventListener("blur", () => { syncPurchaseBlockers(); saveDraft(); });
     });
     selectRecordVoice?.addEventListener("click", () => {
-      if (voiceSource !== "record") clearVoiceSelection();
       setVoiceSource("record");
     });
     selectUploadVoice?.addEventListener("click", () => {
-      if (voiceSource !== "upload") clearVoiceSelection();
       setVoiceSource("upload");
       voiceInput.click();
     });
@@ -527,9 +541,22 @@
       appendOrderProperty("Meaningful Note", details.meaningfulNote);
       const fileName = selectedVoice()?.name || "meaningful-plushie-voice";
       const voiceLink = `${apiUrl}/api/customisation/audio-download?path=${encodeURIComponent(voiceStoragePath)}&filename=${encodeURIComponent(fileName)}`;
-      appendOrderProperty("Meaningful Message", voiceLink);
+      appendOrderProperty("Meaningful Message", "Customised");
+      appendOrderProperty("_meaningful_message_url", voiceLink);
       // Retain the token only as an internal property for recovery/support.
       appendOrderProperty("_customisation_token", token);
+    };
+    const saveCartCustomisationReference = async (sessionId) => {
+      // Keep a cart-level copy as a fallback for accelerated checkout and
+      // theme Ajax handlers that can serialize the product form before its
+      // dynamically-added line-item properties are included.
+      const response = await fetch("/cart/update.js", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ attributes: { mp_customisation_session_id: sessionId } }),
+      });
+      if (!response.ok) throw new Error("Could not link your customisation to the cart. Please try again.");
     };
     const request = async (path, options) => {
       const response = await fetch(`${apiUrl}${path}`, options);
@@ -669,6 +696,7 @@
           }
           appendSessionId(upload.session.sessionId);
           appendCompleteNowProperties(details, upload.voiceStoragePath, upload.session.token);
+          await saveCartCustomisationReference(upload.session.sessionId);
           notice.textContent = t("saved");
         }
         // Preserve the two storefront actions: Add to cart opens the cart,

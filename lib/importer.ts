@@ -244,7 +244,7 @@ export function shopifyLinePersonalization(lineItem: unknown): ShopifyPersonaliz
     favouritePerson: shopifyLineAttributeValue(lineItem, ["Favourite Person", "Favorite Person", "Plushie's Favourite Person", "Plushie's Favorite Person"]),
     belongsTo: shopifyLineAttributeValue(lineItem, ["Belongs To", "Plushie Belongs To", "Plushie's Belongs To"]),
     meaningfulNote: shopifyLineAttributeValue(lineItem, ["Meaningful Note", "Note"]),
-    meaningfulMessage: shopifyLineAttributeValue(lineItem, ["Meaningful Message", "Message", "Voice Message"]),
+    meaningfulMessage: shopifyLineAttributeValue(lineItem, ["_meaningful_message_url", "Meaningful Message", "Message", "Voice Message"]),
   };
 }
 
@@ -337,6 +337,15 @@ function shopifyLineCharacter(lineName: string) {
   return lineName.match(/-\s*([^/]+?)(?:\s*\(RM\d+(?:\.\d+)?\))?\s*\//i)?.[1]?.trim()
     ?? lineName.match(/\b(BILLY|TOOTSIE|HUNNIE|DRAGON WARRIOR)\b/i)?.[1]?.trim()
     ?? "";
+}
+
+function shopifyPlushCharmCharacter(lineName: string) {
+  // Only use the leading P/R/B code when this is the Plush Charm product.
+  // A classic item such as “(B,20S) BUILD YOUR MEANINGFUL PLUSHIE - BILLY”
+  // must remain Billy rather than being interpreted as Benny.
+  if (!/\bmeaningful\s+plush\s+charm\b/i.test(lineName)) return "";
+  const code = lineName.match(/^\s*\(\s*([PRB])\s*,\s*\d+\s*S\s*\)/i)?.[1]?.toUpperCase();
+  return code === "P" ? "PENNY" : code === "R" ? "RENNY" : code === "B" ? "BENNY" : "";
 }
 
 function shopifyLineVoice(lineName: string) {
@@ -522,7 +531,11 @@ export function shopifyOrderToFulfilmentOrders(
       creatorFreeOrder,
       shippingMethod: String(shippingLines[0]?.title ?? shippingLine.title ?? current?.shippingMethod ?? ""),
       product: productName(lineName, personalization.product || current?.product || ""),
-      character: shopifyLineCharacter(lineName) || current?.character || "",
+      // Keep the explicit session marker during later Shopify refreshes. Older
+      // charm orders are still recognised in the fulfilment UI from their
+      // product name, so they do not need a data migration.
+      productType: current?.productType || (/\b(?:snowy\s+)?plush\s*charm\b/i.test(`${lineName} ${personalization.product}`) ? "plush_charm" : ""),
+      character: shopifyPlushCharmCharacter(lineName) || shopifyLineCharacter(lineName) || current?.character || "",
       setIndicator: total > 1 ? `(${index + 1},${total})` : "",
       idWebsiteLink: certificateLink(certificateCode) || current?.idWebsiteLink || "",
       voiceLength: shopifyLineVoice(lineName) || current?.voiceLength || 0,
