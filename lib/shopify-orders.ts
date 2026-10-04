@@ -596,9 +596,11 @@ export async function fetchShopifyOrdersCreatedSince(date: string, request?: Req
       }
     }
   `, {
-    // Fetch the recent set first. Shopify's date search can omit newly-created
-    // orders while indexes are catching up, so the caller filters createdAt.
-    query: "status:any",
+    // Keep recoveries deliberately scoped. The previous broad query only
+    // looked at Shopify's most-recent page and could return no qualifying
+    // rows when a store had more recent activity outside the requested range.
+    // The caller still checks the returned timestamp as a safety net.
+    query: `created_at:>=${date} status:any`,
     uploadLiftKey: UPLOAD_LIFT_KEY,
     uploadLiftNamespace: UPLOAD_LIFT_NAMESPACE,
   });
