@@ -129,7 +129,11 @@ async function nextPlushCharmSequence() {
   const { data, error } = await database()
     .from("closer_app_certificates")
     .select("certificate_id")
-    .like("certificate_id", "________");
+    // certificate_id is unique/indexed. A bounded numeric range uses that
+    // index, whereas a wildcard length match can scan the complete Our Link
+    // table and time out as the account grows.
+    .gte("certificate_id", "00000000")
+    .lte("certificate_id", "99999999");
   throwDatabaseError(error);
   return (data || []).reduce((highest, row) => {
     const certificateId = String((row as { certificate_id?: unknown }).certificate_id || "");
