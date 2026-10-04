@@ -657,7 +657,7 @@ const workspaceLabels: Record<Workspace, string> = {
   reports: "Reports",
   content: "Content Plan",
   settings: "Settings",
-  shopify_app: "Shopify App",
+  shopify_app: "Our Link",
   audio_scanner: "Audio Scanner",
 };
 const orderStatusFilterValues = ["all", ...orderStatuses] as const;
@@ -873,7 +873,7 @@ const contentNavItems: NavItem[] = [
   { view: "content_plan", label: "Planned Content", icon: "calendar" },
   { view: "content_ideas", label: "Idea Brainstorming", icon: "idea" },
 ];
-const shopifyAppNavItems: NavItem[] = [{ view: "shopify_app", label: "Closer Certificates", icon: "settings" }];
+const shopifyAppNavItems: NavItem[] = [{ view: "shopify_app", label: "Our Link", icon: "settings" }];
 const manualOrderNavItems: NavItem[] = [
   { view: "manual_orders_dashboard", label: "Manual Orders", icon: "orders" },
   { view: "manual_orders_preorders", label: "Preorders", icon: "cash" },
@@ -1490,9 +1490,10 @@ function viewTitle(view: View) {
     manual_orders_dashboard: "Manual Orders",
     manual_orders_preorders: "Preorders",
     manual_orders_leads: "Leads",
+    shopify_app: "Our Link",
   };
   if (titleOverrides[view]) return titleOverrides[view]!;
-  const item = [...fulfilmentNavItems, ...fulfilmentAdminNavItems, ...audioScannerNavItems, ...manualOrderNavItems, ...accountingNavItems, ...formalAccountingNavItems, ...monthlyJournalNavItems, ...creatorAdminNavItems, ...inventoryNavItems, ...reportsNavItems, ...contentNavItems, ...settingsNavItems]
+  const item = [...fulfilmentNavItems, ...fulfilmentAdminNavItems, ...audioScannerNavItems, ...shopifyAppNavItems, ...manualOrderNavItems, ...accountingNavItems, ...formalAccountingNavItems, ...monthlyJournalNavItems, ...creatorAdminNavItems, ...inventoryNavItems, ...reportsNavItems, ...contentNavItems, ...settingsNavItems]
     .find((navItem) => navItem.view === view);
   if (item) return item.label;
   return "Orders Dashboard";
