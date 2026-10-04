@@ -522,6 +522,10 @@ export function shopifyOrderToFulfilmentOrders(
       creatorFreeOrder,
       shippingMethod: String(shippingLines[0]?.title ?? shippingLine.title ?? current?.shippingMethod ?? ""),
       product: productName(lineName, personalization.product || current?.product || ""),
+      // Keep the explicit session marker during later Shopify refreshes. Older
+      // charm orders are still recognised in the fulfilment UI from their
+      // product name, so they do not need a data migration.
+      productType: current?.productType || (/\b(?:snowy\s+)?plush\s*charm\b/i.test(`${lineName} ${personalization.product}`) ? "plush_charm" : ""),
       character: shopifyLineCharacter(lineName) || current?.character || "",
       setIndicator: total > 1 ? `(${index + 1},${total})` : "",
       idWebsiteLink: certificateLink(certificateCode) || current?.idWebsiteLink || "",

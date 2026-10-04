@@ -55,7 +55,7 @@ type SessionRow = {
   contact_email: string | null;
   contact_phone: string | null;
   status: "draft" | "pending_payment" | "awaiting_customisation" | "submitted" | "expired" | "cancelled";
-  form_data: Partial<CustomisationForm> & { customisationPageUrl?: string };
+  form_data: Partial<CustomisationForm> & { customisationPageUrl?: string; productType?: "plush_charm" | "snowy_charm" | string };
   voice_storage_path: string | null;
   google_drive_file_id?: string | null;
   google_drive_file_name?: string | null;
@@ -217,7 +217,7 @@ export async function saveSnowyCharmVoice(token: string, voiceStoragePath: strin
 
   const completedAt = new Date().toISOString();
   const { error } = await serviceClient().from(SESSION_TABLE).update({
-    form_data: { ...session.form_data, productType: "snowy_charm" },
+    form_data: { ...session.form_data, productType: "plush_charm" },
     voice_storage_path: voiceStoragePath,
     status: "submitted",
     completed_at: completedAt,
@@ -622,6 +622,10 @@ export async function bindSessionsToOrders(input: { orderId: string; orderNumber
       // updated so browser and mobile caches retrieve the restored details.
       updatedAt: now,
       status: submitted ? "new_order" : "awaiting_customisation",
+      // The Plush Charm storefront block records this on the session before
+      // checkout. Keep it on the fulfilment order so packing can safely keep
+      // charms separate from the classic plushies.
+      productType: form.productType === "snowy_charm" ? "plush_charm" : String(form.productType || order.productType || ""),
       plushName: submitted ? form.plushName || order.plushName : order.plushName,
       plushGender: submitted ? form.gender || order.plushGender : order.plushGender,
       plushBirthDate: submitted ? form.birthDate || order.plushBirthDate : order.plushBirthDate,
