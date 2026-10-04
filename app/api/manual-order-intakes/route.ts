@@ -17,12 +17,12 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   if (!await requireAdmin(request)) return NextResponse.json({ ok: false, error: "Administrator access is required." }, { status: 403 });
   try {
-    const body = await request.json() as { action?: string; id?: string; paymentReceipts?: PaymentReceipt[] };
+    const body = await request.json() as { action?: string; id?: string; intakeIds?: string[]; paymentReceipts?: PaymentReceipt[] };
     if (body.action === "details") return NextResponse.json({ ok: true, details: await getManualOrderIntakeDetails(String(body.id || "")) });
     if (body.action === "attach_receipt") return NextResponse.json({ ok: true, intake: await attachManualOrderReceipt(String(body.id || ""), Array.isArray(body.paymentReceipts) ? body.paymentReceipts : []) });
     if (body.action === "approve_cod") return NextResponse.json({ ok: true, intake: await approveManualOrderCod(String(body.id || "")) });
     if (body.action === "create_shopify_order") return NextResponse.json({ ok: true, order: await createPaidShopifyOrder(String(body.id || "")) });
-    if (body.action === "restore_fulfilment") return NextResponse.json({ ok: true, restoration: await restoreManualOrderFulfilment() });
+    if (body.action === "restore_fulfilment") return NextResponse.json({ ok: true, restoration: await restoreManualOrderFulfilment(body.intakeIds) });
     if (body.action === "repair_shipping") return NextResponse.json({ ok: true, order: await repairManualOrderShipping(String(body.id || "")) });
     if (body.action === "delete") { await deleteManualOrderIntake(String(body.id || "")); return NextResponse.json({ ok: true }); }
     return NextResponse.json({ ok: false, error: "That Manual Order action is not supported." }, { status: 400 });

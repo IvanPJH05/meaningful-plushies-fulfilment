@@ -753,12 +753,16 @@ export async function createPaidShopifyOrder(intakeId: string) {
 
 /** Restore any historical WhatsApp collection orders that were created while
  * Shopify did not deliver its order-created webhook to this app. */
-export async function restoreManualOrderFulfilment() {
-  const { data, error } = await serviceClient()
+export async function restoreManualOrderFulfilment(intakeIds?: string[]) {
+  const database = serviceClient();
+  let query = database
     .from(TABLE)
     .select("*")
     .eq("status", "created")
     .order("created_by_order_at", { ascending: false });
+  const requestedIds = [...new Set((intakeIds || []).filter((id) => /^[0-9a-f-]{36}$/i.test(id)))];
+  if (requestedIds.length) query = query.in("id", requestedIds);
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
 
   let restored = 0;
