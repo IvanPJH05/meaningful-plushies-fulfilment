@@ -3055,10 +3055,12 @@ export default function Home() {
       return;
     }
     const changedAt = new Date().toISOString();
-    const changed: Order[] = [];
-    const nextOrders = orders.map((order) => {
-      if (mode === "labels" || !packingSelection.includes(order.id) || order.status !== "new_order") return order;
-      const updated: Order = {
+    // Printing a packing slip starts the non-TikTok production workflow. A
+    // label-only print does not, and TikTok Shop follows its own workflow.
+    const shouldAdvance = mode !== "labels";
+    const changed = packingOrders
+      .filter((order) => shouldAdvance && order.salesChannel !== "tiktok" && order.status === "new_order")
+      .map((order): Order => ({
         ...order,
         status: "uploading_audio",
         updatedAt: changedAt,
@@ -3067,12 +3069,11 @@ export default function Home() {
           status: "uploading_audio",
           changedAt,
           changedBy: session ? `${session.displayName} (${session.username})` : "Staff",
-      note: "Packing slip printed",
+          note: "Packing slip printed",
         }],
-      };
-      changed.push(updated);
-      return updated;
-    });
+      }));
+    const changedById = new Map(changed.map((order) => [order.id, order]));
+    const nextOrders = orders.map((order) => changedById.get(order.id) ?? order);
     try { if (changed.length) await upsertSharedOrders(changed); }
     catch (error) { setNotice(error instanceof Error ? error.message : "Packing-slip changes could not be saved."); return; }
     setOrders(nextOrders);
