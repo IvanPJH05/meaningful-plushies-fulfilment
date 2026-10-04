@@ -101,7 +101,7 @@ type View =
   | "monthly_journal_inbox" | "monthly_journal_import" | "monthly_journal_shopee" | "monthly_journal_shortcuts" | "monthly_journal_source_documents" | "monthly_journal_general_journal" | "monthly_journal_reports" | "monthly_journal_accounts" | "monthly_journal_account_activity"
   | "content_dashboard" | "content_plan" | "content_ideas"
   | "manual_orders_dashboard" | "manual_orders_preorders" | "manual_orders_leads"
-  | "creator_dashboard" | "creator_accounts" | "creator_sales" | "creator_commissions" | "creator_payouts" | "creator_analytics" | "creator_free_samples" | "shopify_app" | "audio_scanner";
+  | "creator_dashboard" | "creator_accounts" | "creator_sales" | "creator_commissions" | "creator_payouts" | "creator_analytics" | "creator_free_samples" | "plush_charm_orders" | "shopify_app" | "audio_scanner";
 type Workspace = "fulfilment" | "manual_orders" | "accounting" | "formal_accounting" | "monthly_journal" | "creator" | "inventory" | "reports" | "content" | "settings" | "shopify_app" | "audio_scanner";
 type SalesRange = "active" | "today" | "7d" | "30d" | "lifetime";
 type SortKey = "orderNumber" | "importedAt" | "updatedAt";
@@ -630,7 +630,7 @@ const manualOrderViews: readonly View[] = ["manual_orders_dashboard", "manual_or
 const manualOrderCharacters = ["Billy", "Tootsie", "Hunnie", "Dragon Warrior"] as const;
 const creatorViews: readonly View[] = ["creator_dashboard", "creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
 const creatorAdminViews: readonly View[] = ["creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
-const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "meta_capi", "stock", "sales_report", "shopify_app", "audio_scanner", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...creatorViews];
+const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "meta_capi", "stock", "sales_report", "plush_charm_orders", "shopify_app", "audio_scanner", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...creatorViews];
 const adminOnlyViews = new Set<View>(["history", "settings", "meta_capi", "stock", "sales_report", "shopify_app", "audio_scanner", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...creatorAdminViews]);
 const workspaceDefaultViews: Record<Workspace, View> = {
   fulfilment: "orders",
@@ -643,7 +643,7 @@ const workspaceDefaultViews: Record<Workspace, View> = {
   reports: "sales_report",
   content: "content_dashboard",
   settings: "settings",
-  shopify_app: "shopify_app",
+  shopify_app: "plush_charm_orders",
   audio_scanner: "audio_scanner",
 };
 const workspaceLabels: Record<Workspace, string> = {
@@ -873,7 +873,11 @@ const contentNavItems: NavItem[] = [
   { view: "content_plan", label: "Planned Content", icon: "calendar" },
   { view: "content_ideas", label: "Idea Brainstorming", icon: "idea" },
 ];
-const shopifyAppNavItems: NavItem[] = [{ view: "shopify_app", label: "Our Link", icon: "settings" }];
+const shopifyAppNavItems: NavItem[] = [
+  { view: "plush_charm_orders", label: "Plush Charm Orders", icon: "fulfilment" },
+  { view: "shopify_app", label: "Our Link Settings", icon: "settings" },
+];
+const shopifyCharmStaffNavItems: NavItem[] = [{ view: "plush_charm_orders", label: "Plush Charm Orders", icon: "fulfilment" }];
 const manualOrderNavItems: NavItem[] = [
   { view: "manual_orders_dashboard", label: "Manual Orders", icon: "orders" },
   { view: "manual_orders_preorders", label: "Preorders", icon: "cash" },
@@ -1453,7 +1457,7 @@ function workspaceForView(view: View): Workspace {
   if (accountingViews.includes(view)) return "accounting";
   if (view === "stock") return "inventory";
   if (view === "sales_report") return "reports";
-  if (view === "shopify_app") return "shopify_app";
+  if (view === "plush_charm_orders" || view === "shopify_app") return "shopify_app";
   if (view === "audio_scanner") return "audio_scanner";
   if (view === "history" || view === "settings" || view === "meta_capi") return "settings";
   return "fulfilment";
@@ -1461,7 +1465,7 @@ function workspaceForView(view: View): Workspace {
 
 function navItemsForWorkspace(workspace: Workspace, role: UserRole): NavItem[] {
   if (role === "creator") return creatorNavItems;
-  if (role !== "admin") return fulfilmentNavItems;
+  if (role !== "admin") return workspace === "shopify_app" ? shopifyCharmStaffNavItems : fulfilmentNavItems;
   if (workspace === "accounting") return accountingNavItems;
   if (workspace === "formal_accounting") return formalAccountingNavItems;
   if (workspace === "monthly_journal") return monthlyJournalNavItems;
@@ -1490,7 +1494,8 @@ function viewTitle(view: View) {
     manual_orders_dashboard: "Manual Orders",
     manual_orders_preorders: "Preorders",
     manual_orders_leads: "Leads",
-    shopify_app: "Our Link",
+    plush_charm_orders: "Plush Charm Orders",
+    shopify_app: "Our Link Settings",
   };
   if (titleOverrides[view]) return titleOverrides[view]!;
   const item = [...fulfilmentNavItems, ...fulfilmentAdminNavItems, ...audioScannerNavItems, ...shopifyAppNavItems, ...manualOrderNavItems, ...accountingNavItems, ...formalAccountingNavItems, ...monthlyJournalNavItems, ...creatorAdminNavItems, ...inventoryNavItems, ...reportsNavItems, ...contentNavItems, ...settingsNavItems]
@@ -2143,6 +2148,16 @@ export default function Home() {
         .join(" ").toLowerCase().includes(search));
     return sortOrderRecords(matching, sortKey, sortDirection);
   }, [orders, manualOrders, query, sourceFilter, statusFilter, view, sortKey, sortDirection, fulfilmentStartDate, fulfilmentEndDate]);
+  const plushCharmOrders = useMemo(() => {
+    const search = query.trim().toLowerCase();
+    const matching = orders
+      .filter(isPlushCharm)
+      .filter((order) => orderSourceMatches(order, sourceFilter, manualOrders))
+      .filter((order) => statusFilter === "all" || order.status === statusFilter)
+      .filter((order) => !search || [order.orderNumber, order.customerName, order.phone, order.plushName, order.product, displayedCharacter(order), order.idWebsiteLink]
+        .join(" ").toLowerCase().includes(search));
+    return sortOrderRecords(matching, sortKey, sortDirection);
+  }, [orders, manualOrders, query, sourceFilter, statusFilter, sortKey, sortDirection]);
   const fulfilmentDateRangeSales = useMemo(() => {
     const uniqueSales = new Map<string, Order>();
     for (const order of orders) {
@@ -5659,7 +5674,7 @@ export default function Home() {
   const workspace = workspaceForView(view);
   const availableWorkspaces: Workspace[] = session.role === "admin"
     ? ["fulfilment", "manual_orders", "accounting", "formal_accounting", "monthly_journal", "creator", "inventory", "reports", "content", "shopify_app", "audio_scanner", "settings"]
-    : session.role === "creator" ? ["creator"] : ["fulfilment"];
+    : session.role === "creator" ? ["creator"] : ["fulfilment", "shopify_app"];
   const sidebarNavItems = navItemsForWorkspace(workspace, session.role);
   const workspaceTitle = workspaceLabels[workspace];
 
@@ -5835,7 +5850,23 @@ export default function Home() {
 
       {workspace === "monthly_journal" && session.role === "admin" && <MonthlyJournalWorkspace initialView={view.replace("monthly_journal_", "") as "inbox" | "import" | "shopee" | "shortcuts" | "source_documents" | "general_journal" | "reports" | "account_activity" | "accounts"} />}
 
-      {workspace === "shopify_app" && session.role === "admin" && <ShopifyAppWorkspace sessionToken={session.token} />}
+      {view === "plush_charm_orders" && <section className="card orders-card plush-charm-orders-card">
+        <div className="toolbar">
+          <div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, character, customer or phone..." /></div>
+          <SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} />
+          <StatusFilterPills value={statusFilter} onChange={setStatusFilter} />
+          <SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} />
+        </div>
+        <div className="plush-charm-orders-intro"><strong>All Plush Charm orders</strong><span>These orders are separated from classic plushies to make packing safer.</span></div>
+        <div className="table-scroll"><table className="orders-table plush-charm-orders-table"><thead><tr><th>Order ID</th><th>Meaningful Message</th><th>Character</th><th>ID Website Link</th><th>Customer Name</th><th>Phone Number</th><th>Status</th><th>View</th></tr></thead><tbody>{plushCharmOrders.map((order) => {
+          const messageLink = meaningfulMessageLink(order);
+          const downloadName = meaningfulMessageDownloadName(order);
+          const link = certificateLink(order);
+          return <tr key={order.id} className="plush-charm-row"><td><strong>{orderLabel(order)}</strong><OrderMarkers order={order} manualOrders={manualOrders} /></td><td>{messageLink ? <a href={messageLink} download={downloadName} target={downloadName ? undefined : "_blank"} rel="noreferrer">{downloadName ? "Download message" : "Open message"}</a> : "-"}</td><td><strong>{displayedCharacter(order) || "-"}</strong></td><td className="certificate-cell">{link ? <a href={link} target="_blank" rel="noreferrer">{certificateLink(order, false)}</a> : "-"}</td><td><strong>{order.customerName || "-"}</strong></td><td>{order.phone || "-"}</td><td><StatusPill status={order.status} /></td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>;
+        })}</tbody></table>{!plushCharmOrders.length && <div className="empty"><strong>No Plush Charm orders found</strong><p>Try another search or status filter.</p></div>}</div>
+        <div className="table-footer">Showing {plushCharmOrders.length} of {orders.filter(isPlushCharm).length} Plush Charm orders</div>
+      </section>}
+      {view === "shopify_app" && session.role === "admin" && <ShopifyAppWorkspace sessionToken={session.token} />}
       {workspace === "audio_scanner" && session.role === "admin" && <AudioScannerWorkspace orders={orders} audioSourceFor={meaningfulMessageLink} />}
 
       {workspace === "creator" && (session.role === "admin" || session.role === "creator") && <CreatorProgramWorkspacePage
