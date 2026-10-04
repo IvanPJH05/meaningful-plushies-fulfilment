@@ -3131,9 +3131,11 @@ export default function Home() {
       return;
     }
     const changedAt = new Date().toISOString();
-    // Printing a packing slip starts the non-TikTok production workflow. A
-    // label-only print does not, and TikTok Shop follows its own workflow.
-    const shouldAdvance = mode !== "labels";
+    // Preparing any print set for a non-TikTok order means its shipping label
+    // is ready for the production box. Advance it consistently whether staff
+    // printed the packing slip, the shipping label, or both. TikTok Shop
+    // retains its separate workflow and is never moved here.
+    const shouldAdvance = true;
     const changed = packingOrders
       .filter((order) => shouldAdvance && order.salesChannel !== "tiktok" && order.status === "new_order")
       .map((order): Order => ({
