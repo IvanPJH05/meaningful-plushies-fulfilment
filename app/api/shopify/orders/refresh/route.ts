@@ -5,7 +5,7 @@ import { isPlushCharmOrder } from "../../../../../lib/plush-charm";
 import { submittedCustomisationForOrder } from "../../../../../lib/customisation";
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
 import { certificateMediaForLineItem, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrderByNumber, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
-import { fetchMetaCapiSettings, fetchSharedOrders, fetchSharedOrdersByOrderNumber, insertSharedActivity, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
+import { fetchMetaCapiSettings, fetchSharedOrders, fetchSharedOrdersByOrderNumber, insertSharedActivity, upsertSharedOrders } from "../../../../../lib/supabase";
 import { createCloserOrderLink, isFormattedPlushCharmLink, nextPlushCharmSequence } from "@/src/modules/closer/service";
 import type { Order } from "../../../../../lib/types";
 
@@ -57,7 +57,10 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
     meaningfulNote: submitted.form.meaningfulNote,
     meaningfulMessage: `supabase-storage:${submitted.voiceStoragePath}`,
   } : uploadLiftCertificateFields(shopifyMetafieldValue(fullOrder));
-  const charmSequence = nextPlushCharmSequence((await fetchSharedOrders()).filter(isPlushCharmOrder));
+  const needsCharmLink = importedOrders.some((order) => isPlushCharmOrder(order) && !isFormattedPlushCharmLink(order.idWebsiteLink));
+  const charmSequence = needsCharmLink
+    ? nextPlushCharmSequence((await fetchSharedOrders()).filter(isPlushCharmOrder))
+    : 0;
   let nextSequence = charmSequence;
   const ordersWithOurLinks = await Promise.all(importedOrders.map(async (order) => (
     isPlushCharmOrder(order) && !isFormattedPlushCharmLink(order.idWebsiteLink)
@@ -152,8 +155,9 @@ export async function POST(request: Request) {
     const checkedRows = successful.reduce((sum, result) => sum + result.orders.length, 0);
 
     if (changedOrders.length) {
-      await upsertSharedOrders(changedOrders);
-      await syncCreatorCommissions();
+      // Restoring an order must not wait for reporting calculations. This is
+      // especially important while the database is under IO pressure.
+      await upsertSharedOrders(changedOrders, { syncSales: false });
       await insertSharedActivity({
         id: `shopify-refresh-${Date.now()}`,
         orderNumber: uniqueOrderNumbers.length === 1 ? uniqueOrderNumbers[0] : undefined,

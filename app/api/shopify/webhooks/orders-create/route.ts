@@ -6,7 +6,7 @@ import { isPlushCharmOrder } from "../../../../../lib/plush-charm";
 import { bindSessionsToOrders, customisationSessionIds, submittedCustomisationsForSessionIds } from "../../../../../lib/customisation";
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
 import { certificateMediaForLineItem, certificateMetaobjectForOrder, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrder, flowCertificateCode, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
-import { fetchMetaCapiSettings, fetchSharedOrders, fetchSharedOrdersByOrderNumber, insertSharedActivity, markManualOrderUsedByDiscountCode, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
+import { fetchMetaCapiSettings, fetchSharedOrders, fetchSharedOrdersByOrderNumber, insertSharedActivity, markManualOrderUsedByDiscountCode, upsertSharedOrders } from "../../../../../lib/supabase";
 import { createCloserOrderLink, isFormattedPlushCharmLink, nextPlushCharmSequence } from "@/src/modules/closer/service";
 
 export const runtime = "nodejs";
@@ -119,7 +119,13 @@ export async function POST(request: Request) {
     // Plush Charms are audio-only products. They receive an Our Link address,
     // never a birth certificate. Classic plushies continue through the
     // certificate flow below without any change.
-    let nextCharmSequence = nextPlushCharmSequence((await fetchSharedOrders()).filter(isPlushCharmOrder));
+    // Reading every order includes historical media and is unnecessary for a
+    // classic plushie. Restrict that expensive read to the small subset of
+    // new Plush Charm orders that genuinely need a Charm sales sequence.
+    const needsCharmLink = ordersToSave.some((order) => isPlushCharmOrder(order) && !isFormattedPlushCharmLink(order.idWebsiteLink));
+    let nextCharmSequence = needsCharmLink
+      ? nextPlushCharmSequence((await fetchSharedOrders()).filter(isPlushCharmOrder))
+      : 0;
     ordersToSave = await Promise.all(ordersToSave.map(async (order) => (
       isPlushCharmOrder(order) && !isFormattedPlushCharmLink(order.idWebsiteLink)
         ? { ...order, idWebsiteLink: await createCloserOrderLink(order, nextCharmSequence++) }
@@ -191,21 +197,17 @@ export async function POST(request: Request) {
       });
     }
 
-    await upsertSharedOrders(ordersToSave);
+    // The webhook's only critical job is to save the customer order. Sales
+    // journals and commission reports are calculated separately; running
+    // them here can exceed Postgres's statement timeout and make Shopify
+    // retry an otherwise valid order.
+    await upsertSharedOrders(ordersToSave, { syncSales: false });
     for (const code of appliedDiscountCodes(fullOrder)) {
       await markManualOrderUsedByDiscountCode(
         code,
         textValue(fullOrder.id) || textValue(payload.admin_graphql_api_id),
         textValue(fullOrder.name) || textValue(payload.name),
       );
-    }
-    try {
-      await syncCreatorCommissions();
-    } catch (error) {
-      // A slow commission recalculation must never make Shopify retry and
-      // duplicate an otherwise imported order. The next successful order
-      // sync or manual refresh will recalculate commissions again.
-      console.error("Creator commission sync failed after Shopify import", error);
     }
     try {
       const metaSettings = await fetchMetaCapiSettings();
