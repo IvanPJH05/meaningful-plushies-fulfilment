@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 
 import { shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
+import { isPlushCharmOrder } from "../../../../../lib/plush-charm";
 import { submittedCustomisationForOrder } from "../../../../../lib/customisation";
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
 import { certificateMediaForLineItem, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrderByNumber, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
 import { fetchMetaCapiSettings, fetchSharedOrdersByOrderNumber, insertSharedActivity, syncCreatorCommissions, upsertSharedOrders } from "../../../../../lib/supabase";
+import { createCloserOrderLink, isOurLinkUrl } from "@/src/modules/closer/service";
 import type { Order } from "../../../../../lib/types";
 
 export const runtime = "nodejs";
@@ -55,8 +57,14 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
     meaningfulNote: submitted.form.meaningfulNote,
     meaningfulMessage: `supabase-storage:${submitted.voiceStoragePath}`,
   } : uploadLiftCertificateFields(shopifyMetafieldValue(fullOrder));
+  const ordersWithOurLinks = await Promise.all(importedOrders.map(async (order) => (
+    isPlushCharmOrder(order) && !isOurLinkUrl(order.idWebsiteLink)
+      ? { ...order, idWebsiteLink: await createCloserOrderLink(order.id) }
+      : order
+  )));
   const certificates = looksLikePersonalizedPlushie(fullOrder)
-    ? await Promise.all(importedOrders.map((order, index) => {
+    ? await Promise.all(ordersWithOurLinks.map((order, index) => {
+      if (isPlushCharmOrder(order)) return null;
       const lineItem = objectValue(lineItems[index]);
       return createCertificateMetaobject({
         orderNumber: requestedOrderNumber,
@@ -77,7 +85,7 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
       });
     }))
     : [];
-  const ordersWithCertificates = importedOrders.map((order, index) => {
+  const ordersWithCertificates = ordersWithOurLinks.map((order, index) => {
     const certificate = certificates[index];
     return certificate ? {
       ...order,

@@ -1326,7 +1326,11 @@ function orderSourceMatches(order: Order, source: SourceFilter, manualOrders: Ma
 }
 
 function certificateLink(order: Order, includeProtocol = true) {
-  const link = order.certificateCode
+  // A Plush Charm has an Our Link rather than a birth certificate. Prefer its
+  // saved Our Link even if an older import left a legacy certificate code.
+  const link = isPlushCharm(order)
+    ? order.idWebsiteLink.replace(/^https?:\/\//i, "")
+    : order.certificateCode
     ? `meaningfulplushies.com/pages/certificate/${order.certificateCode.trim()}`
     : order.idWebsiteLink.replace(/^https?:\/\//i, "");
   return includeProtocol && link ? `https://${link}` : link;
@@ -1695,6 +1699,7 @@ export default function Home() {
   const [loadingOrders, setLoadingOrders] = useState(() => !initialOrdersCache);
   const [databaseError, setDatabaseError] = useState("");
   const [refreshingOrderNumber, setRefreshingOrderNumber] = useState("");
+  const [generatingPlushCharmLinks, setGeneratingPlushCharmLinks] = useState(false);
   const [nfcWritingOrderId, setNfcWritingOrderId] = useState("");
   const [nfcHelperStatus, setNfcHelperStatus] = useState<"unknown" | "checking" | "running" | "not_running" | "starting">("unknown");
   const [nfcUnlockPassword, setNfcUnlockPassword] = useState("");
@@ -2499,6 +2504,28 @@ export default function Home() {
       return;
     }
     await refreshShopifyOrderNumbers([order.orderNumber]);
+  }
+
+  async function generatePlushCharmOurLinks() {
+    if (currentSession.role !== "admin") return;
+    setGeneratingPlushCharmLinks(true);
+    try {
+      const response = await fetch("/api/our-link/plush-charm-links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-dashboard-session": currentSession.token },
+      });
+      const result = await response.json() as { ok?: boolean; updated?: number; orders?: Order[]; error?: string };
+      if (!response.ok || !result.ok) throw new Error(result.error || "Our Link IDs could not be generated.");
+      if (result.orders?.length) {
+        const byId = new Map(result.orders.map((order) => [order.id, order]));
+        setOrders((current) => current.map((order) => byId.get(order.id) || order));
+      }
+      setNotice(result.updated ? `${result.updated} Plush Charm order${result.updated === 1 ? " now has" : "s now have"} an Our Link ID.` : "Every Plush Charm order already has an Our Link ID.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Our Link IDs could not be generated.");
+    } finally {
+      setGeneratingPlushCharmLinks(false);
+    }
   }
 
   async function bulkRefreshShopifyOrders() {
@@ -5856,6 +5883,7 @@ export default function Home() {
           <SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} />
           <StatusFilterPills value={statusFilter} onChange={setStatusFilter} />
           <SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} />
+          {session.role === "admin" && <button className="button primary" type="button" disabled={generatingPlushCharmLinks} onClick={() => void generatePlushCharmOurLinks()}>{generatingPlushCharmLinks ? "Generating Our Link IDs..." : "Generate Our Link IDs"}</button>}
         </div>
         <div className="plush-charm-orders-intro"><strong>All Plush Charm orders</strong><span>These orders are separated from classic plushies to make packing safer.</span></div>
         <div className="table-scroll"><table className="orders-table plush-charm-orders-table"><thead><tr><th>Order ID</th><th>Meaningful Message</th><th>Character</th><th>ID Website Link</th><th>Customer Name</th><th>Phone Number</th><th>Status</th><th>View</th></tr></thead><tbody>{plushCharmOrders.map((order) => {

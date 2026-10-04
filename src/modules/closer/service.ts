@@ -5,6 +5,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { deleteCloserMedia, storeCloserMedia } from "@/src/modules/closer/media-storage";
 
 const nameLimit = 60;
+const customerSpaceUrl = (process.env.CLOSER_CUSTOMER_PAGE_URL || "https://meaningfulplushies.com/apps/closer").replace(/\/$/, "");
 
 type Certificate = { id: string; certificate_id: string; access_key_hash: string; connection_id: string | null; created_at: string };
 type Connection = { id: string; first_certificate_id: string; second_certificate_id: string; first_name: string; second_name: string; next_photo_certificate_id: string; photo_path: string | null; photo_content_type: string | null; voice_path: string | null; voice_content_type: string | null; first_voice_path: string | null; first_voice_content_type: string | null; second_voice_path: string | null; second_voice_content_type: string | null; created_at: string; updated_at: string };
@@ -92,6 +93,39 @@ async function logActivity(connectionId: string, actorCertificateId: string, act
 }
 
 export function hashCloserAccessKey(accessKey: string) { return createHash("sha256").update(accessKey).digest("hex"); }
+
+export function isOurLinkUrl(value: string | undefined) {
+  try {
+    const url = new URL(value || "");
+    return url.pathname === "/apps/closer" && Boolean(url.searchParams.get("certificate") && url.searchParams.get("key"));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Creates a private Our Link address for one Plush Charm order. The order ID
+ * is part of the certificate ID so a webhook retry cannot create duplicates.
+ */
+export async function createCloserOrderLink(orderIdValue: string) {
+  const orderId = String(orderIdValue).replace(/[^A-Za-z0-9_-]/g, "-").slice(0, 80);
+  if (!orderId) throw new CloserError("This order needs a valid ID before an Our Link can be created.");
+  const certificateId = `plush-charm-${orderId}`;
+  const accessKey = randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, "").slice(0, 16);
+  try {
+    await createCloserCertificate(certificateId, accessKey);
+  } catch (error) {
+    // The link may have been created by a previous webhook attempt before the
+    // order record saved. Rotate to a new key so this retry returns a usable
+    // link instead of failing or creating a second certificate.
+    if (!await certificateById(certificateId)) throw error;
+    await rotateCloserCertificateAccessKey(certificateId, accessKey);
+  }
+  const url = new URL(customerSpaceUrl);
+  url.searchParams.set("certificate", certificateId);
+  url.searchParams.set("key", accessKey);
+  return url.toString();
+}
 
 function previewSigningKey() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;

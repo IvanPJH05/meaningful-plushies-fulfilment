@@ -205,7 +205,7 @@ export async function syncFulfilmentSalesToMonthlyJournal(orders: Order[]) {
   }
 }
 
-export async function upsertSharedOrders(orders: Order[]) {
+export async function upsertSharedOrders(orders: Order[], options?: { syncSales?: boolean }) {
   if (!orders.length) return;
   const client = requireSupabase();
   // The browser cache deliberately excludes inline files. When a cached order
@@ -275,7 +275,7 @@ export async function upsertSharedOrders(orders: Order[]) {
       .upsert(rows.slice(start, start + batchSize), { onConflict: "id" });
     if (error) throw error;
   }
-  await syncFulfilmentSalesToMonthlyJournal(orders);
+  if (options?.syncSales !== false) await syncFulfilmentSalesToMonthlyJournal(orders);
 }
 
 export async function deleteSharedOrders(ids: string[]) {

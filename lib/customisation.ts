@@ -3,6 +3,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 import { createClient } from "@supabase/supabase-js";
 
 import { certificateMediaForLineItem, certificateMetaobjectForOrder, createCertificateMetaobject, plushBackgroundForMeaningfulNote, setShopifyOrderMetafield, shopDomain, shopifyGraphql, updateCertificateMetaobject } from "./shopify-orders";
+import { isPlushCharmOrder } from "./plush-charm";
 import type { Order } from "./types";
 import { voiceBackupFileName } from "./voice-file-name";
 
@@ -603,7 +604,11 @@ export async function bindSessionsToOrders(input: { orderId: string; orderNumber
   const sessions = (data ?? []) as SessionRow[];
   const byId = new Map(sessions.map((session) => [session.id, session]));
   const now = new Date().toISOString();
-  const needsCertificate = sessions.some((session) => session.status === "submitted");
+  const needsCertificate = sessions.some((session, index) => {
+    const order = input.orders[index] || input.orders[0];
+    const productType = session.form_data?.productType === "snowy_charm" ? "plush_charm" : String(session.form_data?.productType || order?.productType || "");
+    return session.status === "submitted" && Boolean(order) && !isPlushCharmOrder({ ...order, productType });
+  });
   const fallbackCertificate = !input.certificates?.length && needsCertificate
     ? await flowCertificateForOrder(input.orderNumber)
     : null;
@@ -614,6 +619,7 @@ export async function bindSessionsToOrders(input: { orderId: string; orderNumber
     if (!session) return order;
     const form = session.form_data || {};
     const submitted = session.status === "submitted";
+    const plushCharm = isPlushCharmOrder({ ...order, productType: form.productType === "snowy_charm" ? "plush_charm" : String(form.productType || order.productType || "") });
     const certificate = input.certificates?.[index] || fallbackCertificate;
     const certificateCode = certificate?.code || session.certificate_code || "";
     return {
@@ -635,7 +641,9 @@ export async function bindSessionsToOrders(input: { orderId: string; orderNumber
       meaningfulNote: submitted ? form.meaningfulNote || order.meaningfulNote : order.meaningfulNote,
       meaningfulMessage: submitted && session.voice_storage_path ? `supabase-storage:${session.voice_storage_path}` : order.meaningfulMessage,
       certificateCode: certificateCode || order.certificateCode,
-      idWebsiteLink: submitted && certificateCode ? `https://meaningfulplushies.com/pages/certificate/${certificateCode}` : order.idWebsiteLink,
+      // Audio-only Plush Charms have an Our Link instead of a birth
+      // certificate. Never replace that link during session reconciliation.
+      idWebsiteLink: submitted && certificateCode && !plushCharm ? `https://meaningfulplushies.com/pages/certificate/${certificateCode}` : order.idWebsiteLink,
       voiceUploadStatus: submitted && session.voice_storage_path ? "received" : "missing",
       statusHistory: submitted
         ? [...order.statusHistory, { id: `${order.id}-customisation-${now}`, status: "new_order", changedAt: now, changedBy: "Customer", note: "Customisation submitted through secure link." }]
