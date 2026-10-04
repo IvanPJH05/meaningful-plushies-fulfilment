@@ -6,6 +6,7 @@ import { createCompleteNowSession, createVoiceUpload, saveSubmittedSession, subm
 import { notifyNewManualOrder } from "./mobile-push-notifications";
 import { shopifyManualOrderCustomerName } from "./manual-order-customer-name";
 import { manualOrderProductByKey } from "./manual-order-products";
+import { manualOrderIntakeQuote as quoteManualOrderIntake } from "./manual-order-intake-pricing";
 import { normalizeManualOrderPhone, shopifyManualOrderPhone } from "./manual-order-phone";
 import { manualOrderSpeakerSeconds, normalizeManualOrderCharacter } from "./manual-order-product-paths";
 import { shopDomain, shopifyGraphql, shopifyRest, textValue } from "./shopify-orders";
@@ -160,6 +161,17 @@ function currentVariantIdForIntake(intake: ManualOrderIntake) {
   const seconds = Number(product ? manualOrderSpeakerSeconds(product) : 0);
   const currentVariant = character && seconds ? knownVariantId(character, seconds) : "";
   return currentVariant ? asVariantGid(currentVariant) : intake.shopifyVariantId;
+}
+
+function intakeConfiguredSpeakerSeconds(intake: Pick<ManualOrderIntake, "productKey" | "productDisplayName">) {
+  const configuredProduct = manualOrderProductByKey(intake.productKey);
+  const configuredSeconds = Number(configuredProduct ? manualOrderSpeakerSeconds(configuredProduct) : 0);
+  if (configuredSeconds) return configuredSeconds;
+  return 0;
+}
+
+export function manualOrderIntakeQuote(intake: Pick<ManualOrderIntake, "productKey" | "productDisplayName" | "shippingRegion">, storeVariantPrice?: number) {
+  return quoteManualOrderIntake(intake, intakeConfiguredSpeakerSeconds(intake), storeVariantPrice);
 }
 
 function voiceDownloadUrl(path: string) {
@@ -408,7 +420,8 @@ export async function listManualOrderIntakeApprovals(): Promise<ManualOrderIntak
   }
   return intakes.map((intake) => {
     const price = prices.get(currentVariantIdForIntake(intake));
-    return { ...intake, speakerSeconds: Number(manualOrderSpeakerSeconds(manualOrderProductByKey(intake.productKey) || { key: intake.productKey, displayName: intake.productDisplayName })) || 0, amountToCollect: price === undefined ? null : price + (intake.shippingRegion === "EAST" ? 20 : 0) };
+    const quote = manualOrderIntakeQuote(intake, price);
+    return { ...intake, speakerSeconds: quote.speakerSeconds, amountToCollect: quote.amountToCollect };
   });
 }
 
