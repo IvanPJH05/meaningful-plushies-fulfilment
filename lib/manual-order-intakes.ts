@@ -3,15 +3,16 @@ import { randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 
 import { createCompleteNowSession, createVoiceUpload, saveSubmittedSession, submittedCustomisationsForSessionIds, type CustomisationForm } from "./customisation";
+import { shopifyOrderToFulfilmentOrders } from "./importer";
 import { notifyNewManualOrder } from "./mobile-push-notifications";
 import { shopifyManualOrderCustomerName } from "./manual-order-customer-name";
 import { manualOrderProductByKey } from "./manual-order-products";
 import { manualOrderIntakeQuote as quoteManualOrderIntake } from "./manual-order-intake-pricing";
 import { normalizeManualOrderPhone, shopifyManualOrderPhone } from "./manual-order-phone";
 import { manualOrderSpeakerSeconds, normalizeManualOrderCharacter } from "./manual-order-product-paths";
-import { shopDomain, shopifyGraphql, shopifyRest, textValue } from "./shopify-orders";
-import { saveManualOrder } from "./supabase";
-import type { ManualOrder } from "./types";
+import { cleanShopifyOrderNumber, fetchShopifyOrderByNumber, shopDomain, shopifyGraphql, shopifyRest, textValue } from "./shopify-orders";
+import { fetchSharedOrdersByOrderNumber, saveManualOrder, upsertSharedOrders } from "./supabase";
+import type { ManualOrder, Order } from "./types";
 
 const TABLE = "manual_order_intakes";
 const COD_PAYMENT_MARKER = "manual-order://cash-on-delivery";
@@ -178,6 +179,138 @@ function voiceDownloadUrl(path: string) {
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://meaningful-plushies-fulfilment.vercel.app").replace(/\/$/, "");
   const fileName = path.split("/").at(-1) || "meaningful-plushie-voice";
   return `${appUrl}/api/customisation/audio-download?path=${encodeURIComponent(path)}&filename=${encodeURIComponent(fileName)}`;
+}
+
+function intakeAddress(intake: ManualOrderIntake) {
+  return [
+    intake.shippingAddress.address1,
+    intake.shippingAddress.address2,
+    intake.shippingAddress.city,
+    intake.shippingAddress.province,
+    intake.shippingAddress.zip,
+    "Malaysia",
+  ].filter(Boolean).join(", ");
+}
+
+function fallbackFulfilmentOrderForIntake(
+  intake: ManualOrderIntake,
+  form: CustomisationForm,
+  voiceStoragePath: string,
+  createdAt: string,
+): Order | null {
+  const orderNumber = cleanShopifyOrderNumber(intake.shopifyOrderName || intake.shopifyOrderId);
+  if (!orderNumber) return null;
+  const quote = manualOrderIntakeQuote(intake);
+  const basePrice = Math.max(0, (quote.amountToCollect ?? 0) - quote.shippingFee);
+  const total = quote.amountToCollect ?? 0;
+  return {
+    id: orderNumber,
+    orderNumber,
+    salesChannel: "shopify",
+    orderDate: createdAt,
+    customerName: intake.customerName,
+    phone: intake.phoneOriginal,
+    email: intake.customerEmail,
+    address: intakeAddress(intake),
+    currency: "MYR",
+    subtotalAmount: basePrice,
+    shippingAmount: quote.shippingFee,
+    totalAmount: total,
+    discountAmount: 0,
+    productDiscountAmount: 0,
+    shippingDiscountAmount: 0,
+    refundedAmount: 0,
+    outstandingBalance: intake.isCod ? total : 0,
+    paymentProcessor: intake.isCod ? "Cash on Delivery" : "Bank Transfer",
+    discountCodes: [],
+    discountCodeUsed: "",
+    creatorFreeOrder: false,
+    shippingMethod: intake.shippingRegion === "EAST" ? "East Malaysia delivery" : "Standard delivery",
+    product: intake.productDisplayName,
+    productType: "classic_plushie",
+    character: normalizeManualOrderCharacter(intake.character) || intake.character,
+    setIndicator: "",
+    idWebsiteLink: "",
+    voiceLength: quote.speakerSeconds,
+    plushName: form.plushName,
+    plushGender: form.gender,
+    plushBirthDate: form.birthDate,
+    plushBirthPlace: form.birthPlace,
+    plushFavouritePerson: form.favouritePerson,
+    plushBelongsTo: form.belongsTo,
+    certificateCode: "",
+    meaningfulNote: form.meaningfulNote,
+    meaningfulMessage: voiceDownloadUrl(voiceStoragePath),
+    remark: intake.isCod
+      ? "Created from Manual Order Collection as Cash on Delivery."
+      : "Created from Manual Order Collection after payment receipt was verified.",
+    voiceUploadStatus: voiceStoragePath ? "received" : "missing",
+    courier: "",
+    trackingNumber: "",
+    status: "new_order",
+    internalNotes: "",
+    statusHistory: [{
+      id: `${orderNumber}-${createdAt}`,
+      status: "new_order",
+      changedAt: createdAt,
+      changedBy: "Manual Order Collection",
+      note: "Created directly from the verified WhatsApp order.",
+    }],
+    importedAt: createdAt,
+    updatedAt: createdAt,
+  };
+}
+
+/**
+ * Manual collection orders are created through Shopify's Admin API. Shopify
+ * does not guarantee that an app receives its own order-created webhook, so
+ * write the fulfilment row here as part of the same completed-order flow.
+ * The webhook can still arrive later and safely enrich this record.
+ */
+async function saveManualIntakeToFulfilment(
+  intake: ManualOrderIntake,
+  form: CustomisationForm,
+  voiceStoragePath: string,
+  createdAt: string,
+) {
+  const orderNumber = cleanShopifyOrderNumber(intake.shopifyOrderName || intake.shopifyOrderId);
+  if (!orderNumber) throw new Error("Shopify did not provide an order number for fulfilment.");
+
+  const existing = await fetchSharedOrdersByOrderNumber(orderNumber);
+  const shopifyOrder = await fetchShopifyOrderByNumber(orderNumber);
+  const imported = shopifyOrder
+    ? shopifyOrderToFulfilmentOrders(shopifyOrder, "", existing, "Manual Order Collection")
+      .filter((order) => order.orderNumber === orderNumber)
+    : [];
+  const fallback = fallbackFulfilmentOrderForIntake(intake, form, voiceStoragePath, createdAt);
+  const sourceOrders = imported.length ? imported : fallback ? [fallback] : [];
+  if (!sourceOrders.length) throw new Error("The created Shopify order could not be prepared for fulfilment.");
+
+  const enriched = sourceOrders.map((order) => ({
+    ...order,
+    customerName: intake.customerName || order.customerName,
+    phone: intake.phoneOriginal || order.phone,
+    email: intake.customerEmail || order.email,
+    address: intakeAddress(intake) || order.address,
+    character: normalizeManualOrderCharacter(intake.character) || order.character,
+    voiceLength: manualOrderIntakeQuote(intake).speakerSeconds || order.voiceLength,
+    plushName: form.plushName || order.plushName,
+    plushGender: form.gender || order.plushGender,
+    plushBirthDate: form.birthDate || order.plushBirthDate,
+    plushBirthPlace: form.birthPlace || order.plushBirthPlace,
+    plushFavouritePerson: form.favouritePerson || order.plushFavouritePerson,
+    plushBelongsTo: form.belongsTo || order.plushBelongsTo,
+    meaningfulNote: form.meaningfulNote || order.meaningfulNote,
+    meaningfulMessage: voiceStoragePath ? voiceDownloadUrl(voiceStoragePath) : order.meaningfulMessage,
+    voiceUploadStatus: voiceStoragePath ? "received" as const : order.voiceUploadStatus,
+    paymentProcessor: intake.isCod ? "Cash on Delivery" : order.paymentProcessor || "Bank Transfer",
+    remark: order.remark || (intake.isCod
+      ? "Created from Manual Order Collection as Cash on Delivery."
+      : "Created from Manual Order Collection after payment receipt was verified."),
+    updatedAt: createdAt,
+  }));
+  await upsertSharedOrders(enriched);
+  return enriched.length;
 }
 
 type ShopifyManualOrder = {
@@ -594,7 +727,54 @@ export async function createPaidShopifyOrder(intakeId: string) {
       error: error instanceof Error ? error.message : String(error),
     });
   }
-  return { shopifyOrderId, shopifyOrderName };
+  let fulfilmentRowsSaved = 0;
+  try {
+    fulfilmentRowsSaved = await saveManualIntakeToFulfilment(intake, form, customisation.voiceStoragePath, now);
+  } catch (error) {
+    // Shopify has already created the order, so preserve that successful state.
+    // The restoration action can safely retry this small, idempotent upsert.
+    console.error("Manual Order Collection fulfilment sync failed", {
+      intakeId: intake.id,
+      shopifyOrderId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  return { shopifyOrderId, shopifyOrderName, fulfilmentRowsSaved };
+}
+
+/** Restore any historical WhatsApp collection orders that were created while
+ * Shopify did not deliver its order-created webhook to this app. */
+export async function restoreManualOrderFulfilment() {
+  const { data, error } = await serviceClient()
+    .from(TABLE)
+    .select("*")
+    .eq("status", "created")
+    .order("created_by_order_at", { ascending: false });
+  if (error) throw new Error(error.message);
+
+  let restored = 0;
+  let failed = 0;
+  for (const row of data ?? []) {
+    try {
+      const intake = rowToIntake(row as Record<string, unknown>);
+      const submitted = await submittedCustomisationsForSessionIds([intake.customisationSessionId]);
+      const customisation = submitted.get(intake.customisationSessionId);
+      if (!customisation) {
+        failed += 1;
+        continue;
+      }
+      restored += await saveManualIntakeToFulfilment(
+        intake,
+        customisation.form,
+        customisation.voiceStoragePath,
+        intake.createdByOrderAt || intake.updatedAt || new Date().toISOString(),
+      );
+    } catch (restoreError) {
+      failed += 1;
+      console.error("Historical Manual Order Collection fulfilment restore failed", restoreError);
+    }
+  }
+  return { checked: (data ?? []).length, restored, failed };
 }
 
 export async function repairManualOrderShipping(intakeId: string) {
