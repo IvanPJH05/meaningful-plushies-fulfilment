@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { shopifyOrderToFulfilmentOrders } from "@/lib/importer";
 import { cleanShopifyOrderNumber, fetchShopifyOrdersCreatedSince, shopifyMetafieldValue, textValue } from "@/lib/shopify-orders";
-import { fetchSharedOrdersByOrderNumber, insertSharedActivity, syncCreatorCommissions, upsertSharedOrders } from "@/lib/supabase";
+import { fetchSharedOrdersByOrderNumber, insertSharedActivity, upsertSharedOrders } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 
@@ -43,8 +43,9 @@ export async function POST(request: Request) {
     }
 
     if (imported.length) {
-      await upsertSharedOrders(imported);
-      await syncCreatorCommissions();
+      // Keep recovery writes narrow and fast. Reporting and commission
+      // aggregates are maintained outside the Shopify ingestion path.
+      await upsertSharedOrders(imported, { syncSales: false });
       await insertSharedActivity({
         id: `shopify-catch-up-${Date.now()}`,
         action: "Shopify catch-up completed",
