@@ -276,7 +276,13 @@ async function saveManualIntakeToFulfilment(
   const orderNumber = cleanShopifyOrderNumber(intake.shopifyOrderName || intake.shopifyOrderId);
   if (!orderNumber) throw new Error("Shopify did not provide an order number for fulfilment.");
 
-  const existing = await fetchSharedOrdersByOrderNumber(orderNumber);
+  // This is an internal, server-side step in an already approved payment.
+  // Use the same service connection that created the Shopify order, rather
+  // than the browser-facing database connection used by the dashboard. That
+  // removes the old failure point where a valid WhatsApp order was created in
+  // Shopify but RLS/network timing prevented it from reaching fulfilment.
+  const database = serviceClient();
+  const existing = await fetchSharedOrdersByOrderNumber(orderNumber, database);
   const shopifyOrder = await fetchShopifyOrderByNumber(orderNumber);
   const imported = shopifyOrder
     ? shopifyOrderToFulfilmentOrders(shopifyOrder, "", existing, "Manual Order Collection")
@@ -309,7 +315,10 @@ async function saveManualIntakeToFulfilment(
       : "Created from Manual Order Collection after payment receipt was verified."),
     updatedAt: createdAt,
   }));
-  await upsertSharedOrders(enriched);
+  // Sales reporting reads these fulfilment rows. The separate monthly-journal
+  // mirror is intentionally left to its normal background sync so a missing
+  // accounting setup can never hide a real customer order from production.
+  await upsertSharedOrders(enriched, { syncSales: false }, database);
   return enriched.length;
 }
 
