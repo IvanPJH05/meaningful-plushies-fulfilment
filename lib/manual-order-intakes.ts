@@ -292,6 +292,13 @@ async function saveManualIntakeToFulfilment(
   const sourceOrders = imported.length ? imported : fallback ? [fallback] : [];
   if (!sourceOrders.length) throw new Error("The created Shopify order could not be prepared for fulfilment.");
 
+  // Keep the customer's original order time for the order itself, but always
+  // record *this* sync as the row's update time. The dashboard downloads only
+  // rows newer than its local cache; using the historical purchase time here
+  // meant a restored order could be stored successfully yet never appear on a
+  // device that had already refreshed later that day.
+  const syncedAt = new Date().toISOString();
+
   const enriched = sourceOrders.map((order) => ({
     ...order,
     customerName: intake.customerName || order.customerName,
@@ -313,7 +320,7 @@ async function saveManualIntakeToFulfilment(
     remark: order.remark || (intake.isCod
       ? "Created from Manual Order Collection as Cash on Delivery."
       : "Created from Manual Order Collection after payment receipt was verified."),
-    updatedAt: createdAt,
+    updatedAt: syncedAt,
   }));
   // Sales reporting reads these fulfilment rows. The separate monthly-journal
   // mirror is intentionally left to its normal background sync so a missing
