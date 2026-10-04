@@ -339,6 +339,15 @@ function shopifyLineCharacter(lineName: string) {
     ?? "";
 }
 
+function shopifyPlushCharmCharacter(lineName: string) {
+  // Only use the leading P/R/B code when this is the Plush Charm product.
+  // A classic item such as “(B,20S) BUILD YOUR MEANINGFUL PLUSHIE - BILLY”
+  // must remain Billy rather than being interpreted as Benny.
+  if (!/\bmeaningful\s+plush\s+charm\b/i.test(lineName)) return "";
+  const code = lineName.match(/^\s*\(\s*([PRB])\s*,\s*\d+\s*S\s*\)/i)?.[1]?.toUpperCase();
+  return code === "P" ? "PENNY" : code === "R" ? "RENNY" : code === "B" ? "BENNY" : "";
+}
+
 function shopifyLineVoice(lineName: string) {
   return Number(lineName.match(/(5|10|20)\s*(?:seconds?|S)\b/i)?.[1] ?? 0);
 }
@@ -526,7 +535,7 @@ export function shopifyOrderToFulfilmentOrders(
       // charm orders are still recognised in the fulfilment UI from their
       // product name, so they do not need a data migration.
       productType: current?.productType || (/\b(?:snowy\s+)?plush\s*charm\b/i.test(`${lineName} ${personalization.product}`) ? "plush_charm" : ""),
-      character: shopifyLineCharacter(lineName) || current?.character || "",
+      character: shopifyPlushCharmCharacter(lineName) || shopifyLineCharacter(lineName) || current?.character || "",
       setIndicator: total > 1 ? `(${index + 1},${total})` : "",
       idWebsiteLink: certificateLink(certificateCode) || current?.idWebsiteLink || "",
       voiceLength: shopifyLineVoice(lineName) || current?.voiceLength || 0,
