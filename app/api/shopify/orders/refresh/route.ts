@@ -76,7 +76,15 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
         createdAt,
         code: submitted?.certificateCode || order.certificateCode || undefined,
         plushDetails: textValue(lineItem.title) || order.character || order.product,
-        certificate: certificateMediaForLineItem(textValue(lineItem.title), textValue(lineItem.variantTitle)),
+        // Manual Shopify orders use a generic product title, so it often does
+        // not contain the selected character. Match the normal webhook flow
+        // by adding the already-normalised fulfilment character as a fallback
+        // hint; otherwise the certificate is created correctly but without its
+        // plush image.
+        certificate: certificateMediaForLineItem(
+          `${textValue(lineItem.title)} ${order.character || order.product}`,
+          `${textValue(lineItem.variantTitle)} ${order.character || order.product}`,
+        ),
         plushBackgroundBottom: plushBackgroundForMeaningfulNote(certificateFields.meaningfulNote || order.meaningfulNote || ""),
         ...certificateFields,
         idName: certificateFields.idName || order.plushName,
