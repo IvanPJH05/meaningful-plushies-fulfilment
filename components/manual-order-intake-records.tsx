@@ -96,10 +96,11 @@ export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: strin
     finally { setBusy(""); }
   }
 
-  async function restoreFulfilment() {
-    setBusy("restore-fulfilment");
+  async function restoreFulfilment(intakeIds?: string[]) {
+    const restoringOne = intakeIds?.length === 1 ? intakeIds[0] : "";
+    setBusy(restoringOne ? `restore-${restoringOne}` : "restore-fulfilment");
     try {
-      const result = await request({ action: "restore_fulfilment" });
+      const result = await request({ action: "restore_fulfilment", intakeIds });
       const restoration = result.restoration;
       if (!restoration) throw new Error("The fulfilment restoration did not return a result.");
       setNotice(`Fulfilment restored for ${restoration.restored} order${restoration.restored === 1 ? "" : "s"}. ${restoration.failed ? `${restoration.failed} need a retry.` : ""}`.trim());
@@ -176,7 +177,7 @@ export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: strin
       <td><strong>{intake.customerName}</strong><small>{intake.phoneOriginal}</small></td>
       <td><span className={`manual-order-status ${intake.isCod ? "active" : "used"}`}>{intake.isCod ? "COD" : "Paid"}</span></td>
       <td>{receiptPreviews(intake)}</td>
-      <td><div className="manual-order-approval-actions">{detailsButton(intake)}<button className="manual-order-receipt-drop" type="button" disabled={busy === intake.id} onClick={() => void repairShipping(intake)}>{busy === intake.id ? "SAVING SHIPPING..." : "CHECK / FIX SHIPPING"}</button><button className="button danger small" type="button" disabled={busy === intake.id} onClick={() => void deleteManualOrder(intake)}>{busy === intake.id ? "REMOVING..." : "DELETE"}</button></div></td>
+      <td><div className="manual-order-approval-actions">{detailsButton(intake)}<button className="manual-order-receipt-drop" type="button" disabled={busy === `restore-${intake.id}`} onClick={() => void restoreFulfilment([intake.id])}>{busy === `restore-${intake.id}` ? "RESTORING..." : "RESTORE TO FULFILMENT"}</button><button className="manual-order-receipt-drop" type="button" disabled={busy === intake.id} onClick={() => void repairShipping(intake)}>{busy === intake.id ? "SAVING SHIPPING..." : "CHECK / FIX SHIPPING"}</button><button className="button danger small" type="button" disabled={busy === intake.id} onClick={() => void deleteManualOrder(intake)}>{busy === intake.id ? "REMOVING..." : "DELETE"}</button></div></td>
     </tr>);
   }
 
