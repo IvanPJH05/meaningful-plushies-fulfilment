@@ -58,6 +58,7 @@ export type ManualOrderIntakeDetails = {
   form: CustomisationForm | null;
   voiceUrl: string;
   voiceFileName: string;
+  customisationSavedAt: string;
 };
 
 export type ManualOrderIntakeApproval = ManualOrderIntake & {
@@ -591,6 +592,7 @@ export async function getManualOrderIntakeDetails(id: string): Promise<ManualOrd
     form: customisation?.form || null,
     voiceUrl: voiceStoragePath ? voiceDownloadUrl(voiceStoragePath) : "",
     voiceFileName: voiceStoragePath.split("/").at(-1) || "",
+    customisationSavedAt: customisation?.savedAt || "",
   };
 }
 
