@@ -545,10 +545,10 @@ export function customisationSessionIds(order: Record<string, unknown>) {
  */
 export async function submittedCustomisationsForSessionIds(sessionIds: string[]) {
   const ids = [...new Set(sessionIds.filter(Boolean))];
-  if (!ids.length) return new Map<string, { form: CustomisationForm; voiceStoragePath: string }>();
+  if (!ids.length) return new Map<string, { form: CustomisationForm; voiceStoragePath: string; savedAt: string }>();
   const { data, error } = await serviceClient()
     .from(SESSION_TABLE)
-    .select("id,status,form_data,voice_storage_path")
+    .select("id,status,form_data,voice_storage_path,completed_at,updated_at")
     .in("id", ids)
     .eq("status", "submitted");
   if (error) throw new Error(error.message);
@@ -556,7 +556,13 @@ export async function submittedCustomisationsForSessionIds(sessionIds: string[])
   return new Map((data ?? []).flatMap((session) => {
     const form = normaliseCustomisationForm(session.form_data);
     const voiceStoragePath = String(session.voice_storage_path || "");
-    return form && voiceStoragePath ? [[String(session.id), { form, voiceStoragePath }] as const] : [];
+    return form && voiceStoragePath ? [[String(session.id), {
+      form,
+      voiceStoragePath,
+      // Complete-now sessions record the exact customer save time here.
+      // Older records fall back to their final session update time.
+      savedAt: String(session.completed_at || session.updated_at || ""),
+    }] as const] : [];
   }));
 }
 

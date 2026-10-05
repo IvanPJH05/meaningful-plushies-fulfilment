@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { approveManualOrderCod, getManualOrderIntakeDetails, listManualOrderIntakeApprovals, listManualOrderIntakes } from "../../../../lib/manual-order-intakes";
+import { approveManualOrderCod, attachManualOrderReceipt, createPaidShopifyOrder, getManualOrderIntakeDetails, listManualOrderIntakeApprovals, listManualOrderIntakes, type PaymentReceipt } from "../../../../lib/manual-order-intakes";
 import { requireMobileSession } from "../../../../lib/mobile-api";
 
 export async function GET(request: Request) {
@@ -25,9 +25,11 @@ export async function POST(request: Request) {
   try {
     const session = await requireMobileSession(request);
     if (session.role !== "admin") return NextResponse.json({ error: "Administrator access is required." }, { status: 403 });
-    const body = await request.json() as { action?: string; id?: string };
+    const body = await request.json() as { action?: string; id?: string; paymentReceipts?: PaymentReceipt[] };
     if (body.action === "details") return NextResponse.json({ details: await getManualOrderIntakeDetails(String(body.id || "")) });
+    if (body.action === "attach_receipt") return NextResponse.json({ intake: await attachManualOrderReceipt(String(body.id || ""), Array.isArray(body.paymentReceipts) ? body.paymentReceipts : []) });
     if (body.action === "approve_cod") return NextResponse.json({ intake: await approveManualOrderCod(String(body.id || "")) });
+    if (body.action === "create_shopify_order") return NextResponse.json({ order: await createPaidShopifyOrder(String(body.id || "")) });
     return NextResponse.json({ error: "That Manual Order action is not supported in the app yet." }, { status: 400 });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "MANUAL_ORDER_ACTION_FAILED" }, { status: 500 }); }
 }
