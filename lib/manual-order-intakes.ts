@@ -29,6 +29,7 @@ export type ShippingAddress = {
 
 export type ManualOrderIntake = {
   id: string;
+  reference: string;
   customerName: string;
   customerEmail: string;
   phoneOriginal: string;
@@ -118,6 +119,7 @@ function rowToIntake(row: Record<string, unknown>): ManualOrderIntake {
   const paymentReceipts = Array.isArray(row.payment_receipts) ? row.payment_receipts as PaymentReceipt[] : [];
   return {
     id: String(row.id || ""),
+    reference: manualOrderIntakeReference(String(row.id || "")),
     customerName: String(row.customer_name || ""),
     customerEmail: String(row.customer_email || ""),
     phoneOriginal: String(row.phone_original || ""),

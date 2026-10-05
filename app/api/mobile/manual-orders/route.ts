@@ -9,7 +9,16 @@ export async function GET(request: Request) {
     const scope = new URL(request.url).searchParams.get("scope");
     if (scope === "awaiting") return NextResponse.json({ intakes: await listManualOrderIntakeApprovals() }, { headers: { "cache-control": "no-store, max-age=0" } });
     if (scope === "history") return NextResponse.json({ intakes: (await listManualOrderIntakes()).filter((intake) => intake.status !== "awaiting_payment") }, { headers: { "cache-control": "no-store, max-age=0" } });
-    return NextResponse.json({ intakes: await listManualOrderIntakes() });
+    // The mobile archive needs the same complete approval summary as the
+    // browser workspace. Returning plain intake rows here used to omit both
+    // the configured recording duration and the calculated collection total.
+    const [approvals, history] = await Promise.all([
+      listManualOrderIntakeApprovals(),
+      listManualOrderIntakes(),
+    ]);
+    return NextResponse.json({
+      intakes: [...approvals, ...history.filter((intake) => intake.status !== "awaiting_payment")],
+    }, { headers: { "cache-control": "no-store, max-age=0" } });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "MANUAL_ORDERS_FAILED" }, { status: 500 }); }
 }
 export async function POST(request: Request) {
