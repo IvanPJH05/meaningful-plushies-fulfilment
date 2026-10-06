@@ -3137,7 +3137,24 @@ export default function Home() {
           unmatched.push(`page ${label.page}${label.reference ? ` (${label.reference})` : ""}`);
           continue;
         }
-        changed.push({ ...matched, shippingLabelUrl: label.url, shippingLabelFileName: label.fileName, shippingLabelSource: label.source === "tiktok" ? "tiktok" : "jnt", updatedAt: changedAt });
+        const advancesProduction = matched.salesChannel !== "tiktok" && matched.status === "new_order";
+        changed.push({
+          ...matched,
+          shippingLabelUrl: label.url,
+          shippingLabelFileName: label.fileName,
+          shippingLabelSource: label.source === "tiktok" ? "tiktok" : "jnt",
+          ...(advancesProduction ? {
+            status: "uploading_audio" as const,
+            statusHistory: [...(matched.statusHistory ?? []), {
+              id: `${matched.id}-${changedAt}-shipping-label-uploading-audio`,
+              status: "uploading_audio" as const,
+              changedAt,
+              changedBy: session ? `${session.displayName} (${session.username})` : "Staff",
+              note: "Shipping label paired",
+            }],
+          } : {}),
+          updatedAt: changedAt,
+        });
       }
       if (changed.length) {
         await upsertSharedOrders(changed);
@@ -3145,7 +3162,8 @@ export default function Home() {
         setOrders((current) => current.map((order) => changedById.get(order.id) ?? order));
         setPackingSelection((current) => [...new Set([...current, ...changed.map((order) => order.id)])]);
       }
-      const summary = `${changed.length} label${changed.length === 1 ? "" : "s"} paired.${unmatched.length ? ` Could not pair: ${unmatched.join(", ")}.` : ""}`;
+      const advanced = changed.filter((order) => order.status === "uploading_audio" && order.statusHistory.at(-1)?.note === "Shipping label paired").length;
+      const summary = `${changed.length} label${changed.length === 1 ? "" : "s"} paired.${advanced ? ` ${advanced} new order${advanced === 1 ? "" : "s"} moved to Uploading Audio.` : ""}${unmatched.length ? ` Could not pair: ${unmatched.join(", ")}.` : ""}`;
       setShippingLabelSummary(summary);
       setNotice(summary);
       if (changed.length) await logActivity("Shipping labels imported", `${changed.length} label${changed.length === 1 ? "" : "s"} paired with packing slips.`);
