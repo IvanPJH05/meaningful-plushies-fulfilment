@@ -8976,6 +8976,10 @@ function CreatorProgramWorkspacePage({
   }, [currentProfile?.id, currentProfile?.payoutMethod, currentProfile?.payoutAccountName, currentProfile?.payoutAccountNumber, currentProfile?.payoutNotes]);
   useEffect(() => {
     writeJson(freeCreatorSamplesStorageKey, freeCreatorSamples);
+    // Fulfilment reads this compact code list to show the Influencer badge.
+    // Keep it in sync immediately after an admin creates or imports a sample;
+    // waiting for a later reload made newly created codes look untracked.
+    window.dispatchEvent(new Event("meaningful-plushies-free-creator-samples"));
   }, [freeCreatorSamples]);
   useEffect(() => {
     if (!admin || view !== "creator_free_samples") return;

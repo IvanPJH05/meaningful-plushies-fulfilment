@@ -8,6 +8,7 @@ import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
 import { certificateMediaForLineItem, certificateMetaobjectForOrder, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrder, flowCertificateCode, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
 import { fetchMetaCapiSettings, fetchSharedOrders, fetchSharedOrdersByOrderNumber, insertSharedActivity, markManualOrderUsedByDiscountCode, upsertSharedOrders } from "../../../../../lib/supabase";
 import { createCloserOrderLink, isFormattedPlushCharmLink, nextPlushCharmSequence } from "@/src/modules/closer/service";
+import type { Order } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -59,6 +60,30 @@ function certificateFieldsForLineItem(lineItem: Record<string, unknown>, uploadL
     meaningfulNote: line.meaningfulNote || metafield.meaningfulNote,
     meaningfulMessage: line.meaningfulMessage || metafield.meaningfulMessage,
   };
+}
+
+// An Our Link is a helpful extra for a Plush Charm, but it must never stop
+// the paid Shopify order from reaching fulfilment. A later refresh can create
+// a missing link after a transient Supabase / Our Link error has recovered.
+async function addMissingPlushCharmLinks(orders: Order[]) {
+  if (!orders.some((order) => isPlushCharmOrder(order) && !isFormattedPlushCharmLink(order.idWebsiteLink))) return orders;
+  let nextSequence: number;
+  try {
+    nextSequence = nextPlushCharmSequence((await fetchSharedOrders()).filter(isPlushCharmOrder));
+  } catch (error) {
+    console.error("Could not reserve a Plush Charm Our Link sequence", error);
+    return orders;
+  }
+
+  return Promise.all(orders.map(async (order) => {
+    if (!isPlushCharmOrder(order) || isFormattedPlushCharmLink(order.idWebsiteLink)) return order;
+    try {
+      return { ...order, idWebsiteLink: await createCloserOrderLink(order, nextSequence++) };
+    } catch (error) {
+      console.error(`Could not create an Our Link for Plush Charm order #${order.orderNumber}`, error);
+      return order;
+    }
+  }));
 }
 
 export async function POST(request: Request) {
@@ -122,15 +147,7 @@ export async function POST(request: Request) {
     // Reading every order includes historical media and is unnecessary for a
     // classic plushie. Restrict that expensive read to the small subset of
     // new Plush Charm orders that genuinely need a Charm sales sequence.
-    const needsCharmLink = ordersToSave.some((order) => isPlushCharmOrder(order) && !isFormattedPlushCharmLink(order.idWebsiteLink));
-    let nextCharmSequence = needsCharmLink
-      ? nextPlushCharmSequence((await fetchSharedOrders()).filter(isPlushCharmOrder))
-      : 0;
-    ordersToSave = await Promise.all(ordersToSave.map(async (order) => (
-      isPlushCharmOrder(order) && !isFormattedPlushCharmLink(order.idWebsiteLink)
-        ? { ...order, idWebsiteLink: await createCloserOrderLink(order, nextCharmSequence++) }
-        : order
-    )));
+    ordersToSave = await addMissingPlushCharmLinks(ordersToSave);
     const createdAt = textValue(fullOrder.createdAt) || new Date().toISOString();
     const existingCertificate = looksLikePersonalizedPlushie(fullOrder)
       ? await certificateMetaobjectForOrder(syncedNumber).catch(() => null)

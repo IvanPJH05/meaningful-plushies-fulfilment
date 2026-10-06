@@ -24,7 +24,7 @@ const ORDER_SELECTION = `
   paymentGatewayNames
   discountApplications(first: 10) {
     nodes {
-      ... on DiscountCodeApplication { code title }
+      ... on DiscountCodeApplication { code }
       ... on ManualDiscountApplication { title }
       ... on ScriptDiscountApplication { title }
       ... on AutomaticDiscountApplication { title }

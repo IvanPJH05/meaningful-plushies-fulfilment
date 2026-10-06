@@ -166,6 +166,27 @@ test("keeps free-looking Shopify codes unclassified until Creator Program matchi
   assert.equal(orders[0]?.discountCodeUsed, "FREE-CREATOR10");
 });
 
+test("imports a Plush Charm creator claim with its code and exact charm character", () => {
+  const orders = shopifyOrderToFulfilmentOrders({
+    name: "#1842",
+    createdAt: "2026-10-07T08:00:00Z",
+    currencyCode: "MYR",
+    currentSubtotalPriceSet: { shopMoney: { amount: "65.00", currencyCode: "MYR" } },
+    currentTotalPriceSet: { shopMoney: { amount: "0.00", currencyCode: "MYR" } },
+    currentTotalDiscountsSet: { shopMoney: { amount: "73.00", currencyCode: "MYR" } },
+    totalShippingPriceSet: { shopMoney: { amount: "8.00", currencyCode: "MYR" } },
+    discountApplications: { nodes: [{ code: "MARS-1" }] },
+    shippingAddress: { name: "Creator", phone: "0123456789" },
+    lineItems: { nodes: [{ name: "(P,5S) MEANINGFUL PLUSH CHARM", quantity: 1 }] },
+  }, "", []);
+
+  assert.equal(orders.length, 1);
+  assert.equal(orders[0]?.productType, "plush_charm");
+  assert.equal(orders[0]?.character, "PENNY");
+  assert.equal(orders[0]?.voiceLength, 5);
+  assert.deepEqual(orders[0]?.discountCodes, ["MARS-1"]);
+});
+
 test("preserves a creator claim's zero total when Shopify refreshes an existing order", () => {
   const paidOrder = shopifyOrderToFulfilmentOrders({
     name: "#1502",

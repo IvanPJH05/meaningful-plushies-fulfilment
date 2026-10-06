@@ -26,6 +26,28 @@ function looksLikePersonalizedPlushie(order: Record<string, unknown>) {
   return /meaningful plushie|build your meaningful plushie|plushie/i.test(JSON.stringify(order.lineItems ?? order.line_items ?? ""));
 }
 
+// Saving the fulfilment order is more important than making an optional Our
+// Link. Keep the order visible even when the link service is temporarily down.
+async function addMissingPlushCharmLinks(orders: Order[]) {
+  if (!orders.some((order) => isPlushCharmOrder(order) && !isFormattedPlushCharmLink(order.idWebsiteLink))) return orders;
+  let nextSequence: number;
+  try {
+    nextSequence = nextPlushCharmSequence((await fetchSharedOrders()).filter(isPlushCharmOrder));
+  } catch (error) {
+    console.error("Could not reserve a Plush Charm Our Link sequence", error);
+    return orders;
+  }
+  return Promise.all(orders.map(async (order) => {
+    if (!isPlushCharmOrder(order) || isFormattedPlushCharmLink(order.idWebsiteLink)) return order;
+    try {
+      return { ...order, idWebsiteLink: await createCloserOrderLink(order, nextSequence++) };
+    } catch (error) {
+      console.error(`Could not create an Our Link for Plush Charm order #${order.orderNumber}`, error);
+      return order;
+    }
+  }));
+}
+
 async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], request: Request) {
   const fullOrder = await fetchShopifyOrderByNumber(requestedOrderNumber, request);
   const syncedNumber = cleanShopifyOrderNumber(textValue(fullOrder?.name));
@@ -57,16 +79,7 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
     meaningfulNote: submitted.form.meaningfulNote,
     meaningfulMessage: `supabase-storage:${submitted.voiceStoragePath}`,
   } : uploadLiftCertificateFields(shopifyMetafieldValue(fullOrder));
-  const needsCharmLink = importedOrders.some((order) => isPlushCharmOrder(order) && !isFormattedPlushCharmLink(order.idWebsiteLink));
-  const charmSequence = needsCharmLink
-    ? nextPlushCharmSequence((await fetchSharedOrders()).filter(isPlushCharmOrder))
-    : 0;
-  let nextSequence = charmSequence;
-  const ordersWithOurLinks = await Promise.all(importedOrders.map(async (order) => (
-    isPlushCharmOrder(order) && !isFormattedPlushCharmLink(order.idWebsiteLink)
-      ? { ...order, idWebsiteLink: await createCloserOrderLink(order, nextSequence++) }
-      : order
-  )));
+  const ordersWithOurLinks = await addMissingPlushCharmLinks(importedOrders);
   const certificates = looksLikePersonalizedPlushie(fullOrder)
     ? await Promise.all(ordersWithOurLinks.map((order, index) => {
       if (isPlushCharmOrder(order)) return null;
