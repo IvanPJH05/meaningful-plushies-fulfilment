@@ -166,6 +166,32 @@ test("keeps free-looking Shopify codes unclassified until Creator Program matchi
   assert.equal(orders[0]?.discountCodeUsed, "FREE-CREATOR10");
 });
 
+test("preserves a creator claim's zero total when Shopify refreshes an existing order", () => {
+  const paidOrder = shopifyOrderToFulfilmentOrders({
+    name: "#1502",
+    createdAt: "2026-07-01T10:00:00Z",
+    currencyCode: "MYR",
+    currentSubtotalPriceSet: { shopMoney: { amount: "135.00", currencyCode: "MYR" } },
+    currentTotalPriceSet: { shopMoney: { amount: "135.00", currencyCode: "MYR" } },
+    lineItems: { nodes: [{ name: "BUILD YOUR MEANINGFUL PLUSHIE - BILLY", quantity: 1 }] },
+  }, "", []);
+
+  const refreshedOrder = shopifyOrderToFulfilmentOrders({
+    name: "#1502",
+    createdAt: "2026-07-01T10:00:00Z",
+    currencyCode: "MYR",
+    currentSubtotalPriceSet: { shopMoney: { amount: "135.00", currencyCode: "MYR" } },
+    currentTotalPriceSet: { shopMoney: { amount: "0.00", currencyCode: "MYR" } },
+    currentTotalDiscountsSet: { shopMoney: { amount: "143.00", currencyCode: "MYR" } },
+    totalShippingPriceSet: { shopMoney: { amount: "8.00", currencyCode: "MYR" } },
+    discountApplications: { nodes: [{ code: "CREATOR150" }] },
+    lineItems: { nodes: [{ name: "BUILD YOUR MEANINGFUL PLUSHIE - BILLY", quantity: 1 }] },
+  }, "", paidOrder);
+
+  assert.equal(refreshedOrder[0]?.totalAmount, 0);
+  assert.equal(refreshedOrder[0]?.discountCodeUsed, "CREATOR150");
+});
+
 test("imports plushie details and voice links from Shopify line-item properties", () => {
   const orders = shopifyOrderToFulfilmentOrders({
     name: "#1462",
