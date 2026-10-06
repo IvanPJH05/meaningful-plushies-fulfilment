@@ -519,7 +519,10 @@ export function shopifyOrderToFulfilmentOrders(
         ? lineItems.reduce((sum, item) => sum + shopifyLinePrice(item) * shopifyLineQuantity(item), 0)
         : subtotalAmount || current?.subtotalAmount || 0,
       shippingAmount: shippingAmount || current?.shippingAmount || 0,
-      totalAmount: totalAmount || current?.totalAmount || 0,
+      // A zero total is meaningful for an influencer claim. Do not let a
+      // later Shopify refresh replace it with the value from an older paid
+      // version of the same order.
+      totalAmount: isZeroCashOrder ? 0 : totalAmount || current?.totalAmount || 0,
       discountAmount: isZeroCashOrder ? shippingDiscountAmount : discountAmount || current?.discountAmount || 0,
       productDiscountAmount,
       shippingDiscountAmount,
