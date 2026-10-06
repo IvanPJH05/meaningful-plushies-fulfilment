@@ -9314,7 +9314,18 @@ function CreatorProgramWorkspacePage({
           <div className="accounting-form-heading"><div><h3>New sample record</h3><p>Choose the collection. Classics creates one code; Plush Charms creates two one-use codes. Each code makes only one item from that collection free, with free shipping.</p></div></div>
           <div className="creator-sample-form-fields">
             <label>Creator<input value={freeCreatorSampleForm.creatorName} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, creatorName: event.target.value }))} placeholder="Creator name or handle" /></label>
-            <label>Free product collection<select value={freeCreatorSampleForm.productCollection} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, productCollection: event.target.value as "classics" | "plush_charms_v1" }))}><option value="classics">Meaningful Plushies (Classics) — 1 code</option><option value="plush_charms_v1">Meaningful Plush Charms V1 — 2 codes</option></select></label>
+            <fieldset className="creator-sample-collection-picker">
+              <legend>Free product collection</legend>
+              <div>
+                <button type="button" className={freeCreatorSampleForm.productCollection === "classics" ? "selected" : ""} aria-pressed={freeCreatorSampleForm.productCollection === "classics"} onClick={() => setFreeCreatorSampleForm((current) => ({ ...current, productCollection: "classics" }))}>
+                  <span className="creator-sample-collection-count">1</span><span><strong>Meaningful Plushies</strong><small>Classics · one code</small></span>
+                </button>
+                <button type="button" className={freeCreatorSampleForm.productCollection === "plush_charms_v1" ? "selected" : ""} aria-pressed={freeCreatorSampleForm.productCollection === "plush_charms_v1"} onClick={() => setFreeCreatorSampleForm((current) => ({ ...current, productCollection: "plush_charms_v1" }))}>
+                  <span className="creator-sample-collection-count">2</span><span><strong>Plush Charms V1</strong><small>Two codes · one charm each</small></span>
+                </button>
+              </div>
+              <p>{freeCreatorSampleForm.productCollection === "plush_charms_v1" ? "Your base code will create two one-use codes, ending in -1 and -2." : "One one-use code for a Classic plushie, including free shipping."}</p>
+            </fieldset>
             <label>Discount code{freeCreatorSampleForm.productCollection === "plush_charms_v1" && <small>We will create -1 and -2 automatically.</small>}<input value={freeCreatorSampleForm.sampleCode} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, sampleCode: event.target.value.toUpperCase() }))} placeholder="FREE-IVAN10" /></label>
             <label>Creator link<input value={freeCreatorSampleForm.creatorUrl} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, creatorUrl: event.target.value }))} placeholder="https://www.tiktok.com/@creator" /></label>
             <label>Notes<textarea value={freeCreatorSampleForm.notes} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Sent link, waiting for order, etc." /></label>
