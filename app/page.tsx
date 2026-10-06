@@ -139,6 +139,7 @@ type FreeCreatorSample = {
   creatorName: string;
   creatorUrl: string;
   sampleCode: string;
+  productCollection?: "classics" | "plush_charms_v1";
   shopifyDiscountId?: string;
   orderNumber?: string;
   givenAt: string;
@@ -685,7 +686,14 @@ const uiStorageKey = "meaningful-plushies-ui-preferences";
 const ordersCacheStorageKey = "meaningful-plushies-orders-cache-v2";
 const envelopeSettingsStorageKey = "meaningful-plushies-envelope-print-settings";
 const freeCreatorSamplesStorageKey = "meaningful-plushies-free-creator-samples";
-const freeCreatorSampleProductLink = "https://meaningfulplushies.com/products/meaningful-plushie";
+const freeCreatorSampleProductLinks = {
+  classics: "https://meaningfulplushies.com/collections/meaningful-plushies-classics",
+  plush_charms_v1: "https://meaningfulplushies.com/collections/meaningful-plush-charms-v1",
+} as const;
+const freeCreatorSampleCollectionLabels = {
+  classics: "Meaningful Plushies (Classics)",
+  plush_charms_v1: "Meaningful Plush Charms V1",
+} as const;
 const defaultMetaCapiSettings: MetaCapiSettings = { enabled: false, purchaseMode: "manual_only", testEventCode: "", pixelId: "", browserPixelEnabled: false, trackingNotes: "" };
 const shopifyStorefrontUrl = process.env.NEXT_PUBLIC_SHOPIFY_STOREFRONT_URL || "https://meaningfulplushies.com";
 const influencerOrderPagePath = process.env.NEXT_PUBLIC_INFLUENCER_ORDER_PAGE_PATH || "/products/build-your-meaningful-plushie";
@@ -8919,7 +8927,7 @@ function CreatorProgramWorkspacePage({
     proofFileDataUrl: "",
   });
   const [freeCreatorSamples, setFreeCreatorSamples] = useState<FreeCreatorSample[]>(() => readJson<FreeCreatorSample[]>(freeCreatorSamplesStorageKey) ?? []);
-  const [freeCreatorSampleForm, setFreeCreatorSampleForm] = useState({ creatorName: "", creatorUrl: "", sampleCode: "", notes: "" });
+  const [freeCreatorSampleForm, setFreeCreatorSampleForm] = useState({ creatorName: "", creatorUrl: "", sampleCode: "", productCollection: "classics" as "classics" | "plush_charms_v1", notes: "" });
   const [creatingFreeCreatorSample, setCreatingFreeCreatorSample] = useState(false);
   const [syncingFreeCreatorSamples, setSyncingFreeCreatorSamples] = useState(false);
   const visibleProfiles = admin ? creatorProfiles : creatorProfiles.filter((profile) => profile.userId === session.id);
@@ -9086,38 +9094,40 @@ function CreatorProgramWorkspacePage({
     if (!creatorName || !sampleCode) {
       return setMessage("Add the creator name and the code you gave them.");
     }
-    if (freeCreatorSamples.some((sample) => sample.sampleCode.trim().toUpperCase() === sampleCode)) {
+    const sampleCodes = freeCreatorSampleForm.productCollection === "plush_charms_v1" ? [`${sampleCode}-1`, `${sampleCode}-2`] : [sampleCode];
+    if (freeCreatorSamples.some((sample) => sampleCodes.includes(sample.sampleCode.trim().toUpperCase()))) {
       return setMessage("This creator sample discount code is already logged.");
     }
     setCreatingFreeCreatorSample(true);
     try {
       const now = new Date().toISOString();
-      const sample: FreeCreatorSample = {
+      const samples: FreeCreatorSample[] = sampleCodes.map((code) => ({
         id: crypto.randomUUID(),
         creatorName,
         creatorUrl: freeCreatorSampleForm.creatorUrl.trim(),
-        sampleCode,
+        sampleCode: code,
+        productCollection: freeCreatorSampleForm.productCollection,
         shopifyDiscountId: "",
         orderNumber: "",
         givenAt: now,
         notes: freeCreatorSampleForm.notes.trim(),
-      };
+      }));
       const response = await fetch("/api/shopify/creator-sample-discounts", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sessionToken: session.token, sample }),
+        body: JSON.stringify({ sessionToken: session.token, samples }),
       });
-      const result = await response.json().catch(() => ({})) as { ok?: boolean; saved?: boolean; discountId?: string; sample?: FreeCreatorSample; error?: string };
-      if (result.saved && result.sample) {
-        setFreeCreatorSamples((current) => [result.sample!, ...current.filter((item) => item.id !== result.sample!.id)]);
-        setFreeCreatorSampleForm({ creatorName: "", creatorUrl: "", sampleCode: "", notes: "" });
+      const result = await response.json().catch(() => ({})) as { ok?: boolean; saved?: boolean; discountIds?: string[]; samples?: FreeCreatorSample[]; error?: string };
+      if (result.saved && result.samples) {
+        setFreeCreatorSamples((current) => [...result.samples!, ...current.filter((item) => !result.samples!.some((saved) => saved.id === item.id))]);
+        setFreeCreatorSampleForm({ creatorName: "", creatorUrl: "", sampleCode: "", productCollection: "classics", notes: "" });
       }
-      if (!response.ok || !result.ok || !result.discountId) {
+      if (!response.ok || !result.ok || !result.discountIds?.length) {
         if (!result.saved) throw new Error(result.error || "The creator sample could not be saved.");
         setMessage(`Creator sample saved in the shared ledger. Shopify could not create this discount code: ${result.error || "the code may already exist"}.`);
         return;
       }
-      setMessage("Free creator sample saved and Shopify RM150 discount created.");
+      setMessage(`${sampleCodes.length} free ${freeCreatorSampleForm.productCollection === "plush_charms_v1" ? "Plush Charm" : "Classic Plushie"} claim code${sampleCodes.length === 1 ? "" : "s"} created with free shipping.`);
     } catch (error) {
       setMessage(readableError(error, "Free creator sample could not be saved in the shared ledger."));
     } finally {
@@ -9197,7 +9207,8 @@ function CreatorProgramWorkspacePage({
   }
 
   function freeCreatorSampleMessage(sample: FreeCreatorSample) {
-    return `${freeCreatorSampleProductLink}\n\nUse this code at checkout: ${sample.sampleCode.trim().toUpperCase()}`;
+    const productCollection = sample.productCollection === "plush_charms_v1" ? "plush_charms_v1" : "classics";
+    return `${freeCreatorSampleProductLinks[productCollection]}\n\nYour free sample: ${freeCreatorSampleCollectionLabels[productCollection]}\nUse this code at checkout: ${sample.sampleCode.trim().toUpperCase()}`;
   }
 
   async function copyFreeCreatorSampleMessage(sample: FreeCreatorSample) {
@@ -9300,13 +9311,14 @@ function CreatorProgramWorkspacePage({
       {message && <div className="notice"><span>{message}</span><button onClick={() => setMessage("")}>x</button></div>}
       <section className="creator-sample-ledger-layout">
         <form className="creator-form card creator-sample-entry-form" onSubmit={saveFreeCreatorSample}>
-          <div className="accounting-form-heading"><div><h3>New sample record</h3><p>Creates a one-use RM150 Shopify discount code, then logs the creator here.</p></div></div>
+          <div className="accounting-form-heading"><div><h3>New sample record</h3><p>Choose the collection. Classics creates one code; Plush Charms creates two one-use codes. Each code makes only one item from that collection free, with free shipping.</p></div></div>
           <div className="creator-sample-form-fields">
             <label>Creator<input value={freeCreatorSampleForm.creatorName} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, creatorName: event.target.value }))} placeholder="Creator name or handle" /></label>
-            <label>Discount code<input value={freeCreatorSampleForm.sampleCode} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, sampleCode: event.target.value.toUpperCase() }))} placeholder="FREE-IVAN10" /></label>
+            <label>Free product collection<select value={freeCreatorSampleForm.productCollection} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, productCollection: event.target.value as "classics" | "plush_charms_v1" }))}><option value="classics">Meaningful Plushies (Classics) — 1 code</option><option value="plush_charms_v1">Meaningful Plush Charms V1 — 2 codes</option></select></label>
+            <label>Discount code{freeCreatorSampleForm.productCollection === "plush_charms_v1" && <small>We will create -1 and -2 automatically.</small>}<input value={freeCreatorSampleForm.sampleCode} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, sampleCode: event.target.value.toUpperCase() }))} placeholder="FREE-IVAN10" /></label>
             <label>Creator link<input value={freeCreatorSampleForm.creatorUrl} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, creatorUrl: event.target.value }))} placeholder="https://www.tiktok.com/@creator" /></label>
             <label>Notes<textarea value={freeCreatorSampleForm.notes} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Sent link, waiting for order, etc." /></label>
-            <button className="button primary" type="submit" disabled={creatingFreeCreatorSample}>{creatingFreeCreatorSample ? "Creating Shopify code..." : "Create RM150 code + add creator"}</button>
+            <button className="button primary" type="submit" disabled={creatingFreeCreatorSample}>{creatingFreeCreatorSample ? "Creating Shopify code..." : freeCreatorSampleForm.productCollection === "plush_charms_v1" ? "Create 2 Plush Charm codes" : "Create Classic Plushie code"}</button>
           </div>
         </form>
         <section className="card accounting-table-card creator-sample-ledger-card">
@@ -9316,14 +9328,15 @@ function CreatorProgramWorkspacePage({
             {!freeCreatorSampleCodeRows.length && <div className="empty compact"><strong>No discount codes yet.</strong><p>Add the first creator sample on the left.</p></div>}
           </div>
           <div className="creator-free-sample-table">
-            <table><thead><tr><th>Creator</th><th>Code</th><th>Used</th><th>Message</th><th>Order number</th><th>Paired customer info</th><th>Notes</th><th /></tr></thead><tbody>
+            <table><thead><tr><th>Creator</th><th>Free product</th><th>Code</th><th>Used</th><th>Message</th><th>Order number</th><th>Paired customer info</th><th>Notes</th><th /></tr></thead><tbody>
               {freeCreatorSamples.map((sample) => {
                 const claims = freeCreatorSampleClaims(sample.sampleCode);
                 const pairedOrder = freeCreatorSampleOrder(sample);
                 const sampleMessage = freeCreatorSampleMessage(sample);
-                return <tr key={sample.id}><td>{sample.creatorUrl ? <a href={sample.creatorUrl} target="_blank" rel="noreferrer"><strong>{sample.creatorName}</strong></a> : <strong>{sample.creatorName}</strong>}<small>Added {formatDate(sample.givenAt)}</small></td><td><code>{sample.sampleCode}</code></td><td><div className="creator-sample-claim-cell"><span className={`creator-sample-claim ${claims.length ? "claimed" : "pending"}`}>{claims.length}</span><small>{claims.length === 1 ? "order" : "orders"}</small></div></td><td><div className="creator-sample-message-cell"><textarea readOnly value={sampleMessage} /><button className="button secondary small" type="button" onClick={() => copyFreeCreatorSampleMessage(sample)}>Copy message</button></div></td><td><input className="creator-sample-order-input" value={sample.orderNumber ?? ""} onChange={(event) => updateFreeCreatorSample(sample.id, { orderNumber: event.target.value })} placeholder="Order #" /></td><td>{pairedOrder ? <div className="creator-sample-order-details"><strong>{pairedOrder.customerName || "-"}</strong><span>{pairedOrder.phone || "-"}</span><small>{pairedOrder.address || "-"}</small></div> : <span className="creator-sample-unmatched">{sample.orderNumber ? "No matching order found" : "Enter order number"}</span>}</td><td><input className="creator-sample-notes-input" value={sample.notes} onChange={(event) => updateFreeCreatorSample(sample.id, { notes: event.target.value })} placeholder="Notes" /></td><td><button className="button secondary small" type="button" onClick={() => deleteFreeCreatorSample(sample.id)}>Remove</button></td></tr>;
+                const collection = sample.productCollection === "plush_charms_v1" ? "plush_charms_v1" : "classics";
+                return <tr key={sample.id}><td>{sample.creatorUrl ? <a href={sample.creatorUrl} target="_blank" rel="noreferrer"><strong>{sample.creatorName}</strong></a> : <strong>{sample.creatorName}</strong>}<small>Added {formatDate(sample.givenAt)}</small></td><td>{freeCreatorSampleCollectionLabels[collection]}</td><td><code>{sample.sampleCode}</code></td><td><div className="creator-sample-claim-cell"><span className={`creator-sample-claim ${claims.length ? "claimed" : "pending"}`}>{claims.length}</span><small>{claims.length === 1 ? "order" : "orders"}</small></div></td><td><div className="creator-sample-message-cell"><textarea readOnly value={sampleMessage} /><button className="button secondary small" type="button" onClick={() => copyFreeCreatorSampleMessage(sample)}>Copy message</button></div></td><td><input className="creator-sample-order-input" value={sample.orderNumber ?? ""} onChange={(event) => updateFreeCreatorSample(sample.id, { orderNumber: event.target.value })} placeholder="Order #" /></td><td>{pairedOrder ? <div className="creator-sample-order-details"><strong>{pairedOrder.customerName || "-"}</strong><span>{pairedOrder.phone || "-"}</span><small>{pairedOrder.address || "-"}</small></div> : <span className="creator-sample-unmatched">{sample.orderNumber ? "No matching order found" : "Enter order number"}</span>}</td><td><input className="creator-sample-notes-input" value={sample.notes} onChange={(event) => updateFreeCreatorSample(sample.id, { notes: event.target.value })} placeholder="Notes" /></td><td><button className="button secondary small" type="button" onClick={() => deleteFreeCreatorSample(sample.id)}>Remove</button></td></tr>;
               })}
-              {!freeCreatorSamples.length && <tr><td colSpan={8}>No free creator samples logged yet.</td></tr>}
+              {!freeCreatorSamples.length && <tr><td colSpan={9}>No free creator samples logged yet.</td></tr>}
             </tbody></table>
           </div>
         </section>

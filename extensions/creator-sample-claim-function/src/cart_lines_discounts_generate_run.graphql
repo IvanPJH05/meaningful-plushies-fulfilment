@@ -1,0 +1,18 @@
+query CartInput($eligibleCollectionIds: [ID!]) {
+  cart {
+    lines {
+      id
+      merchandise {
+        __typename
+        ... on ProductVariant {
+          product {
+            eligibleForCreatorSample: inAnyCollection(ids: $eligibleCollectionIds)
+          }
+        }
+      }
+    }
+  }
+  discount {
+    discountClasses
+  }
+}

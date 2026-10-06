@@ -19,6 +19,23 @@ export type ManualOrderCreateInput = {
 
 type DiscountUserError = { field?: string[]; message?: string; code?: string };
 
+export type CreatorSampleCollection = "classics" | "plush_charms_v1";
+
+const creatorSampleCollections: Record<CreatorSampleCollection, { title: string; customerLink: string }> = {
+  classics: {
+    title: "Meaningful Plushies (Classics)",
+    customerLink: "https://meaningfulplushies.com/collections/meaningful-plushies-classics",
+  },
+  plush_charms_v1: {
+    title: "Meaningful Plush Charms V1",
+    customerLink: "https://meaningfulplushies.com/collections/meaningful-plush-charms-v1",
+  },
+};
+
+export function creatorSampleCollectionDetail(value: string | undefined) {
+  return creatorSampleCollections[value === "plush_charms_v1" ? "plush_charms_v1" : "classics"];
+}
+
 function asShopifyGid(value: string, type: "Product" | "ProductVariant") {
   const trimmed = value.trim();
   if (!trimmed) return "";
@@ -311,43 +328,68 @@ export async function generateManualOrderCode(phoneLastFour: string) {
 
 export { buildManualOrderCustomerLink };
 
-export async function createCreatorSampleDiscountCode(code: string, creatorName: string) {
+async function creatorSampleCollectionId(domain: string, collection: CreatorSampleCollection) {
+  const selected = creatorSampleCollectionDetail(collection);
+  const result = await shopifyGraphql<{
+    data?: { collections?: { nodes?: { id?: string; title?: string }[] } };
+    errors?: { message?: string }[];
+  }>(domain, `
+    query CreatorSampleCollection($query: String!) {
+      collections(first: 25, query: $query) { nodes { id title } }
+    }
+  `, { query: `title:${JSON.stringify(selected.title)}` });
+  if (result?.errors?.length) throw new Error(result.errors.map((error) => error.message).filter(Boolean).join(" "));
+  const match = result?.data?.collections?.nodes?.find((item) => item.title?.trim().toLowerCase() === selected.title.toLowerCase());
+  if (!match?.id) throw new Error(`Shopify collection \"${selected.title}\" could not be found. Check that the collection title matches exactly.`);
+  return match.id;
+}
+
+export async function createCreatorSampleDiscountCode(code: string, creatorName: string, collection: CreatorSampleCollection = "classics") {
   const normalizedCode = code.trim().toUpperCase();
   if (!normalizedCode) throw new Error("Discount code is required.");
 
   const domain = shopDomain();
   if (!domain) throw new Error("SHOPIFY_SHOP_DOMAIN is missing in Vercel.");
+  const functionId = process.env.SHOPIFY_CREATOR_SAMPLE_FUNCTION_ID?.trim();
+  if (!functionId) {
+    throw new Error("Creator sample claim function is not connected yet. Add SHOPIFY_CREATOR_SAMPLE_FUNCTION_ID in Vercel after the Shopify Function is deployed.");
+  }
+  const collectionId = await creatorSampleCollectionId(domain, collection);
 
   const result = await shopifyGraphql<{
-    data?: { discountCodeBasicCreate?: { codeDiscountNode?: { id?: string }, userErrors?: DiscountUserError[] } };
+    data?: { discountCodeAppCreate?: { codeAppDiscount?: { discountId?: string }, userErrors?: DiscountUserError[] } };
     errors?: { message?: string }[];
   }>(domain, `
-    mutation CreateCreatorSampleDiscount($basicCodeDiscount: DiscountCodeBasicInput!) {
-      discountCodeBasicCreate(basicCodeDiscount: $basicCodeDiscount) {
-        codeDiscountNode { id }
+    mutation CreateCreatorSampleClaim($codeAppDiscount: DiscountCodeAppInput!) {
+      discountCodeAppCreate(codeAppDiscount: $codeAppDiscount) {
+        codeAppDiscount { discountId }
         userErrors { field message code }
       }
     }
   `, {
-    basicCodeDiscount: {
-      title: `Creator Sample - ${creatorName.trim() || normalizedCode}`,
+    codeAppDiscount: {
+      title: `Creator Sample Claim - ${creatorName.trim() || normalizedCode} - ${creatorSampleCollectionDetail(collection).title}`,
       code: normalizedCode,
+      functionId,
       startsAt: new Date().toISOString(),
       usageLimit: 1,
       appliesOncePerCustomer: true,
       context: { all: "ALL" },
-      combinesWith: { shippingDiscounts: true },
-      customerGets: {
-        value: { discountAmount: { amount: "150.00", appliesOnEachItem: false } },
-        items: { all: true },
-      },
+      discountClasses: ["PRODUCT", "SHIPPING"],
+      combinesWith: { orderDiscounts: false, productDiscounts: false, shippingDiscounts: false },
+      metafields: [{
+        namespace: "$app:creator-sample",
+        key: "collection-eligibility",
+        type: "json",
+        value: JSON.stringify({ eligibleCollectionIds: [collectionId] }),
+      }],
     },
   });
 
   if (result?.errors?.length) throw new Error(result.errors.map((error) => error.message).filter(Boolean).join(" "));
-  const payload = result?.data?.discountCodeBasicCreate;
+  const payload = result?.data?.discountCodeAppCreate;
   if (payload?.userErrors?.length) throw new Error(userErrorMessage(payload.userErrors, "Shopify rejected the creator sample discount."));
-  const id = textValue(payload?.codeDiscountNode?.id);
+  const id = textValue(payload?.codeAppDiscount?.discountId);
   if (!id) throw new Error("Shopify did not return the creator sample discount ID.");
   return id;
 }

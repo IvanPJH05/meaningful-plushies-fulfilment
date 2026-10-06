@@ -17,6 +17,7 @@ export type CreatorFreeSampleRecord = {
   creatorName: string;
   creatorUrl: string;
   sampleCode: string;
+  productCollection?: "classics" | "plush_charms_v1";
   shopifyDiscountId?: string;
   orderNumber?: string;
   givenAt: string;
@@ -826,6 +827,7 @@ function creatorFreeSampleFromRow(row: Record<string, unknown>): CreatorFreeSamp
     creatorName: String(row.creator_name ?? ""),
     creatorUrl: String(row.creator_url ?? ""),
     sampleCode: String(row.sample_code ?? ""),
+    productCollection: row.product_collection === "plush_charms_v1" ? "plush_charms_v1" : "classics",
     shopifyDiscountId: String(row.shopify_discount_id ?? "") || undefined,
     orderNumber: String(row.order_number ?? ""),
     givenAt: String(row.given_at ?? ""),
@@ -846,6 +848,7 @@ export async function saveCreatorFreeSample(token: string, sample: CreatorFreeSa
     p_creator_name: sample.creatorName,
     p_creator_url: sample.creatorUrl,
     p_sample_code: sample.sampleCode,
+    p_product_collection: sample.productCollection ?? "classics",
     p_shopify_discount_id: sample.shopifyDiscountId ?? "",
     p_order_number: sample.orderNumber ?? "",
     p_given_at: sample.givenAt || new Date().toISOString(),
@@ -861,6 +864,7 @@ export async function importCreatorFreeSample(token: string, sample: CreatorFree
     p_creator_name: sample.creatorName,
     p_creator_url: sample.creatorUrl,
     p_sample_code: sample.sampleCode,
+    p_product_collection: sample.productCollection ?? "classics",
     p_shopify_discount_id: sample.shopifyDiscountId ?? "",
     p_order_number: sample.orderNumber ?? "",
     p_given_at: sample.givenAt || new Date().toISOString(),
