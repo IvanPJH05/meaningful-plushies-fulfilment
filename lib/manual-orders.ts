@@ -417,6 +417,62 @@ export async function createCreatorSampleDiscountCode(code: string, creatorName:
   return id;
 }
 
+export type CreatorSampleDiscountUpgrade = {
+  code: string;
+  status: "upgraded" | "already_includes_shipping" | "skipped_inactive" | "skipped_used" | "missing";
+  discountId?: string;
+};
+
+export async function upgradeCreatorSampleDiscountCode(code: string, creatorName: string, collection: CreatorSampleCollection = "classics"): Promise<CreatorSampleDiscountUpgrade> {
+  const normalizedCode = code.trim().toUpperCase();
+  const domain = shopDomain();
+  if (!normalizedCode) throw new Error("Discount code is required.");
+  if (!domain) throw new Error("SHOPIFY_SHOP_DOMAIN is missing in Vercel.");
+
+  const lookup = await shopifyGraphql<{
+    data?: { codeDiscountNodeByCode?: { id?: string; codeDiscount?: { __typename?: string; status?: string; asyncUsageCount?: number } } };
+    errors?: { message?: string }[];
+  }>(domain, `
+    query CreatorSampleCode($code: String!) {
+      codeDiscountNodeByCode(code: $code) {
+        id
+        codeDiscount {
+          __typename
+          ... on DiscountCodeBasic { status asyncUsageCount }
+          ... on DiscountCodeApp { status asyncUsageCount }
+        }
+      }
+    }
+  `, { code: normalizedCode });
+  if (!lookup) throw new Error("Shopify could not inspect this Creator Sample code.");
+  if (lookup.errors?.length) throw new Error(lookup.errors.map((error) => error.message).filter(Boolean).join(" "));
+  const node = lookup.data?.codeDiscountNodeByCode;
+  const discount = node?.codeDiscount;
+  if (!node?.id || !discount) return { code: normalizedCode, status: "missing" };
+  if (discount.__typename === "DiscountCodeApp") return { code: normalizedCode, status: "already_includes_shipping", discountId: node.id };
+  if (discount.status !== "ACTIVE") return { code: normalizedCode, status: "skipped_inactive" };
+  if ((discount.asyncUsageCount ?? 0) > 0) return { code: normalizedCode, status: "skipped_used" };
+
+  // Native amount-off discounts cannot apply this app's delivery rule. Replace
+  // only unused active codes, retaining the identical code for the creator.
+  const deletion = await shopifyGraphql<{
+    data?: { discountCodeDelete?: { userErrors?: DiscountUserError[] } };
+    errors?: { message?: string }[];
+  }>(domain, `
+    mutation DeleteCreatorSampleCode($id: ID!) {
+      discountCodeDelete(id: $id) {
+        userErrors { field message code }
+      }
+    }
+  `, { id: node.id });
+  if (!deletion) throw new Error("Shopify could not replace this Creator Sample code.");
+  if (deletion.errors?.length) throw new Error(deletion.errors.map((error) => error.message).filter(Boolean).join(" "));
+  const errors = deletion.data?.discountCodeDelete?.userErrors;
+  if (errors?.length) throw new Error(userErrorMessage(errors, "Shopify rejected this Creator Sample code replacement."));
+
+  return { code: normalizedCode, status: "upgraded", discountId: await createCreatorSampleDiscountCode(normalizedCode, creatorName, collection) };
+}
+
 async function createProductDiscount(
   domain: string,
   input: ManualOrderCreateInput,

@@ -8955,6 +8955,7 @@ function CreatorProgramWorkspacePage({
   const [freeCreatorSamples, setFreeCreatorSamples] = useState<FreeCreatorSample[]>(() => readJson<FreeCreatorSample[]>(freeCreatorSamplesStorageKey) ?? []);
   const [freeCreatorSampleForm, setFreeCreatorSampleForm] = useState({ creatorName: "", creatorUrl: "", sampleCode: "", productCollection: "classics" as "classics" | "plush_charms_v1", notes: "" });
   const [creatingFreeCreatorSample, setCreatingFreeCreatorSample] = useState(false);
+  const [upgradingCreatorShipping, setUpgradingCreatorShipping] = useState(false);
   const [syncingFreeCreatorSamples, setSyncingFreeCreatorSamples] = useState(false);
   const visibleProfiles = admin ? creatorProfiles : creatorProfiles.filter((profile) => profile.userId === session.id);
   const currentProfile = visibleProfiles[0];
@@ -9199,6 +9200,35 @@ function CreatorProgramWorkspacePage({
     }
   }
 
+  async function upgradeActiveCreatorSampleShipping() {
+    const candidates = freeCreatorSamples.filter((sample) => sample.shopifyDiscountId && !freeCreatorSampleClaims(sample.sampleCode).length);
+    if (!candidates.length) return setMessage("There are no unused Creator Sample codes available to upgrade.");
+    setUpgradingCreatorShipping(true);
+    try {
+      const response = await fetch("/api/shopify/creator-sample-discounts", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sessionToken: session.token, samples: candidates }),
+      });
+      const result = await response.json().catch(() => ({})) as {
+        ok?: boolean;
+        error?: string;
+        samples?: FreeCreatorSample[];
+        results?: { status?: string }[];
+      };
+      if (!response.ok || !result.ok) throw new Error(result.error || "Creator Sample codes could not be upgraded.");
+      if (result.samples) setFreeCreatorSamples((current) => current.map((sample) => result.samples?.find((saved) => saved.id === sample.id) ?? sample));
+      const upgraded = result.results?.filter((item) => item.status === "upgraded").length ?? 0;
+      const already = result.results?.filter((item) => item.status === "already_includes_shipping").length ?? 0;
+      const skipped = result.results?.filter((item) => item.status === "skipped_used" || item.status === "skipped_inactive").length ?? 0;
+      setMessage(`${upgraded} active Creator Sample code${upgraded === 1 ? "" : "s"} now include free shipping.${already ? ` ${already} already included it.` : ""}${skipped ? ` ${skipped} used or inactive code${skipped === 1 ? " was" : "s were"} left unchanged.` : ""}`);
+    } catch (error) {
+      setMessage(readableError(error, "Creator Sample codes could not be upgraded."));
+    } finally {
+      setUpgradingCreatorShipping(false);
+    }
+  }
+
   async function syncThisDeviceFreeCreatorSamples() {
     if (!admin) return;
     setSyncingFreeCreatorSamples(true);
@@ -9375,7 +9405,7 @@ function CreatorProgramWorkspacePage({
 
   if (view === "creator_free_samples" && admin) {
     return <section className="creator-workspace">
-      <div className="creator-hero card"><div><p>CREATOR PROGRAM</p><h2>Free Creator Sample</h2><span>Track every creator who received a free sample code, then pair the row to the order once they claim it.</span></div><div className="creator-sample-hero-actions"><button className="button secondary small" type="button" onClick={syncThisDeviceFreeCreatorSamples} disabled={syncingFreeCreatorSamples}>{syncingFreeCreatorSamples ? "Syncing this device..." : "Sync local samples"}</button><div className="accounting-status-pill">{freeCreatorSampleBundles.length} creators</div></div></div>
+      <div className="creator-hero card"><div><p>CREATOR PROGRAM</p><h2>Free Creator Sample</h2><span>Track every creator who received a free sample code, then pair the row to the order once they claim it.</span></div><div className="creator-sample-hero-actions"><button className="button secondary small" type="button" onClick={upgradeActiveCreatorSampleShipping} disabled={upgradingCreatorShipping}>{upgradingCreatorShipping ? "Adding free shipping..." : "Add free shipping to active codes"}</button><button className="button secondary small" type="button" onClick={syncThisDeviceFreeCreatorSamples} disabled={syncingFreeCreatorSamples}>{syncingFreeCreatorSamples ? "Syncing this device..." : "Sync local samples"}</button><div className="accounting-status-pill">{freeCreatorSampleBundles.length} creators</div></div></div>
       {message && <div className="notice"><span>{message}</span><button onClick={() => setMessage("")}>x</button></div>}
       <section className="creator-sample-ledger-layout">
         <form className="creator-form card creator-sample-entry-form" onSubmit={saveFreeCreatorSample}>
