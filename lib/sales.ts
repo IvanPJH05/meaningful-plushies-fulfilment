@@ -17,6 +17,7 @@ export type SalesSummary = {
 export type SalesReportRow = {
   orderNumber: string;
   orderDate: string;
+  source: "shopify" | "tiktok" | "whatsapp";
   customerName: string;
   characters: string[];
   voiceLengths: number[];
@@ -122,6 +123,11 @@ export function buildSalesReportRows(orders: Order[], settings: PaymentProcessor
       order.totalAmount - order.refundedAmount - order.outstandingBalance,
     );
     const manualOrder = manualOrderFor(order, manualOrders);
+    const source = order.salesChannel === "tiktok"
+      ? "tiktok" as const
+      : manualOrder || /created from manual order collection/i.test(order.remark || "")
+        ? "whatsapp" as const
+        : "shopify" as const;
     const creatorFreeOrder = isCreatorFreeOrder(order, creatorProfiles, freeCreatorSampleCodes);
     const isManualOrder = Boolean(manualOrder) || (cashCollected === 0 && !creatorFreeOrder);
     const manualPrice = manualOrderRevenue(order, manualOrder);
@@ -139,6 +145,7 @@ export function buildSalesReportRows(orders: Order[], settings: PaymentProcessor
     return {
       orderNumber: order.orderNumber,
       orderDate: order.orderDate,
+      source,
       customerName: order.customerName,
       characters: [...new Set(group.map((item) => item.character).filter(Boolean))],
       voiceLengths: [...new Set(group.map((item) => item.voiceLength).filter(Boolean))].sort((a, b) => a - b),

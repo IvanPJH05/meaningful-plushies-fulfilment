@@ -195,3 +195,13 @@ test("builds one report row and charges one fee for a multi-item order", () => {
   assert.equal(rows[0].processingFee, 4);
   assert.equal(rows[0].cashAfterFees, 96);
 });
+
+test("labels report rows by their actual sales source", () => {
+  const [shopify] = buildSalesReportRows([order({ totalAmount: 100 })]);
+  const [tiktok] = buildSalesReportRows([order({ totalAmount: 100, salesChannel: "tiktok" })]);
+  const [whatsapp] = buildSalesReportRows([order({ totalAmount: 100, remark: "Created from manual order collection" })]);
+
+  assert.equal(shopify.source, "shopify");
+  assert.equal(tiktok.source, "tiktok");
+  assert.equal(whatsapp.source, "whatsapp");
+});

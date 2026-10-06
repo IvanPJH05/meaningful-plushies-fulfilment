@@ -174,6 +174,7 @@ type StoredUiPreferences = {
   sortDirection?: SortDirection;
   reportStartDate?: string;
   reportEndDate?: string;
+  reportSourceFilter?: SourceFilter;
   fulfilmentStartDate?: string;
   fulfilmentEndDate?: string;
   fulfilmentColumns?: FulfilmentColumn[];
@@ -1564,6 +1565,7 @@ export default function Home() {
   const [reportSelectedOrders, setReportSelectedOrders] = useState<string[]>([]);
   const [reportStartDate, setReportStartDate] = useState(() => storedUi.reportStartDate ?? "");
   const [reportEndDate, setReportEndDate] = useState(() => storedUi.reportEndDate ?? "");
+  const [reportSourceFilter, setReportSourceFilter] = useState<SourceFilter>(() => choice(storedUi.reportSourceFilter, "all", sourceFilterValues));
   const [fulfilmentStartDate, setFulfilmentStartDate] = useState(() => storedUi.fulfilmentStartDate ?? "");
   const [fulfilmentEndDate, setFulfilmentEndDate] = useState(() => storedUi.fulfilmentEndDate ?? "");
   const [processorSettings, setProcessorSettings] = useState<PaymentProcessorSetting[]>([]);
@@ -2064,6 +2066,7 @@ export default function Home() {
       sortDirection,
       reportStartDate,
       reportEndDate,
+      reportSourceFilter,
       fulfilmentStartDate,
       fulfilmentEndDate,
       fulfilmentColumns,
@@ -2088,6 +2091,7 @@ export default function Home() {
     sortDirection,
     reportStartDate,
     reportEndDate,
+    reportSourceFilter,
     fulfilmentStartDate,
     fulfilmentEndDate,
     fulfilmentColumns,
@@ -2281,8 +2285,9 @@ export default function Home() {
   }, { stripeCollected: 0, stripeProcessingFees: 0, xenditCollected: 0, xenditProcessingFees: 0 }), [allSalesReportRows]);
   const dateFilteredReportRows = useMemo(() => allSalesReportRows.filter((row) => {
     const date = dateKey(row.orderDate);
-    return (!reportStartDate || date >= reportStartDate) && (!reportEndDate || date <= reportEndDate);
-  }).sort((a, b) => Number(a.orderNumber) - Number(b.orderNumber)), [allSalesReportRows, reportStartDate, reportEndDate]);
+    const sourceMatches = reportSourceFilter === "all" || row.source === reportSourceFilter;
+    return sourceMatches && (!reportStartDate || date >= reportStartDate) && (!reportEndDate || date <= reportEndDate);
+  }).sort((a, b) => Number(a.orderNumber) - Number(b.orderNumber)), [allSalesReportRows, reportStartDate, reportEndDate, reportSourceFilter]);
   const visibleReportRows = useMemo(() => reportSelectedOrders.length
     ? dateFilteredReportRows.filter((row) => reportSelectedOrders.includes(row.orderNumber))
     : dateFilteredReportRows, [dateFilteredReportRows, reportSelectedOrders]);
@@ -2294,6 +2299,16 @@ export default function Home() {
     fees: total.fees + row.totalFees,
     cash: total.cash + row.cashAfterFees,
   }), { sales: 0, discounts: 0, processingFees: 0, shopifyFees: 0, fees: 0, cash: 0 }), [visibleReportRows]);
+  const reportCharacterSales = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const row of visibleReportRows) {
+      for (const character of row.characters) {
+        const name = character.trim();
+        if (name) totals.set(name, (totals.get(name) ?? 0) + 1);
+      }
+    }
+    return [...totals.entries()].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]));
+  }, [visibleReportRows]);
   const otherIncomeCharacterSales = useMemo(() => accountingTransactions
     .filter((transaction) => transaction.businessEvent === "other_income")
     .reduce<Partial<Record<(typeof stockCharacters)[number], number>>>((totals, transaction) => {
@@ -6131,11 +6146,12 @@ export default function Home() {
       </section>}
 
       {view === "sales_report" && session.role === "admin" && <section className="sales-report-page">
-        <div className="report-controls card no-print"><div><label>From<input type="date" value={reportStartDate} onChange={(event) => setReportStartDate(event.target.value)} /></label><label>To<input type="date" value={reportEndDate} onChange={(event) => setReportEndDate(event.target.value)} /></label></div><div><button className="button secondary" onClick={() => setReportSelectedOrders(dateFilteredReportRows.map((row) => row.orderNumber))}>Select shown</button><button className="button secondary" onClick={() => setReportSelectedOrders([])}>Use all matching</button><button className="button primary" onClick={() => printView("print-sales-report")}>Print / Save PDF</button></div></div>
+        <div className="report-controls card no-print"><div><label>From<input type="date" value={reportStartDate} onChange={(event) => setReportStartDate(event.target.value)} /></label><label>To<input type="date" value={reportEndDate} onChange={(event) => setReportEndDate(event.target.value)} /></label><label>Sales source<SourceFilterSelect value={reportSourceFilter} onChange={setReportSourceFilter} /></label></div><div><button className="button secondary" onClick={() => setReportSelectedOrders(dateFilteredReportRows.map((row) => row.orderNumber))}>Select shown</button><button className="button secondary" onClick={() => setReportSelectedOrders([])}>Use all matching</button><button className="button primary" onClick={() => printView("print-sales-report")}>Print / Save PDF</button></div></div>
         <div className="report-selection card no-print"><div className="report-selection-heading"><strong>Choose individual orders</strong><span>{reportSelectedOrders.length ? `${reportSelectedOrders.length} selected` : "All orders matching the dates are included"}</span></div><div>{dateFilteredReportRows.map((row) => <label key={row.orderNumber}><input type="checkbox" checked={reportSelectedOrders.includes(row.orderNumber)} onChange={() => setReportSelectedOrders((current) => current.includes(row.orderNumber) ? current.filter((number) => number !== row.orderNumber) : [...current, row.orderNumber])} /><span>#{row.orderNumber}</span><small>{formatDate(row.orderDate)} | {row.customerName}</small></label>)}</div></div>
         <section className="sales-report-print card">
           <div className="report-title"><div><p>MEANINGFUL PLUSHIES</p><h2>Sales Report</h2><span>{reportStartDate || "All dates"}{reportEndDate ? ` to ${reportEndDate}` : ""}</span></div><div><strong>{visibleReportRows.length}</strong><span>orders</span></div></div>
           <div className="report-summary"><div><span>Sale price</span><strong>{formatMoney(reportTotals.sales)}</strong></div><div><span>Discounts</span><strong>{formatMoney(reportTotals.discounts)}</strong></div><div><span>Processor fees</span><strong>{formatMoney(reportTotals.processingFees)}</strong></div><div><span>Shopify fees</span><strong>{formatMoney(reportTotals.shopifyFees)}</strong></div><div><span>Total fees</span><strong>{formatMoney(reportTotals.fees)}</strong></div><div><span>Cash after fees</span><strong>{formatMoney(reportTotals.cash)}</strong></div></div>
+          <section className="report-character-sales"><div><strong>Characters sold</strong><span>Based on the orders currently included in this report.</span></div><div className="report-character-sales-grid">{reportCharacterSales.map(([character, count]) => <article key={character}><span>{character}</span><strong>{count}</strong><small>sold</small></article>)}{!reportCharacterSales.length && <p>No character data in the selected orders.</p>}</div></section>
           <div className="table-scroll"><table className="orders-table report-table"><thead><tr><th>Order</th><th>Date</th><th>Customer</th><th>Character</th><th>Speaker</th><th>Payment</th><th>Sale price</th><th>Discount</th><th>Processor fee</th><th>Shopify fee</th><th>Cash after fees</th></tr></thead><tbody>{visibleReportRows.map((row) => <tr key={row.orderNumber}><td><strong>#{row.orderNumber}</strong></td><td>{formatDate(row.orderDate)}</td><td>{row.customerName || "-"}</td><td>{row.characters.join(", ") || "-"}</td><td>{row.voiceLengths.map((length) => `${length}s`).join(", ") || "-"}</td><td>{row.paymentProcessor}</td><td>{formatMoney(row.salePrice)}</td><td>{formatMoney(row.totalDiscount)}</td><td>{formatMoney(row.processingFee)}</td><td>{formatMoney(row.shopifyFee)}</td><td><strong>{formatMoney(row.cashAfterFees)}</strong></td></tr>)}</tbody></table></div>
           {!visibleReportRows.length && <div className="empty"><strong>No orders in this report</strong><p>Choose orders or adjust the date range.</p></div>}
         </section>
