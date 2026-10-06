@@ -11,35 +11,39 @@ function json(status: number, body: Record<string, unknown>) {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json() as { sessionToken?: string; sample?: CreatorFreeSampleRecord };
+    const body = await request.json() as { sessionToken?: string; samples?: CreatorFreeSampleRecord[]; sample?: CreatorFreeSampleRecord };
     const sessionToken = body.sessionToken?.trim() ?? "";
-    const sample = body.sample;
-    if (!sessionToken || !sample?.id || !sample.creatorName?.trim() || !sample.sampleCode?.trim()) {
+    const samples = body.samples ?? (body.sample ? [body.sample] : []);
+    if (!sessionToken || !samples.length || samples.some((sample) => !sample?.id || !sample.creatorName?.trim() || !sample.sampleCode?.trim())) {
       return json(400, { ok: false, error: "Creator name, discount code, and an active admin session are required." });
     }
 
     // The database RPC validates the dashboard session before any Shopify action.
     // Keeping both saves on the server prevents a browser-to-Supabase network blip
     // from leaving the creator ledger and Shopify code out of sync.
-    const pendingSample: CreatorFreeSampleRecord = {
+    const pendingSamples = samples.map((sample) => ({
       ...sample,
+      productCollection: sample.productCollection === "plush_charms_v1" ? "plush_charms_v1" as const : "classics" as const,
       sampleCode: sample.sampleCode.trim().toUpperCase(),
       shopifyDiscountId: "",
-    };
-    await saveCreatorFreeSample(sessionToken, pendingSample);
+    }));
+    await Promise.all(pendingSamples.map((sample) => saveCreatorFreeSample(sessionToken, sample)));
 
     try {
-      const discountId = await createCreatorSampleDiscountCode(pendingSample.sampleCode, pendingSample.creatorName);
-      const savedSample = { ...pendingSample, shopifyDiscountId: discountId };
-      await saveCreatorFreeSample(sessionToken, savedSample);
-      return json(200, { ok: true, saved: true, discountId, sample: savedSample });
+      const savedSamples = await Promise.all(pendingSamples.map(async (sample) => {
+        const discountId = await createCreatorSampleDiscountCode(sample.sampleCode, sample.creatorName, sample.productCollection);
+        const savedSample = { ...sample, shopifyDiscountId: discountId };
+        await saveCreatorFreeSample(sessionToken, savedSample);
+        return savedSample;
+      }));
+      return json(200, { ok: true, saved: true, discountIds: savedSamples.map((sample) => sample.shopifyDiscountId), samples: savedSamples });
     } catch (error) {
       // The creator record is still retained so staff can resolve an already-used
       // code without accidentally giving the same sample twice.
       return json(200, {
         ok: false,
         saved: true,
-        sample: pendingSample,
+        samples: pendingSamples,
         error: error instanceof Error ? error.message : "Shopify could not create this discount code.",
       });
     }
