@@ -9221,7 +9221,8 @@ function CreatorProgramWorkspacePage({
       const upgraded = result.results?.filter((item) => item.status === "upgraded").length ?? 0;
       const already = result.results?.filter((item) => item.status === "already_includes_shipping").length ?? 0;
       const skipped = result.results?.filter((item) => item.status === "skipped_used" || item.status === "skipped_inactive").length ?? 0;
-      setMessage(`${upgraded} active Creator Sample code${upgraded === 1 ? "" : "s"} now include free shipping.${already ? ` ${already} already included it.` : ""}${skipped ? ` ${skipped} used or inactive code${skipped === 1 ? " was" : "s were"} left unchanged.` : ""}`);
+      const failed = result.results?.filter((item) => item.status === "failed").length ?? 0;
+      setMessage(`${upgraded} active Creator Sample code${upgraded === 1 ? "" : "s"} now include free shipping.${already ? ` ${already} already included it.` : ""}${skipped ? ` ${skipped} used or inactive code${skipped === 1 ? " was" : "s were"} left unchanged.` : ""}${failed ? ` ${failed} code${failed === 1 ? " needs" : "s need"} a separate retry.` : ""}`);
     } catch (error) {
       setMessage(readableError(error, "Creator Sample codes could not be upgraded."));
     } finally {

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { createCreatorSampleDiscountCode, deactivateManualOrderDiscount, upgradeCreatorSampleDiscountCode } from "../../../../lib/manual-orders";
+import { createCreatorSampleDiscountCode, deactivateManualOrderDiscount, upgradeCreatorSampleDiscountCode, type CreatorSampleDiscountUpgrade } from "../../../../lib/manual-orders";
 import { saveCreatorFreeSample, type CreatorFreeSampleRecord } from "../../../../lib/supabase";
 
 export const runtime = "nodejs";
@@ -60,18 +60,31 @@ export async function PUT(request: Request) {
     if (!sessionToken || !samples.length) return json(400, { ok: false, error: "Choose active Creator Sample codes and an admin session." });
 
     // This write validates the dashboard session before any Shopify mutations.
-    await Promise.all(samples.map((sample) => saveCreatorFreeSample(sessionToken, sample)));
-    const results = await Promise.all(samples.map((sample) => upgradeCreatorSampleDiscountCode(
-      sample.sampleCode,
-      sample.creatorName,
-      sample.productCollection === "plush_charms_v1" ? "plush_charms_v1" : "classics",
-    )));
-    const updated = await Promise.all(samples.map(async (sample) => {
-      const result = results.find((item) => item.code === sample.sampleCode.trim().toUpperCase());
-      const next = result?.discountId ? { ...sample, shopifyDiscountId: result.discountId } : sample;
+    // Work one code at a time. This avoids Shopify rate limits and means a
+    // single problematic legacy code cannot prevent the other safe upgrades.
+    const results: CreatorSampleDiscountUpgrade[] = [];
+    const updated: CreatorFreeSampleRecord[] = [];
+    for (const sample of samples) {
+      await saveCreatorFreeSample(sessionToken, sample);
+      let result: CreatorSampleDiscountUpgrade;
+      try {
+        result = await upgradeCreatorSampleDiscountCode(
+          sample.sampleCode,
+          sample.creatorName,
+          sample.productCollection === "plush_charms_v1" ? "plush_charms_v1" : "classics",
+        );
+      } catch (error) {
+        result = {
+          code: sample.sampleCode.trim().toUpperCase(),
+          status: "failed",
+          error: error instanceof Error ? error.message : "Shopify could not upgrade this Creator Sample code.",
+        };
+      }
+      results.push(result);
+      const next = result.discountId ? { ...sample, shopifyDiscountId: result.discountId } : sample;
       if (next !== sample) await saveCreatorFreeSample(sessionToken, next);
-      return next;
-    }));
+      updated.push(next);
+    }
     return json(200, { ok: true, results, samples: updated });
   } catch (error) {
     return json(500, { ok: false, error: error instanceof Error ? error.message : "Creator Sample codes could not be upgraded." });

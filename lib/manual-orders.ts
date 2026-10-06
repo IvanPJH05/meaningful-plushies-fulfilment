@@ -419,8 +419,9 @@ export async function createCreatorSampleDiscountCode(code: string, creatorName:
 
 export type CreatorSampleDiscountUpgrade = {
   code: string;
-  status: "upgraded" | "already_includes_shipping" | "skipped_inactive" | "skipped_used" | "missing";
+  status: "upgraded" | "already_includes_shipping" | "skipped_inactive" | "skipped_used" | "missing" | "failed";
   discountId?: string;
+  error?: string;
 };
 
 export async function upgradeCreatorSampleDiscountCode(code: string, creatorName: string, collection: CreatorSampleCollection = "classics"): Promise<CreatorSampleDiscountUpgrade> {
