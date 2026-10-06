@@ -96,10 +96,13 @@ export function isCreatorSampleOrder(order: Order, creatorProfiles?: CreatorProf
   ));
 }
 
-/** A fully free creator claim has no remaining checkout balance. */
+/**
+ * Creator-programme membership is determined only by an exact registered
+ * code. Checkout totals are not reliable: historic creator claims could
+ * contain delivery fees, while newer ones include free shipping.
+ */
 export function isCreatorFreeOrder(order: Order, creatorProfiles?: CreatorProfile[], freeCreatorSampleCodes: string[] = []) {
-  if (creatorProfiles) return order.totalAmount <= 0 && isCreatorSampleOrder(order, creatorProfiles, freeCreatorSampleCodes);
-  return order.creatorFreeOrder || isCreatorSampleOrder(order, creatorProfiles, freeCreatorSampleCodes);
+  return isCreatorSampleOrder(order, creatorProfiles, freeCreatorSampleCodes);
 }
 
 export function summarizeSales(orders: Order[], settings: PaymentProcessorSetting[] = [], shopifyPercentage = 0, manualOrders: ManualOrder[] = [], creatorProfiles?: CreatorProfile[], freeCreatorSampleCodes: string[] = []): SalesSummary {
