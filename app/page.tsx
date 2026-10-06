@@ -6,7 +6,7 @@ import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, u
 import type { ChangeEvent, DragEvent, FormEvent, SVGProps } from "react";
 import { applyTikTokDetailEntries, detectCsvKind, fulfilledOrdersCsv, importShopifyData, importTikTokShopData, normalizePaymentProcessor, parseTikTokDetailsBlock, tikTokCertificateJson, tikTokDetailsToText } from "../lib/importer";
 import { parseBankStatementCsv } from "../lib/bank-statements";
-import { buildSalesReportRows, isCreatorFreeOrder, manualOrderFor, summarizeSales, type SalesReportRow, type SalesSummary } from "../lib/sales";
+import { buildSalesReportRows, isCreatorFreeOrder, isCreatorSampleOrder, manualOrderFor, summarizeSales, type SalesReportRow, type SalesSummary } from "../lib/sales";
 import { stockCharacters, summarizeStock } from "../lib/stock";
 import { mediaFileExtension, voiceBackupFileName } from "../lib/voice-file-name";
 import {
@@ -1292,7 +1292,7 @@ function codCollectionAmount(order: Order, manualOrders: ManualOrder[]) {
 }
 
 function isInfluencerFulfilmentOrder(order: Order, creatorProfiles: CreatorProfile[], freeCreatorSampleCodes: string[]) {
-  return isCreatorFreeOrder(order, creatorProfiles, freeCreatorSampleCodes);
+  return isCreatorSampleOrder(order, creatorProfiles, freeCreatorSampleCodes);
 }
 
 function packingSlipRemark(order: Order) {

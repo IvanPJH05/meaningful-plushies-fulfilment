@@ -71,13 +71,17 @@ export function manualOrderRevenue(order: Order, manualOrder?: ManualOrder) {
   return Math.max(0, order.subtotalAmount) + eastMalaysiaSurcharge + codFee;
 }
 
-export function isCreatorFreeOrder(order: Order, creatorProfiles?: CreatorProfile[], freeCreatorSampleCodes: string[] = []) {
+/**
+ * Identifies an order that used a known creator code. This intentionally does
+ * not require a RM0 total: older Creator Sample claims could still charge
+ * shipping, and staff must be able to identify those claims in fulfilment.
+ */
+export function isCreatorSampleOrder(order: Order, creatorProfiles?: CreatorProfile[], freeCreatorSampleCodes: string[] = []) {
   const codes = orderDiscountCodes(order);
   // When the Creator Program has been loaded, only an exact program code can
-  // mark a RM0 checkout as an influencer order. A generic FREE-* discount is
+  // mark a checkout as an influencer order. A generic FREE-* discount is
   // never enough on its own.
   if (creatorProfiles) {
-    if (order.totalAmount > 0) return false;
     const creatorCodes = new Set([...creatorProfiles.flatMap((profile) => {
       const code = profile.discountCode.trim().toUpperCase();
       return code ? [code, code.startsWith("FREE-") ? code : `FREE-${code}`] : [];
@@ -90,6 +94,12 @@ export function isCreatorFreeOrder(order: Order, creatorProfiles?: CreatorProfil
     || code.startsWith("CREATOR-FREE")
     || code.includes("INFLUENCER-FREE")
   ));
+}
+
+/** A fully free creator claim has no remaining checkout balance. */
+export function isCreatorFreeOrder(order: Order, creatorProfiles?: CreatorProfile[], freeCreatorSampleCodes: string[] = []) {
+  if (creatorProfiles) return order.totalAmount <= 0 && isCreatorSampleOrder(order, creatorProfiles, freeCreatorSampleCodes);
+  return order.creatorFreeOrder || isCreatorSampleOrder(order, creatorProfiles, freeCreatorSampleCodes);
 }
 
 export function summarizeSales(orders: Order[], settings: PaymentProcessorSetting[] = [], shopifyPercentage = 0, manualOrders: ManualOrder[] = [], creatorProfiles?: CreatorProfile[], freeCreatorSampleCodes: string[] = []): SalesSummary {
