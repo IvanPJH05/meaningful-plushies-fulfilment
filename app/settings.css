@@ -509,6 +509,24 @@
 .creator-sample-form-fields textarea { width: 100%; border: 1px solid #d8e1eb; border-radius: 8px; background: #fff; padding: 0 12px; color: var(--text); font: inherit; font-size: 12px; letter-spacing: 0; text-transform: none; }
 .creator-sample-form-fields input { height: 40px; }
 .creator-sample-form-fields textarea { min-height: 96px; padding-top: 10px; resize: vertical; }
+.creator-sample-form-fields input:focus,
+.creator-sample-form-fields textarea:focus { outline: none; border-color: #3979c9; box-shadow: 0 0 0 3px rgba(57,121,201,.12); }
+.creator-sample-collection-picker { min-width: 0; margin: 0; padding: 0; border: 0; }
+.creator-sample-collection-picker legend { padding: 0; color: var(--muted); font-size: 10px; font-weight: 850; letter-spacing: .06em; text-transform: uppercase; }
+.creator-sample-collection-picker > div { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 7px; }
+.creator-sample-collection-picker button { min-width: 0; display: flex; gap: 9px; align-items: center; padding: 11px; border: 1px solid #d8e1eb; border-radius: 10px; background: linear-gradient(145deg,#fff,#f7faff); color: #43536a; text-align: left; cursor: pointer; transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease, background .18s ease; }
+.creator-sample-collection-picker button:hover { border-color: #90b5e3; background: #f4f8ff; transform: translateY(-1px); }
+.creator-sample-collection-picker button.selected { border-color: #1769e0; background: linear-gradient(145deg,#eaf3ff,#f6faff); box-shadow: 0 0 0 3px rgba(23,105,224,.12); }
+.creator-sample-collection-picker button:focus-visible { outline: 2px solid #1769e0; outline-offset: 2px; }
+.creator-sample-collection-count { flex: 0 0 30px; height: 30px; display: grid; place-items: center; border-radius: 9px; background: #e6edf7; color: #4b627f; font-size: 14px; font-weight: 900; }
+.creator-sample-collection-picker button.selected .creator-sample-collection-count { background: #1769e0; color: #fff; }
+.creator-sample-collection-picker button > span:last-child { display: grid; min-width: 0; gap: 2px; }
+.creator-sample-collection-picker strong { overflow: hidden; color: #203957; font-size: 11px; font-weight: 850; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.creator-sample-collection-picker small { color: #718198; font-size: 10px; font-weight: 650; letter-spacing: 0; line-height: 1.2; text-transform: none; }
+.creator-sample-collection-picker > p { margin: 8px 1px 0; color: #62738a; font-size: 11px; font-weight: 500; letter-spacing: 0; line-height: 1.45; text-transform: none; }
+.creator-sample-form-fields > .button.primary { min-height: 44px; border-radius: 9px; background: linear-gradient(135deg,#1769e0,#275fba); box-shadow: 0 8px 16px rgba(23,105,224,.2); transition: transform .18s ease, box-shadow .18s ease, background .18s ease; }
+.creator-sample-form-fields > .button.primary:hover:not(:disabled) { background: linear-gradient(135deg,#0f5dcc,#214f9e); box-shadow: 0 10px 20px rgba(23,105,224,.26); transform: translateY(-1px); }
+.creator-sample-form-fields > .button.primary:focus-visible { outline: 3px solid rgba(23,105,224,.25); outline-offset: 2px; }
 .creator-sample-ledger-card { min-width: 0; overflow: hidden; }
 .creator-code-summary-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; padding: 0 0 14px; }
 .creator-code-summary-strip article { display: grid; gap: 5px; padding: 10px 12px; border: 1px solid #e6edf5; border-radius: 8px; background: #f8fbff; }
