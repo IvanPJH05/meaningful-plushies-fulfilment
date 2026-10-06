@@ -9160,6 +9160,29 @@ function CreatorProgramWorkspacePage({
     }
   }
 
+  async function retryFreeCreatorSampleBundle(bundle: FreeCreatorSampleBundle) {
+    const pendingSamples = bundle.samples.filter((sample) => !sample.shopifyDiscountId);
+    if (!pendingSamples.length) return;
+    setCreatingFreeCreatorSample(true);
+    try {
+      const response = await fetch("/api/shopify/creator-sample-discounts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sessionToken: session.token, samples: pendingSamples }),
+      });
+      const result = await response.json().catch(() => ({})) as { ok?: boolean; saved?: boolean; samples?: FreeCreatorSample[]; error?: string };
+      if (result.saved && result.samples) {
+        setFreeCreatorSamples((current) => current.map((sample) => result.samples?.find((saved) => saved.id === sample.id) ?? sample));
+      }
+      if (!response.ok || !result.ok) throw new Error(result.error || "Shopify could not create the missing code.");
+      setMessage(`${pendingSamples.length === 2 ? "Both Plush Charm codes" : "The Creator Sample code"} are now active in Shopify, with free shipping included.`);
+    } catch (error) {
+      setMessage(readableError(error, "Shopify could not create the missing code."));
+    } finally {
+      setCreatingFreeCreatorSample(false);
+    }
+  }
+
   async function syncThisDeviceFreeCreatorSamples() {
     if (!admin) return;
     setSyncingFreeCreatorSamples(true);
@@ -9225,9 +9248,9 @@ function CreatorProgramWorkspacePage({
   function freeCreatorSampleMessage(bundle: FreeCreatorSampleBundle) {
     const codes = bundle.samples.map((sample) => sample.sampleCode.trim().toUpperCase());
     if (bundle.productCollection === "plush_charms_v1") {
-      return `${freeCreatorSampleProductLinks.plush_charms_v1}\n\nhere is your code:\n${codes[0] ?? ""}\nHere is your partner's code:\n${codes[1] ?? ""}\n\nYou can customise your meaningful plush charm here. Send the link and 2nd code to your partner, so that both of you can surprise each other🤭. Checkout like usual and use the code at checkout to get the plush charm for 100% off`;
+      return `${freeCreatorSampleProductLinks.plush_charms_v1}\n\nhere is your code:\n${codes[0] ?? ""}\nHere is your partner's code:\n${codes[1] ?? ""}\n\nYou can customise your meaningful plush charm here. Send the link and 2nd code to your partner, so that both of you can surprise each other🤭. Checkout like usual and use the code at checkout to get the plush charm for 100% off, including free shipping.`;
     }
-    return `${freeCreatorSampleProductLinks.classics}\n\nhere is your code:\n${codes[0] ?? ""}\n\nyou can checkout like usual, and use the code at checkout to get 100% off your meaningful plushie`;
+    return `${freeCreatorSampleProductLinks.classics}\n\nhere is your code:\n${codes[0] ?? ""}\n\nyou can checkout like usual, and use the code at checkout to get 100% off your meaningful plushie, including free shipping.`;
   }
 
   async function copyFreeCreatorSampleMessage(bundle: FreeCreatorSampleBundle) {
@@ -9372,7 +9395,8 @@ function CreatorProgramWorkspacePage({
               {freeCreatorSampleBundles.map((bundle) => {
                 const claims = bundle.samples.flatMap((sample) => freeCreatorSampleClaims(sample.sampleCode));
                 const sampleMessage = freeCreatorSampleMessage(bundle);
-                return <tr key={bundle.key}><td>{bundle.creatorUrl ? <a href={bundle.creatorUrl} target="_blank" rel="noreferrer"><strong>{bundle.creatorName}</strong></a> : <strong>{bundle.creatorName}</strong>}<small>Added {formatDate(bundle.givenAt)}</small></td><td>{freeCreatorSampleCollectionLabels[bundle.productCollection]}</td><td><div className="creator-sample-code-stack">{bundle.samples.map((sample, index) => <code key={sample.id}>{bundle.samples.length === 2 ? index === 0 ? "You · " : "Partner · " : ""}{sample.sampleCode}</code>)}</div></td><td><div className="creator-sample-claim-cell"><span className={`creator-sample-claim ${claims.length ? "claimed" : "pending"}`}>{claims.length}</span><small>{claims.length === 1 ? "order" : "orders"}</small></div></td><td><div className="creator-sample-message-cell"><textarea readOnly value={sampleMessage} /><button className="button secondary small" type="button" onClick={() => copyFreeCreatorSampleMessage(bundle)}>Copy message</button></div></td><td><div className="creator-sample-order-stack">{bundle.samples.map((sample, index) => <label key={sample.id}>{bundle.samples.length === 2 && <span>{index === 0 ? "You" : "Partner"}</span>}<input className="creator-sample-order-input" value={sample.orderNumber ?? ""} onChange={(event) => updateFreeCreatorSample(sample.id, { orderNumber: event.target.value })} placeholder="Order #" /></label>)}</div></td><td><div className="creator-sample-customer-stack">{bundle.samples.map((sample) => { const pairedOrder = freeCreatorSampleOrder(sample); return pairedOrder ? <div className="creator-sample-order-details" key={sample.id}><strong>{pairedOrder.customerName || "-"}</strong><span>{pairedOrder.phone || "-"}</span><small>{pairedOrder.address || "-"}</small></div> : <span className="creator-sample-unmatched" key={sample.id}>{sample.orderNumber ? "No matching order found" : "Enter order number"}</span>; })}</div></td><td><input className="creator-sample-notes-input" value={bundle.notes} onChange={(event) => updateFreeCreatorSampleBundle(bundle, { notes: event.target.value })} placeholder="Notes" /></td><td><button className="button secondary small" type="button" onClick={() => deleteFreeCreatorSampleBundle(bundle)}>Remove</button></td></tr>;
+                const missingShopifyCodes = bundle.samples.some((sample) => !sample.shopifyDiscountId);
+                return <tr key={bundle.key}><td>{bundle.creatorUrl ? <a href={bundle.creatorUrl} target="_blank" rel="noreferrer"><strong>{bundle.creatorName}</strong></a> : <strong>{bundle.creatorName}</strong>}<small>Added {formatDate(bundle.givenAt)}</small></td><td>{freeCreatorSampleCollectionLabels[bundle.productCollection]}</td><td><div className="creator-sample-code-stack">{bundle.samples.map((sample, index) => <code key={sample.id}>{bundle.samples.length === 2 ? index === 0 ? "You · " : "Partner · " : ""}{sample.sampleCode}</code>)}</div></td><td><div className="creator-sample-claim-cell"><span className={`creator-sample-claim ${claims.length ? "claimed" : "pending"}`}>{claims.length}</span><small>{claims.length === 1 ? "order" : "orders"}</small></div></td><td><div className="creator-sample-message-cell"><textarea readOnly value={sampleMessage} /><button className="button secondary small" type="button" onClick={() => copyFreeCreatorSampleMessage(bundle)}>Copy message</button></div></td><td><div className="creator-sample-order-stack">{bundle.samples.map((sample, index) => <label key={sample.id}>{bundle.samples.length === 2 && <span>{index === 0 ? "You" : "Partner"}</span>}<input className="creator-sample-order-input" value={sample.orderNumber ?? ""} onChange={(event) => updateFreeCreatorSample(sample.id, { orderNumber: event.target.value })} placeholder="Order #" /></label>)}</div></td><td><div className="creator-sample-customer-stack">{bundle.samples.map((sample) => { const pairedOrder = freeCreatorSampleOrder(sample); return pairedOrder ? <div className="creator-sample-order-details" key={sample.id}><strong>{pairedOrder.customerName || "-"}</strong><span>{pairedOrder.phone || "-"}</span><small>{pairedOrder.address || "-"}</small></div> : <span className="creator-sample-unmatched" key={sample.id}>{sample.orderNumber ? "No matching order found" : "Enter order number"}</span>; })}</div></td><td><input className="creator-sample-notes-input" value={bundle.notes} onChange={(event) => updateFreeCreatorSampleBundle(bundle, { notes: event.target.value })} placeholder="Notes" /></td><td>{missingShopifyCodes && <button className="button primary small" type="button" disabled={creatingFreeCreatorSample} onClick={() => retryFreeCreatorSampleBundle(bundle)}>{creatingFreeCreatorSample ? "Creating..." : "Create missing code"}</button>}<button className="button secondary small" type="button" onClick={() => deleteFreeCreatorSampleBundle(bundle)}>Remove</button></td></tr>;
               })}
               {!freeCreatorSampleBundles.length && <tr><td colSpan={9}>No free creator samples logged yet.</td></tr>}
             </tbody></table>

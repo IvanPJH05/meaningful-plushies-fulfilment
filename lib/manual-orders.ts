@@ -344,16 +344,39 @@ async function creatorSampleCollectionId(domain: string, collection: CreatorSamp
   return match.id;
 }
 
+async function creatorSampleFunctionId(domain: string) {
+  // A Function ID is regenerated when its Shopify app version changes. Prefer a
+  // configured value for backwards compatibility, but discover the live
+  // Function by its stable handle so creator codes do not break after releases.
+  const configuredId = process.env.SHOPIFY_CREATOR_SAMPLE_FUNCTION_ID?.trim();
+  if (configuredId) return configuredId;
+
+  const result = await shopifyGraphql<{
+    data?: { shopifyFunctions?: { nodes?: { id?: string; handle?: string }[] } };
+    errors?: { message?: string }[];
+  }>(domain, `
+    query CreatorSampleFunction {
+      shopifyFunctions(first: 25) {
+        nodes { id handle }
+      }
+    }
+  `, {});
+  if (!result) throw new Error("Shopify could not look up the active creator sample Function.");
+  if (result.errors?.length) throw new Error(result.errors.map((error) => error.message).filter(Boolean).join(" "));
+  const functionId = result.data?.shopifyFunctions?.nodes?.find((item) => item.handle === "creator-sample-claim-function")?.id;
+  if (!functionId) {
+    throw new Error("Creator sample Function was not found. Publish the Shopify Function and ensure Meaningful Fulfilment is installed on this store.");
+  }
+  return functionId;
+}
+
 export async function createCreatorSampleDiscountCode(code: string, creatorName: string, collection: CreatorSampleCollection = "classics") {
   const normalizedCode = code.trim().toUpperCase();
   if (!normalizedCode) throw new Error("Discount code is required.");
 
   const domain = shopDomain();
   if (!domain) throw new Error("SHOPIFY_SHOP_DOMAIN is missing in Vercel.");
-  const functionId = process.env.SHOPIFY_CREATOR_SAMPLE_FUNCTION_ID?.trim();
-  if (!functionId) {
-    throw new Error("Creator sample claim function is not connected yet. Add SHOPIFY_CREATOR_SAMPLE_FUNCTION_ID in Vercel after the Shopify Function is deployed.");
-  }
+  const functionId = await creatorSampleFunctionId(domain);
   const collectionId = await creatorSampleCollectionId(domain, collection);
 
   const result = await shopifyGraphql<{
