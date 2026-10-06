@@ -69,23 +69,28 @@ export async function POST(request: Request) {
         existing,
         "Shopify catch-up",
       );
-      imported.push(...await addMissingPlushCharmLinks(orders));
+      imported.push(...orders);
     }
 
-    if (imported.length) {
+    // Reserve Charm sales numbers once for the whole recovery batch. Doing it
+    // per Shopify order would repeatedly scan fulfilment history and make a
+    // normal daily recovery needlessly slow.
+    const recoveredOrders = await addMissingPlushCharmLinks(imported);
+
+    if (recoveredOrders.length) {
       // Keep recovery writes narrow and fast. Reporting and commission
       // aggregates are maintained outside the Shopify ingestion path.
-      await upsertSharedOrders(imported, { syncSales: false });
+      await upsertSharedOrders(recoveredOrders, { syncSales: false });
       await insertSharedActivity({
         id: `shopify-catch-up-${Date.now()}`,
         action: "Shopify catch-up completed",
-        detail: `${shopifyOrders.length} Shopify order${shopifyOrders.length === 1 ? "" : "s"} checked; ${imported.length} fulfilment row${imported.length === 1 ? "" : "s"} updated for ${date}.`,
+        detail: `${shopifyOrders.length} Shopify order${shopifyOrders.length === 1 ? "" : "s"} checked; ${recoveredOrders.length} fulfilment row${recoveredOrders.length === 1 ? "" : "s"} updated for ${date}.`,
         actor: "Shopify catch-up",
         createdAt: new Date().toISOString(),
       });
     }
 
-    return NextResponse.json({ ok: true, date, checked: shopifyOrders.length, updated: imported.length });
+    return NextResponse.json({ ok: true, date, checked: shopifyOrders.length, updated: recoveredOrders.length });
   } catch (error) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Shopify catch-up failed." }, { status: 500 });
   }
