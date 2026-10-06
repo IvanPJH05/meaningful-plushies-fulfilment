@@ -145,6 +145,16 @@ type FreeCreatorSample = {
   givenAt: string;
   notes: string;
 };
+type FreeCreatorSampleBundle = {
+  key: string;
+  creatorName: string;
+  creatorUrl: string;
+  productCollection: "classics" | "plush_charms_v1";
+  baseCode: string;
+  givenAt: string;
+  notes: string;
+  samples: FreeCreatorSample[];
+};
 type StoredUiPreferences = {
   view?: View;
   query?: string;
@@ -687,8 +697,8 @@ const ordersCacheStorageKey = "meaningful-plushies-orders-cache-v2";
 const envelopeSettingsStorageKey = "meaningful-plushies-envelope-print-settings";
 const freeCreatorSamplesStorageKey = "meaningful-plushies-free-creator-samples";
 const freeCreatorSampleProductLinks = {
-  classics: "https://meaningfulplushies.com/collections/meaningful-plushies-classics",
-  plush_charms_v1: "https://meaningfulplushies.com/collections/meaningful-plush-charms-v1",
+  classics: "https://meaningfulplushies.com/products/meaningful-plushie",
+  plush_charms_v1: "https://meaningfulplushies.com/products/meaningful-plush-charm",
 } as const;
 const freeCreatorSampleCollectionLabels = {
   classics: "Meaningful Plushies (Classics)",
@@ -9135,20 +9145,16 @@ function CreatorProgramWorkspacePage({
     }
   }
 
-  async function deleteFreeCreatorSample(sampleId: string) {
-    const sample = freeCreatorSamples.find((item) => item.id === sampleId);
-    if (!sample) return;
+  async function deleteFreeCreatorSampleBundle(bundle: FreeCreatorSampleBundle) {
     try {
-      await deleteCreatorFreeSample(session.token, sampleId);
-      setFreeCreatorSamples((current) => current.filter((item) => item.id !== sampleId));
-      if (sample.shopifyDiscountId) {
-        void fetch("/api/shopify/creator-sample-discounts", {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action: "deactivate", discountId: sample.shopifyDiscountId }),
-        });
-      }
-      setMessage("Free creator sample removed.");
+      await Promise.all(bundle.samples.map((sample) => deleteCreatorFreeSample(session.token, sample.id)));
+      setFreeCreatorSamples((current) => current.filter((item) => !bundle.samples.some((sample) => sample.id === item.id)));
+      void Promise.all(bundle.samples.filter((sample) => sample.shopifyDiscountId).map((sample) => fetch("/api/shopify/creator-sample-discounts", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "deactivate", discountId: sample.shopifyDiscountId }),
+      })));
+      setMessage(`${bundle.samples.length === 2 ? "Both Plush Charm codes" : "Free creator sample"} removed.`);
     } catch (error) {
       setMessage(readableError(error, "Free creator sample could not be removed."));
     }
@@ -9185,6 +9191,16 @@ function CreatorProgramWorkspacePage({
     });
   }
 
+  function updateFreeCreatorSampleBundle(bundle: FreeCreatorSampleBundle, patch: Partial<FreeCreatorSample>) {
+    const previous = bundle.samples;
+    const next = previous.map((sample) => ({ ...sample, ...patch }));
+    setFreeCreatorSamples((samples) => samples.map((sample) => next.find((item) => item.id === sample.id) ?? sample));
+    void Promise.all(next.map((sample) => saveCreatorFreeSample(session.token, sample))).catch((error) => {
+      setFreeCreatorSamples((samples) => samples.map((sample) => previous.find((item) => item.id === sample.id) ?? sample));
+      setMessage(readableError(error, "Free creator sample could not be saved."));
+    });
+  }
+
   function freeCreatorSampleClaims(codeValue: string) {
     const code = codeValue.trim().toUpperCase();
     if (!code) return [];
@@ -9206,32 +9222,45 @@ function CreatorProgramWorkspacePage({
     return orders.find((order) => order.orderNumber.toLowerCase() === number || orderLabel(order).replace(/^#/, "").toLowerCase() === number);
   }
 
-  function freeCreatorSampleMessage(sample: FreeCreatorSample) {
-    const productCollection = sample.productCollection === "plush_charms_v1" ? "plush_charms_v1" : "classics";
-    return `${freeCreatorSampleProductLinks[productCollection]}\n\nYour free sample: ${freeCreatorSampleCollectionLabels[productCollection]}\nUse this code at checkout: ${sample.sampleCode.trim().toUpperCase()}`;
+  function freeCreatorSampleMessage(bundle: FreeCreatorSampleBundle) {
+    const codes = bundle.samples.map((sample) => sample.sampleCode.trim().toUpperCase());
+    if (bundle.productCollection === "plush_charms_v1") {
+      return `${freeCreatorSampleProductLinks.plush_charms_v1}\n\nhere is your code:\n${codes[0] ?? ""}\nHere is your partner's code:\n${codes[1] ?? ""}\n\nYou can customise your meaningful plush charm here. Send the link and 2nd code to your partner, so that both of you can surprise each other🤭. Checkout like usual and use the code at checkout to get the plush charm for 100% off`;
+    }
+    return `${freeCreatorSampleProductLinks.classics}\n\nhere is your code:\n${codes[0] ?? ""}\n\nyou can checkout like usual, and use the code at checkout to get 100% off your meaningful plushie`;
   }
 
-  async function copyFreeCreatorSampleMessage(sample: FreeCreatorSample) {
+  async function copyFreeCreatorSampleMessage(bundle: FreeCreatorSampleBundle) {
     try {
-      await navigator.clipboard.writeText(freeCreatorSampleMessage(sample));
-      setMessage(`Message copied for ${sample.creatorName}.`);
+      await navigator.clipboard.writeText(freeCreatorSampleMessage(bundle));
+      setMessage(`Message copied for ${bundle.creatorName}.`);
     } catch {
       setMessage("Could not copy the message. You can still select and copy it from the message box.");
     }
   }
 
-  const freeCreatorSampleCodeRows = useMemo(() => {
-    const rows = new Map<string, { code: string; creatorsGiven: number; pairedCreators: number; ordersUsingCode: number }>();
+  const freeCreatorSampleBundles = useMemo(() => {
+    const bundles = new Map<string, FreeCreatorSampleBundle>();
     for (const sample of freeCreatorSamples) {
+      const productCollection = sample.productCollection === "plush_charms_v1" ? "plush_charms_v1" : "classics";
       const code = sample.sampleCode.trim().toUpperCase();
-      if (!code) continue;
-      const row = rows.get(code) ?? { code, creatorsGiven: 0, pairedCreators: 0, ordersUsingCode: freeCreatorSampleClaims(code).length };
-      row.creatorsGiven += 1;
-      if (freeCreatorSampleOrder(sample)) row.pairedCreators += 1;
-      rows.set(code, row);
+      const baseCode = productCollection === "plush_charms_v1" ? code.replace(/-(?:1|2)$/, "") : code;
+      const key = `${productCollection}|${sample.creatorName.trim().toLowerCase()}|${baseCode}`;
+      const existing = bundles.get(key);
+      if (existing) {
+        existing.samples.push(sample);
+      } else {
+        bundles.set(key, { key, creatorName: sample.creatorName, creatorUrl: sample.creatorUrl, productCollection, baseCode, givenAt: sample.givenAt, notes: sample.notes, samples: [sample] });
+      }
     }
-    return [...rows.values()].sort((left, right) => right.ordersUsingCode - left.ordersUsingCode || left.code.localeCompare(right.code));
+    return [...bundles.values()].map((bundle) => ({ ...bundle, samples: [...bundle.samples].sort((left, right) => left.sampleCode.localeCompare(right.sampleCode, undefined, { numeric: true })) })).sort((left, right) => new Date(right.givenAt).getTime() - new Date(left.givenAt).getTime());
   }, [freeCreatorSamples, orders]);
+
+  const freeCreatorSampleCodeRows = useMemo(() => freeCreatorSampleBundles.map((bundle) => {
+    const ordersUsingCode = bundle.samples.reduce((count, sample) => count + freeCreatorSampleClaims(sample.sampleCode).length, 0);
+    const pairedCreators = bundle.samples.filter((sample) => freeCreatorSampleOrder(sample)).length;
+    return { code: bundle.productCollection === "plush_charms_v1" ? `${bundle.baseCode} · 2 codes` : bundle.baseCode, creatorsGiven: 1, pairedCreators, ordersUsingCode };
+  }).sort((left, right) => right.ordersUsingCode - left.ordersUsingCode || left.code.localeCompare(right.code)), [freeCreatorSampleBundles, orders]);
 
   async function saveOwnPayoutInfo(event: FormEvent) {
     event.preventDefault();
@@ -9307,7 +9336,7 @@ function CreatorProgramWorkspacePage({
 
   if (view === "creator_free_samples" && admin) {
     return <section className="creator-workspace">
-      <div className="creator-hero card"><div><p>CREATOR PROGRAM</p><h2>Free Creator Sample</h2><span>Track every creator who received a free sample code, then pair the row to the order once they claim it.</span></div><div className="creator-sample-hero-actions"><button className="button secondary small" type="button" onClick={syncThisDeviceFreeCreatorSamples} disabled={syncingFreeCreatorSamples}>{syncingFreeCreatorSamples ? "Syncing this device..." : "Sync local samples"}</button><div className="accounting-status-pill">{freeCreatorSamples.length} creators</div></div></div>
+      <div className="creator-hero card"><div><p>CREATOR PROGRAM</p><h2>Free Creator Sample</h2><span>Track every creator who received a free sample code, then pair the row to the order once they claim it.</span></div><div className="creator-sample-hero-actions"><button className="button secondary small" type="button" onClick={syncThisDeviceFreeCreatorSamples} disabled={syncingFreeCreatorSamples}>{syncingFreeCreatorSamples ? "Syncing this device..." : "Sync local samples"}</button><div className="accounting-status-pill">{freeCreatorSampleBundles.length} creators</div></div></div>
       {message && <div className="notice"><span>{message}</span><button onClick={() => setMessage("")}>x</button></div>}
       <section className="creator-sample-ledger-layout">
         <form className="creator-form card creator-sample-entry-form" onSubmit={saveFreeCreatorSample}>
@@ -9340,14 +9369,12 @@ function CreatorProgramWorkspacePage({
           </div>
           <div className="creator-free-sample-table">
             <table><thead><tr><th>Creator</th><th>Free product</th><th>Code</th><th>Used</th><th>Message</th><th>Order number</th><th>Paired customer info</th><th>Notes</th><th /></tr></thead><tbody>
-              {freeCreatorSamples.map((sample) => {
-                const claims = freeCreatorSampleClaims(sample.sampleCode);
-                const pairedOrder = freeCreatorSampleOrder(sample);
-                const sampleMessage = freeCreatorSampleMessage(sample);
-                const collection = sample.productCollection === "plush_charms_v1" ? "plush_charms_v1" : "classics";
-                return <tr key={sample.id}><td>{sample.creatorUrl ? <a href={sample.creatorUrl} target="_blank" rel="noreferrer"><strong>{sample.creatorName}</strong></a> : <strong>{sample.creatorName}</strong>}<small>Added {formatDate(sample.givenAt)}</small></td><td>{freeCreatorSampleCollectionLabels[collection]}</td><td><code>{sample.sampleCode}</code></td><td><div className="creator-sample-claim-cell"><span className={`creator-sample-claim ${claims.length ? "claimed" : "pending"}`}>{claims.length}</span><small>{claims.length === 1 ? "order" : "orders"}</small></div></td><td><div className="creator-sample-message-cell"><textarea readOnly value={sampleMessage} /><button className="button secondary small" type="button" onClick={() => copyFreeCreatorSampleMessage(sample)}>Copy message</button></div></td><td><input className="creator-sample-order-input" value={sample.orderNumber ?? ""} onChange={(event) => updateFreeCreatorSample(sample.id, { orderNumber: event.target.value })} placeholder="Order #" /></td><td>{pairedOrder ? <div className="creator-sample-order-details"><strong>{pairedOrder.customerName || "-"}</strong><span>{pairedOrder.phone || "-"}</span><small>{pairedOrder.address || "-"}</small></div> : <span className="creator-sample-unmatched">{sample.orderNumber ? "No matching order found" : "Enter order number"}</span>}</td><td><input className="creator-sample-notes-input" value={sample.notes} onChange={(event) => updateFreeCreatorSample(sample.id, { notes: event.target.value })} placeholder="Notes" /></td><td><button className="button secondary small" type="button" onClick={() => deleteFreeCreatorSample(sample.id)}>Remove</button></td></tr>;
+              {freeCreatorSampleBundles.map((bundle) => {
+                const claims = bundle.samples.flatMap((sample) => freeCreatorSampleClaims(sample.sampleCode));
+                const sampleMessage = freeCreatorSampleMessage(bundle);
+                return <tr key={bundle.key}><td>{bundle.creatorUrl ? <a href={bundle.creatorUrl} target="_blank" rel="noreferrer"><strong>{bundle.creatorName}</strong></a> : <strong>{bundle.creatorName}</strong>}<small>Added {formatDate(bundle.givenAt)}</small></td><td>{freeCreatorSampleCollectionLabels[bundle.productCollection]}</td><td><div className="creator-sample-code-stack">{bundle.samples.map((sample, index) => <code key={sample.id}>{bundle.samples.length === 2 ? index === 0 ? "You · " : "Partner · " : ""}{sample.sampleCode}</code>)}</div></td><td><div className="creator-sample-claim-cell"><span className={`creator-sample-claim ${claims.length ? "claimed" : "pending"}`}>{claims.length}</span><small>{claims.length === 1 ? "order" : "orders"}</small></div></td><td><div className="creator-sample-message-cell"><textarea readOnly value={sampleMessage} /><button className="button secondary small" type="button" onClick={() => copyFreeCreatorSampleMessage(bundle)}>Copy message</button></div></td><td><div className="creator-sample-order-stack">{bundle.samples.map((sample, index) => <label key={sample.id}>{bundle.samples.length === 2 && <span>{index === 0 ? "You" : "Partner"}</span>}<input className="creator-sample-order-input" value={sample.orderNumber ?? ""} onChange={(event) => updateFreeCreatorSample(sample.id, { orderNumber: event.target.value })} placeholder="Order #" /></label>)}</div></td><td><div className="creator-sample-customer-stack">{bundle.samples.map((sample) => { const pairedOrder = freeCreatorSampleOrder(sample); return pairedOrder ? <div className="creator-sample-order-details" key={sample.id}><strong>{pairedOrder.customerName || "-"}</strong><span>{pairedOrder.phone || "-"}</span><small>{pairedOrder.address || "-"}</small></div> : <span className="creator-sample-unmatched" key={sample.id}>{sample.orderNumber ? "No matching order found" : "Enter order number"}</span>; })}</div></td><td><input className="creator-sample-notes-input" value={bundle.notes} onChange={(event) => updateFreeCreatorSampleBundle(bundle, { notes: event.target.value })} placeholder="Notes" /></td><td><button className="button secondary small" type="button" onClick={() => deleteFreeCreatorSampleBundle(bundle)}>Remove</button></td></tr>;
               })}
-              {!freeCreatorSamples.length && <tr><td colSpan={9}>No free creator samples logged yet.</td></tr>}
+              {!freeCreatorSampleBundles.length && <tr><td colSpan={9}>No free creator samples logged yet.</td></tr>}
             </tbody></table>
           </div>
         </section>
