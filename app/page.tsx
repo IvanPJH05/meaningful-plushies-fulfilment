@@ -9,6 +9,7 @@ import { parseBankStatementCsv } from "../lib/bank-statements";
 import { buildSalesReportRows, isCreatorFreeOrder, isCreatorSampleOrder, manualOrderFor, summarizeSales, type SalesReportRow, type SalesSummary } from "../lib/sales";
 import { stockCharacters, summarizeStock } from "../lib/stock";
 import { mediaFileExtension, voiceBackupFileName } from "../lib/voice-file-name";
+import { productionPrintNextStatus, shouldAdvanceAfterProductionPrint } from "../lib/fulfilment-transitions";
 import {
   createDashboardAccount,
   createAccountingDocumentSignedUrl,
@@ -3137,17 +3138,17 @@ export default function Home() {
           unmatched.push(`page ${label.page}${label.reference ? ` (${label.reference})` : ""}`);
           continue;
         }
-        const advancesProduction = matched.salesChannel !== "tiktok" && matched.status === "new_order";
+        const advancesProduction = shouldAdvanceAfterProductionPrint(matched);
         changed.push({
           ...matched,
           shippingLabelUrl: label.url,
           shippingLabelFileName: label.fileName,
           shippingLabelSource: label.source === "tiktok" ? "tiktok" : "jnt",
           ...(advancesProduction ? {
-            status: "uploading_audio" as const,
+            status: productionPrintNextStatus,
             statusHistory: [...(matched.statusHistory ?? []), {
               id: `${matched.id}-${changedAt}-shipping-label-uploading-audio`,
-              status: "uploading_audio" as const,
+              status: productionPrintNextStatus,
               changedAt,
               changedBy: session ? `${session.displayName} (${session.username})` : "Staff",
               note: "Shipping label paired",
@@ -3193,20 +3194,17 @@ export default function Home() {
     printWindow.document.title = "Preparing print PDF";
     printWindow.document.body.textContent = "Preparing the high-quality print PDF…";
     const changedAt = new Date().toISOString();
-    // Preparing any print set for a non-TikTok order means its shipping label
-    // is ready for the production box. Advance it consistently whether staff
-    // printed the packing slip, the shipping label, or both. TikTok Shop
-    // retains its separate workflow and is never moved here.
-    const shouldAdvance = true;
+    // Every sales channel follows the same production flow once staff prepare
+    // its packing slip, shipping label, or combined print set.
     const changed = packingOrders
-      .filter((order) => shouldAdvance && order.salesChannel !== "tiktok" && order.status === "new_order")
+      .filter(shouldAdvanceAfterProductionPrint)
       .map((order): Order => ({
         ...order,
-        status: "uploading_audio",
+        status: productionPrintNextStatus,
         updatedAt: changedAt,
         statusHistory: [...(order.statusHistory ?? []), {
           id: `${order.id}-${changedAt}-uploading-audio`,
-          status: "uploading_audio",
+          status: productionPrintNextStatus,
           changedAt,
           changedBy: session ? `${session.displayName} (${session.username})` : "Staff",
           note: "Packing slip printed",
