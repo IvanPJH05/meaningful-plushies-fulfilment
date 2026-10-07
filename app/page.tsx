@@ -3157,7 +3157,9 @@ export default function Home() {
         });
       }
       if (changed.length) {
-        await upsertSharedOrders(changed);
+        // Pairing a label only changes fulfilment information. Never make it
+        // wait for a separate accounting-journal calculation.
+        await upsertSharedOrders(changed, { syncSales: false });
         const changedById = new Map(changed.map((order) => [order.id, order]));
         setOrders((current) => current.map((order) => changedById.get(order.id) ?? order));
         setPackingSelection((current) => [...new Set([...current, ...changed.map((order) => order.id)])]);
@@ -3181,6 +3183,15 @@ export default function Home() {
       setNotice("Select at least one order before printing.");
       return;
     }
+    // Open synchronously from the click. Opening it after an awaited database
+    // write makes browsers treat it as an unsolicited pop-up and block it.
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      setNotice("Allow pop-ups for this site, then press Print again to open the sharp PDF.");
+      return;
+    }
+    printWindow.document.title = "Preparing print PDF";
+    printWindow.document.body.textContent = "Preparing the high-quality print PDF…";
     const changedAt = new Date().toISOString();
     // Preparing any print set for a non-TikTok order means its shipping label
     // is ready for the production box. Advance it consistently whether staff
@@ -3203,16 +3214,17 @@ export default function Home() {
       }));
     const changedById = new Map(changed.map((order) => [order.id, order]));
     const nextOrders = orders.map((order) => changedById.get(order.id) ?? order);
-    try { if (changed.length) await upsertSharedOrders(changed); }
-    catch (error) { setNotice(error instanceof Error ? error.message : "Packing-slip changes could not be saved."); return; }
-    setOrders(nextOrders);
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) {
-      setNotice("Allow pop-ups for this site, then press Print again to open the sharp PDF.");
+    try {
+      // Printing moves a production stage only. Do not let an unrelated sales
+      // journal sync block New Order → Uploading Audio.
+      if (changed.length) await upsertSharedOrders(changed, { syncSales: false });
+    }
+    catch (error) {
+      printWindow.close();
+      setNotice(error instanceof Error ? error.message : "Packing-slip changes could not be saved.");
       return;
     }
-    printWindow.document.title = "Preparing print PDF";
-    printWindow.document.body.textContent = "Preparing the high-quality print PDF…";
+    setOrders(nextOrders);
     try {
       const response = await fetch("/api/packing-slips/pdf", {
         method: "POST",
