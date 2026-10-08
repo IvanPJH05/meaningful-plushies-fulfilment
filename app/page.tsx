@@ -33,6 +33,7 @@ import {
   fetchContentPlanItems,
   fetchCreatorCommissions,
   fetchCreatorFreeSamples,
+  fetchCreatorFreeSampleCodes,
   fetchCreatorPayouts,
   fetchCreatorProfiles,
   fetchEnvelopePrintSettings,
@@ -1700,7 +1701,7 @@ export default function Home() {
   const [accountPasswords, setAccountPasswords] = useState<Record<string, string>>({});
   const [newAccount, setNewAccount] = useState({ username: "", displayName: "", role: "staff" as UserRole, password: "" });
   const [creatorProfiles, setCreatorProfiles] = useState<CreatorProfile[]>([]);
-  const [freeCreatorSampleCodes, setFreeCreatorSampleCodes] = useState<string[]>(() => (readJson<FreeCreatorSample[]>(freeCreatorSamplesStorageKey) ?? []).map((sample) => sample.sampleCode));
+  const [freeCreatorSampleCodes, setFreeCreatorSampleCodes] = useState<string[]>([]);
   const [creatorCommissions, setCreatorCommissions] = useState<CreatorCommission[]>([]);
   const [creatorPayouts, setCreatorPayouts] = useState<CreatorPayout[]>([]);
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
@@ -1761,12 +1762,6 @@ export default function Home() {
     inventoryItem: inventoryAccountKey(mapping.inventoryItem),
   })), []);
 
-  useEffect(() => {
-    const refreshSampleCodes = () => setFreeCreatorSampleCodes((readJson<FreeCreatorSample[]>(freeCreatorSamplesStorageKey) ?? []).map((sample) => sample.sampleCode));
-    window.addEventListener("meaningful-plushies-free-creator-samples", refreshSampleCodes);
-    return () => window.removeEventListener("meaningful-plushies-free-creator-samples", refreshSampleCodes);
-  }, []);
-
   const syncLocalFreeCreatorSamples = useCallback(async (token: string) => {
     // Earlier versions kept this ledger only in the browser. Keep every valid
     // old row from that browser, even if one corrupted legacy row cannot import.
@@ -1798,17 +1793,33 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (session?.role !== "admin" || !supabaseConfigured) return;
+    if (!session || !supabaseConfigured || (session.role !== "admin" && session.role !== "staff")) return;
     let cancelled = false;
     const loadSharedFreeSamples = async () => {
-      const { samples: sharedSamples } = await syncLocalFreeCreatorSamples(session.token);
+      const sharedSamples = session.role === "admin"
+        ? (await syncLocalFreeCreatorSamples(session.token)).samples
+        : [];
+      const sharedCodes = await fetchCreatorFreeSampleCodes(session.token);
       if (cancelled) return;
-      writeJson(freeCreatorSamplesStorageKey, sharedSamples);
-      window.dispatchEvent(new Event("meaningful-plushies-free-creator-samples"));
+      if (session.role === "admin") writeJson(freeCreatorSamplesStorageKey, sharedSamples);
+      setFreeCreatorSampleCodes(sharedCodes.map((code) => code.trim().toUpperCase()).filter(Boolean));
     };
-    void loadSharedFreeSamples().catch(() => undefined);
+    void loadSharedFreeSamples().catch((error) => {
+      if (!cancelled) setNotice(readableError(error, "Creator sample codes could not be loaded from the shared database."));
+    });
     return () => { cancelled = true; };
   }, [session, syncLocalFreeCreatorSamples]);
+
+  useEffect(() => {
+    if (!session || !supabaseConfigured || (session.role !== "admin" && session.role !== "staff")) return;
+    const refreshSharedCodes = () => {
+      void fetchCreatorFreeSampleCodes(session.token)
+        .then((codes) => setFreeCreatorSampleCodes(codes.map((code) => code.trim().toUpperCase()).filter(Boolean)))
+        .catch(() => undefined);
+    };
+    window.addEventListener("meaningful-plushies-free-creator-samples", refreshSharedCodes);
+    return () => window.removeEventListener("meaningful-plushies-free-creator-samples", refreshSharedCodes);
+  }, [session]);
 
   const fetchSharedOrdersWithRetry = useCallback(async () => {
     let lastError: unknown;
@@ -1933,10 +1944,8 @@ export default function Home() {
         (tables.has("creator_profiles") && session && (session.role === "admin" || session.role === "creator")) ? fetchCreatorProfiles(session.token).then(setCreatorProfiles) : Promise.resolve(),
         (tables.has("creator_commissions") && session && (session.role === "admin" || session.role === "creator")) ? fetchCreatorCommissions(session.token).then(setCreatorCommissions) : Promise.resolve(),
         (tables.has("creator_payouts") && session && (session.role === "admin" || session.role === "creator")) ? fetchCreatorPayouts(session.token).then(setCreatorPayouts) : Promise.resolve(),
-        (tables.has("creator_free_samples") && session?.role === "admin") ? fetchCreatorFreeSamples(session.token).then((samples) => {
-          writeJson(freeCreatorSamplesStorageKey, samples);
-          setFreeCreatorSampleCodes(samples.map((sample) => sample.sampleCode));
-          window.dispatchEvent(new Event("meaningful-plushies-free-creator-samples"));
+        (tables.has("creator_free_samples") && session && (session.role === "admin" || session.role === "staff")) ? fetchCreatorFreeSampleCodes(session.token).then((codes) => {
+          setFreeCreatorSampleCodes(codes.map((code) => code.trim().toUpperCase()).filter(Boolean));
         }) : Promise.resolve(),
       ]);
     } catch {
@@ -8965,7 +8974,7 @@ function CreatorProgramWorkspacePage({
     proofFileType: "",
     proofFileDataUrl: "",
   });
-  const [freeCreatorSamples, setFreeCreatorSamples] = useState<FreeCreatorSample[]>(() => readJson<FreeCreatorSample[]>(freeCreatorSamplesStorageKey) ?? []);
+  const [freeCreatorSamples, setFreeCreatorSamples] = useState<FreeCreatorSample[]>([]);
   const [freeCreatorSampleForm, setFreeCreatorSampleForm] = useState({ creatorName: "", creatorUrl: "", sampleCode: "", productCollection: "classics" as "classics" | "plush_charms_v1", notes: "" });
   const [creatingFreeCreatorSample, setCreatingFreeCreatorSample] = useState(false);
   const [upgradingCreatorShipping, setUpgradingCreatorShipping] = useState(false);
@@ -9000,7 +9009,9 @@ function CreatorProgramWorkspacePage({
     const refreshSamples = () => {
       void fetchCreatorFreeSamples(session.token).then((samples) => {
         if (!cancelled) setFreeCreatorSamples(samples);
-      }).catch(() => undefined);
+      }).catch((error) => {
+        if (!cancelled) setMessage(readableError(error, "Free Creator Samples could not be loaded from the shared database."));
+      });
     };
     const refreshWhenActive = () => {
       if (!document.hidden) refreshSamples();

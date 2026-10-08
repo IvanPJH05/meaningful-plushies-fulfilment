@@ -836,9 +836,21 @@ function creatorFreeSampleFromRow(row: Record<string, unknown>): CreatorFreeSamp
 }
 
 export async function fetchCreatorFreeSamples(token: string): Promise<CreatorFreeSampleRecord[]> {
-  const { data, error } = await requireSupabase().rpc("creator_list_free_samples", { p_session_token: token });
-  if (error) throw new Error(creatorFreeSampleError(error, "Free creator samples could not be loaded."));
-  return (data ?? []).map((row: Record<string, unknown>) => creatorFreeSampleFromRow(row));
+  const response = await fetch("/api/creator-samples", {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  const result = await response.json().catch(() => ({})) as { samples?: Record<string, unknown>[]; error?: string };
+  if (!response.ok || !result.samples) throw new Error(result.error || "Free creator samples could not be loaded.");
+  return result.samples.map((row) => creatorFreeSampleFromRow(row));
+}
+
+export async function fetchCreatorFreeSampleCodes(token: string): Promise<string[]> {
+  const response = await fetch("/api/creator-samples", {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  const result = await response.json().catch(() => ({})) as { samples?: Record<string, unknown>[]; codes?: string[]; error?: string };
+  if (!response.ok) throw new Error(result.error || "Creator sample codes could not be loaded.");
+  return result.codes ?? result.samples?.map((sample) => String(sample.sample_code ?? "")) ?? [];
 }
 
 export async function saveCreatorFreeSample(token: string, sample: CreatorFreeSampleRecord) {
