@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { shopifyOrderToFulfilmentOrders } from "@/lib/importer";
 import { isPlushCharmOrder } from "@/lib/plush-charm";
+import { bindSessionsToOrders, customisationSessionIds } from "@/lib/customisation";
 import { cleanShopifyOrderNumber, fetchShopifyOrdersCreatedSince, shopifyMetafieldValue, textValue } from "@/lib/shopify-orders";
 import { fetchSharedOrders, fetchSharedOrdersByOrderNumber, insertSharedActivity, upsertSharedOrders } from "@/lib/supabase";
 import { createCloserOrderLink, isFormattedPlushCharmLink, nextPlushCharmSequence } from "@/src/modules/closer/service";
@@ -69,7 +70,21 @@ export async function POST(request: Request) {
         existing,
         "Shopify catch-up",
       );
-      imported.push(...orders);
+      // A delayed or incomplete order-created webhook is exactly when this
+      // recovery runs.  The saved customisation lives in Supabase and is
+      // linked through the Shopify line-item/cart attribute, so recovery must
+      // perform the same session binding as the webhook rather than restore a
+      // bare order with its personalisation omitted.
+      const sessionIds = customisationSessionIds(order);
+      const reconciledOrders = sessionIds.length && orders.length
+        ? await bindSessionsToOrders({
+          orderId: textValue(order.id),
+          orderNumber,
+          sessionIds,
+          orders,
+        })
+        : orders;
+      imported.push(...reconciledOrders);
     }
 
     // Reserve Charm sales numbers once for the whole recovery batch. Doing it

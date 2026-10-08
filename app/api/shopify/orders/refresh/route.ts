@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
 import { isPlushCharmOrder } from "../../../../../lib/plush-charm";
-import { submittedCustomisationForOrder } from "../../../../../lib/customisation";
+import { bindSessionsToOrders, customisationSessionIds, submittedCustomisationForOrder, submittedCustomisationsForSessionIds } from "../../../../../lib/customisation";
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
 import { certificateMediaForLineItem, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrderByNumber, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
 import { fetchMetaCapiSettings, fetchSharedOrders, fetchSharedOrdersByOrderNumber, insertSharedActivity, upsertSharedOrders } from "../../../../../lib/supabase";
@@ -68,7 +68,16 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
 
   const createdAt = textValue(fullOrder.createdAt) || new Date().toISOString();
   const lineItems = Array.isArray(fullOrder.lineItems) ? fullOrder.lineItems : [];
-  const submitted = await submittedCustomisationForOrder(requestedOrderNumber);
+  // Prefer the session explicitly carried by this Shopify order.  A lookup by
+  // order number only works after a previous webhook has already bound the
+  // session, which is not true for the very orders this refresh is meant to
+  // recover.
+  const sessionIds = customisationSessionIds(fullOrder);
+  const submittedBySession = await submittedCustomisationsForSessionIds(sessionIds);
+  const sessionSubmission = sessionIds.map((id) => submittedBySession.get(id)).find(Boolean);
+  const submitted = sessionSubmission
+    ? { ...sessionSubmission, certificateCode: "" }
+    : await submittedCustomisationForOrder(requestedOrderNumber);
   const certificateFields = submitted ? {
     idName: submitted.form.plushName,
     gender: submitted.form.gender,
@@ -132,8 +141,18 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
     } : order;
   });
 
+  const reconciledOrders = sessionIds.length
+    ? await bindSessionsToOrders({
+      orderId: textValue(fullOrder.id),
+      orderNumber: requestedOrderNumber,
+      sessionIds,
+      orders: ordersWithCertificates,
+      certificates,
+    })
+    : ordersWithCertificates;
+
   const previousById = new Map(existing.map((order) => [order.id, order]));
-  const changedOrders = ordersWithCertificates.filter((order) => {
+  const changedOrders = reconciledOrders.filter((order) => {
     const previous = previousById.get(order.id);
     return !previous || JSON.stringify(comparableOrder(previous)) !== JSON.stringify(comparableOrder(order));
   });
@@ -144,7 +163,7 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
     imported: !existing.some((order) => order.orderNumber === requestedOrderNumber && (order.salesChannel ?? "shopify") === "shopify"),
     changed: changedOrders.length > 0,
     updated: changedOrders.length,
-    orders: ordersWithCertificates,
+    orders: reconciledOrders,
     shopifyOrder: fullOrder,
   };
 }
