@@ -684,6 +684,11 @@
             body: JSON.stringify({ deliveryMethod: method.value === "whatsapp" ? "whatsapp" : "email", contactEmail: email.value.trim(), contactPhone: phone.value.trim() }),
           });
           appendSessionId(result.sessionId);
+          // The theme can add this product with Ajax and serialize the cart
+          // before dynamically-added line-item inputs. Keep the same session
+          // on the cart itself, just as we do for a completed customisation,
+          // so Shopify's order webhook can always recover the order details.
+          await saveCartCustomisationReference(result.sessionId);
           notice.textContent = t("paired");
         } else {
           const upload = await uploadVoiceEarly();
