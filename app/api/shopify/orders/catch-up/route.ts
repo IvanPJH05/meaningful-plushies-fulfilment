@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 
 import { shopifyOrderToFulfilmentOrders } from "@/lib/importer";
 import { isPlushCharmOrder } from "@/lib/plush-charm";
+import { addMissingOurLinks } from "@/lib/our-link";
 import { bindSessionsToOrders, customisationSessionIds } from "@/lib/customisation";
 import { cleanShopifyOrderNumber, fetchShopifyOrdersCreatedSince, shopifyMetafieldValue, textValue } from "@/lib/shopify-orders";
 import { fetchSharedOrders, fetchSharedOrdersByOrderNumber, insertSharedActivity, upsertSharedOrders } from "@/lib/supabase";
-import { createCloserOrderLink, isFormattedPlushCharmLink, nextPlushCharmSequence } from "@/src/modules/closer/service";
 import type { Order } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -17,32 +17,6 @@ function malaysiaDate() {
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
-}
-
-// A catch-up is often used when Shopify webhooks were delayed. Treat an Our
-// Link as a helpful follow-up, never as a reason to omit a paid Charm order
-// from fulfilment. Individual failures leave the order visible for a later
-// refresh to complete.
-async function addMissingPlushCharmLinks(orders: Order[]) {
-  if (!orders.some((order) => isPlushCharmOrder(order) && !isFormattedPlushCharmLink(order.idWebsiteLink))) return orders;
-
-  let nextSequence: number;
-  try {
-    nextSequence = nextPlushCharmSequence((await fetchSharedOrders()).filter(isPlushCharmOrder));
-  } catch (error) {
-    console.error("Could not reserve a Plush Charm Our Link sequence during Shopify catch-up", error);
-    return orders;
-  }
-
-  return Promise.all(orders.map(async (order) => {
-    if (!isPlushCharmOrder(order) || isFormattedPlushCharmLink(order.idWebsiteLink)) return order;
-    try {
-      return { ...order, idWebsiteLink: await createCloserOrderLink(order, nextSequence++) };
-    } catch (error) {
-      console.error(`Could not create an Our Link for Plush Charm order #${order.orderNumber} during Shopify catch-up`, error);
-      return order;
-    }
-  }));
 }
 
 export async function POST(request: Request) {
@@ -90,7 +64,7 @@ export async function POST(request: Request) {
     // Reserve Charm sales numbers once for the whole recovery batch. Doing it
     // per Shopify order would repeatedly scan fulfilment history and make a
     // normal daily recovery needlessly slow.
-    const recoveredOrders = await addMissingPlushCharmLinks(imported);
+    const recoveredOrders = await addMissingOurLinks(imported, "Shopify catch-up");
 
     if (recoveredOrders.length) {
       // Keep recovery writes narrow and fast. Reporting and commission

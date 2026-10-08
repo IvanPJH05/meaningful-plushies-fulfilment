@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 
 import { isPlushCharmOrder } from "@/lib/plush-charm";
+import { addMissingOurLinks } from "@/lib/our-link";
 import { fetchSharedOrders, upsertSharedOrders } from "@/lib/supabase";
-import { createCloserOrderLink, isFormattedPlushCharmLink, plushCharmSequenceFromLink } from "@/src/modules/closer/service";
+import { isFormattedPlushCharmLink } from "@/src/modules/closer/service";
 import { prisma } from "@/src/infrastructure/database/prisma";
 
 export const runtime = "nodejs";
@@ -27,22 +28,10 @@ export async function POST(request: NextRequest) {
       .filter((order) => !isFormattedPlushCharmLink(order.idWebsiteLink))
       .sort((left, right) => String(left.orderDate || left.importedAt || "").localeCompare(String(right.orderDate || right.importedAt || "")));
 
-    // Allocate the running sales number from fulfilment rows already fetched
-    // for this action. This avoids an expensive scan of the media workspace.
-    let nextSequence = Math.max(
-      charmOrders.filter((order) => isFormattedPlushCharmLink(order.idWebsiteLink)).length,
-      ...charmOrders.map((order) => plushCharmSequenceFromLink(order.idWebsiteLink)),
-      0,
-    );
-
     const now = new Date().toISOString();
-    const updated = [];
-    // Sequential creation avoids a burst of writes against the same Supabase
-    // project while still making every historical Charm order available.
-    for (const order of needsLink) {
-      nextSequence += 1;
-      updated.push({ ...order, idWebsiteLink: await createCloserOrderLink(order, nextSequence), updatedAt: now });
-    }
+    const updated = (await addMissingOurLinks(needsLink, "manual Our Link recovery"))
+      .filter((order) => isFormattedPlushCharmLink(order.idWebsiteLink))
+      .map((order) => ({ ...order, updatedAt: now }));
     // A link update does not change sales. Skip needless accounting writes.
     await upsertSharedOrders(updated, { syncSales: false });
     return NextResponse.json({ ok: true, updated: updated.length, orders: updated });

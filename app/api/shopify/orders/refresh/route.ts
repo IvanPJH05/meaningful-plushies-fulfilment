@@ -2,11 +2,11 @@ import { NextResponse } from "next/server";
 
 import { shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
 import { isPlushCharmOrder } from "../../../../../lib/plush-charm";
+import { addMissingOurLinks } from "../../../../../lib/our-link";
 import { bindSessionsToOrders, customisationSessionIds, submittedCustomisationForOrder, submittedCustomisationsForSessionIds } from "../../../../../lib/customisation";
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
 import { certificateMediaForLineItem, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrderByNumber, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
 import { fetchMetaCapiSettings, fetchSharedOrders, fetchSharedOrdersByOrderNumber, insertSharedActivity, upsertSharedOrders } from "../../../../../lib/supabase";
-import { createCloserOrderLink, isFormattedPlushCharmLink, nextPlushCharmSequence } from "@/src/modules/closer/service";
 import type { Order } from "../../../../../lib/types";
 
 export const runtime = "nodejs";
@@ -24,28 +24,6 @@ function comparableOrder(order: Order) {
 
 function looksLikePersonalizedPlushie(order: Record<string, unknown>) {
   return /meaningful plushie|build your meaningful plushie|plushie/i.test(JSON.stringify(order.lineItems ?? order.line_items ?? ""));
-}
-
-// Saving the fulfilment order is more important than making an optional Our
-// Link. Keep the order visible even when the link service is temporarily down.
-async function addMissingPlushCharmLinks(orders: Order[]) {
-  if (!orders.some((order) => isPlushCharmOrder(order) && !isFormattedPlushCharmLink(order.idWebsiteLink))) return orders;
-  let nextSequence: number;
-  try {
-    nextSequence = nextPlushCharmSequence((await fetchSharedOrders()).filter(isPlushCharmOrder));
-  } catch (error) {
-    console.error("Could not reserve a Plush Charm Our Link sequence", error);
-    return orders;
-  }
-  return Promise.all(orders.map(async (order) => {
-    if (!isPlushCharmOrder(order) || isFormattedPlushCharmLink(order.idWebsiteLink)) return order;
-    try {
-      return { ...order, idWebsiteLink: await createCloserOrderLink(order, nextSequence++) };
-    } catch (error) {
-      console.error(`Could not create an Our Link for Plush Charm order #${order.orderNumber}`, error);
-      return order;
-    }
-  }));
 }
 
 async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], request: Request) {
@@ -88,7 +66,7 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
     meaningfulNote: submitted.form.meaningfulNote,
     meaningfulMessage: `supabase-storage:${submitted.voiceStoragePath}`,
   } : uploadLiftCertificateFields(shopifyMetafieldValue(fullOrder));
-  const ordersWithOurLinks = await addMissingPlushCharmLinks(importedOrders);
+  const ordersWithOurLinks = await addMissingOurLinks(importedOrders, "Shopify refresh");
   const certificates = looksLikePersonalizedPlushie(fullOrder)
     ? await Promise.all(ordersWithOurLinks.map((order, index) => {
       if (isPlushCharmOrder(order)) return null;
