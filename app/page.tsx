@@ -2365,6 +2365,28 @@ export default function Home() {
     catch (error) { setNotice(error instanceof Error ? error.message : "Activity history could not be saved."); }
   }
 
+  async function persistOrderTransitions(transitions: Array<{ order: Order; toStatus: OrderStatus; note?: string }>) {
+    if (!transitions.length) return [] as Order[];
+    const response = await fetch("/api/fulfilment/orders/transition", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${currentSession.token}`,
+      },
+      body: JSON.stringify({
+        transitions: transitions.map(({ order, toStatus, note }) => ({
+          orderId: order.id,
+          fromStatus: order.status,
+          toStatus,
+          note,
+        })),
+      }),
+    });
+    const result = await response.json().catch(() => ({})) as { orders?: Order[]; error?: string };
+    if (!response.ok || !result.orders) throw new Error(result.error || "Order stage could not be saved.");
+    return result.orders;
+  }
+
   async function updateOrder(orderId: string, patch: Partial<Order>) {
     if (currentSession.role !== "admin") return setNotice("Staff accounts can only move orders to the next stage.");
     const order = orders.find((item) => item.id === orderId);
@@ -2385,20 +2407,10 @@ export default function Home() {
     if (currentSession.role === "staff" && nextStatus[order.status] !== status) {
       return setNotice("Staff accounts can only move orders to the next stage.");
     }
-    const changedAt = new Date().toISOString();
-    const updated: Order = {
-      ...order,
-      status,
-      updatedAt: changedAt,
-      statusHistory: [...(order.statusHistory ?? []), {
-        id: `${order.id}-${changedAt}`,
-        status,
-        changedAt,
-        changedBy: session ? `${session.displayName} (${session.username})` : "Staff",
-      }],
-    };
-    setOrders((current) => current.map((item) => item.id === order.id ? updated : item));
-    try { await upsertSharedOrders([updated]); }
+    try {
+      const [updated] = await persistOrderTransitions([{ order, toStatus: status }]);
+      setOrders((current) => current.map((item) => item.id === order.id ? updated : item));
+    }
     catch (error) { setNotice(error instanceof Error ? error.message : "Status change could not be saved."); await loadSharedData(); return; }
     setNotice(`#${order.orderNumber} updated to ${statusLabels[status]}.`);
   }
@@ -2406,34 +2418,19 @@ export default function Home() {
   async function bulkMoveNext() {
     const selected = orders.filter((order) => selectedOrders.includes(order.id));
     if (!selected.length) return setNotice("Select at least one order first.");
-    const changedAt = new Date().toISOString();
-    let moved = 0;
-    const changed: Order[] = [];
-    const nextOrders = orders.map((order) => {
-      if (!selectedOrders.includes(order.id)) return order;
+    const transitions = selected.flatMap((order) => {
       const status = nextStatus[order.status];
-      if (!status) return order;
-      moved += 1;
-      const updated: Order = {
-        ...order,
-        status,
-        updatedAt: changedAt,
-        statusHistory: [...(order.statusHistory ?? []), {
-          id: `${order.id}-${changedAt}-${status}`,
-          status,
-          changedAt,
-          changedBy: session ? `${session.displayName} (${session.username})` : "Staff",
-          note: "Bulk status update",
-        }],
-      };
-      changed.push(updated);
-      return updated;
+      return status ? [{ order, toStatus: status, note: "Bulk status update" }] : [];
     });
-    setOrders(nextOrders);
-    try { await upsertSharedOrders(changed); }
+    if (!transitions.length) return setNotice("The selected orders are already at their final stage.");
+    try {
+      const changed = await persistOrderTransitions(transitions);
+      const changedById = new Map(changed.map((order) => [order.id, order]));
+      setOrders((current) => current.map((order) => changedById.get(order.id) ?? order));
+    }
     catch (error) { setNotice(error instanceof Error ? error.message : "Orders could not be saved."); await loadSharedData(); return; }
     setSelectedOrders([]);
-    setNotice(`${moved} order${moved === 1 ? "" : "s"} moved to the next status.`);
+    setNotice(`${transitions.length} order${transitions.length === 1 ? "" : "s"} moved to the next status.`);
   }
 
   function toggleOrderSelection(orderId: string) {
@@ -3127,6 +3124,7 @@ export default function Home() {
       if (!result.ok) throw new Error(result.error || "Could not import the shipping-label PDF.");
       const changedAt = new Date().toISOString();
       const changed: Order[] = [];
+      const transitions: Array<{ order: Order; toStatus: OrderStatus; note: string }> = [];
       const unmatched: string[] = [];
       for (const label of result.labels as Array<{ page: number; source: "jnt" | "tiktok" | null; reference: string; url: string; fileName: string }>) {
         const matched = label.source === "jnt"
@@ -3144,28 +3142,24 @@ export default function Home() {
           shippingLabelUrl: label.url,
           shippingLabelFileName: label.fileName,
           shippingLabelSource: label.source === "tiktok" ? "tiktok" : "jnt",
-          ...(advancesProduction ? {
-            status: productionPrintNextStatus,
-            statusHistory: [...(matched.statusHistory ?? []), {
-              id: `${matched.id}-${changedAt}-shipping-label-uploading-audio`,
-              status: productionPrintNextStatus,
-              changedAt,
-              changedBy: session ? `${session.displayName} (${session.username})` : "Staff",
-              note: "Shipping label paired",
-            }],
-          } : {}),
           updatedAt: changedAt,
         });
+        if (advancesProduction) transitions.push({ order: matched, toStatus: productionPrintNextStatus, note: "Shipping label paired" });
       }
+      let moved: Order[] = [];
       if (changed.length) {
         // Pairing a label only changes fulfilment information. Never make it
         // wait for a separate accounting-journal calculation.
         await upsertSharedOrders(changed, { syncSales: false });
-        const changedById = new Map(changed.map((order) => [order.id, order]));
+        // The label is persisted above; the production stage is then changed
+        // server-side from the current row so it cannot be overwritten by an
+        // out-of-date browser tab or background Shopify sync.
+        moved = await persistOrderTransitions(transitions);
+        const changedById = new Map([...changed, ...moved].map((order) => [order.id, order]));
         setOrders((current) => current.map((order) => changedById.get(order.id) ?? order));
         setPackingSelection((current) => [...new Set([...current, ...changed.map((order) => order.id)])]);
       }
-      const advanced = changed.filter((order) => order.status === "uploading_audio" && order.statusHistory.at(-1)?.note === "Shipping label paired").length;
+      const advanced = moved.length;
       const summary = `${changed.length} label${changed.length === 1 ? "" : "s"} paired.${advanced ? ` ${advanced} new order${advanced === 1 ? "" : "s"} moved to Uploading Audio.` : ""}${unmatched.length ? ` Could not pair: ${unmatched.join(", ")}.` : ""}`;
       setShippingLabelSummary(summary);
       setNotice(summary);
@@ -3193,36 +3187,27 @@ export default function Home() {
     }
     printWindow.document.title = "Preparing print PDF";
     printWindow.document.body.textContent = "Preparing the high-quality print PDF…";
-    const changedAt = new Date().toISOString();
     // Every sales channel follows the same production flow once staff prepare
     // its packing slip, shipping label, or combined print set.
-    const changed = packingOrders
+    const transitions = packingOrders
       .filter(shouldAdvanceAfterProductionPrint)
-      .map((order): Order => ({
-        ...order,
-        status: productionPrintNextStatus,
-        updatedAt: changedAt,
-        statusHistory: [...(order.statusHistory ?? []), {
-          id: `${order.id}-${changedAt}-uploading-audio`,
-          status: productionPrintNextStatus,
-          changedAt,
-          changedBy: session ? `${session.displayName} (${session.username})` : "Staff",
-          note: "Packing slip printed",
-        }],
-      }));
-    const changedById = new Map(changed.map((order) => [order.id, order]));
-    const nextOrders = orders.map((order) => changedById.get(order.id) ?? order);
+      .map((order) => ({ order, toStatus: productionPrintNextStatus, note: "Packing slip printed" }));
+    let changed: Order[] = [];
     try {
-      // Printing moves a production stage only. Do not let an unrelated sales
-      // journal sync block New Order → Uploading Audio.
-      if (changed.length) await upsertSharedOrders(changed, { syncSales: false });
+      // Save against the current database row, rather than a browser snapshot.
+      // This is deliberately independent of sales journals and stays durable
+      // if another browser or a Shopify sync updates the order at the same time.
+      changed = await persistOrderTransitions(transitions);
     }
     catch (error) {
       printWindow.close();
       setNotice(error instanceof Error ? error.message : "Packing-slip changes could not be saved.");
       return;
     }
-    setOrders(nextOrders);
+    if (changed.length) {
+      const changedById = new Map(changed.map((order) => [order.id, order]));
+      setOrders((current) => current.map((order) => changedById.get(order.id) ?? order));
+    }
     try {
       const response = await fetch("/api/packing-slips/pdf", {
         method: "POST",
