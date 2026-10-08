@@ -34,3 +34,4 @@ end;
 $$;
 
 revoke all on function public.reserve_plush_charm_link_sequence() from public;
+grant execute on function public.reserve_plush_charm_link_sequence() to service_role;
