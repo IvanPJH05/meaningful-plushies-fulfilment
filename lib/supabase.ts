@@ -104,6 +104,22 @@ export async function fetchSharedOrders(onPage?: (orders: Order[]) => void): Pro
   return orders;
 }
 
+// The dashboard list intentionally reads from the compact summary table.  It
+// has every field needed for filtering and fulfilment, but never carries the
+// legacy embedded TikTok/photo file payloads.  Full records are fetched only
+// when staff opens a specific order.
+export async function fetchSharedOrderSummaryPage(offset: number, limit = 100): Promise<Order[]> {
+  const safeOffset = Math.max(0, Math.floor(offset));
+  const safeLimit = Math.min(100, Math.max(1, Math.floor(limit)));
+  const { data, error } = await requireSupabase()
+    .from("fulfilment_order_summaries")
+    .select("data")
+    .order("order_date", { ascending: false, nullsFirst: false })
+    .range(safeOffset, safeOffset + safeLimit - 1);
+  if (error) throw error;
+  return (data ?? []).map((row) => row.data as Order);
+}
+
 // A Shopify webhook or manual refresh only needs the existing rows for that
 // order to preserve its fulfilment status and other staff edits. Avoid loading
 // every historical order (including large media payloads) during a live sale.
@@ -147,6 +163,21 @@ export async function fetchSharedOrderChangesSince(checkedAt: string): Promise<S
     : "1970-01-01T00:00:00.000Z";
   const { data, error } = await client
     .from("fulfilment_orders")
+    .select("data")
+    .gt("updated_at", safeCheckedAt)
+    .order("updated_at", { ascending: true });
+  if (error) throw error;
+  return { changedOrders: (data ?? []).map((row) => row.data as Order) };
+}
+
+export async function fetchSharedOrderSummaryChangesSince(checkedAt: string): Promise<SharedOrderChanges> {
+  const client = requireSupabase();
+  const parsedCheckedAt = Date.parse(checkedAt);
+  const safeCheckedAt = Number.isFinite(parsedCheckedAt)
+    ? new Date(parsedCheckedAt - 5_000).toISOString()
+    : "1970-01-01T00:00:00.000Z";
+  const { data, error } = await client
+    .from("fulfilment_order_summaries")
     .select("data")
     .gt("updated_at", safeCheckedAt)
     .order("updated_at", { ascending: true });

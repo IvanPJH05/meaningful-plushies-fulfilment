@@ -43,8 +43,9 @@ import {
   fetchWhatsAppLeads,
   fetchSalesConsumptionMappings,
   fetchSharedActivity,
-  fetchSharedOrderChangesSince,
-  fetchSharedOrders,
+  fetchSharedOrderById,
+  fetchSharedOrderSummaryChangesSince,
+  fetchSharedOrderSummaryPage,
   fetchDashboardAccounts,
   fetchPaymentProcessorSettings,
   fetchSalesFeeSettings,
@@ -1540,6 +1541,11 @@ export default function Home() {
   const [session, setSession] = useState<Session | null>(() => storedSession);
   const [view, setView] = useState<View>(() => permittedView(storedUi.view, storedSession?.role));
   const [orders, setOrders] = useState<Order[]>(() => initialOrdersCache?.orders ?? []);
+  const [hasMoreOrderSummaries, setHasMoreOrderSummaries] = useState(() => Boolean(initialOrdersCache?.orders.length && initialOrdersCache.orders.length % 100 === 0));
+  const [loadingMoreOrderSummaries, setLoadingMoreOrderSummaries] = useState(false);
+  const nextOrderSummaryOffset = useRef(initialOrdersCache?.orders.length ?? 0);
+  const hydratedOrderIds = useRef(new Set<string>());
+  const orderSummaryLoadMoreSentinel = useRef<HTMLDivElement | null>(null);
   const skipNextEnvelopeSettingsSave = useRef(false);
   const [manualOrders, setManualOrders] = useState<ManualOrder[]>([]);
   const [whatsAppLeads, setWhatsAppLeads] = useState<WhatsAppLead[]>([]);
@@ -1821,11 +1827,11 @@ export default function Home() {
     return () => window.removeEventListener("meaningful-plushies-free-creator-samples", refreshSharedCodes);
   }, [session]);
 
-  const fetchSharedOrdersWithRetry = useCallback(async (onPage?: (orders: Order[]) => void) => {
+  const fetchSharedOrdersWithRetry = useCallback(async (offset: number) => {
     let lastError: unknown;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
-        return await fetchSharedOrders(onPage);
+        return await fetchSharedOrderSummaryPage(offset, 100);
       } catch (error) {
         lastError = error;
         if (attempt < 2) await new Promise<void>((resolve) => window.setTimeout(resolve, (attempt + 1) * 500));
@@ -1835,20 +1841,14 @@ export default function Home() {
   }, []);
 
   const refreshCachedOrders = useCallback(async () => {
-    if (!hasOrdersCache.current) {
-      const loadedById = new Map<string, Order>();
-      const applyInitialPage = (page: Order[]) => {
-        for (const order of page) loadedById.set(order.id, order);
-        const partial = normalizeSharedOrders(Array.from(loadedById.values()));
-        // Reveal the newest operational work as soon as its small page arrives.
-        // Do not mark the cache complete until every page has been collected.
-        setOrders(partial);
-        setLoadingOrders(false);
-        setDatabaseError("");
-      };
-      const sharedOrders = await fetchSharedOrdersWithRetry(applyInitialPage);
+    // Older browser caches can contain the temporary 25-order safeguard.  Replace
+    // those with the first lightweight 100-order page on their next refresh.
+    if (!hasOrdersCache.current || nextOrderSummaryOffset.current < 100) {
+      const sharedOrders = await fetchSharedOrdersWithRetry(0);
       const normalizedOrders = normalizeSharedOrders(sharedOrders);
       hasOrdersCache.current = true;
+      nextOrderSummaryOffset.current = normalizedOrders.length;
+      setHasMoreOrderSummaries(normalizedOrders.length === 100);
       const completedAt = new Date().toISOString();
       ordersCacheCheckedAt.current = completedAt;
       writeOrdersCache(completedAt, normalizedOrders);
@@ -1856,7 +1856,7 @@ export default function Home() {
       return;
     }
 
-    const { changedOrders } = await fetchSharedOrderChangesSince(ordersCacheCheckedAt.current);
+    const { changedOrders } = await fetchSharedOrderSummaryChangesSince(ordersCacheCheckedAt.current);
     const changedById = new Map(normalizeSharedOrders(changedOrders).map((order) => [order.id, order]));
     const completedAt = new Date().toISOString();
     ordersCacheCheckedAt.current = completedAt;
@@ -1870,6 +1870,38 @@ export default function Home() {
       return merged;
     });
   }, [fetchSharedOrdersWithRetry, normalizeSharedOrders]);
+
+  const loadNextOrderSummaries = useCallback(async () => {
+    if (loadingMoreOrderSummaries || !hasMoreOrderSummaries) return;
+    setLoadingMoreOrderSummaries(true);
+    try {
+      const nextPage = normalizeSharedOrders(await fetchSharedOrdersWithRetry(nextOrderSummaryOffset.current));
+      nextOrderSummaryOffset.current += nextPage.length;
+      setHasMoreOrderSummaries(nextPage.length === 100);
+      setOrders((current) => {
+        const merged = [...current];
+        for (const order of nextPage) {
+          const index = merged.findIndex((currentOrder) => currentOrder.id === order.id);
+          if (index >= 0) merged[index] = order;
+          else merged.push(order);
+        }
+        writeOrdersCache(new Date().toISOString(), merged);
+        return merged;
+      });
+    } finally {
+      setLoadingMoreOrderSummaries(false);
+    }
+  }, [fetchSharedOrdersWithRetry, hasMoreOrderSummaries, loadingMoreOrderSummaries, normalizeSharedOrders]);
+
+  useEffect(() => {
+    const sentinel = orderSummaryLoadMoreSentinel.current;
+    if (!sentinel || !hasMoreOrderSummaries || loadingMoreOrderSummaries) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) void loadNextOrderSummaries();
+    }, { rootMargin: "240px" });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMoreOrderSummaries, loadNextOrderSummaries, loadingMoreOrderSummaries]);
 
   const loadSharedData = useCallback(async (showLoading = false) => {
     if (!supabaseConfigured) {
@@ -2180,6 +2212,16 @@ export default function Home() {
   }, [view]);
 
   const selected = orders.find((order) => order.id === selectedId) ?? null;
+  useEffect(() => {
+    if (!selectedId || hydratedOrderIds.current.has(selectedId)) return;
+    let cancelled = false;
+    void fetchSharedOrderById(selectedId).then((fullOrder) => {
+      if (cancelled || !fullOrder) return;
+      hydratedOrderIds.current.add(selectedId);
+      setOrders((current) => current.map((order) => order.id === selectedId ? fullOrder : order));
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [selectedId]);
   const packingOrders = useMemo(() => sortOrderRecords(
     orders.filter((order) => packingSelection.includes(order.id)),
     "orderNumber",
@@ -5998,6 +6040,7 @@ export default function Home() {
           return <tr key={order.id} className="plush-charm-row"><td><strong>{orderLabel(order)}</strong><OrderMarkers order={order} manualOrders={manualOrders} /></td><td>{messageLink ? <a href={messageLink} download={downloadName} target={downloadName ? undefined : "_blank"} rel="noreferrer">{downloadName ? "Download message" : "Open message"}</a> : "-"}</td><td><strong>{displayedCharacter(order) || "-"}</strong></td><td className="certificate-cell">{link ? <a href={link} target="_blank" rel="noreferrer">{certificateLink(order, false)}</a> : "-"}</td><td><strong>{order.customerName || "-"}</strong></td><td>{order.phone || "-"}</td><td><StatusPill status={order.status} /></td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>;
         })}</tbody></table>{!plushCharmOrders.length && <div className="empty"><strong>No Plush Charm orders found</strong><p>Try another search or status filter.</p></div>}</div>
         <div className="table-footer">Showing {plushCharmOrders.length} of {orders.filter(isPlushCharm).length} Plush Charm orders</div>
+        {hasMoreOrderSummaries && <div ref={orderSummaryLoadMoreSentinel} className="table-footer"><button className="button secondary small" type="button" disabled={loadingMoreOrderSummaries} onClick={() => void loadNextOrderSummaries()}>{loadingMoreOrderSummaries ? "Loading more orders..." : "Load next 100 orders"}</button></div>}
       </section>}
       {view === "shopify_app" && session.role === "admin" && <ShopifyAppWorkspace sessionToken={session.token} />}
       {workspace === "audio_scanner" && session.role === "admin" && <AudioScannerWorkspace orders={orders} audioSourceFor={meaningfulMessageLink} />}
@@ -6114,6 +6157,7 @@ export default function Home() {
           </div>
           <div className="table-scroll"><table className="orders-table"><thead><tr><th><input type="checkbox" aria-label="Select visible orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th>Order</th><th>Date</th><th>Customer</th><th>Phone</th><th>Character</th><th>Voice</th><th>Plush name</th><th>Status</th><th>Tracking number</th><th>Last updated</th><th>{view === "orders" ? "Actions" : "View"}</th></tr></thead><tbody>{filtered.map((order) => <tr key={order.id} className={[isExpressShipping(order) ? "express-shipping-row" : "", isPlushCharm(order) ? "plush-charm-row" : ""].filter(Boolean).join(" ")}><td><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={selectedOrders.includes(order.id)} onChange={() => toggleOrderSelection(order.id)} /></td><td><strong>{orderLabel(order)}</strong><OrderMarkers order={order} manualOrders={manualOrders} /></td><td>{formatDate(order.orderDate)}</td><td><strong>{order.customerName || "-"}</strong></td><td>{order.phone || "-"}</td><td>{displayedCharacter(order) || "-"}</td><td>{order.voiceLength ? `${order.voiceLength}s` : "-"}</td><td>{order.plushName || "-"}</td><td><StatusPill status={order.status} /></td><td><code>{order.trackingNumber || "-"}</code></td><td>{formatDate(order.updatedAt, true)}</td><td><div className="row-actions"><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button>{view === "orders" && (order.salesChannel ?? "shopify") === "shopify" && <button className="view-button refresh-order-button" disabled={refreshingOrderNumber === order.orderNumber} onClick={() => refreshShopifyOrder(order)}>{refreshingOrderNumber === order.orderNumber ? "Refreshing..." : "Refresh"}</button>}{view === "orders" && order.salesChannel === "tiktok" && <button className="view-button refresh-order-button" disabled={refreshingOrderNumber === tiktokOrderIdFromOrder(order)} onClick={() => refreshTikTokOrder(order)}>{refreshingOrderNumber === tiktokOrderIdFromOrder(order) ? "Syncing..." : "Sync"}</button>}</div></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No orders found</strong><p>Try another search or status filter.</p></div>}</div>
           <div className="table-footer">Showing {filtered.length} of {view === "fulfilled" ? orders.filter((order) => order.status === "shipped").length : orders.length} orders</div>
+          {hasMoreOrderSummaries && <div ref={orderSummaryLoadMoreSentinel} className="table-footer"><button className="button secondary small" type="button" disabled={loadingMoreOrderSummaries} onClick={() => void loadNextOrderSummaries()}>{loadingMoreOrderSummaries ? "Loading more orders..." : "Load next 100 orders"}</button></div>}
         </section>}
 
         {view === "fulfilment" && <section className="card orders-card">
@@ -6131,6 +6175,7 @@ export default function Home() {
           </div>
           <div className="fulfilment-scroll table-scroll"><table className="orders-table fulfilment-table"><thead><tr><th className="select-column"><input type="checkbox" aria-label="Select visible fulfilment orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th className="locked-order-column">Order ID</th>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <th key={column} className={draggedColumn === column ? "dragging" : ""} draggable onDragStart={(event) => { setDraggedColumn(column); event.dataTransfer.setData("text/plain", column); }} onDragEnd={() => setDraggedColumn(null)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => reorderFulfilmentColumn(event.dataTransfer.getData("text/plain") as FulfilmentColumn, column)}><span className="drag-handle"><Icon name="drag" /></span>{fulfilmentColumnLabels[column]}</th>)}<th>Status</th><th>View</th></tr></thead><tbody>{filtered.map((order) => { const checked = selectedOrders.includes(order.id); const rowClass = [checked ? "selected-row" : "", isExpressShipping(order) ? "express-shipping-row" : "", isPlushCharm(order) ? "plush-charm-row" : ""].filter(Boolean).join(" "); return <tr key={order.id} className={rowClass} onClick={(event) => { if ((event.target as HTMLElement).closest("button,a,input")) return; toggleOrderSelection(order.id); }}><td className="select-column"><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={checked} onChange={() => toggleOrderSelection(order.id)} /></td><td className="locked-order-column"><strong>{orderLabel(order)}</strong><OrderMarkers order={order} manualOrders={manualOrders} /></td>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <td key={column} className={column === "idWebsiteLink" ? "certificate-cell" : ""}>{fulfilmentCell(order, column)}</td>)}<td><StatusPill status={order.status} /></td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>; })}</tbody></table>{!filtered.length && <div className="empty"><strong>No fulfilment orders found</strong><p>Try another search or status filter.</p></div>}</div>
           <div className="table-footer">Showing {filtered.length} of {orders.length} orders</div>
+          {hasMoreOrderSummaries && <div ref={orderSummaryLoadMoreSentinel} className="table-footer"><button className="button secondary small" type="button" disabled={loadingMoreOrderSummaries} onClick={() => void loadNextOrderSummaries()}>{loadingMoreOrderSummaries ? "Loading more orders..." : "Load next 100 orders"}</button></div>}
         </section>}
       </>}
 
