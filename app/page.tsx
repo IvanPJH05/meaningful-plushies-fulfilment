@@ -1843,6 +1843,8 @@ export default function Home() {
         // Reveal the newest operational work as soon as its small page arrives.
         // Do not mark the cache complete until every page has been collected.
         setOrders(partial);
+        setLoadingOrders(false);
+        setDatabaseError("");
       };
       const sharedOrders = await fetchSharedOrdersWithRetry(applyInitialPage);
       const normalizedOrders = normalizeSharedOrders(sharedOrders);
