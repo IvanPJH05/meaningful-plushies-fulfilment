@@ -83,6 +83,10 @@ export async function fetchSharedOrders(onPage?: (orders: Order[]) => void): Pro
   // pressure. Small newest-first pages let staff start working immediately while
   // the older history is collected safely behind it.
   const pageSize = 25;
+  // The dashboard supplies a page callback and must become usable from the
+  // newest operational slice. Server-side maintenance callers omit it and can
+  // still intentionally read the complete history when they need to.
+  const dashboardFirstPageOnly = Boolean(onPage);
   for (let from = 0; ; from += pageSize) {
     const { data, error } = await client
       .from("fulfilment_orders")
@@ -94,6 +98,7 @@ export async function fetchSharedOrders(onPage?: (orders: Order[]) => void): Pro
     if (!page.length) break;
     orders.push(...page);
     onPage?.(page);
+    if (dashboardFirstPageOnly) break;
     if (page.length < pageSize) break;
   }
   return orders;
