@@ -112,32 +112,26 @@ export type SharedOrderChanges = {
   changedOrders: Order[];
 };
 
-// This deliberately reads only IDs and timestamps first. The fulfilment payload can
-// contain attached media, so a browser refresh should only download complete rows
-// that actually changed since its last successful check.
+// Ask Postgres to filter by its indexed update timestamp.  The former version read
+// the ID and timestamp of every historical order on every browser refresh, then
+// filtered those rows in JavaScript.  With several staff devices open that became a
+// constant full-table read even when no order had changed.
 export async function fetchSharedOrderChangesSince(checkedAt: string): Promise<SharedOrderChanges> {
   const client = requireSupabase();
-  const { data: indexRows, error: indexError } = await client
+  const parsedCheckedAt = Date.parse(checkedAt);
+  // A small overlap makes the refresh resilient to clock precision and a write
+  // landing exactly as a previous request completes. Duplicate rows are merged by
+  // ID in the caller, so this cannot duplicate an order in the workspace.
+  const safeCheckedAt = Number.isFinite(parsedCheckedAt)
+    ? new Date(parsedCheckedAt - 5_000).toISOString()
+    : "1970-01-01T00:00:00.000Z";
+  const { data, error } = await client
     .from("fulfilment_orders")
-    .select("id, updated_at");
-  if (indexError) throw indexError;
-
-  const since = Date.parse(checkedAt);
-  const changedIds = (indexRows ?? [])
-    .filter((row) => !Number.isFinite(since) || Date.parse(String(row.updated_at ?? "")) > since)
-    .map((row) => String(row.id));
-  if (!changedIds.length) return { changedOrders: [] };
-
-  const changedOrders: Order[] = [];
-  for (let start = 0; start < changedIds.length; start += 100) {
-    const { data, error } = await client
-      .from("fulfilment_orders")
-      .select("data")
-      .in("id", changedIds.slice(start, start + 100));
-    if (error) throw error;
-    changedOrders.push(...(data ?? []).map((row) => row.data as Order));
-  }
-  return { changedOrders };
+    .select("data")
+    .gt("updated_at", safeCheckedAt)
+    .order("updated_at", { ascending: true });
+  if (error) throw error;
+  return { changedOrders: (data ?? []).map((row) => row.data as Order) };
 }
 
 function creatorFreeSampleError(error: unknown, fallback: string) {

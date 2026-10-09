@@ -1835,27 +1835,28 @@ export default function Home() {
   }, []);
 
   const refreshCachedOrders = useCallback(async () => {
-    const checkedAt = new Date().toISOString();
     if (!hasOrdersCache.current) {
       const sharedOrders = await fetchSharedOrdersWithRetry();
       const normalizedOrders = normalizeSharedOrders(sharedOrders);
       hasOrdersCache.current = true;
-      ordersCacheCheckedAt.current = checkedAt;
-      writeOrdersCache(checkedAt, normalizedOrders);
+      const completedAt = new Date().toISOString();
+      ordersCacheCheckedAt.current = completedAt;
+      writeOrdersCache(completedAt, normalizedOrders);
       setOrders(normalizedOrders);
       return;
     }
 
     const { changedOrders } = await fetchSharedOrderChangesSince(ordersCacheCheckedAt.current);
     const changedById = new Map(normalizeSharedOrders(changedOrders).map((order) => [order.id, order]));
-    ordersCacheCheckedAt.current = checkedAt;
+    const completedAt = new Date().toISOString();
+    ordersCacheCheckedAt.current = completedAt;
     setOrders((current) => {
       const merged = current
         .map((order) => changedById.get(order.id) ?? order);
       for (const order of changedById.values()) {
         if (!merged.some((currentOrder) => currentOrder.id === order.id)) merged.push(order);
       }
-      writeOrdersCache(checkedAt, merged);
+      writeOrdersCache(completedAt, merged);
       return merged;
     });
   }, [fetchSharedOrdersWithRetry, normalizeSharedOrders]);
@@ -1992,7 +1993,9 @@ export default function Home() {
     };
     window.addEventListener("focus", refreshWhenVisible);
     document.addEventListener("visibilitychange", refreshWhenVisible);
-    const refreshInterval = window.setInterval(refreshManualOrders, 30_000);
+    // Realtime already keeps active screens current. This is only an offline
+    // recovery check, so it must not repeatedly compete with fulfilment traffic.
+    const refreshInterval = window.setInterval(refreshManualOrders, 5 * 60_000);
     return () => {
       cancelled = true;
       window.removeEventListener("focus", refreshWhenVisible);
@@ -2017,7 +2020,9 @@ export default function Home() {
     };
     window.addEventListener("focus", refreshWhenActive);
     document.addEventListener("visibilitychange", refreshWhenActive);
-    const interval = window.setInterval(refreshOrders, 45_000);
+    // Realtime delivers normal changes immediately. Keep a low-frequency safety
+    // refresh for missed browser events instead of continually scanning orders.
+    const interval = window.setInterval(refreshOrders, 5 * 60_000);
     return () => {
       cancelled = true;
       window.removeEventListener("focus", refreshWhenActive);
@@ -9020,7 +9025,7 @@ function CreatorProgramWorkspacePage({
     window.addEventListener("focus", refreshWhenActive);
     document.addEventListener("visibilitychange", refreshWhenActive);
     window.addEventListener("meaningful-plushies-free-creator-samples", refreshSamples);
-    const interval = window.setInterval(refreshSamples, 15_000);
+    const interval = window.setInterval(refreshSamples, 2 * 60_000);
     return () => {
       cancelled = true;
       window.removeEventListener("focus", refreshWhenActive);
