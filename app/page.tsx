@@ -1821,11 +1821,11 @@ export default function Home() {
     return () => window.removeEventListener("meaningful-plushies-free-creator-samples", refreshSharedCodes);
   }, [session]);
 
-  const fetchSharedOrdersWithRetry = useCallback(async () => {
+  const fetchSharedOrdersWithRetry = useCallback(async (onPage?: (orders: Order[]) => void) => {
     let lastError: unknown;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
-        return await fetchSharedOrders();
+        return await fetchSharedOrders(onPage);
       } catch (error) {
         lastError = error;
         if (attempt < 2) await new Promise<void>((resolve) => window.setTimeout(resolve, (attempt + 1) * 500));
@@ -1836,7 +1836,15 @@ export default function Home() {
 
   const refreshCachedOrders = useCallback(async () => {
     if (!hasOrdersCache.current) {
-      const sharedOrders = await fetchSharedOrdersWithRetry();
+      const loadedById = new Map<string, Order>();
+      const applyInitialPage = (page: Order[]) => {
+        for (const order of page) loadedById.set(order.id, order);
+        const partial = normalizeSharedOrders(Array.from(loadedById.values()));
+        // Reveal the newest operational work as soon as its small page arrives.
+        // Do not mark the cache complete until every page has been collected.
+        setOrders(partial);
+      };
+      const sharedOrders = await fetchSharedOrdersWithRetry(applyInitialPage);
       const normalizedOrders = normalizeSharedOrders(sharedOrders);
       hasOrdersCache.current = true;
       const completedAt = new Date().toISOString();

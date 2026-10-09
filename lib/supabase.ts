@@ -75,13 +75,28 @@ function creatorEmailLoginSetupError() {
   return new Error("Supabase still has the old username rule, so email logins are being rejected. Run the updated supabase/schema.sql in Supabase SQL Editor to allow creator email usernames.");
 }
 
-export async function fetchSharedOrders(): Promise<Order[]> {
-  const { data, error } = await requireSupabase()
-    .from("fulfilment_orders")
-    .select("data")
-    .order("order_number", { ascending: true });
-  if (error) throw error;
-  return (data ?? []).map((row) => row.data as Order);
+export async function fetchSharedOrders(onPage?: (orders: Order[]) => void): Promise<Order[]> {
+  const client = requireSupabase();
+  const orders: Order[] = [];
+  // Rows may contain embedded legacy files. Loading the entire history in one
+  // response can make PostgREST and the browser wait for minutes under IO
+  // pressure. Small newest-first pages let staff start working immediately while
+  // the older history is collected safely behind it.
+  const pageSize = 25;
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await client
+      .from("fulfilment_orders")
+      .select("data")
+      .order("order_date", { ascending: false, nullsFirst: false })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    const page = (data ?? []).map((row) => row.data as Order);
+    if (!page.length) break;
+    orders.push(...page);
+    onPage?.(page);
+    if (page.length < pageSize) break;
+  }
+  return orders;
 }
 
 // A Shopify webhook or manual refresh only needs the existing rows for that
