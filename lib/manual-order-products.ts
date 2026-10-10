@@ -29,27 +29,17 @@ const fallbackProducts: ManualOrderProductConfig[] = [
     productPath: "products/meaningful-plushie",
     shopifyProductId: "7407587360839",
   },
-  {
-    key: "plush_charm_penny",
-    displayName: "Meaningful Plush Charm - Penny - 5 seconds",
-    productPath: "products/meaningful-plush-charm",
-    family: "plush_charm",
-    character: "Penny",
-  },
-  {
-    key: "plush_charm_renny",
-    displayName: "Meaningful Plush Charm - Renny - 5 seconds",
-    productPath: "products/meaningful-plush-charm",
-    family: "plush_charm",
-    character: "Renny",
-  },
-  {
-    key: "plush_charm_benny",
-    displayName: "Meaningful Plush Charm - Benny - 5 seconds",
-    productPath: "products/meaningful-plush-charm",
-    family: "plush_charm",
-    character: "Benny",
-  },
+  // These are Shopify's live handles. A few use historical handle names, so
+  // keep this explicit rather than deriving paths from the character/duration.
+  { key: "plush_charm_penny_5s", displayName: "Meaningful Plush Charm - Penny - 5 seconds", productPath: "products/p-5-meaningful-plush-charm", family: "plush_charm", character: "Penny" },
+  { key: "plush_charm_penny_10s", displayName: "Meaningful Plush Charm - Penny - 10 seconds", productPath: "products/p-10s-meaningful-plush-charm-copy", family: "plush_charm", character: "Penny" },
+  { key: "plush_charm_penny_20s", displayName: "Meaningful Plush Charm - Penny - 20 seconds", productPath: "products/p-20s-meaningful-plush-charm", family: "plush_charm", character: "Penny" },
+  { key: "plush_charm_renny_5s", displayName: "Meaningful Plush Charm - Renny - 5 seconds", productPath: "products/r-5s-meaningful-plush-charm", family: "plush_charm", character: "Renny" },
+  { key: "plush_charm_renny_10s", displayName: "Meaningful Plush Charm - Renny - 10 seconds", productPath: "products/r-10s-meaningful-plush-charm", family: "plush_charm", character: "Renny" },
+  { key: "plush_charm_renny_20s", displayName: "Meaningful Plush Charm - Renny - 20 seconds", productPath: "products/r-20s-meaningful-plush-charm", family: "plush_charm", character: "Renny" },
+  { key: "plush_charm_benny_5s", displayName: "Meaningful Plush Charm - Benny - 5 seconds", productPath: "products/b-20s-meaningful-plush-charm", family: "plush_charm", character: "Benny" },
+  { key: "plush_charm_benny_10s", displayName: "Meaningful Plush Charm - Benny - 10 seconds", productPath: "products/b-10s-meaningful-plush-charm", family: "plush_charm", character: "Benny" },
+  { key: "plush_charm_benny_20s", displayName: "Meaningful Plush Charm - Benny - 20 seconds", productPath: "products/b-20s-meaningful-plush-charm-1", family: "plush_charm", character: "Benny" },
 ];
 
 function readConfiguredProducts() {

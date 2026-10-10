@@ -9,6 +9,9 @@ const lockedLinks = {
   t5: { character: "Tootsie", productKey: "plushie_5s" }, t10: { character: "Tootsie", productKey: "plushie_10s" }, t20: { character: "Tootsie", productKey: "plushie_20s" },
   d5: { character: "Dragon Warrior", productKey: "plushie_5s" }, d10: { character: "Dragon Warrior", productKey: "plushie_10s" }, d20: { character: "Dragon Warrior", productKey: "plushie_20s" },
   h5: { character: "Hunnie", productKey: "plushie_5s" }, h10: { character: "Hunnie", productKey: "plushie_10s" }, h20: { character: "Hunnie", productKey: "plushie_20s" },
+  "charm-p5": { character: "Penny", productKey: "plush_charm_penny_5s" }, "charm-p10": { character: "Penny", productKey: "plush_charm_penny_10s" }, "charm-p20": { character: "Penny", productKey: "plush_charm_penny_20s" },
+  "charm-r5": { character: "Renny", productKey: "plush_charm_renny_5s" }, "charm-r10": { character: "Renny", productKey: "plush_charm_renny_10s" }, "charm-r20": { character: "Renny", productKey: "plush_charm_renny_20s" },
+  "charm-b5": { character: "Benny", productKey: "plush_charm_benny_5s" }, "charm-b10": { character: "Benny", productKey: "plush_charm_benny_10s" }, "charm-b20": { character: "Benny", productKey: "plush_charm_benny_20s" },
 } as const;
 
 function result(body: Record<string, unknown>, status = 200) {

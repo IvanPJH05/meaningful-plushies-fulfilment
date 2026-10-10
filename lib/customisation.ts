@@ -41,6 +41,16 @@ export type CustomisationForm = {
   meaningfulNote: string;
 };
 
+export const emptyCustomisationForm = (): CustomisationForm => ({
+  plushName: "",
+  gender: "",
+  birthDate: "",
+  birthPlace: "",
+  favouritePerson: "",
+  belongsTo: "",
+  meaningfulNote: "",
+});
+
 type SessionRow = {
   id: string;
   token_hash: string;
@@ -158,7 +168,8 @@ export async function submittedCustomisationForOrder(orderNumber: string) {
     .limit(1)
     .maybeSingle();
   if (error || !data) return null;
-  const form = normaliseCustomisationForm(data.form_data);
+  const formData = data.form_data && typeof data.form_data === "object" ? data.form_data as Record<string, unknown> : {};
+  const form = normaliseCustomisationForm(formData) || (formData.productType === "plush_charm" ? emptyCustomisationForm() : null);
   if (!form || !data.voice_storage_path) return null;
   return {
     form,
@@ -554,7 +565,8 @@ export async function submittedCustomisationsForSessionIds(sessionIds: string[])
   if (error) throw new Error(error.message);
 
   return new Map((data ?? []).flatMap((session) => {
-    const form = normaliseCustomisationForm(session.form_data);
+    const formData = session.form_data && typeof session.form_data === "object" ? session.form_data as Record<string, unknown> : {};
+    const form = normaliseCustomisationForm(formData) || (formData.productType === "plush_charm" ? emptyCustomisationForm() : null);
     const voiceStoragePath = String(session.voice_storage_path || "");
     return form && voiceStoragePath ? [[String(session.id), {
       form,

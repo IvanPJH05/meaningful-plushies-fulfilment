@@ -2,11 +2,11 @@ import { randomUUID } from "node:crypto";
 
 import { createClient } from "@supabase/supabase-js";
 
-import { createCompleteNowSession, createVoiceUpload, saveSubmittedSession, submittedCustomisationsForSessionIds, type CustomisationForm } from "./customisation";
+import { createCompleteNowSession, createVoiceUpload, saveSnowyCharmVoice, saveSubmittedSession, submittedCustomisationsForSessionIds, type CustomisationForm } from "./customisation";
 import { shopifyOrderToFulfilmentOrders } from "./importer";
 import { notifyNewManualOrder } from "./mobile-push-notifications";
 import { shopifyManualOrderCustomerName } from "./manual-order-customer-name";
-import { manualOrderProductByKey } from "./manual-order-products";
+import { manualOrderCharactersForProduct, manualOrderProductByKey, manualOrderProductFamily, type ManualOrderProductConfig } from "./manual-order-products";
 import { manualOrderIntakeQuote as quoteManualOrderIntake } from "./manual-order-intake-pricing";
 import { normalizeManualOrderPhone, shopifyManualOrderPhone } from "./manual-order-phone";
 import { manualOrderSpeakerSeconds, normalizeManualOrderCharacter } from "./manual-order-product-paths";
@@ -155,13 +155,40 @@ function knownVariantId(character: string, seconds: number) {
   return variants[character.toLowerCase()]?.[seconds] || "";
 }
 
+function characterForProduct(value: string, product: ManualOrderProductConfig) {
+  const requested = value.trim().toLowerCase();
+  return manualOrderCharactersForProduct(product).find((character) => character.toLowerCase() === requested) || "";
+}
+
+function productHandle(product: ManualOrderProductConfig) {
+  return product.productPath.replace(/^https?:\/\/[^/]+\//, "").replace(/^\/+/, "").replace(/^products\//, "").split("/")[0];
+}
+
+async function shopifyVariantForProduct(product: ManualOrderProductConfig) {
+  if (product.shopifyVariantId) return asVariantGid(product.shopifyVariantId);
+  const handle = productHandle(product);
+  const domain = shopDomain();
+  if (!handle || !domain) return "";
+  const result = await shopifyGraphql<{
+    data?: { products?: { nodes?: Array<{ variants?: { nodes?: Array<{ id?: string }> } }> } };
+  }>(domain, `
+    query ManualOrderCollectionProduct($query: String!) {
+      products(first: 1, query: $query) {
+        nodes { variants(first: 10) { nodes { id } } }
+      }
+    }
+  `, { query: `handle:${handle}` });
+  return textValue(result?.data?.products?.nodes?.[0]?.variants?.nodes?.[0]?.id);
+}
+
 function asVariantGid(id: string) {
   return id.startsWith("gid://") ? id : `gid://shopify/ProductVariant/${id}`;
 }
 
 function currentVariantIdForIntake(intake: ManualOrderIntake) {
+  if (intake.shopifyVariantId) return intake.shopifyVariantId;
   const product = manualOrderProductByKey(intake.productKey);
-  const character = normalizeManualOrderCharacter(intake.character);
+  const character = product ? characterForProduct(intake.character, product) : normalizeManualOrderCharacter(intake.character);
   const seconds = Number(product ? manualOrderSpeakerSeconds(product) : 0);
   const currentVariant = character && seconds ? knownVariantId(character, seconds) : "";
   return currentVariant ? asVariantGid(currentVariant) : intake.shopifyVariantId;
@@ -204,6 +231,8 @@ function fallbackFulfilmentOrderForIntake(
   const orderNumber = cleanShopifyOrderNumber(intake.shopifyOrderName || intake.shopifyOrderId);
   if (!orderNumber) return null;
   const quote = manualOrderIntakeQuote(intake);
+  const configuredProduct = manualOrderProductByKey(intake.productKey);
+  const isPlushCharm = Boolean(configuredProduct && manualOrderProductFamily(configuredProduct) === "plush_charm");
   const basePrice = Math.max(0, (quote.amountToCollect ?? 0) - quote.shippingFee);
   const total = quote.amountToCollect ?? 0;
   return {
@@ -230,8 +259,8 @@ function fallbackFulfilmentOrderForIntake(
     creatorFreeOrder: false,
     shippingMethod: intake.shippingRegion === "EAST" ? "East Malaysia delivery" : "Standard delivery",
     product: intake.productDisplayName,
-    productType: "classic_plushie",
-    character: normalizeManualOrderCharacter(intake.character) || intake.character,
+    productType: isPlushCharm ? "plush_charm" : "classic_plushie",
+    character: configuredProduct ? characterForProduct(intake.character, configuredProduct) || intake.character : normalizeManualOrderCharacter(intake.character) || intake.character,
     setIndicator: "",
     idWebsiteLink: "",
     voiceLength: quote.speakerSeconds,
@@ -301,14 +330,17 @@ async function saveManualIntakeToFulfilment(
   // meant a restored order could be stored successfully yet never appear on a
   // device that had already refreshed later that day.
   const syncedAt = new Date().toISOString();
+  const configuredProduct = manualOrderProductByKey(intake.productKey);
+  const isPlushCharm = Boolean(configuredProduct && manualOrderProductFamily(configuredProduct) === "plush_charm");
 
   const enriched = sourceOrders.map((order) => ({
     ...order,
+    productType: isPlushCharm ? "plush_charm" : order.productType,
     customerName: intake.customerName || order.customerName,
     phone: intake.phoneOriginal || order.phone,
     email: intake.customerEmail || order.email,
     address: intakeAddress(intake) || order.address,
-    character: normalizeManualOrderCharacter(intake.character) || order.character,
+    character: configuredProduct ? characterForProduct(intake.character, configuredProduct) || order.character : normalizeManualOrderCharacter(intake.character) || order.character,
     voiceLength: manualOrderIntakeQuote(intake).speakerSeconds || order.voiceLength,
     plushName: form.plushName || order.plushName,
     plushGender: form.gender || order.plushGender,
@@ -515,14 +547,21 @@ export async function submitManualOrderIntake(input: ManualOrderIntakeSubmission
   const email = clean(input.customerEmail, 254).toLowerCase();
   if (!customerName) throw new Error("Enter the customer name.");
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) throw new Error("Enter a valid email address.");
-  const character = normalizeManualOrderCharacter(input.character);
   const product = manualOrderProductByKey(input.productKey);
+  const character = product ? characterForProduct(input.character, product) : "";
   const seconds = Number(product ? manualOrderSpeakerSeconds(product) : 0);
-  const variant = character && seconds ? knownVariantId(character, seconds) : "";
+  const classicVariant = product && manualOrderProductFamily(product) === "classic_plushie" && character && seconds
+    ? knownVariantId(character, seconds)
+    : "";
+  const variant = classicVariant || (product && manualOrderProductFamily(product) === "plush_charm" ? await shopifyVariantForProduct(product) : "");
   if (!product || !character || !variant) throw new Error("Choose a valid plushie and voice length.");
   const phone = normalizeManualOrderPhone(input.phone);
   const address = validAddress(input.shippingAddress);
-  await saveSubmittedSession(input.sessionToken, input.form, input.voiceStoragePath);
+  if (manualOrderProductFamily(product) === "plush_charm") {
+    await saveSnowyCharmVoice(input.sessionToken, input.voiceStoragePath);
+  } else {
+    await saveSubmittedSession(input.sessionToken, input.form, input.voiceStoragePath);
+  }
 
   const now = new Date().toISOString();
   const { data, error } = await serviceClient().from(TABLE).insert({
@@ -653,23 +692,30 @@ export async function createPaidShopifyOrder(intakeId: string) {
   const customisation = submitted.get(intake.customisationSessionId);
   if (!customisation) throw new Error("The saved customisation for this collection submission could not be found.");
   const form = customisation.form;
+  const configuredProduct = manualOrderProductByKey(intake.productKey);
+  const isPlushCharm = Boolean(configuredProduct && manualOrderProductFamily(configuredProduct) === "plush_charm");
   const shopifyAddress = shopifyAddressForIntake(intake);
   const shopifyVariantId = currentVariantIdForIntake(intake);
   if (!shopifyVariantId) throw new Error("The selected plushie product is not available in Shopify. This order has not been created.");
   if (shopifyVariantId !== intake.shopifyVariantId) {
     await serviceClient().from(TABLE).update({ shopify_variant_id: shopifyVariantId, updated_at: new Date().toISOString() }).eq("id", intake.id);
   }
-  const lineItemProperties = [
-    { name: "customisation_session_id", value: intake.customisationSessionId },
-    { name: "Name", value: form.plushName },
-    { name: "Gender", value: form.gender },
-    { name: "Born On", value: form.birthDate },
-    { name: "Birthplace", value: form.birthPlace },
-    { name: "Favourite Person", value: form.favouritePerson },
-    { name: "Belongs To", value: form.belongsTo },
-    { name: "Meaningful Note", value: form.meaningfulNote },
-    { name: "Meaningful Message", value: voiceDownloadUrl(customisation.voiceStoragePath) },
-  ];
+  const lineItemProperties = isPlushCharm
+    ? [
+      { name: "customisation_session_id", value: intake.customisationSessionId },
+      { name: "Meaningful Message", value: voiceDownloadUrl(customisation.voiceStoragePath) },
+    ]
+    : [
+      { name: "customisation_session_id", value: intake.customisationSessionId },
+      { name: "Name", value: form.plushName },
+      { name: "Gender", value: form.gender },
+      { name: "Born On", value: form.birthDate },
+      { name: "Birthplace", value: form.birthPlace },
+      { name: "Favourite Person", value: form.favouritePerson },
+      { name: "Belongs To", value: form.belongsTo },
+      { name: "Meaningful Note", value: form.meaningfulNote },
+      { name: "Meaningful Message", value: voiceDownloadUrl(customisation.voiceStoragePath) },
+    ];
   // Shopify needs a real customer with a saved default address before this
   // manual paid order is made. Without that sequence it can create the order
   // and shipping line but leave "No shipping address provided" in Admin.
