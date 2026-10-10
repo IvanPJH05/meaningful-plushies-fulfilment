@@ -1,8 +1,8 @@
 import { randomInt, randomUUID } from "node:crypto";
 
 import { buildManualOrderCustomerLink } from "./manual-order-links";
-import { manualOrderProductPathForSelection, manualOrderSpeakerSeconds, normalizeManualOrderCharacter } from "./manual-order-product-paths";
-import { manualOrderProductByKey, type ManualOrderProductConfig } from "./manual-order-products";
+import { manualOrderProductPathForSelection, manualOrderSpeakerSeconds } from "./manual-order-product-paths";
+import { manualOrderCharactersForProduct, manualOrderProductByKey, manualOrderProductFamily, type ManualOrderProductConfig } from "./manual-order-products";
 import { normalizeManualOrderPhone } from "./manual-order-phone";
 import { cleanShopifyOrderNumber, objectValue, shopDomain, shopifyGraphql, textValue } from "./shopify-orders";
 import { fetchManualOrders } from "./supabase";
@@ -78,6 +78,11 @@ function productHandleFromPath(productPath: string) {
 
 function normalizeVariantText(value?: string | null) {
   return (value ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function characterForManualOrderProduct(value: string | undefined, product: ManualOrderProductConfig) {
+  const normalized = (value || "").trim().toLowerCase();
+  return manualOrderCharactersForProduct(product).find((character) => character.toLowerCase() === normalized) || "";
 }
 
 function normalizePhoneDigits(value: string) {
@@ -247,8 +252,10 @@ async function resolveManualOrderProductFromStorefront(input: ManualOrderCreateI
     };
   }
 
-  const character = normalizeManualOrderCharacter(input.character);
-  const seconds = manualOrderSpeakerSeconds(product);
+  const character = characterForManualOrderProduct(input.character, product);
+  // Charms are sold as a five-second product, but their Shopify variants are
+  // identified by character rather than a separate speaker-length option.
+  const seconds = manualOrderProductFamily(product) === "plush_charm" ? "" : manualOrderSpeakerSeconds(product);
   const variant = data.variants?.find((item) => {
     const title = normalizeVariantText(item.title);
     const option1 = normalizeVariantText(item.option1);
@@ -262,7 +269,17 @@ async function resolveManualOrderProductFromStorefront(input: ManualOrderCreateI
     return characterMatches && secondsMatches;
   });
   const variantId = textValue(variant?.id);
-  if ((character || seconds) && !variantId) return { productId: "", variantId: "", productPath: "" };
+  if ((character || seconds) && !variantId) {
+    if (manualOrderProductFamily(product) !== "plush_charm") return { productId: "", variantId: "", productPath: "" };
+    // Some Charm storefront setups have one configurable/default variant. In
+    // that case a product-level discount is the correct safe fallback; the
+    // customer still chooses the Charm character on the product page.
+    const hasNamedCharmVariants = data.variants?.some((item) => {
+      const variantText = `${item.title || ""} ${item.option1 || ""}`.toLowerCase();
+      return manualOrderCharactersForProduct(product).some((name) => variantText.includes(name.toLowerCase()));
+    });
+    if (hasNamedCharmVariants) return { productId: "", variantId: "", productPath: "" };
+  }
   return {
     productId: productId ? asShopifyGid(productId, "Product") : "",
     variantId: productOnly ? "" : variantId ? asShopifyGid(variantId, "ProductVariant") : "",
@@ -271,7 +288,7 @@ async function resolveManualOrderProductFromStorefront(input: ManualOrderCreateI
 }
 
 function resolveKnownManualOrderProduct(input: ManualOrderCreateInput, product: ManualOrderProductConfig) {
-  const character = normalizeManualOrderCharacter(input.character).toLowerCase();
+  const character = characterForManualOrderProduct(input.character, product).toLowerCase();
   const seconds = manualOrderSpeakerSeconds(product);
   const variantId = character && seconds ? knownMeaningfulPlushieVariantIds[character]?.[seconds] ?? "" : "";
   const handle = productHandleFromPath(product.productPath);
@@ -535,7 +552,7 @@ export async function createManualOrderDiscounts(input: ManualOrderCreateInput):
   if (!domain) throw new Error("SHOPIFY_SHOP_DOMAIN is missing in Vercel.");
 
   const phone = normalizeManualOrderPhone(input.phone);
-  const character = normalizeManualOrderCharacter(input.character);
+  const character = characterForManualOrderProduct(input.character, product);
   if (input.character && !character) throw new Error("Choose a valid character.");
   const productCode = await generateManualOrderCode(phone.lastFour);
   const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();

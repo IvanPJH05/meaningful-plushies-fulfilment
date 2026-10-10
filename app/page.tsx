@@ -84,7 +84,7 @@ import {
   upsertSharedOrders,
   type DashboardSession,
 } from "../lib/supabase";
-import { manualOrderProducts } from "../lib/manual-order-products";
+import { manualOrderCharactersForProduct, manualOrderProductFamily, manualOrderProducts } from "../lib/manual-order-products";
 import { orderStatuses, type AccountingBankStatementLine, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type AiAccountantReview, type CommissionStatus, type ContentIdeaItem, type ContentIdeaReference, type ContentPlanItem, type CreatorCommission, type CreatorPayout, type CreatorProfile, type CreatorStatus, type CreatorTier, type DashboardAccount, type EnvelopePrintSettings, type ManualOrder, type MetaCapiLog, type MetaCapiSettings, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesConsumptionMapping, type SalesFeeSetting, type StockSetting, type UserRole, type WhatsAppLead, type WhatsAppLeadStatus } from "../lib/types";
 import { MonthlyJournalWorkspace } from "../components/monthly-journal-workspace";
 import { ShopifyAppWorkspace } from "../components/shopify-app-workspace";
@@ -8108,6 +8108,20 @@ function ManualOrdersWorkspacePage({
   });
   const lastOrder = manualOrders.find((order) => order.id === lastManualOrderId);
   const selectedProduct = manualOrderProducts.find((product) => product.key === form.productKey) ?? manualOrderProducts[0];
+  const selectedProductFamily = selectedProduct ? manualOrderProductFamily(selectedProduct) : "classic_plushie";
+  const productsForSelectedFamily = manualOrderProducts.filter((product) => manualOrderProductFamily(product) === selectedProductFamily);
+  const characterChoices = selectedProduct ? manualOrderCharactersForProduct(selectedProduct) : manualOrderCharacters;
+  const chooseProduct = (product: typeof manualOrderProducts[number]) => {
+    const choices = manualOrderCharactersForProduct(product);
+    const preferredCharacter = choices.some((character) => character === form.character)
+      ? form.character
+      : product.character || choices[0];
+    onFormChange({ productKey: product.key, character: preferredCharacter });
+  };
+  const chooseCharmCharacter = (character: string) => {
+    const matchingProduct = productsForSelectedFamily.find((product) => product.character?.toLowerCase() === character.toLowerCase());
+    onFormChange({ character, productKey: matchingProduct?.key || selectedProduct?.key || form.productKey });
+  };
   const statusLabel = (status: ManualOrder["status"]) => {
     if (status === "used") return "Done";
     if (status === "cancelled") return "Cancelled";
@@ -8135,17 +8149,26 @@ function ManualOrdersWorkspacePage({
         <label>Customer name<input value={form.customerName} onChange={(event) => onFormChange({ customerName: event.target.value })} placeholder="Sarah Lim" required /></label>
         <label>Phone<input value={form.phone} onChange={(event) => onFormChange({ phone: event.target.value })} placeholder="0123456789" required /></label>
         <div className="manual-order-choice">
-          <span>Character</span>
-          <div className="manual-order-pill-group" aria-label="Manual order character">
-            {manualOrderCharacters.map((character) => <button type="button" key={character} className={form.character === character ? "active" : ""} onClick={() => onFormChange({ character })}>{character}</button>)}
+          <span>Product</span>
+          <div className="manual-order-pill-group" aria-label="Manual order product family">
+            {(["classic_plushie", "plush_charm"] as const).map((family) => {
+              const firstProduct = manualOrderProducts.find((product) => manualOrderProductFamily(product) === family);
+              return <button type="button" key={family} disabled={!firstProduct} className={selectedProductFamily === family ? "active" : ""} onClick={() => firstProduct && chooseProduct(firstProduct)}>{family === "plush_charm" ? "Plush Charm" : "Classic Plushie"}</button>;
+            })}
           </div>
         </div>
         <div className="manual-order-choice">
-          <span>Speaker</span>
-          <div className="manual-order-pill-group" aria-label="Manual order speaker length">
-            {manualOrderProducts.map((product) => <button type="button" key={product.key} className={selectedProduct?.key === product.key ? "active" : ""} onClick={() => onFormChange({ productKey: product.key })}>{speakerLabel(product.displayName)}</button>)}
+          <span>Character</span>
+          <div className="manual-order-pill-group" aria-label="Manual order character">
+            {characterChoices.map((character) => <button type="button" key={character} className={form.character === character ? "active" : ""} onClick={() => selectedProductFamily === "plush_charm" ? chooseCharmCharacter(character) : onFormChange({ character })}>{character}</button>)}
           </div>
         </div>
+        {selectedProductFamily === "classic_plushie" ? <div className="manual-order-choice">
+          <span>Speaker</span>
+          <div className="manual-order-pill-group" aria-label="Manual order speaker length">
+            {productsForSelectedFamily.map((product) => <button type="button" key={product.key} className={selectedProduct?.key === product.key ? "active" : ""} onClick={() => chooseProduct(product)}>{speakerLabel(product.displayName)}</button>)}
+          </div>
+        </div> : <div className="manual-order-choice"><span>Voice length</span><small>5 seconds voice is included with every Plush Charm.</small></div>}
         <label>Shipping region<select value={form.shippingRegion} onChange={(event) => onFormChange({ shippingRegion: event.target.value === "EAST" ? "EAST" : "WEST" })}><option value="WEST">West Malaysia</option><option value="EAST">East Malaysia</option></select></label>
         <div className="manual-order-choice"><span>Cash on delivery</span><div className="manual-order-pill-group"><button type="button" className={!form.isCod ? "active" : ""} onClick={() => onFormChange({ isCod: false })}>No</button><button type="button" className={form.isCod ? "active" : ""} onClick={() => onFormChange({ isCod: true })}>COD — RM10 fee</button></div><small>Internal record only. The Shopify checkout link remains unchanged.</small></div>
         <label>Payment receipt files (PDF or images)<input type="file" multiple accept="application/pdf,image/png,image/jpeg,image/webp" onChange={(event) => onReceiptFilesChange(Array.from(event.target.files || []))} /></label>
