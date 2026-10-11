@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { shopifyOrderToFulfilmentOrders } from "@/lib/importer";
 import { isPlushCharmOrder } from "@/lib/plush-charm";
 import { addMissingOurLinks } from "@/lib/our-link";
-import { bindSessionsToOrders, customisationSessionIds } from "@/lib/customisation";
+import { bindSessionsToOrders, customisationSessionIds, recoverMissingSessionIdForOrder } from "@/lib/customisation";
 import { cleanShopifyOrderNumber, fetchShopifyOrdersCreatedSince, shopifyMetafieldValue, textValue } from "@/lib/shopify-orders";
 import { fetchSharedOrders, fetchSharedOrdersByOrderNumber, insertSharedActivity, upsertSharedOrders } from "@/lib/supabase";
 import type { Order } from "@/lib/types";
@@ -49,7 +49,13 @@ export async function POST(request: Request) {
       // linked through the Shopify line-item/cart attribute, so recovery must
       // perform the same session binding as the webhook rather than restore a
       // bare order with its personalisation omitted.
-      const sessionIds = customisationSessionIds(order);
+      let sessionIds = customisationSessionIds(order);
+      if (!sessionIds.length) {
+        sessionIds = await recoverMissingSessionIdForOrder({
+          createdAt: textValue(order.createdAt),
+          orders,
+        });
+      }
       const reconciledOrders = sessionIds.length && orders.length
         ? await bindSessionsToOrders({
           orderId: textValue(order.id),

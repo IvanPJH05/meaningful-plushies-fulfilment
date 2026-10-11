@@ -550,6 +550,47 @@ export function customisationSessionIds(order: Record<string, unknown>) {
 }
 
 /**
+ * Last-resort recovery for a storefront checkout where Shopify has dropped
+ * both the line-item property and cart attribute.  It is deliberately narrow:
+ * only one submitted, unbound session may exist within the short checkout
+ * window, and it must be the same product family.  Ambiguous sessions are
+ * never guessed or attached.
+ */
+export async function recoverMissingSessionIdForOrder(input: {
+  createdAt: string;
+  orders: Order[];
+}) {
+  if (input.orders.length !== 1) return [];
+  const createdAt = Date.parse(input.createdAt);
+  if (!Number.isFinite(createdAt)) return [];
+
+  const startsAt = new Date(createdAt - 2 * 60_000).toISOString();
+  const endsAt = new Date(createdAt + 90_000).toISOString();
+  const expectedCharm = isPlushCharmOrder(input.orders[0]);
+  const { data, error } = await serviceClient()
+    .from(SESSION_TABLE)
+    .select("id,form_data,voice_storage_path,completed_at")
+    .eq("status", "submitted")
+    .is("order_id", null)
+    .is("fulfilment_order_id", null)
+    .not("voice_storage_path", "is", null)
+    .gte("completed_at", startsAt)
+    .lte("completed_at", endsAt)
+    .order("completed_at", { ascending: false })
+    .limit(2);
+  if (error) throw new Error(error.message);
+
+  const candidates = ((data ?? []) as Array<Pick<SessionRow, "id" | "form_data" | "voice_storage_path" | "completed_at">>)
+    .filter((session) => {
+      const productType = String(session.form_data?.productType || "").toLowerCase();
+      const sessionIsCharm = productType === "plush_charm" || productType === "snowy_charm";
+      return Boolean(session.voice_storage_path) && sessionIsCharm === expectedCharm;
+    });
+
+  return candidates.length === 1 ? [candidates[0].id] : [];
+}
+
+/**
  * Retrieves completed "Complete it now" form data before the Shopify webhook
  * creates its certificate. This keeps the first saved metaobject complete,
  * rather than creating an empty certificate and relying on a later update.

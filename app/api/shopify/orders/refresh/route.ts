@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
 import { isPlushCharmOrder } from "../../../../../lib/plush-charm";
 import { addMissingOurLinks } from "../../../../../lib/our-link";
-import { bindSessionsToOrders, customisationSessionIds, submittedCustomisationForOrder, submittedCustomisationsForSessionIds } from "../../../../../lib/customisation";
+import { bindSessionsToOrders, customisationSessionIds, recoverMissingSessionIdForOrder, submittedCustomisationForOrder, submittedCustomisationsForSessionIds } from "../../../../../lib/customisation";
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
 import { certificateMediaForLineItem, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrderByNumber, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
 import { fetchMetaCapiSettings, fetchSharedOrders, fetchSharedOrdersByOrderNumber, insertSharedActivity, upsertSharedOrders } from "../../../../../lib/supabase";
@@ -50,7 +50,10 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
   // order number only works after a previous webhook has already bound the
   // session, which is not true for the very orders this refresh is meant to
   // recover.
-  const sessionIds = customisationSessionIds(fullOrder);
+  let sessionIds = customisationSessionIds(fullOrder);
+  if (!sessionIds.length) {
+    sessionIds = await recoverMissingSessionIdForOrder({ createdAt, orders: importedOrders });
+  }
   const submittedBySession = await submittedCustomisationsForSessionIds(sessionIds);
   const sessionSubmission = sessionIds.map((id) => submittedBySession.get(id)).find(Boolean);
   const submitted = sessionSubmission
