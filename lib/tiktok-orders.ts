@@ -72,8 +72,8 @@ function tikTokCertificateCode(ttNumber: string, orderId: string) {
 }
 
 function tikTokVariation(value: string) {
-  const character = value.match(/\b(BILLY|TOOTSIE|HUNNIE|DRAGON WARRIOR)\b/i)?.[1]
-    ?? value.split(/[,/-]/).map((part) => part.trim()).find((part) => /billy|tootsie|hunnie|dragon/i.test(part))
+  const character = value.match(/\b(BILLY|TOOTSIE|HUNNIE|DRAGON WARRIOR|PENNY|RENNY|BENNY)\b/i)?.[1]
+    ?? value.split(/[,/-]/).map((part) => part.trim()).find((part) => /billy|tootsie|hunnie|dragon|penny|renny|benny/i.test(part))
     ?? "";
   const voiceLength = Number(value.match(/(5|10|20)\s*(?:seconds?|s)\b/i)?.[1] ?? 0);
   return { character: titleCase(character).replace(/\bDragon Warrior\b/i, "Dragon Warrior"), voiceLength };

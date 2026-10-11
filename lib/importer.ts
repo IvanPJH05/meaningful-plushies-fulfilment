@@ -1,4 +1,5 @@
 import type { ImportResult, Order } from "./types";
+import { isPlushCharmOrder } from "./plush-charm.ts";
 import { mediaFileExtension, voiceBackupFileName } from "./voice-file-name.ts";
 
 function clean(value: string | undefined) {
@@ -917,8 +918,10 @@ export function importTikTokShopData(
     );
     const assignedNumber = current?.orderNumber.match(/\bTT\d{4,}\b/i)?.[0] ?? nextTikTokOrderNumber(existing, importedOrders.length);
     const displayOrderNumber = `${assignedNumber} ${tikTokOrderId}`;
-    const code = current?.certificateCode || tikTokCertificateCode(assignedNumber, tikTokOrderId);
-    const { character, voiceLength } = tikTokVariation(row.Variation || row["Product Name"] || "");
+    const productName = row["Product Name"] || current?.product || "TikTok Shop Order";
+    const plushCharm = isPlushCharmOrder({ product: productName, productType: current?.productType || "", remark: "" });
+    const code = plushCharm ? "" : current?.certificateCode || tikTokCertificateCode(assignedNumber, tikTokOrderId);
+    const { character, voiceLength } = tikTokVariation(row.Variation || productName);
     const totalAmount = money(row["Order Amount"] || row["SKU Subtotal After Discount"]);
     const originalPrice = money(row["SKU Subtotal Before Discount"] || row["SKU Unit Original Price"]);
     const sellerDiscount = money(row["SKU Seller Discount"]);
@@ -946,13 +949,16 @@ export function importTikTokShopData(
       outstandingBalance: current?.outstandingBalance ?? 0,
       paymentProcessor: normalizeTikTokPaymentMethod(row["Payment Method"]),
       shippingMethod: row["Delivery Option"] || current?.shippingMethod || "",
-      product: row["Product Name"] || current?.product || "TikTok Shop Order",
+      product: productName,
+      productType: plushCharm ? "plush_charm" : current?.productType || "",
       character: character || current?.character || "",
       setIndicator: current?.setIndicator || "",
-      idWebsiteLink: certificateLink(code),
+      // Plush Charms use Our Link, never a birth-certificate page. The
+      // existing Our Link generator fills this after import.
+      idWebsiteLink: plushCharm ? current?.idWebsiteLink || "" : certificateLink(code),
       voiceLength: voiceLength || current?.voiceLength || 0,
       plushName: details.plushName || current?.plushName || "",
-      certificateCode: code,
+      certificateCode: plushCharm ? "" : code,
       meaningfulNote: details.meaningfulNote || current?.meaningfulNote || "",
       meaningfulMessage: [
         details.gender ? `Gender: ${details.gender}` : "",

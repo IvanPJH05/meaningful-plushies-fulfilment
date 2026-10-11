@@ -515,3 +515,18 @@ test("imports TikTok Shop orders with certificate JSON", () => {
   });
   assert.equal(summarizeSales(orders).bankTransfer, 123.3);
 });
+
+test("imports TikTok's Meaningful Plush Charms product as a Charm, not a birth certificate", () => {
+  const tiktok = [
+    "Order ID,Order Status,Order Substatus,Product Name,Variation,SKU Unit Original Price,SKU Subtotal Before Discount,Order Amount,Created Time,Buyer Username,Recipient,Phone #,Country,State,Post Town,Detail Address,Payment Method",
+    "586534617998853699,To ship,Awaiting shipment,Meaningful Plush Charms | Personalised Custom Plushie Keychain with Voice Message | Perfect Gift,\"Benny, 5 seconds\",75,75,35,11/10/2026 17:57:49,w***yy033,p****,(+60)112*****52,Malaysia,Sabah,Kota Belud,Address,Cash on delivery",
+  ].join("\n");
+  const { importedOrders } = importTikTokShopData(tiktok, [], []);
+  const order = importedOrders[0];
+
+  assert.equal(order.productType, "plush_charm");
+  assert.equal(order.character, "Benny");
+  assert.equal(order.voiceLength, 5);
+  assert.equal(order.certificateCode, "");
+  assert.equal(order.idWebsiteLink, "");
+});
