@@ -564,8 +564,13 @@ export async function recoverMissingSessionIdForOrder(input: {
   const createdAt = Date.parse(input.createdAt);
   if (!Number.isFinite(createdAt)) return [];
 
-  const startsAt = new Date(createdAt - 2 * 60_000).toISOString();
-  const endsAt = new Date(createdAt + 90_000).toISOString();
+  // A customer can save their voice and spend a few minutes completing
+  // checkout.  Shopify's order-created timestamp is therefore not always
+  // within two minutes of the saved session.  Five minutes covers that normal
+  // checkout delay; the exact-one-candidate requirement below still prevents
+  // any ambiguous session from being attached.
+  const startsAt = new Date(createdAt - 5 * 60_000).toISOString();
+  const endsAt = new Date(createdAt + 2 * 60_000).toISOString();
   const expectedCharm = isPlushCharmOrder(input.orders[0]);
   const { data, error } = await serviceClient()
     .from(SESSION_TABLE)
