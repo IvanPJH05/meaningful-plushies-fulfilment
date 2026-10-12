@@ -1,8 +1,7 @@
 import { fetchSharedOrders, insertSharedActivity, upsertSharedOrders } from "./supabase";
-import { isPlushCharmOrder } from "./plush-charm";
+import { addMissingOurLinks } from "./our-link";
 import { fetchTikTokOrderDetails, tiktokApiOrderToFulfilmentOrder, tiktokOrderIdFromValue } from "./tiktok-orders";
 import type { Order } from "./types";
-import { createCloserOrderLink, isFormattedPlushCharmLink, nextPlushCharmSequence } from "@/src/modules/closer/service";
 
 function comparableOrder(order: Order) {
   return { ...order, updatedAt: "" };
@@ -20,15 +19,10 @@ export async function syncTikTokOrdersByIds(orderIds: string[], actor = "TikTok 
     .map((order) => tiktokApiOrderToFulfilmentOrder(order, existing, actor))
     .filter(Boolean) as Order[];
 
-  // TikTok mapping is deliberately synchronous. Add the server-only Our Link
-  // after conversion so a Charm receives its yyyy g ccc ID without ever
-  // entering the classic birth-certificate flow.
-  let nextCharmSequence = nextPlushCharmSequence(existing.filter(isPlushCharmOrder));
-  syncedOrders = await Promise.all(syncedOrders.map(async (order) => (
-    isPlushCharmOrder(order) && !isFormattedPlushCharmLink(order.idWebsiteLink)
-      ? { ...order, certificateCode: "", idWebsiteLink: await createCloserOrderLink(order, nextCharmSequence++) }
-      : order
-  )));
+  // Use the same atomic Charm counter as every other ingestion path. This
+  // avoids duplicate or missing Our Links when TikTok webhooks arrive close
+  // together with Shopify sales.
+  syncedOrders = await addMissingOurLinks(syncedOrders, actor);
 
   const previousById = new Map(existing.map((order) => [order.id, order]));
   const changedOrders = syncedOrders.filter((order) => {

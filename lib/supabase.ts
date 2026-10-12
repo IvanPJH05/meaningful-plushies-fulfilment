@@ -132,6 +132,18 @@ export async function fetchSharedOrdersByOrderNumber(orderNumber: string, client
   return (data ?? []).map((row) => row.data as Order);
 }
 
+/** Reads only explicitly requested orders, for targeted server-side repairs. */
+export async function fetchSharedOrdersByIds(orderIds: string[], client: SupabaseClient = requireSupabase()): Promise<Order[]> {
+  const ids = [...new Set(orderIds.map((id) => String(id || "").trim()).filter(Boolean))];
+  if (!ids.length) return [];
+  const { data, error } = await client
+    .from("fulfilment_orders")
+    .select("data")
+    .in("id", ids);
+  if (error) throw error;
+  return (data ?? []).map((row) => row.data as Order);
+}
+
 // Load a media-bearing order only when its download link is used. This keeps a
 // browser refresh fast while still allowing cached TikTok rows to download files.
 export async function fetchSharedOrderById(id: string): Promise<Order | null> {

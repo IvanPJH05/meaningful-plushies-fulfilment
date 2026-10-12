@@ -10,6 +10,7 @@ import { buildSalesReportRows, isCreatorFreeOrder, isCreatorSampleOrder, manualO
 import { stockCharacters, summarizeStock } from "../lib/stock";
 import { mediaFileExtension, voiceBackupFileName } from "../lib/voice-file-name";
 import { productionPrintNextStatus, shouldAdvanceAfterProductionPrint } from "../lib/fulfilment-transitions";
+import { isPlushCharmOrder } from "../lib/plush-charm";
 import {
   createDashboardAccount,
   createAccountingDocumentSignedUrl,
@@ -2794,14 +2795,28 @@ export default function Home() {
     const { orders: imported, result, importedOrders } = tikTokCsv.trim()
       ? importTikTokShopData(tikTokCsv, details, orders, actor)
       : applyTikTokDetailEntries(details, orders, actor);
+    let importedForView = imported;
     try {
       // A TikTok import only changes the rows read from this file. Saving the
       // entire fulfilment history here can exceed Supabase's statement limit.
       await upsertSharedOrders(importedOrders);
       await ensurePaymentProcessors(importedOrders.map((order) => order.paymentProcessor));
+      const charmOrderIds = importedOrders.filter(isPlushCharmOrder).map((order) => order.id);
+      if (charmOrderIds.length && session?.token) {
+        const response = await fetch("/api/our-link/plush-charm-links", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-dashboard-session": session.token },
+          body: JSON.stringify({ orderIds: charmOrderIds }),
+        });
+        const linkResult = await response.json().catch(() => ({}));
+        if (!response.ok || !linkResult.ok) throw new Error(linkResult.error || "TikTok Plush Charm links could not be generated.");
+        const linkedOrders = Array.isArray(linkResult.orders) ? linkResult.orders as Order[] : [];
+        const linkedById = new Map(linkedOrders.map((order) => [order.id, order] as const));
+        importedForView = imported.map((order) => linkedById.get(order.id) ?? order);
+      }
     }
     catch (error) { setNotice(readableError(error, "TikTok Shop import could not be saved to Supabase.")); return; }
-    setOrders(imported);
+    setOrders(importedForView);
     setTikTokCsv("");
     setTikTokDetailEntries([emptyTikTokDetailEntry()]);
     setSelectedTikTokJsonOrders(importedOrders.map((order) => order.id));

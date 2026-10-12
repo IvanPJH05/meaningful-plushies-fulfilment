@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 
 import { isPlushCharmOrder } from "@/lib/plush-charm";
 import { addMissingOurLinks } from "@/lib/our-link";
-import { fetchSharedOrders, upsertSharedOrders } from "@/lib/supabase";
+import { fetchSharedOrders, fetchSharedOrdersByIds, upsertSharedOrders } from "@/lib/supabase";
 import { isFormattedPlushCharmLink } from "@/src/modules/closer/service";
 import { prisma } from "@/src/infrastructure/database/prisma";
 
@@ -21,7 +21,16 @@ export async function POST(request: NextRequest) {
   try {
     if (!await requireAdmin(request)) return NextResponse.json({ error: "Administrator access is required." }, { status: 403 });
 
-    const charmOrders = (await fetchSharedOrders()).filter(isPlushCharmOrder);
+    const body = await request.json().catch(() => ({})) as { orderIds?: unknown };
+    const requestedIds = Array.isArray(body.orderIds)
+      ? [...new Set(body.orderIds.map((id) => String(id || "").trim()).filter((id) => /^[a-z0-9_-]{1,120}$/i.test(id)))]
+      : [];
+    // Imports submit their exact changed rows. This avoids a full historical
+    // media read merely to create the one or two Charm links just imported.
+    const sourceOrders = requestedIds.length
+      ? await fetchSharedOrdersByIds(requestedIds)
+      : await fetchSharedOrders();
+    const charmOrders = sourceOrders.filter(isPlushCharmOrder);
     const needsLink = charmOrders
       // Replace the earlier temporary `plush-charm-…` addresses as well, so
       // every Charm uses the staff-friendly yyyy g ccc ID format.
