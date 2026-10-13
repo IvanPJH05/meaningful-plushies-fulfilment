@@ -10,6 +10,7 @@ import { buildSalesReportRows, isCreatorFreeOrder, isCreatorSampleOrder, manualO
 import { stockCharacters, summarizeStock } from "../lib/stock";
 import { mediaFileExtension, voiceBackupFileName } from "../lib/voice-file-name";
 import { productionPrintNextStatus, shouldAdvanceAfterProductionPrint } from "../lib/fulfilment-transitions";
+import { mergeRefreshedOrder } from "../lib/order-refresh";
 import { isPlushCharmOrder } from "../lib/plush-charm";
 import {
   createDashboardAccount,
@@ -1853,7 +1854,10 @@ export default function Home() {
       const completedAt = new Date().toISOString();
       ordersCacheCheckedAt.current = completedAt;
       writeOrdersCache(completedAt, normalizedOrders);
-      setOrders(normalizedOrders);
+      setOrders((current) => normalizedOrders.map((incoming) => {
+        const existing = current.find((order) => order.id === incoming.id);
+        return existing ? mergeRefreshedOrder(existing, incoming) : incoming;
+      }));
       return;
     }
 
@@ -1863,7 +1867,7 @@ export default function Home() {
     ordersCacheCheckedAt.current = completedAt;
     setOrders((current) => {
       const merged = current
-        .map((order) => changedById.get(order.id) ?? order);
+        .map((order) => mergeRefreshedOrder(order, changedById.get(order.id)));
       for (const order of changedById.values()) {
         if (!merged.some((currentOrder) => currentOrder.id === order.id)) merged.push(order);
       }
@@ -1883,7 +1887,7 @@ export default function Home() {
         const merged = [...current];
         for (const order of nextPage) {
           const index = merged.findIndex((currentOrder) => currentOrder.id === order.id);
-          if (index >= 0) merged[index] = order;
+          if (index >= 0) merged[index] = mergeRefreshedOrder(merged[index], order);
           else merged.push(order);
         }
         writeOrdersCache(new Date().toISOString(), merged);
@@ -2219,7 +2223,7 @@ export default function Home() {
     void fetchSharedOrderById(selectedId).then((fullOrder) => {
       if (cancelled || !fullOrder) return;
       hydratedOrderIds.current.add(selectedId);
-      setOrders((current) => current.map((order) => order.id === selectedId ? fullOrder : order));
+      setOrders((current) => current.map((order) => order.id === selectedId ? mergeRefreshedOrder(order, fullOrder) : order));
     }).catch(() => undefined);
     return () => { cancelled = true; };
   }, [selectedId]);
@@ -2450,7 +2454,15 @@ export default function Home() {
       }),
     });
     const result = await response.json().catch(() => ({})) as { orders?: Order[]; error?: string };
-    if (!response.ok || !result.orders) throw new Error(result.error || "Order stage could not be saved.");
+    if (!response.ok || !result.orders) throw new Error(result.error === "ORDER_CHANGED"
+      ? "An order changed in another session. No orders in this batch were moved; refresh and try again."
+      : result.error || "Order stage could not be saved.");
+    const byId = new Map(result.orders.map((order) => [order.id, order]));
+    setOrders((current) => {
+      const merged = current.map((order) => mergeRefreshedOrder(order, byId.get(order.id)));
+      writeOrdersCache(ordersCacheCheckedAt.current, merged);
+      return merged;
+    });
     return result.orders;
   }
 
@@ -2459,7 +2471,7 @@ export default function Home() {
     const order = orders.find((item) => item.id === orderId);
     if (!order) return;
     const updated = { ...order, ...patch, updatedAt: new Date().toISOString() };
-    setOrders((current) => current.map((item) => item.id === orderId ? updated : item));
+    setOrders((current) => current.map((item) => item.id === orderId ? { ...item, ...patch } : item));
     try {
       await upsertSharedOrders([updated]);
       await logActivity("Order updated", `Changed ${Object.keys(patch).join(", ")}.`, order.orderNumber);
@@ -2476,7 +2488,7 @@ export default function Home() {
     }
     try {
       const [updated] = await persistOrderTransitions([{ order, toStatus: status }]);
-      setOrders((current) => current.map((item) => item.id === order.id ? updated : item));
+      setOrders((current) => current.map((item) => item.id === order.id ? mergeRefreshedOrder(item, updated) : item));
     }
     catch (error) { setNotice(error instanceof Error ? error.message : "Status change could not be saved."); await loadSharedData(); return; }
     setNotice(`#${order.orderNumber} updated to ${statusLabels[status]}.`);
@@ -2493,7 +2505,7 @@ export default function Home() {
     try {
       const changed = await persistOrderTransitions(transitions);
       const changedById = new Map(changed.map((order) => [order.id, order]));
-      setOrders((current) => current.map((order) => changedById.get(order.id) ?? order));
+      setOrders((current) => current.map((order) => mergeRefreshedOrder(order, changedById.get(order.id))));
     }
     catch (error) { setNotice(error instanceof Error ? error.message : "Orders could not be saved."); await loadSharedData(); return; }
     setSelectedOrders([]);
@@ -2649,7 +2661,7 @@ export default function Home() {
       if (!response.ok || !result.ok) throw new Error(result.error || "Our Link IDs could not be generated.");
       if (result.orders?.length) {
         const byId = new Map(result.orders.map((order) => [order.id, order]));
-        setOrders((current) => current.map((order) => byId.get(order.id) || order));
+        setOrders((current) => current.map((order) => mergeRefreshedOrder(order, byId.get(order.id))));
       }
       setNotice(result.updated ? `${result.updated} Plush Charm order${result.updated === 1 ? " now has" : "s now have"} an Our Link ID.` : "Every Plush Charm order already has an Our Link ID.");
     } catch (error) {
@@ -3237,7 +3249,7 @@ export default function Home() {
         // out-of-date browser tab or background Shopify sync.
         moved = await persistOrderTransitions(transitions);
         const changedById = new Map([...changed, ...moved].map((order) => [order.id, order]));
-        setOrders((current) => current.map((order) => changedById.get(order.id) ?? order));
+        setOrders((current) => current.map((order) => mergeRefreshedOrder(order, changedById.get(order.id))));
         setPackingSelection((current) => [...new Set([...current, ...changed.map((order) => order.id)])]);
       }
       const advanced = moved.length;
@@ -3275,21 +3287,6 @@ export default function Home() {
       .map((order) => ({ order, toStatus: productionPrintNextStatus, note: "Packing slip printed" }));
     let changed: Order[] = [];
     try {
-      // Save against the current database row, rather than a browser snapshot.
-      // This is deliberately independent of sales journals and stays durable
-      // if another browser or a Shopify sync updates the order at the same time.
-      changed = await persistOrderTransitions(transitions);
-    }
-    catch (error) {
-      printWindow.close();
-      setNotice(error instanceof Error ? error.message : "Packing-slip changes could not be saved.");
-      return;
-    }
-    if (changed.length) {
-      const changedById = new Map(changed.map((order) => [order.id, order]));
-      setOrders((current) => current.map((order) => changedById.get(order.id) ?? order));
-    }
-    try {
       const response = await fetch("/api/packing-slips/pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -3314,16 +3311,20 @@ export default function Home() {
         const result = await response.json().catch(() => ({}));
         throw new Error(result.error || "Could not create the print PDF.");
       }
-      const url = URL.createObjectURL(await response.blob());
+      const pdf = await response.blob();
+      // A failed PDF must not advance any order. After generation, commit the
+      // entire eligible batch atomically before exposing it for printing.
+      changed = await persistOrderTransitions(transitions);
+      const url = URL.createObjectURL(pdf);
       printWindow.location.replace(url);
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
       const printed = mode === "packing" ? "packing slip" : mode === "labels" ? "shipping label" : "packing slip + shipping label";
       setNotice(`${packingOrders.length} ${printed}${packingOrders.length === 1 ? "" : "s"} prepared as a sharp PDF. Use the PDF viewer's Print button.${changed.length ? " New orders moved to Uploading Audio." : ""}`);
+      await logActivity("Print PDF prepared", `${packingOrders.length} ${mode} print set prepared.`);
     } catch (error) {
       printWindow.close();
       setNotice(error instanceof Error ? error.message : "Could not create the print PDF.");
     }
-    await logActivity("Print PDF prepared", `${packingOrders.length} ${mode} print set prepared.`);
   }
 
   function selectManualEnvelopeOrders() {
