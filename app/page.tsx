@@ -2318,7 +2318,7 @@ export default function Home() {
   }), [orders, dashboardStatus, dashboardStatusTwo]);
 
   const reportingOrders = useMemo(() => {
-    if (salesRange === "active") return orders.filter((order) => order.status !== "shipped");
+    if (salesRange === "active") return filtered.filter((order) => order.status !== "shipped");
     if (salesRange === "lifetime") return orders;
     if (salesRange === "today") {
       const today = dateKey(new Date().toISOString());
@@ -2327,7 +2327,7 @@ export default function Home() {
     const days = salesRange === "7d" ? 7 : 30;
     const threshold = Date.now() - days * 24 * 60 * 60 * 1000;
     return orders.filter((order) => new Date(order.orderDate).getTime() >= threshold);
-  }, [orders, salesRange]);
+  }, [orders, filtered, salesRange]);
   const sales = useMemo(() => summarizeSales(reportingOrders, processorSettings, salesFeeSettings.shopifyPercentage, manualOrders, creatorProfiles, freeCreatorSampleCodes), [reportingOrders, processorSettings, salesFeeSettings, manualOrders, creatorProfiles, freeCreatorSampleCodes]);
   const allSalesReportRows = useMemo(() => buildSalesReportRows(orders, processorSettings, salesFeeSettings.shopifyPercentage, manualOrders, creatorProfiles, freeCreatorSampleCodes), [orders, processorSettings, salesFeeSettings, manualOrders, creatorProfiles, freeCreatorSampleCodes]);
   const tikTokOrders = useMemo(() => sortOrderRecords(
