@@ -2310,7 +2310,7 @@ export default function Home() {
     .map((order) => tiktokOrderIdFromOrder(order))).size, [orders, selectedOrders]);
 
   const counts = useMemo(() => ({
-    total: orders.filter((order) => order.status !== "shipped").length,
+    total: orders.filter((order) => orderStatuses.includes(order.status) && order.status !== "shipped").length,
     voice: orders.filter((order) => order.status === "uploading_audio").length,
     production: orders.filter((order) => order.status === "sent_for_sewing").length,
     selected: dashboardStatus === "total" ? orders.length : orders.filter((order) => order.status === dashboardStatus).length,
@@ -2318,7 +2318,7 @@ export default function Home() {
   }), [orders, dashboardStatus, dashboardStatusTwo]);
 
   const reportingOrders = useMemo(() => {
-    if (salesRange === "active") return filtered.filter((order) => order.status !== "shipped");
+    if (salesRange === "active") return filtered.filter((order) => orderStatuses.includes(order.status) && order.status !== "shipped");
     if (salesRange === "lifetime") return orders;
     if (salesRange === "today") {
       const today = dateKey(new Date().toISOString());
