@@ -11,6 +11,7 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "test:order-edits": "node scripts/test-order-edits.mjs",
     "test": "node --experimental-strip-types --test lib/*.test.ts tests/*.test.ts",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
@@ -43,6 +44,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.4.1",
     "@capacitor/cli": "^8.5.2",
     "@types/node": "^22.13.0",
     "@types/pdf-parse": "^1.1.5",
