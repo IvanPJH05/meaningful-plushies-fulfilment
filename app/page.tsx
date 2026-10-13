@@ -78,6 +78,7 @@ import {
   saveSalesFeeSettings,
   subscribeToSharedData,
   syncCreatorCommissions,
+  syncFulfilmentSalesToMonthlyJournal,
   supabaseConfigured,
   updateDashboardAccount,
   updateCreatorCommissionStatus,
@@ -1727,6 +1728,16 @@ export default function Home() {
   const [selectedTikTokJsonOrders, setSelectedTikTokJsonOrders] = useState<string[]>([]);
   const [exportingTikTokShopify, setExportingTikTokShopify] = useState(false);
   const [notice, setNotice] = useState("");
+  const [accountingRetryIds, setAccountingRetryIds] = useState<string[]>(() => {
+    const saved = readJson<unknown>("meaningful-plushies-accounting-retry-orders");
+    return Array.isArray(saved) ? saved.filter((id): id is string => typeof id === "string") : [];
+  });
+  const [accountingRetryMessage, setAccountingRetryMessage] = useState(() =>
+    readJson<string[]>("meaningful-plushies-accounting-retry-orders")?.length ? "Saved orders need a Monthly Journal sync retry." : "");
+  const [retryingAccounting, setRetryingAccounting] = useState(false);
+  useEffect(() => {
+    writeJson("meaningful-plushies-accounting-retry-orders", accountingRetryIds);
+  }, [accountingRetryIds]);
   const [loadingOrders, setLoadingOrders] = useState(() => !initialOrdersCache);
   const [databaseError, setDatabaseError] = useState("");
   const [refreshingOrderNumber, setRefreshingOrderNumber] = useState("");
@@ -2466,19 +2477,42 @@ export default function Home() {
     return result.orders;
   }
 
-  async function updateOrder(orderId: string, patch: Partial<Order>) {
-    if (currentSession.role !== "admin") return setNotice("Staff accounts can only move orders to the next stage.");
-    const order = orders.find((item) => item.id === orderId);
-    if (!order) return;
-    const updated = { ...order, ...patch, updatedAt: new Date().toISOString() };
-    setOrders((current) => current.map((item) => item.id === orderId ? { ...item, ...patch } : item));
-    try {
-      await upsertSharedOrders([updated]);
-      await logActivity("Order updated", `Changed ${Object.keys(patch).join(", ")}.`, order.orderNumber);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Order update could not be saved.");
-      await loadSharedData();
+  async function updateOrder(orderId: string, patch: Partial<Order>, expectedUpdatedAt: string): Promise<Order> {
+    const response = await fetch("/api/fulfilment/orders/edit", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${currentSession.token}` },
+      body: JSON.stringify({ orderId, expectedUpdatedAt, patch }),
+    });
+    const result = await response.json().catch(() => ({})) as { order?: Order; error?: string };
+    if (!response.ok || !result.order) {
+      if (response.status === 409) {
+        const latest = await fetchSharedOrderById(orderId).catch(() => null);
+        if (latest) setOrders((current) => current.map((item) => item.id === orderId ? mergeRefreshedOrder(item, latest) : item));
+      }
+      throw new Error(result.error || "Order could not be saved. Your draft is kept.");
     }
+    const updated = result.order;
+    setOrders((current) => current.map((item) => item.id === orderId ? mergeRefreshedOrder(item, { ...updated, ...patch }) : item));
+    return updated;
+  }
+
+  async function retryAccountingSync() {
+    if (retryingAccounting || !accountingRetryIds.length) return;
+    setRetryingAccounting(true);
+    const ids = [...accountingRetryIds];
+    try {
+      // Retry the latest saved financial data, never an old import snapshot.
+      const latest: Order[] = [];
+      for (const id of ids) {
+        const order = await fetchSharedOrderById(id);
+        if (order) latest.push(order);
+      }
+      await syncFulfilmentSalesToMonthlyJournal(latest);
+      setAccountingRetryIds((current) => current.filter((id) => !ids.includes(id)));
+      setAccountingRetryMessage("Monthly Journal sync completed.");
+    } catch {
+      setAccountingRetryMessage("Orders remain saved. Monthly Journal sync still needs a retry.");
+    } finally { setRetryingAccounting(false); }
   }
 
   async function setStatus(order: Order, status: OrderStatus) {
@@ -2696,8 +2730,12 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orderIds: uniqueOrderIds }),
       });
-      const result = await response.json() as { ok?: boolean; changed?: boolean; updated?: number; checked?: number; failed?: number; error?: string };
+      const result = await response.json() as { ok?: boolean; changed?: boolean; updated?: number; checked?: number; failed?: number; error?: string; accountingWarning?: string; accountingRetryOrderIds?: string[] };
       if (!response.ok || !result.ok) throw new Error(result.error || "TikTok sync failed.");
+      if (result.accountingWarning) {
+        setAccountingRetryIds((current) => [...new Set([...current, ...(result.accountingRetryOrderIds ?? [])])]);
+        setAccountingRetryMessage(result.accountingWarning);
+      }
       await loadSharedData(false);
       const prefix = uniqueOrderIds.length === 1 ? `TikTok order ${uniqueOrderIds[0]}` : `${uniqueOrderIds.length} TikTok orders`;
       const failureText = result.failed ? ` ${result.failed} could not be synced.` : "";
@@ -2757,7 +2795,11 @@ export default function Home() {
   async function runImport() {
     const { orders: imported, result } = importShopifyData(orderCsv, metafieldCsv, orders, session ? `${session.displayName} (${session.username})` : "Admin");
     try {
-      await upsertSharedOrders(imported);
+      const saveResult = await upsertSharedOrders(imported);
+      if (saveResult.accountingWarning) {
+        setAccountingRetryIds((current) => [...new Set([...current, ...imported.map((order) => order.id)])]);
+        setAccountingRetryMessage(saveResult.accountingWarning);
+      }
       await ensurePaymentProcessors(imported.map((order) => order.paymentProcessor));
       await syncCreatorCommissions();
     }
@@ -2811,7 +2853,11 @@ export default function Home() {
     try {
       // A TikTok import only changes the rows read from this file. Saving the
       // entire fulfilment history here can exceed Supabase's statement limit.
-      await upsertSharedOrders(importedOrders);
+      const saveResult = await upsertSharedOrders(importedOrders);
+      if (saveResult.accountingWarning) {
+        setAccountingRetryIds((current) => [...new Set([...current, ...importedOrders.map((order) => order.id)])]);
+        setAccountingRetryMessage(saveResult.accountingWarning);
+      }
       await ensurePaymentProcessors(importedOrders.map((order) => order.paymentProcessor));
       const charmOrderIds = importedOrders.filter(isPlushCharmOrder).map((order) => order.id);
       if (charmOrderIds.length && session?.token) {
@@ -5893,6 +5939,7 @@ export default function Home() {
       {databaseError && <div className="notice"><span>Database connection: {databaseError}</span></div>}
       {loadingOrders && <div className="notice"><span>Loading shared orders from Supabase...</span></div>}
       {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice("")}>x</button></div>}
+      {session.role === "admin" && accountingRetryMessage && <div className="notice" role="status"><span>{accountingRetryMessage}</span>{accountingRetryIds.length > 0 ? <button disabled={retryingAccounting} onClick={() => void retryAccountingSync()}>{retryingAccounting ? "Retrying..." : "Retry accounting sync"}</button> : <button onClick={() => setAccountingRetryMessage("")}>x</button>}</div>}
 
       {workspace === "manual_orders" && view === "manual_orders_dashboard" && session.role === "admin" && <ManualOrdersWorkspacePage
         manualOrders={manualOrders}
@@ -6368,7 +6415,7 @@ export default function Home() {
       </section>}
     </section>
 
-    {selected && <OrderDrawer order={selected} manualOrders={manualOrders} role={session.role} actor={session.displayName} onClose={() => setSelectedId(null)} onUpdate={(patch) => updateOrder(selected.id, patch)} onStatus={(status) => setStatus(selected, status)} />}
+    {selected && <OrderDrawer key={selected.id} order={selected} manualOrders={manualOrders} role={session.role} actor={session.displayName} onClose={() => setSelectedId(null)} onUpdate={(patch, expectedUpdatedAt) => updateOrder(selected.id, patch, expectedUpdatedAt)} onStatus={(status) => setStatus(selected, status)} />}
     {previewDocument && <DocumentPreviewModal document={previewDocument} url={previewDocumentUrl} error={previewDocumentError} onClose={() => { setPreviewDocument(null); setPreviewDocumentUrl(""); setPreviewDocumentError(""); }} />}
     {previewBankLineId && (() => {
       const line = bankStatementLines.find((item) => item.id === previewBankLineId);
@@ -9827,11 +9874,64 @@ function ImportBox({ number, title, required, value, onChange, onFile, placehold
   return <article className="card import-box"><div className="import-heading"><span>{number}</span><div><h3>{title}</h3><p>{required ? "Required" : "Optional, but recommended"}</p></div></div><FileDropZone accept=".csv,text/csv" title="Choose or drop CSV file" description="or paste the CSV content below" onFile={(file) => onFile(file ?? undefined)} /><textarea value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} /></article>;
 }
 
-function OrderDrawer({ order, manualOrders, role, actor, onClose, onUpdate, onStatus }: { order: Order; manualOrders: ManualOrder[]; role: UserRole; actor: string; onClose: () => void; onUpdate: (patch: Partial<Order>) => void; onStatus: (status: OrderStatus) => void }) {
+function OrderDrawer({ order, manualOrders, role, actor, onClose, onUpdate, onStatus }: { order: Order; manualOrders: ManualOrder[]; role: UserRole; actor: string; onClose: () => void; onUpdate: (patch: Partial<Order>, expectedUpdatedAt: string) => Promise<Order>; onStatus: (status: OrderStatus) => void }) {
+  const [draft, setDraft] = useState<Partial<Order>>({});
+  const [saving, setSaving] = useState(false);
+  const [readingFile, setReadingFile] = useState(false);
+  const readingFileRef = useRef(false);
+  const [saveMessage, setSaveMessage] = useState("");
+  const baseline = useRef<Order | null>(null);
+  const savingRef = useRef(false);
+  const dirty = Object.keys(draft).length > 0;
+  const displayOrder = { ...order, ...draft };
+
+  function editDraft(patch: Partial<Order>) {
+    if (savingRef.current) return;
+    baseline.current ??= order;
+    setDraft((current) => ({ ...current, ...patch }));
+    setSaveMessage("");
+  }
+
+  async function saveDraft() {
+    if (!dirty || savingRef.current || readingFileRef.current || !baseline.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      await onUpdate(draft, baseline.current.updatedAt);
+      setDraft({});
+      baseline.current = null;
+      setSaveMessage("Saved.");
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message : "Save failed. Your draft is kept.");
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  }
+
+  function discardDraft() {
+    if (savingRef.current || readingFileRef.current) return;
+    setDraft({});
+    baseline.current = null;
+    setSaveMessage("");
+  }
+
+  function closeDrawer() {
+    if (savingRef.current || readingFileRef.current) return;
+    if (dirty && !window.confirm("Discard your unsaved order changes?")) return;
+    onClose();
+  }
+
+  useEffect(() => {
+    if (!dirty && !readingFile) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty, readingFile]);
   const admin = role === "admin";
   const following = nextStatus[order.status];
-  const messageLink = meaningfulMessageLink(order);
-  const messageDownloadName = meaningfulMessageDownloadName(order);
+  const messageLink = meaningfulMessageLink(displayOrder);
+  const messageDownloadName = meaningfulMessageDownloadName(displayOrder);
   const fulfilmentChannel = fulfilmentSource(order, manualOrders);
   const source = fulfilmentSourceLabel(order, manualOrders);
   const isCod = isCodFulfilmentOrder(order, manualOrders);
@@ -9839,34 +9939,43 @@ function OrderDrawer({ order, manualOrders, role, actor, onClose, onUpdate, onSt
   const missingTikTokAttachment = tikTokAttachmentNeedsReupload(order);
 
   function uploadPhoto(file?: File) {
-    if (!file) return;
+    if (!file || savingRef.current || readingFileRef.current) return;
     if (file.size > 3_000_000) return alert("Please choose an image smaller than 3 MB.");
+    readingFileRef.current = true;
+    setReadingFile(true);
     const reader = new FileReader();
-    reader.onload = () => onUpdate({ photoDataUrl: String(reader.result), photoName: file.name });
+    reader.onload = () => editDraft({ photoDataUrl: String(reader.result), photoName: file.name });
+    reader.onerror = () => setSaveMessage("The file could not be read. Please choose it again.");
+    reader.onloadend = () => { readingFileRef.current = false; setReadingFile(false); };
     reader.readAsDataURL(file);
   }
 
   function uploadTikTokOrderFile(file: File | null) {
-    if (!file) return;
+    if (!file || savingRef.current || readingFileRef.current) return;
     if (file.size > 5_000_000) return alert("Please choose a TikTok order file smaller than 5 MB.");
+    readingFileRef.current = true;
+    setReadingFile(true);
     const reader = new FileReader();
-    reader.onload = () => onUpdate({
+    reader.onload = () => editDraft({
       tikTokFileDataUrl: String(reader.result),
       tikTokFileName: voiceBackupFileName(order, mediaFileExtension(file.name, file.type, String(reader.result))),
       tikTokFileType: file.type || "application/octet-stream",
     });
+    reader.onerror = () => setSaveMessage("The file could not be read. Please choose it again.");
+    reader.onloadend = () => { readingFileRef.current = false; setReadingFile(false); };
     reader.readAsDataURL(file);
   }
 
-  return <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><aside className="order-drawer"><div className="drawer-header"><div><p>ORDER DETAIL</p><h2>{orderLabel(order)}</h2></div><button onClick={onClose}>x</button></div><div className="drawer-body">
+  return <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && closeDrawer()}><aside className="order-drawer"><div className="drawer-header"><div><p>ORDER DETAIL</p><h2>{orderLabel(order)}</h2></div><button onClick={closeDrawer}>x</button></div><div className="drawer-body">
+    {admin && <section className="detail-section" aria-live="polite"><div className="toolbar"><button className="button primary" disabled={!dirty || saving || readingFile} onClick={() => void saveDraft()}>{saving ? "Saving..." : "Save changes"}</button><button className="button" disabled={!dirty || saving || readingFile} onClick={discardDraft}>Discard draft</button></div><p>{saveMessage || (readingFile ? "Reading file..." : dirty ? "Unsaved changes" : "No unsaved changes")}</p>{dirty && baseline.current?.updatedAt !== order.updatedAt && <p>The order has changed. Your draft is shown above. Discard the draft to review the latest saved values before editing again.</p>}</section>}
     <section className="detail-summary"><div><span>Current status</span><StatusPill status={order.status} /></div><div><span>Last updated</span><strong>{formatDate(order.updatedAt, true)}</strong></div></section>
-    <section className="detail-section"><h3>Quick actions</h3><div className="status-actions">{following && <button className="button primary" onClick={() => onStatus(following)}>Move to {statusLabels[following]}</button>}{admin && <button className="button issue-button" onClick={() => onStatus("issue")}>Mark issue</button>}{admin && order.status === "issue" && <button className="button secondary" onClick={() => onStatus("sent_for_sewing")}>Resolve issue</button>}<a className="button whatsapp" href={whatsappLink(order)} target="_blank">Open WhatsApp</a></div></section>
-    <section className="detail-section"><h3>Customer and order</h3><div className="field-grid"><Field label="Order number" value={`#${order.orderNumber}`} /><Field label="Source" value={source} /><Field label="Order date" value={formatDate(order.orderDate, true)} /><Field label="Payment method" value={paymentMethod} />{isCod && <Field label="Collection instruction" value="COD — collect payment on delivery" />}<Editable label="Customer name" value={order.customerName} disabled={!admin} onChange={(value) => onUpdate({ customerName: value })} /><Editable label="Phone" value={order.phone} disabled={!admin} onChange={(value) => onUpdate({ phone: value })} /><Editable wide label="Address" value={order.address} disabled={!admin} onChange={(value) => onUpdate({ address: value })} /></div></section>
+    <section className="detail-section"><h3>Quick actions</h3><div className="status-actions">{following && <button className="button primary" disabled={dirty || saving || readingFile} onClick={() => onStatus(following)}>Move to {statusLabels[following]}</button>}{admin && <button className="button issue-button" disabled={dirty || saving || readingFile} onClick={() => onStatus("issue")}>Mark issue</button>}{admin && order.status === "issue" && <button className="button secondary" disabled={dirty || saving || readingFile} onClick={() => onStatus("sent_for_sewing")}>Resolve issue</button>}<a className="button whatsapp" href={whatsappLink(order)} target="_blank">Open WhatsApp</a></div></section>
+    <section className="detail-section"><h3>Customer and order</h3><div className="field-grid"><Field label="Order number" value={`#${order.orderNumber}`} /><Field label="Source" value={source} /><Field label="Order date" value={formatDate(order.orderDate, true)} /><Field label="Payment method" value={paymentMethod} />{isCod && <Field label="Collection instruction" value="COD — collect payment on delivery" />}<Editable label="Customer name" value={displayOrder.customerName} disabled={!admin || saving} onChange={(value) => editDraft({ customerName: value })} /><Editable label="Phone" value={displayOrder.phone} disabled={!admin || saving} onChange={(value) => editDraft({ phone: value })} /><Editable wide label="Address" value={displayOrder.address} disabled={!admin || saving} onChange={(value) => editDraft({ address: value })} /></div></section>
     {order.salesChannel === "tiktok" && <section className="detail-section"><h3>TikTok order file</h3><div className="field-grid"><div className="field wide"><label>Attached file</label>{missingTikTokAttachment ? <span>This earlier attachment is unavailable. Upload it again below.</span> : messageLink ? <a href={messageLink} download={messageDownloadName} rel="noreferrer">{messageDownloadName || "Download TikTok order file"}</a> : <span>No file attached</span>}</div>{admin && <div className="field wide"><FileDropZone accept="audio/*,video/*,application/pdf,image/png,image/jpeg,image/webp,.txt,.doc,.docx" title={order.tikTokFileDataUrl ? "Replace TikTok file" : "Upload TikTok file"} description="Choose or drop the customer's audio, video, or document" selectedName={order.tikTokFileDataUrl ? order.tikTokFileName : undefined} onFile={uploadTikTokOrderFile} className="compact-file-drop" /></div>}</div></section>}
-    <section className="detail-section"><h3>Plushie details</h3><div className="field-grid"><Editable label="Product name" value={order.product} disabled={!admin} onChange={(value) => onUpdate({ product: value })} /><Editable label="Character" value={order.character} disabled={!admin} onChange={(value) => onUpdate({ character: value })} /><Editable label="Set indicator" value={order.setIndicator ?? ""} disabled={!admin} onChange={(value) => onUpdate({ setIndicator: value })} /><Editable label="ID website link" value={order.idWebsiteLink ?? ""} disabled={!admin} onChange={(value) => onUpdate({ idWebsiteLink: value })} /><Editable label="Voice length" value={String(order.voiceLength || "")} disabled={!admin} onChange={(value) => onUpdate({ voiceLength: Number(value) || 0 })} /><Editable label="Plush name" value={order.plushName} disabled={!admin} onChange={(value) => onUpdate({ plushName: value })} /><Editable wide label="Remark" value={order.remark ?? ""} disabled={!admin} onChange={(value) => onUpdate({ remark: value })} /><Editable wide textarea label="Meaningful note" value={order.meaningfulNote} disabled={!admin} onChange={(value) => onUpdate({ meaningfulNote: value })} /><div className="field wide"><label>Meaningful message</label>{missingTikTokAttachment ? <span>Attachment needs to be uploaded again in the TikTok order file section.</span> : messageLink ? <a href={messageLink} download={messageDownloadName} target={messageDownloadName ? undefined : "_blank"} rel="noreferrer">{messageDownloadName ? "Download customer message" : "Open customer message"}</a> : <span>{order.salesChannel === "tiktok" ? "No TikTok file uploaded" : "Not provided"}</span>}</div><div className="field"><label>Voice upload</label>{admin ? <select value={order.voiceUploadStatus} onChange={(event) => onUpdate({ voiceUploadStatus: event.target.value as Order["voiceUploadStatus"] })}><option value="missing">Missing</option><option value="received">Received</option><option value="checked">Checked</option></select> : <strong>{order.voiceUploadStatus}</strong>}</div></div></section>
-    <section className="detail-section"><h3>Delivery</h3><div className="field-grid"><Field label="Shipping method" value={order.shippingMethod || "Not imported"} /><Editable label="Courier" value={order.courier} disabled={!admin} placeholder="J&T Express" onChange={(value) => onUpdate({ courier: value })} /><Editable label="Tracking number" value={order.trackingNumber} disabled={!admin} placeholder="Enter tracking number" onChange={(value) => onUpdate({ trackingNumber: value })} /></div></section>
-    <section className="detail-section"><h3>Tailor / packing photo</h3><div className="photo-field">{order.photoDataUrl ? <img src={order.photoDataUrl} alt="Tailor or packing evidence" /> : <div className="photo-placeholder">No photo uploaded</div>}{admin && <FileDropZone accept="image/*" title={order.photoDataUrl ? "Replace photo" : "Upload photo"} description="Click or drop an image" selectedName={order.photoName} onFile={(file) => uploadPhoto(file ?? undefined)} className="photo-file-drop" />}</div></section>
-    <section className="detail-section"><h3>Internal notes</h3><textarea className="notes" value={order.internalNotes} disabled={!admin} onChange={(event) => onUpdate({ internalNotes: event.target.value })} placeholder="Add notes visible to your team..." /></section>
+    <section className="detail-section"><h3>Plushie details</h3><div className="field-grid"><Editable label="Product name" value={displayOrder.product} disabled={!admin || saving} onChange={(value) => editDraft({ product: value })} /><Editable label="Character" value={displayOrder.character} disabled={!admin || saving} onChange={(value) => editDraft({ character: value })} /><Editable label="Set indicator" value={displayOrder.setIndicator ?? ""} disabled={!admin || saving} onChange={(value) => editDraft({ setIndicator: value })} /><Editable label="ID website link" value={displayOrder.idWebsiteLink ?? ""} disabled={!admin || saving} onChange={(value) => editDraft({ idWebsiteLink: value })} /><Editable label="Voice length" value={String(displayOrder.voiceLength || "")} disabled={!admin || saving} onChange={(value) => editDraft({ voiceLength: Number(value) || 0 })} /><Editable label="Plush name" value={displayOrder.plushName} disabled={!admin || saving} onChange={(value) => editDraft({ plushName: value })} /><Editable wide label="Remark" value={displayOrder.remark ?? ""} disabled={!admin || saving} onChange={(value) => editDraft({ remark: value })} /><Editable wide textarea label="Meaningful note" value={displayOrder.meaningfulNote} disabled={!admin || saving} onChange={(value) => editDraft({ meaningfulNote: value })} /><div className="field wide"><label>Meaningful message</label>{missingTikTokAttachment ? <span>Attachment needs to be uploaded again in the TikTok order file section.</span> : messageLink ? <a href={messageLink} download={messageDownloadName} target={messageDownloadName ? undefined : "_blank"} rel="noreferrer">{messageDownloadName ? "Download customer message" : "Open customer message"}</a> : <span>{order.salesChannel === "tiktok" ? "No TikTok file uploaded" : "Not provided"}</span>}</div><div className="field"><label>Voice upload</label>{admin ? <select disabled={saving} value={displayOrder.voiceUploadStatus} onChange={(event) => editDraft({ voiceUploadStatus: event.target.value as Order["voiceUploadStatus"] })}><option value="missing">Missing</option><option value="received">Received</option><option value="checked">Checked</option></select> : <strong>{order.voiceUploadStatus}</strong>}</div></div></section>
+    <section className="detail-section"><h3>Delivery</h3><div className="field-grid"><Field label="Shipping method" value={displayOrder.shippingMethod || "Not imported"} /><Editable label="Courier" value={displayOrder.courier} disabled={!admin || saving} placeholder="J&T Express" onChange={(value) => editDraft({ courier: value })} /><Editable label="Tracking number" value={displayOrder.trackingNumber} disabled={!admin || saving} placeholder="Enter tracking number" onChange={(value) => editDraft({ trackingNumber: value })} /></div></section>
+    <section className="detail-section"><h3>Tailor / packing photo</h3><div className="photo-field">{displayOrder.photoDataUrl ? <img src={displayOrder.photoDataUrl} alt="Tailor or packing evidence" /> : <div className="photo-placeholder">No photo uploaded</div>}{admin && <FileDropZone accept="image/*" title={displayOrder.photoDataUrl ? "Replace photo" : "Upload photo"} description="Click or drop an image" selectedName={displayOrder.photoName} onFile={(file) => uploadPhoto(file ?? undefined)} className="photo-file-drop" />}</div></section>
+    <section className="detail-section"><h3>Internal notes</h3><textarea className="notes" value={displayOrder.internalNotes} disabled={!admin || saving} onChange={(event) => editDraft({ internalNotes: event.target.value })} placeholder="Add notes visible to your team..." /></section>
     <section className="detail-section"><h3>Status history</h3><div className="history">{[...order.statusHistory].reverse().map((event) => <div key={event.id}><span></span><div><strong>{statusLabels[event.status]}</strong><p>{event.changedBy} | {formatDate(event.changedAt, true)}</p>{event.note && <small>{event.note}</small>}</div></div>)}</div></section>
     {!admin && <p className="permission-note">Signed in as Staff. You can only move orders to the next stage.</p>}
   </div></aside></div>;

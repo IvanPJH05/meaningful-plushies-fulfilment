@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { writeOrdersThenSyncAccounting, type OrderSaveOutcome } from "./order-save-outcome";
 import type { AccountingBankStatementLine, AccountingCategory, AccountingDocument, AccountingLedgerEntry, AccountingTransaction, AiAccountantReview, CommissionStatus, ContentIdeaItem, ContentIdeaReference, ContentPlanItem, CreatorCommission, CreatorPayout, CreatorProfile, CreatorStatus, CreatorTier, DashboardAccount, EnvelopePrintSettings, ManualOrder, MetaCapiLog, MetaCapiSettings, Order, PaymentProcessorSetting, SalesConsumptionMapping, SalesFeeSetting, StockSetting, UserRole, WhatsAppLead } from "./types";
 
 export type DashboardSession = DashboardAccount & { token: string };
@@ -267,8 +268,8 @@ export async function upsertSharedOrders(
   orders: Order[],
   options?: { syncSales?: boolean },
   client: SupabaseClient = requireSupabase(),
-) {
-  if (!orders.length) return;
+): Promise<OrderSaveOutcome> {
+  if (!orders.length) return { saved: true, accountingWarning: null };
   // The browser cache deliberately excludes inline files. When a cached order
   // is later moved to another fulfilment stage, keep any server-side file
   // instead of treating that lightweight cache entry as a file removal.
@@ -330,13 +331,16 @@ export async function upsertSharedOrders(
   // uploaded files. Smaller writes keep large CSV imports below Postgres's
   // statement timeout while preserving the same upsert behaviour.
   const batchSize = 25;
-  for (let start = 0; start < rows.length; start += batchSize) {
-    const { error } = await client
-      .from("fulfilment_orders")
-      .upsert(rows.slice(start, start + batchSize), { onConflict: "id" });
-    if (error) throw error;
-  }
-  if (options?.syncSales !== false) await syncFulfilmentSalesToMonthlyJournal(orders);
+  return writeOrdersThenSyncAccounting(async () => {
+    for (let start = 0; start < rows.length; start += batchSize) {
+      const { error } = await client
+        .from("fulfilment_orders")
+        .upsert(rows.slice(start, start + batchSize), { onConflict: "id" });
+      if (error) throw error;
+    }
+  }, async () => {
+    if (options?.syncSales !== false) await syncFulfilmentSalesToMonthlyJournal(orders);
+  });
 }
 
 export async function deleteSharedOrders(ids: string[]) {

@@ -30,13 +30,15 @@ export async function syncTikTokOrdersByIds(orderIds: string[], actor = "TikTok 
     return !previous || JSON.stringify(comparableOrder(previous)) !== JSON.stringify(comparableOrder(order));
   });
 
+  let accountingWarning: string | null = null;
   if (changedOrders.length) {
-    await upsertSharedOrders(changedOrders);
+    const saved = await upsertSharedOrders(changedOrders);
+    accountingWarning = saved.accountingWarning;
     await insertSharedActivity({
       id: `tiktok-sync-${Date.now()}`,
       orderNumber: changedOrders.length === 1 ? changedOrders[0].orderNumber : undefined,
       action: "TikTok order synced",
-      detail: `${syncedOrders.length} TikTok order${syncedOrders.length === 1 ? "" : "s"} checked, ${changedOrders.length} updated. Plushie details are still manual.`,
+      detail: `${syncedOrders.length} TikTok order${syncedOrders.length === 1 ? "" : "s"} checked, ${changedOrders.length} updated. Plushie details are still manual.${accountingWarning ? ` ${accountingWarning}` : ""}`,
       actor,
       createdAt: new Date().toISOString(),
     });
@@ -49,5 +51,7 @@ export async function syncTikTokOrdersByIds(orderIds: string[], actor = "TikTok 
     updated: changedOrders.length,
     failed: Math.max(0, uniqueOrderIds.length - syncedOrders.length),
     orderNumbers: syncedOrders.map((order) => order.orderNumber),
+    accountingWarning,
+    accountingRetryOrderIds: accountingWarning ? changedOrders.map((order) => order.id) : [],
   };
 }
