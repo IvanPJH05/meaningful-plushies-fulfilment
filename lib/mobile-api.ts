@@ -48,15 +48,10 @@ export async function mobileLogin(username: string, password: string): Promise<M
 }
 
 export async function transitionMobileOrder(orderId: string, fromStatus: OrderStatus, toStatus: OrderStatus, actor: string) {
-  const client = adminClient();
-  const { data: row, error: readError } = await client.from("fulfilment_orders").select("id,data,status,updated_at").eq("id", orderId).maybeSingle();
-  if (readError || !row) throw new Error("ORDER_NOT_FOUND");
-  if (row.status !== fromStatus) throw new Error("ORDER_CHANGED");
-  const changedAt = new Date().toISOString();
-  const order = row.data as Order;
-  const updated: Order = { ...order, status: toStatus, updatedAt: changedAt, statusHistory: [...(order.statusHistory ?? []), { id: `${order.id}-${changedAt}`, status: toStatus, changedAt, changedBy: actor }] };
-  const { data: changed, error } = await client.from("fulfilment_orders").update({ status: toStatus, updated_at: changedAt, data: updated }).eq("id", orderId).eq("status", fromStatus).eq("updated_at", row.updated_at).select("data").maybeSingle();
-  if (error) throw error;
-  if (!changed) throw new Error("ORDER_CHANGED");
-  return mobileOrder(changed.data as Order);
+  const { data, error } = await adminClient().rpc("transition_fulfilment_orders", {
+    p_transitions: [{ orderId, fromStatus, toStatus }], p_actor: actor,
+  });
+  if (error) throw new Error(error.message);
+  if (!data?.[0]) throw new Error("ORDER_NOT_FOUND");
+  return mobileOrder(data[0] as Order);
 }
