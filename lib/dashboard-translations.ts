@@ -1,6 +1,7 @@
 // Interface copy only. Order/customer records are never translated.
 // Tuple order: Bahasa Melayu, Bahasa Indonesia.
 export const dashboardTranslations: Readonly<Record<string, readonly [string, string]>> = {
+  "Click to select. Double-click to view.": ["Klik untuk memilih. Klik dua kali untuk melihat.", "Klik untuk memilih. Klik dua kali untuk melihat."],
   "Birth certificate details": ["Butiran sijil kelahiran", "Detail akta kelahiran"],
   "Certificate code": ["Kod sijil", "Kode akta"],
   "Birth date": ["Tarikh lahir", "Tanggal lahir"],
