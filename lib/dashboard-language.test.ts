@@ -35,3 +35,15 @@ test("both dictionaries have valid strings and preserve interpolation tokens", (
     }
   }
 });
+
+test("missing legacy status labels cannot crash any language", () => {
+  const legacyLabels: Record<string, string | undefined> = { shipped: "Shipped" };
+  for (const language of ["en", "ms", "id"] as const) {
+    const t = translator(language, dashboardTranslations);
+    assert.equal(t(legacyLabels["legacy_status"]), "");
+    assert.equal(t(null), "");
+    assert.equal(t(undefined, { workspace: "Fulfilment" }), "");
+    assert.ok(t(legacyLabels["legacy_status"] ?? "Unknown"));
+    assert.equal(t(""), "");
+  }
+});
