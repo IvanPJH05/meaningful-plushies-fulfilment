@@ -52,7 +52,11 @@ export function BatchFulfilmentWorkspace({ token, initialBatchId, onOrdersChange
   async function mutate(action: string, payload: object = {}, current = detail) {
     if (!current) throw new Error("Choose a batch first.");
     const result = await batchRequest(token, undefined, { action, batchId: current.batch.id, version: current.batch.version, payload });
-    setDetail(result); setGenerated(false); await refreshList(); return result;
+    setDetail(result); setGenerated(false);
+    // The mutation already returns current progress. Avoid another batch-list
+    // request after every card; staff can refresh to see changes to other batches.
+    setBatches(current => current.map(batch => batch.id === result.batch.id ? { ...batch, ...result.batch, orderCount: result.orders.length, writtenCount: result.members.filter(member => member.nfc_written_at).length } : batch));
+    return result;
   }
   async function run(action: () => Promise<void>) {
     if (operation.current) return;
@@ -97,13 +101,14 @@ export function BatchFulfilmentWorkspace({ token, initialBatchId, onOrdersChange
     await mutate("advance", { stage: "audio" });
     setNotice(t("Audio ZIP download started."));
   }
-  const stage = detail?.batch.stage, step = batchStages.indexOf(stage ?? "labels"), missingLabels = detail?.orders.filter(order => batchNeedsLabel(order) && !order.shippingLabelUrl) ?? [];
+  const stage = detail?.batch.stage, step = stage ? batchStages.indexOf(stage) : -1, missingLabels = detail?.orders.filter(order => batchNeedsLabel(order) && !order.shippingLabelUrl) ?? [];
   const written = new Set(detail?.members.filter(member => member.nfc_written_at).map(member => member.order_id));
   return <section className="batch-workspace"><div className="batch-picker card"><label>{t("Choose batch")}<select value={id} disabled={busy || loading} onChange={event => setId(event.target.value)}><option value="">{t("Choose a batch")}</option>{batches.map(batch => <option key={batch.id} value={batch.id}>{t("Batch")} {batch.number} · {batch.orderCount} {t("orders")} · {t(labels[batchStages.indexOf(batch.stage)])}</option>)}</select></label><button className="button secondary" disabled={busy || loading} onClick={() => void run(async () => { await refreshList(); if (id) await openBatch(id); })}>{t("Refresh")}</button></div>
     {error && <p className="batch-error" role="alert">{t(error)}</p>}{notice && <p role="status">{notice}</p>}
+    <ol className="batch-progress">{labels.slice(0, 5).map((label, index) => <li key={label} className={step > index ? "done" : step === index ? "current" : ""} aria-current={step === index ? "step" : undefined}><span>{index + 1}</span>{t(label)}</li>)}</ol>
     {!id && !loading && <div className="card batch-step"><h2>{t("No batch selected")}</h2><p>{t("Select orders in Fulfilment, then choose Move to Batch Fulfilment.")}</p></div>}
     {loading && <p role="status">{t("Loading batch...")}</p>}
-    {detail && <><ol className="batch-progress">{labels.slice(0, 5).map((label, index) => <li key={label} className={step > index ? "done" : step === index ? "current" : ""} aria-current={step === index ? "step" : undefined}><span>{index + 1}</span>{t(label)}</li>)}</ol><div className="card batch-step"><p>{t("Batch")} {detail.batch.number} · {detail.orders.length} {t("orders")}</p><h2>{t(labels[step])}</h2>
+    {detail && <><div className="card batch-step"><p>{t("Batch")} {detail.batch.number} · {detail.orders.length} {t("orders")}</p><h2>{t(labels[step])}</h2>
       {stage === "labels" && <><p>{t("Upload the courier PDFs. Only orders in this batch will be paired.")}</p><input type="file" accept="application/pdf,.pdf" disabled={busy} aria-label={t("Upload shipping labels")} onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void run(() => upload(file)); }} /><p>{missingLabels.length ? `${missingLabels.length} ${t("orders still need shipping labels")}` : t("All shipping labels are ready.")}</p><button className="button primary" disabled={busy || Boolean(missingLabels.length)} onClick={() => void run(async () => { await mutate("advance", { stage }); })}>{t("Next step")}</button></>}
       {stage === "printing" && <><p>{t("Generate the combined PDF, then print it before continuing.")}</p><div className="batch-buttons"><button className="button primary" disabled={busy} onClick={() => void run(async () => { if (!await onPrint(detail.orders)) throw new Error("PDF generation failed. Try again."); setGenerated(true); })}>{t("Generate packing slips + labels")}</button><button className="button secondary" disabled={busy || !generated} onClick={() => void run(async () => { await mutate("advance", { stage }); })}>{t("Printed — next step")}</button></div></>}
       {stage === "envelopes" && <><p>{t("Check every envelope name, then generate the PDF.")}</p><div className="batch-name-grid">{detail.orders.map(order => <label key={order.id}>#{order.orderNumber}<input maxLength={60} disabled={busy} value={names[order.id] ?? ""} onChange={event => { setNames(current => ({ ...current, [order.id]: event.target.value })); setGenerated(false); }} /></label>)}</div><div className="batch-buttons"><button className="button primary" disabled={busy || detail.orders.some(order => !names[order.id]?.trim())} onClick={() => void run(async () => { await mutate("envelope_names", { names }); if (!await onEnvelopes(detail.orders.map(order => names[order.id].trim()))) throw new Error("Envelope generation failed. Try again."); setGenerated(true); })}>{t("Generate all envelopes")}</button><button className="button secondary" disabled={busy || !generated} onClick={() => void run(async () => { await mutate("advance", { stage }); })}>{t("Envelopes done — next step")}</button></div></>}

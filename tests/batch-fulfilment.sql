@@ -63,8 +63,12 @@ begin
   exception when others then if sqlerrm<>'ORDER_STAGE_CHANGED' then raise; end if; end;
   if (select nfc_written_at from public.fulfilment_batch_orders where order_id=second_id) is not null then raise exception 'Failed completion recorded final NFC'; end if;
   perform public.transition_fulfilment_orders(jsonb_build_array(jsonb_build_object('orderId',second_id,'fromStatus','packed','toStatus','uploading_audio')),'Batch test');
-  perform public.mutate_fulfilment_batch('nfc',batch,v,jsonb_build_object('orderId',second_id),'Batch test');
+  -- Another operator's confirmed card may change the batch version while this
+  -- reader is writing. Independent confirmations must merge rather than fail.
+  perform public.mutate_fulfilment_batch('nfc',batch,v-1,jsonb_build_object('orderId',second_id),'Batch test');
   if (select stage from public.fulfilment_batches where id=batch)<>'complete' or (select count(*) from public.fulfilment_orders where id in(first_id,second_id) and status='sent_for_sewing')<>2 then raise exception 'Final NFC did not complete atomically'; end if;
+  perform public.mutate_fulfilment_batch('nfc',batch,v-1,jsonb_build_object('orderId',second_id),'Batch test');
+  if (select jsonb_array_length(data->'statusHistory') from public.fulfilment_orders where id=first_id)<>2 then raise exception 'Repeated NFC acknowledgement duplicated a stage change'; end if;
   if exists(select 1 from jsonb_array_elements(public.read_fulfilment_batch(batch)->'orders') o where o ? 'tikTokFileDataUrl' or o->>'meaningfulMessage' like 'data:%') then raise exception 'Batch response transferred inline media'; end if;
 end;
 $$;
