@@ -1,6 +1,19 @@
 // Interface copy only. Order/customer records are never translated.
 // Tuple order: Bahasa Melayu, Bahasa Indonesia.
 export const dashboardTranslations: Readonly<Record<string, readonly [string, string]>> = {
+  "Birth certificate details": ["Butiran sijil kelahiran", "Detail akta kelahiran"],
+  "Certificate code": ["Kod sijil", "Kode akta"],
+  "Birth date": ["Tarikh lahir", "Tanggal lahir"],
+  "Birth certificate synced": ["Sijil kelahiran disegerakkan", "Akta kelahiran tersinkron"],
+  "Birth certificate update queued": ["Kemas kini sijil kelahiran dalam giliran", "Pembaruan akta kelahiran dalam antrean"],
+  "Birth certificate update needs attention; retrying automatically": ["Kemas kini sijil memerlukan perhatian; mencuba semula secara automatik", "Pembaruan akta perlu diperiksa; mencoba lagi secara otomatis"],
+  "No birth certificate linked": ["Tiada sijil kelahiran dipautkan", "Belum ada akta kelahiran tertaut"],
+  "Certificate will sync after you edit its details": ["Sijil akan disegerakkan selepas butirannya disunting", "Akta akan disinkronkan setelah detailnya diedit"],
+  "Checking certificate sync...": ["Menyemak penyegerakan sijil...", "Memeriksa sinkronisasi akta..."],
+  "Could not check certificate sync.": ["Tidak dapat menyemak penyegerakan sijil.", "Tidak dapat memeriksa sinkronisasi akta."],
+  "Save changes to update the linked birth certificate automatically.": ["Simpan perubahan untuk mengemas kini sijil kelahiran yang dipautkan secara automatik.", "Simpan perubahan untuk memperbarui akta kelahiran tertaut secara otomatis."],
+  "Sync certificates": ["Segerakkan sijil", "Sinkronkan akta"],
+  "Certificates are created automatically when customisation details are complete. Select orders below to retry a sync.": ["Sijil dicipta secara automatik apabila butiran penyesuaian lengkap. Pilih pesanan di bawah untuk mencuba penyegerakan semula.", "Akta dibuat secara otomatis saat detail kustomisasi lengkap. Pilih pesanan di bawah untuk mencoba sinkronisasi lagi."],
   "Batch Fulfilment": ["Pemenuhan Mengikut Kelompok", "Pemenuhan per Batch"],
   "Audio ZIP download started.": ["Muat turun ZIP audio bermula.", "Unduhan ZIP audio dimulai."],
   "Select up to 200 New Order or Uploading Audio orders.": ["Pilih sehingga 200 pesanan Baharu atau Memuat Naik Audio.", "Pilih hingga 200 pesanan Baru atau Mengunggah Audio."],
