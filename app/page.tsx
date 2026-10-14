@@ -9841,7 +9841,7 @@ function SourceFilterSelect({ value, onChange }: { value: SourceFilter; onChange
 
 function StatusPill({ status }: { status: OrderStatus }) {
   const { t } = useLanguage();
-  return <span className={`status-pill status-${status}`}>{t(statusLabels[status])}</span>;
+  return <span className={`status-pill status-${status}`}>{t(statusLabels[status] ?? "Unknown")}</span>;
 }
 
 function FileDropZone({ accept, title, description, selectedName, className = "", onFile }: { accept: string; title: string; description?: string; selectedName?: string; className?: string; onFile: (file: File | null) => void }) {
