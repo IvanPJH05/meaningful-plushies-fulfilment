@@ -6,6 +6,7 @@ const textFields = new Set([
   "customerName", "phone", "address", "product", "character", "setIndicator",
   "idWebsiteLink", "plushName", "remark", "meaningfulNote", "internalNotes",
   "courier", "trackingNumber", "photoName", "tikTokFileName", "tikTokFileType",
+  "plushGender", "plushBirthDate", "plushBirthPlace", "plushFavouritePerson", "plushBelongsTo",
 ]);
 const assetFields = new Set(["photoDataUrl", "tikTokFileDataUrl"]);
 export type OrderEdit = { orderId: string; expectedUpdatedAt: string; patch: Partial<Order> };

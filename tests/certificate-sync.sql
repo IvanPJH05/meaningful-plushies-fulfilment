@@ -1,0 +1,30 @@
+begin;
+do $$
+declare rid text := 'certificate-sync-test-' || gen_random_uuid()::text; rev integer;
+begin
+  insert into public.fulfilment_orders(id,order_number,order_date,data) values(rid,'CERTIFICATE-TEST',now(), jsonb_build_object('id',rid,'certificateCode','TEST-NO-SHOPIFY-WRITE','plushName','First'));
+  select revision into rev from public.certificate_sync_jobs where order_id = rid;
+  assert rev = 1, 'Creation must queue once';
+  update public.fulfilment_orders set data = data || '{"trackingNumber":"QA"}' where id = rid;
+  select revision into rev from public.certificate_sync_jobs where order_id = rid;
+  assert rev = 1, 'Unrelated fields must not queue';
+  update public.certificate_sync_jobs set lease_token = gen_random_uuid(), lease_until = now() + interval '5 minutes' where order_id = rid;
+  update public.fulfilment_orders set data = data || '{"plushName":"Latest","plushBirthPlace":""}' where id = rid;
+  select revision into rev from public.certificate_sync_jobs where order_id = rid;
+  assert rev = 2, 'Certificate edits must queue the latest revision';
+  assert exists(select 1 from public.certificate_sync_jobs where order_id=rid and lease_until>now()), 'Edit must not steal an active worker lease';
+  update public.certificate_sync_jobs set synced_revision=1, lease_token=null, lease_until=null where order_id=rid;
+  assert exists(select 1 from public.certificate_sync_jobs where order_id=rid and revision>synced_revision), 'Old acknowledgement must not clear newer edits';
+  update public.fulfilment_orders set data = data || '{"plushName":"Latest"}' where id = rid;
+  select revision into rev from public.certificate_sync_jobs where order_id = rid;
+  assert rev = 2, 'Same value must not queue';
+  insert into public.fulfilment_orders(id,order_number,order_date,data) values(rid || '-unlinked','CERTIFICATE-TEST',now(), jsonb_build_object('id',rid || '-unlinked','plushName','No certificate'));
+  assert not exists(select 1 from public.certificate_sync_jobs where order_id=rid || '-unlinked'), 'Unlinked order must not create a certificate';
+  insert into public.fulfilment_orders(id,order_number,order_date,data) values(rid || '-shell','TT-TEST',now(),jsonb_build_object('salesChannel','tiktok','certificateCode','TEST-SHELL','plushName',''));
+  assert not exists(select 1 from public.certificate_sync_jobs where order_id=rid || '-shell'), 'TikTok shell must wait for customisation';
+  update public.fulfilment_orders set data=data || '{"plushName":"QA","meaningfulMessage":"Gender: Female"}' where id=rid || '-shell';
+  assert exists(select 1 from public.certificate_sync_jobs where order_id=rid || '-shell'), 'TikTok details must queue automatic creation';
+  insert into public.fulfilment_orders(id,order_number,order_date,data) values(rid || '-charm','TT-CHARM',now(),jsonb_build_object('salesChannel','tiktok','certificateCode','LEGACY-CHARM','plushName','QA','product','Meaningful Plush Charms'));
+  assert not exists(select 1 from public.certificate_sync_jobs where order_id=rid || '-charm'), 'Plush Charm must never queue a certificate';
+end $$;
+rollback;
