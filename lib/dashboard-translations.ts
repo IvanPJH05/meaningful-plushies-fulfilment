@@ -1,6 +1,7 @@
 // Interface copy only. Order/customer records are never translated.
 // Tuple order: Bahasa Melayu, Bahasa Indonesia.
 export const dashboardTranslations: Readonly<Record<string, readonly [string, string]>> = {
+  "Clear search": ["Kosongkan carian", "Hapus pencarian"],
   "(optional)": [
     "(pilihan)",
     "(opsional)"
