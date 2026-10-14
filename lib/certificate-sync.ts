@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Prisma } from "@prisma/client";
-import { prisma } from "../src/infrastructure/database/prisma";
+import { mobileServiceClient } from "./mobile-api";
 import type { Order } from "./types";
 import { certificateDetails, retryDelaySeconds } from "./certificate-sync-fields";
 import { isPlushCharmOrder } from "./plush-charm";
@@ -29,22 +28,15 @@ export async function syncLinkedCertificate(order: Order) {
   const domain = shopDomain();
   if (!domain) throw new Error("Shopify certificate service is not configured.");
   const type = process.env.SHOPIFY_CERTIFICATE_METAOBJECT_TYPE || "version_1_certs";
-  const sessions = await prisma.$queryRaw<Array<{ certificate_code: string; certificate_metaobject_id: string }>>(Prisma.sql`
-    select certificate_code, certificate_metaobject_id from public.customisation_sessions
-    where fulfilment_order_id = ${order.id}
-       or (id::text = ${order.customisationSessionId || ""} and fulfilment_order_id = ${order.id})
-  `);
+  const { data: link, error: linkError } = await mobileServiceClient().rpc("read_certificate_sync_link", { p_order: order.id, p_code: order.certificateCode || "" });
+  if (linkError) throw new Error("The certificate link could not be checked.");
+  const sessions = (link?.sessions || []) as Array<{ certificate_code: string; certificate_metaobject_id: string }>;
   if (sessions.length > 1) throw new Error("More than one customisation is linked. Review the certificate link.");
   const session = sessions[0];
   const code = order.certificateCode || session?.certificate_code || "";
   if (order.certificateCode && session?.certificate_code && order.certificateCode !== session.certificate_code) throw new Error("The order and customisation certificate links disagree.");
   if (!code && !session?.certificate_metaobject_id) throw new Error("No birth certificate is linked to this order.");
-  if (code) {
-    const duplicates = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-      select id from public.fulfilment_orders where id <> ${order.id} and data->>'certificateCode' = ${code} limit 1
-    `);
-    if (duplicates.length) throw new Error("This certificate is linked to another order. Review the link.");
-  }
+  if (link?.duplicate) throw new Error("This certificate is linked to another order. Review the link.");
   type Result = { errors?: unknown[]; data?: { metaobject?: Metaobject | null; metaobjectByHandle?: Metaobject | null; metaobjectDefinitionByType?: { fieldDefinitions: Array<{ key: string; name: string }> } } };
   const id = session?.certificate_metaobject_id;
   const result = checkResponse(await shopifyGraphql<Result>(domain, id ? certificateLookupQuery : certificateHandleQuery, id
@@ -88,36 +80,20 @@ export async function syncLinkedCertificate(order: Order) {
 /** A lease serializes each certificate; edits during a write remain queued. */
 export async function processCertificateSync() {
   const lease = randomUUID();
-  const jobs = await prisma.$queryRaw<Array<{ order_id: string; revision: number; attempts: number }>>(Prisma.sql`
-    with due as (
-      select order_id from public.certificate_sync_jobs where revision > synced_revision
-        and next_attempt_at <= now() and (lease_until is null or lease_until < now())
-      order by next_attempt_at limit 3 for update skip locked
-    ) update public.certificate_sync_jobs j set lease_token = ${lease}::uuid,
-        lease_until = now() + interval '5 minutes', attempts = attempts + 1
-      from due where j.order_id = due.order_id returning j.order_id, j.revision, j.attempts
-  `);
+  const client = mobileServiceClient();
+  const { data, error } = await client.rpc("claim_certificate_sync", { p_lease: lease });
+  if (error) throw new Error("The certificate queue could not be claimed.");
+  const jobs = (data || []) as Array<{ order_id: string; revision: number; attempts: number; data: Order }>;
   const results = await Promise.all(jobs.map(async job => {
     try {
-      const rows = await prisma.$queryRaw<Array<{ data: Order }>>(Prisma.sql`
-        select data - 'photoDataUrl' - 'tikTokFileDataUrl' as data from public.fulfilment_orders where id = ${job.order_id}
-      `);
-      if (!rows[0]) throw new Error("Order was removed.");
-      await syncLinkedCertificate(rows[0].data);
-      await prisma.$executeRaw(Prisma.sql`
-        update public.certificate_sync_jobs set synced_revision = ${job.revision},
-          synced_at = now(), last_error = null, attempts = 0, lease_token = null, lease_until = null, next_attempt_at = now()
-        where order_id = ${job.order_id} and lease_token = ${lease}::uuid
-      `);
+      await syncLinkedCertificate(job.data);
+      const { error: finishError } = await client.rpc("finish_certificate_sync", { p_order: job.order_id, p_lease: lease, p_revision: job.revision, p_error: null, p_delay: 30 });
+      if (finishError) throw new Error("The certificate update acknowledgement could not be saved.");
       return { ok: true };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Certificate update failed.";
-      await prisma.$executeRaw(Prisma.sql`
-        update public.certificate_sync_jobs set last_error = ${message.slice(0, 300)},
-          lease_token = null, lease_until = null,
-          next_attempt_at = case when revision > ${job.revision} then now() else now() + ${retryDelaySeconds(job.attempts)} * interval '1 second' end
-        where order_id = ${job.order_id} and lease_token = ${lease}::uuid
-      `);
+      const { error: retryError } = await client.rpc("finish_certificate_sync", { p_order: job.order_id, p_lease: lease, p_revision: job.revision, p_error: message, p_delay: retryDelaySeconds(job.attempts) });
+      if (retryError) throw new Error("The certificate retry could not be saved.");
       return { ok: false };
     }
   }));

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ query: vi.fn(), execute: vi.fn(), graphql: vi.fn() }));
-vi.mock("../src/infrastructure/database/prisma", () => ({ prisma: { $queryRaw: mocks.query, $executeRaw: mocks.execute } }));
+const mocks = vi.hoisted(() => ({ rpc: vi.fn(), graphql: vi.fn() }));
+vi.mock("../lib/mobile-api", () => ({ mobileServiceClient: () => ({ rpc: mocks.rpc }) }));
 vi.mock("../lib/shopify-orders", async importOriginal => ({ ...await importOriginal<object>(), shopifyGraphql: mocks.graphql }));
 import { syncLinkedCertificate, processCertificateSync } from "../lib/certificate-sync";
 import type { Order } from "../lib/types";
@@ -10,7 +10,7 @@ const keys = ["code", "order_number", "id_name", "gender", "born_on", "birthplac
 const object = { id: "gid://shopify/Metaobject/123", type: "version_1_certs", handle: "existing-original-handle", fields: [{ key: "code", value: order.certificateCode }, { key: "order_number", value: "#1886" }] };
 const definition = { fieldDefinitions: keys.map(key => ({ key, name: key })) };
 function prepare(linked = true) {
-  mocks.query.mockResolvedValueOnce(linked ? [{ certificate_code: order.certificateCode, certificate_metaobject_id: object.id }] : []).mockResolvedValueOnce([]);
+  mocks.rpc.mockResolvedValueOnce({ data: { sessions: linked ? [{ certificate_code: order.certificateCode, certificate_metaobject_id: object.id }] : [], duplicate: false }, error: null });
   mocks.graphql.mockResolvedValueOnce({ data: { metaobject: object, metaobjectByHandle: object, metaobjectDefinitionByType: definition } }).mockResolvedValueOnce({ data: { metaobjectUpsert: { metaobject: { id: object.id }, userErrors: [] } } });
 }
 beforeEach(() => { vi.resetAllMocks(); process.env.SHOPIFY_SHOP_DOMAIN = "fixture.myshopify.com"; });
@@ -37,7 +37,7 @@ describe("linked certificate synchronization", () => {
     await expect(syncLinkedCertificate(order)).rejects.toThrow("another order"); expect(mocks.graphql).toHaveBeenCalledTimes(1);
   });
   it("rejects duplicate links before contacting Shopify", async () => {
-    mocks.query.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: "other-order" }]);
+    mocks.rpc.mockResolvedValueOnce({ data: { sessions: [], duplicate: true }, error: null });
     await expect(syncLinkedCertificate(order)).rejects.toThrow("another order"); expect(mocks.graphql).not.toHaveBeenCalled();
   });
   it("reports access errors instead of acknowledging a successful sync", async () => {
@@ -45,16 +45,18 @@ describe("linked certificate synchronization", () => {
     await expect(syncLinkedCertificate(order)).rejects.toThrow("access was denied");
   });
   it("keeps failed work for automatic retry", async () => {
-    mocks.query.mockResolvedValueOnce([{ order_id: order.id, revision: 2, attempts: 1 }]).mockResolvedValueOnce([{ data: order }]).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    mocks.rpc.mockResolvedValueOnce({ data: [{ order_id: order.id, revision: 2, attempts: 1, data: order }], error: null }).mockResolvedValueOnce({ data: { sessions: [], duplicate: false }, error: null }).mockResolvedValueOnce({ error: null });
     mocks.graphql.mockResolvedValue(null);
     expect(await processCertificateSync()).toEqual({ processed: 1, failed: 1 });
-    const sql = mocks.execute.mock.calls[0][0];
-    expect(sql.strings.join("?")).toContain("last_error =");
-    expect(sql.strings.join("?")).not.toContain("synced_revision =");
+    const [name, args] = mocks.rpc.mock.calls[2];
+    expect(name).toBe("finish_certificate_sync");
+    expect(args.p_error).toContain("unavailable");
+    expect(args.p_revision).toBe(2);
+    expect(args.p_delay).toBe(30);
   });
   it("creates a TikTok certificate directly with quotes and backslashes intact", async () => {
     const tt = { ...order, salesChannel: "tiktok", orderNumber: "TT1321 586581292406506537", plushBirthPlace: "KL", plushName: 'My "Best" Plushie', meaningfulNote: 'Say "I love you" \\ always 💗' } as Order;
-    mocks.query.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    mocks.rpc.mockResolvedValueOnce({ data: { sessions: [], duplicate: false }, error: null });
     mocks.graphql.mockResolvedValueOnce({ data: { metaobjectByHandle: null, metaobjectDefinitionByType: definition } }).mockResolvedValueOnce({ data: { metaobjectUpsert: { metaobject: { id: object.id }, userErrors: [] } } });
     await syncLinkedCertificate(tt);
     const variables = mocks.graphql.mock.calls[1][2];
@@ -64,7 +66,7 @@ describe("linked certificate synchronization", () => {
     expect(variables.metaobject.fields).toContainEqual({ key: "id_name", value: tt.plushName });
   });
   it("waits for complete TikTok personalisation instead of creating an empty certificate", async () => {
-    mocks.query.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    mocks.rpc.mockResolvedValueOnce({ data: { sessions: [], duplicate: false }, error: null });
     mocks.graphql.mockResolvedValueOnce({ data: { metaobjectByHandle: null, metaobjectDefinitionByType: definition } });
     await expect(syncLinkedCertificate({ ...order, salesChannel: "tiktok", plushGender: "" } as Order)).rejects.toThrow("Complete the TikTok");
     expect(mocks.graphql).toHaveBeenCalledTimes(1);
