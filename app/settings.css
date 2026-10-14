@@ -1648,7 +1648,7 @@ body.print-sales-report .report-table th,
 /* Adapt to the space beside the sidebar, including browser zoom and split views. */
 .adaptive-orders-card { container-type: inline-size; min-width: 0; }
 .adaptive-orders-card .table-scroll { max-width: 100%; }
-.adaptive-order-table { table-layout: fixed; white-space: normal; }
+.orders-table.adaptive-order-table { table-layout: fixed; white-space: normal; }
 .adaptive-order-table th,.adaptive-order-table td { padding: 11px 8px; overflow-wrap: anywhere; vertical-align: middle; }
 .adaptive-order-table .order-col-select { width: 34px; }
 .adaptive-order-table .order-col-orderNumber { width: 170px; }
@@ -1663,6 +1663,7 @@ body.print-sales-report .report-table th,
 .adaptive-order-table .source-badge,.adaptive-order-table .order-marker { margin-left: 0; margin-right: 4px; white-space: normal; }
 .selectable-order-row { cursor: pointer; }
 .selectable-order-row:focus-visible { outline: 2px solid #1769e0; outline-offset: -2px; }
+.adaptive-orders-card .adaptive-order-table .selected-row td { background: #e8f2ff; }
 .adaptive-orders-card .toolbar-row { flex-wrap: wrap; }
 .adaptive-orders-card .toolbar-action-row { justify-content: flex-end; }
 .adaptive-orders-card .status-filter-pills { min-width: 0; max-width: 100%; }
