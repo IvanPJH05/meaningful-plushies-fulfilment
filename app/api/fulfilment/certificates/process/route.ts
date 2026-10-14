@@ -12,7 +12,11 @@ export async function POST(request: Request) {
   }
   try {
     return NextResponse.json(await processCertificateSync(), { headers: { "cache-control": "no-store" } });
-  } catch {
+  } catch (error) {
+    // Queue SQL contains only job IDs, revisions and leases. Do not log order
+    // payloads, customer fields, credentials or Shopify response bodies.
+    const diagnostic = error as { name?: string; code?: string; meta?: { code?: string; message?: string } };
+    console.error("Certificate queue failed", { name: diagnostic.name, code: diagnostic.code, databaseCode: diagnostic.meta?.code, databaseMessage: diagnostic.meta?.message });
     return NextResponse.json({ error: "Certificate queue is unavailable." }, { status: 503 });
   }
 }
