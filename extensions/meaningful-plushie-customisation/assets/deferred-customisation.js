@@ -256,10 +256,7 @@
     };
 
     const isLater = () => !fillLaterDisabled && [...radios].some((radio) => radio.checked && radio.value === "later");
-    const purchaseControls = () => [...form.querySelectorAll("button, input[type='submit']")].filter((control) => {
-      const ownerForm = control.form || control.closest("form");
-      return ownerForm === form && (control.type === "submit" || control.name === "add" || Boolean(control.closest(".shopify-payment-button")));
-    });
+    const purchaseControls = () => window.MPCustomisationCart.controls(form);
     const setRequired = (container, required) => container.querySelectorAll("input, select, textarea").forEach((input) => { input.required = required; });
     // Some mobile storefront browsers briefly expose a selected file through
     // the input value before they populate FileList. Treat either state as a
@@ -546,18 +543,6 @@
       // Retain the token only as an internal property for recovery/support.
       appendOrderProperty("_customisation_token", token);
     };
-    const saveCartCustomisationReference = async (sessionId) => {
-      // Keep a cart-level copy as a fallback for accelerated checkout and
-      // theme Ajax handlers that can serialize the product form before its
-      // dynamically-added line-item properties are included.
-      const response = await fetch("/cart/update.js", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ attributes: { mp_customisation_session_id: sessionId } }),
-      });
-      if (!response.ok) throw new Error("Could not link your customisation to the cart. Please try again.");
-    };
     const request = async (path, options) => {
       const response = await fetch(`${apiUrl}${path}`, options);
       const result = await response.json();
@@ -624,12 +609,8 @@
     // before the normal click or submit event. Catch all three stages.
     let purchaseInProgress = false;
     const guardPurchaseControl = (event) => {
-      if (!(event.target instanceof Element)) return;
-      const control = event.target.closest("button, input[type='submit']");
+      const control = window.MPCustomisationCart.controlForEvent(event, form);
       if (!control) return;
-      const ownerForm = control.form || control.closest("form");
-      const insideProductPurchase = ownerForm === form || (control.closest(".shopify-payment-button") && ownerForm === form);
-      if (!insideProductPurchase) return;
       if (purchaseInProgress) {
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -639,10 +620,7 @@
         blockIncompletePurchase(event);
         return;
       }
-      // This theme adds products with its own Ajax click handler, which means
-      // a normal form submit is not guaranteed to happen. Capture the click
-      // before the theme handles it, save the customisation, then use the
-      // native form submission to add the exact same product to the cart.
+      // Intercept theme and wallet handlers before adding the verified item.
       if (event.type === "pointerdown" || event.type === "click") {
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -677,6 +655,7 @@
       if (submitter) submitter.disabled = true;
       purchaseInProgress = true;
       try {
+        let checkoutSessionId;
         if (isLater()) {
           notice.textContent = t("preparingLink");
           const result = await request("/api/customisation/sessions", {
@@ -684,11 +663,7 @@
             body: JSON.stringify({ deliveryMethod: method.value === "whatsapp" ? "whatsapp" : "email", contactEmail: email.value.trim(), contactPhone: phone.value.trim() }),
           });
           appendSessionId(result.sessionId);
-          // The theme can add this product with Ajax and serialize the cart
-          // before dynamically-added line-item inputs. Keep the same session
-          // on the cart itself, just as we do for a completed customisation,
-          // so Shopify's order webhook can always recover the order details.
-          await saveCartCustomisationReference(result.sessionId);
+          checkoutSessionId = result.sessionId;
           notice.textContent = t("paired");
         } else {
           const upload = await uploadVoiceEarly();
@@ -701,23 +676,12 @@
           }
           appendSessionId(upload.session.sessionId);
           appendCompleteNowProperties(details, upload.voiceStoragePath, upload.session.token);
-          await saveCartCustomisationReference(upload.session.sessionId);
+          checkoutSessionId = upload.session.sessionId;
           notice.textContent = t("saved");
         }
-        // Preserve the two storefront actions: Add to cart opens the cart,
-        // while Buy it now sends the just-saved customisation straight into
-        // Shopify checkout.
-        if (/buy\s*it\s*now/i.test(submitter?.textContent || "")) {
-          let returnTo = form.querySelector('input[name="return_to"]');
-          if (!returnTo) {
-            returnTo = document.createElement("input");
-            returnTo.type = "hidden";
-            returnTo.name = "return_to";
-            form.appendChild(returnTo);
-          }
-          returnTo.value = "/checkout";
-        }
-        form.submit();
+        await window.MPCustomisationCart.add(form, checkoutSessionId);
+        const base = window.Shopify?.routes?.root || "/";
+        window.location.assign(`${base.replace(/\/$/, "")}/${window.MPCustomisationCart.isCheckoutControl(submitter) ? "checkout" : "cart"}`);
       } catch (error) {
         notice.textContent = error instanceof Error ? error.message : "Could not save your customisation.";
         if (submitter) submitter.disabled = false;

@@ -1,6 +1,7 @@
 {{ 'deferred-customisation.css' | asset_url | stylesheet_tag }}
 {{ 'voice-recorder.css' | asset_url | stylesheet_tag }}
 {{ 'customisation-polish.css' | asset_url | stylesheet_tag }}
+<script src="{{ 'customisation-cart.js' | asset_url }}" defer="defer"></script>
 <script src="{{ 'deferred-customisation.js' | asset_url }}" defer="defer"></script>
 <script type="application/json" data-voice-variants>{{ product.variants | json }}</script>
 

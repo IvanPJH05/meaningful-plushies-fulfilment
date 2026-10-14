@@ -1,4 +1,5 @@
 {{ 'snowy-charm-voice.css' | asset_url | stylesheet_tag }}
+<script src="{{ 'customisation-cart.js' | asset_url }}" defer="defer"></script>
 <script src="{{ 'snowy-charm-voice.js' | asset_url }}" defer="defer"></script>
 
 <section class="mp-snowy-charm-voice" data-snowy-charm-voice data-api-url="{{ block.settings.app_url | default: 'https://meaningful-plushies-fulfilment.vercel.app' | escape }}" {{ block.shopify_attributes }}>

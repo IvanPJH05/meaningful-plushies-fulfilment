@@ -509,6 +509,8 @@ export function shopifyOrderToFulfilmentOrders(
     orders.push({
       id,
       orderNumber: number,
+      customisationSessionId: shopifyLineAttributeValue(lineItem, ["customisation_session_id", "mp_customisation_session_id"]) || current?.customisationSessionId,
+      shopifyLineItemId: String(objectValue(lineItem).id || current?.shopifyLineItemId || ""),
       salesChannel: "shopify",
       orderDate: createdAt || paidAt || current?.orderDate || timestamp,
       customerName: customerName || current?.customerName || "",

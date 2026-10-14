@@ -4,6 +4,17 @@ import { applyTikTokDetailEntries, importShopifyData, importTikTokShopData, norm
 import { summarizeSales } from "./sales.ts";
 import type { Order } from "./types.ts";
 
+test("keeps customisation references with their Shopify line when another line has no form", () => {
+  const orders = shopifyOrderToFulfilmentOrders({ name: "#2000", lineItems: { nodes: [
+    { id: "gid://shopify/LineItem/1", title: "Accessory", customAttributes: [] },
+    { id: "gid://shopify/LineItem/2", title: "Plushie", customAttributes: [{ key: "customisation_session_id", value: "session-b" }, { key: "Name", value: "Example" }] },
+  ] } });
+  assert.equal(orders[0].customisationSessionId, undefined);
+  assert.equal(orders[1].customisationSessionId, "session-b");
+  assert.equal(orders[1].shopifyLineItemId, "gid://shopify/LineItem/2");
+  assert.equal(orders[1].plushName, "Example");
+});
+
 const headers = [
   "Name", "Currency", "Subtotal", "Shipping", "Total", "Discount Amount", "Created at",
   "Lineitem quantity", "Lineitem name", "Lineitem price", "Shipping Name", "Lineitem discount",
