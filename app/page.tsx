@@ -1,4 +1,5 @@
 "use client";
+import { useLanguage, LanguageProvider, LanguageSwitcher, WorkspaceLoading } from "../components/dashboard-language";
 
 import "./settings.css";
 
@@ -92,9 +93,9 @@ import {
 } from "../lib/supabase";
 import { manualOrderCharactersForProduct, manualOrderProductFamily, manualOrderProducts } from "../lib/manual-order-products";
 import { orderStatuses, type AccountingBankStatementLine, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type AiAccountantReview, type CommissionStatus, type ContentIdeaItem, type ContentIdeaReference, type ContentPlanItem, type CreatorCommission, type CreatorPayout, type CreatorProfile, type CreatorStatus, type CreatorTier, type DashboardAccount, type EnvelopePrintSettings, type ManualOrder, type MetaCapiLog, type MetaCapiSettings, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesConsumptionMapping, type SalesFeeSetting, type StockSetting, type UserRole, type WhatsAppLead, type WhatsAppLeadStatus } from "../lib/types";
-const MonthlyJournalWorkspace = dynamic(() => import("../components/monthly-journal-workspace").then((module) => module.MonthlyJournalWorkspace), { loading: () => <p role="status">Opening workspace...</p> });
-const ShopifyAppWorkspace = dynamic(() => import("../components/shopify-app-workspace").then((module) => module.ShopifyAppWorkspace), { loading: () => <p role="status">Opening workspace...</p> });
-const AudioScannerWorkspace = dynamic(() => import("../components/audio-scanner-workspace").then((module) => module.AudioScannerWorkspace), { loading: () => <p role="status">Opening workspace...</p> });
+const MonthlyJournalWorkspace = dynamic(() => import("../components/monthly-journal-workspace").then((module) => module.MonthlyJournalWorkspace), { loading: () => <WorkspaceLoading /> });
+const ShopifyAppWorkspace = dynamic(() => import("../components/shopify-app-workspace").then((module) => module.ShopifyAppWorkspace), { loading: () => <WorkspaceLoading /> });
+const AudioScannerWorkspace = dynamic(() => import("../components/audio-scanner-workspace").then((module) => module.AudioScannerWorkspace), { loading: () => <WorkspaceLoading /> });
 import { OrderBarcode, orderBarcodeValue } from "../components/order-barcode";
 import { ManualOrderIntakeRecords } from "../components/manual-order-intake-records";
 
@@ -1336,16 +1337,17 @@ function packingProductMatches(order: Order, filter: PackingProductFilter) {
 }
 
 function OrderMarkers({ order, manualOrders }: { order: Order; manualOrders: ManualOrder[] }) {
+  const { t } = useLanguage();
   const creatorProfiles = useContext(CreatorProfilesContext);
   const freeCreatorSampleCodes = useContext(FreeCreatorSampleCodesContext);
   const source = fulfilmentSource(order, manualOrders);
   const unrecordedManualOrder = source === "shopify" && order.totalAmount === 0 && !isInfluencerFulfilmentOrder(order, creatorProfiles, freeCreatorSampleCodes);
   return <>
     <span className={`source-badge ${source}`}>{fulfilmentSourceLabel(order, manualOrders)}</span>
-    {unrecordedManualOrder && <span className="order-marker legacy-manual">Manual (legacy)</span>}
-    {isCodFulfilmentOrder(order, manualOrders) && <span className="order-marker cod" title="Collect payment when this order is delivered">COD — COLLECT ON DELIVERY</span>}
-    {isInfluencerFulfilmentOrder(order, creatorProfiles, freeCreatorSampleCodes) && <span className="order-marker influencer">Influencer</span>}
-    {isExpressShipping(order) && <span className="shipping-badge">Express</span>}
+    {unrecordedManualOrder && <span className="order-marker legacy-manual">{t("Manual (legacy)")}</span>}
+    {isCodFulfilmentOrder(order, manualOrders) && <span className="order-marker cod" title={t("Collect payment when this order is delivered")}>{t("COD — COLLECT ON DELIVERY")}</span>}
+    {isInfluencerFulfilmentOrder(order, creatorProfiles, freeCreatorSampleCodes) && <span className="order-marker influencer">{t("Influencer")}</span>}
+    {isExpressShipping(order) && <span className="shipping-badge">{t("Express")}</span>}
   </>;
 }
 
@@ -1537,7 +1539,12 @@ function viewTitle(view: View) {
   return "Orders Dashboard";
 }
 
-export default function Home() {
+export default function Dashboard() {
+  return <LanguageProvider><Home /></LanguageProvider>;
+}
+
+function Home() {
+  const { t } = useLanguage();
   const storedSession = readStoredSession();
   const storedUi = readStoredUi();
   const storedEnvelopeSettings = readStoredEnvelopeSettings();
@@ -5853,13 +5860,13 @@ export default function Home() {
     if (column === "meaningfulMessage") {
       const link = meaningfulMessageLink(order);
       const downloadName = meaningfulMessageDownloadName(order);
-      return link ? <a href={link} download={downloadName} target={downloadName ? undefined : "_blank"} rel="noreferrer">{downloadName ? "Download message" : "Open message"}</a> : "-";
+      return link ? <a href={link} download={downloadName} target={downloadName ? undefined : "_blank"} rel="noreferrer">{downloadName ? t("Download message") : t("Open message")}</a> : "-";
     }
     if (column === "plushName") return <strong>{order.plushName || "-"}</strong>;
     if (column === "character") return displayedCharacter(order) || "-";
     if (column === "idWebsiteLink") {
       const link = certificateLink(order);
-      return link ? <div className="link-copy nfc-link-write"><a href={link} target="_blank" rel="noreferrer">{certificateLink(order, false)}</a><button type="button" className="nfc-write-button" disabled={nfcWritingOrderId === order.id} onClick={() => writeCertificateLinkToNfc(order)}>{nfcWritingOrderId === order.id ? "Writing..." : "Write"}</button></div> : "-";
+      return link ? <div className="link-copy nfc-link-write"><a href={link} target="_blank" rel="noreferrer">{certificateLink(order, false)}</a><button type="button" className="nfc-write-button" disabled={nfcWritingOrderId === order.id} onClick={() => writeCertificateLinkToNfc(order)}>{nfcWritingOrderId === order.id ? t("Writing...") : t("Write")}</button></div> : "-";
     }
     if (column === "customerName") return order.customerName || "-";
     return order.phone || "-";
@@ -5875,31 +5882,31 @@ export default function Home() {
   return <CreatorProfilesContext.Provider value={creatorProfiles}><FreeCreatorSampleCodesContext.Provider value={freeCreatorSampleCodes}><main className="app-shell">
     <aside className="side-nav">
       <div className="workspace-switcher">
-        <div className="logo"><span>MP</span><div>Meaningful Plushies<small>{workspaceTitle}</small></div></div>
+        <div className="logo"><span>{t("MP")}</span><div>{t("Meaningful Plushies")}<small>{t(workspaceTitle)}</small></div></div>
         <label>
-          <span>Workspace</span>
+          <span>{t("Workspace")}</span>
           <select value={workspace} onChange={(event) => {
             const nextWorkspace = event.target.value as Workspace;
             setView(workspaceDefaultViews[nextWorkspace]);
           }}>
-            {availableWorkspaces.map((item) => <option key={item} value={item}>{workspaceLabels[item]}</option>)}
+            {availableWorkspaces.map((item) => <option key={item} value={item}>{t(workspaceLabels[item])}</option>)}
           </select>
         </label>
       </div>
       <nav>
-        {sidebarNavItems.map((item) => <button key={item.view} className={view === item.view ? "active" : ""} onClick={() => setView(item.view)}><Icon name={item.icon} /> {item.label}</button>)}
+        {sidebarNavItems.map((item) => <button key={item.view} className={view === item.view ? "active" : ""} onClick={() => setView(item.view)}><Icon name={item.icon} /> {t(item.label)}</button>)}
       </nav>
-      <div className="user-card"><div className="avatar">{session.displayName.slice(0, 1)}</div><div><strong>{session.displayName}</strong><span>@{session.username} | {session.role === "admin" ? "Administrator" : session.role === "creator" ? "Creator" : "Fulfilment staff"}</span></div><button title="Sign out" onClick={signOut}><Icon name="logout" /></button></div>
+      <div className="user-card"><div className="avatar">{session.displayName.slice(0, 1)}</div><div><strong>{session.displayName}</strong><span>@{session.username} | {session.role === "admin" ? t("Administrator") : session.role === "creator" ? t("Creator") : t("Fulfilment staff")}</span></div><button title={t("Sign out")} onClick={signOut}><Icon name="logout" /></button></div>
     </aside>
 
     <section className="main-area">
-      <header className="topbar"><div><p>{workspaceTitle.toUpperCase()} WORKSPACE</p><h1>{viewTitle(view)}</h1></div><div className="top-actions"><span className={`role-badge ${session.role}`}>{session.role}</span>{view === "packing_slips" && <div className="packing-print-actions"><button className="button secondary print-trigger" onClick={() => printPackingSlips("packing")}>Packing slips</button><button className="button secondary print-trigger" onClick={() => printPackingSlips("labels")}>Shipping labels</button><button className="button primary print-trigger" onClick={() => printPackingSlips("both")}>Packing slip + label</button></div>}{view === "print_envelope" && <button className="button primary" disabled={!envelopePrintableNames.length || !envelopePrintSettings.fontBase64} onClick={printEnvelopes}>Generate {Math.ceil(envelopePrintableNames.length / 2)} A4 page{Math.ceil(envelopePrintableNames.length / 2) === 1 ? "" : "s"}</button>}{view === "sales_report" && <button className="button primary" onClick={() => printView("print-sales-report")}>Print / Save PDF</button>}{workspace === "fulfilment" && view !== "import" && <button className="button secondary" onClick={() => setView("import")}>Import CSV</button>}</div></header>
-      {databaseError && <div className="notice"><span>Database connection: {databaseError}</span></div>}
-      {workspaceDataLoading && <div className="notice" role="status">Loading workspace data...</div>}
-      {workspaceDataError && <div className="notice" role="status"><span>{workspaceDataError}</span><button onClick={() => void loadWorkspaceSupport(true)}>Retry</button></div>}
-      {loadingOrders && <div className="notice"><span>Loading shared orders from Supabase...</span></div>}
-      {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice("")}>x</button></div>}
-      {session.role === "admin" && accountingRetryMessage && <div className="notice" role="status"><span>{accountingRetryMessage}</span>{accountingRetryIds.length > 0 ? <button disabled={retryingAccounting} onClick={() => void retryAccountingSync()}>{retryingAccounting ? "Retrying..." : "Retry accounting sync"}</button> : <button onClick={() => setAccountingRetryMessage("")}>x</button>}</div>}
+      <header className="topbar"><div><p>{t("{workspace} workspace", { workspace: t(workspaceTitle) }).toUpperCase()}</p><h1>{t(viewTitle(view))}</h1></div><div className="top-actions"><LanguageSwitcher /><span className={`role-badge ${session.role}`}>{t(session.role === "admin" ? "Administrator" : session.role === "creator" ? "Creator" : "Fulfilment staff")}</span>{view === "packing_slips" && <div className="packing-print-actions"><button className="button secondary print-trigger" onClick={() => printPackingSlips("packing")}>{t("Packing slips")}</button><button className="button secondary print-trigger" onClick={() => printPackingSlips("labels")}>{t("Shipping labels")}</button><button className="button primary print-trigger" onClick={() => printPackingSlips("both")}>{t("Packing slip + label")}</button></div>}{view === "print_envelope" && <button className="button primary" disabled={!envelopePrintableNames.length || !envelopePrintSettings.fontBase64} onClick={printEnvelopes}>{t("Generate") + " "}{Math.ceil(envelopePrintableNames.length / 2)} {" " + t("A4 page")}{Math.ceil(envelopePrintableNames.length / 2) === 1 ? "" : t("s")}</button>}{view === "sales_report" && <button className="button primary" onClick={() => printView("print-sales-report")}>{t("Print / Save PDF")}</button>}{workspace === "fulfilment" && view !== "import" && <button className="button secondary" onClick={() => setView("import")}>{t("Import CSV")}</button>}</div></header>
+      {databaseError && <div className="notice"><span>{t("Database connection:") + " "}{databaseError}</span></div>}
+      {workspaceDataLoading && <div className="notice" role="status">{t("Loading workspace data...")}</div>}
+      {workspaceDataError && <div className="notice" role="status"><span>{workspaceDataError}</span><button onClick={() => void loadWorkspaceSupport(true)}>{t("Retry")}</button></div>}
+      {loadingOrders && <div className="notice"><span>{t("Loading shared orders from Supabase...")}</span></div>}
+      {notice && <div className="notice"><span>{t(notice)}</span><button onClick={() => setNotice("")}>{t("x")}</button></div>}
+      {session.role === "admin" && accountingRetryMessage && <div className="notice" role="status"><span>{accountingRetryMessage}</span>{accountingRetryIds.length > 0 ? <button disabled={retryingAccounting} onClick={() => void retryAccountingSync()}>{retryingAccounting ? t("Retrying...") : t("Retry accounting sync")}</button> : <button onClick={() => setAccountingRetryMessage("")}>{t("x")}</button>}</div>}
 
       {workspace === "manual_orders" && view === "manual_orders_dashboard" && session.role === "admin" && <ManualOrdersWorkspacePage
         manualOrders={manualOrders}
@@ -6049,21 +6056,21 @@ export default function Home() {
 
       {view === "plush_charm_orders" && <section className="card orders-card plush-charm-orders-card">
         <div className="toolbar">
-          <div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, character, customer or phone..." /></div>
+          <div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("Search order, character, customer or phone...")} /></div>
           <SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} />
           <StatusFilterPills value={statusFilter} onChange={setStatusFilter} />
           <SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} />
-          {session.role === "admin" && <button className="button primary" type="button" disabled={generatingPlushCharmLinks} onClick={() => void generatePlushCharmOurLinks()}>{generatingPlushCharmLinks ? "Generating Our Link IDs..." : "Generate Our Link IDs"}</button>}
+          {session.role === "admin" && <button className="button primary" type="button" disabled={generatingPlushCharmLinks} onClick={() => void generatePlushCharmOurLinks()}>{generatingPlushCharmLinks ? t("Generating Our Link IDs...") : t("Generate Our Link IDs")}</button>}
         </div>
-        <div className="plush-charm-orders-intro"><strong>All Plush Charm orders</strong><span>These orders are separated from classic plushies to make packing safer.</span></div>
-        <div className="table-scroll"><table className="orders-table plush-charm-orders-table"><thead><tr><th>Order ID</th><th>Meaningful Message</th><th>Character</th><th>ID Website Link</th><th>Customer Name</th><th>Phone Number</th><th>Status</th><th>View</th></tr></thead><tbody>{plushCharmOrders.map((order) => {
+        <div className="plush-charm-orders-intro"><strong>{t("All Plush Charm orders")}</strong><span>{t("These orders are separated from classic plushies to make packing safer.")}</span></div>
+        <div className="table-scroll"><table className="orders-table plush-charm-orders-table"><thead><tr><th>{t("Order ID")}</th><th>{t("Meaningful Message")}</th><th>{t("Character")}</th><th>{t("ID Website Link")}</th><th>{t("Customer Name")}</th><th>{t("Phone Number")}</th><th>{t("Status")}</th><th>{t("View")}</th></tr></thead><tbody>{plushCharmOrders.map((order) => {
           const messageLink = meaningfulMessageLink(order);
           const downloadName = meaningfulMessageDownloadName(order);
           const link = certificateLink(order);
-          return <tr key={order.id} className="plush-charm-row"><td><strong>{orderLabel(order)}</strong><OrderMarkers order={order} manualOrders={manualOrders} /></td><td>{messageLink ? <a href={messageLink} download={downloadName} target={downloadName ? undefined : "_blank"} rel="noreferrer">{downloadName ? "Download message" : "Open message"}</a> : "-"}</td><td><strong>{displayedCharacter(order) || "-"}</strong></td><td className="certificate-cell">{link ? <a href={link} target="_blank" rel="noreferrer">{certificateLink(order, false)}</a> : "-"}</td><td><strong>{order.customerName || "-"}</strong></td><td>{order.phone || "-"}</td><td><StatusPill status={order.status} /></td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>;
-        })}</tbody></table>{!plushCharmOrders.length && <div className="empty"><strong>No Plush Charm orders found</strong><p>Try another search or status filter.</p></div>}</div>
-        <div className="table-footer">Showing {plushCharmOrders.length} of {orders.filter(isPlushCharm).length} Plush Charm orders</div>
-        {hasMoreOrderSummaries && <div ref={orderSummaryLoadMoreSentinel} className="table-footer"><button className="button secondary small" type="button" disabled={loadingMoreOrderSummaries} onClick={() => void loadNextOrderSummaries()}>{loadingMoreOrderSummaries ? "Loading more orders..." : "Load next 100 orders"}</button></div>}
+          return <tr key={order.id} className="plush-charm-row"><td><strong>{orderLabel(order)}</strong><OrderMarkers order={order} manualOrders={manualOrders} /></td><td>{messageLink ? <a href={messageLink} download={downloadName} target={downloadName ? undefined : "_blank"} rel="noreferrer">{downloadName ? t("Download message") : t("Open message")}</a> : "-"}</td><td><strong>{displayedCharacter(order) || "-"}</strong></td><td className="certificate-cell">{link ? <a href={link} target="_blank" rel="noreferrer">{certificateLink(order, false)}</a> : "-"}</td><td><strong>{order.customerName || "-"}</strong></td><td>{order.phone || "-"}</td><td><StatusPill status={order.status} /></td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>{t("View")}</button></td></tr>;
+        })}</tbody></table>{!plushCharmOrders.length && <div className="empty"><strong>{t("No Plush Charm orders found")}</strong><p>{t("Try another search or status filter.")}</p></div>}</div>
+        <div className="table-footer">{t("Showing") + " "}{plushCharmOrders.length} {" " + t("of") + " "}{orders.filter(isPlushCharm).length} {" " + t("Plush Charm orders")}</div>
+        {hasMoreOrderSummaries && <div ref={orderSummaryLoadMoreSentinel} className="table-footer"><button className="button secondary small" type="button" disabled={loadingMoreOrderSummaries} onClick={() => void loadNextOrderSummaries()}>{loadingMoreOrderSummaries ? t("Loading more orders...") : t("Load next 100 orders")}</button></div>}
       </section>}
       {view === "shopify_app" && session.role === "admin" && <ShopifyAppWorkspace sessionToken={session.token} />}
       {workspace === "audio_scanner" && session.role === "admin" && <AudioScannerWorkspace orders={orders} audioSourceFor={meaningfulMessageLink} />}
@@ -6134,244 +6141,244 @@ export default function Home() {
 
       {workspace === "fulfilment" && view !== "import" && view !== "tiktok_shop" && view !== "packing_slips" && view !== "print_envelope" && view !== "nfc_card" && view !== "history" && view !== "settings" && view !== "stock" && view !== "sales_report" && <>
         {view === "orders" && <section className="stats">
-          <Stat label="Active orders" value={counts.total} color="navy" />
-          <Stat label="Uploading audio" value={counts.voice} color="orange" />
-          <Stat label="Sent for sewing" value={counts.production} color="blue" />
-          <article className="stat green selectable-stat"><select aria-label="Choose fourth dashboard status" value={dashboardStatus} onChange={(event) => setDashboardStatus(event.target.value as OrderStatus | "total")}>{dashboardSelectableStatuses.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><strong>{counts.selected}</strong></article>
-          <article className="stat red selectable-stat"><select aria-label="Choose fifth dashboard status" value={dashboardStatusTwo} onChange={(event) => setDashboardStatusTwo(event.target.value as OrderStatus | "total")}>{dashboardSelectableStatuses.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><strong>{counts.selectedTwo}</strong></article>
+          <Stat label={t("Active orders")} value={counts.total} color="navy" />
+          <Stat label={t("Uploading audio")} value={counts.voice} color="orange" />
+          <Stat label={t("Sent for sewing")} value={counts.production} color="blue" />
+          <article className="stat green selectable-stat"><select aria-label={t("Choose fourth dashboard status")} value={dashboardStatus} onChange={(event) => setDashboardStatus(event.target.value as OrderStatus | "total")}>{dashboardSelectableStatuses.map((option) => <option key={option.value} value={option.value}>{t(option.label)}</option>)}</select><strong>{counts.selected}</strong></article>
+          <article className="stat red selectable-stat"><select aria-label={t("Choose fifth dashboard status")} value={dashboardStatusTwo} onChange={(event) => setDashboardStatusTwo(event.target.value as OrderStatus | "total")}>{dashboardSelectableStatuses.map((option) => <option key={option.value} value={option.value}>{t(option.label)}</option>)}</select><strong>{counts.selectedTwo}</strong></article>
         </section>}
 
         {view === "orders" && <section className="card fulfilment-date-range">
           <div className="fulfilment-date-range-heading">
-            <div><strong>Orders by date range</strong><span>Choose dates to filter the order list and compare sales channels.</span></div>
+            <div><strong>{t("Orders by date range")}</strong><span>{t("Choose dates to filter the order list and compare sales channels.")}</span></div>
             <div className="fulfilment-date-inputs">
-              <label>From<input type="date" value={fulfilmentStartDate} onChange={(event) => setFulfilmentStartDate(event.target.value)} /></label>
-              <label>To<input type="date" value={fulfilmentEndDate} onChange={(event) => setFulfilmentEndDate(event.target.value)} /></label>
-              <button className="button secondary" type="button" disabled={!fulfilmentStartDate && !fulfilmentEndDate} onClick={() => { setFulfilmentStartDate(""); setFulfilmentEndDate(""); }}>Clear</button>
+              <label>{t("From")}<input type="date" value={fulfilmentStartDate} onChange={(event) => setFulfilmentStartDate(event.target.value)} /></label>
+              <label>{t("To")}<input type="date" value={fulfilmentEndDate} onChange={(event) => setFulfilmentEndDate(event.target.value)} /></label>
+              <button className="button secondary" type="button" disabled={!fulfilmentStartDate && !fulfilmentEndDate} onClick={() => { setFulfilmentStartDate(""); setFulfilmentEndDate(""); }}>{t("Clear")}</button>
             </div>
           </div>
           <div className="fulfilment-channel-sales">
-            <article className="shopify"><span>Shopify</span><strong>{fulfilmentDateRangeSales.shopify.count} sales</strong><small>{formatMoney(fulfilmentDateRangeSales.shopify.sales)}</small></article>
-            <article className="tiktok"><span>TikTok Shop</span><strong>{fulfilmentDateRangeSales.tiktok.count} sales</strong><small>{formatMoney(fulfilmentDateRangeSales.tiktok.sales)}</small></article>
-            <article className="total"><span>Total</span><strong>{fulfilmentDateRangeSales.shopify.count + fulfilmentDateRangeSales.tiktok.count} sales</strong><small>{formatMoney(fulfilmentDateRangeSales.shopify.sales + fulfilmentDateRangeSales.tiktok.sales)}</small></article>
+            <article className="shopify"><span>{t("Shopify")}</span><strong>{fulfilmentDateRangeSales.shopify.count} {" " + t("sales")}</strong><small>{formatMoney(fulfilmentDateRangeSales.shopify.sales)}</small></article>
+            <article className="tiktok"><span>{t("TikTok Shop")}</span><strong>{fulfilmentDateRangeSales.tiktok.count} {" " + t("sales")}</strong><small>{formatMoney(fulfilmentDateRangeSales.tiktok.sales)}</small></article>
+            <article className="total"><span>{t("Total")}</span><strong>{fulfilmentDateRangeSales.shopify.count + fulfilmentDateRangeSales.tiktok.count} {" " + t("sales")}</strong><small>{formatMoney(fulfilmentDateRangeSales.shopify.sales + fulfilmentDateRangeSales.tiktok.sales)}</small></article>
           </div>
         </section>}
 
         {view === "orders" && session.role === "admin" && <>
           <div className="reporting-header">
-            <div><strong>Sales reporting</strong><span>{reportingOrders.length} order records</span></div>
+            <div><strong>{t("Sales reporting")}</strong><span>{reportingOrders.length} {" " + t("order records")}</span></div>
             <div className="range-tabs">
-              {salesRanges.map(({ value, label }) => <button key={value} className={salesRange === value ? "active" : ""} onClick={() => setSalesRange(value)}>{label}</button>)}
+              {salesRanges.map(({ value, label }) => <button key={value} className={salesRange === value ? "active" : ""} onClick={() => setSalesRange(value)}>{t(label)}</button>)}
             </div>
           </div>
           <section className="sales-stats">
-            <MoneyStat label="Total sales" value={sales.gross} tone="sales" />
-            <SelectableMoneyStat label="Collected from" value={sales[collectedMetric]} tone="transfer" selected={collectedMetric} onChange={(value) => setCollectedMetric(value as CollectedMetric)} options={Object.entries(collectedMetricLabels)} />
-            <SelectableMoneyStat label="Discount" value={sales[discountMetric]} tone="discount" selected={discountMetric} onChange={(value) => setDiscountMetric(value as DiscountMetric)} options={Object.entries(discountMetricLabels)} />
-            <SelectableMoneyStat label="Fees" value={sales[feeMetric]} tone="fees" selected={feeMetric} onChange={(value) => setFeeMetric(value as FeeMetric)} options={Object.entries(feeMetricLabels)} />
-            <MoneyStat label="Total cash after fees" value={sales.collected} tone="collected" />
+            <MoneyStat label={t("Total sales")} value={sales.gross} tone="sales" />
+            <SelectableMoneyStat label={t("Collected from")} value={sales[collectedMetric]} tone="transfer" selected={collectedMetric} onChange={(value) => setCollectedMetric(value as CollectedMetric)} options={Object.entries(collectedMetricLabels)} />
+            <SelectableMoneyStat label={t("Discount")} value={sales[discountMetric]} tone="discount" selected={discountMetric} onChange={(value) => setDiscountMetric(value as DiscountMetric)} options={Object.entries(discountMetricLabels)} />
+            <SelectableMoneyStat label={t("Fees")} value={sales[feeMetric]} tone="fees" selected={feeMetric} onChange={(value) => setFeeMetric(value as FeeMetric)} options={Object.entries(feeMetricLabels)} />
+            <MoneyStat label={t("Total cash after fees")} value={sales.collected} tone="collected" />
           </section>
         </>}
 
         {view !== "fulfilment" && <section className="card orders-card">
           <div className={`toolbar ${view === "orders" ? "orders-toolbar" : ""}`}>
-            <div className="toolbar-row toolbar-filter-row"><div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, customer, phone or tracking..." /></div><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /></div>
-            <div className="toolbar-row toolbar-action-row">{view === "orders" && <button className="button secondary" disabled={!selectedShopifyOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshShopifyOrders}>{refreshingOrderNumber === "bulk" ? "Refreshing..." : `Refresh ${selectedShopifyOrderCount} Shopify`}</button>}{view === "orders" && <button className="button secondary" disabled={!selectedTikTokOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshTikTokOrders}>{refreshingOrderNumber === "tiktok-bulk" ? "Syncing..." : `Sync ${selectedTikTokOrderCount} TikTok`}</button>}{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>Move {selectedOrders.length} to next status</button>}{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>Delete</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>Export CSV</button>}</div>
+            <div className="toolbar-row toolbar-filter-row"><div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("Search order, customer, phone or tracking...")} /></div><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /></div>
+            <div className="toolbar-row toolbar-action-row">{view === "orders" && <button className="button secondary" disabled={!selectedShopifyOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshShopifyOrders}>{refreshingOrderNumber === "bulk" ? t("Refreshing...") : `Refresh ${selectedShopifyOrderCount} Shopify`}</button>}{view === "orders" && <button className="button secondary" disabled={!selectedTikTokOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshTikTokOrders}>{refreshingOrderNumber === "tiktok-bulk" ? t("Syncing...") : `Sync ${selectedTikTokOrderCount} TikTok`}</button>}{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>{t("Move") + " "}{selectedOrders.length} {" " + t("to next status")}</button>}{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>{t("Delete")}</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>{t("Export CSV")}</button>}</div>
           </div>
-          <div className="table-scroll"><table className="orders-table"><thead><tr><th><input type="checkbox" aria-label="Select visible orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th>Order</th><th>Date</th><th>Customer</th><th>Phone</th><th>Character</th><th>Voice</th><th>Plush name</th><th>Status</th><th>Tracking number</th><th>Last updated</th><th>{view === "orders" ? "Actions" : "View"}</th></tr></thead><tbody>{filtered.map((order) => <tr key={order.id} className={[isExpressShipping(order) ? "express-shipping-row" : "", isPlushCharm(order) ? "plush-charm-row" : ""].filter(Boolean).join(" ")}><td><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={selectedOrders.includes(order.id)} onChange={() => toggleOrderSelection(order.id)} /></td><td><strong>{orderLabel(order)}</strong><OrderMarkers order={order} manualOrders={manualOrders} /></td><td>{formatDate(order.orderDate)}</td><td><strong>{order.customerName || "-"}</strong></td><td>{order.phone || "-"}</td><td>{displayedCharacter(order) || "-"}</td><td>{order.voiceLength ? `${order.voiceLength}s` : "-"}</td><td>{order.plushName || "-"}</td><td><StatusPill status={order.status} /></td><td><code>{order.trackingNumber || "-"}</code></td><td>{formatDate(order.updatedAt, true)}</td><td><div className="row-actions"><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button>{view === "orders" && (order.salesChannel ?? "shopify") === "shopify" && <button className="view-button refresh-order-button" disabled={refreshingOrderNumber === order.orderNumber} onClick={() => refreshShopifyOrder(order)}>{refreshingOrderNumber === order.orderNumber ? "Refreshing..." : "Refresh"}</button>}{view === "orders" && order.salesChannel === "tiktok" && <button className="view-button refresh-order-button" disabled={refreshingOrderNumber === tiktokOrderIdFromOrder(order)} onClick={() => refreshTikTokOrder(order)}>{refreshingOrderNumber === tiktokOrderIdFromOrder(order) ? "Syncing..." : "Sync"}</button>}</div></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>No orders found</strong><p>Try another search or status filter.</p></div>}</div>
-          <div className="table-footer">Showing {filtered.length} of {view === "fulfilled" ? orders.filter((order) => order.status === "shipped").length : orders.length} orders</div>
-          {hasMoreOrderSummaries && <div ref={orderSummaryLoadMoreSentinel} className="table-footer"><button className="button secondary small" type="button" disabled={loadingMoreOrderSummaries} onClick={() => void loadNextOrderSummaries()}>{loadingMoreOrderSummaries ? "Loading more orders..." : "Load next 100 orders"}</button></div>}
+          <div className="table-scroll"><table className="orders-table"><thead><tr><th><input type="checkbox" aria-label={t("Select visible orders")} checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th>{t("Order")}</th><th>{t("Date")}</th><th>{t("Customer")}</th><th>{t("Phone")}</th><th>{t("Character")}</th><th>{t("Voice")}</th><th>{t("Plush name")}</th><th>{t("Status")}</th><th>{t("Tracking number")}</th><th>{t("Last updated")}</th><th>{view === "orders" ? t("Actions") : t("View")}</th></tr></thead><tbody>{filtered.map((order) => <tr key={order.id} className={[isExpressShipping(order) ? "express-shipping-row" : "", isPlushCharm(order) ? "plush-charm-row" : ""].filter(Boolean).join(" ")}><td><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={selectedOrders.includes(order.id)} onChange={() => toggleOrderSelection(order.id)} /></td><td><strong>{orderLabel(order)}</strong><OrderMarkers order={order} manualOrders={manualOrders} /></td><td>{formatDate(order.orderDate)}</td><td><strong>{order.customerName || "-"}</strong></td><td>{order.phone || "-"}</td><td>{displayedCharacter(order) || "-"}</td><td>{order.voiceLength ? `${order.voiceLength}s` : "-"}</td><td>{order.plushName || "-"}</td><td><StatusPill status={order.status} /></td><td><code>{order.trackingNumber || "-"}</code></td><td>{formatDate(order.updatedAt, true)}</td><td><div className="row-actions"><button className="view-button" onClick={() => setSelectedId(order.id)}>{t("View")}</button>{view === "orders" && (order.salesChannel ?? "shopify") === "shopify" && <button className="view-button refresh-order-button" disabled={refreshingOrderNumber === order.orderNumber} onClick={() => refreshShopifyOrder(order)}>{refreshingOrderNumber === order.orderNumber ? t("Refreshing...") : t("Refresh")}</button>}{view === "orders" && order.salesChannel === "tiktok" && <button className="view-button refresh-order-button" disabled={refreshingOrderNumber === tiktokOrderIdFromOrder(order)} onClick={() => refreshTikTokOrder(order)}>{refreshingOrderNumber === tiktokOrderIdFromOrder(order) ? t("Syncing...") : t("Sync")}</button>}</div></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>{t("No orders found")}</strong><p>{t("Try another search or status filter.")}</p></div>}</div>
+          <div className="table-footer">{t("Showing") + " "}{filtered.length} {" " + t("of") + " "}{view === "fulfilled" ? orders.filter((order) => order.status === "shipped").length : orders.length} {" " + t("orders")}</div>
+          {hasMoreOrderSummaries && <div ref={orderSummaryLoadMoreSentinel} className="table-footer"><button className="button secondary small" type="button" disabled={loadingMoreOrderSummaries} onClick={() => void loadNextOrderSummaries()}>{loadingMoreOrderSummaries ? t("Loading more orders...") : t("Load next 100 orders")}</button></div>}
         </section>}
 
         {view === "fulfilment" && <section className="card orders-card">
-          <div className="toolbar"><div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search order, plush name, character, customer or phone..." /></div><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /><button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>Move {selectedOrders.length} to next status</button>{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>Delete</button>}</div>
+          <div className="toolbar"><div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("Search order, plush name, character, customer or phone...")} /></div><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /><button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>{t("Move") + " "}{selectedOrders.length} {" " + t("to next status")}</button>{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>{t("Delete")}</button>}</div>
           <div className={`nfc-helper-panel ${nfcHelperStatus}`}>
             <div>
-              <strong>Windows NFC Helper</strong>
-              <span>{nfcHelperStatus === "running" ? "Ready. Click Write beside an order, then tap an NFC card." : nfcHelperStatus === "checking" ? "Checking local helper..." : nfcHelperStatus === "starting" ? "Opening helper..." : "Start the helper before writing NFC cards from this browser."}</span>
+              <strong>{t("Windows NFC Helper")}</strong>
+              <span>{nfcHelperStatus === "running" ? t("Ready. Click Write beside an order, then tap an NFC card.") : nfcHelperStatus === "checking" ? t("Checking local helper...") : nfcHelperStatus === "starting" ? t("Opening helper...") : t("Start the helper before writing NFC cards from this browser.")}</span>
             </div>
             <div className="nfc-helper-actions">
-              <button className="button primary small" type="button" onClick={startNfcHelper}>Start NFC Helper</button>
-              <button className="button secondary small" type="button" onClick={() => void checkNfcHelper()}>Check helper</button>
-              <button className="button secondary small" type="button" onClick={copyNfcHelperSetupCommand}>Copy setup command</button>
+              <button className="button primary small" type="button" onClick={startNfcHelper}>{t("Start NFC Helper")}</button>
+              <button className="button secondary small" type="button" onClick={() => void checkNfcHelper()}>{t("Check helper")}</button>
+              <button className="button secondary small" type="button" onClick={copyNfcHelperSetupCommand}>{t("Copy setup command")}</button>
             </div>
           </div>
-          <div className="fulfilment-scroll table-scroll"><table className="orders-table fulfilment-table"><thead><tr><th className="select-column"><input type="checkbox" aria-label="Select visible fulfilment orders" checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th className="locked-order-column">Order ID</th>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <th key={column} className={draggedColumn === column ? "dragging" : ""} draggable onDragStart={(event) => { setDraggedColumn(column); event.dataTransfer.setData("text/plain", column); }} onDragEnd={() => setDraggedColumn(null)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => reorderFulfilmentColumn(event.dataTransfer.getData("text/plain") as FulfilmentColumn, column)}><span className="drag-handle"><Icon name="drag" /></span>{fulfilmentColumnLabels[column]}</th>)}<th>Status</th><th>View</th></tr></thead><tbody>{filtered.map((order) => { const checked = selectedOrders.includes(order.id); const rowClass = [checked ? "selected-row" : "", isExpressShipping(order) ? "express-shipping-row" : "", isPlushCharm(order) ? "plush-charm-row" : ""].filter(Boolean).join(" "); return <tr key={order.id} className={rowClass} onClick={(event) => { if ((event.target as HTMLElement).closest("button,a,input")) return; toggleOrderSelection(order.id); }}><td className="select-column"><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={checked} onChange={() => toggleOrderSelection(order.id)} /></td><td className="locked-order-column"><strong>{orderLabel(order)}</strong><OrderMarkers order={order} manualOrders={manualOrders} /></td>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <td key={column} className={column === "idWebsiteLink" ? "certificate-cell" : ""}>{fulfilmentCell(order, column)}</td>)}<td><StatusPill status={order.status} /></td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>View</button></td></tr>; })}</tbody></table>{!filtered.length && <div className="empty"><strong>No fulfilment orders found</strong><p>Try another search or status filter.</p></div>}</div>
-          <div className="table-footer">Showing {filtered.length} of {orders.length} orders</div>
-          {hasMoreOrderSummaries && <div ref={orderSummaryLoadMoreSentinel} className="table-footer"><button className="button secondary small" type="button" disabled={loadingMoreOrderSummaries} onClick={() => void loadNextOrderSummaries()}>{loadingMoreOrderSummaries ? "Loading more orders..." : "Load next 100 orders"}</button></div>}
+          <div className="fulfilment-scroll table-scroll"><table className="orders-table fulfilment-table"><thead><tr><th className="select-column"><input type="checkbox" aria-label={t("Select visible fulfilment orders")} checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th className="locked-order-column">{t("Order ID")}</th>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <th key={column} className={draggedColumn === column ? "dragging" : ""} draggable onDragStart={(event) => { setDraggedColumn(column); event.dataTransfer.setData("text/plain", column); }} onDragEnd={() => setDraggedColumn(null)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => reorderFulfilmentColumn(event.dataTransfer.getData("text/plain") as FulfilmentColumn, column)}><span className="drag-handle"><Icon name="drag" /></span>{t(fulfilmentColumnLabels[column])}</th>)}<th>{t("Status")}</th><th>{t("View")}</th></tr></thead><tbody>{filtered.map((order) => { const checked = selectedOrders.includes(order.id); const rowClass = [checked ? "selected-row" : "", isExpressShipping(order) ? "express-shipping-row" : "", isPlushCharm(order) ? "plush-charm-row" : ""].filter(Boolean).join(" "); return <tr key={order.id} className={rowClass} onClick={(event) => { if ((event.target as HTMLElement).closest("button,a,input")) return; toggleOrderSelection(order.id); }}><td className="select-column"><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={checked} onChange={() => toggleOrderSelection(order.id)} /></td><td className="locked-order-column"><strong>{orderLabel(order)}</strong><OrderMarkers order={order} manualOrders={manualOrders} /></td>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <td key={column} className={column === "idWebsiteLink" ? "certificate-cell" : ""}>{fulfilmentCell(order, column)}</td>)}<td><StatusPill status={order.status} /></td><td><button className="view-button" onClick={() => setSelectedId(order.id)}>{t("View")}</button></td></tr>; })}</tbody></table>{!filtered.length && <div className="empty"><strong>{t("No fulfilment orders found")}</strong><p>{t("Try another search or status filter.")}</p></div>}</div>
+          <div className="table-footer">{t("Showing") + " "}{filtered.length} {" " + t("of") + " "}{orders.length} {" " + t("orders")}</div>
+          {hasMoreOrderSummaries && <div ref={orderSummaryLoadMoreSentinel} className="table-footer"><button className="button secondary small" type="button" disabled={loadingMoreOrderSummaries} onClick={() => void loadNextOrderSummaries()}>{loadingMoreOrderSummaries ? t("Loading more orders...") : t("Load next 100 orders")}</button></div>}
         </section>}
       </>}
 
       {view === "nfc_card" && <section className="nfc-card-page">
         <div className="card hero-card">
-          <span>NFC CARD</span>
-          <h2>Unlock password-protected NFC cards</h2>
-          <p>If a card was locked before rewriting, enter the password and tap the card on your USB reader. For order cards, the password is usually the last 4 letters or numbers of the order number.</p>
+          <span>{t("NFC CARD")}</span>
+          <h2>{t("Unlock password-protected NFC cards")}</h2>
+          <p>{t("If a card was locked before rewriting, enter the password and tap the card on your USB reader. For order cards, the password is usually the last 4 letters or numbers of the order number.")}</p>
         </div>
         <div className="card nfc-unlock-card">
           <div className={`nfc-helper-panel ${nfcHelperStatus}`}>
             <div>
-              <strong>Windows NFC Helper</strong>
-              <span>{nfcHelperStatus === "running" ? "Ready. Enter the password, click unlock, then tap the NFC card." : nfcHelperStatus === "checking" ? "Checking local helper..." : nfcHelperStatus === "starting" ? "Opening helper..." : "Start the helper before unlocking cards from this browser."}</span>
+              <strong>{t("Windows NFC Helper")}</strong>
+              <span>{nfcHelperStatus === "running" ? t("Ready. Enter the password, click unlock, then tap the NFC card.") : nfcHelperStatus === "checking" ? t("Checking local helper...") : nfcHelperStatus === "starting" ? t("Opening helper...") : t("Start the helper before unlocking cards from this browser.")}</span>
             </div>
             <div className="nfc-helper-actions">
-              <button className="button primary small" type="button" onClick={startNfcHelper}>Start NFC Helper</button>
-              <button className="button secondary small" type="button" onClick={() => void checkNfcHelper()}>Check helper</button>
+              <button className="button primary small" type="button" onClick={startNfcHelper}>{t("Start NFC Helper")}</button>
+              <button className="button secondary small" type="button" onClick={() => void checkNfcHelper()}>{t("Check helper")}</button>
             </div>
           </div>
           <div className="nfc-unlock-form">
-            <label>NFC card password<input value={nfcUnlockPassword} onChange={(event) => setNfcUnlockPassword(event.target.value)} placeholder="Example: 1486" /></label>
-            <button className="button primary" type="button" disabled={nfcUnlocking || !nfcUnlockPassword.trim()} onClick={unlockNfcCard}>{nfcUnlocking ? "Unlocking..." : "Unlock card"}</button>
+            <label>{t("NFC card password")}<input value={nfcUnlockPassword} onChange={(event) => setNfcUnlockPassword(event.target.value)} placeholder={t("Example: 1486")} /></label>
+            <button className="button primary" type="button" disabled={nfcUnlocking || !nfcUnlockPassword.trim()} onClick={unlockNfcCard}>{nfcUnlocking ? t("Unlocking...") : t("Unlock card")}</button>
           </div>
           <div className="helper-note">
-            <strong>Tip</strong>
-            <p>For order numbers longer than 4 characters, use the last 4 letters or numbers. Example: #TT1032 uses 1032.</p>
+            <strong>{t("Tip")}</strong>
+            <p>{t("For order numbers longer than 4 characters, use the last 4 letters or numbers. Example: #TT1032 uses 1032.")}</p>
           </div>
         </div>
       </section>}
 
       {view === "packing_slips" && <section className="packing-page">
         <div className="packing-controls card">
-          <div className="packing-manual"><div><h2>Choose orders to print</h2><p>Enter order IDs separated by commas or spaces, or select orders from the list below.</p></div><div className="manual-entry"><input value={manualOrderIds} onChange={(event) => setManualOrderIds(event.target.value)} onKeyDown={(event) => event.key === "Enter" && selectManualOrders()} placeholder="Example: 1359, 1360, 1361" /><button className="button primary" onClick={selectManualOrders}>Add order IDs</button></div></div>
-          <div className="shipping-label-import"><div><h3>Import shipping-label PDF</h3><p>J&amp;T Shopify labels pair from the Remark order number; TikTok labels pair from the top-left Order ID.</p></div><FileDropZone accept="application/pdf,.pdf" title={shippingLabelImporting ? "Importing labels..." : "Drop label PDF or open files"} description={shippingLabelSummary || "Each paired label prints immediately after its packing slip."} onFile={(file) => void importShippingLabels(file)} className="compact-file-drop" /></div>
-          <div className="packing-list-header"><div><strong>Available orders</strong><span>Order number, descending</span></div><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><select value={packingProductFilter} aria-label="Product type" onChange={(event) => setPackingProductFilter(event.target.value as PackingProductFilter)}><option value="all">All product types</option><option value="classic_plushies">Classic plushies</option><option value="plush_charms">Plush charms only</option></select><select value={packingStatusFilter} onChange={(event) => setPackingStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><div className="packing-list-actions"><button onClick={() => setPackingSelection((current) => [...new Set([...current, ...packingAvailableOrders.map((order) => order.id)])])}>Select shown</button><button onClick={() => setPackingSelection([])}>Clear</button></div></div>
-          <div className="packing-order-list">{packingAvailableOrders.map((order) => <label key={order.id} className={isPlushCharm(order) ? "plush-charm-packing-order" : ""}><input type="checkbox" checked={packingSelection.includes(order.id)} onChange={() => setPackingSelection((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><div><strong>{orderLabel(order)} | {order.plushName || "Unnamed plushie"}</strong><span>{order.customerName} | {displayedCharacter(order) || "No character"}</span><OrderMarkers order={order} manualOrders={manualOrders} /></div><StatusPill status={order.status} /></label>)}</div>
+          <div className="packing-manual"><div><h2>{t("Choose orders to print")}</h2><p>{t("Enter order IDs separated by commas or spaces, or select orders from the list below.")}</p></div><div className="manual-entry"><input value={manualOrderIds} onChange={(event) => setManualOrderIds(event.target.value)} onKeyDown={(event) => event.key === "Enter" && selectManualOrders()} placeholder={t("Example: 1359, 1360, 1361")} /><button className="button primary" onClick={selectManualOrders}>{t("Add order IDs")}</button></div></div>
+          <div className="shipping-label-import"><div><h3>{t("Import shipping-label PDF")}</h3><p>{t("J&T Shopify labels pair from the Remark order number; TikTok labels pair from the top-left Order ID.")}</p></div><FileDropZone accept="application/pdf,.pdf" title={shippingLabelImporting ? t("Importing labels...") : t("Drop label PDF or open files")} description={shippingLabelSummary || t("Each paired label prints immediately after its packing slip.")} onFile={(file) => void importShippingLabels(file)} className="compact-file-drop" /></div>
+          <div className="packing-list-header"><div><strong>{t("Available orders")}</strong><span>{t("Order number, descending")}</span></div><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><select value={packingProductFilter} aria-label={t("Product type")} onChange={(event) => setPackingProductFilter(event.target.value as PackingProductFilter)}><option value="all">{t("All product types")}</option><option value="classic_plushies">{t("Classic plushies")}</option><option value="plush_charms">{t("Plush charms only")}</option></select><select value={packingStatusFilter} onChange={(event) => setPackingStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">{t("All statuses")}</option>{orderStatuses.map((status) => <option key={status} value={status}>{t(statusLabels[status])}</option>)}</select><div className="packing-list-actions"><button onClick={() => setPackingSelection((current) => [...new Set([...current, ...packingAvailableOrders.map((order) => order.id)])])}>{t("Select shown")}</button><button onClick={() => setPackingSelection([])}>{t("Clear")}</button></div></div>
+          <div className="packing-order-list">{packingAvailableOrders.map((order) => <label key={order.id} className={isPlushCharm(order) ? "plush-charm-packing-order" : ""}><input type="checkbox" checked={packingSelection.includes(order.id)} onChange={() => setPackingSelection((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><div><strong>{orderLabel(order)} | {order.plushName || t("Unnamed plushie")}</strong><span>{order.customerName} | {displayedCharacter(order) || t("No character")}</span><OrderMarkers order={order} manualOrders={manualOrders} /></div><StatusPill status={order.status} /></label>)}</div>
         </div>
-        <div className="packing-preview"><div className="preview-heading"><div><h2>A6 print preview</h2><p>Every order is paired with either its actual shipping label or a clear manual-label instruction page.</p></div><span>{packingOrders.length} selected</span></div>{packingOrders.length ? <div className="slip-grid">{packingOrders.map((order) => <Fragment key={order.id}><PackingSlip order={order} manualOrders={manualOrders} /><ShippingLabelPage order={order} manualOrders={manualOrders} /></Fragment>)}</div> : <div className="preview-empty"><strong>No orders selected</strong><p>Enter order IDs or tick orders from the list.</p></div>}</div>
+        <div className="packing-preview"><div className="preview-heading"><div><h2>{t("A6 print preview")}</h2><p>{t("Every order is paired with either its actual shipping label or a clear manual-label instruction page.")}</p></div><span>{packingOrders.length} {" " + t("selected")}</span></div>{packingOrders.length ? <div className="slip-grid">{packingOrders.map((order) => <Fragment key={order.id}><PackingSlip order={order} manualOrders={manualOrders} /><ShippingLabelPage order={order} manualOrders={manualOrders} /></Fragment>)}</div> : <div className="preview-empty"><strong>{t("No orders selected")}</strong><p>{t("Enter order IDs or tick orders from the list.")}</p></div>}</div>
       </section>}
 
       {view === "print_envelope" && <section className="envelope-page">
         <div className="envelope-controls card no-envelope-print">
-          <div className="packing-manual"><div><h2>Choose orders to print</h2><p>Enter order IDs, choose a stage, or select every order shown in that stage.</p></div><div className="manual-entry"><input value={manualEnvelopeIds} onChange={(event) => setManualEnvelopeIds(event.target.value)} onKeyDown={(event) => event.key === "Enter" && selectManualEnvelopeOrders()} placeholder="Example: 1402, 1403, 1404" /><button className="button primary" onClick={selectManualEnvelopeOrders}>Add order IDs</button></div></div>
-          <div className="canva-connection connected"><div><strong>Envelope print settings</strong><span>Font, size, spacing, and text box placement are managed in Settings / Print Settings.</span></div><button className="view-button" onClick={() => setView("settings")}>Open settings</button></div>
-          <div className="packing-list-header"><div><strong>Available orders</strong><span>Order number, descending</span></div><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><select value={envelopeStatusFilter} onChange={(event) => setEnvelopeStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select><div className="packing-list-actions"><button onClick={() => setEnvelopeSelection((current) => [...new Set([...current, ...envelopeAvailableOrders.map((order) => order.id)])])}>Select shown</button><button onClick={() => setEnvelopeSelection([])}>Clear</button></div></div>
-          <div className="packing-order-list">{envelopeAvailableOrders.map((order) => { const selectedIndex = envelopeSelection.indexOf(order.id); return <label key={order.id}><input type="checkbox" checked={selectedIndex >= 0} onChange={() => setEnvelopeSelection((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><div><strong>{orderLabel(order)} | {(order.plushName || "Unnamed plushie").toUpperCase()}</strong><span>{order.customerName || "No customer"} | {order.character || "No character"}</span></div>{selectedIndex >= 0 ? <b className="envelope-order-position">{selectedIndex + 1}</b> : <StatusPill status={order.status} />}</label>; })}</div>
+          <div className="packing-manual"><div><h2>{t("Choose orders to print")}</h2><p>{t("Enter order IDs, choose a stage, or select every order shown in that stage.")}</p></div><div className="manual-entry"><input value={manualEnvelopeIds} onChange={(event) => setManualEnvelopeIds(event.target.value)} onKeyDown={(event) => event.key === "Enter" && selectManualEnvelopeOrders()} placeholder={t("Example: 1402, 1403, 1404")} /><button className="button primary" onClick={selectManualEnvelopeOrders}>{t("Add order IDs")}</button></div></div>
+          <div className="canva-connection connected"><div><strong>{t("Envelope print settings")}</strong><span>{t("Font, size, spacing, and text box placement are managed in Settings / Print Settings.")}</span></div><button className="view-button" onClick={() => setView("settings")}>{t("Open settings")}</button></div>
+          <div className="packing-list-header"><div><strong>{t("Available orders")}</strong><span>{t("Order number, descending")}</span></div><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><select value={envelopeStatusFilter} onChange={(event) => setEnvelopeStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">{t("All statuses")}</option>{orderStatuses.map((status) => <option key={status} value={status}>{t(statusLabels[status])}</option>)}</select><div className="packing-list-actions"><button onClick={() => setEnvelopeSelection((current) => [...new Set([...current, ...envelopeAvailableOrders.map((order) => order.id)])])}>{t("Select shown")}</button><button onClick={() => setEnvelopeSelection([])}>{t("Clear")}</button></div></div>
+          <div className="packing-order-list">{envelopeAvailableOrders.map((order) => { const selectedIndex = envelopeSelection.indexOf(order.id); return <label key={order.id}><input type="checkbox" checked={selectedIndex >= 0} onChange={() => setEnvelopeSelection((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><div><strong>{orderLabel(order)} | {(order.plushName || "Unnamed plushie").toUpperCase()}</strong><span>{order.customerName || t("No customer")} | {order.character || t("No character")}</span></div>{selectedIndex >= 0 ? <b className="envelope-order-position">{selectedIndex + 1}</b> : <StatusPill status={order.status} />}</label>; })}</div>
         </div>
-        <div className="envelope-preview"><div className="preview-heading"><div><h2>A4 page order</h2><p>Two names are placed on each page using your uploaded font and envelope settings.</p></div><span>{envelopePages.length} pages</span></div>{envelopePages.length ? <div className="envelope-sheet-list">{envelopePages.map((pageSlots, index) => <EnvelopeSheet key={index} pageNumber={index + 1} slots={pageSlots} slotOffset={index * 2} settings={envelopePrintSettings} onManualNameChange={updateManualEnvelopeName} />)}</div> : <div className="preview-empty"><strong>No orders selected</strong><p>Choose orders from the list to build the envelope pages.</p></div>}</div>
+        <div className="envelope-preview"><div className="preview-heading"><div><h2>{t("A4 page order")}</h2><p>{t("Two names are placed on each page using your uploaded font and envelope settings.")}</p></div><span>{envelopePages.length} {" " + t("pages")}</span></div>{envelopePages.length ? <div className="envelope-sheet-list">{envelopePages.map((pageSlots, index) => <EnvelopeSheet key={index} pageNumber={index + 1} slots={pageSlots} slotOffset={index * 2} settings={envelopePrintSettings} onManualNameChange={updateManualEnvelopeName} />)}</div> : <div className="preview-empty"><strong>{t("No orders selected")}</strong><p>{t("Choose orders from the list to build the envelope pages.")}</p></div>}</div>
       </section>}
 
       {view === "sales_report" && session.role === "admin" && <section className="sales-report-page">
-        <div className="report-controls card no-print"><div><label>From<input type="date" value={reportStartDate} onChange={(event) => setReportStartDate(event.target.value)} /></label><label>To<input type="date" value={reportEndDate} onChange={(event) => setReportEndDate(event.target.value)} /></label><label>Sales source<SourceFilterSelect value={reportSourceFilter} onChange={setReportSourceFilter} /></label></div><div><button className="button secondary" onClick={() => setReportSelectedOrders(dateFilteredReportRows.map((row) => row.orderNumber))}>Select shown</button><button className="button secondary" onClick={() => setReportSelectedOrders([])}>Use all matching</button><button className="button primary" onClick={() => printView("print-sales-report")}>Print / Save PDF</button></div></div>
-        <div className="report-selection card no-print"><div className="report-selection-heading"><strong>Choose individual orders</strong><span>{reportSelectedOrders.length ? `${reportSelectedOrders.length} selected` : "All orders matching the dates are included"}</span></div><div>{dateFilteredReportRows.map((row) => <label key={row.orderNumber}><input type="checkbox" checked={reportSelectedOrders.includes(row.orderNumber)} onChange={() => setReportSelectedOrders((current) => current.includes(row.orderNumber) ? current.filter((number) => number !== row.orderNumber) : [...current, row.orderNumber])} /><span>#{row.orderNumber}</span><small>{formatDate(row.orderDate)} | {row.customerName}</small></label>)}</div></div>
+        <div className="report-controls card no-print"><div><label>{t("From")}<input type="date" value={reportStartDate} onChange={(event) => setReportStartDate(event.target.value)} /></label><label>{t("To")}<input type="date" value={reportEndDate} onChange={(event) => setReportEndDate(event.target.value)} /></label><label>{t("Sales source")}<SourceFilterSelect value={reportSourceFilter} onChange={setReportSourceFilter} /></label></div><div><button className="button secondary" onClick={() => setReportSelectedOrders(dateFilteredReportRows.map((row) => row.orderNumber))}>{t("Select shown")}</button><button className="button secondary" onClick={() => setReportSelectedOrders([])}>{t("Use all matching")}</button><button className="button primary" onClick={() => printView("print-sales-report")}>{t("Print / Save PDF")}</button></div></div>
+        <div className="report-selection card no-print"><div className="report-selection-heading"><strong>{t("Choose individual orders")}</strong><span>{reportSelectedOrders.length ? `${reportSelectedOrders.length} selected` : t("All orders matching the dates are included")}</span></div><div>{dateFilteredReportRows.map((row) => <label key={row.orderNumber}><input type="checkbox" checked={reportSelectedOrders.includes(row.orderNumber)} onChange={() => setReportSelectedOrders((current) => current.includes(row.orderNumber) ? current.filter((number) => number !== row.orderNumber) : [...current, row.orderNumber])} /><span>#{row.orderNumber}</span><small>{formatDate(row.orderDate)} | {row.customerName}</small></label>)}</div></div>
         <section className="sales-report-print card">
-          <div className="report-title"><div><p>MEANINGFUL PLUSHIES</p><h2>Sales Report</h2><span>{reportStartDate || "All dates"}{reportEndDate ? ` to ${reportEndDate}` : ""}</span></div><div><strong>{visibleReportRows.length}</strong><span>orders</span></div></div>
-          <div className="report-summary"><div><span>Sale price</span><strong>{formatMoney(reportTotals.sales)}</strong></div><div><span>Discounts</span><strong>{formatMoney(reportTotals.discounts)}</strong></div><div><span>Processor fees</span><strong>{formatMoney(reportTotals.processingFees)}</strong></div><div><span>Shopify fees</span><strong>{formatMoney(reportTotals.shopifyFees)}</strong></div><div><span>Total fees</span><strong>{formatMoney(reportTotals.fees)}</strong></div><div><span>Cash after fees</span><strong>{formatMoney(reportTotals.cash)}</strong></div></div>
-          <section className="report-character-sales"><div><strong>Characters sold</strong><span>Based on the orders currently included in this report.</span></div><div className="report-character-sales-grid">{reportCharacterSales.map(([character, count]) => <article key={character}><span>{character}</span><strong>{count}</strong><small>sold</small></article>)}{!reportCharacterSales.length && <p>No character data in the selected orders.</p>}</div></section>
-          <div className="table-scroll"><table className="orders-table report-table"><thead><tr><th>Order</th><th>Date</th><th>Customer</th><th>Character</th><th>Speaker</th><th>Payment</th><th>Sale price</th><th>Discount</th><th>Processor fee</th><th>Shopify fee</th><th>Cash after fees</th></tr></thead><tbody>{visibleReportRows.map((row) => <tr key={row.orderNumber}><td><strong>#{row.orderNumber}</strong></td><td>{formatDate(row.orderDate)}</td><td>{row.customerName || "-"}</td><td>{row.characters.join(", ") || "-"}</td><td>{row.voiceLengths.map((length) => `${length}s`).join(", ") || "-"}</td><td>{row.paymentProcessor}</td><td>{formatMoney(row.salePrice)}</td><td>{formatMoney(row.totalDiscount)}</td><td>{formatMoney(row.processingFee)}</td><td>{formatMoney(row.shopifyFee)}</td><td><strong>{formatMoney(row.cashAfterFees)}</strong></td></tr>)}</tbody></table></div>
-          {!visibleReportRows.length && <div className="empty"><strong>No orders in this report</strong><p>Choose orders or adjust the date range.</p></div>}
+          <div className="report-title"><div><p>{t("MEANINGFUL PLUSHIES")}</p><h2>{t("Sales Report")}</h2><span>{reportStartDate || t("All dates")}{reportEndDate ? ` to ${reportEndDate}` : ""}</span></div><div><strong>{visibleReportRows.length}</strong><span>{t("orders")}</span></div></div>
+          <div className="report-summary"><div><span>{t("Sale price")}</span><strong>{formatMoney(reportTotals.sales)}</strong></div><div><span>{t("Discounts")}</span><strong>{formatMoney(reportTotals.discounts)}</strong></div><div><span>{t("Processor fees")}</span><strong>{formatMoney(reportTotals.processingFees)}</strong></div><div><span>{t("Shopify fees")}</span><strong>{formatMoney(reportTotals.shopifyFees)}</strong></div><div><span>{t("Total fees")}</span><strong>{formatMoney(reportTotals.fees)}</strong></div><div><span>{t("Cash after fees")}</span><strong>{formatMoney(reportTotals.cash)}</strong></div></div>
+          <section className="report-character-sales"><div><strong>{t("Characters sold")}</strong><span>{t("Based on the orders currently included in this report.")}</span></div><div className="report-character-sales-grid">{reportCharacterSales.map(([character, count]) => <article key={character}><span>{character}</span><strong>{count}</strong><small>{t("sold")}</small></article>)}{!reportCharacterSales.length && <p>{t("No character data in the selected orders.")}</p>}</div></section>
+          <div className="table-scroll"><table className="orders-table report-table"><thead><tr><th>{t("Order")}</th><th>{t("Date")}</th><th>{t("Customer")}</th><th>{t("Character")}</th><th>{t("Speaker")}</th><th>{t("Payment")}</th><th>{t("Sale price")}</th><th>{t("Discount")}</th><th>{t("Processor fee")}</th><th>{t("Shopify fee")}</th><th>{t("Cash after fees")}</th></tr></thead><tbody>{visibleReportRows.map((row) => <tr key={row.orderNumber}><td><strong>#{row.orderNumber}</strong></td><td>{formatDate(row.orderDate)}</td><td>{row.customerName || "-"}</td><td>{row.characters.join(", ") || "-"}</td><td>{row.voiceLengths.map((length) => `${length}s`).join(", ") || "-"}</td><td>{row.paymentProcessor}</td><td>{formatMoney(row.salePrice)}</td><td>{formatMoney(row.totalDiscount)}</td><td>{formatMoney(row.processingFee)}</td><td>{formatMoney(row.shopifyFee)}</td><td><strong>{formatMoney(row.cashAfterFees)}</strong></td></tr>)}</tbody></table></div>
+          {!visibleReportRows.length && <div className="empty"><strong>{t("No orders in this report")}</strong><p>{t("Choose orders or adjust the date range.")}</p></div>}
         </section>
       </section>}
 
       {view === "stock" && session.role === "admin" && <section className="stock-page">
-        <div className="stock-grid">{stock.characters.map((item) => <article className="stock-card card" key={item.name}><span>{item.name}</span><strong>{item.remaining}</strong><p>{item.sold} sold from {item.initial} initial stock</p></article>)}</div>
-        <section className="card voice-stock"><div><span>Shared voice inventory</span><strong>{stock.voiceRemaining}</strong><p>{stock.voiceSold} total sold from {stock.voiceInitial} initial stock</p></div><div className="voice-breakdown">{stock.voices.map((voice) => <article key={voice.length}><strong>{voice.sold}</strong><span>{voice.length}s sold</span></article>)}</div></section>
+        <div className="stock-grid">{stock.characters.map((item) => <article className="stock-card card" key={item.name}><span>{item.name}</span><strong>{item.remaining}</strong><p>{item.sold} {" " + t("sold from") + " "}{item.initial} {" " + t("initial stock")}</p></article>)}</div>
+        <section className="card voice-stock"><div><span>{t("Shared voice inventory")}</span><strong>{stock.voiceRemaining}</strong><p>{stock.voiceSold} {" " + t("total sold from") + " "}{stock.voiceInitial} {" " + t("initial stock")}</p></div><div className="voice-breakdown">{stock.voices.map((voice) => <article key={voice.length}><strong>{voice.sold}</strong><span>{voice.length}{t("s sold")}</span></article>)}</div></section>
       </section>}
 
-      {view === "history" && session.role === "admin" && <section className="history-page card"><div className="history-page-header"><div><h2>Activity history</h2><p>Every recorded import, edit, status change, print, and deletion.</p></div><span>{historyEvents.length} actions</span></div><div className="activity-list">{historyEvents.map((event) => <article key={event.id}><div className="activity-icon"><Icon name="history" /></div><div><strong>{event.action}</strong><p>{event.detail}</p><span>{event.orderNumber ? `Order #${event.orderNumber} | ` : ""}{event.actor} | {formatDate(event.createdAt, true)}</span></div></article>)}{!historyEvents.length && <div className="empty"><strong>No activity recorded yet</strong><p>New actions will appear here.</p></div>}</div></section>}
+      {view === "history" && session.role === "admin" && <section className="history-page card"><div className="history-page-header"><div><h2>{t("Activity history")}</h2><p>{t("Every recorded import, edit, status change, print, and deletion.")}</p></div><span>{historyEvents.length} {" " + t("actions")}</span></div><div className="activity-list">{historyEvents.map((event) => <article key={event.id}><div className="activity-icon"><Icon name="history" /></div><div><strong>{event.action}</strong><p>{event.detail}</p><span>{event.orderNumber ? `Order #${event.orderNumber} | ` : ""}{event.actor} | {formatDate(event.createdAt, true)}</span></div></article>)}{!historyEvents.length && <div className="empty"><strong>{t("No activity recorded yet")}</strong><p>{t("New actions will appear here.")}</p></div>}</div></section>}
 
       {view === "meta_capi" && session.role === "admin" && <section className="settings-page card meta-capi-page">
-        <div className="settings-heading"><div><h2>Ads tracking settings</h2><p>Save the Meta Pixel ID here, then use server-side Meta CAPI to check whether purchase tracking is working. Other tracking notes can live here too.</p></div><span>{metaCapiLogs.length} logs</span></div>
+        <div className="settings-heading"><div><h2>{t("Ads tracking settings")}</h2><p>{t("Save the Meta Pixel ID here, then use server-side Meta CAPI to check whether purchase tracking is working. Other tracking notes can live here too.")}</p></div><span>{metaCapiLogs.length} {" " + t("logs")}</span></div>
         <div className="meta-capi-grid">
-          <article className={`meta-capi-status ${metaCapiEnvironment.pixelConfigured ? "ready" : "missing"}`}><span>Pixel ID</span><strong>{metaCapiEnvironment.pixelConfigured ? metaCapiSettings.pixelId || "Configured in Vercel" : "Missing"}</strong><p>Pixel ID can be saved here. Vercel env is still supported.</p></article>
-          <article className={`meta-capi-status ${metaCapiEnvironment.tokenConfigured ? "ready" : "missing"}`}><span>Access token</span><strong>{metaCapiEnvironment.tokenConfigured ? metaCapiEnvironment.tokenMasked : "Missing"}</strong><p>Add `META_CAPI_ACCESS_TOKEN` in Vercel.</p></article>
-          <article className={`meta-capi-status ${metaCapiEnvironment.testEventCodeConfigured || metaCapiSettings.testEventCode ? "ready" : ""}`}><span>Test events</span><strong>{metaCapiEnvironment.testEventCodeConfigured || metaCapiSettings.testEventCode ? "Ready" : "Optional"}</strong><p>Use this while checking Meta Events Manager.</p></article>
+          <article className={`meta-capi-status ${metaCapiEnvironment.pixelConfigured ? "ready" : "missing"}`}><span>{t("Pixel ID")}</span><strong>{metaCapiEnvironment.pixelConfigured ? metaCapiSettings.pixelId || t("Configured in Vercel") : t("Missing")}</strong><p>{t("Pixel ID can be saved here. Vercel env is still supported.")}</p></article>
+          <article className={`meta-capi-status ${metaCapiEnvironment.tokenConfigured ? "ready" : "missing"}`}><span>{t("Access token")}</span><strong>{metaCapiEnvironment.tokenConfigured ? metaCapiEnvironment.tokenMasked : t("Missing")}</strong><p>{t("Add `META_CAPI_ACCESS_TOKEN` in Vercel.")}</p></article>
+          <article className={`meta-capi-status ${metaCapiEnvironment.testEventCodeConfigured || metaCapiSettings.testEventCode ? "ready" : ""}`}><span>{t("Test events")}</span><strong>{metaCapiEnvironment.testEventCodeConfigured || metaCapiSettings.testEventCode ? t("Ready") : t("Optional")}</strong><p>{t("Use this while checking Meta Events Manager.")}</p></article>
         </div>
         <div className="meta-capi-panels">
           <section className="meta-capi-panel">
-            <h3>Tracking setup</h3>
-            <label>Meta Pixel ID<input value={metaCapiSettings.pixelId} onChange={(event) => setMetaCapiSettings((current) => ({ ...current, pixelId: event.target.value.replace(/[^\d]/g, "") }))} placeholder="Example: 123456789012345" /></label>
-            <label className="meta-capi-toggle"><input type="checkbox" checked={metaCapiSettings.browserPixelEnabled} onChange={(event) => setMetaCapiSettings((current) => ({ ...current, browserPixelEnabled: event.target.checked }))} /><span>Browser Pixel is installed on Shopify</span></label>
-            <label>Tracking notes<textarea value={metaCapiSettings.trackingNotes} onChange={(event) => setMetaCapiSettings((current) => ({ ...current, trackingNotes: event.target.value }))} placeholder="Example: Pixel installed through Shopify customer events. TikTok tracking not connected yet." /></label>
-            <p className="meta-capi-help">The Pixel ID is safe to save here. Access tokens stay in Vercel because they are private keys.</p>
+            <h3>{t("Tracking setup")}</h3>
+            <label>{t("Meta Pixel ID")}<input value={metaCapiSettings.pixelId} onChange={(event) => setMetaCapiSettings((current) => ({ ...current, pixelId: event.target.value.replace(/[^\d]/g, "") }))} placeholder={t("Example: 123456789012345")} /></label>
+            <label className="meta-capi-toggle"><input type="checkbox" checked={metaCapiSettings.browserPixelEnabled} onChange={(event) => setMetaCapiSettings((current) => ({ ...current, browserPixelEnabled: event.target.checked }))} /><span>{t("Browser Pixel is installed on Shopify")}</span></label>
+            <label>{t("Tracking notes")}<textarea value={metaCapiSettings.trackingNotes} onChange={(event) => setMetaCapiSettings((current) => ({ ...current, trackingNotes: event.target.value }))} placeholder={t("Example: Pixel installed through Shopify customer events. TikTok tracking not connected yet.")} /></label>
+            <p className="meta-capi-help">{t("The Pixel ID is safe to save here. Access tokens stay in Vercel because they are private keys.")}</p>
           </section>
           <section className="meta-capi-panel">
-            <h3>Server purchase event rules</h3>
-            <label className="meta-capi-toggle"><input type="checkbox" checked={metaCapiSettings.enabled} onChange={(event) => setMetaCapiSettings((current) => ({ ...current, enabled: event.target.checked }))} /><span>Enable Meta CAPI purchase tracking</span></label>
-            <label>Send mode<select value={metaCapiSettings.purchaseMode} onChange={(event) => setMetaCapiSettings((current) => ({ ...current, purchaseMode: event.target.value as MetaCapiSettings["purchaseMode"] }))}><option value="manual_only">Only RM0/manual-payment Shopify orders</option><option value="all">All Shopify purchase orders</option><option value="disabled">Disabled</option></select></label>
-            <label>Test event code<input value={metaCapiSettings.testEventCode} onChange={(event) => setMetaCapiSettings((current) => ({ ...current, testEventCode: event.target.value }))} placeholder="Optional Meta test event code" /></label>
-            <button className="button primary" disabled={metaCapiBusy === "save"} onClick={saveMetaCapiAdminSettings}>{metaCapiBusy === "save" ? "Saving..." : "Save Meta settings"}</button>
+            <h3>{t("Server purchase event rules")}</h3>
+            <label className="meta-capi-toggle"><input type="checkbox" checked={metaCapiSettings.enabled} onChange={(event) => setMetaCapiSettings((current) => ({ ...current, enabled: event.target.checked }))} /><span>{t("Enable Meta CAPI purchase tracking")}</span></label>
+            <label>{t("Send mode")}<select value={metaCapiSettings.purchaseMode} onChange={(event) => setMetaCapiSettings((current) => ({ ...current, purchaseMode: event.target.value as MetaCapiSettings["purchaseMode"] }))}><option value="manual_only">{t("Only RM0/manual-payment Shopify orders")}</option><option value="all">{t("All Shopify purchase orders")}</option><option value="disabled">{t("Disabled")}</option></select></label>
+            <label>{t("Test event code")}<input value={metaCapiSettings.testEventCode} onChange={(event) => setMetaCapiSettings((current) => ({ ...current, testEventCode: event.target.value }))} placeholder={t("Optional Meta test event code")} /></label>
+            <button className="button primary" disabled={metaCapiBusy === "save"} onClick={saveMetaCapiAdminSettings}>{metaCapiBusy === "save" ? t("Saving...") : t("Save Meta settings")}</button>
           </section>
           <section className="meta-capi-panel">
-            <h3>Test and retry</h3>
-            <p>Test events use fake order data. Retry sends real saved Shopify order numbers again and updates the order-level Meta status.</p>
-            <div className="meta-capi-actions"><button className="button secondary" disabled={Boolean(metaCapiBusy)} onClick={() => runMetaCapiAction("test_purchase")}>{metaCapiBusy === "test_purchase" ? "Sending..." : "Test normal Shopify purchase"}</button><button className="button secondary" disabled={Boolean(metaCapiBusy)} onClick={() => runMetaCapiAction("test_whatsapp_purchase")}>{metaCapiBusy === "test_whatsapp_purchase" ? "Sending..." : "Test RM0/manual payment"}</button></div>
-            <label>Retry Shopify order numbers<textarea value={metaCapiRetryOrders} onChange={(event) => setMetaCapiRetryOrders(event.target.value)} placeholder="Example: 1468, 1469, 1470" /></label>
-            <button className="button primary" disabled={Boolean(metaCapiBusy) || !metaCapiRetryOrders.trim()} onClick={() => runMetaCapiAction("retry_orders")}>{metaCapiBusy === "retry_orders" ? "Retrying..." : "Retry selected orders"}</button>
+            <h3>{t("Test and retry")}</h3>
+            <p>{t("Test events use fake order data. Retry sends real saved Shopify order numbers again and updates the order-level Meta status.")}</p>
+            <div className="meta-capi-actions"><button className="button secondary" disabled={Boolean(metaCapiBusy)} onClick={() => runMetaCapiAction("test_purchase")}>{metaCapiBusy === "test_purchase" ? t("Sending...") : t("Test normal Shopify purchase")}</button><button className="button secondary" disabled={Boolean(metaCapiBusy)} onClick={() => runMetaCapiAction("test_whatsapp_purchase")}>{metaCapiBusy === "test_whatsapp_purchase" ? t("Sending...") : t("Test RM0/manual payment")}</button></div>
+            <label>{t("Retry Shopify order numbers")}<textarea value={metaCapiRetryOrders} onChange={(event) => setMetaCapiRetryOrders(event.target.value)} placeholder={t("Example: 1468, 1469, 1470")} /></label>
+            <button className="button primary" disabled={Boolean(metaCapiBusy) || !metaCapiRetryOrders.trim()} onClick={() => runMetaCapiAction("retry_orders")}>{metaCapiBusy === "retry_orders" ? t("Retrying...") : t("Retry selected orders")}</button>
           </section>
         </div>
         <div className="meta-capi-log-card">
-          <div className="settings-heading compact"><div><h2>Recent Meta events</h2><p>Shows the last 100 server-side purchase attempts.</p></div><button className="button secondary" onClick={reloadMetaCapiStatus}>Refresh logs</button></div>
-          <div className="table-scroll"><table className="orders-table meta-capi-log-table"><thead><tr><th>Date</th><th>Order</th><th>Status</th><th>Value</th><th>Event ID</th><th>Response</th><th>Error</th></tr></thead><tbody>{metaCapiLogs.map((log) => <tr key={log.id}><td>{formatDate(log.createdAt, true)}</td><td>{log.orderNumber || "-"}</td><td><span className={`meta-capi-log-status ${log.status}`}>{log.status.replace("_", " ")}</span></td><td>{formatMoney(log.value)}</td><td><code>{log.eventId}</code></td><td>{log.responseId || "-"}</td><td>{log.error || "-"}</td></tr>)}</tbody></table>{!metaCapiLogs.length && <div className="empty"><strong>No Meta events yet</strong><p>Run a test event or wait for a matching Shopify order.</p></div>}</div>
+          <div className="settings-heading compact"><div><h2>{t("Recent Meta events")}</h2><p>{t("Shows the last 100 server-side purchase attempts.")}</p></div><button className="button secondary" onClick={reloadMetaCapiStatus}>{t("Refresh logs")}</button></div>
+          <div className="table-scroll"><table className="orders-table meta-capi-log-table"><thead><tr><th>{t("Date")}</th><th>{t("Order")}</th><th>{t("Status")}</th><th>{t("Value")}</th><th>{t("Event ID")}</th><th>{t("Response")}</th><th>{t("Error")}</th></tr></thead><tbody>{metaCapiLogs.map((log) => <tr key={log.id}><td>{formatDate(log.createdAt, true)}</td><td>{log.orderNumber || "-"}</td><td><span className={`meta-capi-log-status ${log.status}`}>{log.status.replace("_", " ")}</span></td><td>{formatMoney(log.value)}</td><td><code>{log.eventId}</code></td><td>{log.responseId || "-"}</td><td>{log.error || "-"}</td></tr>)}</tbody></table>{!metaCapiLogs.length && <div className="empty"><strong>{t("No Meta events yet")}</strong><p>{t("Run a test event or wait for a matching Shopify order.")}</p></div>}</div>
         </div>
       </section>}
 
       {view === "settings" && session.role === "admin" && <section className="settings-page card">
-        <div className="settings-heading"><div><h2>Accounts and permissions</h2><p>Admins can edit everything. Staff can use workflow pages and only advance order stages.</p></div><span>{accounts.length} accounts</span></div>
-        <div className="account-create"><input placeholder="Username" value={newAccount.username} onChange={(event) => setNewAccount({ ...newAccount, username: event.target.value.toLowerCase() })} /><input placeholder="Display name" value={newAccount.displayName} onChange={(event) => setNewAccount({ ...newAccount, displayName: event.target.value })} /><select value={newAccount.role} onChange={(event) => setNewAccount({ ...newAccount, role: event.target.value as UserRole })}><option value="staff">Staff</option><option value="creator">Creator</option><option value="admin">Admin</option></select><input type="password" placeholder="Password (8+ characters)" value={newAccount.password} onChange={(event) => setNewAccount({ ...newAccount, password: event.target.value })} /><button className="button primary" onClick={createAccount}>Create account</button></div>
-        <div className="account-list">{accounts.map((account) => <div className="account-row" key={account.id}><strong>@{account.username}</strong><input value={account.displayName} onChange={(event) => setAccounts((current) => current.map((item) => item.id === account.id ? { ...item, displayName: event.target.value } : item))} /><select value={account.role} onChange={(event) => setAccounts((current) => current.map((item) => item.id === account.id ? { ...item, role: event.target.value as UserRole } : item))}><option value="staff">Staff</option><option value="creator">Creator</option><option value="admin">Admin</option></select><input type="password" placeholder="New password (optional)" value={accountPasswords[account.id] ?? ""} onChange={(event) => setAccountPasswords((current) => ({ ...current, [account.id]: event.target.value }))} /><label><input type="checkbox" checked={account.active} onChange={(event) => setAccounts((current) => current.map((item) => item.id === account.id ? { ...item, active: event.target.checked } : item))} /> Active</label><button className="button primary" onClick={() => saveAccount(account, accountPasswords[account.id])}>Save</button></div>)}</div>
+        <div className="settings-heading"><div><h2>{t("Accounts and permissions")}</h2><p>{t("Admins can edit everything. Staff can use workflow pages and only advance order stages.")}</p></div><span>{accounts.length} {" " + t("accounts")}</span></div>
+        <div className="account-create"><input placeholder={t("Username")} value={newAccount.username} onChange={(event) => setNewAccount({ ...newAccount, username: event.target.value.toLowerCase() })} /><input placeholder={t("Display name")} value={newAccount.displayName} onChange={(event) => setNewAccount({ ...newAccount, displayName: event.target.value })} /><select value={newAccount.role} onChange={(event) => setNewAccount({ ...newAccount, role: event.target.value as UserRole })}><option value="staff">{t("Staff")}</option><option value="creator">{t("Creator")}</option><option value="admin">{t("Admin")}</option></select><input type="password" placeholder={t("Password (8+ characters)")} value={newAccount.password} onChange={(event) => setNewAccount({ ...newAccount, password: event.target.value })} /><button className="button primary" onClick={createAccount}>{t("Create account")}</button></div>
+        <div className="account-list">{accounts.map((account) => <div className="account-row" key={account.id}><strong>@{account.username}</strong><input value={account.displayName} onChange={(event) => setAccounts((current) => current.map((item) => item.id === account.id ? { ...item, displayName: event.target.value } : item))} /><select value={account.role} onChange={(event) => setAccounts((current) => current.map((item) => item.id === account.id ? { ...item, role: event.target.value as UserRole } : item))}><option value="staff">{t("Staff")}</option><option value="creator">{t("Creator")}</option><option value="admin">{t("Admin")}</option></select><input type="password" placeholder={t("New password (optional)")} value={accountPasswords[account.id] ?? ""} onChange={(event) => setAccountPasswords((current) => ({ ...current, [account.id]: event.target.value }))} /><label><input type="checkbox" checked={account.active} onChange={(event) => setAccounts((current) => current.map((item) => item.id === account.id ? { ...item, active: event.target.checked } : item))} /> {" " + t("Active")}</label><button className="button primary" onClick={() => saveAccount(account, accountPasswords[account.id])}>{t("Save")}</button></div>)}</div>
 
-        <div className="settings-heading"><div><h2>Initial stock</h2><p>Character stock is separate. Voice stock is one shared pool, so any 5s, 10s, or 20s sale deducts one unit.</p></div></div>
-        <div className="stock-settings">{[...bookkeepingInventoryStockKeys, "VOICE"].map((itemKey) => { const setting = stockSettings.find((item) => item.itemKey === itemKey) ?? { itemKey, initialStock: 0 }; return <div key={itemKey}><strong>{itemKey === "VOICE" ? "SHARED VOICE UNITS" : itemKey}</strong><input type="number" min="0" step="1" value={setting.initialStock} onChange={(event) => setStockSettings((current) => [...current.filter((item) => item.itemKey !== itemKey), { itemKey, initialStock: Number(event.target.value) }])} /><button className="button primary" onClick={() => saveStock(setting)}>Save</button></div>; })}</div>
+        <div className="settings-heading"><div><h2>{t("Initial stock")}</h2><p>{t("Character stock is separate. Voice stock is one shared pool, so any 5s, 10s, or 20s sale deducts one unit.")}</p></div></div>
+        <div className="stock-settings">{[...bookkeepingInventoryStockKeys, "VOICE"].map((itemKey) => { const setting = stockSettings.find((item) => item.itemKey === itemKey) ?? { itemKey, initialStock: 0 }; return <div key={itemKey}><strong>{itemKey === "VOICE" ? t("SHARED VOICE UNITS") : itemKey}</strong><input type="number" min="0" step="1" value={setting.initialStock} onChange={(event) => setStockSettings((current) => [...current.filter((item) => item.itemKey !== itemKey), { itemKey, initialStock: Number(event.target.value) }])} /><button className="button primary" onClick={() => saveStock(setting)}>{t("Save")}</button></div>; })}</div>
 
-        <div className="settings-heading"><div><h2>Print settings</h2><p>Control the Print Envelope font, text size, spacing, and name box placement. Names are converted to all caps before printing.</p></div></div>
+        <div className="settings-heading"><div><h2>{t("Print settings")}</h2><p>{t("Control the Print Envelope font, text size, spacing, and name box placement. Names are converted to all caps before printing.")}</p></div></div>
         <EnvelopeSettingsPanel settings={envelopePrintSettings} onChange={updateEnvelopePrintSettings} onFontUpload={uploadEnvelopeFont} onReset={() => setEnvelopePrintSettings(defaultEnvelopePrintSettings)} />
 
-        <div className="settings-heading"><div><h2>Payment processor fees</h2><p>New Shopify payment methods appear here automatically. Set a percentage, a fixed RM amount, both, or leave both at zero for no fee.</p></div><span>{processorSettings.length} processors</span></div>
+        <div className="settings-heading"><div><h2>{t("Payment processor fees")}</h2><p>{t("New Shopify payment methods appear here automatically. Set a percentage, a fixed RM amount, both, or leave both at zero for no fee.")}</p></div><span>{processorSettings.length} {" " + t("processors")}</span></div>
         <div className="processor-list">
-          <div className="processor-row shopify-fee-row"><strong>Shopify fee (Stripe and Xendit)</strong><label><input type="number" min="0" step="0.01" value={salesFeeSettings.shopifyPercentage} onChange={(event) => setSalesFeeSettings({ shopifyPercentage: Number(event.target.value) })} /><span>%</span></label><span className="shopify-fee-note">Calculated from the amount collected</span><button className="button primary" onClick={saveShopifyFee}>Save</button></div>
-          <div className="processor-row processor-header"><strong>Payment method</strong><strong>Percentage</strong><strong>Fixed amount</strong><span /></div>
-          {processorSettings.map((setting) => <div className="processor-row" key={setting.processor}><strong>{setting.processor}</strong><label><input type="number" min="0" step="0.01" value={setting.percentage} onChange={(event) => setProcessorSettings((current) => current.map((item) => item.processor === setting.processor ? { ...item, percentage: Number(event.target.value) } : item))} /><span>%</span></label><label><span>RM</span><input type="number" min="0" step="0.01" value={setting.fixedAmount} onChange={(event) => setProcessorSettings((current) => current.map((item) => item.processor === setting.processor ? { ...item, fixedAmount: Number(event.target.value) } : item))} /></label><button className="button primary" onClick={() => saveProcessor(setting)}>Save</button></div>)}
-          {!processorSettings.length && <div className="empty"><strong>No payment methods discovered yet</strong><p>Import a Shopify orders CSV and its payment methods will appear here.</p></div>}
+          <div className="processor-row shopify-fee-row"><strong>{t("Shopify fee (Stripe and Xendit)")}</strong><label><input type="number" min="0" step="0.01" value={salesFeeSettings.shopifyPercentage} onChange={(event) => setSalesFeeSettings({ shopifyPercentage: Number(event.target.value) })} /><span>%</span></label><span className="shopify-fee-note">{t("Calculated from the amount collected")}</span><button className="button primary" onClick={saveShopifyFee}>{t("Save")}</button></div>
+          <div className="processor-row processor-header"><strong>{t("Payment method")}</strong><strong>{t("Percentage")}</strong><strong>{t("Fixed amount")}</strong><span /></div>
+          {processorSettings.map((setting) => <div className="processor-row" key={setting.processor}><strong>{setting.processor}</strong><label><input type="number" min="0" step="0.01" value={setting.percentage} onChange={(event) => setProcessorSettings((current) => current.map((item) => item.processor === setting.processor ? { ...item, percentage: Number(event.target.value) } : item))} /><span>%</span></label><label><span>{t("RM")}</span><input type="number" min="0" step="0.01" value={setting.fixedAmount} onChange={(event) => setProcessorSettings((current) => current.map((item) => item.processor === setting.processor ? { ...item, fixedAmount: Number(event.target.value) } : item))} /></label><button className="button primary" onClick={() => saveProcessor(setting)}>{t("Save")}</button></div>)}
+          {!processorSettings.length && <div className="empty"><strong>{t("No payment methods discovered yet")}</strong><p>{t("Import a Shopify orders CSV and its payment methods will appear here.")}</p></div>}
         </div>
       </section>}
 
       {view === "import" && <section className="import-page">
-        <div className="import-intro"><span>CSV</span><div><h2>Import Shopify exports</h2><p>Upload or paste the CSV files into either side. The app auto-detects the Shopify orders export and the metafields export, then matches line items with each Product block.</p></div></div>
+        <div className="import-intro"><span>{t("CSV")}</span><div><h2>{t("Import Shopify exports")}</h2><p>{t("Upload or paste the CSV files into either side. The app auto-detects the Shopify orders export and the metafields export, then matches line items with each Product block.")}</p></div></div>
         <div className="import-columns">
-          <ImportBox number="1" title="Shopify order export" required value={orderCsv} onChange={setOrderCsv} onFile={(file) => readFile(file, "orders")} placeholder="Name, Email, Financial Status, Lineitem name..." />
-          <ImportBox number="2" title="Order metafields export" value={metafieldCsv} onChange={setMetafieldCsv} onFile={(file) => readFile(file, "metafields")} placeholder="Order GID, Order name, Metafield value..." />
+          <ImportBox number="1" title={t("Shopify order export")} required value={orderCsv} onChange={setOrderCsv} onFile={(file) => readFile(file, "orders")} placeholder={t("Name, Email, Financial Status, Lineitem name...")} />
+          <ImportBox number="2" title={t("Order metafields export")} value={metafieldCsv} onChange={setMetafieldCsv} onFile={(file) => readFile(file, "metafields")} placeholder={t("Order GID, Order name, Metafield value...")} />
         </div>
-        <div className="import-action"><div><strong>Safe repeat imports</strong><p>Existing order numbers are updated without removing status, tracking, notes, or photos.</p></div><button className="button primary large" disabled={!orderCsv.trim() && detectCsvKind(metafieldCsv) !== "orders"} onClick={runImport}>Validate and import orders</button></div>
+        <div className="import-action"><div><strong>{t("Safe repeat imports")}</strong><p>{t("Existing order numbers are updated without removing status, tracking, notes, or photos.")}</p></div><button className="button primary large" disabled={!orderCsv.trim() && detectCsvKind(metafieldCsv) !== "orders"} onClick={runImport}>{t("Validate and import orders")}</button></div>
         <section className="tiktok-import-section card">
-          <div className="settings-heading"><div><h2>TikTok Shop import</h2><p>Upload the TikTok Shop order export to create new orders, or paste plushie details with an Order ID to update existing TikTok orders. The editable preview is what gets saved.</p></div><span>{tikTokOrders.length} TikTok orders</span></div>
+          <div className="settings-heading"><div><h2>{t("TikTok Shop import")}</h2><p>{t("Upload the TikTok Shop order export to create new orders, or paste plushie details with an Order ID to update existing TikTok orders. The editable preview is what gets saved.")}</p></div><span>{tikTokOrders.length} {" " + t("TikTok orders")}</span></div>
           <div className="import-columns">
-            <ImportBox number="3" title="TikTok Shop order export" value={tikTokCsv} onChange={setTikTokCsv} onFile={(file) => readFile(file, "tiktok")} placeholder="Optional if the TikTok order already exists. Order ID, Variation, Order Amount, Buyer Username..." />
+            <ImportBox number="3" title={t("TikTok Shop order export")} value={tikTokCsv} onChange={setTikTokCsv} onFile={(file) => readFile(file, "tiktok")} placeholder={t("Optional if the TikTok order already exists. Order ID, Variation, Order Amount, Buyer Username...")} />
             <div className="import-box">
-              <div className="import-box-header"><span>4</span><div><strong>TikTok plushie details</strong><small>Use the Order ID as the identifier. If you have the full username, paste it in the detail box as Username.</small></div></div>
+              <div className="import-box-header"><span>4</span><div><strong>{t("TikTok plushie details")}</strong><small>{t("Use the Order ID as the identifier. If you have the full username, paste it in the detail box as Username.")}</small></div></div>
               <div className="tiktok-detail-entry-list">
                 {tikTokDetailEntries.map((entry, index) => <article className="tiktok-detail-entry" key={entry.id}>
-                  <div className="tiktok-detail-entry-header"><strong>Entry {index + 1}</strong>{tikTokDetailEntries.length > 1 && <button className="view-button" type="button" onClick={() => removeTikTokDetailEntry(entry.id)}>Remove</button>}</div>
-                  <label>Identifier<input value={entry.identifier} onChange={(event) => updateTikTokDetailEntry(entry.id, { identifier: event.target.value })} placeholder="Order ID, for example 584697260225955022" /></label>
-                  <label>Paste customer details<textarea value={entry.details} onChange={(event) => updateTikTokDetailText(entry.id, event.target.value)} placeholder={"Nama Plushie - Mochi\nJantina Plushie- Female\nTarikh Lahir Plushie - 28/6/2025\nTempat Lahir Plushie - Perak\nOrang Kegemaran Plushie - Panda shomel\nMainan lembut itu milik... Ayangku\nNota bermakna - Ayangku mochi ni adik pda oreo otey."} /></label>
+                  <div className="tiktok-detail-entry-header"><strong>{t("Entry") + " "}{index + 1}</strong>{tikTokDetailEntries.length > 1 && <button className="view-button" type="button" onClick={() => removeTikTokDetailEntry(entry.id)}>{t("Remove")}</button>}</div>
+                  <label>{t("Identifier")}<input value={entry.identifier} onChange={(event) => updateTikTokDetailEntry(entry.id, { identifier: event.target.value })} placeholder={t("Order ID, for example 584697260225955022")} /></label>
+                  <label>{t("Paste customer details")}<textarea value={entry.details} onChange={(event) => updateTikTokDetailText(entry.id, event.target.value)} placeholder={t("Nama Plushie - Mochi\nJantina Plushie- Female\nTarikh Lahir Plushie - 28/6/2025\nTempat Lahir Plushie - Perak\nOrang Kegemaran Plushie - Panda shomel\nMainan lembut itu milik... Ayangku\nNota bermakna - Ayangku mochi ni adik pda oreo otey.")} /></label>
                   <div className="tiktok-detail-preview">
-                    <strong>Editable preview</strong>
-                    <label>Username<input value={entry.username} onChange={(event) => updateTikTokDetailEntry(entry.id, { username: event.target.value })} placeholder="username" /></label>
-                    <label>Plushie's Name<input value={entry.plushName} onChange={(event) => updateTikTokDetailEntry(entry.id, { plushName: event.target.value })} placeholder="Mochi" /></label>
-                    <label>Plushie's Gender<input value={entry.gender} onChange={(event) => updateTikTokDetailEntry(entry.id, { gender: event.target.value })} placeholder="Female" /></label>
-                    <label>Plushie's Birth Date<input value={entry.birthDate} onChange={(event) => updateTikTokDetailEntry(entry.id, { birthDate: event.target.value })} placeholder="28/6/2025" /></label>
-                    <label>Plushie's Birth Place<input value={entry.birthPlace} onChange={(event) => updateTikTokDetailEntry(entry.id, { birthPlace: event.target.value })} placeholder="Perak" /></label>
-                    <label>Plushie's Favourite Person<input value={entry.favouritePerson} onChange={(event) => updateTikTokDetailEntry(entry.id, { favouritePerson: event.target.value })} placeholder="Panda shomel" /></label>
-                    <label>Plushie Belongs to<input value={entry.belongsTo} onChange={(event) => updateTikTokDetailEntry(entry.id, { belongsTo: event.target.value })} placeholder="Ayangku" /></label>
-                    <label className="wide">Meaningful Note<textarea value={entry.meaningfulNote} onChange={(event) => updateTikTokDetailEntry(entry.id, { meaningfulNote: event.target.value })} placeholder="Nota bermakna..." /></label>
+                    <strong>{t("Editable preview")}</strong>
+                    <label>{t("Username")}<input value={entry.username} onChange={(event) => updateTikTokDetailEntry(entry.id, { username: event.target.value })} placeholder={t("username")} /></label>
+                    <label>{t("Plushie's Name")}<input value={entry.plushName} onChange={(event) => updateTikTokDetailEntry(entry.id, { plushName: event.target.value })} placeholder={t("Mochi")} /></label>
+                    <label>{t("Plushie's Gender")}<input value={entry.gender} onChange={(event) => updateTikTokDetailEntry(entry.id, { gender: event.target.value })} placeholder={t("Female")} /></label>
+                    <label>{t("Plushie's Birth Date")}<input value={entry.birthDate} onChange={(event) => updateTikTokDetailEntry(entry.id, { birthDate: event.target.value })} placeholder="28/6/2025" /></label>
+                    <label>{t("Plushie's Birth Place")}<input value={entry.birthPlace} onChange={(event) => updateTikTokDetailEntry(entry.id, { birthPlace: event.target.value })} placeholder={t("Perak")} /></label>
+                    <label>{t("Plushie's Favourite Person")}<input value={entry.favouritePerson} onChange={(event) => updateTikTokDetailEntry(entry.id, { favouritePerson: event.target.value })} placeholder={t("Panda shomel")} /></label>
+                    <label>{t("Plushie Belongs to")}<input value={entry.belongsTo} onChange={(event) => updateTikTokDetailEntry(entry.id, { belongsTo: event.target.value })} placeholder={t("Ayangku")} /></label>
+                    <label className="wide">{t("Meaningful Note")}<textarea value={entry.meaningfulNote} onChange={(event) => updateTikTokDetailEntry(entry.id, { meaningfulNote: event.target.value })} placeholder={t("Nota bermakna...")} /></label>
                   </div>
-                  <FileDropZone accept="audio/*,video/*,application/pdf,image/png,image/jpeg,image/webp,.txt,.doc,.docx" title="TikTok order message" description="Choose or drop the customer's audio, video, or document" selectedName={entry.fileName} onFile={(file) => uploadTikTokDetailFile(entry.id, file)} className="compact-file-drop" />
+                  <FileDropZone accept="audio/*,video/*,application/pdf,image/png,image/jpeg,image/webp,.txt,.doc,.docx" title={t("TikTok order message")} description={t("Choose or drop the customer's audio, video, or document")} selectedName={entry.fileName} onFile={(file) => uploadTikTokDetailFile(entry.id, file)} className="compact-file-drop" />
                 </article>)}
               </div>
-              <button className="button secondary tiktok-add-entry" type="button" onClick={addTikTokDetailEntry}>Add Entry</button>
+              <button className="button secondary tiktok-add-entry" type="button" onClick={addTikTokDetailEntry}>{t("Add Entry")}</button>
             </div>
           </div>
-          <div className="import-action"><div><strong>Auto certificate code</strong><p>With CSV, new TikTok orders are created. Without CSV, existing TikTok orders are updated from the editable preview using the Order ID.</p></div><button className="button primary large" disabled={!tikTokCsv.trim() && !tikTokDetailEntries.some((entry) => entry.identifier.trim() && (tikTokEntryCanonicalDetails(entry) || entry.fileDataUrl))} onClick={runTikTokImport}>{tikTokCsv.trim() ? "Import TikTok Shop orders" : "Update TikTok details"}</button></div>
+          <div className="import-action"><div><strong>{t("Auto certificate code")}</strong><p>{t("With CSV, new TikTok orders are created. Without CSV, existing TikTok orders are updated from the editable preview using the Order ID.")}</p></div><button className="button primary large" disabled={!tikTokCsv.trim() && !tikTokDetailEntries.some((entry) => entry.identifier.trim() && (tikTokEntryCanonicalDetails(entry) || entry.fileDataUrl))} onClick={runTikTokImport}>{tikTokCsv.trim() ? t("Import TikTok Shop orders") : t("Update TikTok details")}</button></div>
         </section>
       </section>}
 
       {view === "tiktok_shop" && <section className="packing-page tiktok-shop-page">
         <div className="packing-controls card">
-          <div className="packing-manual"><div><h2>TikTok certificate data</h2><p>Choose a stage, select the TikTok orders you need, then copy the generated JSON below.</p></div><div className="packing-list-actions"><button className="button primary" onClick={() => setSelectedTikTokJsonOrders(tikTokAvailableOrders.map((order) => order.id))}>Select shown</button><button className="button secondary" onClick={() => setSelectedTikTokJsonOrders([])}>Clear</button></div></div>
-          <div className="packing-list-header"><div><strong>Available TikTok orders</strong><span>{tikTokAvailableOrders.length} shown from {tikTokOrders.length} TikTok orders</span></div><select value={tikTokStatusFilter} onChange={(event) => setTikTokStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">All statuses</option>{orderStatuses.map((status) => <option key={status} value={status}>{statusLabels[status]}</option>)}</select></div>
-          <div className="packing-order-list">{tikTokAvailableOrders.map((order) => <label key={order.id}><input type="checkbox" checked={selectedTikTokJsonOrders.includes(order.id)} onChange={() => setSelectedTikTokJsonOrders((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><div><strong>{tikTokShortOrderLabel(order)} | {order.plushName || "Unnamed plushie"}</strong><span>{order.customerName || "No username"} | {order.character || "No character"} {order.voiceLength ? `${order.voiceLength}S` : ""}</span></div><StatusPill status={order.status} /></label>)}</div>
-          {!tikTokAvailableOrders.length && <div className="empty"><strong>No TikTok orders in this stage</strong><p>Import TikTok Shop orders first, or choose another stage.</p></div>}
+          <div className="packing-manual"><div><h2>{t("TikTok certificate data")}</h2><p>{t("Choose a stage, select the TikTok orders you need, then copy the generated JSON below.")}</p></div><div className="packing-list-actions"><button className="button primary" onClick={() => setSelectedTikTokJsonOrders(tikTokAvailableOrders.map((order) => order.id))}>{t("Select shown")}</button><button className="button secondary" onClick={() => setSelectedTikTokJsonOrders([])}>{t("Clear")}</button></div></div>
+          <div className="packing-list-header"><div><strong>{t("Available TikTok orders")}</strong><span>{tikTokAvailableOrders.length} {" " + t("shown from") + " "}{tikTokOrders.length} {" " + t("TikTok orders")}</span></div><select value={tikTokStatusFilter} onChange={(event) => setTikTokStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">{t("All statuses")}</option>{orderStatuses.map((status) => <option key={status} value={status}>{t(statusLabels[status])}</option>)}</select></div>
+          <div className="packing-order-list">{tikTokAvailableOrders.map((order) => <label key={order.id}><input type="checkbox" checked={selectedTikTokJsonOrders.includes(order.id)} onChange={() => setSelectedTikTokJsonOrders((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><div><strong>{tikTokShortOrderLabel(order)} | {order.plushName || t("Unnamed plushie")}</strong><span>{order.customerName || t("No username")} | {order.character || t("No character")} {order.voiceLength ? `${order.voiceLength}S` : ""}</span></div><StatusPill status={order.status} /></label>)}</div>
+          {!tikTokAvailableOrders.length && <div className="empty"><strong>{t("No TikTok orders in this stage")}</strong><p>{t("Import TikTok Shop orders first, or choose another stage.")}</p></div>}
         </div>
-        <div className="packing-preview tiktok-json-panel"><div className="preview-heading"><div><h2>TikTok Shop JSON</h2><p>Selected orders are converted into certificate JSON.</p></div><div className="json-copy-actions"><span>{selectedTikTokCertificatePayload.length} selected</span><button className="button secondary" type="button" disabled={!selectedTikTokCertificatePayload.length || exportingTikTokShopify} onClick={exportTikTokCertificateJsonToShopify}>{exportingTikTokShopify ? "Exporting..." : "Export to Shopify"}</button><button className="button primary" type="button" onClick={copyTikTokCertificateJson}>Copy JSON</button></div></div><textarea className="tiktok-json-output" readOnly value={selectedTikTokCertificateJson} /></div>
+        <div className="packing-preview tiktok-json-panel"><div className="preview-heading"><div><h2>{t("TikTok Shop JSON")}</h2><p>{t("Selected orders are converted into certificate JSON.")}</p></div><div className="json-copy-actions"><span>{selectedTikTokCertificatePayload.length} {" " + t("selected")}</span><button className="button secondary" type="button" disabled={!selectedTikTokCertificatePayload.length || exportingTikTokShopify} onClick={exportTikTokCertificateJsonToShopify}>{exportingTikTokShopify ? t("Exporting...") : t("Export to Shopify")}</button><button className="button primary" type="button" onClick={copyTikTokCertificateJson}>{t("Copy JSON")}</button></div></div><textarea className="tiktok-json-output" readOnly value={selectedTikTokCertificateJson} /></div>
       </section>}
     </section>
 
@@ -6631,6 +6638,7 @@ function AccountingWorkspacePage({
   processorAccountingTotals: { stripeCollected: number; stripeProcessingFees: number; xenditCollected: number; xenditProcessingFees: number };
   categoryName: (categoryId: string) => string;
 }) {
+  const { t } = useLanguage();
   const cashTransferTransactionIds = new Set(transactions.filter((transaction) => transaction.businessEvent === "payment_processor_paid").map((transaction) => transaction.id));
   const incomeTransactions = transactions.filter((transaction) => transaction.transactionType === "income");
   const cashTransferToBank = ledgerEntries
@@ -6875,19 +6883,19 @@ function AccountingWorkspacePage({
     }).sort((a, b) => Math.abs(Date.parse(a.transactionDate) - lineDate) - Math.abs(Date.parse(b.transactionDate) - lineDate) || a.rowNumber - b.rowNumber);
   }
   const transactionEditPanel = editingTransactionForm ? <section className="accounting-form card">
-    <div className="accounting-form-heading"><div><h3>Edit transaction</h3><p>Update the transaction details or attach a replacement source document.</p></div><button className="view-button" onClick={onCancelEditTransaction}>Cancel</button></div>
-    <div className="accounting-two-cols"><label>Date<input type="date" value={editingTransactionForm.transactionDate} onChange={(input) => onEditingTransactionFormChange({ transactionDate: input.target.value })} /></label><label>Amount<input type="number" min="0" step="0.01" value={editingTransactionForm.amount} onChange={(input) => onEditingTransactionFormChange({ amount: input.target.value })} /></label></div>
-    <div className="accounting-two-cols"><label>Account<select value={editingTransactionForm.categoryId} onChange={(input) => onEditingTransactionFormChange({ categoryId: input.target.value, accountName: "" })}><option value="">Choose account</option>{categories.filter((category) => category.active && Object.values(bookkeepingSectionConfigs).some((config) => config.reportSection === category.reportSection)).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>Account name<input value={editingTransactionForm.accountName} onChange={(input) => onEditingTransactionFormChange({ accountName: input.target.value })} placeholder="Use this if no saved account applies" /></label></div>
-    <div className="accounting-two-cols"><label>Supplier / customer<input value={editingTransactionForm.supplier} onChange={(input) => onEditingTransactionFormChange({ supplier: input.target.value })} /></label><label>Invoice number<input value={editingTransactionForm.invoiceNumber} onChange={(input) => onEditingTransactionFormChange({ invoiceNumber: input.target.value })} /></label></div>
-    <label>Description<input value={editingTransactionForm.description} onChange={(input) => onEditingTransactionFormChange({ description: input.target.value })} /></label>
-    <div className="accounting-two-cols"><label>Quantity<input type="number" min="0" step="0.0001" value={editingTransactionForm.quantity} onChange={(input) => onEditingTransactionFormChange({ quantity: input.target.value })} /></label><label>Unit cost<input type="number" min="0" step="0.01" value={editingTransactionForm.unitCost} onChange={(input) => onEditingTransactionFormChange({ unitCost: input.target.value })} /></label></div>
-    <label>Payment type<select value={editingTransactionForm.paymentStatus} onChange={(input) => onEditingTransactionFormChange({ paymentStatus: input.target.value as AccountingTransactionForm["paymentStatus"] })}><option value="paid_in_full">Paid In Full</option><option value="deposit_paid">Deposit Paid</option><option value="on_credit">On Credit</option></select></label>
-    {editingTransactionForm.paymentStatus !== "on_credit" && <label>Funding source<select value={editingTransactionForm.paymentMethod} onChange={(input) => onEditingTransactionFormChange({ paymentMethod: input.target.value })}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>}
-    {editingTransactionForm.paymentStatus === "deposit_paid" && <label>Deposit amount<input type="number" min="0" step="0.01" value={editingTransactionForm.depositAmount} onChange={(input) => onEditingTransactionFormChange({ depositAmount: input.target.value })} /></label>}
-    {editingTransactionForm.paymentStatus === "on_credit" && <div className="accounting-two-cols"><label>Due date<input type="date" value={editingTransactionForm.dueDate} onChange={(input) => onEditingTransactionFormChange({ dueDate: input.target.value })} /></label><label>Supplier terms<input value={editingTransactionForm.supplierTerms} onChange={(input) => onEditingTransactionFormChange({ supplierTerms: input.target.value })} /></label></div>}
-    <label>Notes<textarea value={editingTransactionForm.notes} onChange={(input) => onEditingTransactionFormChange({ notes: input.target.value })} /></label>
-    <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title="Replace or add source document" description="Choose or drop a new file if you want to update the linked document" selectedName={editingTransactionFile?.name} onFile={onEditingTransactionFileChange} />
-    <button className="button primary" disabled={saving} onClick={onSaveEditedTransaction}>{saving ? "Saving..." : "Save transaction changes"}</button>
+    <div className="accounting-form-heading"><div><h3>{t("Edit transaction")}</h3><p>{t("Update the transaction details or attach a replacement source document.")}</p></div><button className="view-button" onClick={onCancelEditTransaction}>{t("Cancel")}</button></div>
+    <div className="accounting-two-cols"><label>{t("Date")}<input type="date" value={editingTransactionForm.transactionDate} onChange={(input) => onEditingTransactionFormChange({ transactionDate: input.target.value })} /></label><label>{t("Amount")}<input type="number" min="0" step="0.01" value={editingTransactionForm.amount} onChange={(input) => onEditingTransactionFormChange({ amount: input.target.value })} /></label></div>
+    <div className="accounting-two-cols"><label>{t("Account")}<select value={editingTransactionForm.categoryId} onChange={(input) => onEditingTransactionFormChange({ categoryId: input.target.value, accountName: "" })}><option value="">{t("Choose account")}</option>{categories.filter((category) => category.active && Object.values(bookkeepingSectionConfigs).some((config) => config.reportSection === category.reportSection)).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>{t("Account name")}<input value={editingTransactionForm.accountName} onChange={(input) => onEditingTransactionFormChange({ accountName: input.target.value })} placeholder={t("Use this if no saved account applies")} /></label></div>
+    <div className="accounting-two-cols"><label>{t("Supplier / customer")}<input value={editingTransactionForm.supplier} onChange={(input) => onEditingTransactionFormChange({ supplier: input.target.value })} /></label><label>{t("Invoice number")}<input value={editingTransactionForm.invoiceNumber} onChange={(input) => onEditingTransactionFormChange({ invoiceNumber: input.target.value })} /></label></div>
+    <label>{t("Description")}<input value={editingTransactionForm.description} onChange={(input) => onEditingTransactionFormChange({ description: input.target.value })} /></label>
+    <div className="accounting-two-cols"><label>{t("Quantity")}<input type="number" min="0" step="0.0001" value={editingTransactionForm.quantity} onChange={(input) => onEditingTransactionFormChange({ quantity: input.target.value })} /></label><label>{t("Unit cost")}<input type="number" min="0" step="0.01" value={editingTransactionForm.unitCost} onChange={(input) => onEditingTransactionFormChange({ unitCost: input.target.value })} /></label></div>
+    <label>{t("Payment type")}<select value={editingTransactionForm.paymentStatus} onChange={(input) => onEditingTransactionFormChange({ paymentStatus: input.target.value as AccountingTransactionForm["paymentStatus"] })}><option value="paid_in_full">{t("Paid In Full")}</option><option value="deposit_paid">{t("Deposit Paid")}</option><option value="on_credit">{t("On Credit")}</option></select></label>
+    {editingTransactionForm.paymentStatus !== "on_credit" && <label>{t("Funding source")}<select value={editingTransactionForm.paymentMethod} onChange={(input) => onEditingTransactionFormChange({ paymentMethod: input.target.value })}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>}
+    {editingTransactionForm.paymentStatus === "deposit_paid" && <label>{t("Deposit amount")}<input type="number" min="0" step="0.01" value={editingTransactionForm.depositAmount} onChange={(input) => onEditingTransactionFormChange({ depositAmount: input.target.value })} /></label>}
+    {editingTransactionForm.paymentStatus === "on_credit" && <div className="accounting-two-cols"><label>{t("Due date")}<input type="date" value={editingTransactionForm.dueDate} onChange={(input) => onEditingTransactionFormChange({ dueDate: input.target.value })} /></label><label>{t("Supplier terms")}<input value={editingTransactionForm.supplierTerms} onChange={(input) => onEditingTransactionFormChange({ supplierTerms: input.target.value })} /></label></div>}
+    <label>{t("Notes")}<textarea value={editingTransactionForm.notes} onChange={(input) => onEditingTransactionFormChange({ notes: input.target.value })} /></label>
+    <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title={t("Replace or add source document")} description={t("Choose or drop a new file if you want to update the linked document")} selectedName={editingTransactionFile?.name} onFile={onEditingTransactionFileChange} />
+    <button className="button primary" disabled={saving} onClick={onSaveEditedTransaction}>{saving ? t("Saving...") : t("Save transaction changes")}</button>
   </section> : null;
   const bankInProgressPanelFor = (eventValue: string) => {
     const rows = bankStatementInProgressLines
@@ -6897,25 +6905,25 @@ function AccountingWorkspacePage({
   };
 
   if (view === "accounting_dashboard") return <section className="accounting-workspace">
-    <div className="accounting-hero card"><div><p>BOOK KEEPING BOOK</p><h2>All transactions</h2><span>Every money-in and money-out record saved from the bookkeeping category pages.</span></div><div className="accounting-status-pill">{transactions.length} records</div></div>
+    <div className="accounting-hero card"><div><p>{t("BOOK KEEPING BOOK")}</p><h2>{t("All transactions")}</h2><span>{t("Every money-in and money-out record saved from the bookkeeping category pages.")}</span></div><div className="accounting-status-pill">{transactions.length} {" " + t("records")}</div></div>
     <section className="accounting-summary-grid">
-      <MoneyStat label="Money in" value={income} tone="collected" />
-      <MoneyStat label="Money out" value={expenses} tone="fees" />
-      <MoneyStat label="Net" value={profit} tone={profit < 0 ? "fees" : "sales"} />
+      <MoneyStat label={t("Money in")} value={income} tone="collected" />
+      <MoneyStat label={t("Money out")} value={expenses} tone="fees" />
+      <MoneyStat label={t("Net")} value={profit} tone={profit < 0 ? "fees" : "sales"} />
     </section>
-    <div className="ledger-export-actions no-print"><button className="button secondary" disabled={!transactions.length} onClick={downloadBookkeepingLedgerCsv}>Download CSV</button><button className="button primary" disabled={!transactions.length} onClick={() => printView("print-bookkeeping-ledger")}>Print / Save PDF</button></div>
+    <div className="ledger-export-actions no-print"><button className="button secondary" disabled={!transactions.length} onClick={downloadBookkeepingLedgerCsv}>{t("Download CSV")}</button><button className="button primary" disabled={!transactions.length} onClick={() => printView("print-bookkeeping-ledger")}>{t("Print / Save PDF")}</button></div>
     {transactionEditPanel}
     <AccountingTransactionsTable transactions={transactions} ledgerEntries={ledgerEntries} documents={transactionDocuments} bankStatementLines={bankStatementLines} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} onBulkPaymentMethodChange={onBulkTransactionPaymentMethodChange} />
     <section className="bookkeeping-ledger-print card">
-      <header className="financial-statement-title"><p>Meaningful Plushies</p><h2>Book Keeping Transaction Ledger</h2><span>Generated on {formatDate(new Date().toISOString(), true)}</span></header>
+      <header className="financial-statement-title"><p>{t("Meaningful Plushies")}</p><h2>{t("Book Keeping Transaction Ledger")}</h2><span>{t("Generated on") + " "}{formatDate(new Date().toISOString(), true)}</span></header>
       <table className="bookkeeping-ledger-print-table">
-        <thead><tr><th>Date</th><th>Description</th><th>Business Event</th><th>Account</th><th>Payment</th><th>Ledger Posting</th><th>Amount</th><th>Document</th></tr></thead>
+        <thead><tr><th>{t("Date")}</th><th>{t("Description")}</th><th>{t("Business Event")}</th><th>{t("Account")}</th><th>{t("Payment")}</th><th>{t("Ledger Posting")}</th><th>{t("Amount")}</th><th>{t("Document")}</th></tr></thead>
         <tbody>{bookkeepingLedgerRows().map(({ transaction, document, paymentLabel, eventLabel, accountName, ledgerPosting }) => <tr key={transaction.id}>
           <td>{formatDate(transaction.transactionDate)}</td>
           <td><strong>{transaction.description}</strong><small>{transaction.supplier || transaction.source}{transaction.invoiceNumber ? ` - Invoice ${transaction.invoiceNumber}` : ""}</small></td>
           <td>{eventLabel}</td>
           <td>{accountName}</td>
-          <td>{paymentLabel}<small>{transaction.paymentStatus === "on_credit" ? transaction.dueDate || transaction.supplierTerms || "Outstanding" : transaction.paymentMethod || "Bank Account"}</small></td>
+          <td>{paymentLabel}<small>{transaction.paymentStatus === "on_credit" ? transaction.dueDate || transaction.supplierTerms || t("Outstanding") : transaction.paymentMethod || t("Bank Account")}</small></td>
           <td>{ledgerPosting}</td>
           <td>{formatMoney(transaction.amount)}</td>
           <td>{document?.fileName || "-"}</td>
@@ -6925,51 +6933,51 @@ function AccountingWorkspacePage({
   </section>;
 
   if (view === "accounting_payable") return <section className="accounting-workspace">
-    <div className="accounting-hero card"><div><p>UNSETTLED PAYMENTS</p><h2>Deposits and credit purchases</h2><span>Transactions stay here until the remaining payment is marked paid. Upload the payment proof when you settle it.</span></div><div className="accounting-status-pill">{unsettledTransactions.length} unsettled</div></div>
+    <div className="accounting-hero card"><div><p>{t("UNSETTLED PAYMENTS")}</p><h2>{t("Deposits and credit purchases")}</h2><span>{t("Transactions stay here until the remaining payment is marked paid. Upload the payment proof when you settle it.")}</span></div><div className="accounting-status-pill">{unsettledTransactions.length} {" " + t("unsettled")}</div></div>
     <UnsettledPaymentsTable transactions={unsettledTransactions} files={settlementFiles} saving={saving} onFileChange={onSettlementFileChange} onSettle={onSettleTransaction} />
   </section>;
 
   if (view === "accounting_operating_costs") return <section className="accounting-workspace">
-    <div className="accounting-hero card"><div><p>OPERATING COST</p><h2>Pre-paid operating costs</h2><span>Record operating-cost purchases as prepaid first. At month end, enter the amount used to move it into Operating Expense.</span></div><div className="accounting-status-pill">{formatMoney(operatingCostRemaining)} prepaid left</div></div>
+    <div className="accounting-hero card"><div><p>{t("OPERATING COST")}</p><h2>{t("Pre-paid operating costs")}</h2><span>{t("Record operating-cost purchases as prepaid first. At month end, enter the amount used to move it into Operating Expense.")}</span></div><div className="accounting-status-pill">{formatMoney(operatingCostRemaining)} {" " + t("prepaid left")}</div></div>
     <section className="accounting-summary-grid">
-      <MoneyStat label="Prepaid operating cost added" value={operatingCostAdded} tone="sales" />
-      <MoneyStat label="Paid into prepaid" value={operatingCostPaid} tone="collected" />
-      <MoneyStat label="Released to expense" value={operatingCostUsed} tone="fees" />
-      <MoneyStat label="Prepaid remaining" value={operatingCostRemaining} tone="transfer" />
+      <MoneyStat label={t("Prepaid operating cost added")} value={operatingCostAdded} tone="sales" />
+      <MoneyStat label={t("Paid into prepaid")} value={operatingCostPaid} tone="collected" />
+      <MoneyStat label={t("Released to expense")} value={operatingCostUsed} tone="fees" />
+      <MoneyStat label={t("Prepaid remaining")} value={operatingCostRemaining} tone="transfer" />
     </section>
     {bankInProgressPanelFor("operating_cost")}
     <section className="accounting-form-grid">
       <div className="accounting-form card">
-        <h3>Add prepaid operating cost</h3>
-        <label>Date<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label>
-        <label>Amount added to prepaid<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onTransactionFormChange({ amount: input.target.value })} /></label>
-        <label>Supplier / source<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder="Supplier or source" /></label>
-        <label>Description<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder="Example: Carton handling cost, fulfilment materials..." /></label>
-        <h3>Payment</h3>
-        <label>Payment type<select value={transactionForm.paymentStatus} onChange={(input) => onTransactionFormChange({ paymentStatus: input.target.value as AccountingTransactionForm["paymentStatus"] })}><option value="paid_in_full">Paid in full</option><option value="deposit_paid">Deposit Paid</option><option value="on_credit">On Credit</option></select></label>
-        {transactionForm.paymentStatus !== "on_credit" && <label>Paid from<select value={transactionForm.paymentMethod} onChange={(input) => onTransactionFormChange({ paymentMethod: input.target.value })}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>}
-        {transactionForm.paymentStatus === "deposit_paid" && <div className="accounting-two-cols"><label>Deposit paid<input type="number" min="0" step="0.01" value={transactionForm.depositAmount} onChange={(input) => onTransactionFormChange({ depositAmount: input.target.value })} /></label><label>Remaining<input readOnly value={formatMoney(Math.max(0, (Number(transactionForm.amount) || 0) - (Number(transactionForm.depositAmount) || 0)))} /></label></div>}
-        {transactionForm.paymentStatus === "on_credit" && <div className="accounting-two-cols"><label>Due date<input type="date" value={transactionForm.dueDate} onChange={(input) => onTransactionFormChange({ dueDate: input.target.value })} /></label><label>Supplier terms<input value={transactionForm.supplierTerms} onChange={(input) => onTransactionFormChange({ supplierTerms: input.target.value })} placeholder="30 days, monthly..." /></label></div>}
-        <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title="Source document" description="Choose or drop receipt, invoice, CSV, or image" selectedName={transactionFile?.name} onFile={onTransactionFileChange} />
+        <h3>{t("Add prepaid operating cost")}</h3>
+        <label>{t("Date")}<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label>
+        <label>{t("Amount added to prepaid")}<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onTransactionFormChange({ amount: input.target.value })} /></label>
+        <label>{t("Supplier / source")}<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder={t("Supplier or source")} /></label>
+        <label>{t("Description")}<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder={t("Example: Carton handling cost, fulfilment materials...")} /></label>
+        <h3>{t("Payment")}</h3>
+        <label>{t("Payment type")}<select value={transactionForm.paymentStatus} onChange={(input) => onTransactionFormChange({ paymentStatus: input.target.value as AccountingTransactionForm["paymentStatus"] })}><option value="paid_in_full">{t("Paid in full")}</option><option value="deposit_paid">{t("Deposit Paid")}</option><option value="on_credit">{t("On Credit")}</option></select></label>
+        {transactionForm.paymentStatus !== "on_credit" && <label>{t("Paid from")}<select value={transactionForm.paymentMethod} onChange={(input) => onTransactionFormChange({ paymentMethod: input.target.value })}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>}
+        {transactionForm.paymentStatus === "deposit_paid" && <div className="accounting-two-cols"><label>{t("Deposit paid")}<input type="number" min="0" step="0.01" value={transactionForm.depositAmount} onChange={(input) => onTransactionFormChange({ depositAmount: input.target.value })} /></label><label>{t("Remaining")}<input readOnly value={formatMoney(Math.max(0, (Number(transactionForm.amount) || 0) - (Number(transactionForm.depositAmount) || 0)))} /></label></div>}
+        {transactionForm.paymentStatus === "on_credit" && <div className="accounting-two-cols"><label>{t("Due date")}<input type="date" value={transactionForm.dueDate} onChange={(input) => onTransactionFormChange({ dueDate: input.target.value })} /></label><label>{t("Supplier terms")}<input value={transactionForm.supplierTerms} onChange={(input) => onTransactionFormChange({ supplierTerms: input.target.value })} placeholder={t("30 days, monthly...")} /></label></div>}
+        <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title={t("Source document")} description={t("Choose or drop receipt, invoice, CSV, or image")} selectedName={transactionFile?.name} onFile={onTransactionFileChange} />
         <section className="posting-preview">
-          <h3>Posting preview</h3>
-          {postingPreview.length ? postingPreview.map((entry) => <div key={entry.id}><span>{entry.entryType === "debit" ? "Debit" : "Credit"} {entry.accountName}</span><strong>{formatMoney(entry.amount)}</strong></div>) : <div><span>Enter an amount to preview posting</span><strong>{formatMoney(0)}</strong></div>}
+          <h3>{t("Posting preview")}</h3>
+          {postingPreview.length ? postingPreview.map((entry) => <div key={entry.id}><span>{entry.entryType === "debit" ? t("Debit") : t("Credit")} {entry.accountName}</span><strong>{formatMoney(entry.amount)}</strong></div>) : <div><span>{t("Enter an amount to preview posting")}</span><strong>{formatMoney(0)}</strong></div>}
         </section>
-        <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? "Saving..." : "Save prepaid cost"}</button>
+        <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? t("Saving...") : t("Save prepaid cost")}</button>
       </div>
       <div>
         <section className="accounting-form card operating-release-card">
-          <h3>Release monthly operating cost</h3>
-          <p className="accounting-file-name">This reduces {prepaidOperatingCostAccountName} and records the amount as Operating Expense.</p>
-          <label>Month / date used<input type="date" value={operatingCostReleaseForm.transactionDate} onChange={(input) => onOperatingCostReleaseFormChange({ transactionDate: input.target.value })} /></label>
-          <label>Amount used this month<input type="number" min="0" step="0.01" value={operatingCostReleaseForm.amount} onChange={(input) => onOperatingCostReleaseFormChange({ amount: input.target.value })} placeholder="RM 0.00" /></label>
-          <label>Description<input value={operatingCostReleaseForm.description} onChange={(input) => onOperatingCostReleaseFormChange({ description: input.target.value })} placeholder={`Operating cost used for ${formatMonthLabel(operatingCostReleaseForm.transactionDate)}`} /></label>
+          <h3>{t("Release monthly operating cost")}</h3>
+          <p className="accounting-file-name">{t("This reduces") + " "}{prepaidOperatingCostAccountName} {" " + t("and records the amount as Operating Expense.")}</p>
+          <label>{t("Month / date used")}<input type="date" value={operatingCostReleaseForm.transactionDate} onChange={(input) => onOperatingCostReleaseFormChange({ transactionDate: input.target.value })} /></label>
+          <label>{t("Amount used this month")}<input type="number" min="0" step="0.01" value={operatingCostReleaseForm.amount} onChange={(input) => onOperatingCostReleaseFormChange({ amount: input.target.value })} placeholder={t("RM 0.00")} /></label>
+          <label>{t("Description")}<input value={operatingCostReleaseForm.description} onChange={(input) => onOperatingCostReleaseFormChange({ description: input.target.value })} placeholder={`Operating cost used for ${formatMonthLabel(operatingCostReleaseForm.transactionDate)}`} /></label>
           <section className="posting-preview">
-            <h3>Posting preview</h3>
-            <div><span>Debit Operating Expense</span><strong>{formatMoney(Number(operatingCostReleaseForm.amount) || 0)}</strong></div>
-            <div><span>Credit {prepaidOperatingCostAccountName}</span><strong>{formatMoney(Number(operatingCostReleaseForm.amount) || 0)}</strong></div>
+            <h3>{t("Posting preview")}</h3>
+            <div><span>{t("Debit Operating Expense")}</span><strong>{formatMoney(Number(operatingCostReleaseForm.amount) || 0)}</strong></div>
+            <div><span>{t("Credit") + " "}{prepaidOperatingCostAccountName}</span><strong>{formatMoney(Number(operatingCostReleaseForm.amount) || 0)}</strong></div>
           </section>
-          <button className="button primary" disabled={saving} onClick={onReleaseOperatingCost}>{saving ? "Saving..." : "Release to expense"}</button>
+          <button className="button primary" disabled={saving} onClick={onReleaseOperatingCost}>{saving ? t("Saving...") : t("Release to expense")}</button>
         </section>
         {transactionEditPanel}
         <AccountingTransactionsTable transactions={operatingCostPageTransactions} ledgerEntries={ledgerEntries} documents={transactionDocuments} bankStatementLines={bankStatementLines} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} onBulkPaymentMethodChange={onBulkTransactionPaymentMethodChange} />
@@ -6978,57 +6986,57 @@ function AccountingWorkspacePage({
   </section>;
 
   if (view === "accounting_files") return <section className="accounting-workspace">
-    <div className="accounting-hero card"><div><p>SOURCE DOCUMENTS</p><h2>Files linked to transactions</h2><span>Every receipt, invoice, payment proof, or source document attached to a bookkeeping transaction appears here.</span></div><div className="accounting-status-pill">{documents.filter((document) => transactions.some((transaction) => transaction.documentId === document.id)).length} files</div></div>
+    <div className="accounting-hero card"><div><p>{t("SOURCE DOCUMENTS")}</p><h2>{t("Files linked to transactions")}</h2><span>{t("Every receipt, invoice, payment proof, or source document attached to a bookkeeping transaction appears here.")}</span></div><div className="accounting-status-pill">{documents.filter((document) => transactions.some((transaction) => transaction.documentId === document.id)).length} {" " + t("files")}</div></div>
     <AccountingFilesTable documents={documents} transactions={transactions} ledgerEntries={ledgerEntries} categoryName={categoryName} onOpen={onOpenDocument} />
   </section>;
 
   if (view === "accounting_bank_reconciliation") return <section className="accounting-workspace">
-    <div className="accounting-hero card"><div><p>BANK STATEMENT MATCHING</p><h2>Import bank rows, then decide row by row</h2><span>Each row can be matched to an existing transaction, used to create a new entry, marked as sales already recorded, ignored, or removed.</span></div><div className="accounting-status-pill">{bankStatementUnmatched.length} unmatched</div></div>
+    <div className="accounting-hero card"><div><p>{t("BANK STATEMENT MATCHING")}</p><h2>{t("Import bank rows, then decide row by row")}</h2><span>{t("Each row can be matched to an existing transaction, used to create a new entry, marked as sales already recorded, ignored, or removed.")}</span></div><div className="accounting-status-pill">{bankStatementUnmatched.length} {" " + t("unmatched")}</div></div>
     <section className="accounting-summary-grid">
-      <article className="money-stat fees"><span>Unmatched</span><strong>{bankStatementUnmatched.length}</strong></article>
-      <article className="money-stat transfer"><span>In progress</span><strong>{bankStatementInProgressLines.length}</strong></article>
-      <article className="money-stat collected"><span>Shopee</span><strong>{bankStatementShopeeLines.length}</strong></article>
-      <article className="money-stat transfer"><span>Accounts</span><strong>{bankStatementAccountLines.length}</strong></article>
-      <article className="money-stat sales"><span>Payment processor</span><strong>{bankStatementPaymentProcessorLines.length}</strong></article>
-      <article className="money-stat collected"><span>Sales</span><strong>{bankStatementSalesLines.length}</strong></article>
-      <article className="money-stat fees"><span>Transfer within accounts</span><strong>{bankStatementTransferLines.length}</strong></article>
+      <article className="money-stat fees"><span>{t("Unmatched")}</span><strong>{bankStatementUnmatched.length}</strong></article>
+      <article className="money-stat transfer"><span>{t("In progress")}</span><strong>{bankStatementInProgressLines.length}</strong></article>
+      <article className="money-stat collected"><span>{t("Shopee")}</span><strong>{bankStatementShopeeLines.length}</strong></article>
+      <article className="money-stat transfer"><span>{t("Accounts")}</span><strong>{bankStatementAccountLines.length}</strong></article>
+      <article className="money-stat sales"><span>{t("Payment processor")}</span><strong>{bankStatementPaymentProcessorLines.length}</strong></article>
+      <article className="money-stat collected"><span>{t("Sales")}</span><strong>{bankStatementSalesLines.length}</strong></article>
+      <article className="money-stat fees"><span>{t("Transfer within accounts")}</span><strong>{bankStatementTransferLines.length}</strong></article>
     </section>
     <section className="csv-import-layout bank-statement-layout">
       <div className="accounting-form card">
-        <h3>Import bank statement</h3>
-        <FileDropZone accept="application/pdf,.pdf,.csv,text/csv" title="Choose or drop bank statement" description={bankStatementFileName || "PDF or CSV from your bank"} onFile={(file) => onReadBankStatement(file ?? undefined)} className="compact-file-drop" />
-        <label>Or paste CSV content<textarea value={bankStatementCsv} onChange={(event) => onBankStatementCsvChange(event.target.value)} placeholder="Date, Description, Debit, Credit, Balance..." /></label>
-        <div className="csv-import-actions"><button className="button primary" disabled={saving || !bankStatementCsv.trim()} onClick={() => onReadBankStatement()}>{saving ? "Importing..." : "Import pasted CSV"}</button><button className="button secondary" type="button" onClick={onClearBankStatement}>Clear</button></div>
+        <h3>{t("Import bank statement")}</h3>
+        <FileDropZone accept="application/pdf,.pdf,.csv,text/csv" title={t("Choose or drop bank statement")} description={bankStatementFileName || t("PDF or CSV from your bank")} onFile={(file) => onReadBankStatement(file ?? undefined)} className="compact-file-drop" />
+        <label>{t("Or paste CSV content")}<textarea value={bankStatementCsv} onChange={(event) => onBankStatementCsvChange(event.target.value)} placeholder={t("Date, Description, Debit, Credit, Balance...")} /></label>
+        <div className="csv-import-actions"><button className="button primary" disabled={saving || !bankStatementCsv.trim()} onClick={() => onReadBankStatement()}>{saving ? t("Importing...") : t("Import pasted CSV")}</button><button className="button secondary" type="button" onClick={onClearBankStatement}>{t("Clear")}</button></div>
         <section className="posting-preview">
-          <h3>How this works</h3>
-          <div><span>Match</span><strong>Link the bank row to an existing unlinked transaction within +/- 3 days</strong></div>
-          <div><span>New</span><strong>Create a bookkeeping transaction from this bank row</strong></div>
-          <div><span>Sales</span><strong>Mark customer bank-transfer sales as already recorded from fulfilment</strong></div>
+          <h3>{t("How this works")}</h3>
+          <div><span>{t("Match")}</span><strong>{t("Link the bank row to an existing unlinked transaction within +/- 3 days")}</strong></div>
+          <div><span>{t("New")}</span><strong>{t("Create a bookkeeping transaction from this bank row")}</strong></div>
+          <div><span>{t("Sales")}</span><strong>{t("Mark customer bank-transfer sales as already recorded from fulfilment")}</strong></div>
         </section>
       </div>
       <section className={`card accounting-table-card bank-statement-card ${bankStatementFocusMode ? "bank-statement-fullscreen" : ""} lock-${lockedBankStatementColumn}`}>
         <div className="bank-lines-heading">
-          <div><h3>{selectedBankStatementSectionLabel}</h3><span>{shownBankStatementLines.length} shown from {bankStatementLines.length} imported row{bankStatementLines.length === 1 ? "" : "s"}</span></div>
+          <div><h3>{selectedBankStatementSectionLabel}</h3><span>{shownBankStatementLines.length} {" " + t("shown from") + " "}{bankStatementLines.length} {" " + t("imported row")}{bankStatementLines.length === 1 ? "" : t("s")}</span></div>
           <div className="bank-lines-controls no-print">
-            <div className="bank-section-pills" aria-label="Bank statement sections">{bankStatementSections.map((section) => <button key={section.value} className={selectedBankStatementSection === section.value ? "active" : ""} onClick={() => setSelectedBankStatementSection(section.value)}>{section.label}</button>)}</div>
+            <div className="bank-section-pills" aria-label={t("Bank statement sections")}>{bankStatementSections.map((section) => <button key={section.value} className={selectedBankStatementSection === section.value ? "active" : ""} onClick={() => setSelectedBankStatementSection(section.value)}>{section.label}</button>)}</div>
             <div className="bank-lines-tool-row">
-              <label>Lock column<select value={lockedBankStatementColumn} onChange={(event) => setLockedBankStatementColumn(event.target.value as "none" | "status" | "date" | "description")}><option value="none">No locked column</option><option value="status">Status</option><option value="date">Date</option><option value="description">Description</option></select></label>
-              <button className="button secondary" disabled={!bankStatementLines.length} onClick={() => setBankStatementFocusMode((current) => !current)}>{bankStatementFocusMode ? "Exit full screen" : "Full screen"}</button>
+              <label>{t("Lock column")}<select value={lockedBankStatementColumn} onChange={(event) => setLockedBankStatementColumn(event.target.value as "none" | "status" | "date" | "description")}><option value="none">{t("No locked column")}</option><option value="status">{t("Status")}</option><option value="date">{t("Date")}</option><option value="description">{t("Description")}</option></select></label>
+              <button className="button secondary" disabled={!bankStatementLines.length} onClick={() => setBankStatementFocusMode((current) => !current)}>{bankStatementFocusMode ? t("Exit full screen") : t("Full screen")}</button>
             </div>
           </div>
         </div>
         <div className="bank-bulk-actions no-print">
-          <label className="bank-select-all"><input type="checkbox" checked={allShownBankLinesSelected} disabled={!shownBankStatementLines.length} onChange={(event) => toggleShownBankLineSelection(event.target.checked)} /> Select shown</label>
-          <span>{selectedShownBankLines.length} selected</span>
-          <button className="view-button" disabled={saving || !selectedActionableBankLines.some((line) => line.moneyOut > 0)} onClick={() => applyBulkBankStatementAction("ads")}>Ads</button>
-          <button className="view-button" disabled={saving || !selectedActionableBankLines.some((line) => line.moneyOut > 0)} onClick={() => applyBulkBankStatementAction("drawings")}>Drawings</button>
-          <button className="view-button" disabled={saving || !selectedActionableBankLines.length} onClick={() => applyBulkBankStatementAction("shopee")}>Shopee</button>
-          <button className="view-button" disabled={saving || !selectedActionableBankLines.some((line) => line.moneyIn > 0)} onClick={() => applyBulkBankStatementAction("sales")}>Sales</button>
-          <button className="view-button" disabled={saving || !selectedActionableBankLines.length} onClick={() => applyBulkBankStatementAction("ignore")}>Ignore</button>
-          <button className="view-button danger-text" disabled={saving || !selectedShownBankLines.length} onClick={() => applyBulkBankStatementAction("remove")}>Remove</button>
-          <button className="view-button" disabled={!selectedShownBankLines.length} onClick={() => setSelectedBankLineIds((current) => current.filter((id) => !shownBankLineIds.includes(id)))}>Clear</button>
+          <label className="bank-select-all"><input type="checkbox" checked={allShownBankLinesSelected} disabled={!shownBankStatementLines.length} onChange={(event) => toggleShownBankLineSelection(event.target.checked)} /> {" " + t("Select shown")}</label>
+          <span>{selectedShownBankLines.length} {" " + t("selected")}</span>
+          <button className="view-button" disabled={saving || !selectedActionableBankLines.some((line) => line.moneyOut > 0)} onClick={() => applyBulkBankStatementAction("ads")}>{t("Ads")}</button>
+          <button className="view-button" disabled={saving || !selectedActionableBankLines.some((line) => line.moneyOut > 0)} onClick={() => applyBulkBankStatementAction("drawings")}>{t("Drawings")}</button>
+          <button className="view-button" disabled={saving || !selectedActionableBankLines.length} onClick={() => applyBulkBankStatementAction("shopee")}>{t("Shopee")}</button>
+          <button className="view-button" disabled={saving || !selectedActionableBankLines.some((line) => line.moneyIn > 0)} onClick={() => applyBulkBankStatementAction("sales")}>{t("Sales")}</button>
+          <button className="view-button" disabled={saving || !selectedActionableBankLines.length} onClick={() => applyBulkBankStatementAction("ignore")}>{t("Ignore")}</button>
+          <button className="view-button danger-text" disabled={saving || !selectedShownBankLines.length} onClick={() => applyBulkBankStatementAction("remove")}>{t("Remove")}</button>
+          <button className="view-button" disabled={!selectedShownBankLines.length} onClick={() => setSelectedBankLineIds((current) => current.filter((id) => !shownBankLineIds.includes(id)))}>{t("Clear")}</button>
         </div>
-        <div className="table-scroll bank-statement-lines-scroll"><table className="orders-table bank-statement-table"><thead><tr><th><input type="checkbox" checked={allShownBankLinesSelected} disabled={!shownBankStatementLines.length} onChange={(event) => toggleShownBankLineSelection(event.target.checked)} /></th><th>Status</th><th>Date</th><th>Bank</th><th>Description</th><th>Amount</th><th>Action</th></tr></thead><tbody>{shownBankStatementLines.map((line) => {
+        <div className="table-scroll bank-statement-lines-scroll"><table className="orders-table bank-statement-table"><thead><tr><th><input type="checkbox" checked={allShownBankLinesSelected} disabled={!shownBankStatementLines.length} onChange={(event) => toggleShownBankLineSelection(event.target.checked)} /></th><th>{t("Status")}</th><th>{t("Date")}</th><th>{t("Bank")}</th><th>{t("Description")}</th><th>{t("Amount")}</th><th>{t("Action")}</th></tr></thead><tbody>{shownBankStatementLines.map((line) => {
           const form = bankStatementMatchForms[line.id] ?? { businessEvent: line.suggestedEvent || (line.moneyIn > 0 ? "other_income" : "expense"), accountName: line.suggestedAccount || "", notes: "" };
           const options = bankStatementAccountOptions(form.businessEvent);
           const selectedFormAccount = options.includes(form.accountName) ? form.accountName : options[0] || "";
@@ -7056,40 +7064,40 @@ function AccountingWorkspacePage({
             <td><span className={`source-document-pill ${statusClass}`}>{statusLabel}</span></td>
             <td>{formatDate(line.transactionDate)}<br /><small>{line.reference || `Row ${line.rowNumber}`}</small></td>
             <td>{bankLineBankName(line)}</td>
-            <td><strong>{line.description}</strong>{line.notes && <><br /><small>{line.notes}</small></>}{canOpenLinked && <small className="linked-transaction-hint">Click row to view linked transaction</small>}</td>
-            <td><strong className={`bank-amount ${line.moneyIn > 0 ? "money-in" : "money-out"}`}>{formatMoney(line.moneyIn > 0 ? line.moneyIn : line.moneyOut)}</strong><br /><small>{line.moneyIn > 0 ? "money in" : "money out"}</small></td>
-            <td><div className="bank-row-actions">{inProgress ? <button className="view-button" disabled={saving} onClick={() => onUseBankStatementLine(line)}>Use row</button> : <><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => setBankLineActions((current) => ({ ...current, [line.id]: current[line.id] === "match" ? "" : "match" }))}>Match</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => setBankLineActions((current) => ({ ...current, [line.id]: current[line.id] === "new" ? "" : "new" }))}>New</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched" || line.moneyOut <= 0} onClick={() => onMatchBankStatementLine(line, { businessEvent: "marketing_expense", accountName: quickMarketingAccountForLine(line), notes: noteValue })}>Ads</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched" || line.moneyOut <= 0} onClick={() => onMatchBankStatementLine(line, { businessEvent: "owner_drawings", accountName: "Owner Drawings", notes: noteValue })}>Drawings</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => onStageBankStatementLine(line, "Shopee Pay")}>Shopee</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => setBankLineActions((current) => ({ ...current, [line.id]: current[line.id] === "pair" ? "" : "pair" }))}>Pair</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched" || line.moneyIn <= 0} onClick={() => onMarkBankStatementSales(line)}>Sales</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => onIgnoreBankStatementLine(line)}>Ignore</button></>}<button className="view-button" disabled={saving} onClick={() => setBankLineActions((current) => ({ ...current, [line.id]: current[line.id] === "note" ? "" : "note" }))}>Note</button><button className="view-button danger-text" disabled={saving} onClick={() => onDeleteBankStatementLine(line)}>Remove</button></div>{hasLinkedTransactions && <div className={`bank-match-counter ${remainingAmount > 0.01 ? "partial" : "balanced"}`}><span>{formatMoney(matchedTotal)} matched</span><strong>{remainingAmount > 0.01 ? `${formatMoney(remainingAmount)} left` : "Balanced"}</strong></div>}</td>
+            <td><strong>{line.description}</strong>{line.notes && <><br /><small>{line.notes}</small></>}{canOpenLinked && <small className="linked-transaction-hint">{t("Click row to view linked transaction")}</small>}</td>
+            <td><strong className={`bank-amount ${line.moneyIn > 0 ? "money-in" : "money-out"}`}>{formatMoney(line.moneyIn > 0 ? line.moneyIn : line.moneyOut)}</strong><br /><small>{line.moneyIn > 0 ? t("money in") : t("money out")}</small></td>
+            <td><div className="bank-row-actions">{inProgress ? <button className="view-button" disabled={saving} onClick={() => onUseBankStatementLine(line)}>{t("Use row")}</button> : <><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => setBankLineActions((current) => ({ ...current, [line.id]: current[line.id] === "match" ? "" : "match" }))}>{t("Match")}</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => setBankLineActions((current) => ({ ...current, [line.id]: current[line.id] === "new" ? "" : "new" }))}>{t("New")}</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched" || line.moneyOut <= 0} onClick={() => onMatchBankStatementLine(line, { businessEvent: "marketing_expense", accountName: quickMarketingAccountForLine(line), notes: noteValue })}>{t("Ads")}</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched" || line.moneyOut <= 0} onClick={() => onMatchBankStatementLine(line, { businessEvent: "owner_drawings", accountName: "Owner Drawings", notes: noteValue })}>{t("Drawings")}</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => onStageBankStatementLine(line, "Shopee Pay")}>{t("Shopee")}</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => setBankLineActions((current) => ({ ...current, [line.id]: current[line.id] === "pair" ? "" : "pair" }))}>{t("Pair")}</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched" || line.moneyIn <= 0} onClick={() => onMarkBankStatementSales(line)}>{t("Sales")}</button><button className="view-button" disabled={saving || line.matchStatus !== "unmatched"} onClick={() => onIgnoreBankStatementLine(line)}>{t("Ignore")}</button></>}<button className="view-button" disabled={saving} onClick={() => setBankLineActions((current) => ({ ...current, [line.id]: current[line.id] === "note" ? "" : "note" }))}>{t("Note")}</button><button className="view-button danger-text" disabled={saving} onClick={() => onDeleteBankStatementLine(line)}>{t("Remove")}</button></div>{hasLinkedTransactions && <div className={`bank-match-counter ${remainingAmount > 0.01 ? "partial" : "balanced"}`}><span>{formatMoney(matchedTotal)} {" " + t("matched")}</span><strong>{remainingAmount > 0.01 ? `${formatMoney(remainingAmount)} left` : t("Balanced")}</strong></div>}</td>
           </tr>
-          {action === "note" && <tr className="bank-line-detail-row"><td colSpan={7}><section className="posting-preview bank-line-action-panel bank-line-note-panel"><h3>Bank row note</h3><p>Add a reminder or explanation for this statement row.</p><div className="bank-line-note"><textarea value={noteValue} onChange={(event) => onBankStatementNoteChange(line.id, event.target.value)} placeholder="Add note for this bank row..." /><button className="button primary" disabled={!noteChanged || saving} onClick={() => onSaveBankStatementNote(line)}>Save note</button></div></section></td></tr>}
-          {action === "match" && line.matchStatus === "unmatched" && <tr className="bank-line-detail-row"><td colSpan={7}><section className="posting-preview bank-line-action-panel"><h3>Match existing transaction</h3><p>Showing unlinked bookkeeping transactions within +/- 3 days of this bank row. You can correct the selected transaction amount before matching.</p><div className="bank-match-summary"><span>Bank amount {formatMoney(getBankLineAmount(line))}</span><span>Matched {formatMoney(matchedTotal)}</span><strong>{remainingAmount > 0.01 ? `${formatMoney(remainingAmount)} left` : "Balanced"}</strong></div>{matchedTransactions.length > 0 && <div className="bank-linked-list">{matchedTransactions.map((transaction) => <div key={transaction.id}><span>{formatDate(transaction.transactionDate)}</span><strong>{transaction.description}</strong><em>{formatMoney(transaction.amount)}</em></div>)}</div>}<div className="bank-match-edit-grid"><label>Existing transaction<select value={bankLineSelectedTransactions[line.id] || ""} onChange={(event) => { const transactionId = event.target.value; const nextTransaction = transactions.find((item) => item.id === transactionId); setBankLineSelectedTransactions((current) => ({ ...current, [line.id]: transactionId })); setBankLineMatchAmounts((current) => ({ ...current, [line.id]: nextTransaction ? String(nextTransaction.amount) : "" })); }}><option value="">Choose transaction</option>{candidates.map((transaction) => <option key={transaction.id} value={transaction.id}>{formatDate(transaction.transactionDate)} | {transaction.description} | {displayAccountingAccountName(transaction.accountName)} | {formatMoney(transaction.amount)}</option>)}</select></label><label>Amount to match / update<input type="number" min="0" step="0.01" value={selectedMatchAmount} disabled={!selectedTransaction} onChange={(event) => setBankLineMatchAmounts((current) => ({ ...current, [line.id]: event.target.value }))} placeholder={selectedTransaction ? String(selectedTransaction.amount) : "Choose transaction first"} /></label></div>{selectedTransaction && Math.abs((Number(selectedMatchAmount) || 0) - selectedTransaction.amount) >= 0.005 && <p className="bank-match-edit-note">This will update the selected transaction from {formatMoney(selectedTransaction.amount)} to {formatMoney(Number(selectedMatchAmount) || 0)} before matching.</p>}<div className="csv-import-actions"><button className="button primary" disabled={!selectedTransaction || saving || !(Number(selectedMatchAmount) > 0)} onClick={() => selectedTransaction && onLinkBankStatementLine(line, selectedTransaction, Number(selectedMatchAmount))}>Match and update amount</button>{!candidates.length && <span>No unlinked transactions found within +/- 3 days.</span>}</div></section></td></tr>}
-          {action === "pair" && line.matchStatus === "unmatched" && <tr className="bank-line-detail-row"><td colSpan={7}><section className="posting-preview bank-line-action-panel"><h3>Pair internal bank transfer</h3><p>Choose the matching money-in or money-out row from another bank account. Both rows will be marked as internal transfer and excluded from income/expenses.</p><div className="bank-match-summary"><span>This row {formatMoney(getBankLineAmount(line))}</span><span>{line.moneyIn > 0 ? "Money in" : "Money out"}</span><strong>Same day or 1 day apart</strong></div><label>Matching bank row<select value={bankLineSelectedPairs[line.id] || ""} onChange={(event) => setBankLineSelectedPairs((current) => ({ ...current, [line.id]: event.target.value }))}><option value="">Choose matching bank row</option>{pairCandidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{formatDate(candidate.transactionDate)} | {bankLineBankName(candidate)} | {candidate.moneyIn > 0 ? "Money in" : "Money out"} | {formatMoney(getBankLineAmount(candidate))} | Row {candidate.rowNumber}</option>)}</select></label>{pairCandidates.length > 0 && <div className="bank-linked-list">{pairCandidates.map((candidate) => <div key={candidate.id}><span>{formatDate(candidate.transactionDate)}</span><strong>{bankLineBankName(candidate)} | {candidate.description}</strong><em>{formatMoney(getBankLineAmount(candidate))}</em></div>)}</div>}<div className="csv-import-actions"><button className="button primary" disabled={!selectedPair || saving} onClick={() => selectedPair && onPairInternalTransferLine(line, selectedPair)}>Pair selected rows</button>{!pairCandidates.length && <span>No exact opposite row found within 1 day. Import the other bank statement first, or ignore manually.</span>}</div></section></td></tr>}
-          {action === "new" && line.matchStatus === "unmatched" && !inProgress && <tr className="bank-line-detail-row"><td colSpan={7}><section className="posting-preview bank-line-action-panel"><h3>Send to in progress</h3><p>Choose which bookkeeping section should finish this bank row. The row will appear on that page, separate from the transaction ledger, until you save the final entry.</p><div className="accounting-two-cols"><label>Bookkeeping section<select value={form.businessEvent} onChange={(event) => onBankStatementMatchFormChange(line.id, { businessEvent: event.target.value, accountName: "" })}><option value="expense">Expenses</option><option value="inventory_purchase">Inventory</option><option value="asset_purchase">Assets</option><option value="marketing_expense">Marketing</option><option value="operating_cost">Operating cost</option><option value="other_income">Other income</option><option value="owner_contribution">Owner capital</option><option value="owner_drawings">Owner drawings</option><option value="payment_processor_paid">Payment processor</option><option value="internal_transfer">Transfer within accounts</option><option value="ignore">Ignore</option></select></label><label>{form.businessEvent === "payment_processor_paid" ? "Processor" : "Suggested account"}<select value={selectedFormAccount} disabled={form.businessEvent === "ignore"} onChange={(event) => onBankStatementMatchFormChange(line.id, { accountName: event.target.value })}>{options.map((option) => <option key={option} value={option}>{option}</option>)}</select></label></div><label>Notes<input value={form.notes} onChange={(event) => onBankStatementMatchFormChange(line.id, { notes: event.target.value })} placeholder="Optional note" /></label><button className="button primary" disabled={saving} onClick={() => onStageBankStatementLine(line)}>{form.businessEvent === "internal_transfer" ? "Pair internal transfer" : "Move to in progress"}</button></section></td></tr>}
+          {action === "note" && <tr className="bank-line-detail-row"><td colSpan={7}><section className="posting-preview bank-line-action-panel bank-line-note-panel"><h3>{t("Bank row note")}</h3><p>{t("Add a reminder or explanation for this statement row.")}</p><div className="bank-line-note"><textarea value={noteValue} onChange={(event) => onBankStatementNoteChange(line.id, event.target.value)} placeholder={t("Add note for this bank row...")} /><button className="button primary" disabled={!noteChanged || saving} onClick={() => onSaveBankStatementNote(line)}>{t("Save note")}</button></div></section></td></tr>}
+          {action === "match" && line.matchStatus === "unmatched" && <tr className="bank-line-detail-row"><td colSpan={7}><section className="posting-preview bank-line-action-panel"><h3>{t("Match existing transaction")}</h3><p>{t("Showing unlinked bookkeeping transactions within +/- 3 days of this bank row. You can correct the selected transaction amount before matching.")}</p><div className="bank-match-summary"><span>{t("Bank amount") + " "}{formatMoney(getBankLineAmount(line))}</span><span>{t("Matched") + " "}{formatMoney(matchedTotal)}</span><strong>{remainingAmount > 0.01 ? `${formatMoney(remainingAmount)} left` : t("Balanced")}</strong></div>{matchedTransactions.length > 0 && <div className="bank-linked-list">{matchedTransactions.map((transaction) => <div key={transaction.id}><span>{formatDate(transaction.transactionDate)}</span><strong>{transaction.description}</strong><em>{formatMoney(transaction.amount)}</em></div>)}</div>}<div className="bank-match-edit-grid"><label>{t("Existing transaction")}<select value={bankLineSelectedTransactions[line.id] || ""} onChange={(event) => { const transactionId = event.target.value; const nextTransaction = transactions.find((item) => item.id === transactionId); setBankLineSelectedTransactions((current) => ({ ...current, [line.id]: transactionId })); setBankLineMatchAmounts((current) => ({ ...current, [line.id]: nextTransaction ? String(nextTransaction.amount) : "" })); }}><option value="">{t("Choose transaction")}</option>{candidates.map((transaction) => <option key={transaction.id} value={transaction.id}>{formatDate(transaction.transactionDate)} | {transaction.description} | {displayAccountingAccountName(transaction.accountName)} | {formatMoney(transaction.amount)}</option>)}</select></label><label>{t("Amount to match / update")}<input type="number" min="0" step="0.01" value={selectedMatchAmount} disabled={!selectedTransaction} onChange={(event) => setBankLineMatchAmounts((current) => ({ ...current, [line.id]: event.target.value }))} placeholder={selectedTransaction ? String(selectedTransaction.amount) : t("Choose transaction first")} /></label></div>{selectedTransaction && Math.abs((Number(selectedMatchAmount) || 0) - selectedTransaction.amount) >= 0.005 && <p className="bank-match-edit-note">{t("This will update the selected transaction from") + " "}{formatMoney(selectedTransaction.amount)} {" " + t("to") + " "}{formatMoney(Number(selectedMatchAmount) || 0)} {" " + t("before matching.")}</p>}<div className="csv-import-actions"><button className="button primary" disabled={!selectedTransaction || saving || !(Number(selectedMatchAmount) > 0)} onClick={() => selectedTransaction && onLinkBankStatementLine(line, selectedTransaction, Number(selectedMatchAmount))}>{t("Match and update amount")}</button>{!candidates.length && <span>{t("No unlinked transactions found within +/- 3 days.")}</span>}</div></section></td></tr>}
+          {action === "pair" && line.matchStatus === "unmatched" && <tr className="bank-line-detail-row"><td colSpan={7}><section className="posting-preview bank-line-action-panel"><h3>{t("Pair internal bank transfer")}</h3><p>{t("Choose the matching money-in or money-out row from another bank account. Both rows will be marked as internal transfer and excluded from income/expenses.")}</p><div className="bank-match-summary"><span>{t("This row") + " "}{formatMoney(getBankLineAmount(line))}</span><span>{line.moneyIn > 0 ? t("Money in") : t("Money out")}</span><strong>{t("Same day or 1 day apart")}</strong></div><label>{t("Matching bank row")}<select value={bankLineSelectedPairs[line.id] || ""} onChange={(event) => setBankLineSelectedPairs((current) => ({ ...current, [line.id]: event.target.value }))}><option value="">{t("Choose matching bank row")}</option>{pairCandidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{formatDate(candidate.transactionDate)} | {bankLineBankName(candidate)} | {candidate.moneyIn > 0 ? t("Money in") : t("Money out")} | {formatMoney(getBankLineAmount(candidate))} {" " + t("| Row") + " "}{candidate.rowNumber}</option>)}</select></label>{pairCandidates.length > 0 && <div className="bank-linked-list">{pairCandidates.map((candidate) => <div key={candidate.id}><span>{formatDate(candidate.transactionDate)}</span><strong>{bankLineBankName(candidate)} | {candidate.description}</strong><em>{formatMoney(getBankLineAmount(candidate))}</em></div>)}</div>}<div className="csv-import-actions"><button className="button primary" disabled={!selectedPair || saving} onClick={() => selectedPair && onPairInternalTransferLine(line, selectedPair)}>{t("Pair selected rows")}</button>{!pairCandidates.length && <span>{t("No exact opposite row found within 1 day. Import the other bank statement first, or ignore manually.")}</span>}</div></section></td></tr>}
+          {action === "new" && line.matchStatus === "unmatched" && !inProgress && <tr className="bank-line-detail-row"><td colSpan={7}><section className="posting-preview bank-line-action-panel"><h3>{t("Send to in progress")}</h3><p>{t("Choose which bookkeeping section should finish this bank row. The row will appear on that page, separate from the transaction ledger, until you save the final entry.")}</p><div className="accounting-two-cols"><label>{t("Bookkeeping section")}<select value={form.businessEvent} onChange={(event) => onBankStatementMatchFormChange(line.id, { businessEvent: event.target.value, accountName: "" })}><option value="expense">{t("Expenses")}</option><option value="inventory_purchase">{t("Inventory")}</option><option value="asset_purchase">{t("Assets")}</option><option value="marketing_expense">{t("Marketing")}</option><option value="operating_cost">{t("Operating cost")}</option><option value="other_income">{t("Other income")}</option><option value="owner_contribution">{t("Owner capital")}</option><option value="owner_drawings">{t("Owner drawings")}</option><option value="payment_processor_paid">{t("Payment processor")}</option><option value="internal_transfer">{t("Transfer within accounts")}</option><option value="ignore">{t("Ignore")}</option></select></label><label>{form.businessEvent === "payment_processor_paid" ? t("Processor") : t("Suggested account")}<select value={selectedFormAccount} disabled={form.businessEvent === "ignore"} onChange={(event) => onBankStatementMatchFormChange(line.id, { accountName: event.target.value })}>{options.map((option) => <option key={option} value={option}>{option}</option>)}</select></label></div><label>{t("Notes")}<input value={form.notes} onChange={(event) => onBankStatementMatchFormChange(line.id, { notes: event.target.value })} placeholder={t("Optional note")} /></label><button className="button primary" disabled={saving} onClick={() => onStageBankStatementLine(line)}>{form.businessEvent === "internal_transfer" ? t("Pair internal transfer") : t("Move to in progress")}</button></section></td></tr>}
           </Fragment>;
-        })}</tbody></table>{!shownBankStatementLines.length && <div className="empty"><strong>No {selectedBankStatementSectionLabel.toLowerCase()} rows yet</strong><p>{bankStatementLines.length ? "Rows will move here when you mark or pair them." : "Drop a PDF or CSV statement to start matching transactions from your bank."}</p></div>}</div>
+        })}</tbody></table>{!shownBankStatementLines.length && <div className="empty"><strong>{t("No") + " "}{selectedBankStatementSectionLabel.toLowerCase()} {" " + t("rows yet")}</strong><p>{bankStatementLines.length ? t("Rows will move here when you mark or pair them.") : t("Drop a PDF or CSV statement to start matching transactions from your bank.")}</p></div>}</div>
       </section>
     </section>
     <section className="card bank-statement-reference bank-statement-reference-print">
       <div className="bank-reference-heading">
-        <div><p>BANK STATEMENT REFERENCE</p><h3>Monthly statement view</h3><span>Saved imported rows in the original statement format for checking and PDF reference.</span></div>
+        <div><p>{t("BANK STATEMENT REFERENCE")}</p><h3>{t("Monthly statement view")}</h3><span>{t("Saved imported rows in the original statement format for checking and PDF reference.")}</span></div>
         <div className="bank-reference-actions no-print">
-          <label>Month<select value={selectedBankStatementMonth} onChange={(event) => setSelectedBankStatementMonth(event.target.value)}><option value="all">All months</option>{bankStatementMonthOptions.map((month) => <option key={month} value={month}>{formatMonthLabel(`${month}-01`)}</option>)}</select></label>
-          <button className="button primary" disabled={!bankStatementLines.length} onClick={() => printView("print-bank-statement")}>Print / Save PDF</button>
+          <label>{t("Month")}<select value={selectedBankStatementMonth} onChange={(event) => setSelectedBankStatementMonth(event.target.value)}><option value="all">{t("All months")}</option>{bankStatementMonthOptions.map((month) => <option key={month} value={month}>{formatMonthLabel(`${month}-01`)}</option>)}</select></label>
+          <button className="button primary" disabled={!bankStatementLines.length} onClick={() => printView("print-bank-statement")}>{t("Print / Save PDF")}</button>
         </div>
       </div>
       <div className="bank-reference-print-title">
-        <p>Meaningful Plushies</p>
-        <h2>Bank Statement Reference</h2>
-        <span>{selectedBankStatementMonth === "all" ? "All imported months" : formatMonthLabel(`${selectedBankStatementMonth}-01`)}</span>
+        <p>{t("Meaningful Plushies")}</p>
+        <h2>{t("Bank Statement Reference")}</h2>
+        <span>{selectedBankStatementMonth === "all" ? t("All imported months") : formatMonthLabel(`${selectedBankStatementMonth}-01`)}</span>
       </div>
       <div className="bank-reference-months">
         {shownBankStatementGroups.map((group) => {
           const debitTotal = group.lines.reduce((total, line) => total + line.moneyOut, 0);
           const creditTotal = group.lines.reduce((total, line) => total + line.moneyIn, 0);
           return <section className="bank-reference-month" key={group.month}>
-            <div className="bank-month-title"><strong>{formatMonthLabel(`${group.month}-01`)}</strong><span>{group.lines.length} transaction{group.lines.length === 1 ? "" : "s"}</span></div>
+            <div className="bank-month-title"><strong>{formatMonthLabel(`${group.month}-01`)}</strong><span>{group.lines.length} {" " + t("transaction")}{group.lines.length === 1 ? "" : t("s")}</span></div>
             <div className="bank-reference-table-wrap">
               <table className="bank-reference-table">
-                <thead><tr><th>Date</th><th>Transaction</th><th>Debit</th><th>Credit</th><th>Balance</th></tr></thead>
+                <thead><tr><th>{t("Date")}</th><th>{t("Transaction")}</th><th>{t("Debit")}</th><th>{t("Credit")}</th><th>{t("Balance")}</th></tr></thead>
                 <tbody>
                   {group.lines.map((line) => <tr key={line.id}>
                     <td>{formatStatementDate(line.transactionDate)}</td>
@@ -7099,52 +7107,52 @@ function AccountingWorkspacePage({
                     <td>{formatStatementNumber(line.balance)}</td>
                   </tr>)}
                 </tbody>
-                <tfoot><tr><td colSpan={2}>Monthly total</td><td>{formatStatementNumber(debitTotal)}</td><td>{formatStatementNumber(creditTotal)}</td><td /></tr></tfoot>
+                <tfoot><tr><td colSpan={2}>{t("Monthly total")}</td><td>{formatStatementNumber(debitTotal)}</td><td>{formatStatementNumber(creditTotal)}</td><td /></tr></tfoot>
               </table>
             </div>
           </section>;
         })}
-        {!shownBankStatementGroups.length && <div className="empty"><strong>No monthly reference yet</strong><p>Import a bank statement first, then the monthly reference will appear here.</p></div>}
+        {!shownBankStatementGroups.length && <div className="empty"><strong>{t("No monthly reference yet")}</strong><p>{t("Import a bank statement first, then the monthly reference will appear here.")}</p></div>}
       </div>
     </section>
   </section>;
 
   if (view === "accounting_csv_import") return <section className="accounting-workspace">
-    <div className="accounting-hero card"><div><p>BOOK KEEPING CSV IMPORT</p><h2>Import transactions automatically</h2><span>Upload either the simple bookkeeping CSV or the strict AI Accountant CSV. The AI import never guesses categories: uncertain rows go to review.</span></div><div className="accounting-status-pill">{csvRows.length + aiRows.length} rows</div></div>
+    <div className="accounting-hero card"><div><p>{t("BOOK KEEPING CSV IMPORT")}</p><h2>{t("Import transactions automatically")}</h2><span>{t("Upload either the simple bookkeeping CSV or the strict AI Accountant CSV. The AI import never guesses categories: uncertain rows go to review.")}</span></div><div className="accounting-status-pill">{csvRows.length + aiRows.length} {" " + t("rows")}</div></div>
     <section className="card accounting-table-card">
       <div className="accounting-form-heading">
-        <div><h3>AI Accountant CSV</h3><p>Use the accountant template with exact columns. Create, match, ignore, internal transfer, and manual review rows are handled separately.</p></div>
-        <div className="csv-import-actions"><button className="button primary" disabled={!aiImportCanSave || saving} onClick={onImportAiAccountantCsv}>{saving ? "Importing..." : "Confirm AI import"}</button><button className="button secondary" type="button" onClick={onClearAiAccountantCsv}>Clear</button></div>
+        <div><h3>{t("AI Accountant CSV")}</h3><p>{t("Use the accountant template with exact columns. Create, match, ignore, internal transfer, and manual review rows are handled separately.")}</p></div>
+        <div className="csv-import-actions"><button className="button primary" disabled={!aiImportCanSave || saving} onClick={onImportAiAccountantCsv}>{saving ? t("Importing...") : t("Confirm AI import")}</button><button className="button secondary" type="button" onClick={onClearAiAccountantCsv}>{t("Clear")}</button></div>
       </div>
-      <FileDropZone accept=".csv,text/csv" title="Choose or drop AI Accountant CSV" description={aiFileName || "Uses the exact AI accountant import template"} selectedName={aiFileName} onFile={(file) => onReadAiAccountantCsv(file ?? undefined)} className="compact-file-drop" />
+      <FileDropZone accept=".csv,text/csv" title={t("Choose or drop AI Accountant CSV")} description={aiFileName || t("Uses the exact AI accountant import template")} selectedName={aiFileName} onFile={(file) => onReadAiAccountantCsv(file ?? undefined)} className="compact-file-drop" />
       <section className="sales-stats ai-import-stats">
         {(Object.keys(aiGroupLabels) as AiImportGroup[]).map((group) => <article key={group} className={`money-stat ${group === "ready" || group === "matched" ? "sales" : group === "error" || group === "duplicate" ? "fees" : "transfer"}`}><span>{aiGroupLabels[group]}</span><strong>{(aiGroupCounts[group] ?? 0).toLocaleString("en-MY")}</strong></article>)}
       </section>
-      <div className="table-scroll"><table className="orders-table"><thead><tr><th>Row</th><th>Status</th><th>Action</th><th>Date</th><th>Bank description</th><th>Business event</th><th>Account</th><th>Amount</th><th>Issue / AI reason</th></tr></thead><tbody>{aiRows.map((row) => <tr key={row.id} className={row.group === "error" || row.group === "duplicate" || row.group === "manual" ? "csv-warning-row" : ""}><td>{row.rowNumber}</td><td><span className={`source-document-pill ${row.group === "ready" || row.group === "matched" ? "matched" : row.group === "ignored" || row.group === "internal" ? "ignored" : ""}`}>{aiGroupLabels[row.group]}</span></td><td>{row.importAction || "-"}</td><td>{row.bankDate ? formatDate(row.bankDate) : "-"}</td><td><strong>{row.bankDescription || row.description}</strong><br /><small>{row.counterparty || row.bankReference || "-"}</small></td><td>{row.businessEvent || "-"}</td><td>{row.account || "-"}</td><td><strong>{formatMoney(row.amount || row.bankAmount)}</strong><br /><small>{row.bankDirection || "-"}</small></td><td>{[...row.errors, ...row.warnings, row.aiReason].filter(Boolean).join(" | ") || "-"}</td></tr>)}</tbody></table>{!aiRows.length && <div className="empty"><strong>No AI Accountant CSV loaded yet</strong><p>Drop the accountant CSV here to validate every row before it touches the book.</p></div>}</div>
+      <div className="table-scroll"><table className="orders-table"><thead><tr><th>{t("Row")}</th><th>{t("Status")}</th><th>{t("Action")}</th><th>{t("Date")}</th><th>{t("Bank description")}</th><th>{t("Business event")}</th><th>{t("Account")}</th><th>{t("Amount")}</th><th>{t("Issue / AI reason")}</th></tr></thead><tbody>{aiRows.map((row) => <tr key={row.id} className={row.group === "error" || row.group === "duplicate" || row.group === "manual" ? "csv-warning-row" : ""}><td>{row.rowNumber}</td><td><span className={`source-document-pill ${row.group === "ready" || row.group === "matched" ? "matched" : row.group === "ignored" || row.group === "internal" ? "ignored" : ""}`}>{aiGroupLabels[row.group]}</span></td><td>{row.importAction || "-"}</td><td>{row.bankDate ? formatDate(row.bankDate) : "-"}</td><td><strong>{row.bankDescription || row.description}</strong><br /><small>{row.counterparty || row.bankReference || "-"}</small></td><td>{row.businessEvent || "-"}</td><td>{row.account || "-"}</td><td><strong>{formatMoney(row.amount || row.bankAmount)}</strong><br /><small>{row.bankDirection || "-"}</small></td><td>{[...row.errors, ...row.warnings, row.aiReason].filter(Boolean).join(" | ") || "-"}</td></tr>)}</tbody></table>{!aiRows.length && <div className="empty"><strong>{t("No AI Accountant CSV loaded yet")}</strong><p>{t("Drop the accountant CSV here to validate every row before it touches the book.")}</p></div>}</div>
       {aiReviews.length > 0 && <section className="posting-preview">
-        <h3>Saved review queue</h3>
-        <p>{aiReviews.length} row{aiReviews.length === 1 ? "" : "s"} were held back because they need manual checking, looked duplicated, or had an error.</p>
-        <div className="table-scroll"><table className="orders-table"><thead><tr><th>Date</th><th>Status</th><th>Description</th><th>Account</th><th>Amount</th><th>Reason</th></tr></thead><tbody>{aiReviews.slice(0, 20).map((row) => <tr key={row.id}><td>{row.bankDate ? formatDate(row.bankDate) : "-"}</td><td><span className="source-document-pill ignored">{row.status.replace(/_/g, " ")}</span></td><td><strong>{row.bankDescription || row.description}</strong><br /><small>{row.bankTransactionId || row.duplicateCheckKey || "-"}</small></td><td>{row.account || "-"}</td><td><strong>{formatMoney(row.amount || row.bankAmount)}</strong></td><td>{row.notes || row.aiReason || "-"}</td></tr>)}</tbody></table></div>
+        <h3>{t("Saved review queue")}</h3>
+        <p>{aiReviews.length} {" " + t("row")}{aiReviews.length === 1 ? "" : t("s")} {" " + t("were held back because they need manual checking, looked duplicated, or had an error.")}</p>
+        <div className="table-scroll"><table className="orders-table"><thead><tr><th>{t("Date")}</th><th>{t("Status")}</th><th>{t("Description")}</th><th>{t("Account")}</th><th>{t("Amount")}</th><th>{t("Reason")}</th></tr></thead><tbody>{aiReviews.slice(0, 20).map((row) => <tr key={row.id}><td>{row.bankDate ? formatDate(row.bankDate) : "-"}</td><td><span className="source-document-pill ignored">{row.status.replace(/_/g, " ")}</span></td><td><strong>{row.bankDescription || row.description}</strong><br /><small>{row.bankTransactionId || row.duplicateCheckKey || "-"}</small></td><td>{row.account || "-"}</td><td><strong>{formatMoney(row.amount || row.bankAmount)}</strong></td><td>{row.notes || row.aiReason || "-"}</td></tr>)}</tbody></table></div>
       </section>}
     </section>
     <section className="csv-import-layout">
       <div className="accounting-form card">
-        <h3>Simple bookkeeping CSV</h3>
-        <FileDropZone accept=".csv,text/csv" title="Choose or drop bookkeeping CSV" description={csvFileName || "CSV columns can be in any order"} onFile={(file) => onReadBookkeepingCsv(file ?? undefined)} className="compact-file-drop" />
+        <h3>{t("Simple bookkeeping CSV")}</h3>
+        <FileDropZone accept=".csv,text/csv" title={t("Choose or drop bookkeeping CSV")} description={csvFileName || t("CSV columns can be in any order")} onFile={(file) => onReadBookkeepingCsv(file ?? undefined)} className="compact-file-drop" />
         <section className="posting-preview">
-          <h3>Accepted columns</h3>
-          <p>Use any of these common headers. Extra columns are ignored.</p>
-          <div><span>Date</span><strong>date, transaction date</strong></div>
-          <div><span>Details</span><strong>description, memo, notes</strong></div>
-          <div><span>Category</span><strong>category, account, item</strong></div>
-          <div><span>Amount</span><strong>amount, total, debit, credit</strong></div>
-          <div><span>Inventory</span><strong>quantity, unit cost</strong></div>
+          <h3>{t("Accepted columns")}</h3>
+          <p>{t("Use any of these common headers. Extra columns are ignored.")}</p>
+          <div><span>{t("Date")}</span><strong>{t("date, transaction date")}</strong></div>
+          <div><span>{t("Details")}</span><strong>{t("description, memo, notes")}</strong></div>
+          <div><span>{t("Category")}</span><strong>{t("category, account, item")}</strong></div>
+          <div><span>{t("Amount")}</span><strong>{t("amount, total, debit, credit")}</strong></div>
+          <div><span>{t("Inventory")}</span><strong>{t("quantity, unit cost")}</strong></div>
         </section>
-        <div className="csv-import-actions"><button className="button primary" disabled={!csvRows.some((row) => row.amount > 0) || saving} onClick={onImportBookkeepingCsv}>{saving ? "Importing..." : `Import ${csvRows.filter((row) => row.amount > 0).length} rows`}</button><button className="button secondary" type="button" onClick={onClearBookkeepingCsv}>Clear</button></div>
+        <div className="csv-import-actions"><button className="button primary" disabled={!csvRows.some((row) => row.amount > 0) || saving} onClick={onImportBookkeepingCsv}>{saving ? t("Importing...") : `Import ${csvRows.filter((row) => row.amount > 0).length} rows`}</button><button className="button secondary" type="button" onClick={onClearBookkeepingCsv}>{t("Clear")}</button></div>
       </div>
       <section className="card accounting-table-card">
-        <h3>Import preview</h3>
-        <div className="table-scroll"><table className="orders-table"><thead><tr><th>Row</th><th>Date</th><th>Detected type</th><th>Category</th><th>Description</th><th>Amount</th><th>Payment</th><th>Warnings</th></tr></thead><tbody>{csvRows.map((row) => <tr key={row.id} className={row.warnings.length ? "csv-warning-row" : ""}><td>{row.rowNumber}</td><td>{formatDate(row.transactionDate)}</td><td>{businessEvents.find((event) => event.value === row.businessEvent)?.label}</td><td><strong>{row.categoryName}</strong>{row.quantity > 0 && <><br /><small>{row.quantity} x {formatMoney(row.unitCost)}</small></>}</td><td>{row.description}<br /><small>{row.supplier || "-"}</small></td><td><strong>{formatMoney(row.amount)}</strong></td><td>{row.paymentStatus.replace(/_/g, " ")}<br /><small>{row.paymentMethod}</small></td><td>{row.warnings.length ? row.warnings.join(", ") : "-"}</td></tr>)}</tbody></table>{!csvRows.length && <div className="empty"><strong>No CSV loaded yet</strong><p>Upload a CSV to preview the bookkeeping entries before importing.</p></div>}</div>
+        <h3>{t("Import preview")}</h3>
+        <div className="table-scroll"><table className="orders-table"><thead><tr><th>{t("Row")}</th><th>{t("Date")}</th><th>{t("Detected type")}</th><th>{t("Category")}</th><th>{t("Description")}</th><th>{t("Amount")}</th><th>{t("Payment")}</th><th>{t("Warnings")}</th></tr></thead><tbody>{csvRows.map((row) => <tr key={row.id} className={row.warnings.length ? "csv-warning-row" : ""}><td>{row.rowNumber}</td><td>{formatDate(row.transactionDate)}</td><td>{businessEvents.find((event) => event.value === row.businessEvent)?.label}</td><td><strong>{row.categoryName}</strong>{row.quantity > 0 && <><br /><small>{row.quantity} {" " + t("x") + " "}{formatMoney(row.unitCost)}</small></>}</td><td>{row.description}<br /><small>{row.supplier || "-"}</small></td><td><strong>{formatMoney(row.amount)}</strong></td><td>{row.paymentStatus.replace(/_/g, " ")}<br /><small>{row.paymentMethod}</small></td><td>{row.warnings.length ? row.warnings.join(", ") : "-"}</td></tr>)}</tbody></table>{!csvRows.length && <div className="empty"><strong>{t("No CSV loaded yet")}</strong><p>{t("Upload a CSV to preview the bookkeeping entries before importing.")}</p></div>}</div>
       </section>
     </section>
   </section>;
@@ -7165,34 +7173,34 @@ function AccountingWorkspacePage({
       .sort((a, b) => dateKey(a.transactionDate).localeCompare(dateKey(b.transactionDate)) || a.rowNumber - b.rowNumber);
     const ownerAmount = Number(transactionForm.amount) || 0;
     return <section className="accounting-workspace">
-      <div className="accounting-hero card"><div><p>OWNER'S EQUITY</p><h2>Capital and drawings</h2><span>Record money you put into the business, and money you take out from the business. These go to equity, not sales or expenses.</span></div><div className="accounting-status-pill">{formatMoney(ownerCapitalTotal - ownerDrawingsTotal)}</div></div>
+      <div className="accounting-hero card"><div><p>{t("OWNER'S EQUITY")}</p><h2>{t("Capital and drawings")}</h2><span>{t("Record money you put into the business, and money you take out from the business. These go to equity, not sales or expenses.")}</span></div><div className="accounting-status-pill">{formatMoney(ownerCapitalTotal - ownerDrawingsTotal)}</div></div>
       <section className="accounting-summary-grid">
-        <MoneyStat label="Owner capital put in" value={ownerCapitalTotal} tone="sales" />
-        <MoneyStat label="Owner drawings taken out" value={ownerDrawingsTotal} tone="fees" />
-        <MoneyStat label="Net owner equity movement" value={ownerCapitalTotal - ownerDrawingsTotal} tone={ownerCapitalTotal - ownerDrawingsTotal < 0 ? "fees" : "collected"} />
+        <MoneyStat label={t("Owner capital put in")} value={ownerCapitalTotal} tone="sales" />
+        <MoneyStat label={t("Owner drawings taken out")} value={ownerDrawingsTotal} tone="fees" />
+        <MoneyStat label={t("Net owner equity movement")} value={ownerCapitalTotal - ownerDrawingsTotal} tone={ownerCapitalTotal - ownerDrawingsTotal < 0 ? "fees" : "collected"} />
       </section>
       <BankStatementInProgressPanel rows={ownerInProgressRows} onUse={onUseBankStatementLine} />
       <section className="accounting-form-grid">
         <div className="accounting-form card">
-          <h3>New owner's equity record</h3>
-          <label>Date<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label>
-          <label>Transaction type<select value={ownerEvent} onChange={(input) => onTransactionFormChange({ businessEvent: input.target.value as AccountingTransactionForm["businessEvent"], categoryId: "", accountName: "", paymentStatus: "paid_in_full" })}><option value="owner_contribution">Capital put into business</option><option value="owner_drawings">Money taken from business</option></select></label>
-          <label>{ownerEvent === "owner_drawings" ? "Paid from" : "Money received into"}<select value={transactionForm.paymentMethod} onChange={(input) => onTransactionFormChange({ paymentMethod: input.target.value })}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>
-          <label>{ownerEvent === "owner_drawings" ? "Amount taken out" : "Capital amount"}<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onTransactionFormChange({ amount: input.target.value })} /></label>
-          <label>Description<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder={ownerEvent === "owner_drawings" ? "Example: Owner withdrawal for personal use" : "Example: Owner capital injection"} /></label>
-          <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title="Source document" description="Choose or drop transfer proof, receipt, bank slip, or image" selectedName={transactionFile?.name} onFile={onTransactionFileChange} />
-          <label>Notes<textarea value={transactionForm.notes} onChange={(event) => onTransactionFormChange({ notes: event.target.value })} /></label>
+          <h3>{t("New owner's equity record")}</h3>
+          <label>{t("Date")}<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label>
+          <label>{t("Transaction type")}<select value={ownerEvent} onChange={(input) => onTransactionFormChange({ businessEvent: input.target.value as AccountingTransactionForm["businessEvent"], categoryId: "", accountName: "", paymentStatus: "paid_in_full" })}><option value="owner_contribution">{t("Capital put into business")}</option><option value="owner_drawings">{t("Money taken from business")}</option></select></label>
+          <label>{ownerEvent === "owner_drawings" ? t("Paid from") : t("Money received into")}<select value={transactionForm.paymentMethod} onChange={(input) => onTransactionFormChange({ paymentMethod: input.target.value })}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>
+          <label>{ownerEvent === "owner_drawings" ? t("Amount taken out") : t("Capital amount")}<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onTransactionFormChange({ amount: input.target.value })} /></label>
+          <label>{t("Description")}<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder={ownerEvent === "owner_drawings" ? t("Example: Owner withdrawal for personal use") : t("Example: Owner capital injection")} /></label>
+          <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title={t("Source document")} description={t("Choose or drop transfer proof, receipt, bank slip, or image")} selectedName={transactionFile?.name} onFile={onTransactionFileChange} />
+          <label>{t("Notes")}<textarea value={transactionForm.notes} onChange={(event) => onTransactionFormChange({ notes: event.target.value })} /></label>
           <section className="posting-preview">
-            <h3>Posting preview</h3>
+            <h3>{t("Posting preview")}</h3>
             {ownerEvent === "owner_drawings" ? <>
-              <div><span>Debit Owner Drawings</span><strong>{formatMoney(ownerAmount)}</strong></div>
-              <div><span>Credit {transactionForm.paymentMethod || "Bank Account"}</span><strong>{formatMoney(ownerAmount)}</strong></div>
+              <div><span>{t("Debit Owner Drawings")}</span><strong>{formatMoney(ownerAmount)}</strong></div>
+              <div><span>{t("Credit") + " "}{transactionForm.paymentMethod || t("Bank Account")}</span><strong>{formatMoney(ownerAmount)}</strong></div>
             </> : <>
-              <div><span>Debit {transactionForm.paymentMethod || "Bank Account"}</span><strong>{formatMoney(ownerAmount)}</strong></div>
-              <div><span>Credit Owner Capital</span><strong>{formatMoney(ownerAmount)}</strong></div>
+              <div><span>{t("Debit") + " "}{transactionForm.paymentMethod || t("Bank Account")}</span><strong>{formatMoney(ownerAmount)}</strong></div>
+              <div><span>{t("Credit Owner Capital")}</span><strong>{formatMoney(ownerAmount)}</strong></div>
             </>}
           </section>
-          <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? "Saving..." : "Save owner's equity record"}</button>
+          <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? t("Saving...") : t("Save owner's equity record")}</button>
         </div>
         <div>
           {transactionEditPanel}
@@ -7259,40 +7267,40 @@ function AccountingWorkspacePage({
     const selectedMarketingAccountName = marketingAdAccountName(selectedMarketingAccount?.label || transactionForm.accountName || "Meta Ads");
     const selectedMarketingMonth = monthKey(transactionForm.transactionDate) || monthKey(localDateKey(new Date()));
     if (categoryEvent.value === "marketing_expense") return <section className="accounting-workspace">
-      <div className="accounting-hero card"><div><p>MONTHLY ADS</p><h2>Marketing</h2><span>Meta Ads and TikTok Ads are handled by month. Existing ad charges are grouped below, and one source document can be attached to the whole month.</span></div><div className="accounting-status-pill">{formatMoney(marketingTransactions.reduce((total, transaction) => total + transaction.amount, 0))}</div></div>
+      <div className="accounting-hero card"><div><p>{t("MONTHLY ADS")}</p><h2>{t("Marketing")}</h2><span>{t("Meta Ads and TikTok Ads are handled by month. Existing ad charges are grouped below, and one source document can be attached to the whole month.")}</span></div><div className="accounting-status-pill">{formatMoney(marketingTransactions.reduce((total, transaction) => total + transaction.amount, 0))}</div></div>
       {bankInProgressPanelFor("marketing_expense")}
       <section className="accounting-form-grid">
         <div className="accounting-form card">
-          <h3>New monthly ad record</h3>
-          <label>Month<input type="month" value={selectedMarketingMonth} onChange={(input) => {
+          <h3>{t("New monthly ad record")}</h3>
+          <label>{t("Month")}<input type="month" value={selectedMarketingMonth} onChange={(input) => {
             const nextMonth = input.target.value || selectedMarketingMonth;
             onTransactionFormChange({
               transactionDate: `${nextMonth}-01`,
               description: transactionForm.description.trim() ? transactionForm.description : `${selectedMarketingAccountName} - ${formatMonthLabel(`${nextMonth}-01`)}`,
             });
           }} /></label>
-          <label>Ad account<select value={transactionForm.categoryId} onChange={(input) => {
+          <label>{t("Ad account")}<select value={transactionForm.categoryId} onChange={(input) => {
             const selected = accountOptions.find((account) => account.value === input.target.value);
             const accountName = marketingAdAccountName(selected?.label || "");
             const patch: Partial<AccountingTransactionForm> = { categoryId: input.target.value, accountName: "", supplier: accountName };
             if (!transactionForm.description.trim() && selectedMarketingMonth) patch.description = `${accountName || "Marketing Ads"} - ${formatMonthLabel(`${selectedMarketingMonth}-01`)}`;
             onTransactionFormChange(patch);
-          }}><option value="">Choose ad account</option>{visibleMarketingAccountOptions.map((account) => <option key={account.value} value={account.value}>{account.label}</option>)}</select></label>
-          {transactionForm.categoryId === newAssetOptionValue && <label>{newAccountLabel}<input value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })} placeholder="Example: Meta Ads, TikTok Ads..." /></label>}
-          <label>Total monthly spend<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onTransactionFormChange({ amount: input.target.value })} /></label>
-          <label>Supplier / source<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder="Meta, TikTok, agency..." /></label>
-          <label>Description<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder="Example: Meta Ads - July 2026" /></label>
-          <h3>Payment</h3>
-          <label>Payment type<select value={transactionForm.paymentStatus} onChange={(input) => onTransactionFormChange({ paymentStatus: input.target.value as AccountingTransactionForm["paymentStatus"] })}><option value="paid_in_full">Paid in full</option><option value="deposit_paid">Deposit Paid</option><option value="on_credit">On Credit</option></select></label>
-          {transactionForm.paymentStatus !== "on_credit" && <label>Paid from<select value={transactionForm.paymentMethod} onChange={(input) => onTransactionFormChange({ paymentMethod: input.target.value })}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>}
-          <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title="Monthly source document" description="Choose or drop the monthly Meta/TikTok invoice or report" selectedName={transactionFile?.name} onFile={onTransactionFileChange} />
-          <label>Notes<textarea value={transactionForm.notes} onChange={(event) => onTransactionFormChange({ notes: event.target.value })} /></label>
-          <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? "Saving..." : "Save monthly ad record"}</button>
+          }}><option value="">{t("Choose ad account")}</option>{visibleMarketingAccountOptions.map((account) => <option key={account.value} value={account.value}>{account.label}</option>)}</select></label>
+          {transactionForm.categoryId === newAssetOptionValue && <label>{newAccountLabel}<input value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })} placeholder={t("Example: Meta Ads, TikTok Ads...")} /></label>}
+          <label>{t("Total monthly spend")}<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onTransactionFormChange({ amount: input.target.value })} /></label>
+          <label>{t("Supplier / source")}<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder={t("Meta, TikTok, agency...")} /></label>
+          <label>{t("Description")}<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder={t("Example: Meta Ads - July 2026")} /></label>
+          <h3>{t("Payment")}</h3>
+          <label>{t("Payment type")}<select value={transactionForm.paymentStatus} onChange={(input) => onTransactionFormChange({ paymentStatus: input.target.value as AccountingTransactionForm["paymentStatus"] })}><option value="paid_in_full">{t("Paid in full")}</option><option value="deposit_paid">{t("Deposit Paid")}</option><option value="on_credit">{t("On Credit")}</option></select></label>
+          {transactionForm.paymentStatus !== "on_credit" && <label>{t("Paid from")}<select value={transactionForm.paymentMethod} onChange={(input) => onTransactionFormChange({ paymentMethod: input.target.value })}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>}
+          <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title={t("Monthly source document")} description={t("Choose or drop the monthly Meta/TikTok invoice or report")} selectedName={transactionFile?.name} onFile={onTransactionFileChange} />
+          <label>{t("Notes")}<textarea value={transactionForm.notes} onChange={(event) => onTransactionFormChange({ notes: event.target.value })} /></label>
+          <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? t("Saving...") : t("Save monthly ad record")}</button>
         </div>
         <div className="marketing-monthly-panel">
           {transactionEditPanel}
           <section className="card accounting-table-card">
-            <div className="ledger-table-heading"><div><h3>Monthly Meta/TikTok totals</h3><p>These totals are added up from the existing ad transactions. Attach one invoice/report to the whole month without creating a duplicate expense.</p></div></div>
+            <div className="ledger-table-heading"><div><h3>{t("Monthly Meta/TikTok totals")}</h3><p>{t("These totals are added up from the existing ad transactions. Attach one invoice/report to the whole month without creating a duplicate expense.")}</p></div></div>
             <div className="monthly-marketing-list">
               {monthlyMarketingGroups.map((group) => {
                 const groupDocuments = [...group.documentIds]
@@ -7302,17 +7310,17 @@ function AccountingWorkspacePage({
                 return <article className="monthly-marketing-row" key={group.key}>
                   <div className="monthly-marketing-summary">
                     <strong>{formatMonthLabel(`${group.month}-01`)} · {group.accountName}</strong>
-                    <span>{group.transactions.length} transaction{group.transactions.length === 1 ? "" : "s"} added up</span>
+                    <span>{group.transactions.length} {" " + t("transaction")}{group.transactions.length === 1 ? "" : t("s")} {" " + t("added up")}</span>
                   </div>
                   <strong className="monthly-marketing-total">{formatMoney(group.total)}</strong>
                   <div className="monthly-marketing-documents">
-                    {groupDocuments.length ? groupDocuments.map((document) => <button key={document.id} className="view-button document-link" onClick={() => onOpenDocument(document)}>{document.fileName}</button>) : <span>No source document yet</span>}
+                    {groupDocuments.length ? groupDocuments.map((document) => <button key={document.id} className="view-button document-link" onClick={() => onOpenDocument(document)}>{document.fileName}</button>) : <span>{t("No source document yet")}</span>}
                   </div>
-                  <FileDropZone className="compact-file-drop monthly-marketing-drop" accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title="Attach source document" description="Drop the monthly proof here" selectedName={selectedFile?.name} onFile={(file) => onMonthlyMarketingDocumentFileChange(group.key, file)} />
-                  <button className="button primary" disabled={saving || !selectedFile} onClick={() => onAttachMonthlyMarketingDocument({ groupKey: group.key, month: group.month, accountName: group.accountName, transactionIds: group.transactions.map((transaction) => transaction.id), amount: group.total })}>{saving ? "Saving..." : "Attach to month"}</button>
+                  <FileDropZone className="compact-file-drop monthly-marketing-drop" accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title={t("Attach source document")} description={t("Drop the monthly proof here")} selectedName={selectedFile?.name} onFile={(file) => onMonthlyMarketingDocumentFileChange(group.key, file)} />
+                  <button className="button primary" disabled={saving || !selectedFile} onClick={() => onAttachMonthlyMarketingDocument({ groupKey: group.key, month: group.month, accountName: group.accountName, transactionIds: group.transactions.map((transaction) => transaction.id), amount: group.total })}>{saving ? t("Saving...") : t("Attach to month")}</button>
                 </article>;
               })}
-              {!monthlyMarketingGroups.length && <div className="empty"><strong>No monthly ad totals yet</strong><p>When Meta Ads or TikTok Ads transactions are recorded, they will appear here grouped by month.</p></div>}
+              {!monthlyMarketingGroups.length && <div className="empty"><strong>{t("No monthly ad totals yet")}</strong><p>{t("When Meta Ads or TikTok Ads transactions are recorded, they will appear here grouped by month.")}</p></div>}
             </div>
           </section>
           <AccountingTransactionsTable transactions={marketingTransactions} ledgerEntries={ledgerEntries} documents={transactionDocuments} bankStatementLines={bankStatementLines} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} onBulkPaymentMethodChange={onBulkTransactionPaymentMethodChange} />
@@ -7320,32 +7328,32 @@ function AccountingWorkspacePage({
       </section>
     </section>;
     if (isOtherIncome) return <section className="accounting-workspace">
-      <div className="accounting-hero card"><div><p>MONEY IN</p><h2>Other Income</h2><span>Record sales that were not keyed into Shopify. These entries post as income and consume inventory through FIFO like normal sales.</span></div><div className="accounting-status-pill">{formatMoney(otherIncomeTotal)}</div></div>
+      <div className="accounting-hero card"><div><p>{t("MONEY IN")}</p><h2>{t("Other Income")}</h2><span>{t("Record sales that were not keyed into Shopify. These entries post as income and consume inventory through FIFO like normal sales.")}</span></div><div className="accounting-status-pill">{formatMoney(otherIncomeTotal)}</div></div>
       {bankInProgressPanelFor("other_income")}
       <section className="accounting-form-grid">
         <div className="accounting-form card">
-          <h3>New other income sale</h3>
-          <label>Date<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label>
-          <label>Income account<select value={transactionForm.categoryId} onChange={(input) => onTransactionFormChange({ categoryId: input.target.value, accountName: "" })}><option value="">Choose</option>{accountOptions.map((account) => <option key={account.value} value={account.value}>{account.label}</option>)}</select></label>
-          {transactionForm.categoryId === newAssetOptionValue && <label>{newAccountLabel}<input value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })} placeholder="Example: Pop-up booth sales, manual sales..." /></label>}
-          <label>Description<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder="Example: Weekend booth sales" /></label>
-          <label>Money received into<select value={transactionForm.paymentMethod} onChange={(input) => onTransactionFormChange({ paymentMethod: input.target.value })}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>
+          <h3>{t("New other income sale")}</h3>
+          <label>{t("Date")}<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label>
+          <label>{t("Income account")}<select value={transactionForm.categoryId} onChange={(input) => onTransactionFormChange({ categoryId: input.target.value, accountName: "" })}><option value="">{t("Choose")}</option>{accountOptions.map((account) => <option key={account.value} value={account.value}>{account.label}</option>)}</select></label>
+          {transactionForm.categoryId === newAssetOptionValue && <label>{newAccountLabel}<input value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })} placeholder={t("Example: Pop-up booth sales, manual sales...")} /></label>}
+          <label>{t("Description")}<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder={t("Example: Weekend booth sales")} /></label>
+          <label>{t("Money received into")}<select value={transactionForm.paymentMethod} onChange={(input) => onTransactionFormChange({ paymentMethod: input.target.value })}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>
           <section className="card accounting-table-card">
-            <h3>Characters sold</h3>
-            <div className="table-scroll"><table className="orders-table"><thead><tr><th>Character</th><th>Quantity sold</th><th>Price each</th><th>Total</th></tr></thead><tbody>{otherIncomeSaleLines.map((line) => {
+            <h3>{t("Characters sold")}</h3>
+            <div className="table-scroll"><table className="orders-table"><thead><tr><th>{t("Character")}</th><th>{t("Quantity sold")}</th><th>{t("Price each")}</th><th>{t("Total")}</th></tr></thead><tbody>{otherIncomeSaleLines.map((line) => {
               const lineTotal = (Number(line.quantity) || 0) * (Number(line.unitPrice) || 0);
               return <tr key={line.character}><td><strong>{line.character}</strong></td><td><input type="number" min="0" step="1" value={line.quantity} onChange={(input) => onOtherIncomeSaleLineChange(line.character, { quantity: input.target.value })} /></td><td><input type="number" min="0" step="0.01" value={line.unitPrice} onChange={(input) => onOtherIncomeSaleLineChange(line.character, { unitPrice: input.target.value })} /></td><td><strong>{formatMoney(lineTotal)}</strong></td></tr>;
             })}</tbody></table></div>
           </section>
-          <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title="Source document" description="Choose or drop receipt, proof, CSV, or image" selectedName={transactionFile?.name} onFile={onTransactionFileChange} />
-          <label>Notes<textarea value={transactionForm.notes} onChange={(event) => onTransactionFormChange({ notes: event.target.value })} /></label>
+          <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title={t("Source document")} description={t("Choose or drop receipt, proof, CSV, or image")} selectedName={transactionFile?.name} onFile={onTransactionFileChange} />
+          <label>{t("Notes")}<textarea value={transactionForm.notes} onChange={(event) => onTransactionFormChange({ notes: event.target.value })} /></label>
           <section className="posting-preview">
-            <h3>Posting preview</h3>
-            <div><span>Debit {transactionForm.paymentMethod || "Bank Account"}</span><strong>{formatMoney(otherIncomeTotal)}</strong></div>
-            <div><span>Credit {(accountOptions.find((account) => account.value === transactionForm.categoryId)?.label ?? transactionForm.accountName) || "Other income account"}</span><strong>{formatMoney(otherIncomeTotal)}</strong></div>
-            <p>{otherIncomeUnits.toLocaleString("en-MY")} unit{otherIncomeUnits === 1 ? "" : "s"} will be counted as sold for FIFO inventory.</p>
+            <h3>{t("Posting preview")}</h3>
+            <div><span>{t("Debit") + " "}{transactionForm.paymentMethod || t("Bank Account")}</span><strong>{formatMoney(otherIncomeTotal)}</strong></div>
+            <div><span>{t("Credit") + " "}{(accountOptions.find((account) => account.value === transactionForm.categoryId)?.label ?? transactionForm.accountName) || t("Other income account")}</span><strong>{formatMoney(otherIncomeTotal)}</strong></div>
+            <p>{otherIncomeUnits.toLocaleString("en-MY")} {" " + t("unit")}{otherIncomeUnits === 1 ? "" : t("s")} {" " + t("will be counted as sold for FIFO inventory.")}</p>
           </section>
-          <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? "Saving..." : "Save other income"}</button>
+          <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? t("Saving...") : t("Save other income")}</button>
         </div>
         <div>
           {transactionEditPanel}
@@ -7354,39 +7362,39 @@ function AccountingWorkspacePage({
       </section>
     </section>;
     if (isMoneyIn) return <section className="accounting-workspace">
-      <div className="accounting-hero card"><div><p>CASH</p><h2>Payment processor payouts</h2><span>Collection totals come from the fulfilment sales report. When Stripe, Xendit, or TikTok pays out, record the payout here: debit Bank, credit the payment processor.</span></div><div className="accounting-status-pill">{formatMoney(sales.totalCollected)}</div></div>
+      <div className="accounting-hero card"><div><p>{t("CASH")}</p><h2>{t("Payment processor payouts")}</h2><span>{t("Collection totals come from the fulfilment sales report. When Stripe, Xendit, or TikTok pays out, record the payout here: debit Bank, credit the payment processor.")}</span></div><div className="accounting-status-pill">{formatMoney(sales.totalCollected)}</div></div>
       <section className="sales-stats">
-        <MoneyStat label="Bank transfer collected" value={sales.bankTransfer} tone="transfer" />
-        <MoneyStat label="Stripe collected" value={sales.stripeCollected} tone="sales" />
-        <MoneyStat label="Xendit collected" value={sales.xenditCollected} tone="collected" />
-        <MoneyStat label="Total collected" value={sales.totalCollected} tone="sales" />
-        <MoneyStat label="Cash after processor fees" value={sales.totalCollected - sales.processingFees} tone="collected" />
+        <MoneyStat label={t("Bank transfer collected")} value={sales.bankTransfer} tone="transfer" />
+        <MoneyStat label={t("Stripe collected")} value={sales.stripeCollected} tone="sales" />
+        <MoneyStat label={t("Xendit collected")} value={sales.xenditCollected} tone="collected" />
+        <MoneyStat label={t("Total collected")} value={sales.totalCollected} tone="sales" />
+        <MoneyStat label={t("Cash after processor fees")} value={sales.totalCollected - sales.processingFees} tone="collected" />
       </section>
       <section className="bookkeeping-balance-row">
-        <MoneyStat label="Bank Account" value={bankBalance} tone="collected" />
-        <MoneyStat label="Shopee Pay" value={shopeePayBalance} tone="collected" />
-        <MoneyStat label="Stripe" value={stripeBalance} tone="sales" />
-        <MoneyStat label="Xendit" value={xenditBalance} tone="transfer" />
-        <MoneyStat label="Payment Processing Fees" value={processorFeeBalance} tone="fees" />
-        <MoneyStat label="Owner's Equity" value={ownerEquity} tone="sales" />
-        <MoneyStat label="Drawings" value={drawings} tone="fees" />
+        <MoneyStat label={t("Bank Account")} value={bankBalance} tone="collected" />
+        <MoneyStat label={t("Shopee Pay")} value={shopeePayBalance} tone="collected" />
+        <MoneyStat label={t("Stripe")} value={stripeBalance} tone="sales" />
+        <MoneyStat label={t("Xendit")} value={xenditBalance} tone="transfer" />
+        <MoneyStat label={t("Payment Processing Fees")} value={processorFeeBalance} tone="fees" />
+        <MoneyStat label={t("Owner's Equity")} value={ownerEquity} tone="sales" />
+        <MoneyStat label={t("Drawings")} value={drawings} tone="fees" />
       </section>
       {bankInProgressPanelFor("payment_processor_paid")}
       <section className="accounting-form-grid">
         <div className="accounting-form card">
-          <h3>Record payment received</h3>
-          <label>Date received<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label>
-          <label>Transaction type<select value={transactionForm.categoryId} onChange={(input) => onTransactionFormChange({ categoryId: input.target.value, accountName: "", amount: input.target.value === "Stripe" ? String(stripeBalance || "") : input.target.value === "Xendit" ? String(xenditBalance || "") : "" })}><option value="">Choose transaction</option><option value="Stripe">Stripe payout</option><option value="Xendit">Xendit payout</option><option value="TikTok">TikTok payout</option><option value="Bank Transfer">Bank transfer received</option><option value="Owner's Equity">Owner's Equity</option><option value="Drawings">Drawings</option></select></label>
-          <label>{transactionForm.categoryId === "Drawings" ? "Paid from" : "Money received into"}<select value={transactionForm.paymentMethod} onChange={(input) => onTransactionFormChange({ paymentMethod: input.target.value })}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>
-          {transactionForm.categoryId && <p className="accounting-file-name">{transactionForm.categoryId === "Bank Transfer" ? "Bank transfer sales are already in bank. Use this only if you want to record a manual received amount." : `Unrecorded balance from sales report: ${formatMoney(processorBalance)}`}</p>}
-          <label>{transactionForm.categoryId === "Stripe" || transactionForm.categoryId === "Xendit" || transactionForm.categoryId === "TikTok" ? "Net amount received" : transactionForm.categoryId === "Drawings" ? "Amount withdrawn" : "Amount received"}<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onTransactionFormChange({ amount: input.target.value })} /></label>
-          <label>Description<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder="Example: Stripe payout to bank" /></label>
-          <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title="Source document" description="Choose or drop receipt, invoice, CSV, or image" selectedName={transactionFile?.name} onFile={onTransactionFileChange} />
+          <h3>{t("Record payment received")}</h3>
+          <label>{t("Date received")}<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label>
+          <label>{t("Transaction type")}<select value={transactionForm.categoryId} onChange={(input) => onTransactionFormChange({ categoryId: input.target.value, accountName: "", amount: input.target.value === "Stripe" ? String(stripeBalance || "") : input.target.value === "Xendit" ? String(xenditBalance || "") : "" })}><option value="">{t("Choose transaction")}</option><option value="Stripe">{t("Stripe payout")}</option><option value="Xendit">{t("Xendit payout")}</option><option value="TikTok">{t("TikTok payout")}</option><option value="Bank Transfer">{t("Bank transfer received")}</option><option value="Owner's Equity">{t("Owner's Equity")}</option><option value="Drawings">{t("Drawings")}</option></select></label>
+          <label>{transactionForm.categoryId === "Drawings" ? t("Paid from") : t("Money received into")}<select value={transactionForm.paymentMethod} onChange={(input) => onTransactionFormChange({ paymentMethod: input.target.value })}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>
+          {transactionForm.categoryId && <p className="accounting-file-name">{transactionForm.categoryId === "Bank Transfer" ? t("Bank transfer sales are already in bank. Use this only if you want to record a manual received amount.") : `Unrecorded balance from sales report: ${formatMoney(processorBalance)}`}</p>}
+          <label>{transactionForm.categoryId === "Stripe" || transactionForm.categoryId === "Xendit" || transactionForm.categoryId === "TikTok" ? t("Net amount received") : transactionForm.categoryId === "Drawings" ? t("Amount withdrawn") : t("Amount received")}<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onTransactionFormChange({ amount: input.target.value })} /></label>
+          <label>{t("Description")}<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder={t("Example: Stripe payout to bank")} /></label>
+          <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title={t("Source document")} description={t("Choose or drop receipt, invoice, CSV, or image")} selectedName={transactionFile?.name} onFile={onTransactionFileChange} />
           <section className="posting-preview">
-            <h3>Posting preview</h3>
-            {transactionForm.categoryId === "Drawings" ? <><div><span>Debit Drawings</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>Credit {transactionForm.paymentMethod || "Bank Account"}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></> : transactionForm.categoryId === "Stripe" || transactionForm.categoryId === "Xendit" || transactionForm.categoryId === "TikTok" ? <><div><span>Debit {transactionForm.paymentMethod || "Bank Account"}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>Credit {transactionForm.categoryId}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></> : <><div><span>Debit {transactionForm.paymentMethod || "Bank Account"}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>Credit {transactionForm.categoryId || "payment processor"}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></>}
+            <h3>{t("Posting preview")}</h3>
+            {transactionForm.categoryId === "Drawings" ? <><div><span>{t("Debit Drawings")}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>{t("Credit") + " "}{transactionForm.paymentMethod || t("Bank Account")}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></> : transactionForm.categoryId === "Stripe" || transactionForm.categoryId === "Xendit" || transactionForm.categoryId === "TikTok" ? <><div><span>{t("Debit") + " "}{transactionForm.paymentMethod || t("Bank Account")}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>{t("Credit") + " "}{transactionForm.categoryId}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></> : <><div><span>{t("Debit") + " "}{transactionForm.paymentMethod || t("Bank Account")}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>{t("Credit") + " "}{transactionForm.categoryId || t("payment processor")}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></>}
           </section>
-          <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? "Saving..." : "Save payout"}</button>
+          <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? t("Saving...") : t("Save payout")}</button>
         </div>
         <div>
           {transactionEditPanel}
@@ -7395,24 +7403,24 @@ function AccountingWorkspacePage({
       </section>
     </section>;
     return <section className="accounting-workspace">
-      <div className="accounting-hero card"><div><p>{categoryEvent.group.toUpperCase()}</p><h2>{categoryEvent.label}</h2><span>{isInventory ? "Record stock bought by batch. Quantity updates the inventory stock settings after saving." : isMoneyIn ? "Record payout money received from payment processors or sales reports." : "Record a simple bookkeeping transaction with source document proof."}</span></div><div className="accounting-status-pill">{formatMoney(calculatedAmount || 0)}</div></div>
+      <div className="accounting-hero card"><div><p>{categoryEvent.group.toUpperCase()}</p><h2>{categoryEvent.label}</h2><span>{isInventory ? t("Record stock bought by batch. Quantity updates the inventory stock settings after saving.") : isMoneyIn ? t("Record payout money received from payment processors or sales reports.") : t("Record a simple bookkeeping transaction with source document proof.")}</span></div><div className="accounting-status-pill">{formatMoney(calculatedAmount || 0)}</div></div>
       {bankInProgressPanelFor(categoryEvent.value)}
       <section className="accounting-form-grid">
         <div className="accounting-form card">
-          <h3>New {categoryEvent.label} record</h3>
-          <label>Date<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label>
-          <label>{isInventory ? "Inventory item" : isMoneyIn ? "Money in type" : isAsset ? "Asset" : "Category"}<select value={transactionForm.categoryId} onChange={(input) => onTransactionFormChange({ categoryId: input.target.value, accountName: "" })}><option value="">Choose</option>{accountOptions.map((account) => <option key={account.value} value={account.value}>{account.label}</option>)}</select></label>
-          {isInventory && transactionForm.categoryId === rejectedInventoryOption && <label>Rejected item<select value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })}><option value="">Choose rejected item</option><option value="BILLY">BILLY</option><option value="TOOTSIE">TOOTSIE</option><option value="HUNNIE">HUNNIE</option><option value="DRAGON WARRIOR">DRAGON WARRIOR</option><option value="PACKAGING">PACKAGING</option><option value="BOXES">BOXES</option><option value="BUBBLE WRAP">BUBBLE WRAP</option><option value="WAX SEAL">WAX SEAL</option></select></label>}
-          {transactionForm.categoryId === newAssetOptionValue && <label>{newAccountLabel}<input value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })} placeholder={isAsset ? "Example: Printer, heat press machine..." : isInventory ? "Example: Speaker, wax seal, bubble wrap..." : "Example: Labour, samples, JnT..."} /></label>}
-          <div className="accounting-two-cols"><label>{isInventory ? "Unit price" : "Amount"}<input type="number" min="0" step="0.01" value={isInventory ? transactionForm.unitCost : transactionForm.amount} onChange={(input) => isInventory ? onInventoryCostFieldChange("unitCost", input.target.value) : onTransactionFormChange({ amount: input.target.value })} /></label>{isInventory ? <label>{transactionForm.categoryId === rejectedInventoryOption ? "Quantity rejected" : "Quantity bought"}<input type="number" min="0" step="1" value={transactionForm.quantity} onChange={(input) => onInventoryCostFieldChange("quantity", input.target.value)} /></label> : <label>Supplier / source<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder={isMoneyIn ? "Stripe, Xendit, TikTok Shop..." : "Supplier name"} /></label>}</div>
-          {isInventory && <label>Total batch cost<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onInventoryCostFieldChange("amount", input.target.value)} placeholder="Enter any 2 fields and the missing one calculates" /></label>}
-          {isInventory && <label>Supplier<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder="Supplier name" /></label>}
-          <label>Description<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder={isInventory ? "Example: June Billy plush batch" : "Short note for the book"} /></label>
-          {!isMoneyIn && <><h3>Payment</h3><label>Payment type<select value={transactionForm.paymentStatus} onChange={(input) => onTransactionFormChange({ paymentStatus: input.target.value as AccountingTransactionForm["paymentStatus"] })}><option value="paid_in_full">Paid in full</option><option value="deposit_paid">Deposit Paid</option><option value="on_credit">On Credit</option></select></label>{transactionForm.paymentStatus !== "on_credit" && <label>Paid from<select value={transactionForm.paymentMethod} onChange={(input) => onTransactionFormChange({ paymentMethod: input.target.value })}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>}</>}
-          {transactionForm.paymentStatus === "deposit_paid" && <div className="accounting-two-cols"><label>Deposit paid<input type="number" min="0" step="0.01" value={transactionForm.depositAmount} onChange={(input) => onTransactionFormChange({ depositAmount: input.target.value })} /></label><label>Remaining<input readOnly value={formatMoney(Math.max(0, calculatedAmount - (Number(transactionForm.depositAmount) || 0)))} /></label></div>}
-          <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title="Source document" description="Choose or drop receipt, invoice, CSV, or image" selectedName={transactionFile?.name} onFile={onTransactionFileChange} />
-          <label>Notes<textarea value={transactionForm.notes} onChange={(event) => onTransactionFormChange({ notes: event.target.value })} /></label>
-          <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? "Saving..." : "Save to book"}</button>
+          <h3>{t("New") + " "}{categoryEvent.label} {" " + t("record")}</h3>
+          <label>{t("Date")}<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label>
+          <label>{isInventory ? t("Inventory item") : isMoneyIn ? t("Money in type") : isAsset ? t("Asset") : t("Category")}<select value={transactionForm.categoryId} onChange={(input) => onTransactionFormChange({ categoryId: input.target.value, accountName: "" })}><option value="">{t("Choose")}</option>{accountOptions.map((account) => <option key={account.value} value={account.value}>{account.label}</option>)}</select></label>
+          {isInventory && transactionForm.categoryId === rejectedInventoryOption && <label>{t("Rejected item")}<select value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })}><option value="">{t("Choose rejected item")}</option><option value="BILLY">{t("BILLY")}</option><option value="TOOTSIE">{t("TOOTSIE")}</option><option value="HUNNIE">{t("HUNNIE")}</option><option value="DRAGON WARRIOR">{t("DRAGON WARRIOR")}</option><option value="PACKAGING">{t("PACKAGING")}</option><option value="BOXES">{t("BOXES")}</option><option value="BUBBLE WRAP">{t("BUBBLE WRAP")}</option><option value="WAX SEAL">{t("WAX SEAL")}</option></select></label>}
+          {transactionForm.categoryId === newAssetOptionValue && <label>{newAccountLabel}<input value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })} placeholder={isAsset ? t("Example: Printer, heat press machine...") : isInventory ? t("Example: Speaker, wax seal, bubble wrap...") : t("Example: Labour, samples, JnT...")} /></label>}
+          <div className="accounting-two-cols"><label>{isInventory ? t("Unit price") : t("Amount")}<input type="number" min="0" step="0.01" value={isInventory ? transactionForm.unitCost : transactionForm.amount} onChange={(input) => isInventory ? onInventoryCostFieldChange("unitCost", input.target.value) : onTransactionFormChange({ amount: input.target.value })} /></label>{isInventory ? <label>{transactionForm.categoryId === rejectedInventoryOption ? t("Quantity rejected") : t("Quantity bought")}<input type="number" min="0" step="1" value={transactionForm.quantity} onChange={(input) => onInventoryCostFieldChange("quantity", input.target.value)} /></label> : <label>{t("Supplier / source")}<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder={isMoneyIn ? t("Stripe, Xendit, TikTok Shop...") : t("Supplier name")} /></label>}</div>
+          {isInventory && <label>{t("Total batch cost")}<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => onInventoryCostFieldChange("amount", input.target.value)} placeholder={t("Enter any 2 fields and the missing one calculates")} /></label>}
+          {isInventory && <label>{t("Supplier")}<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder={t("Supplier name")} /></label>}
+          <label>{t("Description")}<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder={isInventory ? t("Example: June Billy plush batch") : t("Short note for the book")} /></label>
+          {!isMoneyIn && <><h3>{t("Payment")}</h3><label>{t("Payment type")}<select value={transactionForm.paymentStatus} onChange={(input) => onTransactionFormChange({ paymentStatus: input.target.value as AccountingTransactionForm["paymentStatus"] })}><option value="paid_in_full">{t("Paid in full")}</option><option value="deposit_paid">{t("Deposit Paid")}</option><option value="on_credit">{t("On Credit")}</option></select></label>{transactionForm.paymentStatus !== "on_credit" && <label>{t("Paid from")}<select value={transactionForm.paymentMethod} onChange={(input) => onTransactionFormChange({ paymentMethod: input.target.value })}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>}</>}
+          {transactionForm.paymentStatus === "deposit_paid" && <div className="accounting-two-cols"><label>{t("Deposit paid")}<input type="number" min="0" step="0.01" value={transactionForm.depositAmount} onChange={(input) => onTransactionFormChange({ depositAmount: input.target.value })} /></label><label>{t("Remaining")}<input readOnly value={formatMoney(Math.max(0, calculatedAmount - (Number(transactionForm.depositAmount) || 0)))} /></label></div>}
+          <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title={t("Source document")} description={t("Choose or drop receipt, invoice, CSV, or image")} selectedName={transactionFile?.name} onFile={onTransactionFileChange} />
+          <label>{t("Notes")}<textarea value={transactionForm.notes} onChange={(event) => onTransactionFormChange({ notes: event.target.value })} /></label>
+          <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? t("Saving...") : t("Save to book")}</button>
         </div>
         {transactionEditPanel}
         <AccountingTransactionsTable transactions={transactions.filter((transaction) => transaction.businessEvent === categoryEvent.value || (categoryEvent.value === "inventory_purchase" && transaction.businessEvent === "inventory_rejected"))} ledgerEntries={ledgerEntries} documents={transactionDocuments} bankStatementLines={bankStatementLines} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} onBulkPaymentMethodChange={onBulkTransactionPaymentMethodChange} />
@@ -7421,51 +7429,51 @@ function AccountingWorkspacePage({
   }
 
   if (view === "accounting_documents") return <section className="accounting-workspace">
-    <div className="accounting-hero card"><div><p>DOCUMENT INBOX</p><h2>Upload accounting documents</h2><span>Upload receipts, invoices, bank statements, or expense proof. Each upload also creates a transaction.</span></div><div className="accounting-status-pill">{documents.length} documents</div></div>
+    <div className="accounting-hero card"><div><p>{t("DOCUMENT INBOX")}</p><h2>{t("Upload accounting documents")}</h2><span>{t("Upload receipts, invoices, bank statements, or expense proof. Each upload also creates a transaction.")}</span></div><div className="accounting-status-pill">{documents.length} {" " + t("documents")}</div></div>
     <section className="accounting-form-grid">
       <div className="accounting-form card">
-        <h3>New document</h3>
-        <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp" title="File" description="Choose or drop receipt, invoice, statement, or image" selectedName={selectedFile?.name} onFile={onFileChange} />
-        <label>Name<input value={documentForm.name} onChange={(event) => onDocumentFormChange({ name: event.target.value })} placeholder="June supplier invoice" /></label>
-        <label>Supplier / source<input value={documentForm.supplier} onChange={(event) => onDocumentFormChange({ supplier: event.target.value })} placeholder="Shopify, Meta, supplier name..." /></label>
-        <label>Description<input value={documentForm.description} onChange={(event) => onDocumentFormChange({ description: event.target.value })} placeholder="What is this for?" /></label>
-        <div className="accounting-two-cols"><label>Date<input type="date" value={documentForm.documentDate} onChange={(event) => onDocumentFormChange({ documentDate: event.target.value })} /></label><label>Amount<input type="number" min="0" step="0.01" value={documentForm.amount} onChange={(event) => onDocumentFormChange({ amount: event.target.value })} /></label></div>
-        <div className="accounting-two-cols"><label>Type<select value={documentForm.transactionType} onChange={(event) => onDocumentFormChange({ transactionType: event.target.value as "income" | "expense" })}><option value="expense">Expense</option><option value="income">Income</option></select></label><label>Category<select value={documentForm.categoryId} onChange={(event) => onDocumentFormChange({ categoryId: event.target.value })}><option value="">Uncategorised</option>{categoryOptions}</select></label></div>
-        <label>Notes<textarea value={documentForm.notes} onChange={(event) => onDocumentFormChange({ notes: event.target.value })} /></label>
-        <button className="button primary" disabled={saving} onClick={onUploadDocument}>{saving ? "Saving..." : "Upload document"}</button>
+        <h3>{t("New document")}</h3>
+        <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp" title={t("File")} description={t("Choose or drop receipt, invoice, statement, or image")} selectedName={selectedFile?.name} onFile={onFileChange} />
+        <label>{t("Name")}<input value={documentForm.name} onChange={(event) => onDocumentFormChange({ name: event.target.value })} placeholder={t("June supplier invoice")} /></label>
+        <label>{t("Supplier / source")}<input value={documentForm.supplier} onChange={(event) => onDocumentFormChange({ supplier: event.target.value })} placeholder={t("Shopify, Meta, supplier name...")} /></label>
+        <label>{t("Description")}<input value={documentForm.description} onChange={(event) => onDocumentFormChange({ description: event.target.value })} placeholder={t("What is this for?")} /></label>
+        <div className="accounting-two-cols"><label>{t("Date")}<input type="date" value={documentForm.documentDate} onChange={(event) => onDocumentFormChange({ documentDate: event.target.value })} /></label><label>{t("Amount")}<input type="number" min="0" step="0.01" value={documentForm.amount} onChange={(event) => onDocumentFormChange({ amount: event.target.value })} /></label></div>
+        <div className="accounting-two-cols"><label>{t("Type")}<select value={documentForm.transactionType} onChange={(event) => onDocumentFormChange({ transactionType: event.target.value as "income" | "expense" })}><option value="expense">{t("Expense")}</option><option value="income">{t("Income")}</option></select></label><label>{t("Category")}<select value={documentForm.categoryId} onChange={(event) => onDocumentFormChange({ categoryId: event.target.value })}><option value="">{t("Uncategorised")}</option>{categoryOptions}</select></label></div>
+        <label>{t("Notes")}<textarea value={documentForm.notes} onChange={(event) => onDocumentFormChange({ notes: event.target.value })} /></label>
+        <button className="button primary" disabled={saving} onClick={onUploadDocument}>{saving ? t("Saving...") : t("Upload document")}</button>
       </div>
       <AccountingDocumentsTable documents={documents} categoryName={categoryName} onOpen={onOpenDocument} onDelete={onDeleteDocument} />
     </section>
   </section>;
 
   if (view === "accounting_transactions") return <section className="accounting-workspace">
-    <div className="accounting-hero card"><div><p>TRANSACTION ENTRY ENGINE</p><h2>Record what happened</h2><span>Use normal business language. The system creates the accounting entries behind the scenes.</span></div><div className="accounting-status-pill">{transactions.length} transactions</div></div>
+    <div className="accounting-hero card"><div><p>{t("TRANSACTION ENTRY ENGINE")}</p><h2>{t("Record what happened")}</h2><span>{t("Use normal business language. The system creates the accounting entries behind the scenes.")}</span></div><div className="accounting-status-pill">{transactions.length} {" " + t("transactions")}</div></div>
     <section className="accounting-form-grid">
       <div className="accounting-form card">
-        <h3>Step 1: Choose category</h3>
-        <div className="business-event-grid">{businessEvents.map((item) => <button type="button" key={item.value} className={transactionForm.businessEvent === item.value ? "selected" : ""} onClick={() => onTransactionFormChange({ businessEvent: item.value, categoryId: "", accountName: "" })}><strong>{item.label}</strong><span>{item.accountingMapping}</span></button>)}</div>
-        <h3>Step 2: Select item / account</h3>
-        <label>Account<select value={transactionForm.categoryId} onChange={(input) => onTransactionFormChange({ categoryId: input.target.value, accountName: "" })}><option value="">Choose account</option>{accountOptions.map((account) => <option key={account.value} value={account.value}>{account.label}</option>)}</select></label>
-        {event.value === "inventory_purchase" && transactionForm.categoryId === "Plushie" && <label>Which plushie / character?<input value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })} placeholder="Billy, Tootsie, Hunnie, Dragon Warrior..." /></label>}
-        {!accountOptions.length && <p className="accounting-file-name">No accounts are configured for this category yet.</p>}
-        <h3>Step 3: Transaction details</h3>
-        <div className="accounting-two-cols"><label>Date<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label><label>Total amount<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => event.value === "inventory_purchase" ? onInventoryCostFieldChange("amount", input.target.value) : onTransactionFormChange({ amount: input.target.value })} /></label></div>
-        <div className="accounting-two-cols"><label>Supplier / customer<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder="Supplier, customer, platform..." /></label><label>Invoice number<input value={transactionForm.invoiceNumber} onChange={(input) => onTransactionFormChange({ invoiceNumber: input.target.value })} placeholder="Optional" /></label></div>
-        <label>Description<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder="Boxes purchase, Meta ad spend, payout..." /></label>
-        <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title="Receipt / invoice / payment slip" description="Choose or drop the source document" selectedName={transactionFile?.name} onFile={onTransactionFileChange} />
-        {event.value === "inventory_purchase" && <div className="accounting-two-cols"><label>Quantity<input type="number" min="0" step="1" value={transactionForm.quantity} onChange={(input) => onInventoryCostFieldChange("quantity", input.target.value)} /></label><label>Unit cost<input type="number" min="0" step="0.01" value={transactionForm.unitCost} onChange={(input) => onInventoryCostFieldChange("unitCost", input.target.value)} /></label></div>}
-        <h3>Step 4: Payment terms</h3>
-        <label>Payment type<select value={transactionForm.paymentStatus} onChange={(input) => onTransactionFormChange({ paymentStatus: input.target.value as AccountingTransactionForm["paymentStatus"] })}><option value="paid_in_full">Paid In Full</option><option value="deposit_paid">Deposit Paid</option><option value="on_credit">On Credit</option></select></label>
-        {transactionForm.paymentStatus !== "on_credit" && <label>Funding source<select value={transactionForm.paymentMethod} onChange={(input) => onTransactionFormChange({ paymentMethod: input.target.value })}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>}
-        {transactionForm.paymentStatus === "deposit_paid" && <div className="accounting-two-cols"><label>Deposit amount<input type="number" min="0" step="0.01" value={transactionForm.depositAmount} onChange={(input) => onTransactionFormChange({ depositAmount: input.target.value })} /></label><label>Remaining amount<input disabled value={formatMoney(Math.max(0, (Number(transactionForm.amount) || 0) - (Number(transactionForm.depositAmount) || 0)))} readOnly /></label></div>}
-        {transactionForm.paymentStatus === "on_credit" && <div className="accounting-two-cols"><label>Due date<input type="date" value={transactionForm.dueDate} onChange={(input) => onTransactionFormChange({ dueDate: input.target.value })} /></label><label>Supplier terms<input value={transactionForm.supplierTerms} onChange={(input) => onTransactionFormChange({ supplierTerms: input.target.value })} placeholder="30 days, COD, monthly..." /></label></div>}
-        <label>Notes<textarea value={transactionForm.notes} onChange={(event) => onTransactionFormChange({ notes: event.target.value })} /></label>
+        <h3>{t("Step 1: Choose category")}</h3>
+        <div className="business-event-grid">{businessEvents.map((item) => <button type="button" key={item.value} className={transactionForm.businessEvent === item.value ? "selected" : ""} onClick={() => onTransactionFormChange({ businessEvent: item.value, categoryId: "", accountName: "" })}><strong>{t(item.label)}</strong><span>{item.accountingMapping}</span></button>)}</div>
+        <h3>{t("Step 2: Select item / account")}</h3>
+        <label>{t("Account")}<select value={transactionForm.categoryId} onChange={(input) => onTransactionFormChange({ categoryId: input.target.value, accountName: "" })}><option value="">{t("Choose account")}</option>{accountOptions.map((account) => <option key={account.value} value={account.value}>{account.label}</option>)}</select></label>
+        {event.value === "inventory_purchase" && transactionForm.categoryId === "Plushie" && <label>{t("Which plushie / character?")}<input value={transactionForm.accountName} onChange={(input) => onTransactionFormChange({ accountName: input.target.value })} placeholder={t("Billy, Tootsie, Hunnie, Dragon Warrior...")} /></label>}
+        {!accountOptions.length && <p className="accounting-file-name">{t("No accounts are configured for this category yet.")}</p>}
+        <h3>{t("Step 3: Transaction details")}</h3>
+        <div className="accounting-two-cols"><label>{t("Date")}<input type="date" value={transactionForm.transactionDate} onChange={(input) => onTransactionFormChange({ transactionDate: input.target.value })} /></label><label>{t("Total amount")}<input type="number" min="0" step="0.01" value={transactionForm.amount} onChange={(input) => event.value === "inventory_purchase" ? onInventoryCostFieldChange("amount", input.target.value) : onTransactionFormChange({ amount: input.target.value })} /></label></div>
+        <div className="accounting-two-cols"><label>{t("Supplier / customer")}<input value={transactionForm.supplier} onChange={(input) => onTransactionFormChange({ supplier: input.target.value })} placeholder={t("Supplier, customer, platform...")} /></label><label>{t("Invoice number")}<input value={transactionForm.invoiceNumber} onChange={(input) => onTransactionFormChange({ invoiceNumber: input.target.value })} placeholder={t("Optional")} /></label></div>
+        <label>{t("Description")}<input value={transactionForm.description} onChange={(input) => onTransactionFormChange({ description: input.target.value })} placeholder={t("Boxes purchase, Meta ad spend, payout...")} /></label>
+        <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title={t("Receipt / invoice / payment slip")} description={t("Choose or drop the source document")} selectedName={transactionFile?.name} onFile={onTransactionFileChange} />
+        {event.value === "inventory_purchase" && <div className="accounting-two-cols"><label>{t("Quantity")}<input type="number" min="0" step="1" value={transactionForm.quantity} onChange={(input) => onInventoryCostFieldChange("quantity", input.target.value)} /></label><label>{t("Unit cost")}<input type="number" min="0" step="0.01" value={transactionForm.unitCost} onChange={(input) => onInventoryCostFieldChange("unitCost", input.target.value)} /></label></div>}
+        <h3>{t("Step 4: Payment terms")}</h3>
+        <label>{t("Payment type")}<select value={transactionForm.paymentStatus} onChange={(input) => onTransactionFormChange({ paymentStatus: input.target.value as AccountingTransactionForm["paymentStatus"] })}><option value="paid_in_full">{t("Paid In Full")}</option><option value="deposit_paid">{t("Deposit Paid")}</option><option value="on_credit">{t("On Credit")}</option></select></label>
+        {transactionForm.paymentStatus !== "on_credit" && <label>{t("Funding source")}<select value={transactionForm.paymentMethod} onChange={(input) => onTransactionFormChange({ paymentMethod: input.target.value })}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>}
+        {transactionForm.paymentStatus === "deposit_paid" && <div className="accounting-two-cols"><label>{t("Deposit amount")}<input type="number" min="0" step="0.01" value={transactionForm.depositAmount} onChange={(input) => onTransactionFormChange({ depositAmount: input.target.value })} /></label><label>{t("Remaining amount")}<input disabled value={formatMoney(Math.max(0, (Number(transactionForm.amount) || 0) - (Number(transactionForm.depositAmount) || 0)))} readOnly /></label></div>}
+        {transactionForm.paymentStatus === "on_credit" && <div className="accounting-two-cols"><label>{t("Due date")}<input type="date" value={transactionForm.dueDate} onChange={(input) => onTransactionFormChange({ dueDate: input.target.value })} /></label><label>{t("Supplier terms")}<input value={transactionForm.supplierTerms} onChange={(input) => onTransactionFormChange({ supplierTerms: input.target.value })} placeholder={t("30 days, COD, monthly...")} /></label></div>}
+        <label>{t("Notes")}<textarea value={transactionForm.notes} onChange={(event) => onTransactionFormChange({ notes: event.target.value })} /></label>
         <section className="posting-preview">
-          <h3>Step 5: Posting preview</h3>
-          <p>You are recording: <strong>{event.label}</strong>{transactionForm.quantity ? `, quantity ${transactionForm.quantity}` : ""}{transactionForm.unitCost ? `, cost ${formatMoney(Number(transactionForm.unitCost))} each` : ""}.</p>
-          {postingPreview.length ? postingPreview.map((entry, index) => <div key={entry.id}><span>{index === 0 ? `Increase / record ${entry.accountName}` : entry.accountName.includes("Payable") || entry.accountName.includes("Receivable") ? `Create outstanding balance in ${entry.accountName}` : `Record payment from ${entry.accountName}`}</span><strong>{formatMoney(entry.amount)}</strong></div>) : <p>Enter an amount and select an account to preview what the system will do.</p>}
+          <h3>{t("Step 5: Posting preview")}</h3>
+          <p>{t("You are recording:") + " "}<strong>{event.label}</strong>{transactionForm.quantity ? `, quantity ${transactionForm.quantity}` : ""}{transactionForm.unitCost ? `, cost ${formatMoney(Number(transactionForm.unitCost))} each` : ""}.</p>
+          {postingPreview.length ? postingPreview.map((entry, index) => <div key={entry.id}><span>{index === 0 ? `Increase / record ${entry.accountName}` : entry.accountName.includes("Payable") || entry.accountName.includes("Receivable") ? `Create outstanding balance in ${entry.accountName}` : `Record payment from ${entry.accountName}`}</span><strong>{formatMoney(entry.amount)}</strong></div>) : <p>{t("Enter an amount and select an account to preview what the system will do.")}</p>}
         </section>
-        <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? "Saving..." : "Save transaction"}</button>
+        <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? t("Saving...") : t("Save transaction")}</button>
       </div>
       {transactionEditPanel}
       <AccountingTransactionsTable transactions={transactions} ledgerEntries={ledgerEntries} documents={transactionDocuments} bankStatementLines={bankStatementLines} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} onBulkPaymentMethodChange={onBulkTransactionPaymentMethodChange} />
@@ -7475,76 +7483,79 @@ function AccountingWorkspacePage({
   if (view === "accounting_settings") {
     const sectionEntries = Object.entries(bookkeepingSectionConfigs) as [BookkeepingSectionKey, typeof bookkeepingSectionConfigs[BookkeepingSectionKey]][];
     return <section className="accounting-workspace">
-      <div className="accounting-hero card"><div><p>BOOK KEEPING SETTINGS</p><h2>Saved accounts</h2><span>Create new accounts directly from Inventory, Expenses, Assets, or Marketing by choosing + New account in the entry form.</span></div><div className="accounting-status-pill">{categories.filter((category) => Object.values(bookkeepingSectionConfigs).some((config) => config.reportSection === category.reportSection) || expenseOptionReportSections.includes(category.reportSection)).length} items</div></div>
+      <div className="accounting-hero card"><div><p>{t("BOOK KEEPING SETTINGS")}</p><h2>{t("Saved accounts")}</h2><span>{t("Create new accounts directly from Inventory, Expenses, Assets, or Marketing by choosing + New account in the entry form.")}</span></div><div className="accounting-status-pill">{categories.filter((category) => Object.values(bookkeepingSectionConfigs).some((config) => config.reportSection === category.reportSection) || expenseOptionReportSections.includes(category.reportSection)).length} {" " + t("items")}</div></div>
       <section>
         <section className="accounting-form card">
-          <div className="accounting-form-heading"><div><h3>{accountForm.id ? "Edit account" : "Account details"}</h3><p>Change the account name or section used in the Choose account dropdowns.</p></div>{accountForm.id && <button className="view-button" onClick={() => onAccountFormChange({ id: "", name: "", accountType: "expense", reportSection: "Expenses", parentId: "", dataSourceType: "manual", sourceModule: "Manual Transactions", sourceEntity: "", postingTrigger: "Manual Entry", allowSubAccounts: false, active: true })}>Cancel edit</button>}</div>
+          <div className="accounting-form-heading"><div><h3>{accountForm.id ? t("Edit account") : t("Account details")}</h3><p>{t("Change the account name or section used in the Choose account dropdowns.")}</p></div>{accountForm.id && <button className="view-button" onClick={() => onAccountFormChange({ id: "", name: "", accountType: "expense", reportSection: "Expenses", parentId: "", dataSourceType: "manual", sourceModule: "Manual Transactions", sourceEntity: "", postingTrigger: "Manual Entry", allowSubAccounts: false, active: true })}>{t("Cancel edit")}</button>}</div>
           <div className="accounting-form-grid compact">
-            <label>Name<input value={accountForm.name} onChange={(input) => onAccountFormChange({ name: input.target.value })} placeholder="Example: NFC Cards, Labour, Meta Ads" /></label>
-            <label>Type<select value={accountForm.accountType} onChange={(input) => onAccountFormChange({ accountType: input.target.value as AccountingCategory["accountType"] })}><option value="asset">Asset</option><option value="expense">Expense</option><option value="revenue">Revenue</option><option value="cost_of_sales">Cost of sales</option><option value="liability">Liability</option><option value="equity">Equity</option></select></label>
-            <label>Section<select value={accountForm.reportSection} onChange={(input) => onAccountFormChange({ reportSection: input.target.value })}>{Object.entries(bookkeepingSectionConfigs).map(([key, config]) => <option key={key} value={config.reportSection}>{config.label}</option>)}<option value="Software Expenses">Software Expenses</option><option value="Admin Fees">Admin Fees</option><option value="Salary">Salary</option><option value="Tax">Tax</option><option value="COGS">COGS</option><option value="Current Assets">Current Assets</option><option value="Revenue">Revenue</option></select></label>
-            <label>Active<select value={accountForm.active ? "yes" : "no"} onChange={(input) => onAccountFormChange({ active: input.target.value === "yes" })}><option value="yes">Active</option><option value="no">Inactive</option></select></label>
+            <label>{t("Name")}<input value={accountForm.name} onChange={(input) => onAccountFormChange({ name: input.target.value })} placeholder={t("Example: NFC Cards, Labour, Meta Ads")} /></label>
+            <label>{t("Type")}<select value={accountForm.accountType} onChange={(input) => onAccountFormChange({ accountType: input.target.value as AccountingCategory["accountType"] })}><option value="asset">{t("Asset")}</option><option value="expense">{t("Expense")}</option><option value="revenue">{t("Revenue")}</option><option value="cost_of_sales">{t("Cost of sales")}</option><option value="liability">{t("Liability")}</option><option value="equity">{t("Equity")}</option></select></label>
+            <label>{t("Section")}<select value={accountForm.reportSection} onChange={(input) => onAccountFormChange({ reportSection: input.target.value })}>{Object.entries(bookkeepingSectionConfigs).map(([key, config]) => <option key={key} value={config.reportSection}>{t(config.label)}</option>)}<option value="Software Expenses">{t("Software Expenses")}</option><option value="Admin Fees">{t("Admin Fees")}</option><option value="Salary">{t("Salary")}</option><option value="Tax">{t("Tax")}</option><option value="COGS">{t("COGS")}</option><option value="Current Assets">{t("Current Assets")}</option><option value="Revenue">{t("Revenue")}</option></select></label>
+            <label>{t("Active")}<select value={accountForm.active ? "yes" : "no"} onChange={(input) => onAccountFormChange({ active: input.target.value === "yes" })}><option value="yes">{t("Active")}</option><option value="no">{t("Inactive")}</option></select></label>
           </div>
-          <button className="button primary" disabled={saving} onClick={onSaveAccount}>{saving ? "Saving..." : accountForm.id ? "Save account changes" : "Add account"}</button>
+          <button className="button primary" disabled={saving} onClick={onSaveAccount}>{saving ? t("Saving...") : accountForm.id ? t("Save account changes") : t("Add account")}</button>
         </section>
-        <section className="card accounting-table-card"><h3>Saved category accounts</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>Section</th><th>Account item</th><th>Type</th><th>Parent</th><th /></tr></thead><tbody>{sectionEntries.flatMap(([key, config]) => {
+        <section className="card accounting-table-card"><h3>{t("Saved category accounts")}</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>{t("Section")}</th><th>{t("Account item")}</th><th>{t("Type")}</th><th>{t("Parent")}</th><th /></tr></thead><tbody>{sectionEntries.flatMap(([key, config]) => {
           const sectionRows = categories.filter((category) => key === "expense" ? category.accountType === "expense" && expenseOptionReportSections.includes(category.reportSection) : category.reportSection === config.reportSection).filter((category) => key !== "inventory" || Boolean(inventoryAccountKey(category.name))).sort((a, b) => a.name.localeCompare(b.name));
           const rows = key === "inventory"
             ? sectionRows.filter((account, index, accounts) => accounts.findIndex((item) => inventoryAccountKey(item.name) === inventoryAccountKey(account.name)) === index)
             : sectionRows;
-          return rows.map((account) => <tr key={account.id}><td>{config.label}</td><td><strong>{key === "inventory" ? inventoryAccountKey(account.name) : account.name}</strong><br /><small>Used by {config.sourceEntity}</small></td><td>{account.accountType}</td><td>{account.parentId ? categoryName(account.parentId) : config.parentAccount}</td><td><button className="view-button" onClick={() => onEditAccount(account)}>Edit</button></td></tr>);
-        })}</tbody></table>{!categories.some((category) => Object.values(bookkeepingSectionConfigs).some((config) => config.reportSection === category.reportSection) || expenseOptionReportSections.includes(category.reportSection)) && <div className="empty"><strong>No saved category accounts yet</strong><p>Create one from a bookkeeping entry form using + New account.</p></div>}</div></section>
+          return rows.map((account) => <tr key={account.id}><td>{t(config.label)}</td><td><strong>{key === "inventory" ? inventoryAccountKey(account.name) : account.name}</strong><br /><small>{t("Used by") + " "}{config.sourceEntity}</small></td><td>{account.accountType}</td><td>{account.parentId ? categoryName(account.parentId) : config.parentAccount}</td><td><button className="view-button" onClick={() => onEditAccount(account)}>{t("Edit")}</button></td></tr>);
+        })}</tbody></table>{!categories.some((category) => Object.values(bookkeepingSectionConfigs).some((config) => config.reportSection === category.reportSection) || expenseOptionReportSections.includes(category.reportSection)) && <div className="empty"><strong>{t("No saved category accounts yet")}</strong><p>{t("Create one from a bookkeeping entry form using + New account.")}</p></div>}</div></section>
       </section>
     </section>;
   }
 
   if (view === "accounting_profit_loss") return <section className="accounting-workspace">
-    <div className="accounting-hero card"><div><p>PROFIT & LOSS</p><h2>Current profit and loss</h2><span>Based on all active accounting transactions currently saved in Supabase.</span></div><div className={`accounting-status-pill ${profit < 0 ? "loss" : ""}`}>{formatMoney(profit)}</div></div>
+    <div className="accounting-hero card"><div><p>{t("PROFIT & LOSS")}</p><h2>{t("Current profit and loss")}</h2><span>{t("Based on all active accounting transactions currently saved in Supabase.")}</span></div><div className={`accounting-status-pill ${profit < 0 ? "loss" : ""}`}>{formatMoney(profit)}</div></div>
     <section className="accounting-summary-grid">
-      <MoneyStat label="Income" value={income} tone="collected" />
-      <MoneyStat label="Expenses" value={expenses} tone="fees" />
-      <MoneyStat label="Net profit" value={profit} tone={profit < 0 ? "fees" : "sales"} />
+      <MoneyStat label={t("Income")} value={income} tone="collected" />
+      <MoneyStat label={t("Expenses")} value={expenses} tone="fees" />
+      <MoneyStat label={t("Net profit")} value={profit} tone={profit < 0 ? "fees" : "sales"} />
     </section>
     <section className="accounting-report card">
-      <h3>Expense breakdown</h3>
-      {Object.entries(expenseByCategory).length ? Object.entries(expenseByCategory).sort((a, b) => b[1] - a[1]).map(([name, amount]) => <div key={name}><span>{name}</span><strong>{formatMoney(amount)}</strong></div>) : <div className="empty"><strong>No expenses yet</strong><p>Upload documents or add expense transactions to build this report.</p></div>}
+      <h3>{t("Expense breakdown")}</h3>
+      {Object.entries(expenseByCategory).length ? Object.entries(expenseByCategory).sort((a, b) => b[1] - a[1]).map(([name, amount]) => <div key={name}><span>{name}</span><strong>{formatMoney(amount)}</strong></div>) : <div className="empty"><strong>{t("No expenses yet")}</strong><p>{t("Upload documents or add expense transactions to build this report.")}</p></div>}
     </section>
   </section>;
 
   return <section className="accounting-workspace">
-    <div className="accounting-hero card"><div><p>ACCOUNTING MVP</p><h2>Accounting overview</h2><span>Start by uploading documents, adding transactions, then review the Profit & Loss page.</span></div><div className="accounting-status-pill">Live in Supabase</div></div>
+    <div className="accounting-hero card"><div><p>{t("ACCOUNTING MVP")}</p><h2>{t("Accounting overview")}</h2><span>{t("Start by uploading documents, adding transactions, then review the Profit & Loss page.")}</span></div><div className="accounting-status-pill">{t("Live in Supabase")}</div></div>
     <div className="accounting-module-grid">
-      <article className="accounting-module-card card"><Icon name="documents" /><strong>{documents.length} documents</strong><span>Receipts, invoices, and statements uploaded.</span></article>
-      <article className="accounting-module-card card"><Icon name="cash" /><strong>{transactions.length} transactions</strong><span>Manual and document-linked entries.</span></article>
-      <article className="accounting-module-card card"><Icon name="report" /><strong>{formatMoney(profit)}</strong><span>Current net profit from saved transactions.</span></article>
-      <article className="accounting-module-card card"><Icon name="ledger" /><strong>{categories.length} categories</strong><span>Accounting categories available for coding.</span></article>
+      <article className="accounting-module-card card"><Icon name="documents" /><strong>{documents.length} {" " + t("documents")}</strong><span>{t("Receipts, invoices, and statements uploaded.")}</span></article>
+      <article className="accounting-module-card card"><Icon name="cash" /><strong>{transactions.length} {" " + t("transactions")}</strong><span>{t("Manual and document-linked entries.")}</span></article>
+      <article className="accounting-module-card card"><Icon name="report" /><strong>{formatMoney(profit)}</strong><span>{t("Current net profit from saved transactions.")}</span></article>
+      <article className="accounting-module-card card"><Icon name="ledger" /><strong>{categories.length} {" " + t("categories")}</strong><span>{t("Accounting categories available for coding.")}</span></article>
     </div>
   </section>;
 }
 
 function BankStatementInProgressPanel({ rows, onUse }: { rows: AccountingBankStatementLine[]; onUse: (line: AccountingBankStatementLine) => void }) {
+  const { t } = useLanguage();
   if (!rows.length) return null;
   return <section className="card bank-in-progress-panel">
     <div className="ledger-table-heading">
-      <div><h3>In progress bank rows</h3><p>Click a row to load its date, description, amount, and bank details into the form below.</p></div>
-      <span className="accounting-status-pill">{rows.length} pending</span>
+      <div><h3>{t("In progress bank rows")}</h3><p>{t("Click a row to load its date, description, amount, and bank details into the form below.")}</p></div>
+      <span className="accounting-status-pill">{rows.length} {" " + t("pending")}</span>
     </div>
     <div className="bank-in-progress-list">
       {rows.map((line) => <button key={line.id} type="button" className="bank-in-progress-item" onClick={() => onUse(line)}>
-        <span>{formatDate(line.transactionDate)}<small>{bankLineRawString(line, "bank") || bankLineRawString(line, "bank_account") || "Bank"}</small></span>
+        <span>{formatDate(line.transactionDate)}<small>{bankLineRawString(line, "bank") || bankLineRawString(line, "bank_account") || t("Bank")}</small></span>
         <strong>{line.description}</strong>
         <em className={line.moneyIn > 0 ? "money-in" : "money-out"}>{formatMoney(getBankLineAmount(line))}</em>
-        <span className="source-document-pill in-progress">Use row</span>
+        <span className="source-document-pill in-progress">{t("Use row")}</span>
       </button>)}
     </div>
   </section>;
 }
 
 function AccountingDocumentsTable({ documents, categoryName, onOpen, onDelete }: { documents: AccountingDocument[]; categoryName: (categoryId: string) => string; onOpen: (document: AccountingDocument) => void; onDelete: (document: AccountingDocument) => void }) {
-  return <section className="card accounting-table-card"><h3>Uploaded documents</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>Date</th><th>Name</th><th>Supplier</th><th>Category</th><th>Type</th><th>Amount</th><th>File</th><th /></tr></thead><tbody>{documents.map((document) => <tr key={document.id}><td>{formatDate(document.documentDate)}</td><td><strong>{document.name}</strong><br /><small>{document.description || document.fileName}</small></td><td>{document.supplier || "-"}</td><td>{categoryName(document.categoryId)}</td><td>{document.transactionType}</td><td><strong>{formatMoney(document.amount)}</strong></td><td><button className="view-button" onClick={() => onOpen(document)}>Open</button></td><td><button className="view-button danger-text" onClick={() => onDelete(document)}>Delete</button></td></tr>)}</tbody></table>{!documents.length && <div className="empty"><strong>No documents uploaded yet</strong><p>Use the form to upload the first receipt or invoice.</p></div>}</div></section>;
+  const { t } = useLanguage();
+  return <section className="card accounting-table-card"><h3>{t("Uploaded documents")}</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>{t("Date")}</th><th>{t("Name")}</th><th>{t("Supplier")}</th><th>{t("Category")}</th><th>{t("Type")}</th><th>{t("Amount")}</th><th>{t("File")}</th><th /></tr></thead><tbody>{documents.map((document) => <tr key={document.id}><td>{formatDate(document.documentDate)}</td><td><strong>{document.name}</strong><br /><small>{document.description || document.fileName}</small></td><td>{document.supplier || "-"}</td><td>{categoryName(document.categoryId)}</td><td>{document.transactionType}</td><td><strong>{formatMoney(document.amount)}</strong></td><td><button className="view-button" onClick={() => onOpen(document)}>{t("Open")}</button></td><td><button className="view-button danger-text" onClick={() => onDelete(document)}>{t("Delete")}</button></td></tr>)}</tbody></table>{!documents.length && <div className="empty"><strong>{t("No documents uploaded yet")}</strong><p>{t("Use the form to upload the first receipt or invoice.")}</p></div>}</div></section>;
 }
 
 function AccountingFilesTable({ documents, transactions, ledgerEntries, categoryName, onOpen }: { documents: AccountingDocument[]; transactions: AccountingTransaction[]; ledgerEntries: AccountingLedgerEntry[]; categoryName: (categoryId: string) => string; onOpen: (document: AccountingDocument) => void }) {
+  const { t } = useLanguage();
   const rows = documents
     .map((document) => ({ document, transaction: transactions.find((item) => item.documentId === document.id) }))
     .filter((row): row is { document: AccountingDocument; transaction: AccountingTransaction } => Boolean(row.transaction))
@@ -7553,23 +7564,24 @@ function AccountingFilesTable({ documents, transactions, ledgerEntries, category
       return dateCompare || a.transaction.createdAt.localeCompare(b.transaction.createdAt) || a.document.fileName.localeCompare(b.document.fileName);
     });
   return <section className="card accounting-table-card file-library-card">
-    <h3>Linked source documents</h3>
-    <div className="table-scroll"><table className="orders-table"><thead><tr><th>Date</th><th>File</th><th>Linked transaction</th><th>Account</th><th>Posting</th><th>Amount</th><th>Preview</th></tr></thead><tbody>{rows.map(({ document, transaction }) => {
+    <h3>{t("Linked source documents")}</h3>
+    <div className="table-scroll"><table className="orders-table"><thead><tr><th>{t("Date")}</th><th>{t("File")}</th><th>{t("Linked transaction")}</th><th>{t("Account")}</th><th>{t("Posting")}</th><th>{t("Amount")}</th><th>{t("Preview")}</th></tr></thead><tbody>{rows.map(({ document, transaction }) => {
       const entries = ledgerEntries.filter((entry) => entry.transactionId === transaction.id);
       return <tr key={document.id} className="has-source-document" onClick={(event) => { if ((event.target as HTMLElement).closest("button,a,input")) return; onOpen(document); }}>
         <td>{formatDate(transaction.transactionDate)}</td>
         <td><strong className="source-document-text">{document.name || document.fileName}</strong><br /><small>{document.fileName} | {formatFileSize(document.fileSize)}</small></td>
         <td><strong>{transaction.description}</strong><br /><small>{transaction.supplier || transaction.source || "-"}</small></td>
         <td>{displayAccountingAccountName(transaction.accountName || categoryName(transaction.categoryId))}</td>
-        <td>{entries.length ? entries.map((entry) => <div key={entry.id} className="ledger-line"><span>{entry.entryType === "debit" ? "Debit" : "Credit"} {displayAccountingAccountName(entry.accountName)}</span><strong>{formatMoney(entry.amount)}</strong></div>) : "-"}</td>
+        <td>{entries.length ? entries.map((entry) => <div key={entry.id} className="ledger-line"><span>{entry.entryType === "debit" ? t("Debit") : t("Credit")} {displayAccountingAccountName(entry.accountName)}</span><strong>{formatMoney(entry.amount)}</strong></div>) : "-"}</td>
         <td><strong>{formatMoney(transaction.amount)}</strong></td>
-        <td><button className="view-button document-link" onClick={() => onOpen(document)}>View file</button></td>
+        <td><button className="view-button document-link" onClick={() => onOpen(document)}>{t("View file")}</button></td>
       </tr>;
-    })}</tbody></table>{!rows.length && <div className="empty"><strong>No linked source documents yet</strong><p>Attach a file when creating a bookkeeping transaction, and it will appear here.</p></div>}</div>
+    })}</tbody></table>{!rows.length && <div className="empty"><strong>{t("No linked source documents yet")}</strong><p>{t("Attach a file when creating a bookkeeping transaction, and it will appear here.")}</p></div>}</div>
   </section>;
 }
 
 function AccountingTransactionsTable({ transactions, ledgerEntries, documents, bankStatementLines = [], categoryName, onOpenDocument, onEdit, onDelete, onBulkPaymentMethodChange }: { transactions: AccountingTransaction[]; ledgerEntries: AccountingLedgerEntry[]; documents: AccountingDocument[]; bankStatementLines?: AccountingBankStatementLine[]; categoryName: (categoryId: string) => string; onOpenDocument: (document: AccountingDocument) => void; onEdit: (transaction: AccountingTransaction) => void; onDelete: (transaction: AccountingTransaction) => void; onBulkPaymentMethodChange?: (transactionIds: string[], paymentMethod: string) => Promise<void> }) {
+  const { t } = useLanguage();
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([]);
   const [bulkPaymentMethod, setBulkPaymentMethod] = useState(paymentAccounts[0]);
   const [bulkSaving, setBulkSaving] = useState(false);
@@ -7596,7 +7608,7 @@ function AccountingTransactionsTable({ transactions, ledgerEntries, documents, b
   for (const line of bankStatementLines) {
     for (const transactionId of getBankMatchedTransactionIds(line)) linkedBankRows.set(transactionId, line);
   }
-  return <section className="card accounting-table-card"><div className="ledger-table-heading"><h3>Transaction ledger</h3>{onBulkPaymentMethodChange && <div className="bulk-ledger-actions"><span>{selectedVisibleIds.length} selected</span><label>Change payment to<select value={bulkPaymentMethod} onChange={(event) => setBulkPaymentMethod(event.target.value)}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label><button className="button primary" disabled={!selectedVisibleIds.length || bulkSaving} onClick={applyBulkPaymentMethod}>{bulkSaving ? "Updating..." : "Apply"}</button><button className="button secondary" disabled={!selectedVisibleIds.length || bulkSaving} onClick={() => setSelectedTransactionIds((current) => current.filter((id) => !visibleTransactionIds.includes(id)))}>Clear</button></div>}</div><div className="table-scroll"><table className="orders-table"><thead><tr>{onBulkPaymentMethodChange && <th><input type="checkbox" aria-label="Select visible transactions" checked={allVisibleSelected} onChange={toggleAllVisible} /></th>}<th>Date</th><th>Description</th><th>Business event</th><th>Account</th><th>Payment</th><th>Ledger posting</th><th>Document</th><th /></tr></thead><tbody>{sortedTransactions.map((transaction) => {
+  return <section className="card accounting-table-card"><div className="ledger-table-heading"><h3>{t("Transaction ledger")}</h3>{onBulkPaymentMethodChange && <div className="bulk-ledger-actions"><span>{selectedVisibleIds.length} {" " + t("selected")}</span><label>{t("Change payment to")}<select value={bulkPaymentMethod} onChange={(event) => setBulkPaymentMethod(event.target.value)}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label><button className="button primary" disabled={!selectedVisibleIds.length || bulkSaving} onClick={applyBulkPaymentMethod}>{bulkSaving ? t("Updating...") : t("Apply")}</button><button className="button secondary" disabled={!selectedVisibleIds.length || bulkSaving} onClick={() => setSelectedTransactionIds((current) => current.filter((id) => !visibleTransactionIds.includes(id)))}>{t("Clear")}</button></div>}</div><div className="table-scroll"><table className="orders-table"><thead><tr>{onBulkPaymentMethodChange && <th><input type="checkbox" aria-label={t("Select visible transactions")} checked={allVisibleSelected} onChange={toggleAllVisible} /></th>}<th>{t("Date")}</th><th>{t("Description")}</th><th>{t("Business event")}</th><th>{t("Account")}</th><th>{t("Payment")}</th><th>{t("Ledger posting")}</th><th>{t("Document")}</th><th /></tr></thead><tbody>{sortedTransactions.map((transaction) => {
     const entries = ledgerEntries.filter((entry) => entry.transactionId === transaction.id);
     const document = documents.find((item) => item.id === transaction.documentId);
     const linkedBankRow = linkedBankRows.get(transaction.id);
@@ -7610,15 +7622,15 @@ function AccountingTransactionsTable({ transactions, ledgerEntries, documents, b
     return <tr key={transaction.id} className={`${document ? "has-source-document" : ""} ${bankLinked ? "bank-linked-transaction" : ""} ${selected ? "selected-row" : ""}`} onClick={(event) => { if (!document || (event.target as HTMLElement).closest("button,a,input")) return; onOpenDocument(document); }}>
       {onBulkPaymentMethodChange && <td><input type="checkbox" aria-label={`Select transaction ${transaction.description}`} checked={selected} onChange={() => toggleTransaction(transaction.id)} /></td>}
       <td>{formatDate(transaction.transactionDate)}</td>
-      <td><strong className={document ? "source-document-text" : ""}>{transaction.description}</strong>{document && <span className="source-document-pill">Source document</span>}{bankLinked && <span className="source-document-pill bank-linked-pill">Bank linked</span>}<br /><small>{transaction.supplier || transaction.source}{transaction.invoiceNumber ? ` - Invoice ${transaction.invoiceNumber}` : ""}{linkedBankRow ? ` | ${linkedBankRow.description}` : ""}</small></td>
+      <td><strong className={document ? "source-document-text" : ""}>{transaction.description}</strong>{document && <span className="source-document-pill">{t("Source document")}</span>}{bankLinked && <span className="source-document-pill bank-linked-pill">{t("Bank linked")}</span>}<br /><small>{transaction.supplier || transaction.source}{transaction.invoiceNumber ? ` - Invoice ${transaction.invoiceNumber}` : ""}{linkedBankRow ? ` | ${linkedBankRow.description}` : ""}</small></td>
       <td>{businessEvents.find((event) => event.value === transaction.businessEvent)?.label ?? (transaction.businessEvent || "-")}</td>
       <td>{displayAccountingAccountName(transaction.accountName || categoryName(transaction.categoryId))}</td>
-      <td>{paymentLabel}<br /><small>{transaction.paymentStatus === "on_credit" ? transaction.dueDate || transaction.supplierTerms || "Outstanding" : transaction.paymentMethod || "Bank Account"}</small></td>
+      <td>{paymentLabel}<br /><small>{transaction.paymentStatus === "on_credit" ? transaction.dueDate || transaction.supplierTerms || t("Outstanding") : transaction.paymentMethod || t("Bank Account")}</small></td>
       <td>{ledgerLines}</td>
-      <td>{document ? <button className="view-button document-link" onClick={() => onOpenDocument(document)}>View file</button> : "-"}</td>
-      <td><button className="view-button" onClick={() => onEdit(transaction)}>Edit</button><button className="view-button danger-text" onClick={() => onDelete(transaction)}>Delete</button></td>
+      <td>{document ? <button className="view-button document-link" onClick={() => onOpenDocument(document)}>{t("View file")}</button> : "-"}</td>
+      <td><button className="view-button" onClick={() => onEdit(transaction)}>{t("Edit")}</button><button className="view-button danger-text" onClick={() => onDelete(transaction)}>{t("Delete")}</button></td>
     </tr>;
-  })}</tbody></table>{!transactions.length && <div className="empty"><strong>No transactions yet</strong><p>Record a business event to start the ledger.</p></div>}</div></section>;
+  })}</tbody></table>{!transactions.length && <div className="empty"><strong>{t("No transactions yet")}</strong><p>{t("Record a business event to start the ledger.")}</p></div>}</div></section>;
 }
 
 function LinkedBankTransactionModal({
@@ -7636,44 +7648,45 @@ function LinkedBankTransactionModal({
   onOpenDocument: (document: AccountingDocument) => void;
   onClose: () => void;
 }) {
+  const { t } = useLanguage();
   const matchedTotal = getBankMatchedTotal(line, transactions);
   const remaining = getBankRemainingAmount(line, transactions);
-  return <div className="document-preview-backdrop" role="dialog" aria-modal="true" aria-label="Linked transaction summary" onClick={onClose}>
+  return <div className="document-preview-backdrop" role="dialog" aria-modal="true" aria-label={t("Linked transaction summary")} onClick={onClose}>
     <section className="linked-transaction-modal" onClick={(event) => event.stopPropagation()}>
       <header>
-        <div><p>LINKED TRANSACTIONS</p><h2>{transactions.length} transaction{transactions.length === 1 ? "" : "s"} linked</h2><span>{formatMoney(matchedTotal)} matched | {remaining > 0.01 ? `${formatMoney(remaining)} left` : "Balanced"}</span></div>
-        <button className="view-button" onClick={onClose}>Close</button>
+        <div><p>{t("LINKED TRANSACTIONS")}</p><h2>{transactions.length} {" " + t("transaction")}{transactions.length === 1 ? "" : t("s")} {" " + t("linked")}</h2><span>{formatMoney(matchedTotal)} {" " + t("matched |") + " "}{remaining > 0.01 ? `${formatMoney(remaining)} left` : t("Balanced")}</span></div>
+        <button className="view-button" onClick={onClose}>{t("Close")}</button>
       </header>
       <div className="linked-transaction-body">
         <section className="linked-summary-grid">
-          <div><span>Bank row</span><strong>{line.description}</strong></div>
-          <div><span>Bank amount</span><strong className={`bank-amount ${line.moneyIn > 0 ? "money-in" : "money-out"}`}>{formatMoney(line.moneyIn > 0 ? line.moneyIn : line.moneyOut)}</strong></div>
-          <div><span>Linked total</span><strong>{formatMoney(matchedTotal)}</strong></div>
-          <div><span>Remaining</span><strong>{remaining > 0.01 ? formatMoney(remaining) : "Balanced"}</strong></div>
-          <div><span>Reference</span><strong>{line.reference || "-"}</strong></div>
-          <div><span>Status</span><strong>{remaining > 0.01 ? "Partially matched" : "Fully matched"}</strong></div>
+          <div><span>{t("Bank row")}</span><strong>{line.description}</strong></div>
+          <div><span>{t("Bank amount")}</span><strong className={`bank-amount ${line.moneyIn > 0 ? "money-in" : "money-out"}`}>{formatMoney(line.moneyIn > 0 ? line.moneyIn : line.moneyOut)}</strong></div>
+          <div><span>{t("Linked total")}</span><strong>{formatMoney(matchedTotal)}</strong></div>
+          <div><span>{t("Remaining")}</span><strong>{remaining > 0.01 ? formatMoney(remaining) : t("Balanced")}</strong></div>
+          <div><span>{t("Reference")}</span><strong>{line.reference || "-"}</strong></div>
+          <div><span>{t("Status")}</span><strong>{remaining > 0.01 ? t("Partially matched") : t("Fully matched")}</strong></div>
         </section>
-        {line.notes && <section className="linked-note-panel"><span>Bank row note</span><p>{line.notes}</p></section>}
+        {line.notes && <section className="linked-note-panel"><span>{t("Bank row note")}</span><p>{line.notes}</p></section>}
         <section className="linked-ledger-panel">
-          <h3>Linked transactions</h3>
+          <h3>{t("Linked transactions")}</h3>
           <div className="linked-ledger-list">
             {transactions.map((transaction) => <div key={transaction.id}><span>{formatDate(transaction.transactionDate)}</span><strong>{transaction.description}</strong><em>{formatMoney(transaction.amount)}</em><small>{displayAccountingAccountName(transaction.accountName)} | {transaction.businessEvent.replace(/_/g, " ")}{transaction.notes ? ` | ${transaction.notes}` : ""}</small></div>)}
           </div>
         </section>
         <section className="linked-ledger-panel">
-          <h3>Ledger posting</h3>
+          <h3>{t("Ledger posting")}</h3>
           <div className="linked-ledger-list">
             {ledgerEntries.map((entry) => <div key={entry.id}><span>{entry.entryType}</span><strong>{entry.accountName}</strong><em>{formatMoney(entry.amount)}</em><small>{entry.memo}</small></div>)}
-            {!ledgerEntries.length && <p>No ledger entries found for this transaction.</p>}
+            {!ledgerEntries.length && <p>{t("No ledger entries found for this transaction.")}</p>}
           </div>
         </section>
         <section className="linked-document-panel">
-          <h3>Source document</h3>
+          <h3>{t("Source document")}</h3>
           {transactions.map((transaction) => {
             const document = transaction.documentId ? documents.find((item) => item.id === transaction.documentId) : undefined;
-            return document ? <div className="linked-document-card" key={document.id}><div><strong>{document.name || document.fileName}</strong><span>{transaction.description} | {document.fileName} | {formatFileSize(document.fileSize)}</span></div><button className="button primary" onClick={() => onOpenDocument(document)}>View source document</button></div> : null;
+            return document ? <div className="linked-document-card" key={document.id}><div><strong>{document.name || document.fileName}</strong><span>{transaction.description} | {document.fileName} | {formatFileSize(document.fileSize)}</span></div><button className="button primary" onClick={() => onOpenDocument(document)}>{t("View source document")}</button></div> : null;
           })}
-          {!transactions.some((transaction) => transaction.documentId && documents.some((item) => item.id === transaction.documentId)) && <p>No source document linked to these transactions.</p>}
+          {!transactions.some((transaction) => transaction.documentId && documents.some((item) => item.id === transaction.documentId)) && <p>{t("No source document linked to these transactions.")}</p>}
         </section>
       </div>
     </section>
@@ -7681,20 +7694,21 @@ function LinkedBankTransactionModal({
 }
 
 function DocumentPreviewModal({ document, url, error, onClose }: { document: AccountingDocument; url: string; error: string; onClose: () => void }) {
+  const { t } = useLanguage();
   const isImage = document.fileType.startsWith("image/");
   const isPdf = document.fileType === "application/pdf" || document.fileName.toLowerCase().endsWith(".pdf");
   return <div className="document-preview-backdrop" role="dialog" aria-modal="true" aria-label={`Preview ${document.name}`} onClick={onClose}>
     <section className="document-preview-modal" onClick={(event) => event.stopPropagation()}>
       <header>
-        <div><p>SOURCE DOCUMENT</p><h2>{document.name || document.fileName}</h2><span>{document.fileName} | {formatFileSize(document.fileSize)}</span></div>
-        <button className="view-button" onClick={onClose}>Close</button>
+        <div><p>{t("SOURCE DOCUMENT")}</p><h2>{document.name || document.fileName}</h2><span>{document.fileName} | {formatFileSize(document.fileSize)}</span></div>
+        <button className="view-button" onClick={onClose}>{t("Close")}</button>
       </header>
-      {error && <div className="notice document-preview-error"><span>{error}</span></div>}
-      {!error && !url && <div className="preview-empty"><strong>Loading file...</strong><p>Creating a secure preview link from Supabase.</p></div>}
+      {error && <div className="notice document-preview-error"><span>{t(error)}</span></div>}
+      {!error && !url && <div className="preview-empty"><strong>{t("Loading file...")}</strong><p>{t("Creating a secure preview link from Supabase.")}</p></div>}
       {!error && url && isImage && <img className="document-preview-image" src={url} alt={document.name || document.fileName} />}
       {!error && url && isPdf && <iframe className="document-preview-frame" src={url} title={document.name || document.fileName} />}
-      {!error && url && !isImage && !isPdf && <div className="preview-empty"><strong>Preview not available for this file type</strong><p>You can still open or download the source document.</p><a className="button primary" href={url} target="_blank" rel="noreferrer">Open file</a></div>}
-      {url && <footer><a className="view-button document-link" href={url} target="_blank" rel="noreferrer">Open in new tab</a></footer>}
+      {!error && url && !isImage && !isPdf && <div className="preview-empty"><strong>{t("Preview not available for this file type")}</strong><p>{t("You can still open or download the source document.")}</p><a className="button primary" href={url} target="_blank" rel="noreferrer">{t("Open file")}</a></div>}
+      {url && <footer><a className="view-button document-link" href={url} target="_blank" rel="noreferrer">{t("Open in new tab")}</a></footer>}
     </section>
   </div>;
 }
@@ -7744,6 +7758,7 @@ function ContentPlanWorkspacePage({
   onDeleteIdea: (item: ContentIdeaItem) => void;
   onMoveIdeaToPlanned: (item: ContentIdeaItem, plannedDate: string) => void;
 }) {
+  const { t } = useLanguage();
   const [visibleMonth, setVisibleMonth] = useState(() => {
     const date = form.plannedDate ? new Date(`${form.plannedDate}T00:00:00`) : new Date();
     return new Date(date.getFullYear(), date.getMonth(), 1);
@@ -7787,46 +7802,46 @@ function ContentPlanWorkspacePage({
     onSave();
   }
   return <section className="content-plan-workspace">
-    <div className="accounting-hero card"><div><p>CONTENT PLAN</p><h2>Content calendar</h2><span>Plan what to post, keep notes for each idea, and mark each item as posted once it goes live.</span></div><div className="content-plan-status"><strong>{plannedCount}</strong><span>planned</span><strong>{postedCount}</strong><span>posted</span></div></div>
+    <div className="accounting-hero card"><div><p>{t("CONTENT PLAN")}</p><h2>{t("Content calendar")}</h2><span>{t("Plan what to post, keep notes for each idea, and mark each item as posted once it goes live.")}</span></div><div className="content-plan-status"><strong>{plannedCount}</strong><span>{t("planned")}</span><strong>{postedCount}</strong><span>{t("posted")}</span></div></div>
     <section className="content-plan-grid">
       <form className="content-plan-form card" onSubmit={submit}>
-        <h3>Plan a content item</h3>
-        <label>Title<input value={form.title} onChange={(event) => onFormChange({ title: event.target.value })} placeholder="Example: Father's Day plushie story" /></label>
-        <label>Planned date<input type="date" value={form.plannedDate} onChange={(event) => onFormChange({ plannedDate: event.target.value })} /></label>
+        <h3>{t("Plan a content item")}</h3>
+        <label>{t("Title")}<input value={form.title} onChange={(event) => onFormChange({ title: event.target.value })} placeholder={t("Example: Father's Day plushie story")} /></label>
+        <label>{t("Planned date")}<input type="date" value={form.plannedDate} onChange={(event) => onFormChange({ plannedDate: event.target.value })} /></label>
         <div className="accounting-two-cols">
-          <label>Platform<select value={form.platform} onChange={(event) => onFormChange({ platform: event.target.value })}><option>Instagram</option><option>TikTok</option><option>Facebook</option><option>Threads</option><option>Email</option><option>Other</option></select></label>
-          <label>Content type<select value={form.contentType} onChange={(event) => onFormChange({ contentType: event.target.value })}><option>Post</option><option>Reel</option><option>Story</option><option>Carousel</option><option>Video</option><option>Live</option><option>Email</option></select></label>
+          <label>{t("Platform")}<select value={form.platform} onChange={(event) => onFormChange({ platform: event.target.value })}><option value={"Instagram"}>{t("Instagram")}</option><option value={"TikTok"}>{t("TikTok")}</option><option value={"Facebook"}>{t("Facebook")}</option><option value={"Threads"}>{t("Threads")}</option><option value={"Email"}>{t("Email")}</option><option value={"Other"}>{t("Other")}</option></select></label>
+          <label>{t("Content type")}<select value={form.contentType} onChange={(event) => onFormChange({ contentType: event.target.value })}><option value={"Post"}>{t("Post")}</option><option value={"Reel"}>{t("Reel")}</option><option value={"Story"}>{t("Story")}</option><option value={"Carousel"}>{t("Carousel")}</option><option value={"Video"}>{t("Video")}</option><option value={"Live"}>{t("Live")}</option><option value={"Email"}>{t("Email")}</option></select></label>
         </div>
-        <label>Notes<textarea value={form.notes} onChange={(event) => onFormChange({ notes: event.target.value })} placeholder="Caption angle, hook, props, offer, or anything to remember..." /></label>
-        <button className="button primary" type="submit">Add to calendar</button>
+        <label>{t("Notes")}<textarea value={form.notes} onChange={(event) => onFormChange({ notes: event.target.value })} placeholder={t("Caption angle, hook, props, offer, or anything to remember...")} /></label>
+        <button className="button primary" type="submit">{t("Add to calendar")}</button>
       </form>
       <section className="content-calendar card">
         <div className="content-calendar-header">
-          <button className="view-button" onClick={() => changeMonth(-1)}>Previous</button>
-          <div><strong>{monthLabel}</strong><span>{sortedItems.length} total content item{sortedItems.length === 1 ? "" : "s"}</span></div>
-          <button className="view-button" onClick={() => changeMonth(1)}>Next</button>
+          <button className="view-button" onClick={() => changeMonth(-1)}>{t("Previous")}</button>
+          <div><strong>{monthLabel}</strong><span>{sortedItems.length} {" " + t("total content item")}{sortedItems.length === 1 ? "" : t("s")}</span></div>
+          <button className="view-button" onClick={() => changeMonth(1)}>{t("Next")}</button>
         </div>
         <div className="content-calendar-weekdays">{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => <span key={day}>{day}</span>)}</div>
         <div className="content-calendar-grid">
           {calendarDays.map((day) => <article key={day.key} className={`content-calendar-day ${day.inMonth ? "" : "muted"} ${day.key === form.plannedDate ? "selected" : ""}`} onClick={() => onFormChange({ plannedDate: day.key })}>
             <strong>{day.date.getDate()}</strong>
             <div>{day.items.slice(0, 3).map((item) => <span key={item.id} className={item.posted ? "posted" : ""}>{item.platform}: {item.title}</span>)}</div>
-            {day.items.length > 3 && <small>+{day.items.length - 3} more</small>}
+            {day.items.length > 3 && <small>+{day.items.length - 3} {" " + t("more")}</small>}
           </article>)}
         </div>
       </section>
     </section>
     <section className="card accounting-table-card content-plan-list">
-      <h3>Planned content</h3>
-      <div className="table-scroll"><table className="orders-table"><thead><tr><th>Date</th><th>Content</th><th>Platform</th><th>Type</th><th>Status</th><th>Notes</th><th /></tr></thead><tbody>{sortedItems.map((item) => <tr key={item.id} className={item.posted ? "posted-content-row" : ""}>
+      <h3>{t("Planned content")}</h3>
+      <div className="table-scroll"><table className="orders-table"><thead><tr><th>{t("Date")}</th><th>{t("Content")}</th><th>{t("Platform")}</th><th>{t("Type")}</th><th>{t("Status")}</th><th>{t("Notes")}</th><th /></tr></thead><tbody>{sortedItems.map((item) => <tr key={item.id} className={item.posted ? "posted-content-row" : ""}>
         <td>{formatDate(item.plannedDate)}</td>
-        <td><strong>{item.title}</strong><br /><small>Created by {item.createdBy}</small></td>
+        <td><strong>{item.title}</strong><br /><small>{t("Created by") + " "}{item.createdBy}</small></td>
         <td>{item.platform || "-"}</td>
         <td>{item.contentType || "-"}</td>
-        <td><button className={`content-status-button ${item.posted ? "posted" : ""}`} onClick={() => onTogglePosted(item)}>{item.posted ? "Posted" : "Mark posted"}</button>{item.postedAt && <small>{formatDate(item.postedAt, true)}</small>}</td>
+        <td><button className={`content-status-button ${item.posted ? "posted" : ""}`} onClick={() => onTogglePosted(item)}>{item.posted ? t("Posted") : t("Mark posted")}</button>{item.postedAt && <small>{formatDate(item.postedAt, true)}</small>}</td>
         <td className="content-notes-cell">{item.notes || "-"}</td>
-        <td><button className="view-button danger-text" onClick={() => onDelete(item)}>Delete</button></td>
-      </tr>)}</tbody></table>{!items.length && <div className="empty"><strong>No content planned yet</strong><p>Add your first idea and it will appear on the calendar.</p></div>}</div>
+        <td><button className="view-button danger-text" onClick={() => onDelete(item)}>{t("Delete")}</button></td>
+      </tr>)}</tbody></table>{!items.length && <div className="empty"><strong>{t("No content planned yet")}</strong><p>{t("Add your first idea and it will appear on the calendar.")}</p></div>}</div>
     </section>
   </section>;
 }
@@ -7842,43 +7857,44 @@ function ContentDashboardPage({
   onTogglePosted: (item: ContentPlanItem) => void;
   onMoveIdeaToPlanned: (item: ContentIdeaItem, plannedDate: string) => void;
 }) {
+  const { t } = useLanguage();
   const [ideaPlanDates, setIdeaPlanDates] = useState<Record<string, string>>({});
   const plannedItems = [...items].filter((item) => !item.posted).sort((a, b) => a.plannedDate.localeCompare(b.plannedDate) || a.createdAt.localeCompare(b.createdAt));
   const doneItems = [...items].filter((item) => item.posted).sort((a, b) => (b.postedAt || b.updatedAt).localeCompare(a.postedAt || a.updatedAt));
   const sortedIdeas = [...ideas].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.createdAt.localeCompare(a.createdAt));
   return <section className="content-plan-workspace">
-    <div className="accounting-hero card"><div><p>CONTENT DASHBOARD</p><h2>Plan, brainstorm, and finish content</h2><span>See planned posts and raw ideas in one place. Move good ideas into the calendar, then mark planned content as done once it has been posted.</span></div><div className="content-plan-status"><strong>{plannedItems.length}</strong><span>planned</span><strong>{ideas.length}</strong><span>ideas</span><strong>{doneItems.length}</strong><span>done</span></div></div>
+    <div className="accounting-hero card"><div><p>{t("CONTENT DASHBOARD")}</p><h2>{t("Plan, brainstorm, and finish content")}</h2><span>{t("See planned posts and raw ideas in one place. Move good ideas into the calendar, then mark planned content as done once it has been posted.")}</span></div><div className="content-plan-status"><strong>{plannedItems.length}</strong><span>{t("planned")}</span><strong>{ideas.length}</strong><span>{t("ideas")}</span><strong>{doneItems.length}</strong><span>{t("done")}</span></div></div>
     <section className="content-dashboard-grid">
       <section className="card content-dashboard-panel">
-        <div className="content-panel-header"><div><p>PLANNED CONTENT</p><h3>Ready to post</h3></div><span>{plannedItems.length} active</span></div>
+        <div className="content-panel-header"><div><p>{t("PLANNED CONTENT")}</p><h3>{t("Ready to post")}</h3></div><span>{plannedItems.length} {" " + t("active")}</span></div>
         <div className="content-dashboard-list">
           {plannedItems.map((item) => <article key={item.id} className="content-dashboard-card planned">
             <div><strong>{item.title}</strong><span>{formatDate(item.plannedDate)} | {item.platform || "-"} | {item.contentType || "-"}</span></div>
             {item.notes && <p>{item.notes}</p>}
-            <button className="content-status-button posted" onClick={() => onTogglePosted(item)}>Move to done</button>
+            <button className="content-status-button posted" onClick={() => onTogglePosted(item)}>{t("Move to done")}</button>
           </article>)}
-          {!plannedItems.length && <div className="empty compact"><strong>No planned content waiting</strong><p>Move ideas here or add posts in Planned Content.</p></div>}
+          {!plannedItems.length && <div className="empty compact"><strong>{t("No planned content waiting")}</strong><p>{t("Move ideas here or add posts in Planned Content.")}</p></div>}
         </div>
       </section>
       <section className="card content-dashboard-panel">
-        <div className="content-panel-header"><div><p>BRAINSTORM IDEAS</p><h3>Move ideas into the calendar</h3></div><span>{ideas.length} ideas</span></div>
+        <div className="content-panel-header"><div><p>{t("BRAINSTORM IDEAS")}</p><h3>{t("Move ideas into the calendar")}</h3></div><span>{ideas.length} {" " + t("ideas")}</span></div>
         <div className="content-dashboard-list">
           {sortedIdeas.map((idea) => {
             const plannedDate = ideaPlanDates[idea.id] ?? localDateKey(new Date());
             return <article key={idea.id} className="content-dashboard-card idea">
-              <div><strong>{idea.title}</strong><span>Updated {formatDate(idea.updatedAt, true)}</span></div>
+              <div><strong>{idea.title}</strong><span>{t("Updated") + " "}{formatDate(idea.updatedAt, true)}</span></div>
               <p>{idea.idea}</p>
               {idea.references.length > 0 && <div className="dashboard-reference-row">{idea.references.slice(0, 3).map((reference) => <a key={reference.id} href={reference.url} target="_blank" rel="noreferrer">{reference.name || reference.url}</a>)}</div>}
-              <div className="dashboard-move-row"><label>Plan date<input type="date" value={plannedDate} onChange={(event) => setIdeaPlanDates((current) => ({ ...current, [idea.id]: event.target.value }))} /></label><button className="button primary" onClick={() => onMoveIdeaToPlanned(idea, plannedDate)}>Move to planned</button></div>
+              <div className="dashboard-move-row"><label>{t("Plan date")}<input type="date" value={plannedDate} onChange={(event) => setIdeaPlanDates((current) => ({ ...current, [idea.id]: event.target.value }))} /></label><button className="button primary" onClick={() => onMoveIdeaToPlanned(idea, plannedDate)}>{t("Move to planned")}</button></div>
             </article>;
           })}
-          {!ideas.length && <div className="empty compact"><strong>No brainstorm ideas yet</strong><p>Add rough ideas in Idea Brainstorming.</p></div>}
+          {!ideas.length && <div className="empty compact"><strong>{t("No brainstorm ideas yet")}</strong><p>{t("Add rough ideas in Idea Brainstorming.")}</p></div>}
         </div>
       </section>
     </section>
     <section className="card content-dashboard-panel done-panel">
-      <div className="content-panel-header"><div><p>DONE</p><h3>Posted content</h3></div><span>{doneItems.length} posted</span></div>
-      <div className="content-done-list">{doneItems.slice(0, 12).map((item) => <article key={item.id}><strong>{item.title}</strong><span>{formatDate(item.postedAt || item.updatedAt, true)} | planned {formatDate(item.plannedDate)}</span></article>)}{!doneItems.length && <div className="empty compact"><strong>No posted content yet</strong><p>Mark planned items as done after posting.</p></div>}</div>
+      <div className="content-panel-header"><div><p>{t("DONE")}</p><h3>{t("Posted content")}</h3></div><span>{doneItems.length} {" " + t("posted")}</span></div>
+      <div className="content-done-list">{doneItems.slice(0, 12).map((item) => <article key={item.id}><strong>{item.title}</strong><span>{formatDate(item.postedAt || item.updatedAt, true)} {" " + t("| planned") + " "}{formatDate(item.plannedDate)}</span></article>)}{!doneItems.length && <div className="empty compact"><strong>{t("No posted content yet")}</strong><p>{t("Mark planned items as done after posting.")}</p></div>}</div>
     </section>
   </section>;
 }
@@ -7900,34 +7916,35 @@ function ContentIdeaBrainstormingPage({
   onSave: () => void;
   onDelete: (item: ContentIdeaItem) => void;
 }) {
+  const { t } = useLanguage();
   const sortedIdeas = [...ideas].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.createdAt.localeCompare(a.createdAt));
   function submit(event: FormEvent) {
     event.preventDefault();
     onSave();
   }
   return <section className="content-plan-workspace">
-    <div className="accounting-hero card"><div><p>IDEA BRAINSTORMING</p><h2>Content ideas and references</h2><span>Capture rough ideas before they become planned posts. Add named links so every reference stays attached to the idea.</span></div><div className="accounting-status-pill">{ideas.length} idea{ideas.length === 1 ? "" : "s"}</div></div>
+    <div className="accounting-hero card"><div><p>{t("IDEA BRAINSTORMING")}</p><h2>{t("Content ideas and references")}</h2><span>{t("Capture rough ideas before they become planned posts. Add named links so every reference stays attached to the idea.")}</span></div><div className="accounting-status-pill">{ideas.length} {" " + t("idea")}{ideas.length === 1 ? "" : t("s")}</div></div>
     <section className="content-plan-grid">
       <form className="content-plan-form card" onSubmit={submit}>
-        <h3>New idea</h3>
-        <label>Idea title<input value={form.title} onChange={(event) => onFormChange({ title: event.target.value })} placeholder="Example: Customer story angle" /></label>
-        <label>Brainstorming notes<textarea value={form.idea} onChange={(event) => onFormChange({ idea: event.target.value })} placeholder="Write the hook, concept, caption angle, shot list, or rough thought..." /></label>
+        <h3>{t("New idea")}</h3>
+        <label>{t("Idea title")}<input value={form.title} onChange={(event) => onFormChange({ title: event.target.value })} placeholder={t("Example: Customer story angle")} /></label>
+        <label>{t("Brainstorming notes")}<textarea value={form.idea} onChange={(event) => onFormChange({ idea: event.target.value })} placeholder={t("Write the hook, concept, caption angle, shot list, or rough thought...")} /></label>
         <div className="idea-reference-box">
-          <h3>Reference links</h3>
-          <label>Reference name<input value={form.referenceName} onChange={(event) => onFormChange({ referenceName: event.target.value })} placeholder="Example: TikTok hook example" /></label>
-          <label>Reference link<input value={form.referenceUrl} onChange={(event) => onFormChange({ referenceUrl: event.target.value })} placeholder="https://..." /></label>
-          <button className="button secondary" type="button" onClick={onAddReference}>Add reference</button>
-          {form.references.length > 0 && <div className="idea-reference-list">{form.references.map((reference) => <div key={reference.id}><a href={reference.url} target="_blank" rel="noreferrer">{reference.name || reference.url}</a><button type="button" onClick={() => onRemoveReference(reference.id)}>Remove</button></div>)}</div>}
+          <h3>{t("Reference links")}</h3>
+          <label>{t("Reference name")}<input value={form.referenceName} onChange={(event) => onFormChange({ referenceName: event.target.value })} placeholder={t("Example: TikTok hook example")} /></label>
+          <label>{t("Reference link")}<input value={form.referenceUrl} onChange={(event) => onFormChange({ referenceUrl: event.target.value })} placeholder="https://..." /></label>
+          <button className="button secondary" type="button" onClick={onAddReference}>{t("Add reference")}</button>
+          {form.references.length > 0 && <div className="idea-reference-list">{form.references.map((reference) => <div key={reference.id}><a href={reference.url} target="_blank" rel="noreferrer">{reference.name || reference.url}</a><button type="button" onClick={() => onRemoveReference(reference.id)}>{t("Remove")}</button></div>)}</div>}
         </div>
-        <button className="button primary" type="submit">Save idea</button>
+        <button className="button primary" type="submit">{t("Save idea")}</button>
       </form>
       <section className="idea-board">
         {sortedIdeas.map((idea) => <article key={idea.id} className="idea-card card">
-          <div className="idea-card-header"><div><strong>{idea.title}</strong><span>Updated {formatDate(idea.updatedAt, true)} by {idea.createdBy}</span></div><button className="view-button danger-text" onClick={() => onDelete(idea)}>Delete</button></div>
+          <div className="idea-card-header"><div><strong>{idea.title}</strong><span>{t("Updated") + " "}{formatDate(idea.updatedAt, true)} {" " + t("by") + " "}{idea.createdBy}</span></div><button className="view-button danger-text" onClick={() => onDelete(idea)}>{t("Delete")}</button></div>
           <p>{idea.idea}</p>
-          {idea.references.length > 0 && <div className="saved-reference-list"><span>References</span>{idea.references.map((reference) => <a key={reference.id} href={reference.url} target="_blank" rel="noreferrer">{reference.name || reference.url}</a>)}</div>}
+          {idea.references.length > 0 && <div className="saved-reference-list"><span>{t("References")}</span>{idea.references.map((reference) => <a key={reference.id} href={reference.url} target="_blank" rel="noreferrer">{reference.name || reference.url}</a>)}</div>}
         </article>)}
-        {!ideas.length && <div className="empty card"><strong>No brainstorming ideas yet</strong><p>Save ideas here first, then move the best ones into Planned Content when you are ready.</p></div>}
+        {!ideas.length && <div className="empty card"><strong>{t("No brainstorming ideas yet")}</strong><p>{t("Save ideas here first, then move the best ones into Planned Content when you are ready.")}</p></div>}
       </section>
     </section>
   </section>;
@@ -7970,6 +7987,7 @@ function WhatsAppLeadsWorkspacePage({
   onNoteDraftChange: (leadId: string, value: string) => void;
   onSaveNotes: (lead: WhatsAppLead) => Promise<void>;
 }) {
+  const { t } = useLanguage();
   const matchedOrderByPhone = new Map<string, ManualOrder>();
   manualOrders
     .filter((order) => order.status !== "cancelled")
@@ -8005,28 +8023,28 @@ function WhatsAppLeadsWorkspacePage({
   return <section className="manual-orders-workspace whatsapp-leads-workspace">
     <div className="manual-order-hero card">
       <div>
-        <p>WHATSAPP LEADS</p>
-        <h2>Track who texted you and who bought</h2>
-        <span>Import a CSV of WhatsApp texters. The app matches phone numbers against Manual Orders, so you can see which leads became buyers and keep notes for follow-up.</span>
+        <p>{t("WHATSAPP LEADS")}</p>
+        <h2>{t("Track who texted you and who bought")}</h2>
+        <span>{t("Import a CSV of WhatsApp texters. The app matches phone numbers against Manual Orders, so you can see which leads became buyers and keep notes for follow-up.")}</span>
       </div>
-      <div className="accounting-status-pill">{leads.length} lead{leads.length === 1 ? "" : "s"}</div>
+      <div className="accounting-status-pill">{leads.length} {" " + t("lead")}{leads.length === 1 ? "" : t("s")}</div>
     </div>
 
     <div className="whatsapp-lead-summary-grid">
-      <article className="card whatsapp-lead-summary-card"><span>Total leads</span><strong>{leads.length}</strong></article>
-      <article className="card whatsapp-lead-summary-card bought"><span>Bought</span><strong>{boughtCount}</strong></article>
-      <article className="card whatsapp-lead-summary-card"><span>Open / follow up</span><strong>{openCount}</strong></article>
-      <article className="card whatsapp-lead-summary-card"><span>Conversion</span><strong>{conversionRate}%</strong></article>
+      <article className="card whatsapp-lead-summary-card"><span>{t("Total leads")}</span><strong>{leads.length}</strong></article>
+      <article className="card whatsapp-lead-summary-card bought"><span>{t("Bought")}</span><strong>{boughtCount}</strong></article>
+      <article className="card whatsapp-lead-summary-card"><span>{t("Open / follow up")}</span><strong>{openCount}</strong></article>
+      <article className="card whatsapp-lead-summary-card"><span>{t("Conversion")}</span><strong>{conversionRate}%</strong></article>
     </div>
 
     <section className="card whatsapp-lead-import-card">
       <div>
-        <h3>Import WhatsApp leads CSV</h3>
-        <p>Required column: phone. Optional columns: name, source, campaign, ad_name, first_message_date, notes.</p>
-        {csvName && <small>Last selected: {csvName}</small>}
+        <h3>{t("Import WhatsApp leads CSV")}</h3>
+        <p>{t("Required column: phone. Optional columns: name, source, campaign, ad_name, first_message_date, notes.")}</p>
+        {csvName && <small>{t("Last selected:") + " "}{csvName}</small>}
       </div>
       <label className="button primary">
-        {busy === "import" ? "Importing..." : "Choose CSV"}
+        {busy === "import" ? t("Importing...") : t("Choose CSV")}
         <input
           type="file"
           accept=".csv,text/csv"
@@ -8042,14 +8060,14 @@ function WhatsAppLeadsWorkspacePage({
 
     <section className="card accounting-table-card manual-order-table-card">
       <div className="manual-order-table-toolbar">
-        <div><h3>Lead records</h3><p>Search by name, phone, source, notes, or matched order.</p></div>
+        <div><h3>{t("Lead records")}</h3><p>{t("Search by name, phone, source, notes, or matched order.")}</p></div>
         <div className="manual-order-search-actions">
-          <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search leads..." />
+          <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder={t("Search leads...")} />
         </div>
       </div>
       <div className="table-scroll">
         <table>
-          <thead><tr><th>Imported</th><th>Lead</th><th>Source</th><th>Status</th><th>Matched Order</th><th>Notes</th><th>Actions</th></tr></thead>
+          <thead><tr><th>{t("Imported")}</th><th>{t("Lead")}</th><th>{t("Source")}</th><th>{t("Status")}</th><th>{t("Matched Order")}</th><th>{t("Notes")}</th><th>{t("Actions")}</th></tr></thead>
           <tbody>
             {visibleRows.map(({ lead, matchedOrder, effectiveStatus }) => {
               const noteDraft = noteDrafts[lead.id] ?? lead.notes;
@@ -8059,20 +8077,20 @@ function WhatsAppLeadsWorkspacePage({
                 <td><strong>{lead.source || "-"}</strong><small>{[lead.campaign, lead.adName].filter(Boolean).join(" / ") || "-"}</small></td>
                 <td>
                   {matchedOrder
-                    ? <span className="manual-order-status used">Bought</span>
+                    ? <span className="manual-order-status used">{t("Bought")}</span>
                     : <select className="whatsapp-lead-status-select" value={lead.status} disabled={busy === lead.id} onChange={(event) => void onStatusChange(lead, event.target.value as WhatsAppLeadStatus)}>
-                      {Object.entries(whatsAppLeadStatusLabels).filter(([status]) => status !== "bought").map(([status, label]) => <option key={status} value={status}>{label}</option>)}
+                      {Object.entries(whatsAppLeadStatusLabels).filter(([status]) => status !== "bought").map(([status, label]) => <option key={status} value={status}>{t(label)}</option>)}
                     </select>}
-                  {effectiveStatus === "follow_up" && <small>Needs follow-up</small>}
+                  {effectiveStatus === "follow_up" && <small>{t("Needs follow-up")}</small>}
                 </td>
                 <td>{matchedOrder ? <div><strong>{matchedOrder.customerName}</strong><small>{matchedOrder.shopifyOrderName || matchedOrder.productDiscountCode}</small><small>{matchedOrder.productDisplayName}</small></div> : "-"}</td>
-                <td><textarea className="whatsapp-lead-notes" value={noteDraft} onChange={(event) => onNoteDraftChange(lead.id, event.target.value)} placeholder="Add notes..." /></td>
+                <td><textarea className="whatsapp-lead-notes" value={noteDraft} onChange={(event) => onNoteDraftChange(lead.id, event.target.value)} placeholder={t("Add notes...")} /></td>
                 <td><div className="manual-order-row-actions">
-                  <button className="button secondary small" type="button" disabled={busy === lead.id || noteDraft === lead.notes} onClick={() => onSaveNotes(lead)}>{busy === lead.id ? "Saving..." : "Save Notes"}</button>
+                  <button className="button secondary small" type="button" disabled={busy === lead.id || noteDraft === lead.notes} onClick={() => onSaveNotes(lead)}>{busy === lead.id ? t("Saving...") : t("Save Notes")}</button>
                 </div></td>
               </tr>;
             })}
-            {!visibleRows.length && <tr><td colSpan={7}>No WhatsApp leads found.</td></tr>}
+            {!visibleRows.length && <tr><td colSpan={7}>{t("No WhatsApp leads found.")}</td></tr>}
           </tbody>
         </table>
       </div>
@@ -8115,6 +8133,7 @@ function ManualOrdersWorkspacePage({
   onReceiptFilesChange: (files: File[]) => void;
   sessionToken: string;
 }) {
+  const { t } = useLanguage();
   const normalizedQuery = query.trim().toLowerCase();
   const [receiptPreview, setReceiptPreview] = useState<{ fileName: string; url: string; customerName: string } | null>(null);
   const visibleOrders = manualOrders.filter((order) => {
@@ -8159,88 +8178,88 @@ function ManualOrdersWorkspacePage({
   return <section className="manual-orders-workspace">
     <div className="manual-order-hero card">
       <div>
-        <p>MANUAL ORDERS</p>
-        <h2>Generate a paid customer checkout link</h2>
-        <span>Use this when someone already paid you by WhatsApp, bank transfer, or another manual method. Shopify still collects their Upload-Lift details, but the customer pays RM0 at checkout.</span>
+        <p>{t("MANUAL ORDERS")}</p>
+        <h2>{t("Generate a paid customer checkout link")}</h2>
+        <span>{t("Use this when someone already paid you by WhatsApp, bank transfer, or another manual method. Shopify still collects their Upload-Lift details, but the customer pays RM0 at checkout.")}</span>
       </div>
-      <div className="accounting-status-pill">{manualOrders.length} manual order{manualOrders.length === 1 ? "" : "s"}</div>
+      <div className="accounting-status-pill">{manualOrders.length} {" " + t("manual order")}{manualOrders.length === 1 ? "" : t("s")}</div>
     </div>
 
     <div className="manual-order-grid">
       <form className="card manual-order-form" onSubmit={onCreate}>
-        <h3>Create manual order</h3>
-        <label>Customer name<input value={form.customerName} onChange={(event) => onFormChange({ customerName: event.target.value })} placeholder="Sarah Lim" required /></label>
-        <label>Phone<input value={form.phone} onChange={(event) => onFormChange({ phone: event.target.value })} placeholder="0123456789" required /></label>
+        <h3>{t("Create manual order")}</h3>
+        <label>{t("Customer name")}<input value={form.customerName} onChange={(event) => onFormChange({ customerName: event.target.value })} placeholder={t("Sarah Lim")} required /></label>
+        <label>{t("Phone")}<input value={form.phone} onChange={(event) => onFormChange({ phone: event.target.value })} placeholder="0123456789" required /></label>
         <div className="manual-order-choice">
-          <span>Product</span>
-          <div className="manual-order-pill-group" aria-label="Manual order product family">
+          <span>{t("Product")}</span>
+          <div className="manual-order-pill-group" aria-label={t("Manual order product family")}>
             {(["classic_plushie", "plush_charm"] as const).map((family) => {
               const firstProduct = manualOrderProducts.find((product) => manualOrderProductFamily(product) === family);
-              return <button type="button" key={family} disabled={!firstProduct} className={selectedProductFamily === family ? "active" : ""} onClick={() => firstProduct && chooseProduct(firstProduct)}>{family === "plush_charm" ? "Plush Charm" : "Classic Plushie"}</button>;
+              return <button type="button" key={family} disabled={!firstProduct} className={selectedProductFamily === family ? "active" : ""} onClick={() => firstProduct && chooseProduct(firstProduct)}>{family === "plush_charm" ? t("Plush Charm") : t("Classic Plushie")}</button>;
             })}
           </div>
         </div>
         <div className="manual-order-choice">
-          <span>Character</span>
-          <div className="manual-order-pill-group" aria-label="Manual order character">
+          <span>{t("Character")}</span>
+          <div className="manual-order-pill-group" aria-label={t("Manual order character")}>
             {characterChoices.map((character) => <button type="button" key={character} className={form.character === character ? "active" : ""} onClick={() => selectedProductFamily === "plush_charm" ? chooseCharmCharacter(character) : onFormChange({ character })}>{character}</button>)}
           </div>
         </div>
         {selectedProductFamily === "classic_plushie" ? <div className="manual-order-choice">
-          <span>Speaker</span>
-          <div className="manual-order-pill-group" aria-label="Manual order speaker length">
+          <span>{t("Speaker")}</span>
+          <div className="manual-order-pill-group" aria-label={t("Manual order speaker length")}>
             {productsForSelectedFamily.map((product) => <button type="button" key={product.key} className={selectedProduct?.key === product.key ? "active" : ""} onClick={() => chooseProduct(product)}>{speakerLabel(product.displayName)}</button>)}
           </div>
-        </div> : <div className="manual-order-choice"><span>Voice length</span><small>5 seconds voice is included with every Plush Charm.</small></div>}
-        <label>Shipping region<select value={form.shippingRegion} onChange={(event) => onFormChange({ shippingRegion: event.target.value === "EAST" ? "EAST" : "WEST" })}><option value="WEST">West Malaysia</option><option value="EAST">East Malaysia</option></select></label>
-        <div className="manual-order-choice"><span>Cash on delivery</span><div className="manual-order-pill-group"><button type="button" className={!form.isCod ? "active" : ""} onClick={() => onFormChange({ isCod: false })}>No</button><button type="button" className={form.isCod ? "active" : ""} onClick={() => onFormChange({ isCod: true })}>COD — RM10 fee</button></div><small>Internal record only. The Shopify checkout link remains unchanged.</small></div>
-        <label>Payment receipt files (PDF or images)<input type="file" multiple accept="application/pdf,image/png,image/jpeg,image/webp" onChange={(event) => onReceiptFilesChange(Array.from(event.target.files || []))} /></label>
-        {receiptFiles.length > 0 && <small>{receiptFiles.length} file{receiptFiles.length === 1 ? "" : "s"} attached: {receiptFiles.map((file) => file.name).join(", ")}</small>}
-        <button className="button primary large" disabled={busy === "create"} type="submit">{busy === "create" ? "Creating..." : "Generate Shopify link"}</button>
-        <p className="manual-order-note">The app creates one 100% product discount. It expires after 14 days and can only be used once.</p>
+        </div> : <div className="manual-order-choice"><span>{t("Voice length")}</span><small>{t("5 seconds voice is included with every Plush Charm.")}</small></div>}
+        <label>{t("Shipping region")}<select value={form.shippingRegion} onChange={(event) => onFormChange({ shippingRegion: event.target.value === "EAST" ? "EAST" : "WEST" })}><option value="WEST">{t("West Malaysia")}</option><option value="EAST">{t("East Malaysia")}</option></select></label>
+        <div className="manual-order-choice"><span>{t("Cash on delivery")}</span><div className="manual-order-pill-group"><button type="button" className={!form.isCod ? "active" : ""} onClick={() => onFormChange({ isCod: false })}>{t("No")}</button><button type="button" className={form.isCod ? "active" : ""} onClick={() => onFormChange({ isCod: true })}>{t("COD — RM10 fee")}</button></div><small>{t("Internal record only. The Shopify checkout link remains unchanged.")}</small></div>
+        <label>{t("Payment receipt files (PDF or images)")}<input type="file" multiple accept="application/pdf,image/png,image/jpeg,image/webp" onChange={(event) => onReceiptFilesChange(Array.from(event.target.files || []))} /></label>
+        {receiptFiles.length > 0 && <small>{receiptFiles.length} {" " + t("file")}{receiptFiles.length === 1 ? "" : t("s")} {" " + t("attached:") + " "}{receiptFiles.map((file) => file.name).join(", ")}</small>}
+        <button className="button primary large" disabled={busy === "create"} type="submit">{busy === "create" ? t("Creating...") : t("Generate Shopify link")}</button>
+        <p className="manual-order-note">{t("The app creates one 100% product discount. It expires after 14 days and can only be used once.")}</p>
       </form>
 
       <section className="card manual-order-result">
-        <div className="accounting-form-heading"><div><h3>Latest generated link</h3><p>Copy this to send the customer back to Shopify.</p></div></div>
+        <div className="accounting-form-heading"><div><h3>{t("Latest generated link")}</h3><p>{t("Copy this to send the customer back to Shopify.")}</p></div></div>
         {lastOrder ? <div className="manual-order-created-card">
           <div className="manual-order-created-header">
             <div>
-              <span>Ready to send</span>
+              <span>{t("Ready to send")}</span>
               <strong>{lastOrder.customerName}</strong>
             </div>
             <em>{statusLabel(lastOrder.status)}</em>
           </div>
           <div className="manual-order-summary-grid">
-            <div><span>Product</span><strong>{lastOrder.productDisplayName}</strong></div>
-            <div><span>Region</span><strong>{lastOrder.shippingRegion === "EAST" ? "East Malaysia" : "West Malaysia"}</strong></div>
-            <div><span>Discount code</span><strong>{lastOrder.productDiscountCode}</strong></div>
+            <div><span>{t("Product")}</span><strong>{lastOrder.productDisplayName}</strong></div>
+            <div><span>{t("Region")}</span><strong>{lastOrder.shippingRegion === "EAST" ? t("East Malaysia") : t("West Malaysia")}</strong></div>
+            <div><span>{t("Discount code")}</span><strong>{lastOrder.productDiscountCode}</strong></div>
           </div>
           <div className="manual-order-link-box">
-            <span>Checkout link</span>
+            <span>{t("Checkout link")}</span>
             <code>{lastOrder.customerLink}</code>
           </div>
           <div className="manual-order-actions">
-            <button className="button primary small" type="button" onClick={() => onCopy(lastOrder.customerLink, "Customer link")}>Copy Link</button>
-            <button className="button secondary small" type="button" onClick={() => onCopy(lastOrder.productDiscountCode, "Product discount")}>Copy Product Code</button>
-            <a className="button secondary small" href={whatsAppLink(lastOrder)} target="_blank" rel="noreferrer">WhatsApp</a>
-            <a className="button secondary small" href={lastOrder.customerLink} target="_blank" rel="noreferrer">Open Link</a>
+            <button className="button primary small" type="button" onClick={() => onCopy(lastOrder.customerLink, "Customer link")}>{t("Copy Link")}</button>
+            <button className="button secondary small" type="button" onClick={() => onCopy(lastOrder.productDiscountCode, "Product discount")}>{t("Copy Product Code")}</button>
+            <a className="button secondary small" href={whatsAppLink(lastOrder)} target="_blank" rel="noreferrer">{t("WhatsApp")}</a>
+            <a className="button secondary small" href={lastOrder.customerLink} target="_blank" rel="noreferrer">{t("Open Link")}</a>
           </div>
-        </div> : <div className="empty compact"><strong>No link generated yet</strong><p>Create the first manual order on the left.</p></div>}
+        </div> : <div className="empty compact"><strong>{t("No link generated yet")}</strong><p>{t("Create the first manual order on the left.")}</p></div>}
       </section>
     </div>
 
     <section className="card accounting-table-card manual-order-table-card">
       <div className="manual-order-table-toolbar">
-        <div><h3>Manual order records</h3><p>Search by name, phone, discount code, or Shopify order.</p></div>
+        <div><h3>{t("Manual order records")}</h3><p>{t("Search by name, phone, discount code, or Shopify order.")}</p></div>
         <div className="manual-order-search-actions">
-          <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Search manual orders..." />
-          <button className="button secondary" type="button" onClick={() => void onRefresh()}>Refresh Status</button>
-          <button className="button secondary" disabled={busy === "export"} type="button" onClick={() => void onExport()}>{busy === "export" ? "Exporting..." : "Export manual orders"}</button>
+          <input value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder={t("Search manual orders...")} />
+          <button className="button secondary" type="button" onClick={() => void onRefresh()}>{t("Refresh Status")}</button>
+          <button className="button secondary" disabled={busy === "export"} type="button" onClick={() => void onExport()}>{busy === "export" ? t("Exporting...") : t("Export manual orders")}</button>
         </div>
       </div>
       <div className="table-scroll">
         <table className="orders-table manual-orders-records-table">
-          <thead><tr><th>Created</th><th>Customer</th><th>Phone</th><th>Product</th><th>Shipping</th><th>Discount</th><th>Status</th><th>Shopify Order</th><th>Actions</th></tr></thead>
+          <thead><tr><th>{t("Created")}</th><th>{t("Customer")}</th><th>{t("Phone")}</th><th>{t("Product")}</th><th>{t("Shipping")}</th><th>{t("Discount")}</th><th>{t("Status")}</th><th>{t("Shopify Order")}</th><th>{t("Actions")}</th></tr></thead>
           <tbody>
             {visibleOrders.map((order) => {
               const firstReceipt = (order.paymentReceipts || [])[0];
@@ -8252,22 +8271,22 @@ function ManualOrdersWorkspacePage({
               <td><strong>{order.customerName}</strong></td>
               <td>{order.phoneNormalized}<small>{order.phoneOriginal}</small></td>
               <td>{order.productDisplayName}</td>
-              <td>{order.shippingRegion === "EAST" ? "East Malaysia" : "West Malaysia"}</td>
+              <td>{order.shippingRegion === "EAST" ? t("East Malaysia") : t("West Malaysia")}</td>
               <td><code>{order.productDiscountCode}</code></td>
-              <td><span className={`manual-order-status ${order.status}`}>{statusLabel(order.status)}</span>{order.isCod && <span className="shipping-badge">COD</span>}</td>
+              <td><span className={`manual-order-status ${order.status}`}>{statusLabel(order.status)}</span>{order.isCod && <span className="shipping-badge">{t("COD")}</span>}</td>
               <td>{order.shopifyOrderName ? <strong>{order.shopifyOrderName}</strong> : "-"}</td>
               <td><div className="manual-order-row-actions">
-                <button className="button secondary small" type="button" onClick={() => onCopy(order.customerLink, "Customer link")}>Copy Link</button>
-                <button className="button secondary small" type="button" onClick={() => onCopy(order.productDiscountCode, "Discount code")}>Copy Code</button>
-                <a className="button secondary small" href={whatsAppLink(order)} target="_blank" rel="noreferrer">WhatsApp</a>
-                <a className="button secondary small" href={order.customerLink} target="_blank" rel="noreferrer">Open</a>
-                {(order.paymentReceipts || []).map((receipt, index) => <button key={receipt.url} className="source-document-pill" type="button" onClick={() => setReceiptPreview({ ...receipt, customerName: order.customerName })}>{(order.paymentReceipts || []).length > 1 ? `Source document ${index + 1}` : "Source document"}</button>)}
-                {order.shopifyOrderId && <a className="button secondary small" href={`https://admin.shopify.com/store/${(process.env.NEXT_PUBLIC_SHOPIFY_ADMIN_STORE_HANDLE || "").trim()}/orders/${order.shopifyOrderId.replace(/\D/g, "")}`} target="_blank" rel="noreferrer">Shopify</a>}
-                {order.status === "active" && <button className="button danger small" type="button" disabled={busy === order.id} onClick={() => onCancel(order)}>{busy === order.id ? "Cancelling..." : "Cancel"}</button>}
+                <button className="button secondary small" type="button" onClick={() => onCopy(order.customerLink, "Customer link")}>{t("Copy Link")}</button>
+                <button className="button secondary small" type="button" onClick={() => onCopy(order.productDiscountCode, "Discount code")}>{t("Copy Code")}</button>
+                <a className="button secondary small" href={whatsAppLink(order)} target="_blank" rel="noreferrer">{t("WhatsApp")}</a>
+                <a className="button secondary small" href={order.customerLink} target="_blank" rel="noreferrer">{t("Open")}</a>
+                {(order.paymentReceipts || []).map((receipt, index) => <button key={receipt.url} className="source-document-pill" type="button" onClick={() => setReceiptPreview({ ...receipt, customerName: order.customerName })}>{(order.paymentReceipts || []).length > 1 ? `Source document ${index + 1}` : t("Source document")}</button>)}
+                {order.shopifyOrderId && <a className="button secondary small" href={`https://admin.shopify.com/store/${(process.env.NEXT_PUBLIC_SHOPIFY_ADMIN_STORE_HANDLE || "").trim()}/orders/${order.shopifyOrderId.replace(/\D/g, "")}`} target="_blank" rel="noreferrer">{t("Shopify")}</a>}
+                {order.status === "active" && <button className="button danger small" type="button" disabled={busy === order.id} onClick={() => onCancel(order)}>{busy === order.id ? t("Cancelling...") : t("Cancel")}</button>}
               </div></td>
             </tr>;
             })}
-            {!visibleOrders.length && <tr><td colSpan={9}>No manual orders found.</td></tr>}
+            {!visibleOrders.length && <tr><td colSpan={9}>{t("No manual orders found.")}</td></tr>}
           </tbody>
         </table>
       </div>
@@ -8278,23 +8297,25 @@ function ManualOrdersWorkspacePage({
 }
 
 function ReceiptPreviewModal({ receipt, onClose }: { receipt: { fileName: string; url: string; customerName: string }; onClose: () => void }) {
+  const { t } = useLanguage();
   const isImage = /\.(png|jpe?g|webp)$/i.test(receipt.fileName);
   const isPdf = /\.pdf$/i.test(receipt.fileName);
   return <div className="document-preview-backdrop" role="dialog" aria-modal="true" aria-label={`Payment receipt for ${receipt.customerName}`} onClick={onClose}>
     <section className="document-preview-modal" onClick={(event) => event.stopPropagation()}>
       <header>
-        <div><p>SOURCE DOCUMENT</p><h2>Payment receipt — {receipt.customerName}</h2><span>{receipt.fileName}</span></div>
-        <button className="view-button" type="button" onClick={onClose}>Close</button>
+        <div><p>{t("SOURCE DOCUMENT")}</p><h2>{t("Payment receipt —") + " "}{receipt.customerName}</h2><span>{receipt.fileName}</span></div>
+        <button className="view-button" type="button" onClick={onClose}>{t("Close")}</button>
       </header>
       {isImage && <img className="document-preview-image" src={receipt.url} alt={`Payment receipt for ${receipt.customerName}`} />}
       {isPdf && <iframe className="document-preview-frame" src={receipt.url} title={`Payment receipt for ${receipt.customerName}`} />}
-      {!isImage && !isPdf && <div className="preview-empty"><strong>Preview not available for this file type</strong><p>You can still open the source document in a new tab.</p></div>}
-      <footer><a className="view-button document-link" href={receipt.url} target="_blank" rel="noreferrer">Open in new tab</a></footer>
+      {!isImage && !isPdf && <div className="preview-empty"><strong>{t("Preview not available for this file type")}</strong><p>{t("You can still open the source document in a new tab.")}</p></div>}
+      <footer><a className="view-button document-link" href={receipt.url} target="_blank" rel="noreferrer">{t("Open in new tab")}</a></footer>
     </section>
   </div>;
 }
 
 function PreordersWorkspacePage() {
+  const { t } = useLanguage();
   type Preorder = { id: string; customer_name: string; phone: string; character: string; product_key: string; shipping_region: "WEST" | "EAST"; total_amount: number; deposit_amount: number; balance_due_date: string | null; status: string; payment_receipts: { fileName: string; url: string }[] };
   const [orders, setOrders] = useState<Preorder[]>([]); const [files, setFiles] = useState<File[]>([]); const [notice, setNotice] = useState("");
   const [form, setForm] = useState({ customerName: "", phone: "", character: "Billy", productKey: manualOrderProducts[0]?.key ?? "", shippingRegion: "WEST", totalAmount: "", depositAmount: "", balanceDueDate: "" });
@@ -8310,24 +8331,24 @@ function PreordersWorkspacePage() {
   const selectedProduct = manualOrderProducts.find((product) => product.key === form.productKey) ?? manualOrderProducts[0];
   const speakerLabel = (name: string) => name.match(/(\d+)\s*seconds?/i)?.[1] ? `${name.match(/(\d+)\s*seconds?/i)?.[1]}s` : name;
   return <section className="manual-orders-workspace">
-    <div className="manual-order-hero card"><div><p>PREORDERS</p><h2>Record a customer deposit</h2><span>Use the same customer and product details as Manual Orders, then add the deposit, balance due date, and payment proof.</span></div><div className="accounting-status-pill">{orders.length} preorder{orders.length === 1 ? "" : "s"}</div></div>
-    {notice && <div className="notice"><span>{notice}</span></div>}
+    <div className="manual-order-hero card"><div><p>{t("PREORDERS")}</p><h2>{t("Record a customer deposit")}</h2><span>{t("Use the same customer and product details as Manual Orders, then add the deposit, balance due date, and payment proof.")}</span></div><div className="accounting-status-pill">{orders.length} {" " + t("preorder")}{orders.length === 1 ? "" : t("s")}</div></div>
+    {notice && <div className="notice"><span>{t(notice)}</span></div>}
     <div className="manual-order-grid"><form className="card manual-order-form" onSubmit={submit}>
-      <h3>Create preorder</h3>
-      <label>Customer name<input required placeholder="Sarah Lim" value={form.customerName} onChange={(e) => setForm({ ...form, customerName: e.target.value })}/></label>
-      <label>Phone<input required placeholder="0123456789" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })}/></label>
-      <div className="manual-order-choice"><span>Character</span><div className="manual-order-pill-group">{manualOrderCharacters.map((character) => <button type="button" key={character} className={form.character === character ? "active" : ""} onClick={() => setForm({ ...form, character })}>{character}</button>)}</div></div>
-      <div className="manual-order-choice"><span>Speaker</span><div className="manual-order-pill-group">{manualOrderProducts.map((product) => <button type="button" key={product.key} className={selectedProduct.key === product.key ? "active" : ""} onClick={() => setForm({ ...form, productKey: product.key })}>{speakerLabel(product.displayName)}</button>)}</div></div>
-      <label>Shipping region<select value={form.shippingRegion} onChange={(e) => setForm({ ...form, shippingRegion: e.target.value === "EAST" ? "EAST" : "WEST" })}><option value="WEST">West Malaysia</option><option value="EAST">East Malaysia</option></select></label>
-      <div className="manual-order-price-breakdown"><span>Normal order price</span><strong>RM {productPrice.toFixed(2)}</strong><small>{selectedProduct.displayName}</small><span>Shipping</span><strong>{shippingPrice ? `RM ${shippingPrice.toFixed(2)}` : "Free"}</strong><small>{form.shippingRegion === "EAST" ? "East Malaysia" : "West Malaysia"}</small><span>Total preorder price</span><strong>RM {totalPrice.toFixed(2)}</strong></div>
-      <label>Deposit received (RM)<input required type="number" min="0" step="0.01" value={form.depositAmount} onChange={(e) => setForm({ ...form, depositAmount: e.target.value })}/></label>
-      <strong>Balance remaining: RM {balance.toFixed(2)}</strong>
-      <label>Balance payment date<input type="date" value={form.balanceDueDate} onChange={(e) => setForm({ ...form, balanceDueDate: e.target.value })}/></label>
-      <label className="file-drop-zone" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); setFiles(Array.from(e.dataTransfer.files)); }}>Drag payment PDFs/images here, or choose files<input type="file" multiple accept="application/pdf,image/png,image/jpeg,image/webp" onChange={(e) => setFiles(Array.from(e.target.files || []))}/></label>
-      {files.length > 0 && <small>{files.length} file{files.length === 1 ? "" : "s"} attached: {files.map((file) => file.name).join(", ")}</small>}
-      <button className="button primary large">Save preorder</button>
-    </form><section className="card manual-order-result"><div className="accounting-form-heading"><div><h3>Preorder details</h3><p>Payment proof stays attached to this preorder.</p></div></div><div className="empty compact"><strong>Waiting for balance payment</strong><p>When the balance is fully paid, choose Mark paid in the preorder records below. A Manual Order checkout link will then be created automatically.</p></div></section></div>
-    <section className="card accounting-table-card manual-order-table-card"><div className="manual-order-table-toolbar"><div><h3>Preorder records</h3><p>Payment receipts remain attached to the preorder and its generated Manual Order.</p></div></div><div className="table-scroll"><table className="orders-table"><thead><tr><th>Customer</th><th>Product</th><th>Deposit</th><th>Balance</th><th>Due</th><th>Receipts</th><th>Status</th><th /></tr></thead><tbody>{orders.map((order) => <tr key={order.id}><td><strong>{order.customer_name}</strong><small>{order.phone}</small></td><td>{order.character} · {speakerLabel(manualOrderProducts.find((p) => p.key === order.product_key)?.displayName || order.product_key)}</td><td>RM {Number(order.deposit_amount).toFixed(2)}</td><td>RM {(Number(order.total_amount) - Number(order.deposit_amount)).toFixed(2)}</td><td>{order.balance_due_date || "-"}</td><td>{(order.payment_receipts || []).map((receipt) => <a key={receipt.url} href={receipt.url} target="_blank" rel="noreferrer">{receipt.fileName} </a>) || "-"}</td><td>{order.status.replace(/_/g, " ")}</td><td>{order.status === "deposit_paid" && <button className="button primary small" onClick={() => void markPaid(order)}>Mark paid & create Manual Order</button>}</td></tr>)}{!orders.length && <tr><td colSpan={8}>No preorders yet.</td></tr>}</tbody></table></div></section>
+      <h3>{t("Create preorder")}</h3>
+      <label>{t("Customer name")}<input required placeholder={t("Sarah Lim")} value={form.customerName} onChange={(e) => setForm({ ...form, customerName: e.target.value })}/></label>
+      <label>{t("Phone")}<input required placeholder="0123456789" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })}/></label>
+      <div className="manual-order-choice"><span>{t("Character")}</span><div className="manual-order-pill-group">{manualOrderCharacters.map((character) => <button type="button" key={character} className={form.character === character ? "active" : ""} onClick={() => setForm({ ...form, character })}>{character}</button>)}</div></div>
+      <div className="manual-order-choice"><span>{t("Speaker")}</span><div className="manual-order-pill-group">{manualOrderProducts.map((product) => <button type="button" key={product.key} className={selectedProduct.key === product.key ? "active" : ""} onClick={() => setForm({ ...form, productKey: product.key })}>{speakerLabel(product.displayName)}</button>)}</div></div>
+      <label>{t("Shipping region")}<select value={form.shippingRegion} onChange={(e) => setForm({ ...form, shippingRegion: e.target.value === "EAST" ? "EAST" : "WEST" })}><option value="WEST">{t("West Malaysia")}</option><option value="EAST">{t("East Malaysia")}</option></select></label>
+      <div className="manual-order-price-breakdown"><span>{t("Normal order price")}</span><strong>{t("RM") + " "}{productPrice.toFixed(2)}</strong><small>{selectedProduct.displayName}</small><span>{t("Shipping")}</span><strong>{shippingPrice ? `RM ${shippingPrice.toFixed(2)}` : t("Free")}</strong><small>{form.shippingRegion === "EAST" ? t("East Malaysia") : t("West Malaysia")}</small><span>{t("Total preorder price")}</span><strong>{t("RM") + " "}{totalPrice.toFixed(2)}</strong></div>
+      <label>{t("Deposit received (RM)")}<input required type="number" min="0" step="0.01" value={form.depositAmount} onChange={(e) => setForm({ ...form, depositAmount: e.target.value })}/></label>
+      <strong>{t("Balance remaining: RM") + " "}{balance.toFixed(2)}</strong>
+      <label>{t("Balance payment date")}<input type="date" value={form.balanceDueDate} onChange={(e) => setForm({ ...form, balanceDueDate: e.target.value })}/></label>
+      <label className="file-drop-zone" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); setFiles(Array.from(e.dataTransfer.files)); }}>{t("Drag payment PDFs/images here, or choose files")}<input type="file" multiple accept="application/pdf,image/png,image/jpeg,image/webp" onChange={(e) => setFiles(Array.from(e.target.files || []))}/></label>
+      {files.length > 0 && <small>{files.length} {" " + t("file")}{files.length === 1 ? "" : t("s")} {" " + t("attached:") + " "}{files.map((file) => file.name).join(", ")}</small>}
+      <button className="button primary large">{t("Save preorder")}</button>
+    </form><section className="card manual-order-result"><div className="accounting-form-heading"><div><h3>{t("Preorder details")}</h3><p>{t("Payment proof stays attached to this preorder.")}</p></div></div><div className="empty compact"><strong>{t("Waiting for balance payment")}</strong><p>{t("When the balance is fully paid, choose Mark paid in the preorder records below. A Manual Order checkout link will then be created automatically.")}</p></div></section></div>
+    <section className="card accounting-table-card manual-order-table-card"><div className="manual-order-table-toolbar"><div><h3>{t("Preorder records")}</h3><p>{t("Payment receipts remain attached to the preorder and its generated Manual Order.")}</p></div></div><div className="table-scroll"><table className="orders-table"><thead><tr><th>{t("Customer")}</th><th>{t("Product")}</th><th>{t("Deposit")}</th><th>{t("Balance")}</th><th>{t("Due")}</th><th>{t("Receipts")}</th><th>{t("Status")}</th><th /></tr></thead><tbody>{orders.map((order) => <tr key={order.id}><td><strong>{order.customer_name}</strong><small>{order.phone}</small></td><td>{order.character} · {speakerLabel(manualOrderProducts.find((p) => p.key === order.product_key)?.displayName || order.product_key)}</td><td>{t("RM") + " "}{Number(order.deposit_amount).toFixed(2)}</td><td>{t("RM") + " "}{(Number(order.total_amount) - Number(order.deposit_amount)).toFixed(2)}</td><td>{order.balance_due_date || "-"}</td><td>{(order.payment_receipts || []).map((receipt) => <a key={receipt.url} href={receipt.url} target="_blank" rel="noreferrer">{receipt.fileName} </a>) || "-"}</td><td>{order.status.replace(/_/g, " ")}</td><td>{order.status === "deposit_paid" && <button className="button primary small" onClick={() => void markPaid(order)}>{t("Mark paid & create Manual Order")}</button>}</td></tr>)}{!orders.length && <tr><td colSpan={8}>{t("No preorders yet.")}</td></tr>}</tbody></table></div></section>
   </section>;
 }
 
@@ -8360,6 +8381,7 @@ function FormalAccountingWorkspacePage({
   onRemoveSalesConsumptionRule: (mapping: SalesConsumptionMapping) => void;
   categoryName: (categoryId: string) => string;
 }) {
+  const { t } = useLanguage();
   const [selectedTAccountSection, setSelectedTAccountSection] = useState("Cash");
   const [selectedTAccountName, setSelectedTAccountName] = useState("all");
   const [selectedUnitCostItem, setSelectedUnitCostItem] = useState("all");
@@ -8683,7 +8705,7 @@ function FormalAccountingWorkspacePage({
     ? `${accountingStartDate ? formatDate(accountingStartDate) : "Beginning"} to ${accountingEndDate ? formatDate(accountingEndDate) : "Today"}`
     : "All dates";
   const dateInputsDisabled = accountingPeriodMode !== "custom";
-  const dateFilter = <section className="card accounting-date-filter"><div className="accounting-date-copy"><strong>Accounting period</strong><span>This date range is shared by General Journal, T Accounts, Unit Costs, and Financial Reports.</span></div><div className="accounting-period-panel"><div className="accounting-period-selector"><button className={accountingPeriodMode === "this_month" ? "active" : ""} onClick={useThisMonthPeriod}>This month</button><button className={accountingPeriodMode === "lifetime" ? "active" : ""} onClick={useLifetimePeriod}>Lifetime</button><button className={accountingPeriodMode === "custom" ? "active" : ""} onClick={useCustomPeriod}>Calendar</button></div><label className={dateInputsDisabled ? "locked" : ""}>From<input type="date" value={accountingStartDate} disabled={dateInputsDisabled} onChange={(event) => setAccountingStartDate(event.target.value)} /></label><label className={dateInputsDisabled ? "locked" : ""}>To<input type="date" value={accountingEndDate} disabled={dateInputsDisabled} onChange={(event) => setAccountingEndDate(event.target.value)} /></label></div></section>;
+  const dateFilter = <section className="card accounting-date-filter"><div className="accounting-date-copy"><strong>{t("Accounting period")}</strong><span>{t("This date range is shared by General Journal, T Accounts, Unit Costs, and Financial Reports.")}</span></div><div className="accounting-period-panel"><div className="accounting-period-selector"><button className={accountingPeriodMode === "this_month" ? "active" : ""} onClick={useThisMonthPeriod}>{t("This month")}</button><button className={accountingPeriodMode === "lifetime" ? "active" : ""} onClick={useLifetimePeriod}>{t("Lifetime")}</button><button className={accountingPeriodMode === "custom" ? "active" : ""} onClick={useCustomPeriod}>{t("Calendar")}</button></div><label className={dateInputsDisabled ? "locked" : ""}>{t("From")}<input type="date" value={accountingStartDate} disabled={dateInputsDisabled} onChange={(event) => setAccountingStartDate(event.target.value)} /></label><label className={dateInputsDisabled ? "locked" : ""}>{t("To")}<input type="date" value={accountingEndDate} disabled={dateInputsDisabled} onChange={(event) => setAccountingEndDate(event.target.value)} /></label></div></section>;
   const unitCostRows = purchaseBatchStates
     .filter((batch) => (!accountingStartDate || batch.date >= accountingStartDate) && (!accountingEndDate || batch.date <= accountingEndDate));
   const unitCostSummaries = Object.values(unitCostRows.reduce<Record<string, { itemName: string; purchaseCount: number; totalQuantity: number; quantityLeft: number; quantityRejected: number; totalCost: number; latestUnitCost: number; latestPurchaseDate: string }>>((groups, row) => {
@@ -8803,118 +8825,118 @@ function FormalAccountingWorkspacePage({
   };
 
   if (view === "accounting_unit_costs") return <section className="accounting-workspace">
-    <div className="accounting-hero card"><div><p>ACCOUNTING</p><h2>Unit Costs</h2><span>Each inventory item is shown by FIFO batch. Sales consume the earliest batch first; rejected inventory is removed as an expense.</span></div><div className="accounting-status-pill">{unitCostRows.length} batches</div></div>
+    <div className="accounting-hero card"><div><p>{t("ACCOUNTING")}</p><h2>{t("Unit Costs")}</h2><span>{t("Each inventory item is shown by FIFO batch. Sales consume the earliest batch first; rejected inventory is removed as an expense.")}</span></div><div className="accounting-status-pill">{unitCostRows.length} {" " + t("batches")}</div></div>
     {dateFilter}
     <section className="accounting-summary-grid">
-      <MoneyStat label="Inventory purchases" value={unitCostRows.reduce((total, row) => total + row.totalCost, 0)} tone="sales" />
-      <Stat label="Items tracked" value={unitCostSummaries.length} color="navy" />
-      <Stat label="Units left" value={unitCostRows.reduce((total, row) => total + row.quantityLeft, 0)} color="green" />
+      <MoneyStat label={t("Inventory purchases")} value={unitCostRows.reduce((total, row) => total + row.totalCost, 0)} tone="sales" />
+      <Stat label={t("Items tracked")} value={unitCostSummaries.length} color="navy" />
+      <Stat label={t("Units left")} value={unitCostRows.reduce((total, row) => total + row.quantityLeft, 0)} color="green" />
     </section>
     <section className="card accounting-table-card">
       <div className="accounting-form-heading">
         <div>
-          <h3>COGS settings</h3>
-          <p>Map each sold character to the inventory it consumes. COGS follows FIFO: the earliest batch price is used first, then the next batch once it runs out.</p>
+          <h3>{t("COGS settings")}</h3>
+          <p>{t("Map each sold character to the inventory it consumes. COGS follows FIFO: the earliest batch price is used first, then the next batch once it runs out.")}</p>
         </div>
       </div>
       <div className="range-tabs t-account-tabs">
         {stockCharacters.map((character) => <button key={character} className={selectedCogsSku === character ? "active" : ""} onClick={() => onSalesConsumptionMappingFormChange({ sku: character })}>{character}</button>)}
       </div>
       <div className="cogs-rule-form">
-        <label className="cogs-rule-field">Inventory account used<select value={salesConsumptionMappingForm.inventoryItem} onChange={(input) => onSalesConsumptionMappingFormChange({ inventoryItem: input.target.value })}><option value="">Choose inventory account</option>{inventoryMappingOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-        <label className="cogs-rule-field">Units used per sale<input type="number" min="0" step="0.0001" value={salesConsumptionMappingForm.quantityPerSale} onChange={(input) => onSalesConsumptionMappingFormChange({ quantityPerSale: input.target.value })} /></label>
+        <label className="cogs-rule-field">{t("Inventory account used")}<select value={salesConsumptionMappingForm.inventoryItem} onChange={(input) => onSalesConsumptionMappingFormChange({ inventoryItem: input.target.value })}><option value="">{t("Choose inventory account")}</option>{inventoryMappingOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+        <label className="cogs-rule-field">{t("Units used per sale")}<input type="number" min="0" step="0.0001" value={salesConsumptionMappingForm.quantityPerSale} onChange={(input) => onSalesConsumptionMappingFormChange({ quantityPerSale: input.target.value })} /></label>
       </div>
-      {!inventoryMappingOptions.length && <p className="accounting-file-name">No inventory accounts found yet. Add inventory items in Book Keeping first.</p>}
-      <button className="button primary" disabled={saving} onClick={onSaveSalesConsumptionRule}>{saving ? "Saving..." : `Add item for ${selectedCogsSku}`}</button>
-      <div className="table-scroll"><table className="orders-table unit-cost-table"><thead><tr><th>Inventory used</th><th>Units per sale</th><th>COGS account</th><th>Next FIFO batch</th><th /></tr></thead><tbody>{selectedSalesConsumptionMappings.map((mapping) => {
+      {!inventoryMappingOptions.length && <p className="accounting-file-name">{t("No inventory accounts found yet. Add inventory items in Book Keeping first.")}</p>}
+      <button className="button primary" disabled={saving} onClick={onSaveSalesConsumptionRule}>{saving ? t("Saving...") : `Add item for ${selectedCogsSku}`}</button>
+      <div className="table-scroll"><table className="orders-table unit-cost-table"><thead><tr><th>{t("Inventory used")}</th><th>{t("Units per sale")}</th><th>{t("COGS account")}</th><th>{t("Next FIFO batch")}</th><th /></tr></thead><tbody>{selectedSalesConsumptionMappings.map((mapping) => {
         const inventoryUsed = inventoryAccountKey(mapping.inventoryItem);
         const nextBatch = inventoryUsed ? nextFifoBatchForItem(inventoryUsed) : undefined;
-        return <tr key={mapping.id}><td>{inventoryUsed || "-"}</td><td>{mapping.quantityPerSale.toLocaleString("en-MY")}</td><td>{inventoryUsed ? cogsAccountForInventoryItem(inventoryUsed) : "-"}</td><td>{nextBatch ? `Batch ${nextBatch.batchNumber} - ${formatMoney(nextBatch.unitCost)} (${nextBatch.quantityLeft.toLocaleString("en-MY")} left)` : inventoryUsed ? "No stock batch left" : "-"}</td><td><button className="view-button danger-text" onClick={() => onRemoveSalesConsumptionRule(mapping)}>Delete</button></td></tr>;
-      })}</tbody></table>{!selectedSalesConsumptionMappings.length && <div className="empty"><strong>No COGS mappings for {selectedCogsSku} yet</strong><p>Add inventory items above. Example: Billy uses 1 NFC Card, then FIFO pulls from the oldest NFC Card batch first.</p></div>}</div>
+        return <tr key={mapping.id}><td>{inventoryUsed || "-"}</td><td>{mapping.quantityPerSale.toLocaleString("en-MY")}</td><td>{inventoryUsed ? cogsAccountForInventoryItem(inventoryUsed) : "-"}</td><td>{nextBatch ? `Batch ${nextBatch.batchNumber} - ${formatMoney(nextBatch.unitCost)} (${nextBatch.quantityLeft.toLocaleString("en-MY")} left)` : inventoryUsed ? t("No stock batch left") : "-"}</td><td><button className="view-button danger-text" onClick={() => onRemoveSalesConsumptionRule(mapping)}>{t("Delete")}</button></td></tr>;
+      })}</tbody></table>{!selectedSalesConsumptionMappings.length && <div className="empty"><strong>{t("No COGS mappings for") + " "}{selectedCogsSku} {" " + t("yet")}</strong><p>{t("Add inventory items above. Example: Billy uses 1 NFC Card, then FIFO pulls from the oldest NFC Card batch first.")}</p></div>}</div>
     </section>
     <section className="card accounting-table-card">
-      <div className="accounting-form-heading"><div><h3>Inventory item overview</h3><p>Quantity left is calculated after FIFO sales and rejected inventory removals.</p></div><label className="unit-cost-filter">Item<select value={selectedUnitCostItem} onChange={(event) => setSelectedUnitCostItem(event.target.value)}><option value="all">View all</option>{unitCostSummaries.map((summary) => <option key={summary.itemName} value={summary.itemName}>{summary.itemName}</option>)}</select></label></div>
-      <div className="table-scroll"><table className="orders-table unit-cost-table"><thead><tr><th>Item</th><th>Batches</th><th>Quantity bought</th><th>Quantity rejected</th><th>Quantity left</th><th>Weighted avg unit cost</th><th>Latest unit cost</th></tr></thead><tbody>
+      <div className="accounting-form-heading"><div><h3>{t("Inventory item overview")}</h3><p>{t("Quantity left is calculated after FIFO sales and rejected inventory removals.")}</p></div><label className="unit-cost-filter">{t("Item")}<select value={selectedUnitCostItem} onChange={(event) => setSelectedUnitCostItem(event.target.value)}><option value="all">{t("View all")}</option>{unitCostSummaries.map((summary) => <option key={summary.itemName} value={summary.itemName}>{summary.itemName}</option>)}</select></label></div>
+      <div className="table-scroll"><table className="orders-table unit-cost-table"><thead><tr><th>{t("Item")}</th><th>{t("Batches")}</th><th>{t("Quantity bought")}</th><th>{t("Quantity rejected")}</th><th>{t("Quantity left")}</th><th>{t("Weighted avg unit cost")}</th><th>{t("Latest unit cost")}</th></tr></thead><tbody>
         {unitCostSummaries.filter((summary) => selectedUnitCostItem === "all" || summary.itemName === selectedUnitCostItem).map((summary) => <tr key={summary.itemName}><td><strong>{summary.itemName}</strong></td><td>{summary.purchaseCount}</td><td>{summary.totalQuantity.toLocaleString("en-MY")}</td><td>{summary.quantityRejected.toLocaleString("en-MY")}</td><td><strong>{summary.quantityLeft.toLocaleString("en-MY")}</strong></td><td>{formatMoney(summary.totalQuantity > 0 ? summary.totalCost / summary.totalQuantity : 0)}</td><td>{formatMoney(summary.latestUnitCost)}</td></tr>)}
-        {!unitCostSummaries.length && <tr><td colSpan={7}>No inventory purchase batches found for this period.</td></tr>}
+        {!unitCostSummaries.length && <tr><td colSpan={7}>{t("No inventory purchase batches found for this period.")}</td></tr>}
       </tbody></table></div>
     </section>
     <section className="card accounting-table-card">
-      <h3>FIFO batch details</h3>
-      <div className="table-scroll"><table className="orders-table unit-cost-table"><thead><tr><th>Item</th><th>Date bought</th><th>Batch no.</th><th>Quantity bought</th><th>Quantity sold</th><th>Quantity rejected</th><th>Quantity left</th><th>Price</th><th>Batch cost</th></tr></thead><tbody>
-        {visibleUnitCostRows.map((row) => <tr key={row.id}><td><strong>{row.itemName}</strong></td><td>{formatDate(row.date)}</td><td>Batch {row.batchNumber}</td><td>{row.quantityBought.toLocaleString("en-MY")}</td><td>{row.quantitySold.toLocaleString("en-MY")}</td><td>{row.quantityRejected.toLocaleString("en-MY")}</td><td><strong>{row.quantityLeft.toLocaleString("en-MY")}</strong></td><td>{formatMoney(row.unitCost)}</td><td>{formatMoney(row.totalCost)}</td></tr>)}
-        {!visibleUnitCostRows.length && <tr><td colSpan={9}>No purchase details match this item and period.</td></tr>}
+      <h3>{t("FIFO batch details")}</h3>
+      <div className="table-scroll"><table className="orders-table unit-cost-table"><thead><tr><th>{t("Item")}</th><th>{t("Date bought")}</th><th>{t("Batch no.")}</th><th>{t("Quantity bought")}</th><th>{t("Quantity sold")}</th><th>{t("Quantity rejected")}</th><th>{t("Quantity left")}</th><th>{t("Price")}</th><th>{t("Batch cost")}</th></tr></thead><tbody>
+        {visibleUnitCostRows.map((row) => <tr key={row.id}><td><strong>{row.itemName}</strong></td><td>{formatDate(row.date)}</td><td>{t("Batch") + " "}{row.batchNumber}</td><td>{row.quantityBought.toLocaleString("en-MY")}</td><td>{row.quantitySold.toLocaleString("en-MY")}</td><td>{row.quantityRejected.toLocaleString("en-MY")}</td><td><strong>{row.quantityLeft.toLocaleString("en-MY")}</strong></td><td>{formatMoney(row.unitCost)}</td><td>{formatMoney(row.totalCost)}</td></tr>)}
+        {!visibleUnitCostRows.length && <tr><td colSpan={9}>{t("No purchase details match this item and period.")}</td></tr>}
       </tbody></table></div>
     </section>
   </section>;
 
   if (view === "accounting_financial_reports") return <section className="accounting-workspace">
-    <div className="accounting-hero card"><div><p>ACCOUNTING</p><h2>Financial Reports</h2><span>Choose one statement, set the accounting period, then print or save as PDF.</span></div><div className="accounting-status-pill">{financialReportLabels[selectedFinancialReport]}</div></div>
+    <div className="accounting-hero card"><div><p>{t("ACCOUNTING")}</p><h2>{t("Financial Reports")}</h2><span>{t("Choose one statement, set the accounting period, then print or save as PDF.")}</span></div><div className="accounting-status-pill">{financialReportLabels[selectedFinancialReport]}</div></div>
     {dateFilter}
-    <div className="range-tabs t-account-tabs no-print">{(Object.entries(financialReportLabels) as [FinancialReportType, string][]).map(([key, label]) => <button key={key} className={selectedFinancialReport === key ? "active" : ""} onClick={() => setSelectedFinancialReport(key)}>{label}</button>)}</div>
-    <div className="financial-report-actions no-print"><button className="button primary" onClick={() => printView("print-financial-report")}>Print / Save PDF</button></div>
+    <div className="range-tabs t-account-tabs no-print">{(Object.entries(financialReportLabels) as [FinancialReportType, string][]).map(([key, label]) => <button key={key} className={selectedFinancialReport === key ? "active" : ""} onClick={() => setSelectedFinancialReport(key)}>{t(label)}</button>)}</div>
+    <div className="financial-report-actions no-print"><button className="button primary" onClick={() => printView("print-financial-report")}>{t("Print / Save PDF")}</button></div>
     <section className="financial-statement card">
-      <header className="financial-statement-title"><p>Meaningful Plushies</p><h2>{financialReportLabels[selectedFinancialReport]}</h2><span>{selectedFinancialReport === "balance_sheet" ? `As at ${accountingEndDate ? formatDate(accountingEndDate) : formatDate(dateKey(new Date().toISOString()))}` : `For the period ${periodLabel}`}</span></header>
+      <header className="financial-statement-title"><p>{t("Meaningful Plushies")}</p><h2>{financialReportLabels[selectedFinancialReport]}</h2><span>{selectedFinancialReport === "balance_sheet" ? `As at ${accountingEndDate ? formatDate(accountingEndDate) : formatDate(dateKey(new Date().toISOString()))}` : `For the period ${periodLabel}`}</span></header>
       {selectedFinancialReport === "income_statement" && <div className="statement-table">
-        <div className="statement-section-title">Revenue</div>
+        <div className="statement-section-title">{t("Revenue")}</div>
         {salesRevenueRows.map((item) => <div className="statement-row" key={item.name}><span>{item.name}</span><strong>{formatMoney(Math.abs(item.balance))}</strong></div>)}
-        {!salesRevenueRows.length && <div className="statement-row muted"><span>No revenue recorded</span><strong>{formatMoney(0)}</strong></div>}
-        <div className="statement-total"><span>Total revenue</span><strong>{formatMoney(salesRevenue)}</strong></div>
-        <div className="statement-section-title">Less: Cost of Goods Sold</div>
+        {!salesRevenueRows.length && <div className="statement-row muted"><span>{t("No revenue recorded")}</span><strong>{formatMoney(0)}</strong></div>}
+        <div className="statement-total"><span>{t("Total revenue")}</span><strong>{formatMoney(salesRevenue)}</strong></div>
+        <div className="statement-section-title">{t("Less: Cost of Goods Sold")}</div>
         {costOfGoodsSoldRows.map((item) => <div className="statement-row" key={item.name}><span>{item.name}</span><strong>{formatMoney(Math.abs(item.balance))}</strong></div>)}
-        {!costOfGoodsSoldRows.length && <div className="statement-row muted"><span>No cost of goods sold recorded</span><strong>{formatMoney(0)}</strong></div>}
-        <div className="statement-total"><span>Total cost of goods sold</span><strong>{formatMoney(totalCostOfGoodsSold)}</strong></div>
-        <div className="statement-grand-total statement-gross-profit"><span>Gross profit</span><strong>{formatMoney(grossProfit)}</strong></div>
-        <div className="statement-section-title">Less: Operating Expenses</div>
+        {!costOfGoodsSoldRows.length && <div className="statement-row muted"><span>{t("No cost of goods sold recorded")}</span><strong>{formatMoney(0)}</strong></div>}
+        <div className="statement-total"><span>{t("Total cost of goods sold")}</span><strong>{formatMoney(totalCostOfGoodsSold)}</strong></div>
+        <div className="statement-grand-total statement-gross-profit"><span>{t("Gross profit")}</span><strong>{formatMoney(grossProfit)}</strong></div>
+        <div className="statement-section-title">{t("Less: Operating Expenses")}</div>
         {operatingExpenses.map((item) => <div className="statement-row" key={item.name}><span>{item.name}</span><strong>{formatMoney(Math.abs(item.balance))}</strong></div>)}
-        {!operatingExpenses.length && <div className="statement-row muted"><span>No expenses recorded</span><strong>{formatMoney(0)}</strong></div>}
-        <div className="statement-total"><span>Total expenses</span><strong>{formatMoney(totalExpenses)}</strong></div>
-        <div className="statement-grand-total"><span>Net profit / (loss)</span><strong>{formatMoney(netProfit)}</strong></div>
+        {!operatingExpenses.length && <div className="statement-row muted"><span>{t("No expenses recorded")}</span><strong>{formatMoney(0)}</strong></div>}
+        <div className="statement-total"><span>{t("Total expenses")}</span><strong>{formatMoney(totalExpenses)}</strong></div>
+        <div className="statement-grand-total"><span>{t("Net profit / (loss)")}</span><strong>{formatMoney(netProfit)}</strong></div>
       </div>}
       {selectedFinancialReport === "balance_sheet" && <div className="statement-table">
-        <div className="statement-section-title">Assets</div>
+        <div className="statement-section-title">{t("Assets")}</div>
         {assetReportRows.map((item) => <div className="statement-row" key={item.name}><span>{item.name}</span><strong>{formatMoney(item.balance)}</strong></div>)}
-        {!assetReportRows.length && <div className="statement-row muted"><span>No assets recorded</span><strong>{formatMoney(0)}</strong></div>}
-        <div className="statement-total"><span>Total assets</span><strong>{formatMoney(totalAssets)}</strong></div>
-        <div className="statement-section-title">Equity</div>
-        <div className="statement-row"><span>Current year earnings</span><strong>{formatMoney(netProfit)}</strong></div>
+        {!assetReportRows.length && <div className="statement-row muted"><span>{t("No assets recorded")}</span><strong>{formatMoney(0)}</strong></div>}
+        <div className="statement-total"><span>{t("Total assets")}</span><strong>{formatMoney(totalAssets)}</strong></div>
+        <div className="statement-section-title">{t("Equity")}</div>
+        <div className="statement-row"><span>{t("Current year earnings")}</span><strong>{formatMoney(netProfit)}</strong></div>
         {equityRows.map((item) => <div className="statement-row" key={item.name}><span>{item.name}</span><strong>{formatMoney(item.name.includes("Drawing") ? -Math.abs(item.balance) : Math.abs(item.balance))}</strong></div>)}
-        <div className="statement-total"><span>Total equity</span><strong>{formatMoney(totalEquity)}</strong></div>
-        <div className="statement-grand-total"><span>Total equity and liabilities</span><strong>{formatMoney(totalEquity)}</strong></div>
+        <div className="statement-total"><span>{t("Total equity")}</span><strong>{formatMoney(totalEquity)}</strong></div>
+        <div className="statement-grand-total"><span>{t("Total equity and liabilities")}</span><strong>{formatMoney(totalEquity)}</strong></div>
       </div>}
       {selectedFinancialReport === "cash_summary" && <div className="statement-table">
-        <div className="statement-row"><span>Opening cash balance</span><strong>{formatMoney(openingCashBalance)}</strong></div>
+        <div className="statement-row"><span>{t("Opening cash balance")}</span><strong>{formatMoney(openingCashBalance)}</strong></div>
         {cashFlowSections.map((section) => {
           const rows = cashFlowRows.filter((row) => row.activity === section.key);
           const total = cashFlowSectionTotal(section.key);
           return <div className="cash-flow-section" key={section.key}>
             <div className="statement-section-title">{section.title}</div>
             {rows.map((row) => <div className="statement-row cash-flow-row" key={row.id}><span><small>{formatDate(row.date)}</small>{row.details}</span><strong>{formatMoney(row.amount)}</strong></div>)}
-            {!rows.length && <div className="statement-row muted"><span>No cash movements recorded</span><strong>{formatMoney(0)}</strong></div>}
-            <div className="statement-total"><span>Net cash from {section.key} activities</span><strong>{formatMoney(total)}</strong></div>
+            {!rows.length && <div className="statement-row muted"><span>{t("No cash movements recorded")}</span><strong>{formatMoney(0)}</strong></div>}
+            <div className="statement-total"><span>{t("Net cash from") + " "}{section.key} {" " + t("activities")}</span><strong>{formatMoney(total)}</strong></div>
           </div>;
         })}
-        <div className="statement-grand-total"><span>Net increase / (decrease) in cash</span><strong>{formatMoney(netCashFlow)}</strong></div>
-        <div className="statement-total"><span>Closing cash balance</span><strong>{formatMoney(closingCashBalance)}</strong></div>
-        <div className={`statement-reconciliation ${cashReconciles ? "ok" : "error"}`}><span>Reconciliation to cash accounts</span><strong>{cashReconciles ? "Matched" : `Difference ${formatMoney(closingCashBalance - cashAccountsClosingBalance)}`}</strong></div>
+        <div className="statement-grand-total"><span>{t("Net increase / (decrease) in cash")}</span><strong>{formatMoney(netCashFlow)}</strong></div>
+        <div className="statement-total"><span>{t("Closing cash balance")}</span><strong>{formatMoney(closingCashBalance)}</strong></div>
+        <div className={`statement-reconciliation ${cashReconciles ? "ok" : "error"}`}><span>{t("Reconciliation to cash accounts")}</span><strong>{cashReconciles ? t("Matched") : `Difference ${formatMoney(closingCashBalance - cashAccountsClosingBalance)}`}</strong></div>
       </div>}
     </section>
   </section>;
 
   if (view === "accounting_t_accounts") return <section className="accounting-workspace">
-    <div className="accounting-hero card"><div><p>ACCOUNTING</p><h2>T Accounts</h2><span>All created bookkeeping accounts appear here, even before they have transactions. Debits and credits are grouped by account section.</span></div><div className="accounting-status-pill">{totalTAccounts} accounts</div></div>
+    <div className="accounting-hero card"><div><p>{t("ACCOUNTING")}</p><h2>{t("T Accounts")}</h2><span>{t("All created bookkeeping accounts appear here, even before they have transactions. Debits and credits are grouped by account section.")}</span></div><div className="accounting-status-pill">{totalTAccounts} {" " + t("accounts")}</div></div>
     {dateFilter}
     <section className="accounting-summary-grid">
-      <MoneyStat label="Total debits" value={totalDebits} tone="sales" />
-      <MoneyStat label="Total credits" value={totalCredits} tone="collected" />
-      <MoneyStat label="Difference" value={Math.abs(totalDebits - totalCredits)} tone={Math.abs(totalDebits - totalCredits) > 0.01 ? "fees" : "transfer"} />
+      <MoneyStat label={t("Total debits")} value={totalDebits} tone="sales" />
+      <MoneyStat label={t("Total credits")} value={totalCredits} tone="collected" />
+      <MoneyStat label={t("Difference")} value={Math.abs(totalDebits - totalCredits)} tone={Math.abs(totalDebits - totalCredits) > 0.01 ? "fees" : "transfer"} />
     </section>
     <div className="range-tabs t-account-tabs">{tAccountSections.map((section) => <button key={section.title} className={selectedTAccountSection === section.title ? "active" : ""} onClick={() => { setSelectedTAccountSection(section.title); setSelectedTAccountName("all"); }}>{section.title}</button>)}</div>
-    <label className="t-account-selector">T account<select value={selectedTAccountName} onChange={(event) => setSelectedTAccountName(event.target.value)}><option value="all">View all</option>{selectedSectionAccountNames.map((accountName) => <option key={accountName} value={accountName}>{accountName}</option>)}</select></label>
+    <label className="t-account-selector">{t("T account")}<select value={selectedTAccountName} onChange={(event) => setSelectedTAccountName(event.target.value)}><option value="all">{t("View all")}</option>{selectedSectionAccountNames.map((accountName) => <option key={accountName} value={accountName}>{accountName}</option>)}</select></label>
     {[selectedSection].map((section) => {
       const accountNames = visibleAccountNames;
       return <section className="accounting-workspace" key={section.title}>
-        <div className="reporting-header"><div><strong>{section.title}</strong><span>{accountNames.length} T account{accountNames.length === 1 ? "" : "s"}</span></div></div>
+        <div className="reporting-header"><div><strong>{section.title}</strong><span>{accountNames.length} {" " + t("T account")}{accountNames.length === 1 ? "" : t("s")}</span></div></div>
         <section className="t-account-list">
           {accountNames.map((accountName) => {
             const entries = [...(accountGroups[accountName] ?? [])].sort((a, b) => {
@@ -8943,42 +8965,43 @@ function FormalAccountingWorkspacePage({
             const sideTotal = Math.max(debitRows.reduce((total, row) => total + row.amount, 0), creditRows.reduce((total, row) => total + row.amount, 0));
             return <article className="card accounting-table-card t-account-card" key={`${section.title}-${accountName}`}>
               <h3>{accountName}</h3>
-              <div className="table-scroll t-account-scroll"><table className="orders-table t-account-table"><colgroup><col className="t-date-col" /><col className="t-details-col" /><col className="t-amount-col" /><col className="t-date-col" /><col className="t-details-col" /><col className="t-amount-col" /></colgroup><thead><tr><th colSpan={3}>Debit</th><th colSpan={3}>Credit</th></tr><tr><th>Date</th><th>Details</th><th>Amount</th><th>Date</th><th>Details</th><th>Amount</th></tr></thead><tbody>{Array.from({ length: rowCount }).map((_, index) => {
+              <div className="table-scroll t-account-scroll"><table className="orders-table t-account-table"><colgroup><col className="t-date-col" /><col className="t-details-col" /><col className="t-amount-col" /><col className="t-date-col" /><col className="t-details-col" /><col className="t-amount-col" /></colgroup><thead><tr><th colSpan={3}>{t("Debit")}</th><th colSpan={3}>{t("Credit")}</th></tr><tr><th>{t("Date")}</th><th>{t("Details")}</th><th>{t("Amount")}</th><th>{t("Date")}</th><th>{t("Details")}</th><th>{t("Amount")}</th></tr></thead><tbody>{Array.from({ length: rowCount }).map((_, index) => {
                 const debit = debitRows[index];
                 const credit = creditRows[index];
                 return <tr key={`${accountName}-${index}`}><td>{debit?.date ? formatDate(debit.date) : ""}</td><td>{debit?.details ?? ""}</td><td>{debit ? formatMoney(debit.amount) : ""}</td><td>{credit?.date ? formatDate(credit.date) : ""}</td><td>{credit?.details ?? ""}</td><td>{credit ? formatMoney(credit.amount) : ""}</td></tr>;
-              })}<tr><td /><td><strong>Total</strong></td><td><strong>{formatMoney(sideTotal)}</strong></td><td /><td><strong>Total</strong></td><td><strong>{formatMoney(sideTotal)}</strong></td></tr><tr className="t-account-balance-row"><td colSpan={6}><strong>Balance: {formatMoney(Math.abs(closingBalance))} {closingBalance >= 0 ? "debit" : "credit"}</strong></td></tr></tbody></table></div>
+              })}<tr><td /><td><strong>{t("Total")}</strong></td><td><strong>{formatMoney(sideTotal)}</strong></td><td /><td><strong>{t("Total")}</strong></td><td><strong>{formatMoney(sideTotal)}</strong></td></tr><tr className="t-account-balance-row"><td colSpan={6}><strong>{t("Balance:") + " "}{formatMoney(Math.abs(closingBalance))} {closingBalance >= 0 ? t("debit") : t("credit")}</strong></td></tr></tbody></table></div>
             </article>;
           })}
-          {!accountNames.length && <div className="empty"><strong>No {section.title.toLowerCase()} accounts yet</strong><p>Add category items in Book Keeping Settings and they will appear here.</p></div>}
+          {!accountNames.length && <div className="empty"><strong>{t("No") + " "}{section.title.toLowerCase()} {" " + t("accounts yet")}</strong><p>{t("Add category items in Book Keeping Settings and they will appear here.")}</p></div>}
         </section>
       </section>;
     })}
   </section>;
 
   return <section className="accounting-workspace">
-    <div className="accounting-hero card"><div><p>ACCOUNTING</p><h2>General Journal</h2><span>Every bookkeeping transaction is converted into debit and credit journal lines. This is the formal journal before posting to T accounts.</span></div><div className="accounting-status-pill">{ledgerEntries.length} lines</div></div>
+    <div className="accounting-hero card"><div><p>{t("ACCOUNTING")}</p><h2>{t("General Journal")}</h2><span>{t("Every bookkeeping transaction is converted into debit and credit journal lines. This is the formal journal before posting to T accounts.")}</span></div><div className="accounting-status-pill">{ledgerEntries.length} {" " + t("lines")}</div></div>
     {dateFilter}
     <section className="accounting-summary-grid">
-      <MoneyStat label="Journal debits" value={totalDebits} tone="sales" />
-      <MoneyStat label="Journal credits" value={totalCredits} tone="collected" />
-      <MoneyStat label="Out of balance" value={Math.abs(totalDebits - totalCredits)} tone={Math.abs(totalDebits - totalCredits) > 0.01 ? "fees" : "transfer"} />
+      <MoneyStat label={t("Journal debits")} value={totalDebits} tone="sales" />
+      <MoneyStat label={t("Journal credits")} value={totalCredits} tone="collected" />
+      <MoneyStat label={t("Out of balance")} value={Math.abs(totalDebits - totalCredits)} tone={Math.abs(totalDebits - totalCredits) > 0.01 ? "fees" : "transfer"} />
     </section>
-    <div className="ledger-export-actions no-print"><button className="button primary" disabled={!journalRows.length} onClick={downloadGeneralJournalCsv}>Download General Journal CSV</button></div>
-    <section className="card accounting-table-card general-journal-card"><h3>Journal entries</h3><div className="table-scroll general-journal-scroll"><table className="orders-table general-journal-table"><colgroup><col className="journal-date-col" /><col className="journal-ref-col" /><col className="journal-account-col" /><col className="journal-description-col" /><col className="journal-money-col" /><col className="journal-money-col" /></colgroup><thead><tr><th>Date</th><th>Reference</th><th>Account</th><th>Description</th><th>Debit</th><th>Credit</th></tr></thead><tbody>{journalRows.map((row, index) => {
+    <div className="ledger-export-actions no-print"><button className="button primary" disabled={!journalRows.length} onClick={downloadGeneralJournalCsv}>{t("Download General Journal CSV")}</button></div>
+    <section className="card accounting-table-card general-journal-card"><h3>{t("Journal entries")}</h3><div className="table-scroll general-journal-scroll"><table className="orders-table general-journal-table"><colgroup><col className="journal-date-col" /><col className="journal-ref-col" /><col className="journal-account-col" /><col className="journal-description-col" /><col className="journal-money-col" /><col className="journal-money-col" /></colgroup><thead><tr><th>{t("Date")}</th><th>{t("Reference")}</th><th>{t("Account")}</th><th>{t("Description")}</th><th>{t("Debit")}</th><th>{t("Credit")}</th></tr></thead><tbody>{journalRows.map((row, index) => {
       const nextRow = journalRows[index + 1];
       const isGroupEnd = !nextRow || nextRow.reference !== row.reference || nextRow.date !== row.date;
       return <tr key={row.id} className={isGroupEnd ? "journal-group-end" : ""}><td>{formatDate(row.date)}</td><td>{row.reference}</td><td><strong>{row.account}</strong><br /><small>{row.accountNote}</small></td><td>{row.description}</td><td>{row.debit ? formatMoney(row.debit) : "-"}</td><td>{row.credit ? formatMoney(row.credit) : "-"}</td></tr>;
-    })}</tbody></table>{!journalRows.length && <div className="empty"><strong>No journal entries in this period</strong><p>Change the date range or save more bookkeeping transactions.</p></div>}</div></section>
+    })}</tbody></table>{!journalRows.length && <div className="empty"><strong>{t("No journal entries in this period")}</strong><p>{t("Change the date range or save more bookkeeping transactions.")}</p></div>}</div></section>
   </section>;
 }
 
 function UnsettledPaymentsTable({ transactions, files, saving, onFileChange, onSettle }: { transactions: AccountingTransaction[]; files: Record<string, File | null>; saving: boolean; onFileChange: (transactionId: string, file: File | null) => void; onSettle: (transaction: AccountingTransaction) => void }) {
+  const { t } = useLanguage();
   function remaining(transaction: AccountingTransaction) {
     if (transaction.paymentStatus === "deposit_paid") return Math.max(0, transaction.amount - transaction.depositAmount);
     return transaction.amount;
   }
-  return <section className="card accounting-table-card"><h3>To be paid</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>Date</th><th>Description</th><th>Supplier</th><th>Total</th><th>Paid</th><th>Remaining</th><th>Payment proof</th><th /></tr></thead><tbody>{transactions.map((transaction) => <tr key={transaction.id}><td>{formatDate(transaction.transactionDate)}</td><td><strong>{transaction.description}</strong><br /><small>{transaction.invoiceNumber ? `Invoice ${transaction.invoiceNumber}` : transaction.businessEvent}</small></td><td>{transaction.supplier || "-"}</td><td>{formatMoney(transaction.amount)}</td><td>{transaction.paymentStatus === "deposit_paid" ? formatMoney(transaction.depositAmount) : "-"}</td><td><strong>{formatMoney(remaining(transaction))}</strong></td><td><FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title="Upload proof" description="Drop file here" selectedName={files[transaction.id]?.name} onFile={(file) => onFileChange(transaction.id, file)} className="inline-file-drop-zone" /></td><td><button className="view-button" disabled={saving} onClick={() => onSettle(transaction)}>Mark paid</button></td></tr>)}</tbody></table>{!transactions.length && <div className="empty"><strong>No unsettled payments</strong><p>Deposit-paid and on-credit transactions will appear here until they are marked paid.</p></div>}</div></section>;
+  return <section className="card accounting-table-card"><h3>{t("To be paid")}</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>{t("Date")}</th><th>{t("Description")}</th><th>{t("Supplier")}</th><th>{t("Total")}</th><th>{t("Paid")}</th><th>{t("Remaining")}</th><th>{t("Payment proof")}</th><th /></tr></thead><tbody>{transactions.map((transaction) => <tr key={transaction.id}><td>{formatDate(transaction.transactionDate)}</td><td><strong>{transaction.description}</strong><br /><small>{transaction.invoiceNumber ? `Invoice ${transaction.invoiceNumber}` : transaction.businessEvent}</small></td><td>{transaction.supplier || "-"}</td><td>{formatMoney(transaction.amount)}</td><td>{transaction.paymentStatus === "deposit_paid" ? formatMoney(transaction.depositAmount) : "-"}</td><td><strong>{formatMoney(remaining(transaction))}</strong></td><td><FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title={t("Upload proof")} description={t("Drop file here")} selectedName={files[transaction.id]?.name} onFile={(file) => onFileChange(transaction.id, file)} className="inline-file-drop-zone" /></td><td><button className="view-button" disabled={saving} onClick={() => onSettle(transaction)}>{t("Mark paid")}</button></td></tr>)}</tbody></table>{!transactions.length && <div className="empty"><strong>{t("No unsettled payments")}</strong><p>{t("Deposit-paid and on-credit transactions will appear here until they are marked paid.")}</p></div>}</div></section>;
 }
 
 const creatorTierDefaults: Record<CreatorTier, { label: string; rate: number; requirement: string }> = {
@@ -9062,6 +9085,7 @@ function CreatorProgramWorkspacePage({
   onSavePayout: (payout: CreatorPayout) => Promise<void>;
   onSyncLocalFreeCreatorSamples: () => Promise<{ samples: FreeCreatorSample[]; imported: number; skipped: number; failed: number }>;
 }) {
+  const { t } = useLanguage();
   const admin = session.role === "admin";
   const [message, setMessage] = useState("");
   const [form, setForm] = useState(creatorFormDefaults);
@@ -9535,51 +9559,51 @@ function CreatorProgramWorkspacePage({
   }
 
   if (!admin && !currentProfile) {
-    return <section className="creator-workspace"><div className="creator-hero card"><div><p>CREATOR PROGRAM</p><h2>Creator profile not ready yet</h2><span>Ask an admin to finish assigning your creator profile and discount code.</span></div></div></section>;
+    return <section className="creator-workspace"><div className="creator-hero card"><div><p>{t("CREATOR PROGRAM")}</p><h2>{t("Creator profile not ready yet")}</h2><span>{t("Ask an admin to finish assigning your creator profile and discount code.")}</span></div></div></section>;
   }
 
   if (view === "creator_free_samples" && admin) {
     return <section className="creator-workspace">
-      <div className="creator-hero card"><div><p>CREATOR PROGRAM</p><h2>Free Creator Sample</h2><span>Track every creator who received a free sample code, then pair the row to the order once they claim it.</span></div><div className="creator-sample-hero-actions"><button className="button secondary small" type="button" onClick={upgradeActiveCreatorSampleShipping} disabled={upgradingCreatorShipping}>{upgradingCreatorShipping ? "Adding free shipping..." : "Add free shipping to active codes"}</button><button className="button secondary small" type="button" onClick={syncThisDeviceFreeCreatorSamples} disabled={syncingFreeCreatorSamples}>{syncingFreeCreatorSamples ? "Syncing this device..." : "Sync local samples"}</button><div className="accounting-status-pill">{freeCreatorSampleBundles.length} creators</div></div></div>
-      {message && <div className="notice"><span>{message}</span><button onClick={() => setMessage("")}>x</button></div>}
+      <div className="creator-hero card"><div><p>{t("CREATOR PROGRAM")}</p><h2>{t("Free Creator Sample")}</h2><span>{t("Track every creator who received a free sample code, then pair the row to the order once they claim it.")}</span></div><div className="creator-sample-hero-actions"><button className="button secondary small" type="button" onClick={upgradeActiveCreatorSampleShipping} disabled={upgradingCreatorShipping}>{upgradingCreatorShipping ? t("Adding free shipping...") : t("Add free shipping to active codes")}</button><button className="button secondary small" type="button" onClick={syncThisDeviceFreeCreatorSamples} disabled={syncingFreeCreatorSamples}>{syncingFreeCreatorSamples ? t("Syncing this device...") : t("Sync local samples")}</button><div className="accounting-status-pill">{freeCreatorSampleBundles.length} {" " + t("creators")}</div></div></div>
+      {message && <div className="notice"><span>{message}</span><button onClick={() => setMessage("")}>{t("x")}</button></div>}
       <section className="creator-sample-ledger-layout">
         <form className="creator-form card creator-sample-entry-form" onSubmit={saveFreeCreatorSample}>
-          <div className="accounting-form-heading"><div><h3>New sample record</h3><p>Choose the collection. Classics creates one code; Plush Charms creates two one-use codes. Each code makes only one item from that collection free, with free shipping.</p></div></div>
+          <div className="accounting-form-heading"><div><h3>{t("New sample record")}</h3><p>{t("Choose the collection. Classics creates one code; Plush Charms creates two one-use codes. Each code makes only one item from that collection free, with free shipping.")}</p></div></div>
           <div className="creator-sample-form-fields">
-            <label>Creator<input value={freeCreatorSampleForm.creatorName} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, creatorName: event.target.value }))} placeholder="Creator name or handle" /></label>
+            <label>{t("Creator")}<input value={freeCreatorSampleForm.creatorName} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, creatorName: event.target.value }))} placeholder={t("Creator name or handle")} /></label>
             <fieldset className="creator-sample-collection-picker">
-              <legend>Free product collection</legend>
+              <legend>{t("Free product collection")}</legend>
               <div>
                 <button type="button" className={freeCreatorSampleForm.productCollection === "classics" ? "selected" : ""} aria-pressed={freeCreatorSampleForm.productCollection === "classics"} onClick={() => setFreeCreatorSampleForm((current) => ({ ...current, productCollection: "classics" }))}>
-                  <span className="creator-sample-collection-count">1</span><span><strong>Meaningful Plushies</strong><small>Classics · one code</small></span>
+                  <span className="creator-sample-collection-count">1</span><span><strong>{t("Meaningful Plushies")}</strong><small>{t("Classics · one code")}</small></span>
                 </button>
                 <button type="button" className={freeCreatorSampleForm.productCollection === "plush_charms_v1" ? "selected" : ""} aria-pressed={freeCreatorSampleForm.productCollection === "plush_charms_v1"} onClick={() => setFreeCreatorSampleForm((current) => ({ ...current, productCollection: "plush_charms_v1" }))}>
-                  <span className="creator-sample-collection-count">2</span><span><strong>Plush Charms V1</strong><small>Two codes · one charm each</small></span>
+                  <span className="creator-sample-collection-count">2</span><span><strong>{t("Plush Charms V1")}</strong><small>{t("Two codes · one charm each")}</small></span>
                 </button>
               </div>
-              <p>{freeCreatorSampleForm.productCollection === "plush_charms_v1" ? "Your base code will create two one-use codes, ending in -1 and -2." : "One one-use code for a Classic plushie, including free shipping."}</p>
+              <p>{freeCreatorSampleForm.productCollection === "plush_charms_v1" ? t("Your base code will create two one-use codes, ending in -1 and -2.") : t("One one-use code for a Classic plushie, including free shipping.")}</p>
             </fieldset>
-            <label>Discount code{freeCreatorSampleForm.productCollection === "plush_charms_v1" && <small>We will create -1 and -2 automatically.</small>}<input value={freeCreatorSampleForm.sampleCode} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, sampleCode: event.target.value.toUpperCase() }))} placeholder="FREE-IVAN10" /></label>
-            <label>Creator link<input value={freeCreatorSampleForm.creatorUrl} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, creatorUrl: event.target.value }))} placeholder="https://www.tiktok.com/@creator" /></label>
-            <label>Notes<textarea value={freeCreatorSampleForm.notes} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Sent link, waiting for order, etc." /></label>
-            <button className="button primary" type="submit" disabled={creatingFreeCreatorSample}>{creatingFreeCreatorSample ? "Creating Shopify code..." : freeCreatorSampleForm.productCollection === "plush_charms_v1" ? "Create 2 Plush Charm codes" : "Create Classic Plushie code"}</button>
+            <label>{t("Discount code")}{freeCreatorSampleForm.productCollection === "plush_charms_v1" && <small>{t("We will create -1 and -2 automatically.")}</small>}<input value={freeCreatorSampleForm.sampleCode} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, sampleCode: event.target.value.toUpperCase() }))} placeholder={t("FREE-IVAN10")} /></label>
+            <label>{t("Creator link")}<input value={freeCreatorSampleForm.creatorUrl} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, creatorUrl: event.target.value }))} placeholder="https://www.tiktok.com/@creator" /></label>
+            <label>{t("Notes")}<textarea value={freeCreatorSampleForm.notes} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, notes: event.target.value }))} placeholder={t("Sent link, waiting for order, etc.")} /></label>
+            <button className="button primary" type="submit" disabled={creatingFreeCreatorSample}>{creatingFreeCreatorSample ? t("Creating Shopify code...") : freeCreatorSampleForm.productCollection === "plush_charms_v1" ? t("Create 2 Plush Charm codes") : t("Create Classic Plushie code")}</button>
           </div>
         </form>
         <section className="card accounting-table-card creator-sample-ledger-card">
-          <div className="accounting-form-heading"><div><h3>Sample code ledger</h3><p>Enter the order number into a row to pull in the customer name, phone number, and address.</p></div></div>
+          <div className="accounting-form-heading"><div><h3>{t("Sample code ledger")}</h3><p>{t("Enter the order number into a row to pull in the customer name, phone number, and address.")}</p></div></div>
           <div className="creator-code-summary-strip">
-            {freeCreatorSampleCodeRows.map((row) => <article key={row.code}><span>{row.code}</span><strong>{row.ordersUsingCode}</strong><small>{row.pairedCreators} paired of {row.creatorsGiven}</small></article>)}
-            {!freeCreatorSampleCodeRows.length && <div className="empty compact"><strong>No discount codes yet.</strong><p>Add the first creator sample on the left.</p></div>}
+            {freeCreatorSampleCodeRows.map((row) => <article key={row.code}><span>{row.code}</span><strong>{row.ordersUsingCode}</strong><small>{row.pairedCreators} {" " + t("paired of") + " "}{row.creatorsGiven}</small></article>)}
+            {!freeCreatorSampleCodeRows.length && <div className="empty compact"><strong>{t("No discount codes yet.")}</strong><p>{t("Add the first creator sample on the left.")}</p></div>}
           </div>
           <div className="creator-free-sample-table">
-            <table><thead><tr><th>Creator</th><th>Free product</th><th>Code</th><th>Used</th><th>Message</th><th>Order number</th><th>Paired customer info</th><th>Notes</th><th /></tr></thead><tbody>
+            <table><thead><tr><th>{t("Creator")}</th><th>{t("Free product")}</th><th>{t("Code")}</th><th>{t("Used")}</th><th>{t("Message")}</th><th>{t("Order number")}</th><th>{t("Paired customer info")}</th><th>{t("Notes")}</th><th /></tr></thead><tbody>
               {freeCreatorSampleBundles.map((bundle) => {
                 const claims = bundle.samples.flatMap((sample) => freeCreatorSampleClaims(sample.sampleCode));
                 const sampleMessage = freeCreatorSampleMessage(bundle);
                 const missingShopifyCodes = bundle.samples.some((sample) => !sample.shopifyDiscountId);
-                return <tr key={bundle.key}><td>{bundle.creatorUrl ? <a href={bundle.creatorUrl} target="_blank" rel="noreferrer"><strong>{bundle.creatorName}</strong></a> : <strong>{bundle.creatorName}</strong>}<small>Added {formatDate(bundle.givenAt)}</small></td><td>{freeCreatorSampleCollectionLabels[bundle.productCollection]}</td><td><div className="creator-sample-code-stack">{bundle.samples.map((sample, index) => <code key={sample.id}>{bundle.samples.length === 2 ? index === 0 ? "You · " : "Partner · " : ""}{sample.sampleCode}</code>)}</div></td><td><div className="creator-sample-claim-cell"><span className={`creator-sample-claim ${claims.length ? "claimed" : "pending"}`}>{claims.length}</span><small>{claims.length === 1 ? "order" : "orders"}</small></div></td><td><div className="creator-sample-message-cell"><textarea readOnly value={sampleMessage} /><button className="button secondary small" type="button" onClick={() => copyFreeCreatorSampleMessage(bundle)}>Copy message</button></div></td><td><div className="creator-sample-order-stack">{bundle.samples.map((sample, index) => <label key={sample.id}>{bundle.samples.length === 2 && <span>{index === 0 ? "You" : "Partner"}</span>}<input className="creator-sample-order-input" value={sample.orderNumber ?? ""} onChange={(event) => updateFreeCreatorSample(sample.id, { orderNumber: event.target.value })} placeholder="Order #" /></label>)}</div></td><td><div className="creator-sample-customer-stack">{bundle.samples.map((sample) => { const pairedOrder = freeCreatorSampleOrder(sample); return pairedOrder ? <div className="creator-sample-order-details" key={sample.id}><strong>{pairedOrder.customerName || "-"}</strong><span>{pairedOrder.phone || "-"}</span><small>{pairedOrder.address || "-"}</small></div> : <span className="creator-sample-unmatched" key={sample.id}>{sample.orderNumber ? "No matching order found" : "Enter order number"}</span>; })}</div></td><td><input className="creator-sample-notes-input" value={bundle.notes} onChange={(event) => updateFreeCreatorSampleBundle(bundle, { notes: event.target.value })} placeholder="Notes" /></td><td>{missingShopifyCodes && <button className="button primary small" type="button" disabled={creatingFreeCreatorSample} onClick={() => retryFreeCreatorSampleBundle(bundle)}>{creatingFreeCreatorSample ? "Creating..." : "Create missing code"}</button>}<button className="button secondary small" type="button" onClick={() => deleteFreeCreatorSampleBundle(bundle)}>Remove</button></td></tr>;
+                return <tr key={bundle.key}><td>{bundle.creatorUrl ? <a href={bundle.creatorUrl} target="_blank" rel="noreferrer"><strong>{bundle.creatorName}</strong></a> : <strong>{bundle.creatorName}</strong>}<small>{t("Added") + " "}{formatDate(bundle.givenAt)}</small></td><td>{freeCreatorSampleCollectionLabels[bundle.productCollection]}</td><td><div className="creator-sample-code-stack">{bundle.samples.map((sample, index) => <code key={sample.id}>{bundle.samples.length === 2 ? index === 0 ? t("You · ") : t("Partner · ") : ""}{sample.sampleCode}</code>)}</div></td><td><div className="creator-sample-claim-cell"><span className={`creator-sample-claim ${claims.length ? "claimed" : "pending"}`}>{claims.length}</span><small>{claims.length === 1 ? t("order") : t("orders")}</small></div></td><td><div className="creator-sample-message-cell"><textarea readOnly value={sampleMessage} /><button className="button secondary small" type="button" onClick={() => copyFreeCreatorSampleMessage(bundle)}>{t("Copy message")}</button></div></td><td><div className="creator-sample-order-stack">{bundle.samples.map((sample, index) => <label key={sample.id}>{bundle.samples.length === 2 && <span>{index === 0 ? t("You") : t("Partner")}</span>}<input className="creator-sample-order-input" value={sample.orderNumber ?? ""} onChange={(event) => updateFreeCreatorSample(sample.id, { orderNumber: event.target.value })} placeholder={t("Order #")} /></label>)}</div></td><td><div className="creator-sample-customer-stack">{bundle.samples.map((sample) => { const pairedOrder = freeCreatorSampleOrder(sample); return pairedOrder ? <div className="creator-sample-order-details" key={sample.id}><strong>{pairedOrder.customerName || "-"}</strong><span>{pairedOrder.phone || "-"}</span><small>{pairedOrder.address || "-"}</small></div> : <span className="creator-sample-unmatched" key={sample.id}>{sample.orderNumber ? t("No matching order found") : t("Enter order number")}</span>; })}</div></td><td><input className="creator-sample-notes-input" value={bundle.notes} onChange={(event) => updateFreeCreatorSampleBundle(bundle, { notes: event.target.value })} placeholder={t("Notes")} /></td><td>{missingShopifyCodes && <button className="button primary small" type="button" disabled={creatingFreeCreatorSample} onClick={() => retryFreeCreatorSampleBundle(bundle)}>{creatingFreeCreatorSample ? t("Creating...") : t("Create missing code")}</button>}<button className="button secondary small" type="button" onClick={() => deleteFreeCreatorSampleBundle(bundle)}>{t("Remove")}</button></td></tr>;
               })}
-              {!freeCreatorSampleBundles.length && <tr><td colSpan={9}>No free creator samples logged yet.</td></tr>}
+              {!freeCreatorSampleBundles.length && <tr><td colSpan={9}>{t("No free creator samples logged yet.")}</td></tr>}
             </tbody></table>
           </div>
         </section>
@@ -9589,23 +9613,23 @@ function CreatorProgramWorkspacePage({
 
   if (view === "creator_accounts" && admin) {
     return <section className="creator-workspace">
-      <div className="creator-hero card"><div><p>CREATOR PROGRAM</p><h2>Creator accounts</h2><span>Create creator logins, assign unique discount codes, and control commission rates.</span></div><div className="accounting-status-pill">{creatorProfiles.length} creators</div></div>
-      {message && <div className="notice"><span>{message}</span><button onClick={() => setMessage("")}>x</button></div>}
+      <div className="creator-hero card"><div><p>{t("CREATOR PROGRAM")}</p><h2>{t("Creator accounts")}</h2><span>{t("Create creator logins, assign unique discount codes, and control commission rates.")}</span></div><div className="accounting-status-pill">{creatorProfiles.length} {" " + t("creators")}</div></div>
+      {message && <div className="notice"><span>{message}</span><button onClick={() => setMessage("")}>{t("x")}</button></div>}
       <form className="creator-form card" onSubmit={saveCreator}>
-        <div className="accounting-form-heading"><div><h3>{form.userId ? "Edit creator" : "New creator"}</h3><p>Discount codes are saved uppercase and must be unique.</p></div><button className="button primary" type="submit">Save creator</button></div>
+        <div className="accounting-form-heading"><div><h3>{form.userId ? t("Edit creator") : t("New creator")}</h3><p>{t("Discount codes are saved uppercase and must be unique.")}</p></div><button className="button primary" type="submit">{t("Save creator")}</button></div>
         <div className="accounting-form-grid">
-          <label>Existing creator account<select value={form.userId} onChange={(event) => updateForm({ userId: event.target.value })}><option value="">Create new login</option>{creatorAccounts.map((account) => <option key={account.id} value={account.id}>@{account.username}</option>)}</select></label>
-          <label>Creator display name<input value={form.displayName} onChange={(event) => updateForm({ displayName: event.target.value })} placeholder="Creator name" /></label>
-          <label>Email / login<input value={form.email} onChange={(event) => updateForm({ email: event.target.value.toLowerCase() })} placeholder="creator@email.com" /></label>
-          {!form.userId && <label>Password<div className="password-reveal-field"><input type={showCreatorPassword ? "text" : "password"} value={form.password} onChange={(event) => updateForm({ password: event.target.value })} placeholder="8+ characters" /><button type="button" onClick={() => setShowCreatorPassword((current) => !current)}>{showCreatorPassword ? "Hide" : "Show"}</button></div></label>}
-          <label>Phone<input value={form.phone} onChange={(event) => updateForm({ phone: event.target.value })} placeholder="+60..." /></label>
-          <label>Discount code<input value={form.discountCode} onChange={(event) => updateForm({ discountCode: event.target.value.toUpperCase() })} placeholder="CREATOR10" /></label>
-          <label>Tier<select value={form.currentTier} onChange={(event) => updateForm({ currentTier: event.target.value as CreatorTier, commissionRate: String(creatorTierDefaults[event.target.value as CreatorTier].rate) })}>{Object.entries(creatorTierDefaults).map(([tier, detail]) => <option key={tier} value={tier}>{detail.label} - {detail.rate}%</option>)}</select></label>
-          <label>Commission rate %<input type="number" min="0" step="0.01" value={form.commissionRate} onChange={(event) => updateForm({ commissionRate: event.target.value })} /></label>
-          <label>Status<select value={form.status} onChange={(event) => updateForm({ status: event.target.value as CreatorStatus })}><option value="active">Active</option><option value="pending">Pending</option><option value="suspended">Suspended</option></select></label>
-          <label className="wide">TikTok URL<input value={form.tiktokUrl} onChange={(event) => updateForm({ tiktokUrl: event.target.value })} /></label>
-          <label className="wide">Instagram URL<input value={form.instagramUrl} onChange={(event) => updateForm({ instagramUrl: event.target.value })} /></label>
-          <label className="wide">Internal notes<textarea value={form.internalNotes} onChange={(event) => updateForm({ internalNotes: event.target.value })} /></label>
+          <label>{t("Existing creator account")}<select value={form.userId} onChange={(event) => updateForm({ userId: event.target.value })}><option value="">{t("Create new login")}</option>{creatorAccounts.map((account) => <option key={account.id} value={account.id}>@{account.username}</option>)}</select></label>
+          <label>{t("Creator display name")}<input value={form.displayName} onChange={(event) => updateForm({ displayName: event.target.value })} placeholder={t("Creator name")} /></label>
+          <label>{t("Email / login")}<input value={form.email} onChange={(event) => updateForm({ email: event.target.value.toLowerCase() })} placeholder={t("creator@email.com")} /></label>
+          {!form.userId && <label>{t("Password")}<div className="password-reveal-field"><input type={showCreatorPassword ? "text" : "password"} value={form.password} onChange={(event) => updateForm({ password: event.target.value })} placeholder={t("8+ characters")} /><button type="button" onClick={() => setShowCreatorPassword((current) => !current)}>{showCreatorPassword ? t("Hide") : t("Show")}</button></div></label>}
+          <label>{t("Phone")}<input value={form.phone} onChange={(event) => updateForm({ phone: event.target.value })} placeholder="+60..." /></label>
+          <label>{t("Discount code")}<input value={form.discountCode} onChange={(event) => updateForm({ discountCode: event.target.value.toUpperCase() })} placeholder={t("CREATOR10")} /></label>
+          <label>{t("Tier")}<select value={form.currentTier} onChange={(event) => updateForm({ currentTier: event.target.value as CreatorTier, commissionRate: String(creatorTierDefaults[event.target.value as CreatorTier].rate) })}>{Object.entries(creatorTierDefaults).map(([tier, detail]) => <option key={tier} value={tier}>{detail.label} - {detail.rate}%</option>)}</select></label>
+          <label>{t("Commission rate %")}<input type="number" min="0" step="0.01" value={form.commissionRate} onChange={(event) => updateForm({ commissionRate: event.target.value })} /></label>
+          <label>{t("Status")}<select value={form.status} onChange={(event) => updateForm({ status: event.target.value as CreatorStatus })}><option value="active">{t("Active")}</option><option value="pending">{t("Pending")}</option><option value="suspended">{t("Suspended")}</option></select></label>
+          <label className="wide">{t("TikTok URL")}<input value={form.tiktokUrl} onChange={(event) => updateForm({ tiktokUrl: event.target.value })} /></label>
+          <label className="wide">{t("Instagram URL")}<input value={form.instagramUrl} onChange={(event) => updateForm({ instagramUrl: event.target.value })} /></label>
+          <label className="wide">{t("Internal notes")}<textarea value={form.internalNotes} onChange={(event) => updateForm({ internalNotes: event.target.value })} /></label>
         </div>
       </form>
       <section className="creator-account-grid">
@@ -9618,47 +9642,47 @@ function CreatorProgramWorkspacePage({
           return <article className="creator-account-card card" key={profile.id}>
             <div className="creator-account-main">
               <div>
-                <span className={`creator-status-dot ${account?.active === false ? "inactive" : profile.status}`}>{account?.active === false ? "Inactive" : profile.status}</span>
+                <span className={`creator-status-dot ${account?.active === false ? "inactive" : profile.status}`}>{account?.active === false ? t("Inactive") : profile.status}</span>
                 <h3>{profile.displayName}</h3>
-                <p>{profile.email || account?.username || "No email login"}</p>
+                <p>{profile.email || account?.username || t("No email login")}</p>
               </div>
-              <button className="button secondary small" type="button" onClick={() => editProfile(profile)}>Edit profile</button>
+              <button className="button secondary small" type="button" onClick={() => editProfile(profile)}>{t("Edit profile")}</button>
             </div>
             <div className="creator-account-stats">
-              <div><span>Code</span><strong>{profile.discountCode}</strong></div>
-              <div><span>Free code</span><strong>{creatorFreeOrderCode(profile)}</strong></div>
-              <div><span>Tier</span><strong>{creatorTierDefaults[profile.currentTier]?.label ?? profile.currentTier}</strong></div>
-              <div><span>Rate</span><strong>{profile.commissionRate}%</strong></div>
-              <div><span>Sales</span><strong>{creatorSummary.lifetimeSales}</strong></div>
-              <div><span>Commission</span><strong>{formatMoney(creatorSummary.lifetimeCommission)}</strong></div>
+              <div><span>{t("Code")}</span><strong>{profile.discountCode}</strong></div>
+              <div><span>{t("Free code")}</span><strong>{creatorFreeOrderCode(profile)}</strong></div>
+              <div><span>{t("Tier")}</span><strong>{creatorTierDefaults[profile.currentTier]?.label ?? profile.currentTier}</strong></div>
+              <div><span>{t("Rate")}</span><strong>{profile.commissionRate}%</strong></div>
+              <div><span>{t("Sales")}</span><strong>{creatorSummary.lifetimeSales}</strong></div>
+              <div><span>{t("Commission")}</span><strong>{formatMoney(creatorSummary.lifetimeCommission)}</strong></div>
             </div>
             <div className="creator-free-order-box">
-              <div><span>Influencer free order link</span><strong>{creatorFreeOrderLink(profile)}</strong><small>Use this after creating the matching 100% Shopify discount code.</small></div>
-              <button className="button primary small" type="button" onClick={() => copyCreatorFreeOrder(profile)}>Copy link</button>
+              <div><span>{t("Influencer free order link")}</span><strong>{creatorFreeOrderLink(profile)}</strong><small>{t("Use this after creating the matching 100% Shopify discount code.")}</small></div>
+              <button className="button primary small" type="button" onClick={() => copyCreatorFreeOrder(profile)}>{t("Copy link")}</button>
             </div>
             {account && <div className="creator-account-tools">
-              <label>New password<div className="password-reveal-field"><input type={passwordVisible ? "text" : "password"} value={passwordValue} onChange={(event) => setCreatorPasswordEdits((current) => ({ ...current, [account.id]: event.target.value }))} placeholder="8+ characters" /><button type="button" onClick={() => setCreatorPasswordVisible((current) => ({ ...current, [account.id]: !current[account.id] }))}>{passwordVisible ? "Hide" : "Show"}</button></div></label>
-              <button className="button primary" type="button" disabled={passwordValue.length < 8} onClick={() => updateCreatorAccount(profile, {}, passwordValue)}>Change password</button>
-              <button className="button secondary" type="button" onClick={() => updateCreatorAccount(profile, { active: !account.active })}>{account.active ? "Deactivate" : "Activate"}</button>
-              <button className="button danger" type="button" onClick={() => deleteCreatorAccount(profile)}>Delete</button>
+              <label>{t("New password")}<div className="password-reveal-field"><input type={passwordVisible ? "text" : "password"} value={passwordValue} onChange={(event) => setCreatorPasswordEdits((current) => ({ ...current, [account.id]: event.target.value }))} placeholder={t("8+ characters")} /><button type="button" onClick={() => setCreatorPasswordVisible((current) => ({ ...current, [account.id]: !current[account.id] }))}>{passwordVisible ? t("Hide") : t("Show")}</button></div></label>
+              <button className="button primary" type="button" disabled={passwordValue.length < 8} onClick={() => updateCreatorAccount(profile, {}, passwordValue)}>{t("Change password")}</button>
+              <button className="button secondary" type="button" onClick={() => updateCreatorAccount(profile, { active: !account.active })}>{account.active ? t("Deactivate") : t("Activate")}</button>
+              <button className="button danger" type="button" onClick={() => deleteCreatorAccount(profile)}>{t("Delete")}</button>
             </div>}
           </article>;
         })}
-        {!creatorProfiles.length && <div className="empty card"><strong>No creator profiles yet.</strong><p>Create your first creator above.</p></div>}
+        {!creatorProfiles.length && <div className="empty card"><strong>{t("No creator profiles yet.")}</strong><p>{t("Create your first creator above.")}</p></div>}
       </section>
     </section>;
   }
 
   if (view === "creator_sales" || view === "creator_commissions") {
     return <section className="creator-workspace">
-      <div className="creator-hero card"><div><p>CREATOR PROGRAM</p><h2>{view === "creator_sales" ? "Creator sales" : "Commission management"}</h2><span>Orders attributed to creator discount codes. Creators only see their own rows.</span></div><div className="accounting-status-pill">{visibleCommissions.length} rows</div></div>
-      {message && <div className="notice"><span>{message}</span><button onClick={() => setMessage("")}>x</button></div>}
-      <section className="card accounting-table-card creator-table"><table><thead><tr><th>Date</th><th>Creator</th><th>Order</th><th>Code</th><th>Eligible subtotal</th><th>Rate</th><th>Commission</th><th>Status</th><th /></tr></thead><tbody>
+      <div className="creator-hero card"><div><p>{t("CREATOR PROGRAM")}</p><h2>{view === "creator_sales" ? t("Creator sales") : t("Commission management")}</h2><span>{t("Orders attributed to creator discount codes. Creators only see their own rows.")}</span></div><div className="accounting-status-pill">{visibleCommissions.length} {" " + t("rows")}</div></div>
+      {message && <div className="notice"><span>{message}</span><button onClick={() => setMessage("")}>{t("x")}</button></div>}
+      <section className="card accounting-table-card creator-table"><table><thead><tr><th>{t("Date")}</th><th>{t("Creator")}</th><th>{t("Order")}</th><th>{t("Code")}</th><th>{t("Eligible subtotal")}</th><th>{t("Rate")}</th><th>{t("Commission")}</th><th>{t("Status")}</th><th /></tr></thead><tbody>
         {visibleCommissions.map((commission) => {
           const profile = creatorProfiles.find((item) => item.id === commission.creatorId);
-          return <tr key={commission.id}><td>{formatDate(commission.orderDate)}</td><td>{profile?.displayName ?? "Creator"}</td><td>#{commission.orderNumber}</td><td>{commission.discountCodeUsed}</td><td>{formatMoney(commission.eligibleSubtotal)}</td><td>{commission.commissionRateAtSale}%</td><td><strong>{formatMoney(commission.commissionAmount)}</strong></td><td>{commission.status}</td><td>{admin && <select value={commission.status} onChange={(event) => changeCommissionStatus(commission, event.target.value as CommissionStatus)}><option value="pending">Pending</option><option value="approved">Approved</option><option value="paid">Paid</option><option value="cancelled">Cancelled</option></select>}</td></tr>;
+          return <tr key={commission.id}><td>{formatDate(commission.orderDate)}</td><td>{profile?.displayName ?? t("Creator")}</td><td>#{commission.orderNumber}</td><td>{commission.discountCodeUsed}</td><td>{formatMoney(commission.eligibleSubtotal)}</td><td>{commission.commissionRateAtSale}%</td><td><strong>{formatMoney(commission.commissionAmount)}</strong></td><td>{commission.status}</td><td>{admin && <select value={commission.status} onChange={(event) => changeCommissionStatus(commission, event.target.value as CommissionStatus)}><option value="pending">{t("Pending")}</option><option value="approved">{t("Approved")}</option><option value="paid">{t("Paid")}</option><option value="cancelled">{t("Cancelled")}</option></select>}</td></tr>;
         })}
-        {!visibleCommissions.length && <tr><td colSpan={9}>No attributed creator sales yet. Shopify orders need a matching discount code.</td></tr>}
+        {!visibleCommissions.length && <tr><td colSpan={9}>{t("No attributed creator sales yet. Shopify orders need a matching discount code.")}</td></tr>}
       </tbody></table></section>
     </section>;
   }
@@ -9675,34 +9699,34 @@ function CreatorProgramWorkspacePage({
     const selectedCreator = rows.find((row) => row.profile.id === payoutForm.creatorId);
     const suggestedAmount = selectedCreator?.owed ?? 0;
     return <section className="creator-workspace">
-      <div className="creator-hero card"><div><p>CREATOR PROGRAM</p><h2>Payouts</h2><span>See how much each creator made, how much is owed, and record paid payouts with proof.</span></div><div className="accounting-status-pill">{formatMoney(rows.reduce((total, row) => total + row.owed, 0))} owed</div></div>
-      {message && <div className="notice"><span>{message}</span><button onClick={() => setMessage("")}>x</button></div>}
+      <div className="creator-hero card"><div><p>{t("CREATOR PROGRAM")}</p><h2>{t("Payouts")}</h2><span>{t("See how much each creator made, how much is owed, and record paid payouts with proof.")}</span></div><div className="accounting-status-pill">{formatMoney(rows.reduce((total, row) => total + row.owed, 0))} {" " + t("owed")}</div></div>
+      {message && <div className="notice"><span>{message}</span><button onClick={() => setMessage("")}>{t("x")}</button></div>}
       <form className="creator-form card" onSubmit={savePayoutRecord}>
-        <div className="accounting-form-heading"><div><h3>Record creator payout</h3><p>Saving as paid will mark the creator's pending and approved commissions as paid.</p></div><button className="button primary" type="submit">Save payout</button></div>
+        <div className="accounting-form-heading"><div><h3>{t("Record creator payout")}</h3><p>{t("Saving as paid will mark the creator's pending and approved commissions as paid.")}</p></div><button className="button primary" type="submit">{t("Save payout")}</button></div>
         <div className="accounting-form-grid">
-          <label>Creator<select value={payoutForm.creatorId} onChange={(event) => {
+          <label>{t("Creator")}<select value={payoutForm.creatorId} onChange={(event) => {
             const row = rows.find((item) => item.profile.id === event.target.value);
             setPayoutForm((current) => ({ ...current, creatorId: event.target.value, approvedCommissionAmount: row ? String(row.owed.toFixed(2)) : "" }));
-          }}><option value="">Choose creator</option>{rows.map((row) => <option key={row.profile.id} value={row.profile.id}>{row.profile.displayName} - owed {formatMoney(row.owed)}</option>)}</select></label>
-          <label>Payout month<input type="month" value={payoutForm.payoutMonth} onChange={(event) => setPayoutForm((current) => ({ ...current, payoutMonth: event.target.value }))} /></label>
-          <label>Commission to pay<input type="number" min="0" step="0.01" value={payoutForm.approvedCommissionAmount} onChange={(event) => setPayoutForm((current) => ({ ...current, approvedCommissionAmount: event.target.value }))} placeholder={formatMoney(suggestedAmount)} /></label>
-          <label>Bonus<input type="number" min="0" step="0.01" value={payoutForm.bonusAmount} onChange={(event) => setPayoutForm((current) => ({ ...current, bonusAmount: event.target.value }))} /></label>
-          <label>Retainer<input type="number" min="0" step="0.01" value={payoutForm.retainerAmount} onChange={(event) => setPayoutForm((current) => ({ ...current, retainerAmount: event.target.value }))} /></label>
-          <label>Payment reference<input value={payoutForm.paymentReference} onChange={(event) => setPayoutForm((current) => ({ ...current, paymentReference: event.target.value }))} placeholder="Bank transfer ref / note" /></label>
-          <div className="wide"><FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.txt,.doc,.docx" title="Upload payment proof" description="Drop receipt or screenshot here" selectedName={payoutForm.proofFileName} onFile={uploadPayoutProof} /></div>
+          }}><option value="">{t("Choose creator")}</option>{rows.map((row) => <option key={row.profile.id} value={row.profile.id}>{row.profile.displayName} {" " + t("- owed") + " "}{formatMoney(row.owed)}</option>)}</select></label>
+          <label>{t("Payout month")}<input type="month" value={payoutForm.payoutMonth} onChange={(event) => setPayoutForm((current) => ({ ...current, payoutMonth: event.target.value }))} /></label>
+          <label>{t("Commission to pay")}<input type="number" min="0" step="0.01" value={payoutForm.approvedCommissionAmount} onChange={(event) => setPayoutForm((current) => ({ ...current, approvedCommissionAmount: event.target.value }))} placeholder={formatMoney(suggestedAmount)} /></label>
+          <label>{t("Bonus")}<input type="number" min="0" step="0.01" value={payoutForm.bonusAmount} onChange={(event) => setPayoutForm((current) => ({ ...current, bonusAmount: event.target.value }))} /></label>
+          <label>{t("Retainer")}<input type="number" min="0" step="0.01" value={payoutForm.retainerAmount} onChange={(event) => setPayoutForm((current) => ({ ...current, retainerAmount: event.target.value }))} /></label>
+          <label>{t("Payment reference")}<input value={payoutForm.paymentReference} onChange={(event) => setPayoutForm((current) => ({ ...current, paymentReference: event.target.value }))} placeholder={t("Bank transfer ref / note")} /></label>
+          <div className="wide"><FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.txt,.doc,.docx" title={t("Upload payment proof")} description={t("Drop receipt or screenshot here")} selectedName={payoutForm.proofFileName} onFile={uploadPayoutProof} /></div>
         </div>
       </form>
       <section className="creator-account-grid">
         {rows.map((row) => <article className="creator-account-card card" key={row.profile.id}>
-          <div className="creator-account-main"><div><span className="creator-status-dot active">{row.profile.currentTier}</span><h3>{row.profile.displayName}</h3><p>{row.profile.payoutMethod || "No payout method"} {row.profile.payoutAccountNumber ? `| ${row.profile.payoutAccountNumber}` : ""}</p></div><button className="button secondary small" type="button" onClick={() => setPayoutForm((current) => ({ ...current, creatorId: row.profile.id, approvedCommissionAmount: row.owed.toFixed(2) }))}>Pay this creator</button></div>
+          <div className="creator-account-main"><div><span className="creator-status-dot active">{row.profile.currentTier}</span><h3>{row.profile.displayName}</h3><p>{row.profile.payoutMethod || t("No payout method")} {row.profile.payoutAccountNumber ? `| ${row.profile.payoutAccountNumber}` : ""}</p></div><button className="button secondary small" type="button" onClick={() => setPayoutForm((current) => ({ ...current, creatorId: row.profile.id, approvedCommissionAmount: row.owed.toFixed(2) }))}>{t("Pay this creator")}</button></div>
           <div className="creator-account-stats">
-            <div><span>Total made</span><strong>{formatMoney(row.made)}</strong></div>
-            <div><span>Owed now</span><strong>{formatMoney(row.owed)}</strong></div>
-            <div><span>Paid before</span><strong>{formatMoney(row.paid)}</strong></div>
-            <div><span>Account name</span><strong>{row.profile.payoutAccountName || "-"}</strong></div>
-            <div><span>Payment ref</span><strong>{row.payouts[0]?.paymentReference || "-"}</strong></div>
+            <div><span>{t("Total made")}</span><strong>{formatMoney(row.made)}</strong></div>
+            <div><span>{t("Owed now")}</span><strong>{formatMoney(row.owed)}</strong></div>
+            <div><span>{t("Paid before")}</span><strong>{formatMoney(row.paid)}</strong></div>
+            <div><span>{t("Account name")}</span><strong>{row.profile.payoutAccountName || "-"}</strong></div>
+            <div><span>{t("Payment ref")}</span><strong>{row.payouts[0]?.paymentReference || "-"}</strong></div>
           </div>
-          <div className="creator-payout-history">{row.payouts.slice(0, 3).map((payout) => <div key={payout.id}><span>{payout.payoutMonth}</span><strong>{formatMoney(payout.totalPayoutAmount)}</strong>{payout.proofFileDataUrl ? <a href={payout.proofFileDataUrl} download={payout.proofFileName || "creator-payout-proof"}>Proof</a> : <em>No proof</em>}</div>)}{!row.payouts.length && <p>No payouts recorded yet.</p>}</div>
+          <div className="creator-payout-history">{row.payouts.slice(0, 3).map((payout) => <div key={payout.id}><span>{payout.payoutMonth}</span><strong>{formatMoney(payout.totalPayoutAmount)}</strong>{payout.proofFileDataUrl ? <a href={payout.proofFileDataUrl} download={payout.proofFileName || "creator-payout-proof"}>{t("Proof")}</a> : <em>{t("No proof")}</em>}</div>)}{!row.payouts.length && <p>{t("No payouts recorded yet.")}</p>}</div>
         </article>)}
       </section>
     </section>;
@@ -9714,9 +9738,9 @@ function CreatorProgramWorkspacePage({
       return { profile, summary: creatorCommissionSummary(rows) };
     }).sort((left, right) => right.summary.lifetimeRevenue - left.summary.lifetimeRevenue);
     return <section className="creator-workspace">
-      <div className="creator-hero card"><div><p>CREATOR PROGRAM</p><h2>Creator analytics</h2><span>A simple ranking of creator sales, revenue, and commission.</span></div><div className="accounting-status-pill">{attributedOrderCount} matched order records</div></div>
-      <section className="stats unit-cost-stats"><MoneyStat label="Creator revenue" value={summary.lifetimeRevenue} tone="blue" /><MoneyStat label="Pending commission" value={summary.byStatus.pending ?? 0} tone="fees" /><MoneyStat label="Paid commission" value={summary.byStatus.paid ?? 0} tone="collected" /><Stat label="Creator sales" value={summary.lifetimeSales} color="navy" /></section>
-      <section className="card accounting-table-card creator-table"><table><thead><tr><th>Creator</th><th>Sales</th><th>Revenue</th><th>Commission</th><th>Code</th></tr></thead><tbody>{topCreators.map(({ profile, summary: creatorSummary }) => <tr key={profile.id}><td><strong>{profile.displayName}</strong></td><td>{creatorSummary.lifetimeSales}</td><td>{formatMoney(creatorSummary.lifetimeRevenue)}</td><td>{formatMoney(creatorSummary.lifetimeCommission)}</td><td>{profile.discountCode}</td></tr>)}</tbody></table></section>
+      <div className="creator-hero card"><div><p>{t("CREATOR PROGRAM")}</p><h2>{t("Creator analytics")}</h2><span>{t("A simple ranking of creator sales, revenue, and commission.")}</span></div><div className="accounting-status-pill">{attributedOrderCount} {" " + t("matched order records")}</div></div>
+      <section className="stats unit-cost-stats"><MoneyStat label={t("Creator revenue")} value={summary.lifetimeRevenue} tone="blue" /><MoneyStat label={t("Pending commission")} value={summary.byStatus.pending ?? 0} tone="fees" /><MoneyStat label={t("Paid commission")} value={summary.byStatus.paid ?? 0} tone="collected" /><Stat label={t("Creator sales")} value={summary.lifetimeSales} color="navy" /></section>
+      <section className="card accounting-table-card creator-table"><table><thead><tr><th>{t("Creator")}</th><th>{t("Sales")}</th><th>{t("Revenue")}</th><th>{t("Commission")}</th><th>{t("Code")}</th></tr></thead><tbody>{topCreators.map(({ profile, summary: creatorSummary }) => <tr key={profile.id}><td><strong>{profile.displayName}</strong></td><td>{creatorSummary.lifetimeSales}</td><td>{formatMoney(creatorSummary.lifetimeRevenue)}</td><td>{formatMoney(creatorSummary.lifetimeCommission)}</td><td>{profile.discountCode}</td></tr>)}</tbody></table></section>
     </section>;
   }
 
@@ -9725,34 +9749,35 @@ function CreatorProgramWorkspacePage({
   const nextTierTarget = profile?.currentTier === "tier_1" ? 50 : profile?.currentTier === "tier_2" ? 100 : profile?.currentTier === "tier_3" ? 500 : profileSummary.lifetimeSales;
   const payoutsForProfile = admin || !profile ? creatorPayouts : creatorPayouts.filter((payout) => payout.creatorId === profile.id);
   return <section className="creator-workspace">
-    <div className="creator-hero card"><div><p>CREATOR PROGRAM</p><h2>{admin ? "Creator overview" : `Welcome, ${profile?.displayName}`}</h2><span>{admin ? "Use the left menu to manage creator accounts, sales, commissions, and analytics." : "Track your creator code, sales, commission, and payout history."}</span></div><div className="creator-code">{profile?.discountCode ?? "NO CODE"}</div></div>
+    <div className="creator-hero card"><div><p>{t("CREATOR PROGRAM")}</p><h2>{admin ? t("Creator overview") : `Welcome, ${profile?.displayName}`}</h2><span>{admin ? t("Use the left menu to manage creator accounts, sales, commissions, and analytics.") : t("Track your creator code, sales, commission, and payout history.")}</span></div><div className="creator-code">{profile?.discountCode ?? t("NO CODE")}</div></div>
     <section className="sales-stats">
-      <MoneyStat label="This month's commission" value={profileSummary.monthCommission} tone="sales" />
-      <MoneyStat label="Pending commission" value={profileSummary.byStatus.pending ?? 0} tone="fees" />
-      <MoneyStat label="Approved commission" value={profileSummary.byStatus.approved ?? 0} tone="transfer" />
-      <MoneyStat label="Paid commission" value={profileSummary.byStatus.paid ?? 0} tone="collected" />
-      <article className="money-stat blue"><span>Current tier</span><strong>{profile ? creatorTierDefaults[profile.currentTier].label : "-"}</strong></article>
+      <MoneyStat label={t("This month's commission")} value={profileSummary.monthCommission} tone="sales" />
+      <MoneyStat label={t("Pending commission")} value={profileSummary.byStatus.pending ?? 0} tone="fees" />
+      <MoneyStat label={t("Approved commission")} value={profileSummary.byStatus.approved ?? 0} tone="transfer" />
+      <MoneyStat label={t("Paid commission")} value={profileSummary.byStatus.paid ?? 0} tone="collected" />
+      <article className="money-stat blue"><span>{t("Current tier")}</span><strong>{profile ? creatorTierDefaults[profile.currentTier].label : "-"}</strong></article>
     </section>
-    {profile && <section className="card creator-profile-card"><div><span>Creator code</span><strong>{profile.discountCode}</strong></div><div><span>Free order code</span><strong>{creatorFreeOrderCode(profile)}</strong></div><div><span>Commission rate</span><strong>{profile.commissionRate}%</strong></div><div><span>This month's sales</span><strong>{profileSummary.monthSales}</strong></div><div><span>Lifetime sales</span><strong>{profileSummary.lifetimeSales}</strong></div><div><span>Next tier progress</span><strong>{Math.min(profileSummary.lifetimeSales, nextTierTarget)} / {nextTierTarget}</strong></div></section>}
+    {profile && <section className="card creator-profile-card"><div><span>{t("Creator code")}</span><strong>{profile.discountCode}</strong></div><div><span>{t("Free order code")}</span><strong>{creatorFreeOrderCode(profile)}</strong></div><div><span>{t("Commission rate")}</span><strong>{profile.commissionRate}%</strong></div><div><span>{t("This month's sales")}</span><strong>{profileSummary.monthSales}</strong></div><div><span>{t("Lifetime sales")}</span><strong>{profileSummary.lifetimeSales}</strong></div><div><span>{t("Next tier progress")}</span><strong>{Math.min(profileSummary.lifetimeSales, nextTierTarget)} / {nextTierTarget}</strong></div></section>}
     {profile && <section className="card creator-free-order-box creator-free-order-wide">
-      <div><span>Your free plushie order link</span><strong>{creatorFreeOrderLink(profile)}</strong><small>Use this link after your free creator discount has been activated by the admin.</small></div>
-      <button className="button primary" type="button" onClick={() => copyCreatorFreeOrder(profile)}>Copy free order link</button>
+      <div><span>{t("Your free plushie order link")}</span><strong>{creatorFreeOrderLink(profile)}</strong><small>{t("Use this link after your free creator discount has been activated by the admin.")}</small></div>
+      <button className="button primary" type="button" onClick={() => copyCreatorFreeOrder(profile)}>{t("Copy free order link")}</button>
     </section>}
     {!admin && profile && <form className="creator-form card" onSubmit={saveOwnPayoutInfo}>
-      <div className="accounting-form-heading"><div><h3>Payout info</h3><p>Add the account you want payouts sent to. Only admins can see this for payment processing.</p></div><button className="button primary" type="submit">Save payout info</button></div>
+      <div className="accounting-form-heading"><div><h3>{t("Payout info")}</h3><p>{t("Add the account you want payouts sent to. Only admins can see this for payment processing.")}</p></div><button className="button primary" type="submit">{t("Save payout info")}</button></div>
       <div className="accounting-form-grid">
-        <label>Payout method<input value={payoutInfoForm.payoutMethod} onChange={(event) => setPayoutInfoForm((current) => ({ ...current, payoutMethod: event.target.value }))} placeholder="Bank / TNG / DuitNow" /></label>
-        <label>Account name<input value={payoutInfoForm.payoutAccountName} onChange={(event) => setPayoutInfoForm((current) => ({ ...current, payoutAccountName: event.target.value }))} placeholder="Name on account" /></label>
-        <label>Account number / phone<input value={payoutInfoForm.payoutAccountNumber} onChange={(event) => setPayoutInfoForm((current) => ({ ...current, payoutAccountNumber: event.target.value }))} placeholder="Account number or DuitNow phone" /></label>
-        <label className="wide">Notes<textarea value={payoutInfoForm.payoutNotes} onChange={(event) => setPayoutInfoForm((current) => ({ ...current, payoutNotes: event.target.value }))} placeholder="Any extra payment instructions" /></label>
+        <label>{t("Payout method")}<input value={payoutInfoForm.payoutMethod} onChange={(event) => setPayoutInfoForm((current) => ({ ...current, payoutMethod: event.target.value }))} placeholder={t("Bank / TNG / DuitNow")} /></label>
+        <label>{t("Account name")}<input value={payoutInfoForm.payoutAccountName} onChange={(event) => setPayoutInfoForm((current) => ({ ...current, payoutAccountName: event.target.value }))} placeholder={t("Name on account")} /></label>
+        <label>{t("Account number / phone")}<input value={payoutInfoForm.payoutAccountNumber} onChange={(event) => setPayoutInfoForm((current) => ({ ...current, payoutAccountNumber: event.target.value }))} placeholder={t("Account number or DuitNow phone")} /></label>
+        <label className="wide">{t("Notes")}<textarea value={payoutInfoForm.payoutNotes} onChange={(event) => setPayoutInfoForm((current) => ({ ...current, payoutNotes: event.target.value }))} placeholder={t("Any extra payment instructions")} /></label>
       </div>
     </form>}
-    <section className="card accounting-table-card creator-table"><div className="accounting-form-heading"><div><h3>Recent attributed orders</h3><p>Creator view hides customer private details.</p></div></div><table><thead><tr><th>Date</th><th>Order</th><th>Order amount</th><th>Commission</th><th>Status</th></tr></thead><tbody>{visibleCommissions.slice(0, 12).map((commission) => <tr key={commission.id}><td>{formatDate(commission.orderDate)}</td><td>#{commission.orderNumber}</td><td>{formatMoney(commission.eligibleSubtotal)}</td><td>{formatMoney(commission.commissionAmount)}</td><td>{commission.status}</td></tr>)}{!visibleCommissions.length && <tr><td colSpan={5}>No attributed creator orders yet.</td></tr>}</tbody></table></section>
-    <section className="card accounting-table-card creator-table"><div className="accounting-form-heading"><div><h3>Payout history</h3><p>Approved and paid creator payout records.</p></div></div><table><thead><tr><th>Month</th><th>Commission</th><th>Bonus</th><th>Retainer</th><th>Total</th><th>Status</th></tr></thead><tbody>{payoutsForProfile.map((payout) => <tr key={payout.id}><td>{payout.payoutMonth}</td><td>{formatMoney(payout.approvedCommissionAmount)}</td><td>{formatMoney(payout.bonusAmount)}</td><td>{formatMoney(payout.retainerAmount)}</td><td><strong>{formatMoney(payout.totalPayoutAmount)}</strong></td><td>{payout.status}</td></tr>)}{!payoutsForProfile.length && <tr><td colSpan={6}>No payout history yet.</td></tr>}</tbody></table></section>
+    <section className="card accounting-table-card creator-table"><div className="accounting-form-heading"><div><h3>{t("Recent attributed orders")}</h3><p>{t("Creator view hides customer private details.")}</p></div></div><table><thead><tr><th>{t("Date")}</th><th>{t("Order")}</th><th>{t("Order amount")}</th><th>{t("Commission")}</th><th>{t("Status")}</th></tr></thead><tbody>{visibleCommissions.slice(0, 12).map((commission) => <tr key={commission.id}><td>{formatDate(commission.orderDate)}</td><td>#{commission.orderNumber}</td><td>{formatMoney(commission.eligibleSubtotal)}</td><td>{formatMoney(commission.commissionAmount)}</td><td>{commission.status}</td></tr>)}{!visibleCommissions.length && <tr><td colSpan={5}>{t("No attributed creator orders yet.")}</td></tr>}</tbody></table></section>
+    <section className="card accounting-table-card creator-table"><div className="accounting-form-heading"><div><h3>{t("Payout history")}</h3><p>{t("Approved and paid creator payout records.")}</p></div></div><table><thead><tr><th>{t("Month")}</th><th>{t("Commission")}</th><th>{t("Bonus")}</th><th>{t("Retainer")}</th><th>{t("Total")}</th><th>{t("Status")}</th></tr></thead><tbody>{payoutsForProfile.map((payout) => <tr key={payout.id}><td>{payout.payoutMonth}</td><td>{formatMoney(payout.approvedCommissionAmount)}</td><td>{formatMoney(payout.bonusAmount)}</td><td>{formatMoney(payout.retainerAmount)}</td><td><strong>{formatMoney(payout.totalPayoutAmount)}</strong></td><td>{payout.status}</td></tr>)}{!payoutsForProfile.length && <tr><td colSpan={6}>{t("No payout history yet.")}</td></tr>}</tbody></table></section>
   </section>;
 }
 
 function Login({ onLogin }: { onLogin: (session: Session) => void }) {
+  const { t } = useLanguage();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -9770,44 +9795,53 @@ function Login({ onLogin }: { onLogin: (session: Session) => void }) {
     catch (loginError) { setError(loginError instanceof Error ? loginError.message : "Sign in failed."); }
     finally { setSigningIn(false); }
   }
-  return <main className="login-page"><section className="login-brand"><div className="login-logo">MP</div><p>MEANINGFUL PLUSHIES</p><h1>A calmer way to manage every plushie.</h1><span>Track voice, production, packing and delivery from one simple workspace.</span></section><section className="login-panel"><form onSubmit={submit} autoComplete="off"><input className="hidden-login-field" type="text" name="fake-username" autoComplete="username" tabIndex={-1} aria-hidden="true" /><input className="hidden-login-field" type="password" name="fake-password" autoComplete="current-password" tabIndex={-1} aria-hidden="true" /><p className="eyebrow">STAFF PORTAL</p><h2>Welcome back</h2><span>Sign in with the account created by your administrator.</span>{error && <p className="login-error">{error}</p>}<label>Username<input name="mp-login-identifier" value={username} onChange={(event) => setUsername(event.target.value)} required autoComplete="off" readOnly={!loginInputsReady} /></label><label>Password<input name="mp-login-secret" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required autoComplete="new-password" readOnly={!loginInputsReady} /></label><button className="button primary large" type="submit" disabled={signingIn}>{signingIn ? "Signing in..." : "Sign in"}</button></form></section></main>;
+  return <main className="login-page"><section className="login-brand"><div className="login-logo">{t("MP")}</div><p>{t("MEANINGFUL PLUSHIES")}</p><h1>{t("A calmer way to manage every plushie.")}</h1><span>{t("Track voice, production, packing and delivery from one simple workspace.")}</span></section><section className="login-panel"><LanguageSwitcher /><form onSubmit={submit} autoComplete="off"><input className="hidden-login-field" type="text" name="fake-username" autoComplete="username" tabIndex={-1} aria-hidden="true" /><input className="hidden-login-field" type="password" name="fake-password" autoComplete="current-password" tabIndex={-1} aria-hidden="true" /><p className="eyebrow">{t("STAFF PORTAL")}</p><h2>{t("Welcome back")}</h2><span>{t("Sign in with the account created by your administrator.")}</span>{error && <p className="login-error">{t(error)}</p>}<label>{t("Username")}<input name="mp-login-identifier" value={username} onChange={(event) => setUsername(event.target.value)} required autoComplete="off" readOnly={!loginInputsReady} /></label><label>{t("Password")}<input name="mp-login-secret" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required autoComplete="new-password" readOnly={!loginInputsReady} /></label><button className="button primary large" type="submit" disabled={signingIn}>{signingIn ? t("Signing in...") : t("Sign in")}</button></form></section></main>;
 }
 
 function Stat({ label, value, color }: { label: string; value: number; color: string }) {
-  return <article className={`stat ${color}`}><span>{label}</span><strong>{value}</strong></article>;
+  const { t } = useLanguage();
+  return <article className={`stat ${color}`}><span>{t(label)}</span><strong>{value}</strong></article>;
 }
 
 function MoneyStat({ label, value, tone }: { label: string; value: number; tone: string }) {
-  return <article className={`money-stat ${tone}`}><span>{label}</span><strong>{formatMoney(value)}</strong></article>;
+  const { t } = useLanguage();
+  return <article className={`money-stat ${tone}`}><span>{t(label)}</span><strong>{formatMoney(value)}</strong></article>;
 }
 
 function MoneyStatWithNote({ label, value, tone, note }: { label: string; value: number; tone: string; note: string }) {
-  return <article className={`money-stat ${tone}`}><span>{label}</span><em>{note}</em><strong>{formatMoney(value)}</strong></article>;
+  const { t } = useLanguage();
+  return <article className={`money-stat ${tone}`}><span>{t(label)}</span><em>{note}</em><strong>{formatMoney(value)}</strong></article>;
 }
 
 function SelectableMoneyStat({ label, value, tone, selected, options, onChange }: { label: string; value: number; tone: string; selected: string; options: [string, string][]; onChange: (value: string) => void }) {
-  return <article className={`money-stat ${tone} selectable-money-stat`}><span>{label}</span><select value={selected} onChange={(event) => onChange(event.target.value)}>{options.map(([value, optionLabel]) => <option key={value} value={value}>{optionLabel}</option>)}</select><strong>{formatMoney(value)}</strong></article>;
+  const { t } = useLanguage();
+  return <article className={`money-stat ${tone} selectable-money-stat`}><span>{t(label)}</span><select value={selected} onChange={(event) => onChange(event.target.value)}>{options.map(([value, optionLabel]) => <option key={value} value={value}>{optionLabel}</option>)}</select><strong>{formatMoney(value)}</strong></article>;
 }
 
 function SortControls({ sortKey, direction, onKey, onDirection }: { sortKey: SortKey; direction: SortDirection; onKey: (key: SortKey) => void; onDirection: (direction: SortDirection) => void }) {
+  const { t } = useLanguage();
   const value: SortChoice = `${sortKey}:${direction}`;
-  return <select className="combined-sort-select" aria-label="Sort orders" value={value} onChange={(event) => { const [key, nextDirection] = event.target.value.split(":") as [SortKey, SortDirection]; onKey(key); onDirection(nextDirection); }}>{(Object.keys(sortChoiceLabels) as SortChoice[]).map((choice) => <option key={choice} value={choice}>{sortChoiceLabels[choice]}</option>)}</select>;
+  return <select className="combined-sort-select" aria-label={t("Sort orders")} value={value} onChange={(event) => { const [key, nextDirection] = event.target.value.split(":") as [SortKey, SortDirection]; onKey(key); onDirection(nextDirection); }}>{(Object.keys(sortChoiceLabels) as SortChoice[]).map((choice) => <option key={choice} value={choice}>{t(sortChoiceLabels[choice])}</option>)}</select>;
 }
 
 function StatusFilterPills({ value, onChange }: { value: "all" | OrderStatus; onChange: (status: "all" | OrderStatus) => void }) {
-  return <div className="status-filter-pills" aria-label="Filter by stage">{(["all", ...orderStatuses] as ("all" | OrderStatus)[]).map((status) => <button type="button" key={status} className={value === status ? "active" : ""} onClick={() => onChange(status)}>{status === "all" ? "All" : statusLabels[status]}</button>)}</div>;
+  const { t } = useLanguage();
+  return <div className="status-filter-pills" aria-label={t("Filter by stage")}>{(["all", ...orderStatuses] as ("all" | OrderStatus)[]).map((status) => <button type="button" key={status} className={value === status ? "active" : ""} onClick={() => onChange(status)}>{status === "all" ? t("All") : t(statusLabels[status])}</button>)}</div>;
 }
 
 function SourceFilterSelect({ value, onChange }: { value: SourceFilter; onChange: (source: SourceFilter) => void }) {
+  const { t } = useLanguage();
   const labels: Record<SourceFilter, string> = { all: "All", shopify: "Shopify", tiktok: "TikTok", whatsapp: "WhatsApp" };
-  return <select className="source-filter-select" aria-label="Filter by source" value={value} onChange={(event) => onChange(event.target.value as SourceFilter)}>{sourceFilterValues.map((source) => <option key={source} value={source}>{labels[source]}</option>)}</select>;
+  return <select className="source-filter-select" aria-label={t("Filter by source")} value={value} onChange={(event) => onChange(event.target.value as SourceFilter)}>{sourceFilterValues.map((source) => <option key={source} value={source}>{labels[source]}</option>)}</select>;
 }
 
 function StatusPill({ status }: { status: OrderStatus }) {
-  return <span className={`status-pill status-${status}`}>{statusLabels[status]}</span>;
+  const { t } = useLanguage();
+  return <span className={`status-pill status-${status}`}>{t(statusLabels[status])}</span>;
 }
 
 function FileDropZone({ accept, title, description, selectedName, className = "", onFile }: { accept: string; title: string; description?: string; selectedName?: string; className?: string; onFile: (file: File | null) => void }) {
+  const { t } = useLanguage();
   const [dragging, setDragging] = useState(false);
   function chooseFile(file: File | undefined) {
     onFile(file ?? null);
@@ -9826,15 +9860,17 @@ function FileDropZone({ accept, title, description, selectedName, className = ""
   >
     <input type="file" accept={accept} onChange={(event) => chooseFile(event.target.files?.[0])} />
     <strong>{selectedName || title}</strong>
-    <span>{selectedName ? "File ready. Drop another file to replace it." : description || "Click to choose, or drag and drop a file here"}</span>
+    <span>{selectedName ? t("File ready. Drop another file to replace it.") : description || t("Click to choose, or drag and drop a file here")}</span>
   </label>;
 }
 
 function ImportBox({ number, title, required, value, onChange, onFile, placeholder }: { number: string; title: string; required?: boolean; value: string; onChange: (value: string) => void; onFile: (file?: File) => void; placeholder: string }) {
-  return <article className="card import-box"><div className="import-heading"><span>{number}</span><div><h3>{title}</h3><p>{required ? "Required" : "Optional, but recommended"}</p></div></div><FileDropZone accept=".csv,text/csv" title="Choose or drop CSV file" description="or paste the CSV content below" onFile={(file) => onFile(file ?? undefined)} /><textarea value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} /></article>;
+  const { t } = useLanguage();
+  return <article className="card import-box"><div className="import-heading"><span>{number}</span><div><h3>{t(title)}</h3><p>{required ? t("Required") : t("Optional, but recommended")}</p></div></div><FileDropZone accept=".csv,text/csv" title={t("Choose or drop CSV file")} description={t("or paste the CSV content below")} onFile={(file) => onFile(file ?? undefined)} /><textarea value={value} onChange={(event) => onChange(event.target.value)} placeholder={t(placeholder || "")} /></article>;
 }
 
 function OrderDrawer({ order, manualOrders, role, actor, onClose, onUpdate, onStatus }: { order: Order; manualOrders: ManualOrder[]; role: UserRole; actor: string; onClose: () => void; onUpdate: (patch: Partial<Order>, expectedUpdatedAt: string) => Promise<Order>; onStatus: (status: OrderStatus) => void }) {
+  const { t } = useLanguage();
   const [draft, setDraft] = useState<Partial<Order>>({});
   const [saving, setSaving] = useState(false);
   const [readingFile, setReadingFile] = useState(false);
@@ -9926,27 +9962,29 @@ function OrderDrawer({ order, manualOrders, role, actor, onClose, onUpdate, onSt
     reader.readAsDataURL(file);
   }
 
-  return <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && closeDrawer()}><aside className="order-drawer"><div className="drawer-header"><div><p>ORDER DETAIL</p><h2>{orderLabel(order)}</h2></div><button onClick={closeDrawer}>x</button></div><div className="drawer-body">
-    {admin && <section className="detail-section" aria-live="polite"><div className="toolbar"><button className="button primary" disabled={!dirty || saving || readingFile} onClick={() => void saveDraft()}>{saving ? "Saving..." : "Save changes"}</button><button className="button" disabled={!dirty || saving || readingFile} onClick={discardDraft}>Discard draft</button></div><p>{saveMessage || (readingFile ? "Reading file..." : dirty ? "Unsaved changes" : "No unsaved changes")}</p>{dirty && baseline.current?.updatedAt !== order.updatedAt && <p>The order has changed. Your draft is shown above. Discard the draft to review the latest saved values before editing again.</p>}</section>}
-    <section className="detail-summary"><div><span>Current status</span><StatusPill status={order.status} /></div><div><span>Last updated</span><strong>{formatDate(order.updatedAt, true)}</strong></div></section>
-    <section className="detail-section"><h3>Quick actions</h3><div className="status-actions">{following && <button className="button primary" disabled={dirty || saving || readingFile} onClick={() => onStatus(following)}>Move to {statusLabels[following]}</button>}{admin && <button className="button issue-button" disabled={dirty || saving || readingFile} onClick={() => onStatus("issue")}>Mark issue</button>}{admin && order.status === "issue" && <button className="button secondary" disabled={dirty || saving || readingFile} onClick={() => onStatus("sent_for_sewing")}>Resolve issue</button>}<a className="button whatsapp" href={whatsappLink(order)} target="_blank">Open WhatsApp</a></div></section>
-    <section className="detail-section"><h3>Customer and order</h3><div className="field-grid"><Field label="Order number" value={`#${order.orderNumber}`} /><Field label="Source" value={source} /><Field label="Order date" value={formatDate(order.orderDate, true)} /><Field label="Payment method" value={paymentMethod} />{isCod && <Field label="Collection instruction" value="COD — collect payment on delivery" />}<Editable label="Customer name" value={displayOrder.customerName} disabled={!admin || saving} onChange={(value) => editDraft({ customerName: value })} /><Editable label="Phone" value={displayOrder.phone} disabled={!admin || saving} onChange={(value) => editDraft({ phone: value })} /><Editable wide label="Address" value={displayOrder.address} disabled={!admin || saving} onChange={(value) => editDraft({ address: value })} /></div></section>
-    {order.salesChannel === "tiktok" && <section className="detail-section"><h3>TikTok order file</h3><div className="field-grid"><div className="field wide"><label>Attached file</label>{missingTikTokAttachment ? <span>This earlier attachment is unavailable. Upload it again below.</span> : messageLink ? <a href={messageLink} download={messageDownloadName} rel="noreferrer">{messageDownloadName || "Download TikTok order file"}</a> : <span>No file attached</span>}</div>{admin && <div className="field wide"><FileDropZone accept="audio/*,video/*,application/pdf,image/png,image/jpeg,image/webp,.txt,.doc,.docx" title={order.tikTokFileDataUrl ? "Replace TikTok file" : "Upload TikTok file"} description="Choose or drop the customer's audio, video, or document" selectedName={order.tikTokFileDataUrl ? order.tikTokFileName : undefined} onFile={uploadTikTokOrderFile} className="compact-file-drop" /></div>}</div></section>}
-    <section className="detail-section"><h3>Plushie details</h3><div className="field-grid"><Editable label="Product name" value={displayOrder.product} disabled={!admin || saving} onChange={(value) => editDraft({ product: value })} /><Editable label="Character" value={displayOrder.character} disabled={!admin || saving} onChange={(value) => editDraft({ character: value })} /><Editable label="Set indicator" value={displayOrder.setIndicator ?? ""} disabled={!admin || saving} onChange={(value) => editDraft({ setIndicator: value })} /><Editable label="ID website link" value={displayOrder.idWebsiteLink ?? ""} disabled={!admin || saving} onChange={(value) => editDraft({ idWebsiteLink: value })} /><Editable label="Voice length" value={String(displayOrder.voiceLength || "")} disabled={!admin || saving} onChange={(value) => editDraft({ voiceLength: Number(value) || 0 })} /><Editable label="Plush name" value={displayOrder.plushName} disabled={!admin || saving} onChange={(value) => editDraft({ plushName: value })} /><Editable wide label="Remark" value={displayOrder.remark ?? ""} disabled={!admin || saving} onChange={(value) => editDraft({ remark: value })} /><Editable wide textarea label="Meaningful note" value={displayOrder.meaningfulNote} disabled={!admin || saving} onChange={(value) => editDraft({ meaningfulNote: value })} /><div className="field wide"><label>Meaningful message</label>{missingTikTokAttachment ? <span>Attachment needs to be uploaded again in the TikTok order file section.</span> : messageLink ? <a href={messageLink} download={messageDownloadName} target={messageDownloadName ? undefined : "_blank"} rel="noreferrer">{messageDownloadName ? "Download customer message" : "Open customer message"}</a> : <span>{order.salesChannel === "tiktok" ? "No TikTok file uploaded" : "Not provided"}</span>}</div><div className="field"><label>Voice upload</label>{admin ? <select disabled={saving} value={displayOrder.voiceUploadStatus} onChange={(event) => editDraft({ voiceUploadStatus: event.target.value as Order["voiceUploadStatus"] })}><option value="missing">Missing</option><option value="received">Received</option><option value="checked">Checked</option></select> : <strong>{order.voiceUploadStatus}</strong>}</div></div></section>
-    <section className="detail-section"><h3>Delivery</h3><div className="field-grid"><Field label="Shipping method" value={displayOrder.shippingMethod || "Not imported"} /><Editable label="Courier" value={displayOrder.courier} disabled={!admin || saving} placeholder="J&T Express" onChange={(value) => editDraft({ courier: value })} /><Editable label="Tracking number" value={displayOrder.trackingNumber} disabled={!admin || saving} placeholder="Enter tracking number" onChange={(value) => editDraft({ trackingNumber: value })} /></div></section>
-    <section className="detail-section"><h3>Tailor / packing photo</h3><div className="photo-field">{displayOrder.photoDataUrl ? <img src={displayOrder.photoDataUrl} alt="Tailor or packing evidence" /> : <div className="photo-placeholder">No photo uploaded</div>}{admin && <FileDropZone accept="image/*" title={displayOrder.photoDataUrl ? "Replace photo" : "Upload photo"} description="Click or drop an image" selectedName={displayOrder.photoName} onFile={(file) => uploadPhoto(file ?? undefined)} className="photo-file-drop" />}</div></section>
-    <section className="detail-section"><h3>Internal notes</h3><textarea className="notes" value={displayOrder.internalNotes} disabled={!admin || saving} onChange={(event) => editDraft({ internalNotes: event.target.value })} placeholder="Add notes visible to your team..." /></section>
-    <section className="detail-section"><h3>Status history</h3><div className="history">{[...order.statusHistory].reverse().map((event) => <div key={event.id}><span></span><div><strong>{statusLabels[event.status]}</strong><p>{event.changedBy} | {formatDate(event.changedAt, true)}</p>{event.note && <small>{event.note}</small>}</div></div>)}</div></section>
-    {!admin && <p className="permission-note">Signed in as Staff. You can only move orders to the next stage.</p>}
+  return <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && closeDrawer()}><aside className="order-drawer"><div className="drawer-header"><div><p>{t("ORDER DETAIL")}</p><h2>{orderLabel(order)}</h2></div><button onClick={closeDrawer}>{t("x")}</button></div><div className="drawer-body">
+    {admin && <section className="detail-section" aria-live="polite"><div className="toolbar"><button className="button primary" disabled={!dirty || saving || readingFile} onClick={() => void saveDraft()}>{saving ? t("Saving...") : t("Save changes")}</button><button className="button" disabled={!dirty || saving || readingFile} onClick={discardDraft}>{t("Discard draft")}</button></div><p>{saveMessage || (readingFile ? t("Reading file...") : dirty ? t("Unsaved changes") : t("No unsaved changes"))}</p>{dirty && baseline.current?.updatedAt !== order.updatedAt && <p>{t("The order has changed. Your draft is shown above. Discard the draft to review the latest saved values before editing again.")}</p>}</section>}
+    <section className="detail-summary"><div><span>{t("Current status")}</span><StatusPill status={order.status} /></div><div><span>{t("Last updated")}</span><strong>{formatDate(order.updatedAt, true)}</strong></div></section>
+    <section className="detail-section"><h3>{t("Quick actions")}</h3><div className="status-actions">{following && <button className="button primary" disabled={dirty || saving || readingFile} onClick={() => onStatus(following)}>{t("Move to") + " "}{t(statusLabels[following])}</button>}{admin && <button className="button issue-button" disabled={dirty || saving || readingFile} onClick={() => onStatus("issue")}>{t("Mark issue")}</button>}{admin && order.status === "issue" && <button className="button secondary" disabled={dirty || saving || readingFile} onClick={() => onStatus("sent_for_sewing")}>{t("Resolve issue")}</button>}<a className="button whatsapp" href={whatsappLink(order)} target="_blank">{t("Open WhatsApp")}</a></div></section>
+    <section className="detail-section"><h3>{t("Customer and order")}</h3><div className="field-grid"><Field label={t("Order number")} value={`#${order.orderNumber}`} /><Field label={t("Source")} value={source} /><Field label={t("Order date")} value={formatDate(order.orderDate, true)} /><Field label={t("Payment method")} value={paymentMethod} />{isCod && <Field label={t("Collection instruction")} value="COD — collect payment on delivery" />}<Editable label={t("Customer name")} value={displayOrder.customerName} disabled={!admin || saving} onChange={(value) => editDraft({ customerName: value })} /><Editable label={t("Phone")} value={displayOrder.phone} disabled={!admin || saving} onChange={(value) => editDraft({ phone: value })} /><Editable wide label={t("Address")} value={displayOrder.address} disabled={!admin || saving} onChange={(value) => editDraft({ address: value })} /></div></section>
+    {order.salesChannel === "tiktok" && <section className="detail-section"><h3>{t("TikTok order file")}</h3><div className="field-grid"><div className="field wide"><label>{t("Attached file")}</label>{missingTikTokAttachment ? <span>{t("This earlier attachment is unavailable. Upload it again below.")}</span> : messageLink ? <a href={messageLink} download={messageDownloadName} rel="noreferrer">{messageDownloadName || t("Download TikTok order file")}</a> : <span>{t("No file attached")}</span>}</div>{admin && <div className="field wide"><FileDropZone accept="audio/*,video/*,application/pdf,image/png,image/jpeg,image/webp,.txt,.doc,.docx" title={order.tikTokFileDataUrl ? t("Replace TikTok file") : t("Upload TikTok file")} description={t("Choose or drop the customer's audio, video, or document")} selectedName={order.tikTokFileDataUrl ? order.tikTokFileName : undefined} onFile={uploadTikTokOrderFile} className="compact-file-drop" /></div>}</div></section>}
+    <section className="detail-section"><h3>{t("Plushie details")}</h3><div className="field-grid"><Editable label={t("Product name")} value={displayOrder.product} disabled={!admin || saving} onChange={(value) => editDraft({ product: value })} /><Editable label={t("Character")} value={displayOrder.character} disabled={!admin || saving} onChange={(value) => editDraft({ character: value })} /><Editable label={t("Set indicator")} value={displayOrder.setIndicator ?? ""} disabled={!admin || saving} onChange={(value) => editDraft({ setIndicator: value })} /><Editable label={t("ID website link")} value={displayOrder.idWebsiteLink ?? ""} disabled={!admin || saving} onChange={(value) => editDraft({ idWebsiteLink: value })} /><Editable label={t("Voice length")} value={String(displayOrder.voiceLength || "")} disabled={!admin || saving} onChange={(value) => editDraft({ voiceLength: Number(value) || 0 })} /><Editable label={t("Plush name")} value={displayOrder.plushName} disabled={!admin || saving} onChange={(value) => editDraft({ plushName: value })} /><Editable wide label={t("Remark")} value={displayOrder.remark ?? ""} disabled={!admin || saving} onChange={(value) => editDraft({ remark: value })} /><Editable wide textarea label={t("Meaningful note")} value={displayOrder.meaningfulNote} disabled={!admin || saving} onChange={(value) => editDraft({ meaningfulNote: value })} /><div className="field wide"><label>{t("Meaningful message")}</label>{missingTikTokAttachment ? <span>{t("Attachment needs to be uploaded again in the TikTok order file section.")}</span> : messageLink ? <a href={messageLink} download={messageDownloadName} target={messageDownloadName ? undefined : "_blank"} rel="noreferrer">{messageDownloadName ? t("Download customer message") : t("Open customer message")}</a> : <span>{order.salesChannel === "tiktok" ? t("No TikTok file uploaded") : t("Not provided")}</span>}</div><div className="field"><label>{t("Voice upload")}</label>{admin ? <select disabled={saving} value={displayOrder.voiceUploadStatus} onChange={(event) => editDraft({ voiceUploadStatus: event.target.value as Order["voiceUploadStatus"] })}><option value="missing">{t("Missing")}</option><option value="received">{t("Received")}</option><option value="checked">{t("Checked")}</option></select> : <strong>{order.voiceUploadStatus}</strong>}</div></div></section>
+    <section className="detail-section"><h3>{t("Delivery")}</h3><div className="field-grid"><Field label={t("Shipping method")} value={displayOrder.shippingMethod || "Not imported"} /><Editable label={t("Courier")} value={displayOrder.courier} disabled={!admin || saving} placeholder={t("J&T Express")} onChange={(value) => editDraft({ courier: value })} /><Editable label={t("Tracking number")} value={displayOrder.trackingNumber} disabled={!admin || saving} placeholder={t("Enter tracking number")} onChange={(value) => editDraft({ trackingNumber: value })} /></div></section>
+    <section className="detail-section"><h3>{t("Tailor / packing photo")}</h3><div className="photo-field">{displayOrder.photoDataUrl ? <img src={displayOrder.photoDataUrl} alt="Tailor or packing evidence" /> : <div className="photo-placeholder">{t("No photo uploaded")}</div>}{admin && <FileDropZone accept="image/*" title={displayOrder.photoDataUrl ? t("Replace photo") : t("Upload photo")} description={t("Click or drop an image")} selectedName={displayOrder.photoName} onFile={(file) => uploadPhoto(file ?? undefined)} className="photo-file-drop" />}</div></section>
+    <section className="detail-section"><h3>{t("Internal notes")}</h3><textarea className="notes" value={displayOrder.internalNotes} disabled={!admin || saving} onChange={(event) => editDraft({ internalNotes: event.target.value })} placeholder={t("Add notes visible to your team...")} /></section>
+    <section className="detail-section"><h3>{t("Status history")}</h3><div className="history">{[...order.statusHistory].reverse().map((event) => <div key={event.id}><span></span><div><strong>{t(statusLabels[event.status])}</strong><p>{event.changedBy} | {formatDate(event.changedAt, true)}</p>{event.note && <small>{event.note}</small>}</div></div>)}</div></section>
+    {!admin && <p className="permission-note">{t("Signed in as Staff. You can only move orders to the next stage.")}</p>}
   </div></aside></div>;
 }
 
 function Field({ label, value }: { label: string; value: string }) {
-  return <div className="field"><label>{label}</label><strong>{value || "-"}</strong></div>;
+  const { t } = useLanguage();
+  return <div className="field"><label>{t(label)}</label><strong>{value || "-"}</strong></div>;
 }
 
 function Editable({ label, value, onChange, disabled, placeholder, wide, textarea }: { label: string; value: string; onChange: (value: string) => void; disabled?: boolean; placeholder?: string; wide?: boolean; textarea?: boolean }) {
-  return <div className={`field ${wide ? "wide" : ""}`}><label>{label}</label>{textarea ? <textarea value={value} disabled={disabled} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} /> : <input value={value} disabled={disabled} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} />}</div>;
+  const { t } = useLanguage();
+  return <div className={`field ${wide ? "wide" : ""}`}><label>{t(label)}</label>{textarea ? <textarea value={value} disabled={disabled} placeholder={t(placeholder || "")} onChange={(event) => onChange(event.target.value)} /> : <input value={value} disabled={disabled} placeholder={t(placeholder || "")} onChange={(event) => onChange(event.target.value)} />}</div>;
 }
 
 function PackingSlip({ order, manualOrders }: { order: Order; manualOrders: ManualOrder[] }) {
@@ -9963,25 +10001,26 @@ function ShippingLabelPage({ order, manualOrders }: { order: Order; manualOrders
 }
 
 function EnvelopeSettingsPanel({ settings, onChange, onFontUpload, onReset }: { settings: EnvelopePrintSettings; onChange: (patch: Partial<EnvelopePrintSettings>) => void; onFontUpload: (file: File | null) => void; onReset: () => void }) {
+  const { t } = useLanguage();
   const numberChange = (key: keyof EnvelopePrintSettings) => (event: ChangeEvent<HTMLInputElement>) => onChange({ [key]: Number(event.target.value) } as Partial<EnvelopePrintSettings>);
   const previewFontFamily = settings.fontBase64 ? "EnvelopeUploadedFont" : undefined;
   return <section className="envelope-settings">
     {settings.fontBase64 && <style>{`@font-face{font-family:"EnvelopeUploadedFont";src:url(data:font/opentype;base64,${settings.fontBase64}) format("opentype");font-display:block;}`}</style>}
-    <div className="envelope-settings-header"><div><strong>Print Envelope</strong><span>Upload any font, then tune the size and text box placement. Names are rendered as all caps before the PDF is created.</span></div><button className="view-button" type="button" onClick={onReset}>Reset</button></div>
-    <FileDropZone accept=".otf,.ttf,font/otf,font/ttf" title="Font file" description="Use .otf or .ttf. Click or drop the font here." selectedName={settings.fontName || ""} onFile={onFontUpload} className="envelope-font-upload" />
-    <div className="envelope-font-sample" style={{ fontFamily: previewFontFamily }}><span>Font preview</span><strong style={{ WebkitTextStroke: settings.boldness ? `${settings.boldness / 2}px #425e75` : undefined }}>SNUGGLEBEAR</strong><small>{settings.fontBase64 ? "This is the all-caps style that will become the envelope name image." : "Upload a font to see the preview here."}</small></div>
+    <div className="envelope-settings-header"><div><strong>{t("Print Envelope")}</strong><span>{t("Upload any font, then tune the size and text box placement. Names are rendered as all caps before the PDF is created.")}</span></div><button className="view-button" type="button" onClick={onReset}>{t("Reset")}</button></div>
+    <FileDropZone accept=".otf,.ttf,font/otf,font/ttf" title={t("Font file")} description={t("Use .otf or .ttf. Click or drop the font here.")} selectedName={settings.fontName || ""} onFile={onFontUpload} className="envelope-font-upload" />
+    <div className="envelope-font-sample" style={{ fontFamily: previewFontFamily }}><span>{t("Font preview")}</span><strong style={{ WebkitTextStroke: settings.boldness ? `${settings.boldness / 2}px #425e75` : undefined }}>{t("SNUGGLEBEAR")}</strong><small>{settings.fontBase64 ? t("This is the all-caps style that will become the envelope name image.") : t("Upload a font to see the preview here.")}</small></div>
     <div className="envelope-settings-grid">
-      <label>Font size<input type="number" step="1" value={settings.fontSize} onChange={numberChange("fontSize")} /></label>
-      <label>Minimum size<input type="number" step="1" value={settings.minFontSize} onChange={numberChange("minFontSize")} /></label>
-      <label>Boldness<input type="number" min="0" max="8" step="0.25" value={settings.boldness} onChange={numberChange("boldness")} /></label>
-      <label>Letter spacing<input type="number" step="0.1" value={settings.letterSpacing} onChange={numberChange("letterSpacing")} /></label>
-      <label>Line height<input type="number" step="0.01" value={settings.lineHeight} onChange={numberChange("lineHeight")} /></label>
-      <label>Box width<input type="number" step="1" value={settings.textBoxWidth} onChange={numberChange("textBoxWidth")} /></label>
-      <label>Box height<input type="number" step="1" value={settings.textBoxHeight} onChange={numberChange("textBoxHeight")} /></label>
-      <label>Top X<input type="number" step="0.1" value={settings.topX} onChange={numberChange("topX")} /></label>
-      <label>Top Y<input type="number" step="0.1" value={settings.topY} onChange={numberChange("topY")} /></label>
-      <label>Bottom X<input type="number" step="0.1" value={settings.bottomX} onChange={numberChange("bottomX")} /></label>
-      <label>Bottom Y<input type="number" step="0.1" value={settings.bottomY} onChange={numberChange("bottomY")} /></label>
+      <label>{t("Font size")}<input type="number" step="1" value={settings.fontSize} onChange={numberChange("fontSize")} /></label>
+      <label>{t("Minimum size")}<input type="number" step="1" value={settings.minFontSize} onChange={numberChange("minFontSize")} /></label>
+      <label>{t("Boldness")}<input type="number" min="0" max="8" step="0.25" value={settings.boldness} onChange={numberChange("boldness")} /></label>
+      <label>{t("Letter spacing")}<input type="number" step="0.1" value={settings.letterSpacing} onChange={numberChange("letterSpacing")} /></label>
+      <label>{t("Line height")}<input type="number" step="0.01" value={settings.lineHeight} onChange={numberChange("lineHeight")} /></label>
+      <label>{t("Box width")}<input type="number" step="1" value={settings.textBoxWidth} onChange={numberChange("textBoxWidth")} /></label>
+      <label>{t("Box height")}<input type="number" step="1" value={settings.textBoxHeight} onChange={numberChange("textBoxHeight")} /></label>
+      <label>{t("Top X")}<input type="number" step="0.1" value={settings.topX} onChange={numberChange("topX")} /></label>
+      <label>{t("Top Y")}<input type="number" step="0.1" value={settings.topY} onChange={numberChange("topY")} /></label>
+      <label>{t("Bottom X")}<input type="number" step="0.1" value={settings.bottomX} onChange={numberChange("bottomX")} /></label>
+      <label>{t("Bottom Y")}<input type="number" step="0.1" value={settings.bottomY} onChange={numberChange("bottomY")} /></label>
     </div>
   </section>;
 }
@@ -10041,5 +10080,3 @@ function Icon({ name }: { name: IconName }) {
   if (name === "drag") return <svg {...common}><circle cx="8" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="8" cy="17" r="1" fill="currentColor" stroke="none"/><circle cx="16" cy="17" r="1" fill="currentColor" stroke="none"/></svg>;
   return <svg {...common}><path d="M12 8v5l3 2"/><circle cx="12" cy="12" r="9"/></svg>;
 }
-
-
