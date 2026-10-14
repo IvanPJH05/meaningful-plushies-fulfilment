@@ -1611,6 +1611,36 @@ body.print-sales-report .report-table th,
 .orders-toolbar .status-filter-pills { flex: 1 1 340px; min-width: 0; }
 .order-search input { padding-right: 110px; }
 .order-search .clear-order-search { position: absolute; right: 5px; top: 4px; height: 30px; padding: 0 8px; font-size: 11px; }
+.batch-workspace { display: grid; gap: 20px; max-width: 1100px; margin: auto; }
+.batch-picker { display: flex; align-items: flex-end; gap: 16px; padding: 20px; }
+.batch-picker label { display: grid; gap: 8px; flex: 1; font-weight: 700; }
+.batch-picker select,.batch-dialog select,.batch-name-grid input { min-height: 44px; width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: white; }
+.batch-progress { display: grid; grid-template-columns: repeat(5,1fr); gap: 8px; padding: 0; margin: 0; list-style: none; }
+.batch-progress li { padding: 14px 10px; border-radius: 10px; background: #e8edf5; color: #68758a; font-size: 12px; font-weight: 700; }
+.batch-progress li span { display: block; font-size: 20px; margin-bottom: 6px; }
+.batch-progress .current { background: #1769e0; color: white; }
+.batch-progress .done { background: #e5f4ed; color: #16845b; }
+.batch-step { padding: 28px; }
+.batch-step h2 { margin-top: 0; }
+.batch-buttons { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.batch-workspace .button,.batch-dialog .button { min-height: 44px; font-size: 14px; padding: 12px 18px; }
+.batch-name-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; margin: 22px 0; }
+.batch-name-grid label { display: grid; gap: 6px; }
+.batch-order-list { padding: 20px; }
+.batch-order-list article { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 16px 0; border-top: 1px solid var(--line); }
+.batch-order-list p { color: var(--muted); }
+.batch-error { padding: 16px; background: #fff0f0; border: 1px solid #eaa; border-radius: 10px; }
+.batch-dialog-overlay { position: fixed; inset: 0; z-index: 100; background: #13233a99; display: grid; place-items: center; padding: 20px; }
+.batch-dialog { width: min(520px,100%); padding: 28px; }
+.batch-dialog label { display: grid; gap: 8px; margin: 20px 0; }
+@media(max-width:640px) {
+  .batch-progress { grid-template-columns: 1fr; }
+  .batch-progress li { display: flex; align-items: center; gap: 14px; padding: 10px; }
+  .batch-progress li span { margin: 0; }
+  .batch-order-list article { align-items: start; flex-direction: column; }
+  .batch-name-grid { grid-template-columns: 1fr; }
+  .batch-step { padding: 20px; }
+}
 @media (max-width: 640px) {
   .orders-card .toolbar .search { flex-basis: 100%; min-width: 0; width: 100%; }
 }

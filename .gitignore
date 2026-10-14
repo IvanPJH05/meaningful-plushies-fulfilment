@@ -10,4 +10,5 @@ tmp/
 meaningful-plushies-fulfilment/
 *.tsbuildinfo
 .vercel
+supabase/.temp/
 android/app/google-services.json
