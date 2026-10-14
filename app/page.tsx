@@ -2,6 +2,9 @@
 
 import "./settings.css";
 
+import dynamic from "next/dynamic";
+import { WorkspaceDataCache, sharedTablesForWorkspace } from "../lib/workspace-data";
+
 import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent, FormEvent, SVGProps } from "react";
 import { applyTikTokDetailEntries, detectCsvKind, fulfilledOrdersCsv, importShopifyData, importTikTokShopData, normalizePaymentProcessor, parseTikTokDetailsBlock, tikTokCertificateJson, tikTokDetailsToText } from "../lib/importer";
@@ -89,9 +92,9 @@ import {
 } from "../lib/supabase";
 import { manualOrderCharactersForProduct, manualOrderProductFamily, manualOrderProducts } from "../lib/manual-order-products";
 import { orderStatuses, type AccountingBankStatementLine, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type AiAccountantReview, type CommissionStatus, type ContentIdeaItem, type ContentIdeaReference, type ContentPlanItem, type CreatorCommission, type CreatorPayout, type CreatorProfile, type CreatorStatus, type CreatorTier, type DashboardAccount, type EnvelopePrintSettings, type ManualOrder, type MetaCapiLog, type MetaCapiSettings, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesConsumptionMapping, type SalesFeeSetting, type StockSetting, type UserRole, type WhatsAppLead, type WhatsAppLeadStatus } from "../lib/types";
-import { MonthlyJournalWorkspace } from "../components/monthly-journal-workspace";
-import { ShopifyAppWorkspace } from "../components/shopify-app-workspace";
-import { AudioScannerWorkspace } from "../components/audio-scanner-workspace";
+const MonthlyJournalWorkspace = dynamic(() => import("../components/monthly-journal-workspace").then((module) => module.MonthlyJournalWorkspace), { loading: () => <p role="status">Opening workspace...</p> });
+const ShopifyAppWorkspace = dynamic(() => import("../components/shopify-app-workspace").then((module) => module.ShopifyAppWorkspace), { loading: () => <p role="status">Opening workspace...</p> });
+const AudioScannerWorkspace = dynamic(() => import("../components/audio-scanner-workspace").then((module) => module.AudioScannerWorkspace), { loading: () => <p role="status">Opening workspace...</p> });
 import { OrderBarcode, orderBarcodeValue } from "../components/order-barcode";
 import { ManualOrderIntakeRecords } from "../components/manual-order-intake-records";
 
@@ -1919,175 +1922,135 @@ export default function Home() {
     return () => observer.disconnect();
   }, [hasMoreOrderSummaries, loadNextOrderSummaries, loadingMoreOrderSummaries]);
 
+  const activeViewRef = useRef(view);
+  activeViewRef.current = view;
+  const dataToken = session?.token;
+  const dataRole = session?.role;
+  const workspaceCache = useMemo(() => new WorkspaceDataCache(), [dataToken]);
+  const [workspaceDataLoading, setWorkspaceDataLoading] = useState(false);
+  const [workspaceDataError, setWorkspaceDataError] = useState("");
+  const supportRequestId = useRef(0);
+  const workspaceLoaders = useMemo<Record<string, () => Promise<unknown>>>(() => ({
+    manual_orders: () => fetchManualOrders().then(setManualOrders),
+    whatsapp_leads: () => fetchWhatsAppLeads().then(setWhatsAppLeads),
+    payment_processor_settings: () => fetchPaymentProcessorSettings().then(setProcessorSettings),
+    sales_fee_settings: () => fetchSalesFeeSettings().then(setSalesFeeSettings),
+    activity_events: () => fetchSharedActivity().then(setActivity),
+    stock_settings: () => fetchStockSettings().then(setStockSettings),
+    accounting_categories: () => fetchAccountingCategories().then(setAccountingCategories),
+    accounting_documents: () => fetchAccountingDocuments().then(setAccountingDocuments),
+    accounting_transactions: () => fetchAccountingTransactions().then(setAccountingTransactions),
+    accounting_ledger_entries: () => fetchAccountingLedgerEntries().then(setAccountingLedgerEntries),
+    accounting_bank_statement_lines: () => fetchAccountingBankStatementLines().then(setBankStatementLines),
+    accounting_ai_import_reviews: () => fetchAiAccountantReviews().then(setAiAccountantReviews),
+    sales_consumption_mappings: () => fetchSalesConsumptionMappings().then((mappings) => setSalesConsumptionMappings(normalizeSalesConsumptionMappings(mappings))),
+    content_plan_items: () => fetchContentPlanItems().then(setContentPlanItems),
+    content_idea_items: () => fetchContentIdeas().then(setContentIdeas),
+    envelope_print_settings: () => fetchEnvelopePrintSettings().then((settings) => {
+      skipNextEnvelopeSettingsSave.current = true;
+      setEnvelopePrintSettings({ ...defaultEnvelopePrintSettings, ...readStoredEnvelopeSettings(), ...settings });
+      setEnvelopeSettingsLoaded(true);
+    }),
+    meta_capi_settings: () => fetchMetaCapiSettings().then(setMetaCapiSettings),
+    meta_capi_logs: () => fetchMetaCapiLogs().then(setMetaCapiLogs),
+    creator_profiles: () => fetchCreatorProfiles(dataToken!).then(setCreatorProfiles),
+    creator_commissions: () => fetchCreatorCommissions(dataToken!).then(setCreatorCommissions),
+    creator_payouts: () => fetchCreatorPayouts(dataToken!).then(setCreatorPayouts),
+  }), [dataToken, normalizeSalesConsumptionMappings]);
+
+  const loadWorkspaceSupport = useCallback(async (force = false) => {
+    const activeView = activeViewRef.current;
+    const keys = sharedTablesForWorkspace(activeView, workspaceForView(activeView), dataRole);
+    const requestId = ++supportRequestId.current;
+    if (!dataToken || !supabaseConfigured) {
+      setWorkspaceDataLoading(false);
+      setWorkspaceDataError("");
+      return;
+    }
+    if (force) workspaceCache.invalidate(keys);
+    setWorkspaceDataLoading(!workspaceCache.isReady(keys));
+    const failed = await workspaceCache.load(keys, workspaceLoaders);
+    if (requestId !== supportRequestId.current || activeViewRef.current !== activeView) return;
+    setWorkspaceDataLoading(false);
+    setWorkspaceDataError(failed.length ? "Some data in this workspace could not load. Your last loaded data is kept. Retry to refresh it." : "");
+    if (failed.length) console.warn("Workspace data reads failed", failed);
+  }, [dataToken, dataRole, workspaceCache, workspaceLoaders]);
+
+  useEffect(() => { void loadWorkspaceSupport(); }, [view, loadWorkspaceSupport]);
+
   const loadSharedData = useCallback(async (showLoading = false) => {
+    if (!dataToken) { setLoadingOrders(false); return; }
     if (!supabaseConfigured) {
       setDatabaseError("Supabase is not configured. Add the public Supabase URL and anon key in Vercel.");
       setLoadingOrders(false);
       return;
     }
+    // Mutations can affect a hidden workspace too. Mark its cached data stale
+    // without fetching it; navigation will load it when it is needed.
+    if (!showLoading) workspaceCache.invalidate(Object.keys(workspaceLoaders));
     if (showLoading && !hasOrdersCache.current) setLoadingOrders(true);
     try {
-      // Use the local order snapshot immediately after a browser refresh, then ask
-      // Supabase only for order IDs/timestamps and the rows that actually changed.
       await refreshCachedOrders();
       setDatabaseError("");
-      setLoadingOrders(false);
-
-      void Promise.allSettled([
-        fetchManualOrders().then(setManualOrders),
-        fetchWhatsAppLeads().then(setWhatsAppLeads),
-        fetchPaymentProcessorSettings().then(setProcessorSettings),
-        fetchSalesFeeSettings().then(setSalesFeeSettings),
-      ]);
-
-      // Orders are the workspace's first priority.  Everything below is supporting
-      // data for other workspaces, so it must never hold up the order screen or turn
-      // a temporary slow query into a misleading "the app is broken" message.
-      void Promise.allSettled([
-        fetchSharedActivity().then(setActivity),
-        fetchStockSettings().then(setStockSettings),
-        fetchAccountingCategories().then(setAccountingCategories),
-        fetchAccountingDocuments().then(setAccountingDocuments),
-        fetchAccountingTransactions().then(setAccountingTransactions),
-        fetchAccountingLedgerEntries().then(setAccountingLedgerEntries),
-        fetchAccountingBankStatementLines().then(setBankStatementLines),
-        fetchAiAccountantReviews().then(setAiAccountantReviews),
-        fetchSalesConsumptionMappings().then((mappings) => setSalesConsumptionMappings(normalizeSalesConsumptionMappings(mappings))),
-        fetchContentPlanItems().then(setContentPlanItems),
-        fetchContentIdeas().then(setContentIdeas),
-        fetchEnvelopePrintSettings().then((settings) => {
-          skipNextEnvelopeSettingsSave.current = true;
-          setEnvelopePrintSettings({ ...defaultEnvelopePrintSettings, ...readStoredEnvelopeSettings(), ...settings });
-          setEnvelopeSettingsLoaded(true);
-        }),
-        fetchMetaCapiSettings().then(setMetaCapiSettings),
-        fetchMetaCapiLogs().then(setMetaCapiLogs),
-      ]);
     } catch (error) {
-      // Preserve the last successful workspace data if a device briefly loses its
-      // connection. The next automatic refresh will retry rather than clearing it.
       setDatabaseError(readableError(error, "Could not reach the shared database. Your displayed data is unchanged and the app will retry automatically."));
-    } finally {
-      setLoadingOrders(false);
-    }
-  }, [normalizeSalesConsumptionMappings, refreshCachedOrders]);
+    } finally { setLoadingOrders(false); }
+    await loadWorkspaceSupport();
+  }, [dataToken, workspaceCache, workspaceLoaders, refreshCachedOrders, loadWorkspaceSupport]);
 
   const loadChangedSharedData = useCallback(async (changedTables: string[]) => {
-    if (!supabaseConfigured || !changedTables.length) return;
-    const tables = new Set(changedTables);
-    try {
-      await Promise.allSettled([
-        tables.has("fulfilment_orders") ? refreshCachedOrders() : Promise.resolve(),
-        tables.has("manual_orders") ? fetchManualOrders().then(setManualOrders) : Promise.resolve(),
-        tables.has("whatsapp_leads") ? fetchWhatsAppLeads().then(setWhatsAppLeads) : Promise.resolve(),
-        tables.has("activity_events") ? fetchSharedActivity().then(setActivity) : Promise.resolve(),
-        tables.has("payment_processor_settings") ? fetchPaymentProcessorSettings().then(setProcessorSettings) : Promise.resolve(),
-        tables.has("sales_fee_settings") ? fetchSalesFeeSettings().then(setSalesFeeSettings) : Promise.resolve(),
-        tables.has("stock_settings") ? fetchStockSettings().then(setStockSettings) : Promise.resolve(),
-        tables.has("sales_consumption_mappings") ? fetchSalesConsumptionMappings().then((mappings) => setSalesConsumptionMappings(normalizeSalesConsumptionMappings(mappings))) : Promise.resolve(),
-        tables.has("accounting_categories") ? fetchAccountingCategories().then(setAccountingCategories) : Promise.resolve(),
-        tables.has("accounting_documents") ? fetchAccountingDocuments().then(setAccountingDocuments) : Promise.resolve(),
-        tables.has("accounting_transactions") ? fetchAccountingTransactions().then(setAccountingTransactions) : Promise.resolve(),
-        tables.has("accounting_ledger_entries") ? fetchAccountingLedgerEntries().then(setAccountingLedgerEntries) : Promise.resolve(),
-        tables.has("accounting_bank_statement_lines") ? fetchAccountingBankStatementLines().then(setBankStatementLines) : Promise.resolve(),
-        tables.has("accounting_ai_import_reviews") ? fetchAiAccountantReviews().then(setAiAccountantReviews) : Promise.resolve(),
-        tables.has("content_plan_items") ? fetchContentPlanItems().then(setContentPlanItems) : Promise.resolve(),
-        tables.has("content_idea_items") ? fetchContentIdeas().then(setContentIdeas) : Promise.resolve(),
-        tables.has("meta_capi_settings") ? fetchMetaCapiSettings().then(setMetaCapiSettings) : Promise.resolve(),
-        tables.has("meta_capi_logs") ? fetchMetaCapiLogs().then(setMetaCapiLogs) : Promise.resolve(),
-        tables.has("envelope_print_settings") ? fetchEnvelopePrintSettings().then((settings) => {
-          skipNextEnvelopeSettingsSave.current = true;
-          setEnvelopePrintSettings({ ...defaultEnvelopePrintSettings, ...readStoredEnvelopeSettings(), ...settings });
-          setEnvelopeSettingsLoaded(true);
-        }) : Promise.resolve(),
-        (tables.has("creator_profiles") && session && (session.role === "admin" || session.role === "creator")) ? fetchCreatorProfiles(session.token).then(setCreatorProfiles) : Promise.resolve(),
-        (tables.has("creator_commissions") && session && (session.role === "admin" || session.role === "creator")) ? fetchCreatorCommissions(session.token).then(setCreatorCommissions) : Promise.resolve(),
-        (tables.has("creator_payouts") && session && (session.role === "admin" || session.role === "creator")) ? fetchCreatorPayouts(session.token).then(setCreatorPayouts) : Promise.resolve(),
-        (tables.has("creator_free_samples") && session && (session.role === "admin" || session.role === "staff")) ? fetchCreatorFreeSampleCodes(session.token).then((codes) => {
-          setFreeCreatorSampleCodes(codes.map((code) => code.trim().toUpperCase()).filter(Boolean));
-        }) : Promise.resolve(),
-      ]);
-    } catch {
-      // A Realtime refresh is best-effort. The next update or manual refresh will
-      // recover it; do not replace a usable workspace with a generic error.
+    if (!dataToken || !supabaseConfigured || !changedTables.length) return;
+    workspaceCache.invalidate(changedTables);
+    if (changedTables.includes("fulfilment_orders")) {
+      try { await refreshCachedOrders(); }
+      catch (error) { setDatabaseError(readableError(error, "Order refresh failed. Your displayed data is kept.")); }
     }
-  }, [normalizeSalesConsumptionMappings, refreshCachedOrders, session]);
+    if (changedTables.includes("creator_free_samples") && (dataRole === "admin" || dataRole === "staff")) {
+      void fetchCreatorFreeSampleCodes(dataToken).then((codes) => setFreeCreatorSampleCodes(codes.map((code) => code.trim().toUpperCase()).filter(Boolean)))
+        .catch(() => setNotice("Creator sample codes could not refresh. Please retry."));
+    }
+    await loadWorkspaceSupport();
+  }, [dataToken, dataRole, workspaceCache, refreshCachedOrders, loadWorkspaceSupport]);
 
   useEffect(() => {
     void loadSharedData(true);
-    if (!supabaseConfigured) return;
+    if (!dataToken || !supabaseConfigured) return;
     const changedTables = new Set<string>();
     let refreshTimer: number | undefined;
-    const flushChanges = () => {
-      const tables = Array.from(changedTables);
-      changedTables.clear();
-      refreshTimer = undefined;
-      void loadChangedSharedData(tables);
-    };
     const unsubscribe = subscribeToSharedData((table) => {
       changedTables.add(table);
       if (refreshTimer) window.clearTimeout(refreshTimer);
-      refreshTimer = window.setTimeout(flushChanges, 800);
+      refreshTimer = window.setTimeout(() => {
+        const tables = Array.from(changedTables);
+        changedTables.clear();
+        refreshTimer = undefined;
+        void loadChangedSharedData(tables);
+      }, 800);
     });
     return () => {
       if (refreshTimer) window.clearTimeout(refreshTimer);
       unsubscribe();
     };
-  }, [loadChangedSharedData, loadSharedData]);
+  }, [dataToken, loadChangedSharedData, loadSharedData]);
 
   useEffect(() => {
-    if (!supabaseConfigured) return;
-    let cancelled = false;
-    const refreshManualOrders = async () => {
-      try {
-        const sharedManualOrders = await fetchManualOrders();
-        if (!cancelled) setManualOrders(sharedManualOrders);
-      } catch {
-        // The primary shared-data loader already reports connection problems.
-      }
-    };
-    const refreshWhenVisible = () => {
-      if (!document.hidden) void refreshManualOrders();
-    };
-    window.addEventListener("focus", refreshWhenVisible);
-    document.addEventListener("visibilitychange", refreshWhenVisible);
-    // Realtime already keeps active screens current. This is only an offline
-    // recovery check, so it must not repeatedly compete with fulfilment traffic.
-    const refreshInterval = window.setInterval(refreshManualOrders, 5 * 60_000);
-    return () => {
-      cancelled = true;
-      window.removeEventListener("focus", refreshWhenVisible);
-      document.removeEventListener("visibilitychange", refreshWhenVisible);
-      window.clearInterval(refreshInterval);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!supabaseConfigured) return;
-    let cancelled = false;
-    const refreshOrders = () => {
-      void refreshCachedOrders().then(() => {
-        if (cancelled) return;
-        setDatabaseError("");
-      }).catch((error) => {
-        if (!cancelled) setDatabaseError(readableError(error, "Could not reach the shared database. Your displayed data is unchanged and the app will retry automatically."));
+    if (!dataToken || !supabaseConfigured) return;
+    const refreshActiveData = () => {
+      if (document.hidden) return;
+      void loadWorkspaceSupport(true);
+      void refreshCachedOrders().then(() => setDatabaseError("")).catch((error) => {
+        setDatabaseError(readableError(error, "Could not refresh orders. Your displayed data is kept."));
       });
     };
-    const refreshWhenActive = () => {
-      if (!document.hidden) refreshOrders();
-    };
-    window.addEventListener("focus", refreshWhenActive);
-    document.addEventListener("visibilitychange", refreshWhenActive);
-    // Realtime delivers normal changes immediately. Keep a low-frequency safety
-    // refresh for missed browser events instead of continually scanning orders.
-    const interval = window.setInterval(refreshOrders, 5 * 60_000);
+    window.addEventListener("focus", refreshActiveData);
+    document.addEventListener("visibilitychange", refreshActiveData);
+    const interval = window.setInterval(refreshActiveData, 5 * 60_000);
     return () => {
-      cancelled = true;
-      window.removeEventListener("focus", refreshWhenActive);
-      document.removeEventListener("visibilitychange", refreshWhenActive);
+      window.removeEventListener("focus", refreshActiveData);
+      document.removeEventListener("visibilitychange", refreshActiveData);
       window.clearInterval(interval);
     };
-  }, [refreshCachedOrders]);
+  }, [dataToken, loadWorkspaceSupport, refreshCachedOrders]);
 
   useEffect(() => {
     if (session) writeJson(sessionStorageKey, session);
@@ -2190,7 +2153,6 @@ export default function Home() {
     // These are only needed in Settings. Keep a transient background failure quiet
     // instead of showing unrelated warnings while someone is fulfilling orders.
     void fetchDashboardAccounts(session.token).then(setAccounts).catch(() => undefined);
-    if (view === "meta_capi") void reloadMetaCapiStatus().catch(() => undefined);
   }, [session, view]);
 
   useEffect(() => {
@@ -2211,10 +2173,6 @@ export default function Home() {
     setCreatorPayouts(payouts);
   }, [session]);
 
-  useEffect(() => {
-    const isCreatorWorkspace = workspaceForView(view) === "creator";
-    void loadCreatorData(isCreatorWorkspace).catch(() => undefined);
-  }, [loadCreatorData, view]);
 
   useEffect(() => {
     const businessEvent = bookkeepingEventByView[view];
@@ -5937,6 +5895,8 @@ export default function Home() {
     <section className="main-area">
       <header className="topbar"><div><p>{workspaceTitle.toUpperCase()} WORKSPACE</p><h1>{viewTitle(view)}</h1></div><div className="top-actions"><span className={`role-badge ${session.role}`}>{session.role}</span>{view === "packing_slips" && <div className="packing-print-actions"><button className="button secondary print-trigger" onClick={() => printPackingSlips("packing")}>Packing slips</button><button className="button secondary print-trigger" onClick={() => printPackingSlips("labels")}>Shipping labels</button><button className="button primary print-trigger" onClick={() => printPackingSlips("both")}>Packing slip + label</button></div>}{view === "print_envelope" && <button className="button primary" disabled={!envelopePrintableNames.length || !envelopePrintSettings.fontBase64} onClick={printEnvelopes}>Generate {Math.ceil(envelopePrintableNames.length / 2)} A4 page{Math.ceil(envelopePrintableNames.length / 2) === 1 ? "" : "s"}</button>}{view === "sales_report" && <button className="button primary" onClick={() => printView("print-sales-report")}>Print / Save PDF</button>}{workspace === "fulfilment" && view !== "import" && <button className="button secondary" onClick={() => setView("import")}>Import CSV</button>}</div></header>
       {databaseError && <div className="notice"><span>Database connection: {databaseError}</span></div>}
+      {workspaceDataLoading && <div className="notice" role="status">Loading workspace data...</div>}
+      {workspaceDataError && <div className="notice" role="status"><span>{workspaceDataError}</span><button onClick={() => void loadWorkspaceSupport(true)}>Retry</button></div>}
       {loadingOrders && <div className="notice"><span>Loading shared orders from Supabase...</span></div>}
       {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice("")}>x</button></div>}
       {session.role === "admin" && accountingRetryMessage && <div className="notice" role="status"><span>{accountingRetryMessage}</span>{accountingRetryIds.length > 0 ? <button disabled={retryingAccounting} onClick={() => void retryAccountingSync()}>{retryingAccounting ? "Retrying..." : "Retry accounting sync"}</button> : <button onClick={() => setAccountingRetryMessage("")}>x</button>}</div>}
