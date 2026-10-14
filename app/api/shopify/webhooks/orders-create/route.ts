@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
+import { sessionIdForOrder } from "@/lib/customisation-links";
 
 import { shopifyLinePersonalization, shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
 import { isPlushCharmOrder } from "../../../../../lib/plush-charm";
@@ -145,7 +146,7 @@ export async function POST(request: Request) {
         // saved fulfilment order retains it, so include that as a matching hint
         // to keep the certificate picture aligned with the selected plushie.
         const characterHint = order.character || order.product;
-        const sessionId = sessionIds[index] || sessionIds[0];
+        const sessionId = sessionIdForOrder(order, importedOrders, sessionIds);
         const submitted = submittedCustomisations.get(sessionId);
         return createCertificateMetaobject({
           orderNumber: syncedNumber,

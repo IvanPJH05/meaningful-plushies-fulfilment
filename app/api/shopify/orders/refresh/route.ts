@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { sessionIdForOrder } from "../../../../../lib/customisation-links";
 
 import { shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
 import { isPlushCharmOrder } from "../../../../../lib/plush-charm";
@@ -55,25 +56,28 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
     sessionIds = await recoverMissingSessionIdForOrder({ createdAt, orders: importedOrders });
   }
   const submittedBySession = await submittedCustomisationsForSessionIds(sessionIds);
-  const sessionSubmission = sessionIds.map((id) => submittedBySession.get(id)).find(Boolean);
-  const submitted = sessionSubmission
-    ? { ...sessionSubmission, certificateCode: "" }
-    : await submittedCustomisationForOrder(requestedOrderNumber);
-  const certificateFields = submitted ? {
-    idName: submitted.form.plushName,
-    gender: submitted.form.gender,
-    bornOn: submitted.form.birthDate,
-    birthplace: submitted.form.birthPlace,
-    favouritePerson: submitted.form.favouritePerson,
-    belongsTo: submitted.form.belongsTo,
-    meaningfulNote: submitted.form.meaningfulNote,
-    meaningfulMessage: `supabase-storage:${submitted.voiceStoragePath}`,
-  } : uploadLiftCertificateFields(shopifyMetafieldValue(fullOrder));
+  const legacySubmission = importedOrders.length === 1 ? await submittedCustomisationForOrder(requestedOrderNumber) : null;
+  const submittedForOrder = (order: Order) => {
+    const submission = submittedBySession.get(sessionIdForOrder(order, importedOrders, sessionIds));
+    return submission ? { ...submission, certificateCode: "" } : legacySubmission;
+  };
+  const fieldsForOrder = (order: Order) => {
+    const submitted = submittedForOrder(order);
+    return submitted ? {
+      idName: submitted.form.plushName, gender: submitted.form.gender,
+      bornOn: submitted.form.birthDate, birthplace: submitted.form.birthPlace,
+      favouritePerson: submitted.form.favouritePerson, belongsTo: submitted.form.belongsTo,
+      meaningfulNote: submitted.form.meaningfulNote,
+      meaningfulMessage: "supabase-storage:" + submitted.voiceStoragePath,
+    } : importedOrders.length === 1 ? uploadLiftCertificateFields(shopifyMetafieldValue(fullOrder)) : {};
+  };
   const ordersWithOurLinks = await addMissingOurLinks(importedOrders, "Shopify refresh");
   const certificates = looksLikePersonalizedPlushie(fullOrder)
     ? await Promise.all(ordersWithOurLinks.map((order, index) => {
       if (isPlushCharmOrder(order)) return null;
       const lineItem = objectValue(lineItems[index]);
+      const submitted = submittedForOrder(order);
+      const certificateFields = fieldsForOrder(order);
       return createCertificateMetaobject({
         orderNumber: requestedOrderNumber,
         createdAt,
@@ -103,12 +107,13 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
     : [];
   const ordersWithCertificates = ordersWithOurLinks.map((order, index) => {
     const certificate = certificates[index];
+    const submitted = submittedForOrder(order);
     return certificate ? {
       ...order,
       certificateCode: certificate.code,
       idWebsiteLink: `https://meaningfulplushies.com/pages/certificate/${certificate.code}`,
       ...(submitted ? {
-        status: "new_order" as const,
+        status: order.status === "awaiting_customisation" ? "new_order" as const : order.status,
         plushName: submitted.form.plushName,
         plushGender: submitted.form.gender,
         plushBirthDate: submitted.form.birthDate,

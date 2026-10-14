@@ -38,6 +38,7 @@ const ORDER_SELECTION = `
   uploadLiftFormData: metafield(namespace: $uploadLiftNamespace, key: $uploadLiftKey) { value }
   lineItems(first: 50) {
     nodes {
+      id
       name
       title
       quantity
