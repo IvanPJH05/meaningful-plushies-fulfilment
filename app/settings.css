@@ -1603,3 +1603,14 @@ body.print-sales-report .report-table th,
   .dashboard-language-switcher select { min-width: 8.5rem; }
 }
 @media print { .dashboard-language-control { display: none !important; } }
+
+/* Order filters must never squeeze an active search down to its icon. */
+.orders-card .toolbar { flex-wrap: wrap; }
+.orders-toolbar .toolbar-filter-row { flex-wrap: wrap; flex-basis: 100%; }
+.orders-card .toolbar .search { flex: 1 0 240px; min-width: 240px; max-width: 100%; }
+.orders-toolbar .status-filter-pills { flex: 1 1 340px; min-width: 0; }
+.order-search input { padding-right: 110px; }
+.order-search .clear-order-search { position: absolute; right: 5px; top: 4px; height: 30px; padding: 0 8px; font-size: 11px; }
+@media (max-width: 640px) {
+  .orders-card .toolbar .search { flex-basis: 100%; min-width: 0; width: 100%; }
+}

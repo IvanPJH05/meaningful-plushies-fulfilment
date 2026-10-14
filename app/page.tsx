@@ -1563,7 +1563,8 @@ function Home() {
   const [manualOrders, setManualOrders] = useState<ManualOrder[]>([]);
   const [whatsAppLeads, setWhatsAppLeads] = useState<WhatsAppLead[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [query, setQuery] = useState(() => storedUi.query ?? "");
+  // Search is temporary: restoring an old query can silently hide orders.
+  const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | OrderStatus>(() => choice(storedUi.statusFilter, "all", orderStatusFilterValues));
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [packingSelection, setPackingSelection] = useState<string[]>([]);
@@ -2092,7 +2093,6 @@ function Home() {
   useEffect(() => {
     writeJson(uiStorageKey, {
       view: permittedView(view, session?.role),
-      query,
       statusFilter,
       packingStatusFilter,
       packingProductFilter,
@@ -2117,7 +2117,6 @@ function Home() {
   }, [
     view,
     session,
-    query,
     statusFilter,
     packingStatusFilter,
     packingProductFilter,
@@ -6056,7 +6055,7 @@ function Home() {
 
       {view === "plush_charm_orders" && <section className="card orders-card plush-charm-orders-card">
         <div className="toolbar">
-          <div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("Search order, character, customer or phone...")} /></div>
+          <OrderSearch value={query} onChange={setQuery} placeholder={t("Search order, character, customer or phone...")} />
           <SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} />
           <StatusFilterPills value={statusFilter} onChange={setStatusFilter} />
           <SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} />
@@ -6182,7 +6181,7 @@ function Home() {
 
         {view !== "fulfilment" && <section className="card orders-card">
           <div className={`toolbar ${view === "orders" ? "orders-toolbar" : ""}`}>
-            <div className="toolbar-row toolbar-filter-row"><div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("Search order, customer, phone or tracking...")} /></div><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /></div>
+            <div className="toolbar-row toolbar-filter-row"><OrderSearch value={query} onChange={setQuery} placeholder={t("Search order, customer, phone or tracking...")} /><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /></div>
             <div className="toolbar-row toolbar-action-row">{view === "orders" && <button className="button secondary" disabled={!selectedShopifyOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshShopifyOrders}>{refreshingOrderNumber === "bulk" ? t("Refreshing...") : `Refresh ${selectedShopifyOrderCount} Shopify`}</button>}{view === "orders" && <button className="button secondary" disabled={!selectedTikTokOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshTikTokOrders}>{refreshingOrderNumber === "tiktok-bulk" ? t("Syncing...") : `Sync ${selectedTikTokOrderCount} TikTok`}</button>}{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>{t("Move") + " "}{selectedOrders.length} {" " + t("to next status")}</button>}{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>{t("Delete")}</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>{t("Export CSV")}</button>}</div>
           </div>
           <div className="table-scroll"><table className="orders-table"><thead><tr><th><input type="checkbox" aria-label={t("Select visible orders")} checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th>{t("Order")}</th><th>{t("Date")}</th><th>{t("Customer")}</th><th>{t("Phone")}</th><th>{t("Character")}</th><th>{t("Voice")}</th><th>{t("Plush name")}</th><th>{t("Status")}</th><th>{t("Tracking number")}</th><th>{t("Last updated")}</th><th>{view === "orders" ? t("Actions") : t("View")}</th></tr></thead><tbody>{filtered.map((order) => <tr key={order.id} className={[isExpressShipping(order) ? "express-shipping-row" : "", isPlushCharm(order) ? "plush-charm-row" : ""].filter(Boolean).join(" ")}><td><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={selectedOrders.includes(order.id)} onChange={() => toggleOrderSelection(order.id)} /></td><td><strong>{orderLabel(order)}</strong><OrderMarkers order={order} manualOrders={manualOrders} /></td><td>{formatDate(order.orderDate)}</td><td><strong>{order.customerName || "-"}</strong></td><td>{order.phone || "-"}</td><td>{displayedCharacter(order) || "-"}</td><td>{order.voiceLength ? `${order.voiceLength}s` : "-"}</td><td>{order.plushName || "-"}</td><td><StatusPill status={order.status} /></td><td><code>{order.trackingNumber || "-"}</code></td><td>{formatDate(order.updatedAt, true)}</td><td><div className="row-actions"><button className="view-button" onClick={() => setSelectedId(order.id)}>{t("View")}</button>{view === "orders" && (order.salesChannel ?? "shopify") === "shopify" && <button className="view-button refresh-order-button" disabled={refreshingOrderNumber === order.orderNumber} onClick={() => refreshShopifyOrder(order)}>{refreshingOrderNumber === order.orderNumber ? t("Refreshing...") : t("Refresh")}</button>}{view === "orders" && order.salesChannel === "tiktok" && <button className="view-button refresh-order-button" disabled={refreshingOrderNumber === tiktokOrderIdFromOrder(order)} onClick={() => refreshTikTokOrder(order)}>{refreshingOrderNumber === tiktokOrderIdFromOrder(order) ? t("Syncing...") : t("Sync")}</button>}</div></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>{t("No orders found")}</strong><p>{t("Try another search or status filter.")}</p></div>}</div>
@@ -6191,7 +6190,7 @@ function Home() {
         </section>}
 
         {view === "fulfilment" && <section className="card orders-card">
-          <div className="toolbar"><div className="search"><Icon name="search" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("Search order, plush name, character, customer or phone...")} /></div><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /><button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>{t("Move") + " "}{selectedOrders.length} {" " + t("to next status")}</button>{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>{t("Delete")}</button>}</div>
+          <div className="toolbar"><OrderSearch value={query} onChange={setQuery} placeholder={t("Search order, plush name, character, customer or phone...")} /><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /><button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>{t("Move") + " "}{selectedOrders.length} {" " + t("to next status")}</button>{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>{t("Delete")}</button>}</div>
           <div className={`nfc-helper-panel ${nfcHelperStatus}`}>
             <div>
               <strong>{t("Windows NFC Helper")}</strong>
@@ -9822,6 +9821,11 @@ function SortControls({ sortKey, direction, onKey, onDirection }: { sortKey: Sor
   const { t } = useLanguage();
   const value: SortChoice = `${sortKey}:${direction}`;
   return <select className="combined-sort-select" aria-label={t("Sort orders")} value={value} onChange={(event) => { const [key, nextDirection] = event.target.value.split(":") as [SortKey, SortDirection]; onKey(key); onDirection(nextDirection); }}>{(Object.keys(sortChoiceLabels) as SortChoice[]).map((choice) => <option key={choice} value={choice}>{t(sortChoiceLabels[choice])}</option>)}</select>;
+}
+
+function OrderSearch({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {
+  const { t } = useLanguage();
+  return <div className="search order-search"><Icon name="search" /><input type="search" name="fulfilment-order-search" autoComplete="off" aria-label={placeholder} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />{value && <button type="button" className="button secondary clear-order-search" onClick={() => onChange("")}>{t("Clear search")}</button>}</div>;
 }
 
 function StatusFilterPills({ value, onChange }: { value: "all" | OrderStatus; onChange: (status: "all" | OrderStatus) => void }) {
