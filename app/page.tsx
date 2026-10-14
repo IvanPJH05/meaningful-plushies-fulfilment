@@ -15,6 +15,7 @@ import { stockCharacters, summarizeStock } from "../lib/stock";
 import { mediaFileExtension, voiceBackupFileName } from "../lib/voice-file-name";
 import { productionPrintNextStatus, shouldAdvanceAfterProductionPrint } from "../lib/fulfilment-transitions";
 import { mergeRefreshedOrder } from "../lib/order-refresh";
+import { canJoinBatch } from "../lib/fulfilment-batches";
 import { isPlushCharmOrder } from "../lib/plush-charm";
 import {
   createDashboardAccount,
@@ -95,6 +96,8 @@ import { manualOrderCharactersForProduct, manualOrderProductFamily, manualOrderP
 import { orderStatuses, type AccountingBankStatementLine, type AccountingCategory, type AccountingDocument, type AccountingLedgerEntry, type AccountingTransaction, type AiAccountantReview, type CommissionStatus, type ContentIdeaItem, type ContentIdeaReference, type ContentPlanItem, type CreatorCommission, type CreatorPayout, type CreatorProfile, type CreatorStatus, type CreatorTier, type DashboardAccount, type EnvelopePrintSettings, type ManualOrder, type MetaCapiLog, type MetaCapiSettings, type Order, type OrderStatus, type PaymentProcessorSetting, type SalesConsumptionMapping, type SalesFeeSetting, type StockSetting, type UserRole, type WhatsAppLead, type WhatsAppLeadStatus } from "../lib/types";
 const MonthlyJournalWorkspace = dynamic(() => import("../components/monthly-journal-workspace").then((module) => module.MonthlyJournalWorkspace), { loading: () => <WorkspaceLoading /> });
 const ShopifyAppWorkspace = dynamic(() => import("../components/shopify-app-workspace").then((module) => module.ShopifyAppWorkspace), { loading: () => <WorkspaceLoading /> });
+const BatchFulfilmentWorkspace = dynamic(() => import("../components/batch-fulfilment-workspace").then(module => module.BatchFulfilmentWorkspace), { loading: () => <WorkspaceLoading /> });
+const BatchAssignment = dynamic(() => import("../components/batch-fulfilment-workspace").then(module => module.BatchAssignment), { ssr: false });
 const AudioScannerWorkspace = dynamic(() => import("../components/audio-scanner-workspace").then((module) => module.AudioScannerWorkspace), { loading: () => <WorkspaceLoading /> });
 import { OrderBarcode, orderBarcodeValue } from "../components/order-barcode";
 import { ManualOrderIntakeRecords } from "../components/manual-order-intake-records";
@@ -112,8 +115,8 @@ type View =
   | "monthly_journal_inbox" | "monthly_journal_import" | "monthly_journal_shopee" | "monthly_journal_shortcuts" | "monthly_journal_source_documents" | "monthly_journal_general_journal" | "monthly_journal_reports" | "monthly_journal_accounts" | "monthly_journal_account_activity"
   | "content_dashboard" | "content_plan" | "content_ideas"
   | "manual_orders_dashboard" | "manual_orders_preorders" | "manual_orders_leads"
-  | "creator_dashboard" | "creator_accounts" | "creator_sales" | "creator_commissions" | "creator_payouts" | "creator_analytics" | "creator_free_samples" | "plush_charm_orders" | "shopify_app" | "audio_scanner";
-type Workspace = "fulfilment" | "manual_orders" | "accounting" | "formal_accounting" | "monthly_journal" | "creator" | "inventory" | "reports" | "content" | "settings" | "shopify_app" | "audio_scanner";
+  | "creator_dashboard" | "creator_accounts" | "creator_sales" | "creator_commissions" | "creator_payouts" | "creator_analytics" | "creator_free_samples" | "plush_charm_orders" | "shopify_app" | "audio_scanner" | "batch_fulfilment";
+type Workspace = "batch_fulfilment" | "fulfilment" | "manual_orders" | "accounting" | "formal_accounting" | "monthly_journal" | "creator" | "inventory" | "reports" | "content" | "settings" | "shopify_app" | "audio_scanner";
 type SalesRange = "active" | "today" | "7d" | "30d" | "lifetime";
 type SortKey = "orderNumber" | "importedAt" | "updatedAt";
 type SortDirection = "asc" | "desc";
@@ -653,9 +656,10 @@ const manualOrderViews: readonly View[] = ["manual_orders_dashboard", "manual_or
 const manualOrderCharacters = ["Billy", "Tootsie", "Hunnie", "Dragon Warrior"] as const;
 const creatorViews: readonly View[] = ["creator_dashboard", "creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
 const creatorAdminViews: readonly View[] = ["creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
-const dashboardViews: readonly View[] = [...fulfilmentViews, "history", "settings", "meta_capi", "stock", "sales_report", "plush_charm_orders", "shopify_app", "audio_scanner", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...creatorViews];
+const dashboardViews: readonly View[] = ["batch_fulfilment", ...fulfilmentViews, "history", "settings", "meta_capi", "stock", "sales_report", "plush_charm_orders", "shopify_app", "audio_scanner", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...creatorViews];
 const adminOnlyViews = new Set<View>(["history", "settings", "meta_capi", "stock", "sales_report", "shopify_app", "audio_scanner", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...creatorAdminViews]);
 const workspaceDefaultViews: Record<Workspace, View> = {
+  batch_fulfilment: "batch_fulfilment",
   fulfilment: "orders",
   manual_orders: "manual_orders_dashboard",
   accounting: "accounting_dashboard",
@@ -670,6 +674,7 @@ const workspaceDefaultViews: Record<Workspace, View> = {
   audio_scanner: "audio_scanner",
 };
 const workspaceLabels: Record<Workspace, string> = {
+  batch_fulfilment: "Batch Fulfilment",
   fulfilment: "Fulfilment",
   manual_orders: "Manual Orders",
   accounting: "Book Keeping",
@@ -1484,6 +1489,7 @@ function permittedView(value: unknown, role?: UserRole) {
 }
 
 function workspaceForView(view: View): Workspace {
+  if (view === "batch_fulfilment") return "batch_fulfilment";
   if (creatorViews.includes(view)) return "creator";
   if (contentViews.includes(view)) return "content";
   if (manualOrderViews.includes(view)) return "manual_orders";
@@ -1499,6 +1505,7 @@ function workspaceForView(view: View): Workspace {
 }
 
 function navItemsForWorkspace(workspace: Workspace, role: UserRole): NavItem[] {
+  if (workspace === "batch_fulfilment") return [{view: "batch_fulfilment", label: "Batch Fulfilment", icon: "orders"}];
   if (role === "creator") return creatorNavItems;
   if (role !== "admin") return workspace === "shopify_app" ? shopifyCharmStaffNavItems : fulfilmentNavItems;
   if (workspace === "accounting") return accountingNavItems;
@@ -1517,6 +1524,7 @@ function navItemsForWorkspace(workspace: Workspace, role: UserRole): NavItem[] {
 
 function viewTitle(view: View) {
   const titleOverrides: Partial<Record<View, string>> = {
+    batch_fulfilment: "Batch Fulfilment",
     orders: "Orders Dashboard",
     import: "Import Shopify Orders",
     tiktok_shop: "TikTok Shop",
@@ -1563,10 +1571,18 @@ function Home() {
   const [manualOrders, setManualOrders] = useState<ManualOrder[]>([]);
   const [whatsAppLeads, setWhatsAppLeads] = useState<WhatsAppLead[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [batchSelectedOrder, setBatchSelectedOrder] = useState<Order | null>(null);
   // Search is temporary: restoring an old query can silently hide orders.
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | OrderStatus>(() => choice(storedUi.statusFilter, "all", orderStatusFilterValues));
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
+  const [assigningBatch, setAssigningBatch] = useState(false);
+  const [activeBatchId, setActiveBatchId] = useState("");
+  const batchSelectionReady = useMemo(() => {
+    if (!selectedOrders.length || selectedOrders.length > 200) return false;
+    const ids = new Set(selectedOrders), selected = orders.filter(order => ids.has(order.id));
+    return selected.length === ids.size && selected.every(order => canJoinBatch(order.status));
+  }, [orders, selectedOrders]);
   const [packingSelection, setPackingSelection] = useState<string[]>([]);
   const [shippingLabelImporting, setShippingLabelImporting] = useState(false);
   const [shippingLabelSummary, setShippingLabelSummary] = useState("");
@@ -2191,13 +2207,14 @@ function Home() {
     });
   }, [view]);
 
-  const selected = orders.find((order) => order.id === selectedId) ?? null;
+  const selected = batchSelectedOrder?.id === selectedId ? batchSelectedOrder : orders.find((order) => order.id === selectedId) ?? null;
   useEffect(() => {
     if (!selectedId || hydratedOrderIds.current.has(selectedId)) return;
     let cancelled = false;
     void fetchSharedOrderById(selectedId).then((fullOrder) => {
       if (cancelled || !fullOrder) return;
       hydratedOrderIds.current.add(selectedId);
+      setBatchSelectedOrder(current => current?.id === selectedId ? mergeRefreshedOrder(current, fullOrder) : current);
       setOrders((current) => current.map((order) => order.id === selectedId ? mergeRefreshedOrder(order, fullOrder) : order));
     }).catch(() => undefined);
     return () => { cancelled = true; };
@@ -2452,10 +2469,12 @@ function Home() {
       if (response.status === 409) {
         const latest = await fetchSharedOrderById(orderId).catch(() => null);
         if (latest) setOrders((current) => current.map((item) => item.id === orderId ? mergeRefreshedOrder(item, latest) : item));
+        if (latest) setBatchSelectedOrder(current => current?.id === orderId ? mergeRefreshedOrder(current, latest) : current);
       }
       throw new Error(result.error || "Order could not be saved. Your draft is kept.");
     }
     const updated = result.order;
+    setBatchSelectedOrder(current => current?.id === orderId ? mergeRefreshedOrder(current, updated) : current);
     setOrders((current) => current.map((item) => item.id === orderId ? mergeRefreshedOrder(item, { ...updated, ...patch }) : item));
     return updated;
   }
@@ -2487,6 +2506,7 @@ function Home() {
     try {
       const [updated] = await persistOrderTransitions([{ order, toStatus: status }]);
       setOrders((current) => current.map((item) => item.id === order.id ? mergeRefreshedOrder(item, updated) : item));
+      setBatchSelectedOrder(current => current?.id === order.id ? mergeRefreshedOrder(current, updated) : current);
     }
     catch (error) { setNotice(error instanceof Error ? error.message : "Status change could not be saved."); await loadSharedData(); return; }
     setNotice(`#${order.orderNumber} updated to ${statusLabels[status]}.`);
@@ -2574,12 +2594,14 @@ function Home() {
       const result = await response.json().catch(() => ({})) as { ok?: boolean; error?: string };
       if (!response.ok || !result.ok) throw new Error(result.error || "Desktop NFC writer did not confirm the card.");
       setNotice(`NFC card written for #${order.orderNumber}.`);
+      return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : "NFC write failed.";
       const helperHint = message.includes("Failed to fetch")
         ? " Start the Windows NFC writer first, then try again."
         : "";
       setNotice(`NFC write failed for #${order.orderNumber}: ${message}.${helperHint}`);
+      return false;
     } finally {
       setNfcWritingOrderId("");
     }
@@ -3276,8 +3298,9 @@ function Home() {
     }
   }
 
-  async function printPackingSlips(mode: "packing" | "labels" | "both") {
-    if (!packingOrders.length) {
+  async function printPackingSlips(mode: "packing" | "labels" | "both", batchOrders?: Order[]) {
+    const printingOrders = batchOrders ?? packingOrders;
+    if (!printingOrders.length) {
       setNotice("Select at least one order before printing.");
       return;
     }
@@ -3300,7 +3323,7 @@ function Home() {
       const response = await fetch("/api/packing-slips/pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode, orders: packingOrders.map((order) => ({
+        body: JSON.stringify({ mode, orders: printingOrders.map((order) => ({
           id: order.id,
           orderNumber: order.orderNumber,
           setIndicator: order.setIndicator,
@@ -3329,11 +3352,13 @@ function Home() {
       printWindow.location.replace(url);
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
       const printed = mode === "packing" ? "packing slip" : mode === "labels" ? "shipping label" : "packing slip + shipping label";
-      setNotice(`${packingOrders.length} ${printed}${packingOrders.length === 1 ? "" : "s"} prepared as a sharp PDF. Use the PDF viewer's Print button.${changed.length ? " New orders moved to Uploading Audio." : ""}`);
-      await logActivity("Print PDF prepared", `${packingOrders.length} ${mode} print set prepared.`);
+      setNotice(`${printingOrders.length} ${printed}${printingOrders.length === 1 ? "" : "s"} prepared as a sharp PDF. Use the PDF viewer's Print button.${changed.length ? " New orders moved to Uploading Audio." : ""}`);
+      await logActivity("Print PDF prepared", `${printingOrders.length} ${mode} print set prepared.`);
+      return true;
     } catch (error) {
       printWindow.close();
       setNotice(error instanceof Error ? error.message : "Could not create the print PDF.");
+      return false;
     }
   }
 
@@ -3378,10 +3403,9 @@ function Home() {
   async function renderEnvelopeNameImage(name: string) {
     const settings = envelopePrintSettings;
     const printName = name.replace(/\s+/g, " ").trim().toUpperCase();
-    const family = `EnvelopePdfFont-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const fontFace = new FontFace(family, `url(data:font/opentype;base64,${settings.fontBase64})`);
-    await fontFace.load();
-    document.fonts.add(fontFace);
+    const family = settings.fontBase64 ? `EnvelopePdfFont-${Date.now()}-${Math.random().toString(36).slice(2)}` : "Arial";
+    const fontFace = settings.fontBase64 ? new FontFace(family, `url(data:font/opentype;base64,${settings.fontBase64})`) : null;
+    if (fontFace) { await fontFace.load(); document.fonts.add(fontFace); }
 
     const scale = 4;
     const canvas = document.createElement("canvas");
@@ -3440,7 +3464,7 @@ function Home() {
       canvasContext.fillText(line, x, y);
     });
 
-    document.fonts.delete(fontFace);
+    if (fontFace) document.fonts.delete(fontFace);
     return {
       pngBase64: canvas.toDataURL("image/png").replace(/^data:image\/png;base64,/, ""),
       width: settings.textBoxWidth,
@@ -3448,24 +3472,34 @@ function Home() {
     };
   }
 
-  async function printEnvelopes() {
-    if (!envelopePrintableNames.length) return;
-    if (!envelopePrintSettings.fontBase64) return setNotice("Upload the font you want to use before generating envelopes.");
+  async function printEnvelopes(batchNames?: string[] | React.MouseEvent) {
+    const names = Array.isArray(batchNames) ? batchNames : envelopePrintableNames;
+    if (!names.length) return false;
+    if (!Array.isArray(batchNames) && !envelopePrintSettings.fontBase64) return setNotice("Upload the font you want to use before generating envelopes.");
     try {
       setNotice("Rendering envelope names, then generating the A4 PDF...");
-      const names = envelopePrintableNames;
-      const nameImages = await Promise.all(names.map(renderEnvelopeNameImage));
-      const response = await fetch("/api/envelopes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          names,
-          nameImages,
-          settings: envelopePrintSettings,
-        }),
-      });
-      if (!response.ok) throw new Error(await response.text() || "Envelope PDF could not be generated.");
-      const url = URL.createObjectURL(await response.blob());
+      async function generateNames(part: string[]) {
+        const nameImages = await Promise.all(part.map(renderEnvelopeNameImage));
+        const response = await fetch("/api/envelopes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ names: part, nameImages, settings: { ...envelopePrintSettings, fontBase64: undefined, fontName: undefined } }),
+        });
+        if (!response.ok) throw new Error(await response.text() || "Envelope PDF could not be generated.");
+        return response.blob();
+      }
+      let pdf: Blob;
+      if (Array.isArray(batchNames) && names.length > 20) {
+        // Even-sized chunks keep envelope pairs together and bound PNG payloads.
+        // PDF merging is loaded only on demand for a large batch.
+        const { batchEnvelopePdf } = await import("../lib/batch-envelope-pdf");
+        let rendered = 0;
+        pdf = await batchEnvelopePdf(names, async part => {
+          setNotice(`Generating envelopes ${rendered + 1}–${rendered + part.length} of ${names.length}...`);
+          const result = await generateNames(part); rendered += part.length; return result;
+        });
+      } else pdf = await generateNames(names);
+      const url = URL.createObjectURL(pdf);
       const link = document.createElement("a");
       link.href = url;
       link.download = "meaningful-plushies-envelopes.pdf";
@@ -3474,10 +3508,12 @@ function Home() {
       link.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
       setNotice(`${Math.ceil(names.length / 2)} A4 envelope page${Math.ceil(names.length / 2) === 1 ? "" : "s"} generated.`);
+      return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Envelope PDF could not be generated.";
       setNotice(`Envelope PDF error: ${message}`);
       window.alert(`Envelope PDF could not be generated.\n\n${message}`);
+      return false;
     }
   }
 
@@ -5873,8 +5909,8 @@ function Home() {
 
   const workspace = workspaceForView(view);
   const availableWorkspaces: Workspace[] = session.role === "admin"
-    ? ["fulfilment", "manual_orders", "accounting", "formal_accounting", "monthly_journal", "creator", "inventory", "reports", "content", "shopify_app", "audio_scanner", "settings"]
-    : session.role === "creator" ? ["creator"] : ["fulfilment", "shopify_app"];
+    ? ["fulfilment", "batch_fulfilment", "manual_orders", "accounting", "formal_accounting", "monthly_journal", "creator", "inventory", "reports", "content", "shopify_app", "audio_scanner", "settings"]
+    : session.role === "creator" ? ["creator"] : ["fulfilment", "batch_fulfilment", "shopify_app"];
   const sidebarNavItems = navItemsForWorkspace(workspace, session.role);
   const workspaceTitle = workspaceLabels[workspace];
 
@@ -6072,6 +6108,7 @@ function Home() {
         {hasMoreOrderSummaries && <div ref={orderSummaryLoadMoreSentinel} className="table-footer"><button className="button secondary small" type="button" disabled={loadingMoreOrderSummaries} onClick={() => void loadNextOrderSummaries()}>{loadingMoreOrderSummaries ? t("Loading more orders...") : t("Load next 100 orders")}</button></div>}
       </section>}
       {view === "shopify_app" && session.role === "admin" && <ShopifyAppWorkspace sessionToken={session.token} />}
+      {workspace === "batch_fulfilment" && <BatchFulfilmentWorkspace token={session.token} initialBatchId={activeBatchId} onOrdersChanged={() => loadSharedData()} onPrint={batchOrders => printPackingSlips("both", batchOrders)} onEnvelopes={printEnvelopes} onNfc={writeCertificateLinkToNfc} onStartNfc={startNfcHelper} certificateFor={certificateLink} onOpenOrder={async order => { const full = await fetchSharedOrderById(order.id); if (!full) throw new Error("Order could not be loaded. Try again."); setBatchSelectedOrder(full); hydratedOrderIds.current.add(full.id); setSelectedId(full.id); }} />}
       {workspace === "audio_scanner" && session.role === "admin" && <AudioScannerWorkspace orders={orders} audioSourceFor={meaningfulMessageLink} />}
 
       {workspace === "creator" && (session.role === "admin" || session.role === "creator") && <CreatorProgramWorkspacePage
@@ -6182,15 +6219,16 @@ function Home() {
         {view !== "fulfilment" && <section className="card orders-card">
           <div className={`toolbar ${view === "orders" ? "orders-toolbar" : ""}`}>
             <div className="toolbar-row toolbar-filter-row"><OrderSearch value={query} onChange={setQuery} placeholder={t("Search order, customer, phone or tracking...")} /><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /></div>
-            <div className="toolbar-row toolbar-action-row">{view === "orders" && <button className="button secondary" disabled={!selectedShopifyOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshShopifyOrders}>{refreshingOrderNumber === "bulk" ? t("Refreshing...") : `Refresh ${selectedShopifyOrderCount} Shopify`}</button>}{view === "orders" && <button className="button secondary" disabled={!selectedTikTokOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshTikTokOrders}>{refreshingOrderNumber === "tiktok-bulk" ? t("Syncing...") : `Sync ${selectedTikTokOrderCount} TikTok`}</button>}{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>{t("Move") + " "}{selectedOrders.length} {" " + t("to next status")}</button>}{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>{t("Delete")}</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>{t("Export CSV")}</button>}</div>
+            <div className="toolbar-row toolbar-action-row"><button className="button primary" disabled={!batchSelectionReady} title={t("Select up to 200 New Order or Uploading Audio orders.")} onClick={() => setAssigningBatch(true)}>{t("Move to Batch Fulfilment")}</button>{view === "orders" && <button className="button secondary" disabled={!selectedShopifyOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshShopifyOrders}>{refreshingOrderNumber === "bulk" ? t("Refreshing...") : `Refresh ${selectedShopifyOrderCount} Shopify`}</button>}{view === "orders" && <button className="button secondary" disabled={!selectedTikTokOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshTikTokOrders}>{refreshingOrderNumber === "tiktok-bulk" ? t("Syncing...") : `Sync ${selectedTikTokOrderCount} TikTok`}</button>}{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>{t("Move") + " "}{selectedOrders.length} {" " + t("to next status")}</button>}{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>{t("Delete")}</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>{t("Export CSV")}</button>}</div>
           </div>
           <div className="table-scroll"><table className="orders-table"><thead><tr><th><input type="checkbox" aria-label={t("Select visible orders")} checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th>{t("Order")}</th><th>{t("Date")}</th><th>{t("Customer")}</th><th>{t("Phone")}</th><th>{t("Character")}</th><th>{t("Voice")}</th><th>{t("Plush name")}</th><th>{t("Status")}</th><th>{t("Tracking number")}</th><th>{t("Last updated")}</th><th>{view === "orders" ? t("Actions") : t("View")}</th></tr></thead><tbody>{filtered.map((order) => <tr key={order.id} className={[isExpressShipping(order) ? "express-shipping-row" : "", isPlushCharm(order) ? "plush-charm-row" : ""].filter(Boolean).join(" ")}><td><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={selectedOrders.includes(order.id)} onChange={() => toggleOrderSelection(order.id)} /></td><td><strong>{orderLabel(order)}</strong><OrderMarkers order={order} manualOrders={manualOrders} /></td><td>{formatDate(order.orderDate)}</td><td><strong>{order.customerName || "-"}</strong></td><td>{order.phone || "-"}</td><td>{displayedCharacter(order) || "-"}</td><td>{order.voiceLength ? `${order.voiceLength}s` : "-"}</td><td>{order.plushName || "-"}</td><td><StatusPill status={order.status} /></td><td><code>{order.trackingNumber || "-"}</code></td><td>{formatDate(order.updatedAt, true)}</td><td><div className="row-actions"><button className="view-button" onClick={() => setSelectedId(order.id)}>{t("View")}</button>{view === "orders" && (order.salesChannel ?? "shopify") === "shopify" && <button className="view-button refresh-order-button" disabled={refreshingOrderNumber === order.orderNumber} onClick={() => refreshShopifyOrder(order)}>{refreshingOrderNumber === order.orderNumber ? t("Refreshing...") : t("Refresh")}</button>}{view === "orders" && order.salesChannel === "tiktok" && <button className="view-button refresh-order-button" disabled={refreshingOrderNumber === tiktokOrderIdFromOrder(order)} onClick={() => refreshTikTokOrder(order)}>{refreshingOrderNumber === tiktokOrderIdFromOrder(order) ? t("Syncing...") : t("Sync")}</button>}</div></td></tr>)}</tbody></table>{!filtered.length && <div className="empty"><strong>{t("No orders found")}</strong><p>{t("Try another search or status filter.")}</p></div>}</div>
           <div className="table-footer">{t("Showing") + " "}{filtered.length} {" " + t("of") + " "}{view === "fulfilled" ? orders.filter((order) => order.status === "shipped").length : orders.length} {" " + t("orders")}</div>
           {hasMoreOrderSummaries && <div ref={orderSummaryLoadMoreSentinel} className="table-footer"><button className="button secondary small" type="button" disabled={loadingMoreOrderSummaries} onClick={() => void loadNextOrderSummaries()}>{loadingMoreOrderSummaries ? t("Loading more orders...") : t("Load next 100 orders")}</button></div>}
         </section>}
 
+        {assigningBatch && <BatchAssignment token={session.token} orderIds={selectedOrders} onClose={() => setAssigningBatch(false)} onAssigned={id => { setAssigningBatch(false); setSelectedOrders([]); setActiveBatchId(id); setView("batch_fulfilment"); void loadSharedData(); }} />}
         {view === "fulfilment" && <section className="card orders-card">
-          <div className="toolbar"><OrderSearch value={query} onChange={setQuery} placeholder={t("Search order, plush name, character, customer or phone...")} /><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /><button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>{t("Move") + " "}{selectedOrders.length} {" " + t("to next status")}</button>{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>{t("Delete")}</button>}</div>
+          <div className="toolbar"><OrderSearch value={query} onChange={setQuery} placeholder={t("Search order, plush name, character, customer or phone...")} /><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /><button className="button primary" disabled={!batchSelectionReady} title={t("Select up to 200 New Order or Uploading Audio orders.")} onClick={() => setAssigningBatch(true)}>{t("Move to Batch Fulfilment")}</button><button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>{t("Move") + " "}{selectedOrders.length} {" " + t("to next status")}</button>{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>{t("Delete")}</button>}</div>
           <div className={`nfc-helper-panel ${nfcHelperStatus}`}>
             <div>
               <strong>{t("Windows NFC Helper")}</strong>
@@ -6381,7 +6419,7 @@ function Home() {
       </section>}
     </section>
 
-    {selected && <OrderDrawer key={selected.id} order={selected} manualOrders={manualOrders} role={session.role} actor={session.displayName} onClose={() => setSelectedId(null)} onUpdate={(patch, expectedUpdatedAt) => updateOrder(selected.id, patch, expectedUpdatedAt)} onStatus={(status) => setStatus(selected, status)} />}
+    {selected && <OrderDrawer key={selected.id} order={selected} manualOrders={manualOrders} role={session.role} actor={session.displayName} onClose={() => { setSelectedId(null); setBatchSelectedOrder(null); }} onUpdate={(patch, expectedUpdatedAt) => updateOrder(selected.id, patch, expectedUpdatedAt)} onStatus={(status) => setStatus(selected, status)} />}
     {previewDocument && <DocumentPreviewModal document={previewDocument} url={previewDocumentUrl} error={previewDocumentError} onClose={() => { setPreviewDocument(null); setPreviewDocumentUrl(""); setPreviewDocumentError(""); }} />}
     {previewBankLineId && (() => {
       const line = bankStatementLines.find((item) => item.id === previewBankLineId);
