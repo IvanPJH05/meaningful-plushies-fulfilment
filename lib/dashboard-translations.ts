@@ -1,6 +1,17 @@
 // Interface copy only. Order/customer records are never translated.
 // Tuple order: Bahasa Melayu, Bahasa Indonesia.
 export const dashboardTranslations: Readonly<Record<string, readonly [string, string]>> = {
+  "Processing batch action": ["Memproses tindakan kelompok", "Memproses tindakan batch"],
+  "Audio ZIP ready — download at the audio step.": ["ZIP audio sedia — muat turun pada langkah audio.", "ZIP audio siap — unduh pada tahap audio."],
+  "Retry audio preparation": ["Cuba sediakan audio semula", "Coba siapkan audio lagi"],
+  "Building audio ZIP": ["Membina ZIP audio", "Membuat ZIP audio"],
+  "Preparing audio in the background": ["Menyediakan audio di latar belakang", "Menyiapkan audio di latar belakang"],
+  "Keep this workspace open while audio is prepared. Other batch steps remain available.": ["Biarkan ruang kerja ini terbuka semasa audio disediakan. Langkah kelompok lain masih boleh digunakan.", "Biarkan ruang kerja ini terbuka saat audio disiapkan. Tahap batch lainnya tetap tersedia."],
+  "Approx. time remaining": ["Anggaran masa berbaki", "Perkiraan waktu tersisa"],
+  "Taking longer than estimated — still working.": ["Mengambil masa lebih lama daripada anggaran — masih diproses.", "Lebih lama dari perkiraan — masih diproses."],
+  "Estimated progress": ["Anggaran kemajuan", "Perkiraan progres"],
+  "min": ["min", "menit"],
+  "sec": ["saat", "detik"],
   "Drop shipping-label PDFs here": ["Lepaskan PDF label penghantaran di sini", "Letakkan PDF label pengiriman di sini"],
   "Add PDFs from different couriers together or upload more later. Existing pairs are kept.": ["Tambah PDF daripada kurier berbeza bersama-sama atau muat naik lagi kemudian. Padanan sedia ada dikekalkan.", "Tambahkan PDF dari kurir berbeda sekaligus atau unggah lagi nanti. Pasangan yang ada tetap disimpan."],
   "Choose PDFs": ["Pilih PDF", "Pilih PDF"],
