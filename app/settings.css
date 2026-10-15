@@ -1666,6 +1666,14 @@ body.print-sales-report .report-table th,
 .adaptive-orders-card .status-filter-pills,.adaptive-orders-card .sort-controls { min-width: 0; max-width: 100%; }
 .adaptive-orders-card .toolbar select { max-width: 100%; }
 .table-layout-toolbar { display: flex; justify-content: flex-end; padding: 12px 16px 0; }
+.adaptive-orders-card .virtual-order-scroll { max-height: 60vh; overflow: auto; overflow-anchor: none; }
+.virtual-order-table thead th { position: sticky; top: 0; z-index: 3; background: #f7f9fc; }
+.virtual-order-scroll:focus-visible,.virtual-packing-list:focus-visible { outline: 2px solid #2563eb; outline-offset: -2px; }
+.virtual-packing-list { overflow-anchor: none; }
+.virtual-packing-list label { height: 88px; box-sizing: border-box; grid-template-columns: 16px minmax(0,1fr) auto; }
+.virtual-packing-list label > div { min-width: 0; overflow: hidden; white-space: nowrap; }
+.virtual-packing-list strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.virtual-packing-list .source-badge,.virtual-packing-list .order-marker,.virtual-packing-list .shipping-badge { display: inline-flex; white-space: nowrap; }
 .layout-overlay { position: fixed; inset: 0; z-index: 1000; background: #14213a80; display: flex; align-items: center; justify-content: center; padding: 16px; }
 .layout-dialog { background: white; border-radius: 16px; width: 660px; max-width: 100%; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 24px 80px #0004; }
 .layout-dialog header,.layout-dialog footer { display: flex; align-items: center; gap: 12px; padding: 20px; }
