@@ -4,6 +4,8 @@ import { useLanguage, LanguageProvider, LanguageSwitcher, WorkspaceLoading } fro
 import "./settings.css";
 
 import dynamic from "next/dynamic";
+import { compactOrderLabel, normalizeTableLayout, tableColumns, type TableColumn, type TableLayouts, type TableView } from "../lib/table-layout";
+const TableLayoutEditor = dynamic(() => import("../components/table-layout-editor"));
 import { OrderTableRow } from "../components/order-table-row";
 import { WorkspaceDataCache, sharedTablesForWorkspace } from "../lib/workspace-data";
 
@@ -192,7 +194,6 @@ type StoredUiPreferences = {
   reportSourceFilter?: SourceFilter;
   fulfilmentStartDate?: string;
   fulfilmentEndDate?: string;
-  fulfilmentColumns?: FulfilmentColumn[];
 };
 type ActivityEvent = {
   id: string;
@@ -708,7 +709,6 @@ const sortChoiceLabels: Record<SortChoice, string> = {
   "updatedAt:asc": "Last edited, oldest first",
   "updatedAt:desc": "Last edited, newest first",
 };
-const fulfilmentColumnValues: readonly FulfilmentColumn[] = ["orderNumber", "meaningfulMessage", "plushName", "character", "idWebsiteLink", "customerName", "phone"];
 const sessionStorageKey = "meaningful-plushies-dashboard-session";
 const uiStorageKey = "meaningful-plushies-ui-preferences";
 const ordersCacheStorageKey = "meaningful-plushies-orders-cache-v2";
@@ -828,15 +828,6 @@ const legacyStatus: Record<string, OrderStatus> = {
 
 type FulfilmentColumn = "orderNumber" | "meaningfulMessage" | "plushName" | "character" | "idWebsiteLink" | "customerName" | "phone";
 
-const fulfilmentColumnLabels: Record<FulfilmentColumn, string> = {
-  orderNumber: "Order ID",
-  meaningfulMessage: "Meaningful Message",
-  plushName: "Plush Name",
-  character: "Character",
-  idWebsiteLink: "ID Website Link",
-  customerName: "Customer Name",
-  phone: "Phone Number",
-};
 
 type NavItem = { view: View; label: string; icon: IconName };
 
@@ -1349,6 +1340,7 @@ function OrderMarkers({ order, manualOrders }: { order: Order; manualOrders: Man
   const freeCreatorSampleCodes = useContext(FreeCreatorSampleCodesContext);
   const source = fulfilmentSource(order, manualOrders);
   const unrecordedManualOrder = source === "shopify" && order.totalAmount === 0 && !isInfluencerFulfilmentOrder(order, creatorProfiles, freeCreatorSampleCodes);
+  if (isInfluencerFulfilmentOrder(order, creatorProfiles, freeCreatorSampleCodes)) return <span className="order-marker influencer">{t("Influencer")}</span>;
   return <>
     <span className={`source-badge ${source}`}>{fulfilmentSourceLabel(order, manualOrders)}</span>
     {unrecordedManualOrder && <span className="order-marker legacy-manual">{t("Manual (legacy)")}</span>}
@@ -1478,11 +1470,6 @@ function choice<T extends string>(value: unknown, fallback: T, allowed: readonly
   return typeof value === "string" && allowed.includes(value as T) ? value as T : fallback;
 }
 
-function cleanFulfilmentColumns(value: unknown) {
-  if (!Array.isArray(value)) return [...fulfilmentColumnValues];
-  const columns = value.filter((column): column is FulfilmentColumn => fulfilmentColumnValues.includes(column));
-  return [...columns, ...fulfilmentColumnValues.filter((column) => !columns.includes(column))];
-}
 
 function permittedView(value: unknown, role?: UserRole) {
   const view = choice(value, "orders" as View, dashboardViews);
@@ -1557,6 +1544,16 @@ function Home() {
   const { t } = useLanguage();
   const storedSession = readStoredSession();
   const storedUi = readStoredUi();
+  const [layoutEditorView, setLayoutEditorView] = useState<TableView | null>(null);
+  const [tableLayouts, setTableLayouts] = useState<TableLayouts>(() => {
+    const saved = readJson<Partial<TableLayouts>>("mp-table-layouts-v1");
+    return { orders: normalizeTableLayout(saved?.orders, "orders"), fulfilment: normalizeTableLayout(saved?.fulfilment, "fulfilment") };
+  });
+  function saveTableLayouts(value: TableLayouts) {
+    const normalized = { orders: normalizeTableLayout(value.orders, "orders"), fulfilment: normalizeTableLayout(value.fulfilment, "fulfilment") };
+    setTableLayouts(normalized);
+    if (!writeJson("mp-table-layouts-v1", normalized)) setNotice("Layout changed, but browser storage could not save it.");
+  }
   const storedEnvelopeSettings = readStoredEnvelopeSettings();
   const initialOrdersCache = useRef<StoredOrdersCache | null>(readStoredOrdersCache()).current;
   const hasOrdersCache = useRef(Boolean(initialOrdersCache));
@@ -1743,8 +1740,6 @@ function Home() {
   const [creatorCommissions, setCreatorCommissions] = useState<CreatorCommission[]>([]);
   const [creatorPayouts, setCreatorPayouts] = useState<CreatorPayout[]>([]);
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
-  const [draggedColumn, setDraggedColumn] = useState<FulfilmentColumn | null>(null);
-  const [fulfilmentColumns, setFulfilmentColumns] = useState<FulfilmentColumn[]>(() => cleanFulfilmentColumns(storedUi.fulfilmentColumns));
   const [manualOrderIds, setManualOrderIds] = useState("");
   const [manualEnvelopeIds, setManualEnvelopeIds] = useState("");
   const [manualEnvelopeNames, setManualEnvelopeNames] = useState<Record<number, string>>({});
@@ -2130,7 +2125,6 @@ function Home() {
       reportSourceFilter,
       fulfilmentStartDate,
       fulfilmentEndDate,
-      fulfilmentColumns,
     } satisfies StoredUiPreferences);
   }, [
     view,
@@ -2154,7 +2148,6 @@ function Home() {
     reportSourceFilter,
     fulfilmentStartDate,
     fulfilmentEndDate,
-    fulfilmentColumns,
   ]);
 
   useEffect(() => {
@@ -2263,7 +2256,7 @@ function Home() {
         const date = dateKey(order.orderDate);
         return (!fulfilmentStartDate || date >= fulfilmentStartDate) && (!fulfilmentEndDate || date <= fulfilmentEndDate);
       })
-      .filter((order) => !search || [order.orderNumber, order.customerName, order.phone, order.trackingNumber, order.plushName, order.product, order.character, order.shippingMethod]
+      .filter((order) => !search || [order.orderNumber, compactOrderLabel(order), order.customerName, order.phone, order.address, order.email, order.trackingNumber, order.plushName, order.product, order.character, order.shippingMethod]
         .join(" ").toLowerCase().includes(search));
     return sortOrderRecords(matching, sortKey, sortDirection);
   }, [orders, manualOrders, query, sourceFilter, statusFilter, view, sortKey, sortDirection, fulfilmentStartDate, fulfilmentEndDate]);
@@ -2538,15 +2531,6 @@ function Home() {
       : [...current, orderId]);
   }
 
-  function reorderFulfilmentColumn(source: FulfilmentColumn, target: FulfilmentColumn) {
-    if (source === target || source === "orderNumber" || target === "orderNumber") return;
-    setFulfilmentColumns((current) => {
-      const next = current.filter((column) => column !== source);
-      next.splice(next.indexOf(target), 0, source);
-      return next;
-    });
-    setDraggedColumn(null);
-  }
 
   async function checkNfcHelper(showResult = true) {
     setNfcHelperStatus("checking");
@@ -5903,10 +5887,32 @@ function Home() {
     if (column === "character") return displayedCharacter(order) || "-";
     if (column === "idWebsiteLink") {
       const link = certificateLink(order);
-      return link ? <div className="link-copy nfc-link-write"><a href={link} target="_blank" rel="noreferrer">{certificateLink(order, false)}</a><button type="button" className="nfc-write-button" disabled={nfcWritingOrderId === order.id} onClick={() => writeCertificateLinkToNfc(order)}>{nfcWritingOrderId === order.id ? t("Writing...") : t("Write")}</button></div> : "-";
+      return link ? <div className="link-copy nfc-link-write"><a href={link} target="_blank" rel="noreferrer">{t("Certificate")}</a><button type="button" className="nfc-write-button" disabled={nfcWritingOrderId === order.id} onClick={() => writeCertificateLinkToNfc(order)}>{nfcWritingOrderId === order.id ? t("Writing...") : t("Write")}</button></div> : "-";
     }
     if (column === "customerName") return order.customerName || "-";
     return order.phone || "-";
+  }
+
+  function compactTableCell(order: Order, column: TableColumn) {
+    if (column === "orderNumber") return <div className="compact-order-identity" title={orderLabel(order)}><strong>{compactOrderLabel(order)}</strong><OrderMarkers order={order} manualOrders={manualOrders} /></div>;
+    if (column === "status") return <StatusPill status={order.status} />;
+    if (column === "orderDate") return formatDate(order.orderDate);
+    if (column === "updatedAt") return formatDate(order.updatedAt, true);
+    if (column === "voiceLength") return order.voiceLength ? `${order.voiceLength}s` : "-";
+    if (column === "character") return displayedCharacter(order) || "-";
+    if (column === "meaningfulMessage" || column === "idWebsiteLink") return fulfilmentCell(order, column);
+    if (column === "actions") return <div className="row-actions"><button className="view-button" onClick={() => setSelectedId(order.id)}>{t("View")}</button>{view === "orders" && (order.salesChannel ?? "shopify") === "shopify" && <button className="view-button refresh-order-button" disabled={refreshingOrderNumber === order.orderNumber} onClick={() => refreshShopifyOrder(order)}>{refreshingOrderNumber === order.orderNumber ? t("Refreshing...") : t("Refresh")}</button>}{view === "orders" && order.salesChannel === "tiktok" && <button className="view-button refresh-order-button" disabled={refreshingOrderNumber === tiktokOrderIdFromOrder(order)} onClick={() => refreshTikTokOrder(order)}>{refreshingOrderNumber === tiktokOrderIdFromOrder(order) ? t("Syncing...") : t("Sync")}</button>}</div>;
+    return order[column] || "-";
+  }
+  function compactTable(tableView: TableView) {
+    const columns = tableLayouts[tableView].filter(column => column.visible);
+    return <table className={`orders-table adaptive-order-table compact-order-table ${tableView === "fulfilment" ? "fulfilment-table" : ""}`} style={{ minWidth: 38 + columns.reduce((width, column) => width + column.width, 0) }}>
+      <colgroup><col style={{ width: 38 }} />{columns.map(column => <col key={column.key} style={{ width: column.width }} />)}</colgroup>
+      <thead><tr><th className="order-col-select"><input type="checkbox" aria-label={t("Select visible orders")} checked={Boolean(filtered.length) && filtered.every(order => selectedOrders.includes(order.id))} onChange={event => setSelectedOrders(event.target.checked ? filtered.map(order => order.id) : [])} /></th>{columns.map(column => <th key={column.key} className={`order-col-${column.key}`}>{t(tableColumns[column.key][0])}</th>)}</tr></thead>
+      <tbody>{filtered.map(order => <OrderTableRow key={order.id} selected={selectedOrders.includes(order.id)} className={[isExpressShipping(order) ? "express-shipping-row" : "", isPlushCharm(order) ? "plush-charm-row" : ""].filter(Boolean).join(" ")} hint={t("Click to select. Double-click to view.")} onToggle={() => toggleOrderSelection(order.id)} onOpen={() => setSelectedId(order.id)}>
+        <td className="order-col-select"><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={selectedOrders.includes(order.id)} onChange={() => toggleOrderSelection(order.id)} /></td>{columns.map(column => <td key={column.key} className={`order-col-${column.key}`} title={typeof order[column.key as keyof Order] === "string" ? String(order[column.key as keyof Order]) : undefined}>{compactTableCell(order, column.key)}</td>)}
+      </OrderTableRow>)}</tbody>
+    </table>;
   }
 
   const workspace = workspaceForView(view);
@@ -6219,17 +6225,19 @@ function Home() {
         </>}
 
         {view !== "fulfilment" && <section className="card orders-card adaptive-orders-card">
+          <div className="table-layout-toolbar"><button className="button secondary small" onClick={() => setLayoutEditorView("orders")}>{t("Layout settings")}</button></div>
           <div className={`toolbar ${view === "orders" ? "orders-toolbar" : ""}`}>
             <div className="toolbar-row toolbar-filter-row"><OrderSearch value={query} onChange={setQuery} placeholder={t("Search order, customer, phone or tracking...")} /><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /></div>
             <div className="toolbar-row toolbar-action-row"><button className="button primary" disabled={!batchSelectionReady} title={t("Select up to 200 New Order or Uploading Audio orders.")} onClick={() => setAssigningBatch(true)}>{t("Move to Batch Fulfilment")}</button>{view === "orders" && <button className="button secondary" disabled={!selectedShopifyOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshShopifyOrders}>{refreshingOrderNumber === "bulk" ? t("Refreshing...") : `Refresh ${selectedShopifyOrderCount} Shopify`}</button>}{view === "orders" && <button className="button secondary" disabled={!selectedTikTokOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshTikTokOrders}>{refreshingOrderNumber === "tiktok-bulk" ? t("Syncing...") : `Sync ${selectedTikTokOrderCount} TikTok`}</button>}{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>{t("Move") + " "}{selectedOrders.length} {" " + t("to next status")}</button>}{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>{t("Delete")}</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>{t("Export CSV")}</button>}</div>
           </div>
-          <div className="table-scroll"><table className="orders-table adaptive-order-table"><thead><tr><th className="order-col-select"><input type="checkbox" aria-label={t("Select visible orders")} checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th className="order-col-orderNumber">{t("Order")}</th><th className="order-col-orderDate">{t("Date")}</th><th className="order-col-customerName">{t("Customer")}</th><th className="order-col-phone">{t("Phone")}</th><th className="order-col-character">{t("Character")}</th><th className="order-col-voiceLength">{t("Voice")}</th><th className="order-col-plushName">{t("Plush name")}</th><th className="order-col-status">{t("Status")}</th><th className="order-col-trackingNumber">{t("Tracking number")}</th><th className="order-col-updatedAt">{t("Last updated")}</th><th className="order-col-actions">{view === "orders" ? t("Actions") : t("View")}</th></tr></thead><tbody>{filtered.map((order) => <OrderTableRow key={order.id} selected={selectedOrders.includes(order.id)} className={[isExpressShipping(order) ? "express-shipping-row" : "", isPlushCharm(order) ? "plush-charm-row" : ""].filter(Boolean).join(" ")} hint={t("Click to select. Double-click to view.")} onToggle={() => toggleOrderSelection(order.id)} onOpen={() => setSelectedId(order.id)}><td className="order-col-select"><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={selectedOrders.includes(order.id)} onChange={() => toggleOrderSelection(order.id)} /></td><td className="order-col-orderNumber" data-label={t("Order")}><strong>{orderLabel(order)}</strong><OrderMarkers order={order} manualOrders={manualOrders} /></td><td className="order-col-orderDate" data-label={t("Date")}>{formatDate(order.orderDate)}</td><td className="order-col-customerName" data-label={t("Customer")}><strong>{order.customerName || "-"}</strong></td><td className="order-col-phone" data-label={t("Phone")}>{order.phone || "-"}</td><td className="order-col-character" data-label={t("Character")}>{displayedCharacter(order) || "-"}</td><td className="order-col-voiceLength" data-label={t("Voice")}>{order.voiceLength ? `${order.voiceLength}s` : "-"}</td><td className="order-col-plushName" data-label={t("Plush name")}>{order.plushName || "-"}</td><td className="order-col-status" data-label={t("Status")}><StatusPill status={order.status} /></td><td className="order-col-trackingNumber" data-label={t("Tracking number")}><code>{order.trackingNumber || "-"}</code></td><td className="order-col-updatedAt" data-label={t("Last updated")}>{formatDate(order.updatedAt, true)}</td><td className="order-col-actions" data-label={t("Actions")}><div className="row-actions"><button className="view-button" onClick={() => setSelectedId(order.id)}>{t("View")}</button>{view === "orders" && (order.salesChannel ?? "shopify") === "shopify" && <button className="view-button refresh-order-button" disabled={refreshingOrderNumber === order.orderNumber} onClick={() => refreshShopifyOrder(order)}>{refreshingOrderNumber === order.orderNumber ? t("Refreshing...") : t("Refresh")}</button>}{view === "orders" && order.salesChannel === "tiktok" && <button className="view-button refresh-order-button" disabled={refreshingOrderNumber === tiktokOrderIdFromOrder(order)} onClick={() => refreshTikTokOrder(order)}>{refreshingOrderNumber === tiktokOrderIdFromOrder(order) ? t("Syncing...") : t("Sync")}</button>}</div></td></OrderTableRow>)}</tbody></table>{!filtered.length && <div className="empty"><strong>{t("No orders found")}</strong><p>{t("Try another search or status filter.")}</p></div>}</div>
+          <div className="table-scroll">{compactTable("orders")}{!filtered.length && <div className="empty"><strong>{t("No orders found")}</strong><p>{t("Try another search or status filter.")}</p></div>}</div>
           <div className="table-footer">{t("Showing") + " "}{filtered.length} {" " + t("of") + " "}{view === "fulfilled" ? orders.filter((order) => order.status === "shipped").length : orders.length} {" " + t("orders")}</div>
           {hasMoreOrderSummaries && <div ref={orderSummaryLoadMoreSentinel} className="table-footer"><button className="button secondary small" type="button" disabled={loadingMoreOrderSummaries} onClick={() => void loadNextOrderSummaries()}>{loadingMoreOrderSummaries ? t("Loading more orders...") : t("Load next 100 orders")}</button></div>}
         </section>}
 
         {assigningBatch && <BatchAssignment token={session.token} orderIds={selectedOrders} onClose={() => setAssigningBatch(false)} onAssigned={id => { setAssigningBatch(false); setSelectedOrders([]); setActiveBatchId(id); setView("batch_fulfilment"); void loadSharedData(); }} />}
         {view === "fulfilment" && <section className="card orders-card adaptive-orders-card">
+          <div className="table-layout-toolbar"><button className="button secondary small" onClick={() => setLayoutEditorView("fulfilment")}>{t("Layout settings")}</button></div>
           <div className="toolbar"><OrderSearch value={query} onChange={setQuery} placeholder={t("Search order, plush name, character, customer or phone...")} /><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /><button className="button primary" disabled={!batchSelectionReady} title={t("Select up to 200 New Order or Uploading Audio orders.")} onClick={() => setAssigningBatch(true)}>{t("Move to Batch Fulfilment")}</button><button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>{t("Move") + " "}{selectedOrders.length} {" " + t("to next status")}</button>{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>{t("Delete")}</button>}</div>
           <div className={`nfc-helper-panel ${nfcHelperStatus}`}>
             <div>
@@ -6242,7 +6250,7 @@ function Home() {
               <button className="button secondary small" type="button" onClick={copyNfcHelperSetupCommand}>{t("Copy setup command")}</button>
             </div>
           </div>
-          <div className="fulfilment-scroll table-scroll"><table className="orders-table fulfilment-table adaptive-order-table"><thead><tr><th className="select-column order-col-select"><input type="checkbox" aria-label={t("Select visible fulfilment orders")} checked={Boolean(filtered.length) && filtered.every((order) => selectedOrders.includes(order.id))} onChange={(event) => setSelectedOrders(event.target.checked ? filtered.map((order) => order.id) : [])} /></th><th className="locked-order-column order-col-orderNumber">{t("Order ID")}</th>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <th key={column} className={`order-col-${column} ${draggedColumn === column ? "dragging" : ""}`} draggable onDragStart={(event) => { setDraggedColumn(column); event.dataTransfer.setData("text/plain", column); }} onDragEnd={() => setDraggedColumn(null)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => reorderFulfilmentColumn(event.dataTransfer.getData("text/plain") as FulfilmentColumn, column)}><span className="drag-handle"><Icon name="drag" /></span>{t(fulfilmentColumnLabels[column])}</th>)}<th className="order-col-status">{t("Status")}</th><th className="order-col-actions">{t("View")}</th></tr></thead><tbody>{filtered.map((order) => { const checked = selectedOrders.includes(order.id); const rowClass = [checked ? "selected-row" : "", isExpressShipping(order) ? "express-shipping-row" : "", isPlushCharm(order) ? "plush-charm-row" : ""].filter(Boolean).join(" "); return <OrderTableRow key={order.id} selected={checked} className={rowClass} hint={t("Click to select. Double-click to view.")} onToggle={() => toggleOrderSelection(order.id)} onOpen={() => setSelectedId(order.id)}><td className="select-column order-col-select"><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={checked} onChange={() => toggleOrderSelection(order.id)} /></td><td className="locked-order-column order-col-orderNumber"><strong>{orderLabel(order)}</strong><OrderMarkers order={order} manualOrders={manualOrders} /></td>{fulfilmentColumns.filter((column) => column !== "orderNumber").map((column) => <td key={column} data-label={t(fulfilmentColumnLabels[column])} className={`order-col-${column} ${column === "idWebsiteLink" ? "certificate-cell" : ""}`}>{fulfilmentCell(order, column)}</td>)}<td className="order-col-status" data-label={t("Status")}><StatusPill status={order.status} /></td><td className="order-col-actions" data-label={t("View")}><button className="view-button" onClick={() => setSelectedId(order.id)}>{t("View")}</button></td></OrderTableRow>; })}</tbody></table>{!filtered.length && <div className="empty"><strong>{t("No fulfilment orders found")}</strong><p>{t("Try another search or status filter.")}</p></div>}</div>
+          <div className="fulfilment-scroll table-scroll">{compactTable("fulfilment")}{!filtered.length && <div className="empty"><strong>{t("No fulfilment orders found")}</strong><p>{t("Try another search or status filter.")}</p></div>}</div>
           <div className="table-footer">{t("Showing") + " "}{filtered.length} {" " + t("of") + " "}{orders.length} {" " + t("orders")}</div>
           {hasMoreOrderSummaries && <div ref={orderSummaryLoadMoreSentinel} className="table-footer"><button className="button secondary small" type="button" disabled={loadingMoreOrderSummaries} onClick={() => void loadNextOrderSummaries()}>{loadingMoreOrderSummaries ? t("Loading more orders...") : t("Load next 100 orders")}</button></div>}
         </section>}
@@ -6351,7 +6359,9 @@ function Home() {
         </div>
       </section>}
 
+      {layoutEditorView && <TableLayoutEditor layouts={tableLayouts} initialView={layoutEditorView} onSave={saveTableLayouts} onClose={() => setLayoutEditorView(null)} />}
       {view === "settings" && session.role === "admin" && <section className="settings-page card">
+        <div className="settings-heading"><div><h2>{t("Table layout")}</h2><p>{t("Configure Orders and Fulfilment columns separately. Saved on this browser.")}</p></div><button className="button secondary" onClick={() => setLayoutEditorView("orders")}>{t("Layout settings")}</button></div>
         <div className="settings-heading"><div><h2>{t("Accounts and permissions")}</h2><p>{t("Admins can edit everything. Staff can use workflow pages and only advance order stages.")}</p></div><span>{accounts.length} {" " + t("accounts")}</span></div>
         <div className="account-create"><input placeholder={t("Username")} value={newAccount.username} onChange={(event) => setNewAccount({ ...newAccount, username: event.target.value.toLowerCase() })} /><input placeholder={t("Display name")} value={newAccount.displayName} onChange={(event) => setNewAccount({ ...newAccount, displayName: event.target.value })} /><select value={newAccount.role} onChange={(event) => setNewAccount({ ...newAccount, role: event.target.value as UserRole })}><option value="staff">{t("Staff")}</option><option value="creator">{t("Creator")}</option><option value="admin">{t("Admin")}</option></select><input type="password" placeholder={t("Password (8+ characters)")} value={newAccount.password} onChange={(event) => setNewAccount({ ...newAccount, password: event.target.value })} /><button className="button primary" onClick={createAccount}>{t("Create account")}</button></div>
         <div className="account-list">{accounts.map((account) => <div className="account-row" key={account.id}><strong>@{account.username}</strong><input value={account.displayName} onChange={(event) => setAccounts((current) => current.map((item) => item.id === account.id ? { ...item, displayName: event.target.value } : item))} /><select value={account.role} onChange={(event) => setAccounts((current) => current.map((item) => item.id === account.id ? { ...item, role: event.target.value as UserRole } : item))}><option value="staff">{t("Staff")}</option><option value="creator">{t("Creator")}</option><option value="admin">{t("Admin")}</option></select><input type="password" placeholder={t("New password (optional)")} value={accountPasswords[account.id] ?? ""} onChange={(event) => setAccountPasswords((current) => ({ ...current, [account.id]: event.target.value }))} /><label><input type="checkbox" checked={account.active} onChange={(event) => setAccounts((current) => current.map((item) => item.id === account.id ? { ...item, active: event.target.checked } : item))} /> {" " + t("Active")}</label><button className="button primary" onClick={() => saveAccount(account, accountPasswords[account.id])}>{t("Save")}</button></div>)}</div>
