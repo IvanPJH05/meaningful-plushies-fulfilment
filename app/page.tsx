@@ -7,6 +7,7 @@ import dynamic from "next/dynamic";
 import { compactOrderLabel, normalizeTableLayout, tableColumns, type TableColumn, type TableLayouts, type TableView } from "../lib/table-layout";
 const TableLayoutEditor = dynamic(() => import("../components/table-layout-editor"));
 import { OrderTableRow } from "../components/order-table-row";
+import { saveImportedOrders } from "../lib/order-import-save";
 import { WorkspaceDataCache, sharedTablesForWorkspace } from "../lib/workspace-data";
 
 import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
@@ -2770,8 +2771,10 @@ function Home() {
 
   async function runImport() {
     const { orders: imported, result } = importShopifyData(orderCsv, metafieldCsv, orders, session ? `${session.displayName} (${session.username})` : "Admin");
+    const existingById = new Map(orders.map(order => [order.id, order]));
+    const changed = imported.filter(order => existingById.get(order.id) !== order);
     try {
-      const saveResult = await upsertSharedOrders(imported);
+      const saveResult = await saveImportedOrders(changed, session?.token ?? "");
       if (saveResult.accountingWarning) {
         setAccountingRetryIds((current) => [...new Set([...current, ...imported.map((order) => order.id)])]);
         setAccountingRetryMessage(saveResult.accountingWarning);
@@ -2829,7 +2832,7 @@ function Home() {
     try {
       // A TikTok import only changes the rows read from this file. Saving the
       // entire fulfilment history here can exceed Supabase's statement limit.
-      const saveResult = await upsertSharedOrders(importedOrders);
+      const saveResult = await saveImportedOrders(importedOrders, session?.token ?? "");
       if (saveResult.accountingWarning) {
         setAccountingRetryIds((current) => [...new Set([...current, ...importedOrders.map((order) => order.id)])]);
         setAccountingRetryMessage(saveResult.accountingWarning);
