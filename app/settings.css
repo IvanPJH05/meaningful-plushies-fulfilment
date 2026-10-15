@@ -1701,5 +1701,6 @@ body.print-sales-report .report-table th,
 .notification-messages>.notice button{flex-shrink:0;font-size:13px}
 .notification-messages>.batch-error{color:#b42318}
 .app-shell>.main-area{padding-bottom:190px}
+.order-drawer{padding-bottom:190px}
 @media(max-width:760px){.notification-bar{left:8px;right:8px;bottom:8px;gap:8px;padding:10px;flex-direction:column}.notification-messages{width:100%;max-height:104px}}
-@media print{.notification-bar{display:none!important}.app-shell>.main-area{padding-bottom:0}}
+@media print{.notification-bar{display:none!important}.app-shell>.main-area,.order-drawer{padding-bottom:0}}
