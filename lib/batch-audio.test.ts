@@ -10,6 +10,20 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { assertAudioMediaType, boundedAudioBytes, cachedBatchMp3, convertAudioToMp3 } from "./batch-audio.ts";
 
 const exec = promisify(execFile);
+test("streamed browser-style WebM converts to MP3 without losing its duration", async () => {
+  // Pipe output has no final seekable WebM duration, like MediaRecorder blobs.
+  const source = await exec(ffmpegPath!, ["-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=7", "-c:a", "libopus", "-f", "webm", "pipe:1"], { encoding: "buffer", windowsHide: true });
+  const mp3 = await convertAudioToMp3(source.stdout);
+  const dir = await mkdtemp(join(tmpdir(), "recording-duration-test-"));
+  try {
+    const file = join(dir, "recording.mp3");
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(file, mp3);
+    const decoded = await exec(ffmpegPath!, ["-loglevel", "error", "-i", file, "-ac", "1", "-ar", "44100", "-f", "s16le", "pipe:1"], { encoding: "buffer", maxBuffer: 2 * 1024 * 1024, windowsHide: true });
+    const duration = decoded.stdout.length / (44100 * 2);
+    assert.ok(Math.abs(duration - 7) < 0.1, `Expected 7 seconds, got ${duration}`);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
 test("video audio is extracted as a playable MP3; silent video fails", async () => {
   const dir = await mkdtemp(join(tmpdir(), "batch-audio-test-"));
   try {

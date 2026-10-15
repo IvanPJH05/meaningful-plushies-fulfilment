@@ -7,6 +7,7 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["ffmpeg-static"],
   outputFileTracingIncludes: {
     "/api/fulfilment/batches/audio": ["./node_modules/ffmpeg-static/ffmpeg*"],
+    "/api/customisation/audio-download": ["./node_modules/ffmpeg-static/ffmpeg*"],
   },
   // Shopify forwards the root app-proxy URL with a trailing slash. Preserve it
   // instead of sending Shopify an internal redirect that becomes a storefront 404.
