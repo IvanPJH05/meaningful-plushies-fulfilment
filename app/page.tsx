@@ -7,6 +7,7 @@ import dynamic from "next/dynamic";
 import { compactOrderLabel, normalizeTableLayout, tableColumns, type TableColumn, type TableLayouts, type TableView } from "../lib/table-layout";
 const TableLayoutEditor = dynamic(() => import("../components/table-layout-editor"));
 import { OrderTableRow } from "../components/order-table-row";
+import { VirtualOrderTable, VirtualPackingList } from "../components/virtual-order-list";
 import { saveImportedOrders } from "../lib/order-import-save";
 import { WorkspaceDataCache, sharedTablesForWorkspace } from "../lib/workspace-data";
 
@@ -1547,8 +1548,8 @@ export default function Dashboard() {
 
 function Home() {
   const { t } = useLanguage();
-  const storedSession = readStoredSession();
-  const storedUi = readStoredUi();
+  const [storedSession] = useState(readStoredSession);
+  const [storedUi] = useState(readStoredUi);
   const [layoutEditorView, setLayoutEditorView] = useState<TableView | null>(null);
   const [tableLayouts, setTableLayouts] = useState<TableLayouts>(() => {
     const saved = readJson<Partial<TableLayouts>>("mp-table-layouts-v1");
@@ -1559,8 +1560,8 @@ function Home() {
     setTableLayouts(normalized);
     if (!writeJson("mp-table-layouts-v1", normalized)) setNotice("Layout changed, but browser storage could not save it.");
   }
-  const storedEnvelopeSettings = readStoredEnvelopeSettings();
-  const initialOrdersCache = useRef<StoredOrdersCache | null>(readStoredOrdersCache()).current;
+  const [storedEnvelopeSettings] = useState(readStoredEnvelopeSettings);
+  const [initialOrdersCache] = useState(readStoredOrdersCache);
   const hasOrdersCache = useRef(Boolean(initialOrdersCache));
   const ordersCacheCheckedAt = useRef(initialOrdersCache?.checkedAt ?? "");
   const [session, setSession] = useState<Session | null>(() => storedSession);
@@ -5913,13 +5914,14 @@ function Home() {
   }
   function compactTable(tableView: TableView) {
     const columns = tableLayouts[tableView].filter(column => column.visible);
-    return <table className={`orders-table adaptive-order-table compact-order-table ${tableView === "fulfilment" ? "fulfilment-table" : ""}`} style={{ minWidth: 38 + columns.reduce((width, column) => width + column.width, 0) }}>
-      <colgroup><col style={{ width: 38 }} />{columns.map(column => <col key={column.key} style={{ width: column.width }} />)}</colgroup>
-      <thead><tr><th className="order-col-select"><input type="checkbox" aria-label={t("Select visible orders")} checked={Boolean(filtered.length) && filtered.every(order => selectedOrders.includes(order.id))} onChange={event => setSelectedOrders(event.target.checked ? filtered.map(order => order.id) : [])} /></th>{columns.map(column => <th key={column.key} className={`order-col-${column.key}`}>{t(tableColumns[column.key][0])}</th>)}</tr></thead>
-      <tbody>{filtered.map(order => <OrderTableRow key={order.id} selected={selectedOrders.includes(order.id)} className={[isExpressShipping(order) ? "express-shipping-row" : "", isPlushCharm(order) ? "plush-charm-row" : ""].filter(Boolean).join(" ")} hint={t("Click to select. Double-click to view.")} onToggle={() => toggleOrderSelection(order.id)} onOpen={() => setSelectedId(order.id)}>
+    return <VirtualOrderTable items={filtered} className={`orders-table adaptive-order-table compact-order-table ${tableView === "fulfilment" ? "fulfilment-table" : ""}`} minWidth={38 + columns.reduce((width, column) => width + column.width, 0)} columnCount={columns.length + 1}
+      label={t(tableView === "fulfilment" ? "Fulfilment" : "Orders")}
+      resetKey={JSON.stringify([view, query, sourceFilter, statusFilter, sortKey, sortDirection, fulfilmentStartDate, fulfilmentEndDate])}
+      columns={<colgroup><col style={{ width: 38 }} />{columns.map(column => <col key={column.key} style={{ width: column.width }} />)}</colgroup>}
+      header={<tr><th className="order-col-select"><input type="checkbox" aria-label={t("Select visible orders")} checked={Boolean(filtered.length) && filtered.every(order => selectedOrders.includes(order.id))} onChange={event => setSelectedOrders(event.target.checked ? filtered.map(order => order.id) : [])} /></th>{columns.map(column => <th key={column.key} className={`order-col-${column.key}`}>{t(tableColumns[column.key][0])}</th>)}</tr>}
+      renderRow={(order, index) => <OrderTableRow key={order.id} rowIndex={index + 2} selected={selectedOrders.includes(order.id)} className={[isExpressShipping(order) ? "express-shipping-row" : "", isPlushCharm(order) ? "plush-charm-row" : ""].filter(Boolean).join(" ")} hint={t("Click to select. Double-click to view.")} onToggle={() => toggleOrderSelection(order.id)} onOpen={() => setSelectedId(order.id)}>
         <td className="order-col-select"><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={selectedOrders.includes(order.id)} onChange={() => toggleOrderSelection(order.id)} /></td>{columns.map(column => <td key={column.key} className={`order-col-${column.key}`} title={typeof order[column.key as keyof Order] === "string" ? String(order[column.key as keyof Order]) : undefined}>{compactTableCell(order, column.key)}</td>)}
-      </OrderTableRow>)}</tbody>
-    </table>;
+      </OrderTableRow>} />;
   }
 
   const workspace = workspaceForView(view);
@@ -6296,7 +6298,7 @@ function Home() {
           <div className="packing-manual"><div><h2>{t("Choose orders to print")}</h2><p>{t("Enter order IDs separated by commas or spaces, or select orders from the list below.")}</p></div><div className="manual-entry"><input value={manualOrderIds} onChange={(event) => setManualOrderIds(event.target.value)} onKeyDown={(event) => event.key === "Enter" && selectManualOrders()} placeholder={t("Example: 1359, 1360, 1361")} /><button className="button primary" onClick={selectManualOrders}>{t("Add order IDs")}</button></div></div>
           <div className="shipping-label-import"><div><h3>{t("Import shipping-label PDF")}</h3><p>{t("J&T Shopify labels pair from the Remark order number; TikTok labels pair from the top-left Order ID.")}</p></div><FileDropZone accept="application/pdf,.pdf" title={shippingLabelImporting ? t("Importing labels...") : t("Drop label PDF or open files")} description={shippingLabelSummary || t("Each paired label prints immediately after its packing slip.")} onFile={(file) => void importShippingLabels(file)} className="compact-file-drop" /></div>
           <div className="packing-list-header"><div><strong>{t("Available orders")}</strong><span>{t("Order number, descending")}</span></div><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><select value={packingProductFilter} aria-label={t("Product type")} onChange={(event) => setPackingProductFilter(event.target.value as PackingProductFilter)}><option value="all">{t("All product types")}</option><option value="classic_plushies">{t("Classic plushies")}</option><option value="plush_charms">{t("Plush charms only")}</option></select><select value={packingStatusFilter} onChange={(event) => setPackingStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">{t("All statuses")}</option>{orderStatuses.map((status) => <option key={status} value={status}>{t(statusLabels[status])}</option>)}</select><div className="packing-list-actions"><button onClick={() => setPackingSelection((current) => [...new Set([...current, ...packingAvailableOrders.map((order) => order.id)])])}>{t("Select shown")}</button><button onClick={() => setPackingSelection([])}>{t("Clear")}</button></div></div>
-          <div className="packing-order-list">{packingAvailableOrders.map((order) => <label key={order.id} className={isPlushCharm(order) ? "plush-charm-packing-order" : ""}><input type="checkbox" checked={packingSelection.includes(order.id)} onChange={() => setPackingSelection((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><div><strong>{orderLabel(order)} | {order.plushName || t("Unnamed plushie")}</strong><span>{order.customerName} | {displayedCharacter(order) || t("No character")}</span><OrderMarkers order={order} manualOrders={manualOrders} /></div><StatusPill status={order.status} /></label>)}</div>
+          <VirtualPackingList items={packingAvailableOrders} label={t("Available orders")} resetKey={JSON.stringify([sourceFilter, packingProductFilter, packingStatusFilter])} renderItem={(order) => <label title={`${orderLabel(order)} | ${order.plushName || ""} | ${order.customerName}`} key={order.id} className={isPlushCharm(order) ? "plush-charm-packing-order" : ""}><input type="checkbox" checked={packingSelection.includes(order.id)} onChange={() => setPackingSelection((current) => current.includes(order.id) ? current.filter((id) => id !== order.id) : [...current, order.id])} /><div><strong>{orderLabel(order)} | {order.plushName || t("Unnamed plushie")}</strong><span>{order.customerName} | {displayedCharacter(order) || t("No character")}</span><OrderMarkers order={order} manualOrders={manualOrders} /></div><StatusPill status={order.status} /></label>} />
         </div>
         <div className="packing-preview"><div className="preview-heading"><div><h2>{t("A6 print preview")}</h2><p>{t("Every order is paired with either its actual shipping label or a clear manual-label instruction page.")}</p></div><span>{packingOrders.length} {" " + t("selected")}</span></div>{packingOrders.length ? <div className="slip-grid">{packingOrders.map((order) => <Fragment key={order.id}><PackingSlip order={order} manualOrders={manualOrders} /><ShippingLabelPage order={order} manualOrders={manualOrders} /></Fragment>)}</div> : <div className="preview-empty"><strong>{t("No orders selected")}</strong><p>{t("Enter order IDs or tick orders from the list.")}</p></div>}</div>
       </section>}
