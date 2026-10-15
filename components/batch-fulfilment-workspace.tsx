@@ -3,8 +3,8 @@ import { NotificationMessage } from "./notification-bar";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLanguage } from "./dashboard-language";
 import { batchStages, batchNeedsAudio, batchNeedsLabel, matchBatchLabel, type BatchDetail, type FulfilmentBatch } from "../lib/fulfilment-batches";
-import { buildAudioZip } from "../lib/batch-zip-client";
-import { voiceBackupFileName } from "../lib/voice-file-name";
+import { useBatchAudioPreparation } from "./batch-audio-preparation";
+import { BatchTaskProgress } from "./batch-task-progress";
 import type { Order } from "../lib/types";
 
 const labels = ["Upload shipping labels", "Packing slips + shipping labels", "Generate envelopes", "Download audio ZIP", "Write NFC cards", "Batch complete"];
@@ -44,6 +44,10 @@ export function BatchFulfilmentWorkspace({ token, initialBatchId, onOrdersChange
   const { t } = useLanguage();
   const [batches, setBatches] = useState<FulfilmentBatch[]>([]), [id, setId] = useState(initialBatchId), [detail, setDetail] = useState<BatchDetail | null>(null), [error, setError] = useState(""), [busy, setBusy] = useState(false), [loading, setLoading] = useState(true), [generated, setGenerated] = useState(false), [names, setNames] = useState<Record<string, string>>({}), [notice, setNotice] = useState("");
   const loadingGeneration = useRef(0), operation = useRef(false);
+  const [audioStartedFor, setAudioStartedFor] = useState("");
+  const [taskStarted, setTaskStarted] = useState(0);
+  const audioEnabled = Boolean(detail && (audioStartedFor === detail.batch.id || ["envelopes", "audio"].includes(detail.batch.stage)));
+  const audio = useBatchAudioPreparation(token, detail, audioEnabled);
   const labelInput = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false), [uploadProgress, setUploadProgress] = useState("");
   const [uploadResults, setUploadResults] = useState<Array<{ name: string; message: string; failed: boolean }>>([]);
@@ -69,7 +73,7 @@ export function BatchFulfilmentWorkspace({ token, initialBatchId, onOrdersChange
   }
   async function run(action: () => Promise<void>) {
     if (operation.current) return;
-    operation.current = true; setBusy(true); setError(""); setNotice("");
+    operation.current = true; setBusy(true); setTaskStarted(Date.now()); setError(""); setNotice("");
     try { await action(); } catch (error) { setNotice(""); setError(error instanceof Error ? error.message : "Batch action failed."); } finally { operation.current = false; setBusy(false); }
   }
   async function upload(file: File, current: BatchDetail) {
@@ -116,19 +120,8 @@ export function BatchFulfilmentWorkspace({ token, initialBatchId, onOrdersChange
     if (!detail) return;
     const expected = detail.orders.filter(batchNeedsAudio);
     if (!expected.length) { await mutate("advance", { stage: "audio" }); return; }
-    const files: Array<{ name: string; bytes: Uint8Array }> = [];
-    let total = 0;
-    for (const [index, order] of expected.entries()) {
-      setNotice(`${t("Preparing audio")}: ${index + 1}/${expected.length}`);
-      const response = await fetch(`/api/fulfilment/batches/audio?id=${encodeURIComponent(detail.batch.id)}&orderId=${encodeURIComponent(order.id)}`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(120000) });
-      if (!response.ok) { const result = await response.json().catch(() => ({})); throw new Error(`${t("Could not download audio for order")} #${order.orderNumber}: ${result.error ?? response.status}`); }
-      const type = (response.headers.get("content-type") ?? "").split(";")[0];
-      if (!type.startsWith("audio/") && type !== "application/octet-stream") throw new Error(`${t("This order has no downloadable audio file")}: #${order.orderNumber}`);
-      const bytes = new Uint8Array(await response.arrayBuffer()); total += bytes.length;
-      if (!bytes.length || total > 200 * 1024 * 1024) throw new Error("Audio ZIP is empty or exceeds 200 MB. Use a smaller batch.");
-      files.push({ name: `${String(index + 1).padStart(3, "0")}-${voiceBackupFileName({ ...order, character: order.character ?? "" }, "mp3")}`, bytes });
-    }
-    const url = URL.createObjectURL(await buildAudioZip(files)), link = document.createElement("a"); link.href = url; link.download = `batch-${detail.batch.number}-audio.zip`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 60000);
+    if (!audio.blob) throw new Error("The audio ZIP is still being prepared.");
+    const url = URL.createObjectURL(audio.blob), link = document.createElement("a"); link.href = url; link.download = `batch-${detail.batch.number}-audio.zip`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 60000);
     await mutate("advance", { stage: "audio" });
     setNotice(t("Audio ZIP download started."));
   }
@@ -136,6 +129,8 @@ export function BatchFulfilmentWorkspace({ token, initialBatchId, onOrdersChange
   const written = new Set(detail?.members.filter(member => member.nfc_written_at).map(member => member.order_id));
   return <section className="batch-workspace"><div className="batch-picker card"><label>{t("Choose batch")}<select value={id} disabled={busy || loading} onChange={event => setId(event.target.value)}><option value="">{t("Choose a batch")}</option>{batches.map(batch => <option key={batch.id} value={batch.id}>{t("Batch")} {batch.number} · {batch.orderCount} {t("orders")} · {t(labels[batchStages.indexOf(batch.stage)])}</option>)}</select></label><button className="button secondary" disabled={busy || loading} onClick={() => void run(async () => { await refreshList(); if (id) await openBatch(id); })}>{t("Refresh")}</button></div>
     {error && <NotificationMessage><p className="batch-error" role="alert">{t(error)}</p></NotificationMessage>}{notice && <NotificationMessage><p role="status">{notice}</p></NotificationMessage>}
+    {busy && <BatchTaskProgress label={uploadProgress || t("Processing batch action")} started={taskStarted} estimate={stage === "printing" || stage === "envelopes" ? Math.max(8, (detail?.orders.length ?? 1) * 2) : 8} />}
+    {audioEnabled && detail?.orders.some(batchNeedsAudio) && <div className="card batch-audio-status">{audio.phase === "ready" ? <p role="status">✓ {t("Audio ZIP ready — download at the audio step.")}</p> : audio.phase === "error" ? <><p role="alert">{audio.error}</p><button className="button secondary" disabled={busy} onClick={audio.retry}>{t("Retry audio preparation")}</button></> : <BatchTaskProgress label={t(audio.phase === "zip" ? "Building audio ZIP" : "Preparing audio in the background")} started={audio.started} completed={audio.completed} total={audio.total} estimate={Math.max(5, audio.total * 8 + 3)} />}<small>{t("Keep this workspace open while audio is prepared. Other batch steps remain available.")}</small></div>}
     <ol className="batch-progress">{labels.slice(0, 5).map((label, index) => <li key={label} className={step > index ? "done" : step === index ? "current" : ""} aria-current={step === index ? "step" : undefined}><span>{index + 1}</span>{t(label)}</li>)}</ol>
     {!id && !loading && <div className="card batch-step"><h2>{t("No batch selected")}</h2><p>{t("Select orders in Fulfilment, then choose Move to Batch Fulfilment.")}</p></div>}
     {loading && <NotificationMessage><p role="status">{t("Loading batch...")}</p></NotificationMessage>}
@@ -158,9 +153,9 @@ export function BatchFulfilmentWorkspace({ token, initialBatchId, onOrdersChange
         </section>
         <button className="button primary" disabled={busy || Boolean(missingLabels.length)} onClick={() => void run(async () => { await mutate("advance", { stage }); })}>{t("Next step")}</button>
       </>}
-      {stage === "printing" && <><p>{t("Generate the combined PDF, then print it before continuing.")}</p><div className="batch-buttons"><button className="button primary" disabled={busy} onClick={() => void run(async () => { if (!await onPrint(detail.orders)) throw new Error("PDF generation failed. Try again."); setGenerated(true); })}>{t("Generate packing slips + labels")}</button><button className="button secondary" disabled={busy || !generated} onClick={() => void run(async () => { await mutate("advance", { stage }); })}>{t("Printed — next step")}</button></div></>}
+      {stage === "printing" && <><p>{t("Generate the combined PDF, then print it before continuing.")}</p><div className="batch-buttons"><button className="button primary" disabled={busy} onClick={() => void run(async () => { if (!await onPrint(detail.orders)) throw new Error("PDF generation failed. Try again."); setGenerated(true); setAudioStartedFor(detail.batch.id); })}>{t("Generate packing slips + labels")}</button><button className="button secondary" disabled={busy || !generated} onClick={() => void run(async () => { await mutate("advance", { stage }); })}>{t("Printed — next step")}</button></div></>}
       {stage === "envelopes" && <><p>{t("Check every envelope name, then generate the PDF.")}</p><div className="batch-name-grid">{detail.orders.map(order => <label key={order.id}>#{order.orderNumber}<input maxLength={60} disabled={busy} value={names[order.id] ?? ""} onChange={event => { setNames(current => ({ ...current, [order.id]: event.target.value })); setGenerated(false); }} /></label>)}</div><div className="batch-buttons"><button className="button primary" disabled={busy || detail.orders.some(order => !names[order.id]?.trim())} onClick={() => void run(async () => { await mutate("envelope_names", { names }); if (!await onEnvelopes(detail.orders.map(order => names[order.id].trim()))) throw new Error("Envelope generation failed. Try again."); setGenerated(true); })}>{t("Generate all envelopes")}</button><button className="button secondary" disabled={busy || !generated} onClick={() => void run(async () => { await mutate("advance", { stage }); })}>{t("Envelopes done — next step")}</button></div></>}
-      {stage === "audio" && <><p>{t("Download one ZIP containing MP3 audio for this batch. Audio and video messages are converted on the first download; later downloads reuse the saved MP3 copies.")}</p><button className="button primary" disabled={busy} onClick={() => void run(downloadAudio)}>{t(detail.orders.some(batchNeedsAudio) ? "Download audio ZIP" : "No audio required — next step")}</button></>}
+      {stage === "audio" && <><p>{t("Download one ZIP containing MP3 audio for this batch. Audio and video messages are converted on the first download; later downloads reuse the saved MP3 copies.")}</p><button className="button primary" disabled={busy || (detail.orders.some(batchNeedsAudio) && audio.phase !== "ready")} onClick={() => void run(downloadAudio)}>{t(detail.orders.some(batchNeedsAudio) ? "Download audio ZIP" : "No audio required — next step")}</button></>}
       {stage === "nfc" && <><p>{t("Hold each card on the reader, then press Write. The final confirmed card completes the batch.")}</p><p>{written.size}/{detail.orders.length} {t("cards written")}</p><button className="button secondary" disabled={busy} onClick={onStartNfc}>{t("Start NFC Helper")}</button></>}
       {stage === "complete" && <p role="status">{t("All NFC cards are complete. The batch orders have moved to Sent for Sewing.")}</p>}
     </div><div className="card batch-order-list"><h3>{t("Orders in this batch")}</h3>{detail.orders.map(order => <article key={order.id}><div><strong title={order.orderNumber}>{shortOrder(order)}{order.setIndicator ? ` (${order.setIndicator})` : ""}</strong><p>{order.plushName || order.customerName} · {order.character}</p><span className={`batch-label-badge ${order.shippingLabelUrl ? "paired" : !batchNeedsLabel(order) ? "not-required" : "missing"}`}>{t(order.shippingLabelUrl ? "Shipping label paired" : !batchNeedsLabel(order) ? "No shipping label required" : "Shipping label missing")}</span>{order.shippingLabelFileName && <small className="batch-label-filename" title={order.shippingLabelFileName}>{order.shippingLabelFileName}</small>}</div><div className="batch-buttons"><button className="button secondary" disabled={busy} onClick={() => void run(() => onOpenOrder(order))}>{t("View order")}</button>{stage === "nfc" && <button className="button primary" disabled={busy || written.has(order.id) || !certificateFor(order)} onClick={() => void run(async () => { if (!await onNfc(order)) throw new Error("NFC writer did not confirm this card. Try again."); const result = await mutate("nfc", { orderId: order.id }); if (result.batch.stage === "complete") await onOrdersChanged(); })}>{t(written.has(order.id) ? "Written" : certificateFor(order) ? "Write NFC card" : "Certificate link missing")}</button>}</div></article>)}</div></>}
