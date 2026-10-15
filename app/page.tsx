@@ -2633,7 +2633,7 @@ function Home() {
     try {
       const response = await fetch("/api/shopify/orders/refresh", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.token ?? ""}` },
         body: JSON.stringify({ orderNumbers: uniqueOrderNumbers }),
       });
       const result = await response.json() as { ok?: boolean; changed?: boolean; updated?: number; checked?: number; failed?: number; error?: string; results?: { ok?: boolean; error?: string }[] };

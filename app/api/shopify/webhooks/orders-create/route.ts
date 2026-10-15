@@ -1,6 +1,7 @@
+import { mobileServiceClient } from "../../../../../lib/mobile-api";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
-import { sessionIdForOrder } from "@/lib/customisation-links";
+import { sessionIdForOrder } from "../../../../../lib/customisation-links";
 
 import { shopifyLinePersonalization, shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
 import { isPlushCharmOrder } from "../../../../../lib/plush-charm";
@@ -9,9 +10,10 @@ import { bindSessionsToOrders, customisationSessionIds, recoverMissingSessionIdF
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
 import { certificateMediaForLineItem, certificateMetaobjectForOrder, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrder, flowCertificateCode, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
 import { fetchMetaCapiSettings, fetchSharedOrders, fetchSharedOrdersByOrderNumber, insertSharedActivity, markManualOrderUsedByDiscountCode, upsertSharedOrders } from "../../../../../lib/supabase";
-import type { Order } from "@/lib/types";
+import type { Order } from "../../../../../lib/types";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 function json(status: number, body: Record<string, unknown>) {
   return NextResponse.json(body, { status });
@@ -77,6 +79,7 @@ export async function POST(request: Request) {
   }
 
   try {
+    const db = mobileServiceClient();
     // Import the sale immediately. Waiting for a delayed optional metafield can
     // make Shopify time out and retry the webhook, leaving the order absent.
     // Line-item properties and later updates still enrich the saved order.
@@ -90,7 +93,7 @@ export async function POST(request: Request) {
       || textValue(payload.name)
       || textValue(payload.order_number),
     );
-    const existing = await fetchSharedOrdersByOrderNumber(syncedNumber);
+    const existing = await fetchSharedOrdersByOrderNumber(syncedNumber, db);
     const importedOrders = shopifyOrderToFulfilmentOrders(fullOrder, uploadLiftFormData, existing, "Shopify");
     let ordersToSave = importedOrders.filter((order) => order.orderNumber === syncedNumber);
     const createdAt = textValue(fullOrder.createdAt) || new Date().toISOString();
@@ -201,7 +204,7 @@ export async function POST(request: Request) {
     // journals and commission reports are calculated separately; running
     // them here can exceed Postgres's statement timeout and make Shopify
     // retry an otherwise valid order.
-    await upsertSharedOrders(ordersToSave, { syncSales: false });
+    await upsertSharedOrders(ordersToSave, { syncSales: false }, db);
     for (const code of appliedDiscountCodes(fullOrder)) {
       await markManualOrderUsedByDiscountCode(
         code,

@@ -1,3 +1,4 @@
+import { mobileServiceClient, requireMobileSession } from "../../../../../lib/mobile-api";
 import { NextResponse } from "next/server";
 import { sessionIdForOrder } from "../../../../../lib/customisation-links";
 
@@ -11,6 +12,7 @@ import { fetchMetaCapiSettings, fetchSharedOrders, fetchSharedOrdersByOrderNumbe
 import type { Order } from "../../../../../lib/types";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 function json(status: number, body: Record<string, unknown>) {
   return NextResponse.json(body, { status });
@@ -155,6 +157,10 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
 }
 
 export async function POST(request: Request) {
+  try { await requireMobileSession(request); } catch (error) {
+    const message = error instanceof Error ? error.message : "SIGN_IN_REQUIRED";
+    return json(message === "WAREHOUSE_ACCESS_REQUIRED" ? 403 : 401, { ok: false, error: message });
+  }
   let body: { orderNumber?: string; orderNumbers?: string[] };
   try {
     body = await request.json() as { orderNumber?: string; orderNumbers?: string[] };
@@ -170,9 +176,10 @@ export async function POST(request: Request) {
   if (!uniqueOrderNumbers.length) return json(400, { ok: false, error: "At least one order number is required." });
 
   try {
+    const db = mobileServiceClient();
     const results = [];
     for (const orderNumber of uniqueOrderNumbers) {
-      results.push(await refreshOneOrder(orderNumber, await fetchSharedOrdersByOrderNumber(orderNumber), request));
+      results.push(await refreshOneOrder(orderNumber, await fetchSharedOrdersByOrderNumber(orderNumber, db), request));
     }
 
     const successful = results.filter((result) => result.ok);
@@ -183,7 +190,7 @@ export async function POST(request: Request) {
     if (changedOrders.length) {
       // Restoring an order must not wait for reporting calculations. This is
       // especially important while the database is under IO pressure.
-      await upsertSharedOrders(changedOrders, { syncSales: false });
+      await upsertSharedOrders(changedOrders, { syncSales: false }, db);
       await insertSharedActivity({
         id: `shopify-refresh-${Date.now()}`,
         orderNumber: uniqueOrderNumbers.length === 1 ? uniqueOrderNumbers[0] : undefined,
