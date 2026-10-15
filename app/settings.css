@@ -1622,6 +1622,27 @@ body.print-sales-report .report-table th,
 .batch-progress .done { background: #e5f4ed; color: #16845b; }
 .batch-step { padding: 28px; }
 .batch-step h2 { margin-top: 0; }
+.batch-label-drop { border: 2px dashed #b6cbed; background: #f5f8ff; border-radius: 14px; padding: 28px 20px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 12px; transition: border-color .15s, background .15s; }
+.batch-label-drop.dragging { border-color: #1769e0; background: #e8f1ff; }
+.batch-label-drop.busy { opacity: .7; }
+.batch-upload-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: #e0ebff; color: #1769e0; font-size: 28px; font-weight: 700; }
+.batch-label-drop strong { font-size: 18px; }
+.batch-label-drop p { margin: 0; max-width: 520px; color: var(--muted); line-height: 1.5; }
+.batch-label-summary { padding: 18px; margin: 20px 0; border: 1px solid #f0d6a7; background: #fffbf2; border-radius: 10px; }
+.batch-label-summary.complete { border-color: #b9dfcf; background: #f0faf5; }
+.batch-label-summary p { margin: 8px 0; }
+.batch-missing-orders { display: flex; flex-wrap: wrap; gap: 8px; }
+.batch-missing-orders button { border: 1px solid #ebc780; border-radius: 7px; padding: 7px 10px; color: #805515; background: white; font: inherit; font-weight: 700; cursor: pointer; }
+.batch-upload-results { list-style: none; margin: 16px 0; padding: 0; max-height: 220px; overflow: auto; }
+.batch-upload-results li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; padding: 10px 0; border-bottom: 1px solid var(--line); color: #16845b; overflow-wrap: anywhere; }
+.batch-upload-results li.failed { color: #b42318; }
+.batch-upload-progress { overflow-wrap: anywhere; }
+.batch-label-badge { display: inline-block; padding: 5px 9px; border-radius: 6px; font-size: 12px; font-weight: 700; }
+.batch-label-badge.paired { color: #166446; background: #e5f4ed; }
+.batch-label-badge.missing { color: #8b5817; background: #fff1d8; }
+.batch-label-badge.not-required { color: #52627a; background: #edf1f7; }
+.batch-label-filename { display: block; max-width: 360px; margin-top: 6px; color: var(--muted); overflow-wrap: anywhere; }
+.batch-order-list article > div { min-width: 0; }
 .batch-buttons { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .batch-workspace .button,.batch-dialog .button { min-height: 44px; font-size: 14px; padding: 12px 18px; }
 .batch-name-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; margin: 22px 0; }

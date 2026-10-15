@@ -8,6 +8,10 @@ import { voiceBackupFileName } from "../lib/voice-file-name";
 import type { Order } from "../lib/types";
 
 const labels = ["Upload shipping labels", "Packing slips + shipping labels", "Generate envelopes", "Download audio ZIP", "Write NFC cards", "Batch complete"];
+function shortOrder(order: Order) {
+  const match = order.salesChannel === "tiktok" && order.orderNumber.match(/\b(TT\d+)\b\s+(\d+)/i);
+  return match ? `${match[1].toUpperCase()} ${match[2].slice(-4)}` : `#${order.orderNumber}`;
+}
 async function batchRequest(token: string, id?: string, mutation?: object): Promise<BatchDetail & { batches: FulfilmentBatch[] }> {
   const response = await fetch(`/api/fulfilment/batches${id && !mutation ? `?id=${encodeURIComponent(id)}` : ""}`, { method: mutation ? "POST" : "GET", headers: { Authorization: `Bearer ${token}`, ...(mutation ? { "Content-Type": "application/json" } : {}) }, body: mutation ? JSON.stringify(mutation) : undefined, cache: "no-store" });
   const data = await response.json();
@@ -40,11 +44,15 @@ export function BatchFulfilmentWorkspace({ token, initialBatchId, onOrdersChange
   const { t } = useLanguage();
   const [batches, setBatches] = useState<FulfilmentBatch[]>([]), [id, setId] = useState(initialBatchId), [detail, setDetail] = useState<BatchDetail | null>(null), [error, setError] = useState(""), [busy, setBusy] = useState(false), [loading, setLoading] = useState(true), [generated, setGenerated] = useState(false), [names, setNames] = useState<Record<string, string>>({}), [notice, setNotice] = useState("");
   const loadingGeneration = useRef(0), operation = useRef(false);
+  const labelInput = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false), [uploadProgress, setUploadProgress] = useState("");
+  const [uploadResults, setUploadResults] = useState<Array<{ name: string; message: string; failed: boolean }>>([]);
   const refreshList = useCallback(async () => { const result = await batchRequest(token); setBatches(result.batches); return result.batches; }, [token]);
   useEffect(() => { let active = true; refreshList().then(list => { if (active && !initialBatchId) setId(list.find(batch => batch.stage !== "complete")?.id ?? list[0]?.id ?? ""); }).catch(error => { if (active) setError(error.message); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [refreshList, initialBatchId]);
   const openBatch = useCallback(async (selected: string) => {
     const generation = ++loadingGeneration.current;
     setLoading(true); setError(""); setNotice(""); setGenerated(false); setDetail(null);
+    setUploadResults([]); setUploadProgress(""); setDragging(false);
     try { const result = await batchRequest(token, selected); if (generation === loadingGeneration.current) { setDetail(result); setNames(Object.fromEntries(result.orders.map(order => [order.id, result.batch.envelope_names[order.id] ?? order.plushName ?? ""]))); } }
     catch (error) { if (generation === loadingGeneration.current) setError(error instanceof Error ? error.message : "Could not load batch."); }
     finally { if (generation === loadingGeneration.current) setLoading(false); }
@@ -64,22 +72,45 @@ export function BatchFulfilmentWorkspace({ token, initialBatchId, onOrdersChange
     operation.current = true; setBusy(true); setError(""); setNotice("");
     try { await action(); } catch (error) { setNotice(""); setError(error instanceof Error ? error.message : "Batch action failed."); } finally { operation.current = false; setBusy(false); }
   }
-  async function upload(file: File) {
-    if (!detail) return;
+  async function upload(file: File, current: BatchDetail) {
     const form = new FormData(); form.append("file", file);
     const response = await fetch("/api/shipping-labels", { method: "POST", body: form });
     const result = await response.json(); if (!response.ok || !result.ok) throw new Error(result.error || "Could not import labels.");
     const paired: Array<{ orderId: string; url: string; fileName: string; source: string }> = [], unmatched: number[] = [];
     for (const label of result.labels) {
-      const matches = matchBatchLabel(detail.orders, label);
+      const matches = matchBatchLabel(current.orders, label);
       if (!matches.length) unmatched.push(label.page);
-      for (const order of matches) paired.push({ orderId: order.id, url: label.url, fileName: label.fileName, source: label.source });
+      for (const order of matches) if (!order.shippingLabelUrl) paired.push({ orderId: order.id, url: label.url, fileName: label.fileName, source: label.source });
     }
-    if (!paired.length) throw new Error("No labels matched orders in this batch.");
+    if (!paired.length) {
+      if (unmatched.length === result.labels.length) throw new Error("No labels matched orders in this batch.");
+      return { detail: current, message: t("Matching orders already have labels.") };
+    }
     if (new Set(paired.map(label => label.orderId)).size !== paired.length) throw new Error("Multiple labels matched the same order. Upload one label per order.");
-    await mutate("labels", { labels: paired });
-    setNotice(`${paired.length} ${t("labels paired")}${unmatched.length ? ` · ${t("Unmatched pages")}: ${unmatched.join(", ")}` : ""}`);
-    await onOrdersChanged();
+    const updated = await mutate("labels", { labels: paired }, current);
+    return { detail: updated, message: `${paired.length} ${t("labels paired")}${unmatched.length ? ` · ${t("Unmatched pages")}: ${unmatched.join(", ")}` : ""}` };
+  }
+  async function uploadFiles(files: File[]) {
+    if (!detail || !files.length) return;
+    let current = detail, changed = false;
+    try {
+      for (const [index, file] of files.entries()) {
+        setUploadProgress(`${t("Uploading PDF")} ${index + 1}/${files.length}: ${file.name}`);
+        try {
+          if (!/\.pdf$/i.test(file.name) && file.type !== "application/pdf") throw new Error(t("Choose PDF files only."));
+          const result = await upload(file, current);
+          changed ||= result.detail !== current;
+          current = result.detail;
+          setUploadResults(items => [...items, { name: file.name, message: result.message, failed: false }]);
+        } catch (error) {
+          setUploadResults(items => [...items, { name: file.name, message: error instanceof Error ? error.message : t("Could not import labels."), failed: true }]);
+          // Stop after a version conflict rather than pairing subsequent files
+          // against a batch another staff member has changed.
+          if (error instanceof Error && /Another staff member|BATCH_CHANGED/.test(error.message)) break;
+        }
+      }
+      if (changed) await onOrdersChanged();
+    } finally { setUploadProgress(""); }
   }
   async function downloadAudio() {
     if (!detail) return;
@@ -109,12 +140,29 @@ export function BatchFulfilmentWorkspace({ token, initialBatchId, onOrdersChange
     {!id && !loading && <div className="card batch-step"><h2>{t("No batch selected")}</h2><p>{t("Select orders in Fulfilment, then choose Move to Batch Fulfilment.")}</p></div>}
     {loading && <NotificationMessage><p role="status">{t("Loading batch...")}</p></NotificationMessage>}
     {detail && <><div className="card batch-step"><p>{t("Batch")} {detail.batch.number} · {detail.orders.length} {t("orders")}</p><h2>{t(labels[step])}</h2>
-      {stage === "labels" && <><p>{t("Upload the courier PDFs. Only orders in this batch will be paired.")}</p><input type="file" accept="application/pdf,.pdf" disabled={busy} aria-label={t("Upload shipping labels")} onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void run(() => upload(file)); }} /><p>{missingLabels.length ? `${missingLabels.length} ${t("orders still need shipping labels")}` : t("All shipping labels are ready.")}</p><button className="button primary" disabled={busy || Boolean(missingLabels.length)} onClick={() => void run(async () => { await mutate("advance", { stage }); })}>{t("Next step")}</button></>}
+      {stage === "labels" && <>
+        <p>{t("Upload the courier PDFs. Only orders in this batch will be paired.")}</p>
+        <div className={`batch-label-drop${dragging ? " dragging" : ""}${busy ? " busy" : ""}`} onDragOver={event => { event.preventDefault(); if (!busy) setDragging(true); }} onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }} onDrop={event => { event.preventDefault(); setDragging(false); if (!busy) void run(() => uploadFiles(Array.from(event.dataTransfer.files))); }}>
+          <span className="batch-upload-icon" aria-hidden="true">↑</span>
+          <strong>{t("Drop shipping-label PDFs here")}</strong>
+          <p>{t("Add PDFs from different couriers together or upload more later. Existing pairs are kept.")}</p>
+          <button className="button primary" disabled={busy} onClick={() => labelInput.current?.click()}>{t(busy ? "Uploading..." : "Choose PDFs")}</button>
+          <input ref={labelInput} type="file" multiple hidden accept="application/pdf,.pdf" disabled={busy} aria-label={t("Upload shipping labels")} onChange={event => { const files = Array.from(event.target.files ?? []); event.target.value = ""; if (files.length) void run(() => uploadFiles(files)); }} />
+        </div>
+        {uploadProgress && <p role="status" className="batch-upload-progress">{uploadProgress}</p>}
+        {uploadResults.length > 0 && <ul className="batch-upload-results" aria-label={t("PDF upload results")}>{uploadResults.map((result, index) => <li key={index} className={result.failed ? "failed" : ""}><strong>{result.name}</strong><span>{t(result.message)}</span></li>)}</ul>}
+        <section className={`batch-label-summary${missingLabels.length ? "" : " complete"}`} aria-live="polite">
+          <strong>{detail.orders.filter(order => batchNeedsLabel(order) && order.shippingLabelUrl).length}/{detail.orders.filter(batchNeedsLabel).length} {t("shipping labels paired")}</strong>
+          <p>{t(missingLabels.length ? "Still need pairing" : "All shipping labels are ready.")}</p>
+          {missingLabels.length > 0 && <div className="batch-missing-orders">{missingLabels.map(order => <button key={order.id} title={order.orderNumber} disabled={busy} onClick={() => void run(() => onOpenOrder(order))}>{shortOrder(order)}{order.setIndicator ? ` (${order.setIndicator})` : ""}</button>)}</div>}
+        </section>
+        <button className="button primary" disabled={busy || Boolean(missingLabels.length)} onClick={() => void run(async () => { await mutate("advance", { stage }); })}>{t("Next step")}</button>
+      </>}
       {stage === "printing" && <><p>{t("Generate the combined PDF, then print it before continuing.")}</p><div className="batch-buttons"><button className="button primary" disabled={busy} onClick={() => void run(async () => { if (!await onPrint(detail.orders)) throw new Error("PDF generation failed. Try again."); setGenerated(true); })}>{t("Generate packing slips + labels")}</button><button className="button secondary" disabled={busy || !generated} onClick={() => void run(async () => { await mutate("advance", { stage }); })}>{t("Printed — next step")}</button></div></>}
       {stage === "envelopes" && <><p>{t("Check every envelope name, then generate the PDF.")}</p><div className="batch-name-grid">{detail.orders.map(order => <label key={order.id}>#{order.orderNumber}<input maxLength={60} disabled={busy} value={names[order.id] ?? ""} onChange={event => { setNames(current => ({ ...current, [order.id]: event.target.value })); setGenerated(false); }} /></label>)}</div><div className="batch-buttons"><button className="button primary" disabled={busy || detail.orders.some(order => !names[order.id]?.trim())} onClick={() => void run(async () => { await mutate("envelope_names", { names }); if (!await onEnvelopes(detail.orders.map(order => names[order.id].trim()))) throw new Error("Envelope generation failed. Try again."); setGenerated(true); })}>{t("Generate all envelopes")}</button><button className="button secondary" disabled={busy || !generated} onClick={() => void run(async () => { await mutate("advance", { stage }); })}>{t("Envelopes done — next step")}</button></div></>}
       {stage === "audio" && <><p>{t("Download one ZIP containing MP3 audio for this batch. Audio and video messages are converted on the first download; later downloads reuse the saved MP3 copies.")}</p><button className="button primary" disabled={busy} onClick={() => void run(downloadAudio)}>{t(detail.orders.some(batchNeedsAudio) ? "Download audio ZIP" : "No audio required — next step")}</button></>}
       {stage === "nfc" && <><p>{t("Hold each card on the reader, then press Write. The final confirmed card completes the batch.")}</p><p>{written.size}/{detail.orders.length} {t("cards written")}</p><button className="button secondary" disabled={busy} onClick={onStartNfc}>{t("Start NFC Helper")}</button></>}
       {stage === "complete" && <p role="status">{t("All NFC cards are complete. The batch orders have moved to Sent for Sewing.")}</p>}
-    </div><div className="card batch-order-list"><h3>{t("Orders in this batch")}</h3>{detail.orders.map(order => <article key={order.id}><div><strong>#{order.orderNumber}{order.setIndicator ? ` (${order.setIndicator})` : ""}</strong><p>{order.plushName || order.customerName} · {order.character}</p>{stage === "labels" && <small>{t(order.shippingLabelUrl || !batchNeedsLabel(order) ? "Ready" : "Shipping label missing")}</small>}</div><div className="batch-buttons"><button className="button secondary" disabled={busy} onClick={() => void run(() => onOpenOrder(order))}>{t("View order")}</button>{stage === "nfc" && <button className="button primary" disabled={busy || written.has(order.id) || !certificateFor(order)} onClick={() => void run(async () => { if (!await onNfc(order)) throw new Error("NFC writer did not confirm this card. Try again."); const result = await mutate("nfc", { orderId: order.id }); if (result.batch.stage === "complete") await onOrdersChanged(); })}>{t(written.has(order.id) ? "Written" : certificateFor(order) ? "Write NFC card" : "Certificate link missing")}</button>}</div></article>)}</div></>}
+    </div><div className="card batch-order-list"><h3>{t("Orders in this batch")}</h3>{detail.orders.map(order => <article key={order.id}><div><strong title={order.orderNumber}>{shortOrder(order)}{order.setIndicator ? ` (${order.setIndicator})` : ""}</strong><p>{order.plushName || order.customerName} · {order.character}</p><span className={`batch-label-badge ${order.shippingLabelUrl ? "paired" : !batchNeedsLabel(order) ? "not-required" : "missing"}`}>{t(order.shippingLabelUrl ? "Shipping label paired" : !batchNeedsLabel(order) ? "No shipping label required" : "Shipping label missing")}</span>{order.shippingLabelFileName && <small className="batch-label-filename" title={order.shippingLabelFileName}>{order.shippingLabelFileName}</small>}</div><div className="batch-buttons"><button className="button secondary" disabled={busy} onClick={() => void run(() => onOpenOrder(order))}>{t("View order")}</button>{stage === "nfc" && <button className="button primary" disabled={busy || written.has(order.id) || !certificateFor(order)} onClick={() => void run(async () => { if (!await onNfc(order)) throw new Error("NFC writer did not confirm this card. Try again."); const result = await mutate("nfc", { orderId: order.id }); if (result.batch.stage === "complete") await onOrdersChanged(); })}>{t(written.has(order.id) ? "Written" : certificateFor(order) ? "Write NFC card" : "Certificate link missing")}</button>}</div></article>)}</div></>}
   </section>;
 }

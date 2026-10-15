@@ -1,6 +1,17 @@
 // Interface copy only. Order/customer records are never translated.
 // Tuple order: Bahasa Melayu, Bahasa Indonesia.
 export const dashboardTranslations: Readonly<Record<string, readonly [string, string]>> = {
+  "Drop shipping-label PDFs here": ["Lepaskan PDF label penghantaran di sini", "Letakkan PDF label pengiriman di sini"],
+  "Add PDFs from different couriers together or upload more later. Existing pairs are kept.": ["Tambah PDF daripada kurier berbeza bersama-sama atau muat naik lagi kemudian. Padanan sedia ada dikekalkan.", "Tambahkan PDF dari kurir berbeda sekaligus atau unggah lagi nanti. Pasangan yang ada tetap disimpan."],
+  "Choose PDFs": ["Pilih PDF", "Pilih PDF"],
+  "Uploading PDF": ["Memuat naik PDF", "Mengunggah PDF"],
+  "Choose PDF files only.": ["Pilih fail PDF sahaja.", "Pilih file PDF saja."],
+  "PDF upload results": ["Keputusan muat naik PDF", "Hasil unggahan PDF"],
+  "shipping labels paired": ["label penghantaran dipadankan", "label pengiriman dipasangkan"],
+  "Still need pairing": ["Masih perlu dipadankan", "Masih perlu dipasangkan"],
+  "Shipping label paired": ["Label penghantaran dipadankan", "Label pengiriman dipasangkan"],
+  "No shipping label required": ["Label penghantaran tidak diperlukan", "Label pengiriman tidak diperlukan"],
+  "Matching orders already have labels.": ["Pesanan yang sepadan sudah mempunyai label.", "Pesanan yang cocok sudah memiliki label."],
   "Notifications": ["Pemberitahuan", "Notifikasi"],
   "No notifications": ["Tiada pemberitahuan", "Tidak ada notifikasi"],
   "Download one ZIP containing MP3 audio for this batch. Audio and video messages are converted on the first download; later downloads reuse the saved MP3 copies.": ["Muat turun satu ZIP yang mengandungi audio MP3 untuk kelompok ini. Mesej audio dan video ditukar pada muat turun pertama; muat turun seterusnya menggunakan salinan MP3 yang disimpan.", "Unduh satu ZIP berisi audio MP3 untuk batch ini. Pesan audio dan video dikonversi pada unduhan pertama; unduhan berikutnya menggunakan salinan MP3 yang disimpan."],
