@@ -1,6 +1,15 @@
 // Interface copy only. Order/customer records are never translated.
 // Tuple order: Bahasa Melayu, Bahasa Indonesia.
 export const dashboardTranslations: Readonly<Record<string, readonly [string, string]>> = {
+  "Layout settings": ["Tetapan susun atur", "Pengaturan tata letak"],
+  "Table layout": ["Susun atur jadual", "Tata letak tabel"],
+  "Width": ["Lebar", "Lebar"],
+  "Move up": ["Alih ke atas", "Pindahkan ke atas"],
+  "Move down": ["Alih ke bawah", "Pindahkan ke bawah"],
+  "Reset layout": ["Tetapkan semula susun atur", "Atur ulang tata letak"],
+  "Certificate": ["Sijil", "Akta"],
+  "Choose columns, their order and width. Saved on this browser. Orders stay on one line.": ["Pilih lajur, susunan dan lebarnya. Disimpan dalam pelayar ini. Setiap pesanan kekal satu baris.", "Pilih kolom, urutan dan lebarnya. Disimpan di browser ini. Setiap pesanan tetap satu baris."],
+  "Configure Orders and Fulfilment columns separately. Saved on this browser.": ["Tetapkan lajur Pesanan dan Pemenuhan secara berasingan. Disimpan dalam pelayar ini.", "Atur kolom Pesanan dan Pemenuhan secara terpisah. Disimpan di browser ini."],
   "Click to select. Double-click to view.": ["Klik untuk memilih. Klik dua kali untuk melihat.", "Klik untuk memilih. Klik dua kali untuk melihat."],
   "Birth certificate details": ["Butiran sijil kelahiran", "Detail akta kelahiran"],
   "Certificate code": ["Kod sijil", "Kode akta"],
