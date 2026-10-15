@@ -1537,7 +1537,11 @@ function viewTitle(view: View) {
 }
 
 export default function Dashboard() {
-  return <LanguageProvider><Home /></LanguageProvider>;
+  // Session, cached orders and layout preferences belong to this browser.
+  // Match the server's first render before mounting their stateful workspace.
+  const [browserReady, setBrowserReady] = useState(false);
+  useEffect(() => { setBrowserReady(true); }, []);
+  return <LanguageProvider>{browserReady ? <Home /> : <WorkspaceLoading />}</LanguageProvider>;
 }
 
 function Home() {
