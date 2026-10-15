@@ -1,5 +1,6 @@
 "use client";
 import { useLanguage, LanguageProvider, LanguageSwitcher, WorkspaceLoading } from "../components/dashboard-language";
+import { NotificationBar, NotificationMessage, NotificationProvider } from "../components/notification-bar";
 
 import "./settings.css";
 
@@ -1543,7 +1544,7 @@ export default function Dashboard() {
   // Match the server's first render before mounting their stateful workspace.
   const [browserReady, setBrowserReady] = useState(false);
   useEffect(() => { setBrowserReady(true); }, []);
-  return <LanguageProvider>{browserReady ? <Home /> : <WorkspaceLoading />}</LanguageProvider>;
+  return <LanguageProvider>{browserReady ? <NotificationProvider><Home /></NotificationProvider> : <WorkspaceLoading />}</LanguageProvider>;
 }
 
 function Home() {
@@ -5952,12 +5953,13 @@ function Home() {
     </aside>
 
     <section className="main-area">
+      <NotificationBar label={t("Notifications")} emptyLabel={t("No notifications")} />
       <header className="topbar"><div><p>{t("{workspace} workspace", { workspace: t(workspaceTitle) }).toUpperCase()}</p><h1>{t(viewTitle(view))}</h1></div><div className="top-actions"><LanguageSwitcher /><span className={`role-badge ${session.role}`}>{t(session.role === "admin" ? "Administrator" : session.role === "creator" ? "Creator" : "Fulfilment staff")}</span>{view === "packing_slips" && <div className="packing-print-actions"><button className="button secondary print-trigger" onClick={() => printPackingSlips("packing")}>{t("Packing slips")}</button><button className="button secondary print-trigger" onClick={() => printPackingSlips("labels")}>{t("Shipping labels")}</button><button className="button primary print-trigger" onClick={() => printPackingSlips("both")}>{t("Packing slip + label")}</button></div>}{view === "print_envelope" && <button className="button primary" disabled={!envelopePrintableNames.length || !envelopePrintSettings.fontBase64} onClick={printEnvelopes}>{t("Generate") + " "}{Math.ceil(envelopePrintableNames.length / 2)} {" " + t("A4 page")}{Math.ceil(envelopePrintableNames.length / 2) === 1 ? "" : t("s")}</button>}{view === "sales_report" && <button className="button primary" onClick={() => printView("print-sales-report")}>{t("Print / Save PDF")}</button>}{workspace === "fulfilment" && view !== "import" && <button className="button secondary" onClick={() => setView("import")}>{t("Import CSV")}</button>}</div></header>
-      {databaseError && <div className="notice"><span>{t("Database connection:") + " "}{databaseError}</span></div>}
-      {workspaceDataLoading && <div className="notice" role="status">{t("Loading workspace data...")}</div>}
-      {workspaceDataError && <div className="notice" role="status"><span>{workspaceDataError}</span><button onClick={() => void loadWorkspaceSupport(true)}>{t("Retry")}</button></div>}
-      {loadingOrders && <div className="notice"><span>{t("Loading shared orders from Supabase...")}</span></div>}
-      {notice && <div className="notice"><span>{t(notice)}</span><button onClick={() => setNotice("")}>{t("x")}</button></div>}
+      {databaseError && <NotificationMessage><div className="notice"><span>{t("Database connection:") + " "}{databaseError}</span></div></NotificationMessage>}
+      {workspaceDataLoading && <NotificationMessage><div className="notice" role="status">{t("Loading workspace data...")}</div></NotificationMessage>}
+      {workspaceDataError && <NotificationMessage><div className="notice" role="status"><span>{workspaceDataError}</span><button onClick={() => void loadWorkspaceSupport(true)}>{t("Retry")}</button></div></NotificationMessage>}
+      {loadingOrders && <NotificationMessage><div className="notice"><span>{t("Loading shared orders from Supabase...")}</span></div></NotificationMessage>}
+      {notice && <NotificationMessage><div className="notice"><span>{t(notice)}</span><button onClick={() => setNotice("")}>{t("x")}</button></div></NotificationMessage>}
       {session.role === "admin" && accountingRetryMessage && <div className="notice" role="status"><span>{accountingRetryMessage}</span>{accountingRetryIds.length > 0 ? <button disabled={retryingAccounting} onClick={() => void retryAccountingSync()}>{retryingAccounting ? t("Retrying...") : t("Retry accounting sync")}</button> : <button onClick={() => setAccountingRetryMessage("")}>{t("x")}</button>}</div>}
 
       {workspace === "manual_orders" && view === "manual_orders_dashboard" && session.role === "admin" && <ManualOrdersWorkspacePage
@@ -8390,7 +8392,7 @@ function PreordersWorkspacePage() {
   const speakerLabel = (name: string) => name.match(/(\d+)\s*seconds?/i)?.[1] ? `${name.match(/(\d+)\s*seconds?/i)?.[1]}s` : name;
   return <section className="manual-orders-workspace">
     <div className="manual-order-hero card"><div><p>{t("PREORDERS")}</p><h2>{t("Record a customer deposit")}</h2><span>{t("Use the same customer and product details as Manual Orders, then add the deposit, balance due date, and payment proof.")}</span></div><div className="accounting-status-pill">{orders.length} {" " + t("preorder")}{orders.length === 1 ? "" : t("s")}</div></div>
-    {notice && <div className="notice"><span>{t(notice)}</span></div>}
+    {notice && <NotificationMessage><div className="notice"><span>{t(notice)}</span></div></NotificationMessage>}
     <div className="manual-order-grid"><form className="card manual-order-form" onSubmit={submit}>
       <h3>{t("Create preorder")}</h3>
       <label>{t("Customer name")}<input required placeholder={t("Sarah Lim")} value={form.customerName} onChange={(e) => setForm({ ...form, customerName: e.target.value })}/></label>

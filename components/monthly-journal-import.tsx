@@ -1,4 +1,5 @@
 "use client";
+import { NotificationMessage } from "./notification-bar";
 
 import { ChangeEvent, DragEvent, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
@@ -104,6 +105,6 @@ export function MonthlyJournalImport() {
       <span>or click to choose a PDF file</span>
       <input ref={inputRef} type="file" accept="application/pdf,.pdf" onChange={chooseFile} />
     </div>
-    {message && <p className="notice">{message}</p>}
+    {message && <NotificationMessage><p className="notice">{message}</p></NotificationMessage>}
   </section>;
 }

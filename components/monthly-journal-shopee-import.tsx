@@ -1,4 +1,5 @@
 "use client";
+import { NotificationMessage } from "./notification-bar";
 
 import { ChangeEvent, DragEvent, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
@@ -49,5 +50,5 @@ export function MonthlyJournalShopeeImport({ onImported }: { onImported: () => P
   function choose(event: ChangeEvent<HTMLInputElement>) { void importFiles(Array.from(event.target.files ?? [])); event.target.value = ""; }
   function drop(event: DragEvent<HTMLDivElement>) { event.preventDefault(); setDragging(false); void importFiles(Array.from(event.dataTransfer.files)); }
 
-  return <section className="mj-shopee-import"><p>Upload one or many Shopee order receipts. Each receipt is attached automatically; purchases are never posted until you classify them.</p><div className={`mj-import-drop${dragging ? " is-dragging" : ""}`} role="button" tabIndex={0} onClick={() => inputRef.current?.click()} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") inputRef.current?.click(); }} onDragEnter={(event) => { event.preventDefault(); setDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={drop}><strong>{busy ? "Reading Shopee receipts…" : "Drop Shopee order receipt PDFs here"}</strong><span>or click to choose PDF files</span><input ref={inputRef} type="file" multiple accept="application/pdf,.pdf" onChange={choose} /></div>{message && <p className="notice">{message}</p>}</section>;
+  return <section className="mj-shopee-import"><p>Upload one or many Shopee order receipts. Each receipt is attached automatically; purchases are never posted until you classify them.</p><div className={`mj-import-drop${dragging ? " is-dragging" : ""}`} role="button" tabIndex={0} onClick={() => inputRef.current?.click()} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") inputRef.current?.click(); }} onDragEnter={(event) => { event.preventDefault(); setDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={drop}><strong>{busy ? "Reading Shopee receipts…" : "Drop Shopee order receipt PDFs here"}</strong><span>or click to choose PDF files</span><input ref={inputRef} type="file" multiple accept="application/pdf,.pdf" onChange={choose} /></div>{message && <NotificationMessage><p className="notice">{message}</p></NotificationMessage>}</section>;
 }

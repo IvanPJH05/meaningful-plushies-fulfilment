@@ -1,4 +1,5 @@
 "use client";
+import { NotificationMessage } from "./notification-bar";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLanguage } from "./dashboard-language";
 import { batchStages, batchNeedsAudio, batchNeedsLabel, matchBatchLabel, type BatchDetail, type FulfilmentBatch } from "../lib/fulfilment-batches";
@@ -103,10 +104,10 @@ export function BatchFulfilmentWorkspace({ token, initialBatchId, onOrdersChange
   const stage = detail?.batch.stage, step = stage ? batchStages.indexOf(stage) : -1, missingLabels = detail?.orders.filter(order => batchNeedsLabel(order) && !order.shippingLabelUrl) ?? [];
   const written = new Set(detail?.members.filter(member => member.nfc_written_at).map(member => member.order_id));
   return <section className="batch-workspace"><div className="batch-picker card"><label>{t("Choose batch")}<select value={id} disabled={busy || loading} onChange={event => setId(event.target.value)}><option value="">{t("Choose a batch")}</option>{batches.map(batch => <option key={batch.id} value={batch.id}>{t("Batch")} {batch.number} · {batch.orderCount} {t("orders")} · {t(labels[batchStages.indexOf(batch.stage)])}</option>)}</select></label><button className="button secondary" disabled={busy || loading} onClick={() => void run(async () => { await refreshList(); if (id) await openBatch(id); })}>{t("Refresh")}</button></div>
-    {error && <p className="batch-error" role="alert">{t(error)}</p>}{notice && <p role="status">{notice}</p>}
+    {error && <NotificationMessage><p className="batch-error" role="alert">{t(error)}</p></NotificationMessage>}{notice && <NotificationMessage><p role="status">{notice}</p></NotificationMessage>}
     <ol className="batch-progress">{labels.slice(0, 5).map((label, index) => <li key={label} className={step > index ? "done" : step === index ? "current" : ""} aria-current={step === index ? "step" : undefined}><span>{index + 1}</span>{t(label)}</li>)}</ol>
     {!id && !loading && <div className="card batch-step"><h2>{t("No batch selected")}</h2><p>{t("Select orders in Fulfilment, then choose Move to Batch Fulfilment.")}</p></div>}
-    {loading && <p role="status">{t("Loading batch...")}</p>}
+    {loading && <NotificationMessage><p role="status">{t("Loading batch...")}</p></NotificationMessage>}
     {detail && <><div className="card batch-step"><p>{t("Batch")} {detail.batch.number} · {detail.orders.length} {t("orders")}</p><h2>{t(labels[step])}</h2>
       {stage === "labels" && <><p>{t("Upload the courier PDFs. Only orders in this batch will be paired.")}</p><input type="file" accept="application/pdf,.pdf" disabled={busy} aria-label={t("Upload shipping labels")} onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void run(() => upload(file)); }} /><p>{missingLabels.length ? `${missingLabels.length} ${t("orders still need shipping labels")}` : t("All shipping labels are ready.")}</p><button className="button primary" disabled={busy || Boolean(missingLabels.length)} onClick={() => void run(async () => { await mutate("advance", { stage }); })}>{t("Next step")}</button></>}
       {stage === "printing" && <><p>{t("Generate the combined PDF, then print it before continuing.")}</p><div className="batch-buttons"><button className="button primary" disabled={busy} onClick={() => void run(async () => { if (!await onPrint(detail.orders)) throw new Error("PDF generation failed. Try again."); setGenerated(true); })}>{t("Generate packing slips + labels")}</button><button className="button secondary" disabled={busy || !generated} onClick={() => void run(async () => { await mutate("advance", { stage }); })}>{t("Printed — next step")}</button></div></>}
