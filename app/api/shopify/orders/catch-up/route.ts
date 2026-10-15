@@ -1,14 +1,16 @@
+import { mobileServiceClient, requireMobileSession } from "../../../../../lib/mobile-api";
 import { NextResponse } from "next/server";
 
-import { shopifyOrderToFulfilmentOrders } from "@/lib/importer";
-import { isPlushCharmOrder } from "@/lib/plush-charm";
-import { addMissingOurLinks } from "@/lib/our-link";
-import { bindSessionsToOrders, customisationSessionIds, recoverMissingSessionIdForOrder } from "@/lib/customisation";
-import { cleanShopifyOrderNumber, fetchShopifyOrdersCreatedSince, shopifyMetafieldValue, textValue } from "@/lib/shopify-orders";
-import { fetchSharedOrders, fetchSharedOrdersByOrderNumber, insertSharedActivity, upsertSharedOrders } from "@/lib/supabase";
-import type { Order } from "@/lib/types";
+import { shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
+import { isPlushCharmOrder } from "../../../../../lib/plush-charm";
+import { addMissingOurLinks } from "../../../../../lib/our-link";
+import { bindSessionsToOrders, customisationSessionIds, recoverMissingSessionIdForOrder } from "../../../../../lib/customisation";
+import { cleanShopifyOrderNumber, fetchShopifyOrdersCreatedSince, shopifyMetafieldValue, textValue } from "../../../../../lib/shopify-orders";
+import { fetchSharedOrders, fetchSharedOrdersByOrderNumber, insertSharedActivity, upsertSharedOrders } from "../../../../../lib/supabase";
+import type { Order } from "../../../../../lib/types";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 function malaysiaDate() {
   return new Intl.DateTimeFormat("en-CA", {
@@ -21,7 +23,9 @@ function malaysiaDate() {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json().catch(() => ({})) as { date?: string };
+    await requireMobileSession(request);
+    const db = mobileServiceClient();
+    const body = await request.json().catch(() => ({})) as { date?: string; onlyMissing?: boolean };
     const date = /^\d{4}-\d{2}-\d{2}$/.test(body.date || "") ? body.date as string : malaysiaDate();
     const recentShopifyOrders = await fetchShopifyOrdersCreatedSince(date, request);
     const startOfDay = Date.parse(`${date}T00:00:00+08:00`);
@@ -37,7 +41,8 @@ export async function POST(request: Request) {
     for (const order of shopifyOrders) {
       const orderNumber = cleanShopifyOrderNumber(textValue(order.name));
       if (!orderNumber) continue;
-      const existing = await fetchSharedOrdersByOrderNumber(orderNumber);
+      const existing = await fetchSharedOrdersByOrderNumber(orderNumber, db);
+      if (body.onlyMissing === true && existing.length) continue;
       const orders = shopifyOrderToFulfilmentOrders(
         order,
         shopifyMetafieldValue(order),
@@ -75,7 +80,7 @@ export async function POST(request: Request) {
     if (recoveredOrders.length) {
       // Keep recovery writes narrow and fast. Reporting and commission
       // aggregates are maintained outside the Shopify ingestion path.
-      await upsertSharedOrders(recoveredOrders, { syncSales: false });
+      await upsertSharedOrders(recoveredOrders, { syncSales: false }, db);
       await insertSharedActivity({
         id: `shopify-catch-up-${Date.now()}`,
         action: "Shopify catch-up completed",
@@ -87,6 +92,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true, date, checked: shopifyOrders.length, updated: recoveredOrders.length });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Shopify catch-up failed.";
+    if (message === "SIGN_IN_REQUIRED" || message === "WAREHOUSE_ACCESS_REQUIRED") return NextResponse.json({ ok: false, error: message }, { status: message === "SIGN_IN_REQUIRED" ? 401 : 403 });
+    console.error("Shopify catch-up failed", error);
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Shopify catch-up failed." }, { status: 500 });
   }
 }
