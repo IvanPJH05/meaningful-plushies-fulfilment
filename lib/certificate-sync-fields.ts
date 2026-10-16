@@ -7,7 +7,7 @@ export const certificateEditFields = ["plushName", "plushGender", "plushBirthDat
 export function certificateDetails(order: Partial<Order>) {
   const legacy = order.salesChannel === "tiktok" ? parseTikTokDetailsBlock(order.meaningfulMessage || "") : undefined;
   return {
-    idName: order.plushName, gender: order.plushGender ?? (legacy?.gender || undefined), bornOn: order.plushBirthDate ?? (legacy?.birthDate || undefined),
+    idName: order.plushName?.toUpperCase(), gender: order.plushGender ?? (legacy?.gender || undefined), bornOn: order.plushBirthDate ?? (legacy?.birthDate || undefined),
     birthplace: order.plushBirthPlace ?? (legacy?.birthPlace || undefined), favouritePerson: order.plushFavouritePerson ?? (legacy?.favouritePerson || undefined),
     belongsTo: order.plushBelongsTo ?? (legacy?.belongsTo || undefined), meaningfulNote: order.meaningfulNote,
   };
