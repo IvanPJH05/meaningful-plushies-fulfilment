@@ -1,6 +1,12 @@
 // Interface copy only. Order/customer records are never translated.
 // Tuple order: Bahasa Melayu, Bahasa Indonesia.
 export const dashboardTranslations: Readonly<Record<string, readonly [string, string]>> = {
+  "Generating packing slips and shipping labels...": ["Menjana slip pembungkusan dan label penghantaran...", "Membuat slip pengepakan dan label pengiriman..."],
+  "Generating envelopes...": ["Menjana sampul surat...", "Membuat amplop..."],
+  "Importing shipping labels...": ["Mengimport label penghantaran...", "Mengimpor label pengiriman..."],
+  "Refreshing orders...": ["Memuat semula pesanan...", "Memuat ulang pesanan..."],
+  "Waiting for NFC reader...": ["Menunggu pembaca NFC...", "Menunggu pembaca NFC..."],
+  "Connecting to NFC helper...": ["Menyambung ke pembantu NFC...", "Menghubungkan ke pembantu NFC..."],
   "Processing batch action": ["Memproses tindakan kelompok", "Memproses tindakan batch"],
   "Audio ZIP ready — download at the audio step.": ["ZIP audio sedia — muat turun pada langkah audio.", "ZIP audio siap — unduh pada tahap audio."],
   "Retry audio preparation": ["Cuba sediakan audio semula", "Coba siapkan audio lagi"],

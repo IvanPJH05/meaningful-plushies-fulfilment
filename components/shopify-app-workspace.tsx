@@ -1,4 +1,5 @@
 "use client";
+import { LoadingIndicator } from "./loading-indicator";
 import { useLanguage } from "./dashboard-language";
 
 import { FormEvent, useEffect, useState } from "react";
@@ -67,7 +68,7 @@ export function ShopifyAppWorkspace({ sessionToken }: { sessionToken: string }) 
   async function clearMedia(connection: Connection, mediaType: "photo" | "voice") { if (!window.confirm(`Remove this pair's shared ${mediaType}?`)) return; try { await request("POST", { action: "clear_pair_media", connectionId: connection.id, mediaType }); await load(); setNotice(`Shared ${mediaType} removed.`); } catch (error) { setNotice(error instanceof Error ? error.message : "Could not remove shared media."); } }
 
   return <section className={styles.workspace}>
-    <header className={styles.hero}><div><p>{t("MEANINGFUL PLUSHIES")}</p><h2>{t("Our Link")}</h2><span>{t("Set up secure NFC links and manage each shared plushie space.")}</span></div><button type="button" className={styles.refresh} onClick={() => void load().catch((error: Error) => setNotice(error.message))} disabled={loading}>{loading ? t("Loading…") : t("Refresh")}</button></header>
+    <header className={styles.hero}><div><p>{t("MEANINGFUL PLUSHIES")}</p><h2>{t("Our Link")}</h2><span>{t("Set up secure NFC links and manage each shared plushie space.")}</span></div><button type="button" className={styles.refresh} onClick={() => void load().catch((error: Error) => setNotice(error.message))} disabled={loading}>{loading ? <LoadingIndicator>{t("Loading…")}</LoadingIndicator> : t("Refresh")}</button></header>
     {notice && <div className={styles.notice} role="status">{t(notice)}<button type="button" onClick={() => setNotice("")} aria-label={t("Dismiss")}>×</button></div>}
     <section className={styles.createPanel}><div><p className={styles.eyebrow}>{t("START HERE")}</p><h3>{t("Create an NFC link")}</h3><span>{t("Create a certificate ID, then copy the secure link to write onto its NFC card.")}</span></div><form onSubmit={createCertificate}><label>{t("Certificate ID")}<input value={certificateId} onChange={(event) => setCertificateId(event.target.value)} placeholder={t("Example: 124")} required /></label><button>{t("Create secure link")}</button></form>{createdLink && <div className={styles.newLink}><strong>{t("New secure link ready")}</strong><a href={createdLink} target="_blank" rel="noreferrer">{t("Open customer page")}</a><button type="button" onClick={() => void copyLink(createdLink)}>{t("Copy link")}</button></div>}</section>
     <section className={styles.summaryGrid}><article><span>{t("Certificates")}</span><strong>{counts.certificates}</strong><small>{t("Issued NFC identities")}</small></article><article><span>{t("Active links")}</span><strong>{counts.connections}</strong><small>{t("Plushie pairs connected")}</small></article><article><span>{t("Recent activity")}</span><strong>{counts.activity}</strong><small>{t("Recorded events")}</small></article></section>

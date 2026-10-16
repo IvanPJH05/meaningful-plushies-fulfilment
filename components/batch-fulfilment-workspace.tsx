@@ -1,5 +1,6 @@
 "use client";
 import { NotificationMessage } from "./notification-bar";
+import { LoadingIndicator } from "./loading-indicator";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLanguage } from "./dashboard-language";
 import { batchStages, batchNeedsAudio, batchNeedsLabel, matchBatchLabel, type BatchDetail, type FulfilmentBatch } from "../lib/fulfilment-batches";
@@ -32,7 +33,7 @@ export function BatchAssignment({ token, orderIds, onClose, onAssigned }: { toke
       onAssigned(result.batch.id);
     } catch (error) { setError(error instanceof Error ? error.message : "Could not create the batch."); } finally { setBusy(false); }
   }
-  return <div className="batch-dialog-overlay"><section className="card batch-dialog" role="dialog" aria-modal="true" aria-labelledby="batch-dialog-title"><h2 id="batch-dialog-title">{t("Move to Batch Fulfilment")}</h2><p>{orderIds.length} {t("orders selected")}. {t("New orders will move to Uploading Audio.")}</p><label>{t("Choose batch")}<select value={choice} disabled={busy} onChange={event => setChoice(event.target.value)}><option value="new">{t("Create a new batch")}</option>{batches.map(batch => <option key={batch.id} value={batch.id}>{t("Batch")} {batch.number} · {batch.orderCount} {t("orders")}</option>)}</select></label>{error && <p role="alert">{t(error)}</p>}<div className="batch-buttons"><button className="button secondary" disabled={busy} onClick={onClose}>{t("Cancel")}</button><button className="button primary" disabled={busy} onClick={() => void assign()}>{t(busy ? "Saving..." : "Move to batch")}</button></div></section></div>;
+  return <div className="batch-dialog-overlay"><section className="card batch-dialog" role="dialog" aria-modal="true" aria-labelledby="batch-dialog-title"><h2 id="batch-dialog-title">{t("Move to Batch Fulfilment")}</h2><p>{orderIds.length} {t("orders selected")}. {t("New orders will move to Uploading Audio.")}</p><label>{t("Choose batch")}<select value={choice} disabled={busy} onChange={event => setChoice(event.target.value)}><option value="new">{t("Create a new batch")}</option>{batches.map(batch => <option key={batch.id} value={batch.id}>{t("Batch")} {batch.number} · {batch.orderCount} {t("orders")}</option>)}</select></label>{error && <p role="alert">{t(error)}</p>}<div className="batch-buttons"><button className="button secondary" disabled={busy} onClick={onClose}>{t("Cancel")}</button><button className="button primary" disabled={busy} onClick={() => void assign()}>{busy ? <LoadingIndicator>{t("Saving...")}</LoadingIndicator> : t("Move to batch")}</button></div></section></div>;
 }
 
 export function BatchFulfilmentWorkspace({ token, initialBatchId, onOrdersChanged, onPrint, onEnvelopes, onNfc, onStartNfc, certificateFor, onOpenOrder }: {
@@ -133,7 +134,7 @@ export function BatchFulfilmentWorkspace({ token, initialBatchId, onOrdersChange
     {audioEnabled && detail?.orders.some(batchNeedsAudio) && <div className="card batch-audio-status">{audio.phase === "ready" ? <p role="status">✓ {t("Audio ZIP ready — download at the audio step.")}</p> : audio.phase === "error" ? <><p role="alert">{audio.error}</p><button className="button secondary" disabled={busy} onClick={audio.retry}>{t("Retry audio preparation")}</button></> : <BatchTaskProgress label={t(audio.phase === "zip" ? "Building audio ZIP" : "Preparing audio in the background")} started={audio.started} completed={audio.completed} total={audio.total} estimate={Math.max(5, audio.total * 8 + 3)} />}<small>{t("Keep this workspace open while audio is prepared. Other batch steps remain available.")}</small></div>}
     <ol className="batch-progress">{labels.slice(0, 5).map((label, index) => <li key={label} className={step > index ? "done" : step === index ? "current" : ""} aria-current={step === index ? "step" : undefined}><span>{index + 1}</span>{t(label)}</li>)}</ol>
     {!id && !loading && <div className="card batch-step"><h2>{t("No batch selected")}</h2><p>{t("Select orders in Fulfilment, then choose Move to Batch Fulfilment.")}</p></div>}
-    {loading && <NotificationMessage><p role="status">{t("Loading batch...")}</p></NotificationMessage>}
+    {loading && <NotificationMessage><LoadingIndicator>{t("Loading batch...")}</LoadingIndicator></NotificationMessage>}
     {detail && <><div className="card batch-step"><p>{t("Batch")} {detail.batch.number} · {detail.orders.length} {t("orders")}</p><h2>{t(labels[step])}</h2>
       {stage === "labels" && <>
         <p>{t("Upload the courier PDFs. Only orders in this batch will be paired.")}</p>

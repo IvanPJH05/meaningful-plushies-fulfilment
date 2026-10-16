@@ -1,6 +1,7 @@
 "use client";
 import { useLanguage, LanguageProvider, LanguageSwitcher, WorkspaceLoading } from "../components/dashboard-language";
 import { NotificationBar, NotificationMessage, NotificationProvider } from "../components/notification-bar";
+import { LoadingIndicator } from "../components/loading-indicator";
 
 import "./settings.css";
 
@@ -1591,6 +1592,8 @@ function Home() {
   }, [orders, selectedOrders]);
   const [packingSelection, setPackingSelection] = useState<string[]>([]);
   const [shippingLabelImporting, setShippingLabelImporting] = useState(false);
+  const [documentTask, setDocumentTask] = useState("");
+  const documentOperation = useRef(false);
   const [shippingLabelSummary, setShippingLabelSummary] = useState("");
   const [envelopeSelection, setEnvelopeSelection] = useState<string[]>([]);
   const [packingStatusFilter, setPackingStatusFilter] = useState<"all" | OrderStatus>(() => choice(storedUi.packingStatusFilter, "all", orderStatusFilterValues));
@@ -3294,6 +3297,12 @@ function Home() {
   }
 
   async function printPackingSlips(mode: "packing" | "labels" | "both", batchOrders?: Order[]) {
+    if (documentOperation.current) return false;
+    documentOperation.current = true; setDocumentTask("Generating packing slips and shipping labels...");
+    try { return await generatePackingSlips(mode, batchOrders); }
+    finally { documentOperation.current = false; setDocumentTask(""); }
+  }
+  async function generatePackingSlips(mode: "packing" | "labels" | "both", batchOrders?: Order[]) {
     const printingOrders = batchOrders ?? packingOrders;
     if (!printingOrders.length) {
       setNotice("Select at least one order before printing.");
@@ -3468,6 +3477,12 @@ function Home() {
   }
 
   async function printEnvelopes(batchNames?: string[] | React.MouseEvent) {
+    if (documentOperation.current) return false;
+    documentOperation.current = true; setDocumentTask("Generating envelopes...");
+    try { return await generateEnvelopes(batchNames); }
+    finally { documentOperation.current = false; setDocumentTask(""); }
+  }
+  async function generateEnvelopes(batchNames?: string[] | React.MouseEvent) {
     const names = Array.isArray(batchNames) ? batchNames : envelopePrintableNames;
     if (!names.length) return false;
     if (!Array.isArray(batchNames) && !envelopePrintSettings.fontBase64) return setNotice("Upload the font you want to use before generating envelopes.");
@@ -5954,11 +5969,12 @@ function Home() {
 
     <section className="main-area">
       <NotificationBar label={t("Notifications")} emptyLabel={t("No notifications")} />
+      {(documentTask || shippingLabelImporting || refreshingOrderNumber || exportingTikTokShopify || savingAccounting || retryingAccounting || generatingPlushCharmLinks || nfcWritingOrderId || nfcUnlocking || nfcHelperStatus === "checking" || nfcHelperStatus === "starting" || loadingMoreOrderSummaries) && <NotificationMessage><LoadingIndicator>{t(documentTask || (shippingLabelImporting ? "Importing shipping labels..." : refreshingOrderNumber ? "Refreshing orders..." : nfcWritingOrderId || nfcUnlocking ? "Waiting for NFC reader..." : nfcHelperStatus === "checking" || nfcHelperStatus === "starting" ? "Connecting to NFC helper..." : savingAccounting || retryingAccounting ? "Saving..." : loadingMoreOrderSummaries ? "Loading more orders..." : "Processing..."))}</LoadingIndicator></NotificationMessage>}
       <header className="topbar"><div><p>{t("{workspace} workspace", { workspace: t(workspaceTitle) }).toUpperCase()}</p><h1>{t(viewTitle(view))}</h1></div><div className="top-actions"><LanguageSwitcher /><span className={`role-badge ${session.role}`}>{t(session.role === "admin" ? "Administrator" : session.role === "creator" ? "Creator" : "Fulfilment staff")}</span>{view === "packing_slips" && <div className="packing-print-actions"><button className="button secondary print-trigger" onClick={() => printPackingSlips("packing")}>{t("Packing slips")}</button><button className="button secondary print-trigger" onClick={() => printPackingSlips("labels")}>{t("Shipping labels")}</button><button className="button primary print-trigger" onClick={() => printPackingSlips("both")}>{t("Packing slip + label")}</button></div>}{view === "print_envelope" && <button className="button primary" disabled={!envelopePrintableNames.length || !envelopePrintSettings.fontBase64} onClick={printEnvelopes}>{t("Generate") + " "}{Math.ceil(envelopePrintableNames.length / 2)} {" " + t("A4 page")}{Math.ceil(envelopePrintableNames.length / 2) === 1 ? "" : t("s")}</button>}{view === "sales_report" && <button className="button primary" onClick={() => printView("print-sales-report")}>{t("Print / Save PDF")}</button>}{workspace === "fulfilment" && view !== "import" && <button className="button secondary" onClick={() => setView("import")}>{t("Import CSV")}</button>}</div></header>
       {databaseError && <NotificationMessage><div className="notice"><span>{t("Database connection:") + " "}{databaseError}</span></div></NotificationMessage>}
-      {workspaceDataLoading && <NotificationMessage><div className="notice" role="status">{t("Loading workspace data...")}</div></NotificationMessage>}
+      {workspaceDataLoading && <NotificationMessage><LoadingIndicator>{t("Loading workspace data...")}</LoadingIndicator></NotificationMessage>}
       {workspaceDataError && <NotificationMessage><div className="notice" role="status"><span>{workspaceDataError}</span><button onClick={() => void loadWorkspaceSupport(true)}>{t("Retry")}</button></div></NotificationMessage>}
-      {loadingOrders && <NotificationMessage><div className="notice"><span>{t("Loading shared orders from Supabase...")}</span></div></NotificationMessage>}
+      {loadingOrders && <NotificationMessage><LoadingIndicator>{t("Loading shared orders from Supabase...")}</LoadingIndicator></NotificationMessage>}
       {notice && <NotificationMessage><div className="notice"><span>{t(notice)}</span><button onClick={() => setNotice("")}>{t("x")}</button></div></NotificationMessage>}
       {session.role === "admin" && accountingRetryMessage && <div className="notice" role="status"><span>{accountingRetryMessage}</span>{accountingRetryIds.length > 0 ? <button disabled={retryingAccounting} onClick={() => void retryAccountingSync()}>{retryingAccounting ? t("Retrying...") : t("Retry accounting sync")}</button> : <button onClick={() => setAccountingRetryMessage("")}>{t("x")}</button>}</div>}
 
@@ -6955,7 +6971,7 @@ function AccountingWorkspacePage({
     {editingTransactionForm.paymentStatus === "on_credit" && <div className="accounting-two-cols"><label>{t("Due date")}<input type="date" value={editingTransactionForm.dueDate} onChange={(input) => onEditingTransactionFormChange({ dueDate: input.target.value })} /></label><label>{t("Supplier terms")}<input value={editingTransactionForm.supplierTerms} onChange={(input) => onEditingTransactionFormChange({ supplierTerms: input.target.value })} /></label></div>}
     <label>{t("Notes")}<textarea value={editingTransactionForm.notes} onChange={(input) => onEditingTransactionFormChange({ notes: input.target.value })} /></label>
     <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title={t("Replace or add source document")} description={t("Choose or drop a new file if you want to update the linked document")} selectedName={editingTransactionFile?.name} onFile={onEditingTransactionFileChange} />
-    <button className="button primary" disabled={saving} onClick={onSaveEditedTransaction}>{saving ? t("Saving...") : t("Save transaction changes")}</button>
+    <button className="button primary" disabled={saving} onClick={onSaveEditedTransaction}>{saving ? <LoadingIndicator>{t("Saving...")}</LoadingIndicator> : t("Save transaction changes")}</button>
   </section> : null;
   const bankInProgressPanelFor = (eventValue: string) => {
     const rows = bankStatementInProgressLines
@@ -7023,7 +7039,7 @@ function AccountingWorkspacePage({
           <h3>{t("Posting preview")}</h3>
           {postingPreview.length ? postingPreview.map((entry) => <div key={entry.id}><span>{entry.entryType === "debit" ? t("Debit") : t("Credit")} {entry.accountName}</span><strong>{formatMoney(entry.amount)}</strong></div>) : <div><span>{t("Enter an amount to preview posting")}</span><strong>{formatMoney(0)}</strong></div>}
         </section>
-        <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? t("Saving...") : t("Save prepaid cost")}</button>
+        <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? <LoadingIndicator>{t("Saving...")}</LoadingIndicator> : t("Save prepaid cost")}</button>
       </div>
       <div>
         <section className="accounting-form card operating-release-card">
@@ -7037,7 +7053,7 @@ function AccountingWorkspacePage({
             <div><span>{t("Debit Operating Expense")}</span><strong>{formatMoney(Number(operatingCostReleaseForm.amount) || 0)}</strong></div>
             <div><span>{t("Credit") + " "}{prepaidOperatingCostAccountName}</span><strong>{formatMoney(Number(operatingCostReleaseForm.amount) || 0)}</strong></div>
           </section>
-          <button className="button primary" disabled={saving} onClick={onReleaseOperatingCost}>{saving ? t("Saving...") : t("Release to expense")}</button>
+          <button className="button primary" disabled={saving} onClick={onReleaseOperatingCost}>{saving ? <LoadingIndicator>{t("Saving...")}</LoadingIndicator> : t("Release to expense")}</button>
         </section>
         {transactionEditPanel}
         <AccountingTransactionsTable transactions={operatingCostPageTransactions} ledgerEntries={ledgerEntries} documents={transactionDocuments} bankStatementLines={bankStatementLines} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} onBulkPaymentMethodChange={onBulkTransactionPaymentMethodChange} />
@@ -7066,7 +7082,7 @@ function AccountingWorkspacePage({
         <h3>{t("Import bank statement")}</h3>
         <FileDropZone accept="application/pdf,.pdf,.csv,text/csv" title={t("Choose or drop bank statement")} description={bankStatementFileName || t("PDF or CSV from your bank")} onFile={(file) => onReadBankStatement(file ?? undefined)} className="compact-file-drop" />
         <label>{t("Or paste CSV content")}<textarea value={bankStatementCsv} onChange={(event) => onBankStatementCsvChange(event.target.value)} placeholder={t("Date, Description, Debit, Credit, Balance...")} /></label>
-        <div className="csv-import-actions"><button className="button primary" disabled={saving || !bankStatementCsv.trim()} onClick={() => onReadBankStatement()}>{saving ? t("Importing...") : t("Import pasted CSV")}</button><button className="button secondary" type="button" onClick={onClearBankStatement}>{t("Clear")}</button></div>
+        <div className="csv-import-actions"><button className="button primary" disabled={saving || !bankStatementCsv.trim()} onClick={() => onReadBankStatement()}>{saving ? <LoadingIndicator>{t("Importing...")}</LoadingIndicator> : t("Import pasted CSV")}</button><button className="button secondary" type="button" onClick={onClearBankStatement}>{t("Clear")}</button></div>
         <section className="posting-preview">
           <h3>{t("How this works")}</h3>
           <div><span>{t("Match")}</span><strong>{t("Link the bank row to an existing unlinked transaction within +/- 3 days")}</strong></div>
@@ -7182,7 +7198,7 @@ function AccountingWorkspacePage({
     <section className="card accounting-table-card">
       <div className="accounting-form-heading">
         <div><h3>{t("AI Accountant CSV")}</h3><p>{t("Use the accountant template with exact columns. Create, match, ignore, internal transfer, and manual review rows are handled separately.")}</p></div>
-        <div className="csv-import-actions"><button className="button primary" disabled={!aiImportCanSave || saving} onClick={onImportAiAccountantCsv}>{saving ? t("Importing...") : t("Confirm AI import")}</button><button className="button secondary" type="button" onClick={onClearAiAccountantCsv}>{t("Clear")}</button></div>
+        <div className="csv-import-actions"><button className="button primary" disabled={!aiImportCanSave || saving} onClick={onImportAiAccountantCsv}>{saving ? <LoadingIndicator>{t("Importing...")}</LoadingIndicator> : t("Confirm AI import")}</button><button className="button secondary" type="button" onClick={onClearAiAccountantCsv}>{t("Clear")}</button></div>
       </div>
       <FileDropZone accept=".csv,text/csv" title={t("Choose or drop AI Accountant CSV")} description={aiFileName || t("Uses the exact AI accountant import template")} selectedName={aiFileName} onFile={(file) => onReadAiAccountantCsv(file ?? undefined)} className="compact-file-drop" />
       <section className="sales-stats ai-import-stats">
@@ -7208,7 +7224,7 @@ function AccountingWorkspacePage({
           <div><span>{t("Amount")}</span><strong>{t("amount, total, debit, credit")}</strong></div>
           <div><span>{t("Inventory")}</span><strong>{t("quantity, unit cost")}</strong></div>
         </section>
-        <div className="csv-import-actions"><button className="button primary" disabled={!csvRows.some((row) => row.amount > 0) || saving} onClick={onImportBookkeepingCsv}>{saving ? t("Importing...") : `Import ${csvRows.filter((row) => row.amount > 0).length} rows`}</button><button className="button secondary" type="button" onClick={onClearBookkeepingCsv}>{t("Clear")}</button></div>
+        <div className="csv-import-actions"><button className="button primary" disabled={!csvRows.some((row) => row.amount > 0) || saving} onClick={onImportBookkeepingCsv}>{saving ? <LoadingIndicator>{t("Importing...")}</LoadingIndicator> : `Import ${csvRows.filter((row) => row.amount > 0).length} rows`}</button><button className="button secondary" type="button" onClick={onClearBookkeepingCsv}>{t("Clear")}</button></div>
       </div>
       <section className="card accounting-table-card">
         <h3>{t("Import preview")}</h3>
@@ -7260,7 +7276,7 @@ function AccountingWorkspacePage({
               <div><span>{t("Credit Owner Capital")}</span><strong>{formatMoney(ownerAmount)}</strong></div>
             </>}
           </section>
-          <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? t("Saving...") : t("Save owner's equity record")}</button>
+          <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? <LoadingIndicator>{t("Saving...")}</LoadingIndicator> : t("Save owner's equity record")}</button>
         </div>
         <div>
           {transactionEditPanel}
@@ -7355,7 +7371,7 @@ function AccountingWorkspacePage({
           {transactionForm.paymentStatus !== "on_credit" && <label>{t("Paid from")}<select value={transactionForm.paymentMethod} onChange={(input) => onTransactionFormChange({ paymentMethod: input.target.value })}>{paymentAccounts.map((account) => <option key={account} value={account}>{account}</option>)}</select></label>}
           <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title={t("Monthly source document")} description={t("Choose or drop the monthly Meta/TikTok invoice or report")} selectedName={transactionFile?.name} onFile={onTransactionFileChange} />
           <label>{t("Notes")}<textarea value={transactionForm.notes} onChange={(event) => onTransactionFormChange({ notes: event.target.value })} /></label>
-          <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? t("Saving...") : t("Save monthly ad record")}</button>
+          <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? <LoadingIndicator>{t("Saving...")}</LoadingIndicator> : t("Save monthly ad record")}</button>
         </div>
         <div className="marketing-monthly-panel">
           {transactionEditPanel}
@@ -7377,7 +7393,7 @@ function AccountingWorkspacePage({
                     {groupDocuments.length ? groupDocuments.map((document) => <button key={document.id} className="view-button document-link" onClick={() => onOpenDocument(document)}>{document.fileName}</button>) : <span>{t("No source document yet")}</span>}
                   </div>
                   <FileDropZone className="compact-file-drop monthly-marketing-drop" accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title={t("Attach source document")} description={t("Drop the monthly proof here")} selectedName={selectedFile?.name} onFile={(file) => onMonthlyMarketingDocumentFileChange(group.key, file)} />
-                  <button className="button primary" disabled={saving || !selectedFile} onClick={() => onAttachMonthlyMarketingDocument({ groupKey: group.key, month: group.month, accountName: group.accountName, transactionIds: group.transactions.map((transaction) => transaction.id), amount: group.total })}>{saving ? t("Saving...") : t("Attach to month")}</button>
+                  <button className="button primary" disabled={saving || !selectedFile} onClick={() => onAttachMonthlyMarketingDocument({ groupKey: group.key, month: group.month, accountName: group.accountName, transactionIds: group.transactions.map((transaction) => transaction.id), amount: group.total })}>{saving ? <LoadingIndicator>{t("Saving...")}</LoadingIndicator> : t("Attach to month")}</button>
                 </article>;
               })}
               {!monthlyMarketingGroups.length && <div className="empty"><strong>{t("No monthly ad totals yet")}</strong><p>{t("When Meta Ads or TikTok Ads transactions are recorded, they will appear here grouped by month.")}</p></div>}
@@ -7413,7 +7429,7 @@ function AccountingWorkspacePage({
             <div><span>{t("Credit") + " "}{(accountOptions.find((account) => account.value === transactionForm.categoryId)?.label ?? transactionForm.accountName) || t("Other income account")}</span><strong>{formatMoney(otherIncomeTotal)}</strong></div>
             <p>{otherIncomeUnits.toLocaleString("en-MY")} {" " + t("unit")}{otherIncomeUnits === 1 ? "" : t("s")} {" " + t("will be counted as sold for FIFO inventory.")}</p>
           </section>
-          <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? t("Saving...") : t("Save other income")}</button>
+          <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? <LoadingIndicator>{t("Saving...")}</LoadingIndicator> : t("Save other income")}</button>
         </div>
         <div>
           {transactionEditPanel}
@@ -7454,7 +7470,7 @@ function AccountingWorkspacePage({
             <h3>{t("Posting preview")}</h3>
             {transactionForm.categoryId === "Drawings" ? <><div><span>{t("Debit Drawings")}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>{t("Credit") + " "}{transactionForm.paymentMethod || t("Bank Account")}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></> : transactionForm.categoryId === "Stripe" || transactionForm.categoryId === "Xendit" || transactionForm.categoryId === "TikTok" ? <><div><span>{t("Debit") + " "}{transactionForm.paymentMethod || t("Bank Account")}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>{t("Credit") + " "}{transactionForm.categoryId}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></> : <><div><span>{t("Debit") + " "}{transactionForm.paymentMethod || t("Bank Account")}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div><div><span>{t("Credit") + " "}{transactionForm.categoryId || t("payment processor")}</span><strong>{formatMoney(calculatedAmount || 0)}</strong></div></>}
           </section>
-          <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? t("Saving...") : t("Save payout")}</button>
+          <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? <LoadingIndicator>{t("Saving...")}</LoadingIndicator> : t("Save payout")}</button>
         </div>
         <div>
           {transactionEditPanel}
@@ -7480,7 +7496,7 @@ function AccountingWorkspacePage({
           {transactionForm.paymentStatus === "deposit_paid" && <div className="accounting-two-cols"><label>{t("Deposit paid")}<input type="number" min="0" step="0.01" value={transactionForm.depositAmount} onChange={(input) => onTransactionFormChange({ depositAmount: input.target.value })} /></label><label>{t("Remaining")}<input readOnly value={formatMoney(Math.max(0, calculatedAmount - (Number(transactionForm.depositAmount) || 0)))} /></label></div>}
           <FileDropZone accept="application/pdf,image/png,image/jpeg,image/webp,.csv,.xlsx,.xls,.doc,.docx" title={t("Source document")} description={t("Choose or drop receipt, invoice, CSV, or image")} selectedName={transactionFile?.name} onFile={onTransactionFileChange} />
           <label>{t("Notes")}<textarea value={transactionForm.notes} onChange={(event) => onTransactionFormChange({ notes: event.target.value })} /></label>
-          <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? t("Saving...") : t("Save to book")}</button>
+          <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? <LoadingIndicator>{t("Saving...")}</LoadingIndicator> : t("Save to book")}</button>
         </div>
         {transactionEditPanel}
         <AccountingTransactionsTable transactions={transactions.filter((transaction) => transaction.businessEvent === categoryEvent.value || (categoryEvent.value === "inventory_purchase" && transaction.businessEvent === "inventory_rejected"))} ledgerEntries={ledgerEntries} documents={transactionDocuments} bankStatementLines={bankStatementLines} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} onBulkPaymentMethodChange={onBulkTransactionPaymentMethodChange} />
@@ -7500,7 +7516,7 @@ function AccountingWorkspacePage({
         <div className="accounting-two-cols"><label>{t("Date")}<input type="date" value={documentForm.documentDate} onChange={(event) => onDocumentFormChange({ documentDate: event.target.value })} /></label><label>{t("Amount")}<input type="number" min="0" step="0.01" value={documentForm.amount} onChange={(event) => onDocumentFormChange({ amount: event.target.value })} /></label></div>
         <div className="accounting-two-cols"><label>{t("Type")}<select value={documentForm.transactionType} onChange={(event) => onDocumentFormChange({ transactionType: event.target.value as "income" | "expense" })}><option value="expense">{t("Expense")}</option><option value="income">{t("Income")}</option></select></label><label>{t("Category")}<select value={documentForm.categoryId} onChange={(event) => onDocumentFormChange({ categoryId: event.target.value })}><option value="">{t("Uncategorised")}</option>{categoryOptions}</select></label></div>
         <label>{t("Notes")}<textarea value={documentForm.notes} onChange={(event) => onDocumentFormChange({ notes: event.target.value })} /></label>
-        <button className="button primary" disabled={saving} onClick={onUploadDocument}>{saving ? t("Saving...") : t("Upload document")}</button>
+        <button className="button primary" disabled={saving} onClick={onUploadDocument}>{saving ? <LoadingIndicator>{t("Saving...")}</LoadingIndicator> : t("Upload document")}</button>
       </div>
       <AccountingDocumentsTable documents={documents} categoryName={categoryName} onOpen={onOpenDocument} onDelete={onDeleteDocument} />
     </section>
@@ -7533,7 +7549,7 @@ function AccountingWorkspacePage({
           <p>{t("You are recording:") + " "}<strong>{event.label}</strong>{transactionForm.quantity ? `, quantity ${transactionForm.quantity}` : ""}{transactionForm.unitCost ? `, cost ${formatMoney(Number(transactionForm.unitCost))} each` : ""}.</p>
           {postingPreview.length ? postingPreview.map((entry, index) => <div key={entry.id}><span>{index === 0 ? `Increase / record ${entry.accountName}` : entry.accountName.includes("Payable") || entry.accountName.includes("Receivable") ? `Create outstanding balance in ${entry.accountName}` : `Record payment from ${entry.accountName}`}</span><strong>{formatMoney(entry.amount)}</strong></div>) : <p>{t("Enter an amount and select an account to preview what the system will do.")}</p>}
         </section>
-        <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? t("Saving...") : t("Save transaction")}</button>
+        <button className="button primary" disabled={saving} onClick={onCreateTransaction}>{saving ? <LoadingIndicator>{t("Saving...")}</LoadingIndicator> : t("Save transaction")}</button>
       </div>
       {transactionEditPanel}
       <AccountingTransactionsTable transactions={transactions} ledgerEntries={ledgerEntries} documents={transactionDocuments} bankStatementLines={bankStatementLines} categoryName={categoryName} onOpenDocument={onOpenDocument} onEdit={onEditTransaction} onDelete={onDeleteTransaction} onBulkPaymentMethodChange={onBulkTransactionPaymentMethodChange} />
@@ -7553,7 +7569,7 @@ function AccountingWorkspacePage({
             <label>{t("Section")}<select value={accountForm.reportSection} onChange={(input) => onAccountFormChange({ reportSection: input.target.value })}>{Object.entries(bookkeepingSectionConfigs).map(([key, config]) => <option key={key} value={config.reportSection}>{t(config.label)}</option>)}<option value="Software Expenses">{t("Software Expenses")}</option><option value="Admin Fees">{t("Admin Fees")}</option><option value="Salary">{t("Salary")}</option><option value="Tax">{t("Tax")}</option><option value="COGS">{t("COGS")}</option><option value="Current Assets">{t("Current Assets")}</option><option value="Revenue">{t("Revenue")}</option></select></label>
             <label>{t("Active")}<select value={accountForm.active ? "yes" : "no"} onChange={(input) => onAccountFormChange({ active: input.target.value === "yes" })}><option value="yes">{t("Active")}</option><option value="no">{t("Inactive")}</option></select></label>
           </div>
-          <button className="button primary" disabled={saving} onClick={onSaveAccount}>{saving ? t("Saving...") : accountForm.id ? t("Save account changes") : t("Add account")}</button>
+          <button className="button primary" disabled={saving} onClick={onSaveAccount}>{saving ? <LoadingIndicator>{t("Saving...")}</LoadingIndicator> : accountForm.id ? t("Save account changes") : t("Add account")}</button>
         </section>
         <section className="card accounting-table-card"><h3>{t("Saved category accounts")}</h3><div className="table-scroll"><table className="orders-table"><thead><tr><th>{t("Section")}</th><th>{t("Account item")}</th><th>{t("Type")}</th><th>{t("Parent")}</th><th /></tr></thead><tbody>{sectionEntries.flatMap(([key, config]) => {
           const sectionRows = categories.filter((category) => key === "expense" ? category.accountType === "expense" && expenseOptionReportSections.includes(category.reportSection) : category.reportSection === config.reportSection).filter((category) => key !== "inventory" || Boolean(inventoryAccountKey(category.name))).sort((a, b) => a.name.localeCompare(b.name));
@@ -8907,7 +8923,7 @@ function FormalAccountingWorkspacePage({
         <label className="cogs-rule-field">{t("Units used per sale")}<input type="number" min="0" step="0.0001" value={salesConsumptionMappingForm.quantityPerSale} onChange={(input) => onSalesConsumptionMappingFormChange({ quantityPerSale: input.target.value })} /></label>
       </div>
       {!inventoryMappingOptions.length && <p className="accounting-file-name">{t("No inventory accounts found yet. Add inventory items in Book Keeping first.")}</p>}
-      <button className="button primary" disabled={saving} onClick={onSaveSalesConsumptionRule}>{saving ? t("Saving...") : `Add item for ${selectedCogsSku}`}</button>
+      <button className="button primary" disabled={saving} onClick={onSaveSalesConsumptionRule}>{saving ? <LoadingIndicator>{t("Saving...")}</LoadingIndicator> : `Add item for ${selectedCogsSku}`}</button>
       <div className="table-scroll"><table className="orders-table unit-cost-table"><thead><tr><th>{t("Inventory used")}</th><th>{t("Units per sale")}</th><th>{t("COGS account")}</th><th>{t("Next FIFO batch")}</th><th /></tr></thead><tbody>{selectedSalesConsumptionMappings.map((mapping) => {
         const inventoryUsed = inventoryAccountKey(mapping.inventoryItem);
         const nextBatch = inventoryUsed ? nextFifoBatchForItem(inventoryUsed) : undefined;
@@ -9624,7 +9640,7 @@ function CreatorProgramWorkspacePage({
 
   if (view === "creator_free_samples" && admin) {
     return <section className="creator-workspace">
-      <div className="creator-hero card"><div><p>{t("CREATOR PROGRAM")}</p><h2>{t("Free Creator Sample")}</h2><span>{t("Track every creator who received a free sample code, then pair the row to the order once they claim it.")}</span></div><div className="creator-sample-hero-actions"><button className="button secondary small" type="button" onClick={upgradeActiveCreatorSampleShipping} disabled={upgradingCreatorShipping}>{upgradingCreatorShipping ? t("Adding free shipping...") : t("Add free shipping to active codes")}</button><button className="button secondary small" type="button" onClick={syncThisDeviceFreeCreatorSamples} disabled={syncingFreeCreatorSamples}>{syncingFreeCreatorSamples ? t("Syncing this device...") : t("Sync local samples")}</button><div className="accounting-status-pill">{freeCreatorSampleBundles.length} {" " + t("creators")}</div></div></div>
+      <div className="creator-hero card"><div><p>{t("CREATOR PROGRAM")}</p><h2>{t("Free Creator Sample")}</h2><span>{t("Track every creator who received a free sample code, then pair the row to the order once they claim it.")}</span></div><div className="creator-sample-hero-actions"><button className="button secondary small" type="button" onClick={upgradeActiveCreatorSampleShipping} disabled={upgradingCreatorShipping}>{upgradingCreatorShipping ? <LoadingIndicator>{t("Adding free shipping...")}</LoadingIndicator> : t("Add free shipping to active codes")}</button><button className="button secondary small" type="button" onClick={syncThisDeviceFreeCreatorSamples} disabled={syncingFreeCreatorSamples}>{syncingFreeCreatorSamples ? <LoadingIndicator>{t("Syncing this device...")}</LoadingIndicator> : t("Sync local samples")}</button><div className="accounting-status-pill">{freeCreatorSampleBundles.length} {" " + t("creators")}</div></div></div>
       {message && <div className="notice"><span>{message}</span><button onClick={() => setMessage("")}>{t("x")}</button></div>}
       <section className="creator-sample-ledger-layout">
         <form className="creator-form card creator-sample-entry-form" onSubmit={saveFreeCreatorSample}>
@@ -9646,7 +9662,7 @@ function CreatorProgramWorkspacePage({
             <label>{t("Discount code")}{freeCreatorSampleForm.productCollection === "plush_charms_v1" && <small>{t("We will create -1 and -2 automatically.")}</small>}<input value={freeCreatorSampleForm.sampleCode} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, sampleCode: event.target.value.toUpperCase() }))} placeholder={t("FREE-IVAN10")} /></label>
             <label>{t("Creator link")}<input value={freeCreatorSampleForm.creatorUrl} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, creatorUrl: event.target.value }))} placeholder="https://www.tiktok.com/@creator" /></label>
             <label>{t("Notes")}<textarea value={freeCreatorSampleForm.notes} onChange={(event) => setFreeCreatorSampleForm((current) => ({ ...current, notes: event.target.value }))} placeholder={t("Sent link, waiting for order, etc.")} /></label>
-            <button className="button primary" type="submit" disabled={creatingFreeCreatorSample}>{creatingFreeCreatorSample ? t("Creating Shopify code...") : freeCreatorSampleForm.productCollection === "plush_charms_v1" ? t("Create 2 Plush Charm codes") : t("Create Classic Plushie code")}</button>
+            <button className="button primary" type="submit" disabled={creatingFreeCreatorSample}>{creatingFreeCreatorSample ? <LoadingIndicator>{t("Creating Shopify code...")}</LoadingIndicator> : freeCreatorSampleForm.productCollection === "plush_charms_v1" ? t("Create 2 Plush Charm codes") : t("Create Classic Plushie code")}</button>
           </div>
         </form>
         <section className="card accounting-table-card creator-sample-ledger-card">
@@ -9661,7 +9677,7 @@ function CreatorProgramWorkspacePage({
                 const claims = bundle.samples.flatMap((sample) => freeCreatorSampleClaims(sample.sampleCode));
                 const sampleMessage = freeCreatorSampleMessage(bundle);
                 const missingShopifyCodes = bundle.samples.some((sample) => !sample.shopifyDiscountId);
-                return <tr key={bundle.key}><td>{bundle.creatorUrl ? <a href={bundle.creatorUrl} target="_blank" rel="noreferrer"><strong>{bundle.creatorName}</strong></a> : <strong>{bundle.creatorName}</strong>}<small>{t("Added") + " "}{formatDate(bundle.givenAt)}</small></td><td>{freeCreatorSampleCollectionLabels[bundle.productCollection]}</td><td><div className="creator-sample-code-stack">{bundle.samples.map((sample, index) => <code key={sample.id}>{bundle.samples.length === 2 ? index === 0 ? t("You · ") : t("Partner · ") : ""}{sample.sampleCode}</code>)}</div></td><td><div className="creator-sample-claim-cell"><span className={`creator-sample-claim ${claims.length ? "claimed" : "pending"}`}>{claims.length}</span><small>{claims.length === 1 ? t("order") : t("orders")}</small></div></td><td><div className="creator-sample-message-cell"><textarea readOnly value={sampleMessage} /><button className="button secondary small" type="button" onClick={() => copyFreeCreatorSampleMessage(bundle)}>{t("Copy message")}</button></div></td><td><div className="creator-sample-order-stack">{bundle.samples.map((sample, index) => <label key={sample.id}>{bundle.samples.length === 2 && <span>{index === 0 ? t("You") : t("Partner")}</span>}<input className="creator-sample-order-input" value={sample.orderNumber ?? ""} onChange={(event) => updateFreeCreatorSample(sample.id, { orderNumber: event.target.value })} placeholder={t("Order #")} /></label>)}</div></td><td><div className="creator-sample-customer-stack">{bundle.samples.map((sample) => { const pairedOrder = freeCreatorSampleOrder(sample); return pairedOrder ? <div className="creator-sample-order-details" key={sample.id}><strong>{pairedOrder.customerName || "-"}</strong><span>{pairedOrder.phone || "-"}</span><small>{pairedOrder.address || "-"}</small></div> : <span className="creator-sample-unmatched" key={sample.id}>{sample.orderNumber ? t("No matching order found") : t("Enter order number")}</span>; })}</div></td><td><input className="creator-sample-notes-input" value={bundle.notes} onChange={(event) => updateFreeCreatorSampleBundle(bundle, { notes: event.target.value })} placeholder={t("Notes")} /></td><td>{missingShopifyCodes && <button className="button primary small" type="button" disabled={creatingFreeCreatorSample} onClick={() => retryFreeCreatorSampleBundle(bundle)}>{creatingFreeCreatorSample ? t("Creating...") : t("Create missing code")}</button>}<button className="button secondary small" type="button" onClick={() => deleteFreeCreatorSampleBundle(bundle)}>{t("Remove")}</button></td></tr>;
+                return <tr key={bundle.key}><td>{bundle.creatorUrl ? <a href={bundle.creatorUrl} target="_blank" rel="noreferrer"><strong>{bundle.creatorName}</strong></a> : <strong>{bundle.creatorName}</strong>}<small>{t("Added") + " "}{formatDate(bundle.givenAt)}</small></td><td>{freeCreatorSampleCollectionLabels[bundle.productCollection]}</td><td><div className="creator-sample-code-stack">{bundle.samples.map((sample, index) => <code key={sample.id}>{bundle.samples.length === 2 ? index === 0 ? t("You · ") : t("Partner · ") : ""}{sample.sampleCode}</code>)}</div></td><td><div className="creator-sample-claim-cell"><span className={`creator-sample-claim ${claims.length ? "claimed" : "pending"}`}>{claims.length}</span><small>{claims.length === 1 ? t("order") : t("orders")}</small></div></td><td><div className="creator-sample-message-cell"><textarea readOnly value={sampleMessage} /><button className="button secondary small" type="button" onClick={() => copyFreeCreatorSampleMessage(bundle)}>{t("Copy message")}</button></div></td><td><div className="creator-sample-order-stack">{bundle.samples.map((sample, index) => <label key={sample.id}>{bundle.samples.length === 2 && <span>{index === 0 ? t("You") : t("Partner")}</span>}<input className="creator-sample-order-input" value={sample.orderNumber ?? ""} onChange={(event) => updateFreeCreatorSample(sample.id, { orderNumber: event.target.value })} placeholder={t("Order #")} /></label>)}</div></td><td><div className="creator-sample-customer-stack">{bundle.samples.map((sample) => { const pairedOrder = freeCreatorSampleOrder(sample); return pairedOrder ? <div className="creator-sample-order-details" key={sample.id}><strong>{pairedOrder.customerName || "-"}</strong><span>{pairedOrder.phone || "-"}</span><small>{pairedOrder.address || "-"}</small></div> : <span className="creator-sample-unmatched" key={sample.id}>{sample.orderNumber ? t("No matching order found") : t("Enter order number")}</span>; })}</div></td><td><input className="creator-sample-notes-input" value={bundle.notes} onChange={(event) => updateFreeCreatorSampleBundle(bundle, { notes: event.target.value })} placeholder={t("Notes")} /></td><td>{missingShopifyCodes && <button className="button primary small" type="button" disabled={creatingFreeCreatorSample} onClick={() => retryFreeCreatorSampleBundle(bundle)}>{creatingFreeCreatorSample ? <LoadingIndicator>{t("Creating...")}</LoadingIndicator> : t("Create missing code")}</button>}<button className="button secondary small" type="button" onClick={() => deleteFreeCreatorSampleBundle(bundle)}>{t("Remove")}</button></td></tr>;
               })}
               {!freeCreatorSampleBundles.length && <tr><td colSpan={9}>{t("No free creator samples logged yet.")}</td></tr>}
             </tbody></table>
@@ -9855,7 +9871,7 @@ function Login({ onLogin }: { onLogin: (session: Session) => void }) {
     catch (loginError) { setError(loginError instanceof Error ? loginError.message : "Sign in failed."); }
     finally { setSigningIn(false); }
   }
-  return <main className="login-page"><section className="login-brand"><div className="login-logo">{t("MP")}</div><p>{t("MEANINGFUL PLUSHIES")}</p><h1>{t("A calmer way to manage every plushie.")}</h1><span>{t("Track voice, production, packing and delivery from one simple workspace.")}</span></section><section className="login-panel"><LanguageSwitcher /><form onSubmit={submit} autoComplete="off"><input className="hidden-login-field" type="text" name="fake-username" autoComplete="username" tabIndex={-1} aria-hidden="true" /><input className="hidden-login-field" type="password" name="fake-password" autoComplete="current-password" tabIndex={-1} aria-hidden="true" /><p className="eyebrow">{t("STAFF PORTAL")}</p><h2>{t("Welcome back")}</h2><span>{t("Sign in with the account created by your administrator.")}</span>{error && <p className="login-error">{t(error)}</p>}<label>{t("Username")}<input name="mp-login-identifier" value={username} onChange={(event) => setUsername(event.target.value)} required autoComplete="off" readOnly={!loginInputsReady} /></label><label>{t("Password")}<input name="mp-login-secret" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required autoComplete="new-password" readOnly={!loginInputsReady} /></label><button className="button primary large" type="submit" disabled={signingIn}>{signingIn ? t("Signing in...") : t("Sign in")}</button></form></section></main>;
+  return <main className="login-page"><section className="login-brand"><div className="login-logo">{t("MP")}</div><p>{t("MEANINGFUL PLUSHIES")}</p><h1>{t("A calmer way to manage every plushie.")}</h1><span>{t("Track voice, production, packing and delivery from one simple workspace.")}</span></section><section className="login-panel"><LanguageSwitcher /><form onSubmit={submit} autoComplete="off"><input className="hidden-login-field" type="text" name="fake-username" autoComplete="username" tabIndex={-1} aria-hidden="true" /><input className="hidden-login-field" type="password" name="fake-password" autoComplete="current-password" tabIndex={-1} aria-hidden="true" /><p className="eyebrow">{t("STAFF PORTAL")}</p><h2>{t("Welcome back")}</h2><span>{t("Sign in with the account created by your administrator.")}</span>{error && <p className="login-error">{t(error)}</p>}<label>{t("Username")}<input name="mp-login-identifier" value={username} onChange={(event) => setUsername(event.target.value)} required autoComplete="off" readOnly={!loginInputsReady} /></label><label>{t("Password")}<input name="mp-login-secret" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required autoComplete="new-password" readOnly={!loginInputsReady} /></label><button className="button primary large" type="submit" disabled={signingIn}>{signingIn ? <LoadingIndicator>{t("Signing in...")}</LoadingIndicator> : t("Sign in")}</button></form></section></main>;
 }
 
 function Stat({ label, value, color }: { label: string; value: number; color: string }) {
@@ -10035,7 +10051,7 @@ function OrderDrawer({ order, manualOrders, role, actor, token, onClose, onUpdat
   }
 
   return <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && closeDrawer()}><aside className="order-drawer"><div className="drawer-header"><div><p>{t("ORDER DETAIL")}</p><h2>{orderLabel(order)}</h2></div><button onClick={closeDrawer}>{t("x")}</button></div><div className="drawer-body">
-    {admin && <section className="detail-section" aria-live="polite"><div className="toolbar"><button className="button primary" disabled={!dirty || saving || readingFile} onClick={() => void saveDraft()}>{saving ? t("Saving...") : t("Save changes")}</button><button className="button" disabled={!dirty || saving || readingFile} onClick={discardDraft}>{t("Discard draft")}</button></div><p>{saveMessage || (readingFile ? t("Reading file...") : dirty ? t("Unsaved changes") : t("No unsaved changes"))}</p>{dirty && baseline.current?.updatedAt !== order.updatedAt && <p>{t("The order has changed. Your draft is shown above. Discard the draft to review the latest saved values before editing again.")}</p>}</section>}
+    {admin && <section className="detail-section" aria-live="polite"><div className="toolbar"><button className="button primary" disabled={!dirty || saving || readingFile} onClick={() => void saveDraft()}>{saving ? <LoadingIndicator>{t("Saving...")}</LoadingIndicator> : t("Save changes")}</button><button className="button" disabled={!dirty || saving || readingFile} onClick={discardDraft}>{t("Discard draft")}</button></div><p>{readingFile ? <LoadingIndicator>{t("Reading file...")}</LoadingIndicator> : saveMessage || (dirty ? t("Unsaved changes") : t("No unsaved changes"))}</p>{dirty && baseline.current?.updatedAt !== order.updatedAt && <p>{t("The order has changed. Your draft is shown above. Discard the draft to review the latest saved values before editing again.")}</p>}</section>}
     <section className="detail-summary"><div><span>{t("Current status")}</span><StatusPill status={order.status} /></div><div><span>{t("Last updated")}</span><strong>{formatDate(order.updatedAt, true)}</strong></div></section>
     <section className="detail-section"><h3>{t("Quick actions")}</h3><div className="status-actions">{following && <button className="button primary" disabled={dirty || saving || readingFile} onClick={() => onStatus(following)}>{t("Move to") + " "}{t(statusLabels[following])}</button>}{admin && <button className="button issue-button" disabled={dirty || saving || readingFile} onClick={() => onStatus("issue")}>{t("Mark issue")}</button>}{admin && order.status === "issue" && <button className="button secondary" disabled={dirty || saving || readingFile} onClick={() => onStatus("sent_for_sewing")}>{t("Resolve issue")}</button>}<a className="button whatsapp" href={whatsappLink(order)} target="_blank">{t("Open WhatsApp")}</a></div></section>
     <section className="detail-section"><h3>{t("Customer and order")}</h3><div className="field-grid"><Field label={t("Order number")} value={`#${order.orderNumber}`} /><Field label={t("Source")} value={source} /><Field label={t("Order date")} value={formatDate(order.orderDate, true)} /><Field label={t("Payment method")} value={paymentMethod} />{isCod && <Field label={t("Collection instruction")} value="COD — collect payment on delivery" />}<Editable label={t("Customer name")} value={displayOrder.customerName} disabled={!admin || saving} onChange={(value) => editDraft({ customerName: value })} /><Editable label={t("Phone")} value={displayOrder.phone} disabled={!admin || saving} onChange={(value) => editDraft({ phone: value })} /><Editable wide label={t("Address")} value={displayOrder.address} disabled={!admin || saving} onChange={(value) => editDraft({ address: value })} /></div></section>

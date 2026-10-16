@@ -1,4 +1,5 @@
 "use client";
+import { LoadingIndicator } from "./loading-indicator";
 import { useLanguage } from "./dashboard-language";
 
 import { ChangeEvent, DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -373,7 +374,7 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
   if (["account_activity"].includes(view)) return <section className={styles.workspace}>
     <header className={styles.header}>
       <div><p className={styles.eyebrow}>{t("SEPARATE ACCOUNTING WORKSPACE")}</p><h1>{t("Monthly Journal")}</h1><p>{t("Your new accounting workspace. It does not change Book Keeping or Accounting.")}</p></div>
-      <div className={styles.headerActions}><button className={styles.refresh} type="button" onClick={toggleFocus}>{focused ? t("Exit focus") : t("Focus full screen")}</button><button className={styles.refresh} type="button" onClick={() => void loadData()}>{loading ? t("Loading…") : t("Refresh")}</button></div>
+      <div className={styles.headerActions}><button className={styles.refresh} type="button" onClick={toggleFocus}>{focused ? t("Exit focus") : t("Focus full screen")}</button><button className={styles.refresh} type="button" onClick={() => void loadData()}>{loading ? <LoadingIndicator>{t("Loading…")}</LoadingIndicator> : t("Refresh")}</button></div>
     </header>
     {message && <p className={styles.message}>{message}</p>}
     <section className={styles.accountActivity}>
@@ -388,7 +389,7 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
   return <section className={styles.workspace}>
     <header className={styles.header}>
       <div><p className={styles.eyebrow}>{t("SEPARATE ACCOUNTING WORKSPACE")}</p><h1>{t("Monthly Journal")}</h1><p>{t("Your new accounting workspace. It does not change Book Keeping or Accounting.")}</p></div>
-      <div className={styles.headerActions}><button className={styles.refresh} type="button" onClick={toggleFocus}>{focused ? t("Exit focus") : t("Focus full screen")}</button><button className={styles.refresh} type="button" onClick={() => void loadData()}>{loading ? t("Loading…") : t("Refresh")}</button></div>
+      <div className={styles.headerActions}><button className={styles.refresh} type="button" onClick={toggleFocus}>{focused ? t("Exit focus") : t("Focus full screen")}</button><button className={styles.refresh} type="button" onClick={() => void loadData()}>{loading ? <LoadingIndicator>{t("Loading…")}</LoadingIndicator> : t("Refresh")}</button></div>
     </header>
     {message && <p className={styles.message}>{message}</p>}
 
@@ -410,7 +411,7 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
             </div>
           </div>
           <label>{t("Description") + " "}<span className={styles.optional}>{t("(optional)")}</span><input value={openingForm.description} onChange={(event) => setOpeningForm({ ...openingForm, description: event.target.value })} placeholder={t("Example: Maybank balance at business start")} /></label>
-          <button className={styles.primary} type="submit" disabled={savingOpeningBalance}>{savingOpeningBalance ? t("Posting…") : t("Post opening balance")}</button>
+          <button className={styles.primary} type="submit" disabled={savingOpeningBalance}>{savingOpeningBalance ? <LoadingIndicator>{t("Posting…")}</LoadingIndicator> : t("Post opening balance")}</button>
         </form>
       </div>
     </div>}
@@ -481,7 +482,7 @@ export function MonthlyJournalWorkspace({ initialView = "accounts" }: { initialV
         <label>{t("Journal note")}<input value={shopeeForm.journalNote} onChange={(event) => setShopeeForm({ ...shopeeForm, journalNote: event.target.value })} placeholder={t("Example: Shopee PayLater purchase for packaging")} /></label>
         <label>{t("Amount (RM)")}<input type="number" min="0.01" step="0.01" value={shopeeForm.amount} onChange={(event) => setShopeeForm({ ...shopeeForm, amount: event.target.value })} required /></label>
         <div className={`${styles.shopeeSource}${shopeeDragging ? ` ${styles.shopeeSourceDragging}` : ""}`} role="button" tabIndex={0} onClick={() => shopeeFileInput.current?.click()} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") shopeeFileInput.current?.click(); }} onDragEnter={(event) => { event.preventDefault(); setShopeeDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setShopeeDragging(false)} onDrop={dropShopeeFile}><strong>{shopeeFile ? shopeeFile.name : t("Drop source document here")}</strong><span>{shopeeFile ? t("Click to replace it") : t("or click to select a receipt, invoice, PDF, or image")}</span><input ref={shopeeFileInput} type="file" accept="application/pdf,image/*" onChange={(event: ChangeEvent<HTMLInputElement>) => { chooseShopeeFile(event.target.files?.[0]); event.target.value = ""; }} /></div>
-        <div className={styles.shopeePreview}>{t("Debit") + " "}{accountById.get(shopeeForm.account)?.name ?? t("chosen account")}<br />{t("Credit Shopee PayLater Payable")}</div><button className={styles.primary} type="submit" disabled={savingShopee || !shopeePayLater}>{savingShopee ? t("Recording…") : t("Add Shopee purchase")}</button>
+        <div className={styles.shopeePreview}>{t("Debit") + " "}{accountById.get(shopeeForm.account)?.name ?? t("chosen account")}<br />{t("Credit Shopee PayLater Payable")}</div><button className={styles.primary} type="submit" disabled={savingShopee || !shopeePayLater}>{savingShopee ? <LoadingIndicator>{t("Recording…")}</LoadingIndicator> : t("Add Shopee purchase")}</button>
         <hr /><p className={styles.eyebrow}>{t("NEW SHOPEE SHORTCUT")}</p><h3>{t("Save this classification")}</h3><p className={styles.muted}>{t("Use this for future purchases that should post to the same debit account.")}</p><div className={styles.dates}><label>{t("Name")}<input value={shopeeShortcutForm.name} onChange={(event) => setShopeeShortcutForm({ ...shopeeShortcutForm, name: event.target.value })} placeholder={t("Example: Packaging")} /></label><label>{t("Debit account")}<select value={shopeeShortcutForm.account} onChange={(event) => setShopeeShortcutForm({ ...shopeeShortcutForm, account: event.target.value })}><option value="">{t("Choose an account")}</option>{accounts.filter((account) => account.id !== shopeePayLater?.id).map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label></div><label>{t("Description template")}<input value={shopeeShortcutForm.description} onChange={(event) => setShopeeShortcutForm({ ...shopeeShortcutForm, description: event.target.value })} placeholder={t("Example: Packaging from Shopee on {paid_date}")} /></label><label>{t("Journal note template")}<input value={shopeeShortcutForm.journalNote} onChange={(event) => setShopeeShortcutForm({ ...shopeeShortcutForm, journalNote: event.target.value })} placeholder={t("Example: Shopee PayLater purchase for {month}")} /></label><button type="button" onClick={(event) => void saveShopeeShortcut(event as unknown as FormEvent)}>{t("Save Shopee shortcut")}</button>
       </form>
     </div>}

@@ -1622,6 +1622,11 @@ body.print-sales-report .report-table th,
 .batch-progress .done { background: #e5f4ed; color: #16845b; }
 .batch-step { padding: 28px; }
 .batch-step h2 { margin-top: 0; }
+.loading-indicator { display: inline-flex; align-items: center; gap: 9px; vertical-align: middle; }
+.loading-spinner { display: inline-block; flex: 0 0 16px; width: 16px; height: 16px; box-sizing: border-box; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: fulfilment-loading-spin .8s linear infinite; }
+@keyframes fulfilment-loading-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .loading-spinner { animation: none; border-style: dotted; } }
+@media print { .loading-indicator { display: none; } }
 .batch-audio-status { padding: 18px 22px; background: #f0f8ff; border: 1px solid #c3ddf6; }
 .batch-audio-status > p { margin: 0 0 8px; font-weight: 700; color: #166446; }
 .batch-task-progress { padding: 14px 0; min-width: 0; }
