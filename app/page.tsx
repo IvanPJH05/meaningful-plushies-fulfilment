@@ -2263,7 +2263,7 @@ function Home() {
     const source = view === "fulfilled" ? orders.filter((order) => order.status === "shipped") : orders;
     const search = query.trim().toLowerCase();
     const matching = source
-      .filter((order) => view !== "orders" || !influencerOnly || influencerOrderIds.has(order.id))
+      .filter((order) => !["orders", "fulfilment"].includes(view) || !influencerOnly || influencerOrderIds.has(order.id))
       .filter((order) => orderSourceMatches(order, sourceFilter, manualOrders))
       .filter((order) => statusFilter === "all" || order.status === statusFilter)
       .filter((order) => {
@@ -6270,7 +6270,7 @@ function Home() {
         {assigningBatch && <BatchAssignment token={session.token} orderIds={selectedOrders} onClose={() => setAssigningBatch(false)} onAssigned={id => { setAssigningBatch(false); setSelectedOrders([]); setActiveBatchId(id); setView("batch_fulfilment"); void loadSharedData(); }} />}
         {view === "fulfilment" && <section className="card orders-card adaptive-orders-card">
           <div className="table-layout-toolbar"><button className="button secondary small" onClick={() => setLayoutEditorView("fulfilment")}>{t("Layout settings")}</button></div>
-          <div className="toolbar"><OrderSearch value={query} onChange={setQuery} placeholder={t("Search order, plush name, character, customer or phone...")} /><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /><button className="button primary" disabled={!batchSelectionReady} title={t("Select up to 200 New Order or Uploading Audio orders.")} onClick={() => setAssigningBatch(true)}>{t("Move to Batch Fulfilment")}</button><button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>{t("Move") + " "}{selectedOrders.length} {" " + t("to next status")}</button>{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>{t("Delete")}</button>}</div>
+          <div className="toolbar"><OrderSearch value={query} onChange={setQuery} placeholder={t("Search order, plush name, character, customer or phone...")} /><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} influencerOnly={influencerOnly} onInfluencerChange={setInfluencerOnly} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /><button className="button primary" disabled={!batchSelectionReady} title={t("Select up to 200 New Order or Uploading Audio orders.")} onClick={() => setAssigningBatch(true)}>{t("Move to Batch Fulfilment")}</button><button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>{t("Move") + " "}{selectedOrders.length} {" " + t("to next status")}</button>{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>{t("Delete")}</button>}</div>
           <div className={`nfc-helper-panel ${nfcHelperStatus}`}>
             <div>
               <strong>{t("Windows NFC Helper")}</strong>
