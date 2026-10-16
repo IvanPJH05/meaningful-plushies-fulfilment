@@ -1,6 +1,21 @@
 // Interface copy only. Order/customer records are never translated.
 // Tuple order: Bahasa Melayu, Bahasa Indonesia.
 export const dashboardTranslations: Readonly<Record<string, readonly [string, string]>> = {
+  "Document preparation finished": ["Penyediaan dokumen selesai", "Persiapan dokumen selesai"],
+  "Shipping label import finished": ["Import label penghantaran selesai", "Impor label pengiriman selesai"],
+  "Order refresh finished": ["Kemas kini pesanan selesai", "Pembaruan pesanan selesai"],
+  "TikTok export finished": ["Eksport TikTok selesai", "Ekspor TikTok selesai"],
+  "NFC writing finished": ["Penulisan NFC selesai", "Penulisan NFC selesai"],
+  "NFC unlock finished": ["Proses buka kunci NFC selesai", "Proses buka kunci NFC selesai"],
+  "NFC helper check complete": ["Semakan pembantu NFC selesai", "Pemeriksaan pembantu NFC selesai"],
+  "Accounting update finished": ["Kemas kini perakaunan selesai", "Pembaruan akuntansi selesai"],
+  "Plush charm link preparation finished": ["Penyediaan pautan plush charm selesai", "Persiapan tautan plush charm selesai"],
+  "More orders loaded": ["Pesanan tambahan dimuatkan", "Pesanan tambahan dimuat"],
+  "Workspace data loaded": ["Data ruang kerja dimuatkan", "Data ruang kerja dimuat"],
+  "Orders loaded": ["Pesanan dimuatkan", "Pesanan dimuat"],
+  "Batch data loaded": ["Data kelompok dimuatkan", "Data batch dimuat"],
+  "Workspace opened": ["Ruang kerja dibuka", "Ruang kerja dibuka"],
+
   "Loading complete": ["Selesai dimuatkan", "Selesai memuat"],
   "Influencer orders only": ["Pesanan influencer sahaja", "Hanya pesanan influencer"],
   "Search order, customer, phone, tracking or influencer code...": ["Cari pesanan, pelanggan, telefon, penjejakan atau kod influencer...", "Cari pesanan, pelanggan, telepon, pelacakan atau kode influencer..."],
