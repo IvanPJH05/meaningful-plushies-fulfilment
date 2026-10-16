@@ -1,0 +1,68 @@
+{% liquid
+  assign meaningful_note = metaobject.meaningful_note.value | default: '' | strip
+  if request.design_mode and section.settings.preview_note != blank
+    assign meaningful_note = section.settings.preview_note | strip
+  endif
+  assign note_length = meaningful_note | size
+  assign note_size = 'standard'
+  if note_length < 180
+    assign note_size = 'short'
+  elsif note_length > 600
+    assign note_size = 'long'
+  endif
+  assign artwork = section.settings.artwork | default: images['4_Bottom.png']
+%}
+
+<section class="certificate-fluid-note certificate-fluid-note--{{ note_size }}" aria-label="{{ section.settings.heading | escape }}" style="--certificate-note-surround: {{ section.settings.surround }}; --certificate-note-panel: {{ section.settings.panel }}; --certificate-note-ink: {{ section.settings.ink }}; --certificate-note-font-size: {{ section.settings.font_size }}px; --certificate-note-width: {{ section.settings.content_width }}px;" data-certificate-note {{ section.shopify_attributes }}>
+  {% if artwork != blank %}
+    <div class="certificate-fluid-note__divider" aria-hidden="true">
+      {{ artwork | image_url: width: 2000 | image_tag: widths: '400, 800, 1200, 1600, 2000', sizes: '100vw', loading: 'lazy', alt: '' }}
+    </div>
+  {% endif %}
+  {% if meaningful_note != blank %}
+    <div class="certificate-fluid-note__body">
+      <div class="certificate-fluid-note__content">
+        <h2>{{ section.settings.heading | escape }}</h2>
+        <p class="certificate-fluid-note__text">{{ meaningful_note | escape }}</p>
+      </div>
+    </div>
+  {% endif %}
+  {% if artwork != blank %}
+    <div class="certificate-fluid-note__ending" aria-hidden="true">
+      {{ artwork | image_url: width: 2000 | image_tag: widths: '400, 800, 1200, 1600, 2000', sizes: '100vw', loading: 'lazy', alt: '' }}
+    </div>
+  {% endif %}
+</section>
+
+{% stylesheet %}
+  .certificate-fluid-note { width: 100%; background: var(--certificate-note-surround, #ceeeff); color: var(--certificate-note-ink, #fff); }
+  .certificate-fluid-note__divider, .certificate-fluid-note__ending { position: relative; overflow: hidden; width: 100%; }
+  .certificate-fluid-note__divider { aspect-ratio: 1200 / 80; }
+  .certificate-fluid-note__ending { aspect-ratio: 1200 / 60; }
+  .certificate-fluid-note__divider img, .certificate-fluid-note__ending img { position: absolute; display: block; width: 100%; max-width: none; height: auto; }
+  .certificate-fluid-note__divider img { top: 0; }
+  .certificate-fluid-note__ending img { bottom: 0; }
+  .certificate-fluid-note__body { margin-inline: 2.8%; padding: clamp(16px, 2.5vw, 36px) clamp(20px, 6vw, 80px) 12px; background: var(--certificate-note-panel, #618497); }
+  .certificate-fluid-note__content { max-width: var(--certificate-note-width, 680px); margin-inline: auto; }
+  .certificate-fluid-note__content h2 { margin: 0 0 16px; color: inherit; font-family: inherit; font-size: 13px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; text-align: center; }
+  .certificate-fluid-note__text { margin: 0; font-family: inherit; font-size: clamp(16px, 1.6vw, var(--certificate-note-font-size, 20px)); line-height: 1.65; text-align: center; white-space: pre-wrap; overflow-wrap: anywhere; word-break: normal; }
+  .certificate-fluid-note--short .certificate-fluid-note__text { font-size: clamp(18px, 1.8vw, calc(var(--certificate-note-font-size, 20px) + 2px)); }
+  .certificate-fluid-note--long .certificate-fluid-note__text { font-size: clamp(16px, 1.5vw, var(--certificate-note-font-size, 20px)); line-height: 1.7; }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Meaningful note (fluid)",
+  "settings": [
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Meaningful Note" },
+    { "type": "image_picker", "id": "artwork", "label": "Certificate bottom artwork", "info": "Use the original 4_Bottom artwork. Its divider and rounded bottom frame the expanding note." },
+    { "type": "range", "id": "font_size", "label": "Desktop text size", "min": 16, "max": 28, "step": 1, "default": 20, "unit": "px" },
+    { "type": "range", "id": "content_width", "label": "Maximum text width", "min": 320, "max": 1000, "step": 20, "default": 680, "unit": "px" },
+    { "type": "color", "id": "surround", "label": "Outside background", "default": "#ceeeff" },
+    { "type": "color", "id": "panel", "label": "Note background", "default": "#618497" },
+    { "type": "color", "id": "ink", "label": "Text colour", "default": "#ffffff" },
+    { "type": "textarea", "id": "preview_note", "label": "Preview note (editor only)", "info": "Try different note lengths here without changing saved certificates. Leave blank to show the real note." }
+  ],
+  "presets": [{ "name": "Meaningful note (fluid)" }]
+}
+{% endschema %}
