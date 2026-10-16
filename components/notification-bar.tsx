@@ -4,8 +4,8 @@ import { createContext, useContext, useState, useEffect, useRef, useCallback, us
 import { createPortal } from "react-dom";
 import { LoadingIndicator } from "./loading-indicator";
 
-type Toast = { id: string; content: ReactNode; loading: boolean; complete: boolean; completionText?: string; revision: number };
-type Notifications = { messages: Toast[]; show: (id: string, content: ReactNode, loading: boolean, completionText?: string) => void; finish: (id: string) => void; dismiss: (id: string) => void };
+type Toast = { id: string; content: ReactNode; loading: boolean; complete: boolean; completionText?: string | null; revision: number };
+type Notifications = { messages: Toast[]; show: (id: string, content: ReactNode, loading: boolean, completionText?: string | null) => void; finish: (id: string) => void; dismiss: (id: string) => void };
 const NotificationContext = createContext<Notifications | null>(null);
 const lifetime = 1750;
 
@@ -34,7 +34,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     clearTimeout(timers.current.get(id));
     timers.current.set(id, setTimeout(() => dismiss(id), lifetime));
   }, [dismiss]);
-  const show = useCallback((id: string, content: ReactNode, loading: boolean, completionText?: string) => {
+  const show = useCallback((id: string, content: ReactNode, loading: boolean, completionText?: string | null) => {
     clearTimeout(timers.current.get(id)); timers.current.delete(id);
     active.current.set(id, loading);
     setMessages(current => {
@@ -47,7 +47,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const finish = useCallback((id: string) => {
     const loading = active.current.get(id); active.current.delete(id);
     if (!loading) return;
-    setMessages(current => current.map(message => message.id === id ? { ...message, loading: false, complete: true, revision: message.revision + 1 } : message));
+    setMessages(current => current.flatMap(message => message.id !== id ? [message] : message.completionText === null ? [] : [{ ...message, loading: false, complete: true, revision: message.revision + 1 }]));
     expire(id);
   }, [expire]);
   useEffect(() => { const pending = timers.current; return () => { pending.forEach(clearTimeout); pending.clear(); }; }, []);
@@ -55,7 +55,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   return <NotificationContext.Provider value={value}>{children}</NotificationContext.Provider>;
 }
 
-export function NotificationMessage({ children, completionText }: { children: ReactNode; completionText?: string }) {
+export function NotificationMessage({ children, completionText }: { children: ReactNode; completionText?: string | null }) {
   const notifications = useContext(NotificationContext);
   const id = useId();
   const latest = useRef(children); latest.current = children;
