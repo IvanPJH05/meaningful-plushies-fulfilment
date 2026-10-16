@@ -138,142 +138,18 @@
       }
     },
     "image_banner_qrVMFL": {
-      "type": "image-banner",
-      "blocks": {
-        "text_CeGn7w": {
-          "type": "text",
-          "settings": {
-            "text": "<p><strong>Belongs To: </strong><strong>{{ metaobject.belongs_to.value }}</strong></p>",
-            "text_size": 18,
-            "text_align": "center",
-            "box_width": 330,
-            "box_height": 0,
-            "align_x": "center",
-            "align_y": "center",
-            "x_offset": 0,
-            "y_offset": 72,
-            "glow_enabled": false,
-            "glow_pulse": false,
-            "glow_color": "#ffffff",
-            "glow_strength": 14,
-            "glow_speed": 2.5
-          }
-        },
-        "text_DaGxk6": {
-          "type": "text",
-          "settings": {
-            "text": "<p><strong>Favourite Person: </strong><strong>{{ metaobject.favourite_person.value }}</strong></p>",
-            "text_size": 18,
-            "text_align": "center",
-            "box_width": 330,
-            "box_height": 0,
-            "align_x": "center",
-            "align_y": "center",
-            "x_offset": 0,
-            "y_offset": 48,
-            "glow_enabled": false,
-            "glow_pulse": false,
-            "glow_color": "#ffffff",
-            "glow_strength": 14,
-            "glow_speed": 2.5
-          }
-        },
-        "text_XTGffr": {
-          "type": "text",
-          "settings": {
-            "text": "<p><strong>Birthplace: </strong><strong>{{ metaobject.birthplace.value }}</strong></p>",
-            "text_size": 18,
-            "text_align": "center",
-            "box_width": 330,
-            "box_height": 0,
-            "align_x": "center",
-            "align_y": "center",
-            "x_offset": 0,
-            "y_offset": 24,
-            "glow_enabled": false,
-            "glow_pulse": false,
-            "glow_color": "#ffffff",
-            "glow_strength": 14,
-            "glow_speed": 2.5
-          }
-        },
-        "text_3m7Wpy": {
-          "type": "text",
-          "settings": {
-            "text": "<p><strong>Born On: </strong><strong>{{ metaobject.born_on.value }}</strong></p>",
-            "text_size": 18,
-            "text_align": "center",
-            "box_width": 280,
-            "box_height": 0,
-            "align_x": "center",
-            "align_y": "center",
-            "x_offset": 0,
-            "y_offset": 0,
-            "glow_enabled": false,
-            "glow_pulse": false,
-            "glow_color": "#ffffff",
-            "glow_strength": 14,
-            "glow_speed": 2.5
-          }
-        },
-        "text_zReAFR": {
-          "type": "text",
-          "settings": {
-            "text": "<p><strong>Gender: </strong><strong>{{ metaobject.gender.value }}</strong></p>",
-            "text_size": 18,
-            "text_align": "center",
-            "box_width": 280,
-            "box_height": 0,
-            "align_x": "center",
-            "align_y": "center",
-            "x_offset": 0,
-            "y_offset": -24,
-            "glow_enabled": false,
-            "glow_pulse": false,
-            "glow_color": "#ffffff",
-            "glow_strength": 14,
-            "glow_speed": 2.5
-          }
-        },
-        "text_8jDQAy": {
-          "type": "text",
-          "settings": {
-            "text": "<p><strong>Id: </strong><strong>{{ metaobject.code.value }}</strong></p>",
-            "text_size": 18,
-            "text_align": "center",
-            "box_width": 280,
-            "box_height": 0,
-            "align_x": "center",
-            "align_y": "center",
-            "x_offset": 0,
-            "y_offset": -48,
-            "glow_enabled": false,
-            "glow_pulse": false,
-            "glow_color": "#ffffff",
-            "glow_strength": 14,
-            "glow_speed": 2.5
-          }
-        }
-      },
-      "block_order": [
-        "text_CeGn7w",
-        "text_DaGxk6",
-        "text_XTGffr",
-        "text_3m7Wpy",
-        "text_zReAFR",
-        "text_8jDQAy"
-      ],
-      "custom_css": [
-        "/* Disable iOS phone number styling */a[x-apple-data-detectors],a[x-apple-data-detectors] *,span[x-apple-data-detectors],span[x-apple-data-detectors] * {color: inherit !important; text-decoration: none !important; font-size: inherit !important; font-family: inherit !important; cursor: default;}"
-      ],
-      "name": "Image banner (Advanced)",
+      "type": "certificate-details-fluid",
+      "name": "ID details (fluid)",
       "settings": {
-        "image": "shopify://shop_images/Top_Normal_93e8d398-f7ea-479d-b1b8-af5c3786b95e.png",
-        "image_fit": "cover",
-        "lock_aspect_ratio": false,
-        "aspect_ratio_width": 16,
-        "aspect_ratio_height": 9,
-        "text_color": "#ffffff"
+        "artwork": "shopify://shop_images/Top_Normal_93e8d398-f7ea-479d-b1b8-af5c3786b95e.png",
+        "font_size": 18,
+        "content_width": 330,
+        "surround": "#ceeeff",
+        "panel": "#618497",
+        "ink": "#ffffff",
+        "preview_favourite_person": "",
+        "preview_belongs_to": "",
+        "preview_birthplace": ""
       }
     },
     "image_banner_YH7hYV": {
