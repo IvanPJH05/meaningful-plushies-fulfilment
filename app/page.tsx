@@ -6259,7 +6259,7 @@ function Home() {
         {view !== "fulfilment" && <section className="card orders-card adaptive-orders-card">
           <div className="table-layout-toolbar"><button className="button secondary small" onClick={() => setLayoutEditorView("orders")}>{t("Layout settings")}</button></div>
           <div className={`toolbar ${view === "orders" ? "orders-toolbar" : ""}`}>
-            <div className="toolbar-row toolbar-filter-row"><OrderSearch value={query} onChange={setQuery} placeholder={t("Search order, customer, phone, tracking or influencer code...")} /><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} />{view === "orders" && <label className="influencer-only-filter"><input type="checkbox" checked={influencerOnly} onChange={(event) => setInfluencerOnly(event.target.checked)} />{t("Influencer orders only")}</label>}<StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /></div>
+            <div className="toolbar-row toolbar-filter-row"><OrderSearch value={query} onChange={setQuery} placeholder={t("Search order, customer, phone, tracking or influencer code...")} /><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} influencerOnly={view === "orders" && influencerOnly} onInfluencerChange={view === "orders" ? setInfluencerOnly : undefined} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /></div>
             <div className="toolbar-row toolbar-action-row"><button className="button primary" disabled={!batchSelectionReady} title={t("Select up to 200 New Order or Uploading Audio orders.")} onClick={() => setAssigningBatch(true)}>{t("Move to Batch Fulfilment")}</button>{view === "orders" && <button className="button secondary" disabled={!selectedShopifyOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshShopifyOrders}>{refreshingOrderNumber === "bulk" ? t("Refreshing...") : `Refresh ${selectedShopifyOrderCount} Shopify`}</button>}{view === "orders" && <button className="button secondary" disabled={!selectedTikTokOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshTikTokOrders}>{refreshingOrderNumber === "tiktok-bulk" ? t("Syncing...") : `Sync ${selectedTikTokOrderCount} TikTok`}</button>}{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>{t("Move") + " "}{selectedOrders.length} {" " + t("to next status")}</button>}{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>{t("Delete")}</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>{t("Export CSV")}</button>}</div>
           </div>
           <div className="table-scroll">{compactTable("orders")}{!filtered.length && <div className="empty"><strong>{t("No orders found")}</strong><p>{t("Try another search or status filter.")}</p></div>}</div>
@@ -9915,10 +9915,14 @@ function StatusFilterPills({ value, onChange }: { value: "all" | OrderStatus; on
   return <div className="status-filter-pills" aria-label={t("Filter by stage")}>{(["all", ...orderStatuses] as ("all" | OrderStatus)[]).map((status) => <button type="button" key={status} className={value === status ? "active" : ""} onClick={() => onChange(status)}>{status === "all" ? t("All") : t(statusLabels[status])}</button>)}</div>;
 }
 
-function SourceFilterSelect({ value, onChange }: { value: SourceFilter; onChange: (source: SourceFilter) => void }) {
+function SourceFilterSelect({ value, onChange, influencerOnly = false, onInfluencerChange }: { value: SourceFilter; onChange: (source: SourceFilter) => void; influencerOnly?: boolean; onInfluencerChange?: (enabled: boolean) => void }) {
   const { t } = useLanguage();
   const labels: Record<SourceFilter, string> = { all: "All", shopify: "Shopify", tiktok: "TikTok", whatsapp: "WhatsApp" };
-  return <select className="source-filter-select" aria-label={t("Filter by source")} value={value} onChange={(event) => onChange(event.target.value as SourceFilter)}>{sourceFilterValues.map((source) => <option key={source} value={source}>{labels[source]}</option>)}</select>;
+  return <select className="source-filter-select" aria-label={t("Filter by source")} value={influencerOnly ? "influencer" : value} onChange={(event) => {
+    const influencer = event.target.value === "influencer";
+    onInfluencerChange?.(influencer);
+    onChange(influencer ? "all" : event.target.value as SourceFilter);
+  }}>{sourceFilterValues.map((source) => <option key={source} value={source}>{labels[source]}</option>)}{onInfluencerChange && <option value="influencer">{t("Influencer")}</option>}</select>;
 }
 
 function StatusPill({ status }: { status: OrderStatus }) {

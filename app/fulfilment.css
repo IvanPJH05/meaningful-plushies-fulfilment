@@ -147,18 +147,3 @@
 @media (max-width: 760px) {
   .sales-stats { grid-template-columns: 1fr; }
 }
-
-
-.influencer-only-filter {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border: 1px solid #d5dfef;
-  border-radius: 10px;
-  background: #fff;
-  white-space: nowrap;
-  font-size: 13px;
-  cursor: pointer;
-}
-.influencer-only-filter input { width: 16px; height: 16px; margin: 0; accent-color: #4865df; }
