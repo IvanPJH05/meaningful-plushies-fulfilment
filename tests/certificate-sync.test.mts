@@ -20,7 +20,7 @@ describe("linked certificate synchronization", () => {
     const variables = mocks.graphql.mock.calls[1][2];
     expect(variables.handle).toEqual({ type: object.type, handle: object.handle });
     expect(variables.metaobject.fields).toContainEqual({ key: "birthplace", value: "" });
-    expect(variables.metaobject.fields).toContainEqual({ key: "id_name", value: "Updated name" });
+    expect(variables.metaobject.fields).toContainEqual({ key: "id_name", value: "UPDATED NAME" });
     expect(variables.metaobject.fields.some((field: { key: string }) => ["code", "created_at", "order_number", "meaningful_message"].includes(field.key))).toBe(false);
   });
   it("uses code lookup only when no session metaobject ID is linked", async () => {
@@ -63,7 +63,7 @@ describe("linked certificate synchronization", () => {
     expect(variables.metaobject.fields).toContainEqual({ key: "code", value: tt.certificateCode });
     expect(variables.metaobject.fields).toContainEqual({ key: "order_number", value: tt.orderNumber });
     expect(JSON.parse(JSON.stringify(variables)).metaobject.fields).toContainEqual({ key: "meaningful_note", value: tt.meaningfulNote });
-    expect(variables.metaobject.fields).toContainEqual({ key: "id_name", value: tt.plushName });
+    expect(variables.metaobject.fields).toContainEqual({ key: "id_name", value: tt.plushName.toUpperCase() });
   });
   it("waits for complete TikTok personalisation instead of creating an empty certificate", async () => {
     mocks.rpc.mockResolvedValueOnce({ data: { sessions: [], duplicate: false }, error: null });

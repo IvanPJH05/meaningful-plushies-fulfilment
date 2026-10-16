@@ -5,7 +5,7 @@ import { parseOrderEdit } from "./order-edit.ts";
 
 test("certificate details preserve clears without erasing absent legacy fields", () => {
   const result = certificateDetails({ plushName: "New name", plushBirthPlace: "", plushGender: "Female" });
-  assert.equal(result.idName, "New name");
+  assert.equal(result.idName, "NEW NAME");
   assert.equal(result.birthplace, "");
   assert.equal(result.gender, "Female");
   assert.equal(result.bornOn, undefined);
