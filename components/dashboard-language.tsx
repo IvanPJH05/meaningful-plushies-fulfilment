@@ -1,5 +1,6 @@
 "use client";
 import { NotificationMessage } from "./notification-bar";
+import { LoadingIndicator } from "./loading-indicator";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { dashboardLanguage, dashboardLanguageStorageKey, translator, type DashboardLanguage, type Translate, type TranslationDictionary } from "../lib/dashboard-language";
@@ -81,5 +82,5 @@ export function LanguageSwitcher() {
 
 export function WorkspaceLoading() {
   const { t } = useLanguage();
-  return <NotificationMessage><p role="status">{t("Opening workspace...")}</p></NotificationMessage>;
+  return <NotificationMessage><LoadingIndicator>{t("Opening workspace...")}</LoadingIndicator></NotificationMessage>;
 }
