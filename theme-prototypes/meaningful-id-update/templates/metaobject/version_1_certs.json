@@ -282,8 +282,8 @@
       "settings": {
         "heading": "Meaningful Note",
         "artwork": "shopify://shop_images/4_Bottom.png",
-        "font_size": 20,
-        "content_width": 680,
+        "font_size": 14,
+        "content_width": 280,
         "surround": "#ceeeff",
         "panel": "#618497",
         "ink": "#ffffff",
