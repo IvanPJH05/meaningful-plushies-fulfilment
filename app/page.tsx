@@ -1763,7 +1763,9 @@ function Home() {
   const [tikTokDetailEntries, setTikTokDetailEntries] = useState<TikTokDetailFormEntry[]>(() => [emptyTikTokDetailEntry()]);
   const [selectedTikTokJsonOrders, setSelectedTikTokJsonOrders] = useState<string[]>([]);
   const [exportingTikTokShopify, setExportingTikTokShopify] = useState(false);
-  const [notice, setNotice] = useState("");
+  const [notice, setNoticeText] = useState("");
+  const [noticeRevision, setNoticeRevision] = useState(0);
+  const setNotice = useCallback((message: string) => { setNoticeText(message); setNoticeRevision(revision => revision + 1); }, []);
   const [accountingRetryIds, setAccountingRetryIds] = useState<string[]>(() => {
     const saved = readJson<unknown>("meaningful-plushies-accounting-retry-orders");
     return Array.isArray(saved) ? saved.filter((id): id is string => typeof id === "string") : [];
@@ -5983,14 +5985,14 @@ function Home() {
     </aside>
 
     <section className="main-area">
-      <NotificationBar label={t("Notifications")} emptyLabel={t("No notifications")} />
+      <NotificationBar label={t("Notifications")} completedLabel={t("Loading complete")} />
       {(documentTask || shippingLabelImporting || refreshingOrderNumber || exportingTikTokShopify || savingAccounting || retryingAccounting || generatingPlushCharmLinks || nfcWritingOrderId || nfcUnlocking || nfcHelperStatus === "checking" || nfcHelperStatus === "starting" || loadingMoreOrderSummaries) && <NotificationMessage><LoadingIndicator>{t(documentTask || (shippingLabelImporting ? "Importing shipping labels..." : refreshingOrderNumber ? "Refreshing orders..." : nfcWritingOrderId || nfcUnlocking ? "Waiting for NFC reader..." : nfcHelperStatus === "checking" || nfcHelperStatus === "starting" ? "Connecting to NFC helper..." : savingAccounting || retryingAccounting ? "Saving..." : loadingMoreOrderSummaries ? "Loading more orders..." : "Processing..."))}</LoadingIndicator></NotificationMessage>}
       <header className="topbar"><div><p>{t("{workspace} workspace", { workspace: t(workspaceTitle) }).toUpperCase()}</p><h1>{t(viewTitle(view))}</h1></div><div className="top-actions"><LanguageSwitcher /><span className={`role-badge ${session.role}`}>{t(session.role === "admin" ? "Administrator" : session.role === "creator" ? "Creator" : "Fulfilment staff")}</span>{view === "packing_slips" && <div className="packing-print-actions"><button className="button secondary print-trigger" onClick={() => printPackingSlips("packing")}>{t("Packing slips")}</button><button className="button secondary print-trigger" onClick={() => printPackingSlips("labels")}>{t("Shipping labels")}</button><button className="button primary print-trigger" onClick={() => printPackingSlips("both")}>{t("Packing slip + label")}</button></div>}{view === "print_envelope" && <button className="button primary" disabled={!envelopePrintableNames.length || !envelopePrintSettings.fontBase64} onClick={printEnvelopes}>{t("Generate") + " "}{Math.ceil(envelopePrintableNames.length / 2)} {" " + t("A4 page")}{Math.ceil(envelopePrintableNames.length / 2) === 1 ? "" : t("s")}</button>}{view === "sales_report" && <button className="button primary" onClick={() => printView("print-sales-report")}>{t("Print / Save PDF")}</button>}{workspace === "fulfilment" && view !== "import" && <button className="button secondary" onClick={() => setView("import")}>{t("Import CSV")}</button>}</div></header>
       {databaseError && <NotificationMessage><div className="notice"><span>{t("Database connection:") + " "}{databaseError}</span></div></NotificationMessage>}
       {workspaceDataLoading && <NotificationMessage><LoadingIndicator>{t("Loading workspace data...")}</LoadingIndicator></NotificationMessage>}
       {workspaceDataError && <NotificationMessage><div className="notice" role="status"><span>{workspaceDataError}</span><button onClick={() => void loadWorkspaceSupport(true)}>{t("Retry")}</button></div></NotificationMessage>}
       {loadingOrders && <NotificationMessage><LoadingIndicator>{t("Loading shared orders from Supabase...")}</LoadingIndicator></NotificationMessage>}
-      {notice && <NotificationMessage><div className="notice"><span>{t(notice)}</span><button onClick={() => setNotice("")}>{t("x")}</button></div></NotificationMessage>}
+      {notice && <NotificationMessage key={noticeRevision}><div className="notice"><span>{t(notice)}</span></div></NotificationMessage>}
       {session.role === "admin" && accountingRetryMessage && <div className="notice" role="status"><span>{accountingRetryMessage}</span>{accountingRetryIds.length > 0 ? <button disabled={retryingAccounting} onClick={() => void retryAccountingSync()}>{retryingAccounting ? t("Retrying...") : t("Retry accounting sync")}</button> : <button onClick={() => setAccountingRetryMessage("")}>{t("x")}</button>}</div>}
 
       {workspace === "manual_orders" && view === "manual_orders_dashboard" && session.role === "admin" && <ManualOrdersWorkspacePage

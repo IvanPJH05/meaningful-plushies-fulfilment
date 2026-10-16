@@ -1,6 +1,7 @@
 // Interface copy only. Order/customer records are never translated.
 // Tuple order: Bahasa Melayu, Bahasa Indonesia.
 export const dashboardTranslations: Readonly<Record<string, readonly [string, string]>> = {
+  "Loading complete": ["Selesai dimuatkan", "Selesai memuat"],
   "Influencer orders only": ["Pesanan influencer sahaja", "Hanya pesanan influencer"],
   "Search order, customer, phone, tracking or influencer code...": ["Cari pesanan, pelanggan, telefon, penjejakan atau kod influencer...", "Cari pesanan, pelanggan, telepon, pelacakan atau kode influencer..."],
   "Active batches": ["Kelompok aktif", "Batch aktif"],
