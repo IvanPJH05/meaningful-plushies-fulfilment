@@ -1600,6 +1600,7 @@ function Home() {
   const [packingProductFilter, setPackingProductFilter] = useState<PackingProductFilter>(() => choice(storedUi.packingProductFilter, "all", packingProductFilterValues));
   const [envelopeStatusFilter, setEnvelopeStatusFilter] = useState<"all" | OrderStatus>(() => choice(storedUi.envelopeStatusFilter, "all", orderStatusFilterValues));
   const [tikTokStatusFilter, setTikTokStatusFilter] = useState<"all" | OrderStatus>(() => choice(storedUi.tikTokStatusFilter, "all", orderStatusFilterValues));
+  const [influencerOnly, setInfluencerOnly] = useState(false);
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>(() => choice(storedUi.sourceFilter, "all", sourceFilterValues));
   const [dashboardStatus, setDashboardStatus] = useState<OrderStatus | "total">(() => choice(storedUi.dashboardStatus, "packed", dashboardMetricValues));
   const [dashboardStatusTwo, setDashboardStatusTwo] = useState<OrderStatus | "total">(() => choice(storedUi.dashboardStatusTwo, "issue", dashboardMetricValues));
@@ -2255,10 +2256,14 @@ function Home() {
     "orderNumber",
     "desc",
   ), [orders, manualOrders, envelopeStatusFilter, sourceFilter]);
+  const influencerOrderIds = useMemo(() => new Set(orders
+    .filter((order) => isInfluencerFulfilmentOrder(order, creatorProfiles, freeCreatorSampleCodes))
+    .map((order) => order.id)), [orders, creatorProfiles, freeCreatorSampleCodes]);
   const filtered = useMemo(() => {
     const source = view === "fulfilled" ? orders.filter((order) => order.status === "shipped") : orders;
     const search = query.trim().toLowerCase();
     const matching = source
+      .filter((order) => view !== "orders" || !influencerOnly || influencerOrderIds.has(order.id))
       .filter((order) => orderSourceMatches(order, sourceFilter, manualOrders))
       .filter((order) => statusFilter === "all" || order.status === statusFilter)
       .filter((order) => {
@@ -2266,10 +2271,10 @@ function Home() {
         const date = dateKey(order.orderDate);
         return (!fulfilmentStartDate || date >= fulfilmentStartDate) && (!fulfilmentEndDate || date <= fulfilmentEndDate);
       })
-      .filter((order) => !search || [order.orderNumber, compactOrderLabel(order), order.customerName, order.phone, order.address, order.email, order.trackingNumber, order.plushName, order.product, order.character, order.shippingMethod]
+      .filter((order) => !search || [order.orderNumber, compactOrderLabel(order), order.customerName, order.phone, order.address, order.email, order.trackingNumber, order.plushName, order.product, order.character, order.shippingMethod, order.discountCodeUsed, ...(order.discountCodes ?? [])]
         .join(" ").toLowerCase().includes(search));
     return sortOrderRecords(matching, sortKey, sortDirection);
-  }, [orders, manualOrders, query, sourceFilter, statusFilter, view, sortKey, sortDirection, fulfilmentStartDate, fulfilmentEndDate]);
+  }, [orders, manualOrders, query, sourceFilter, statusFilter, view, sortKey, sortDirection, fulfilmentStartDate, fulfilmentEndDate, influencerOnly, influencerOrderIds]);
   const plushCharmOrders = useMemo(() => {
     const search = query.trim().toLowerCase();
     const matching = orders
@@ -5932,7 +5937,7 @@ function Home() {
     const columns = tableLayouts[tableView].filter(column => column.visible);
     return <VirtualOrderTable items={filtered} className={`orders-table adaptive-order-table compact-order-table ${tableView === "fulfilment" ? "fulfilment-table" : ""}`} minWidth={38 + columns.reduce((width, column) => width + column.width, 0)} columnCount={columns.length + 1}
       label={t(tableView === "fulfilment" ? "Fulfilment" : "Orders")}
-      resetKey={JSON.stringify([view, query, sourceFilter, statusFilter, sortKey, sortDirection, fulfilmentStartDate, fulfilmentEndDate])}
+      resetKey={JSON.stringify([view, query, sourceFilter, statusFilter, sortKey, sortDirection, fulfilmentStartDate, fulfilmentEndDate, influencerOnly])}
       columns={<colgroup><col style={{ width: 38 }} />{columns.map(column => <col key={column.key} style={{ width: column.width }} />)}</colgroup>}
       header={<tr><th className="order-col-select"><input type="checkbox" aria-label={t("Select visible orders")} checked={Boolean(filtered.length) && filtered.every(order => selectedOrders.includes(order.id))} onChange={event => setSelectedOrders(event.target.checked ? filtered.map(order => order.id) : [])} /></th>{columns.map(column => <th key={column.key} className={`order-col-${column.key}`}>{t(tableColumns[column.key][0])}</th>)}</tr>}
       renderRow={(order, index) => <OrderTableRow key={order.id} rowIndex={index + 2} selected={selectedOrders.includes(order.id)} className={[isExpressShipping(order) ? "express-shipping-row" : "", isPlushCharm(order) ? "plush-charm-row" : ""].filter(Boolean).join(" ")} hint={t("Click to select. Double-click to view.")} onToggle={() => toggleOrderSelection(order.id)} onOpen={() => setSelectedId(order.id)}>
@@ -6254,7 +6259,7 @@ function Home() {
         {view !== "fulfilment" && <section className="card orders-card adaptive-orders-card">
           <div className="table-layout-toolbar"><button className="button secondary small" onClick={() => setLayoutEditorView("orders")}>{t("Layout settings")}</button></div>
           <div className={`toolbar ${view === "orders" ? "orders-toolbar" : ""}`}>
-            <div className="toolbar-row toolbar-filter-row"><OrderSearch value={query} onChange={setQuery} placeholder={t("Search order, customer, phone or tracking...")} /><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /></div>
+            <div className="toolbar-row toolbar-filter-row"><OrderSearch value={query} onChange={setQuery} placeholder={t("Search order, customer, phone, tracking or influencer code...")} /><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} />{view === "orders" && <label className="influencer-only-filter"><input type="checkbox" checked={influencerOnly} onChange={(event) => setInfluencerOnly(event.target.checked)} />{t("Influencer orders only")}</label>}<StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /></div>
             <div className="toolbar-row toolbar-action-row"><button className="button primary" disabled={!batchSelectionReady} title={t("Select up to 200 New Order or Uploading Audio orders.")} onClick={() => setAssigningBatch(true)}>{t("Move to Batch Fulfilment")}</button>{view === "orders" && <button className="button secondary" disabled={!selectedShopifyOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshShopifyOrders}>{refreshingOrderNumber === "bulk" ? t("Refreshing...") : `Refresh ${selectedShopifyOrderCount} Shopify`}</button>}{view === "orders" && <button className="button secondary" disabled={!selectedTikTokOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshTikTokOrders}>{refreshingOrderNumber === "tiktok-bulk" ? t("Syncing...") : `Sync ${selectedTikTokOrderCount} TikTok`}</button>}{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>{t("Move") + " "}{selectedOrders.length} {" " + t("to next status")}</button>}{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>{t("Delete")}</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>{t("Export CSV")}</button>}</div>
           </div>
           <div className="table-scroll">{compactTable("orders")}{!filtered.length && <div className="empty"><strong>{t("No orders found")}</strong><p>{t("Try another search or status filter.")}</p></div>}</div>
