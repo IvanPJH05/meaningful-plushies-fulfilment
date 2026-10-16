@@ -1754,7 +1754,7 @@ body.print-sales-report .report-table th,
 .queue-toolbar .source-filter-select,.queue-toolbar .sort-controls,.queue-toolbar .combined-sort-select { width: 100%; min-width: 0; }
 .queue-toolbar .queue-status-row { width: 100%; }
 .adaptive-orders-card .queue-toolbar .status-filter-pills { flex: 1; width: 100%; max-width: none; min-width: 0; }
-.queue-toolbar .status-filter-pills button { flex: 1 0 auto; }
+.queue-toolbar .status-filter-pills button { flex: 1 0 auto; font-size: 14px; line-height: 1.35; padding: 11px 14px; }
 .adaptive-orders-card .queue-toolbar .toolbar-action-row { justify-content: flex-start; }
 .queue-toolbar .toolbar-action-row .primary { order: 0; }
 .queue-toolbar .toolbar-action-row .danger { order: 1; }
