@@ -33,9 +33,10 @@ export async function GET(request: Request) {
       if (!data) throw new Error("BATCH_NOT_FOUND");
       return detailResponse(data);
     }
-    const { data, error } = await db.rpc("list_fulfilment_batches");
+    const { data: active, error } = await db.from("fulfilment_batches").select("id,number,stage,version,created_at,completed_at,fulfilment_batch_orders(nfc_written_at)").neq("stage", "complete").order("number", { ascending: false }).limit(100);
     if (error) throw new Error(error.message);
-    return NextResponse.json({ batches: data ?? [] }, { headers });
+    const batches = (active ?? []).map(({ fulfilment_batch_orders: members, ...batch }) => ({ ...batch, orderCount: members.length, writtenCount: members.filter(member => member.nfc_written_at).length }));
+    return NextResponse.json({ batches }, { headers });
   } catch (error) { return failure(error); }
 }
 export async function POST(request: Request) {
