@@ -1746,3 +1746,20 @@ body.print-sales-report .report-table th,
 .notification-messages>.batch-error{color:#b42318}
 @media(max-width:760px){.notification-bar{height:88px;gap:8px;padding:10px;flex-direction:column}.notification-messages{width:100%;max-height:44px}}
 @media print{.notification-bar{display:none!important}}
+
+/* Shared Orders / Fulfilment queue toolbar. */
+.adaptive-orders-card .queue-toolbar { display: flex; flex-direction: column; align-items: stretch; gap: 12px; }
+.queue-toolbar .toolbar-filter-row { display: grid; grid-template-columns: minmax(0, 1fr) 160px 230px; gap: 12px; width: 100%; }
+.orders-card .queue-toolbar .search { width: 100%; min-width: 0; max-width: none; }
+.queue-toolbar .source-filter-select,.queue-toolbar .sort-controls,.queue-toolbar .combined-sort-select { width: 100%; min-width: 0; }
+.queue-toolbar .queue-status-row { width: 100%; }
+.adaptive-orders-card .queue-toolbar .status-filter-pills { flex: 1; width: 100%; max-width: none; min-width: 0; }
+.queue-toolbar .status-filter-pills button { flex: 1 0 auto; }
+.adaptive-orders-card .queue-toolbar .toolbar-action-row { justify-content: flex-start; }
+.queue-toolbar .toolbar-action-row .primary { order: 0; }
+.queue-toolbar .toolbar-action-row .danger { order: 1; }
+.queue-toolbar .toolbar-action-row .secondary { order: 2; }
+@media (max-width: 760px) {
+  .queue-toolbar .toolbar-filter-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .queue-toolbar .toolbar-filter-row .search { grid-column: 1 / -1; }
+}

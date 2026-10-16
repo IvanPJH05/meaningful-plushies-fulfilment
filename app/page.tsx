@@ -20,6 +20,7 @@ import { parseBankStatementCsv } from "../lib/bank-statements";
 import { buildSalesReportRows, isCreatorFreeOrder, isCreatorSampleOrder, manualOrderFor, summarizeSales, type SalesReportRow, type SalesSummary } from "../lib/sales";
 import { stockCharacters, summarizeStock } from "../lib/stock";
 import { mediaFileExtension, voiceBackupFileName } from "../lib/voice-file-name";
+import { isRemovedFromQueue } from "../lib/order-queue";
 import { productionPrintNextStatus, shouldAdvanceAfterProductionPrint } from "../lib/fulfilment-transitions";
 import { mergeRefreshedOrder } from "../lib/order-refresh";
 import { canJoinBatch } from "../lib/fulfilment-batches";
@@ -32,7 +33,6 @@ import {
   deleteContentPlanItem,
   deleteDashboardAccount,
   deleteCreatorFreeSample,
-  deleteSharedOrders,
   deleteAccountingDocument,
   deleteAccountingTransaction,
   deleteAccountingBankStatementLine,
@@ -1601,6 +1601,7 @@ function Home() {
   const [envelopeStatusFilter, setEnvelopeStatusFilter] = useState<"all" | OrderStatus>(() => choice(storedUi.envelopeStatusFilter, "all", orderStatusFilterValues));
   const [tikTokStatusFilter, setTikTokStatusFilter] = useState<"all" | OrderStatus>(() => choice(storedUi.tikTokStatusFilter, "all", orderStatusFilterValues));
   const [influencerOnly, setInfluencerOnly] = useState(false);
+  const [removingOrders, setRemovingOrders] = useState(false);
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>(() => choice(storedUi.sourceFilter, "all", sourceFilterValues));
   const [dashboardStatus, setDashboardStatus] = useState<OrderStatus | "total">(() => choice(storedUi.dashboardStatus, "packed", dashboardMetricValues));
   const [dashboardStatusTwo, setDashboardStatusTwo] = useState<OrderStatus | "total">(() => choice(storedUi.dashboardStatusTwo, "issue", dashboardMetricValues));
@@ -2265,7 +2266,7 @@ function Home() {
     const matching = source
       .filter((order) => !["orders", "fulfilment"].includes(view) || !influencerOnly || influencerOrderIds.has(order.id))
       .filter((order) => orderSourceMatches(order, sourceFilter, manualOrders))
-      .filter((order) => statusFilter === "all" || order.status === statusFilter)
+      .filter((order) => statusFilter === "all" ? !isRemovedFromQueue(order) : order.status === statusFilter)
       .filter((order) => {
         if (view !== "orders" || (!fulfilmentStartDate && !fulfilmentEndDate)) return true;
         const date = dateKey(order.orderDate);
@@ -3533,15 +3534,24 @@ function Home() {
   }
 
   async function deleteOrders(orderIds: string[]) {
-    const deleting = orders.filter((order) => orderIds.includes(order.id));
-    if (!deleting.length || !window.confirm(`Delete ${deleting.length} selected order${deleting.length === 1 ? "" : "s"}? This cannot be undone.`)) return;
-    try { await deleteSharedOrders(orderIds); }
-    catch (error) { setNotice(error instanceof Error ? error.message : "Orders could not be deleted."); return; }
-    setOrders((current) => current.filter((order) => !orderIds.includes(order.id)));
-    setSelectedOrders([]);
-    setSelectedId(null);
-    await Promise.all(deleting.map((order) => logActivity("Order deleted", `${order.customerName || "Customer"} - ${order.product || "Order"}.`, order.orderNumber)));
-    setNotice(`${deleting.length} order${deleting.length === 1 ? "" : "s"} deleted.`);
+    if (removingOrders || currentSession.role !== "admin") return;
+    const removing = orders.filter((order) => orderIds.includes(order.id));
+    if (!removing.length || !window.confirm(`Move ${removing.length} selected order${removing.length === 1 ? "" : "s"} to Issues with the note "deleted order"? You can find them in Issues.`)) return;
+    setRemovingOrders(true);
+    try {
+      const transitions = removing.filter(order => order.status !== "issue")
+        .map(order => ({ order, toStatus: "issue" as const, note: "deleted order" }));
+      await persistOrderTransitions(transitions);
+      for (const order of removing.filter(order => order.status === "issue" && !isRemovedFromQueue(order))) {
+        await updateOrder(order.id, { internalNotes: [order.internalNotes, "deleted order"].filter(Boolean).join("\n") }, order.updatedAt);
+      }
+      setSelectedOrders([]);
+      setSelectedId(null);
+      setNotice(`${removing.length} order${removing.length === 1 ? "" : "s"} moved to Issues with the note "deleted order".`);
+    } catch (error) {
+      setNotice(readableError(error, "Orders could not be moved to Issues. Refresh and try again."));
+      await loadSharedData();
+    } finally { setRemovingOrders(false); }
   }
 
   async function readFile(file: File | undefined, target: "orders" | "metafields" | "tiktok") {
@@ -6258,9 +6268,10 @@ function Home() {
 
         {view !== "fulfilment" && <section className="card orders-card adaptive-orders-card">
           <div className="table-layout-toolbar"><button className="button secondary small" onClick={() => setLayoutEditorView("orders")}>{t("Layout settings")}</button></div>
-          <div className={`toolbar ${view === "orders" ? "orders-toolbar" : ""}`}>
-            <div className="toolbar-row toolbar-filter-row"><OrderSearch value={query} onChange={setQuery} placeholder={t("Search order, customer, phone, tracking or influencer code...")} /><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} influencerOnly={view === "orders" && influencerOnly} onInfluencerChange={view === "orders" ? setInfluencerOnly : undefined} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /></div>
-            <div className="toolbar-row toolbar-action-row"><button className="button primary" disabled={!batchSelectionReady} title={t("Select up to 200 New Order or Uploading Audio orders.")} onClick={() => setAssigningBatch(true)}>{t("Move to Batch Fulfilment")}</button>{view === "orders" && <button className="button secondary" disabled={!selectedShopifyOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshShopifyOrders}>{refreshingOrderNumber === "bulk" ? t("Refreshing...") : `Refresh ${selectedShopifyOrderCount} Shopify`}</button>}{view === "orders" && <button className="button secondary" disabled={!selectedTikTokOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshTikTokOrders}>{refreshingOrderNumber === "tiktok-bulk" ? t("Syncing...") : `Sync ${selectedTikTokOrderCount} TikTok`}</button>}{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>{t("Move") + " "}{selectedOrders.length} {" " + t("to next status")}</button>}{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>{t("Delete")}</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>{t("Export CSV")}</button>}</div>
+          <div className="toolbar queue-toolbar">
+            <div className="toolbar-row toolbar-filter-row"><OrderSearch value={query} onChange={setQuery} placeholder={t("Search order, customer, phone, tracking or influencer code...")} /><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} influencerOnly={view === "orders" && influencerOnly} onInfluencerChange={view === "orders" ? setInfluencerOnly : undefined} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /></div>
+            <div className="toolbar-row queue-status-row"><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /></div>
+            <div className="toolbar-row toolbar-action-row"><button className="button primary" disabled={!batchSelectionReady} title={t("Select up to 200 New Order or Uploading Audio orders.")} onClick={() => setAssigningBatch(true)}>{t("Move to Batch Fulfilment")}</button>{view === "orders" && <button className="button secondary" disabled={!selectedShopifyOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshShopifyOrders}>{refreshingOrderNumber === "bulk" ? t("Refreshing...") : `Refresh ${selectedShopifyOrderCount} Shopify`}</button>}{view === "orders" && <button className="button secondary" disabled={!selectedTikTokOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshTikTokOrders}>{refreshingOrderNumber === "tiktok-bulk" ? t("Syncing...") : `Sync ${selectedTikTokOrderCount} TikTok`}</button>}{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>{t("Move") + " "}{selectedOrders.length} {" " + t("to next status")}</button>}{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length || removingOrders} onClick={() => deleteOrders(selectedOrders)}>{t("Delete")}</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>{t("Export CSV")}</button>}</div>
           </div>
           <div className="table-scroll">{compactTable("orders")}{!filtered.length && <div className="empty"><strong>{t("No orders found")}</strong><p>{t("Try another search or status filter.")}</p></div>}</div>
           <div className="table-footer">{t("Showing") + " "}{filtered.length} {" " + t("of") + " "}{view === "fulfilled" ? orders.filter((order) => order.status === "shipped").length : orders.length} {" " + t("orders")}</div>
@@ -6270,7 +6281,11 @@ function Home() {
         {assigningBatch && <BatchAssignment token={session.token} orderIds={selectedOrders} onClose={() => setAssigningBatch(false)} onAssigned={id => { setAssigningBatch(false); setSelectedOrders([]); setActiveBatchId(id); setView("batch_fulfilment"); void loadSharedData(); }} />}
         {view === "fulfilment" && <section className="card orders-card adaptive-orders-card">
           <div className="table-layout-toolbar"><button className="button secondary small" onClick={() => setLayoutEditorView("fulfilment")}>{t("Layout settings")}</button></div>
-          <div className="toolbar"><OrderSearch value={query} onChange={setQuery} placeholder={t("Search order, plush name, character, customer or phone...")} /><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} influencerOnly={influencerOnly} onInfluencerChange={setInfluencerOnly} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /><button className="button primary" disabled={!batchSelectionReady} title={t("Select up to 200 New Order or Uploading Audio orders.")} onClick={() => setAssigningBatch(true)}>{t("Move to Batch Fulfilment")}</button><button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>{t("Move") + " "}{selectedOrders.length} {" " + t("to next status")}</button>{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>{t("Delete")}</button>}</div>
+          <div className="toolbar queue-toolbar">
+            <div className="toolbar-row toolbar-filter-row"><OrderSearch value={query} onChange={setQuery} placeholder={t("Search order, customer, phone, tracking or influencer code...")} /><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} influencerOnly={influencerOnly} onInfluencerChange={setInfluencerOnly} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /></div>
+            <div className="toolbar-row queue-status-row"><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /></div>
+            <div className="toolbar-row toolbar-action-row"><button className="button primary" disabled={!batchSelectionReady} title={t("Select up to 200 New Order or Uploading Audio orders.")} onClick={() => setAssigningBatch(true)}>{t("Move to Batch Fulfilment")}</button><button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>{t("Move") + " "}{selectedOrders.length} {" " + t("to next status")}</button>{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length || removingOrders} onClick={() => deleteOrders(selectedOrders)}>{t("Delete")}</button>}</div>
+          </div>
           <div className={`nfc-helper-panel ${nfcHelperStatus}`}>
             <div>
               <strong>{t("Windows NFC Helper")}</strong>
