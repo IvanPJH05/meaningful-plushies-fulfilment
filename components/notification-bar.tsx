@@ -7,7 +7,7 @@ import { LoadingIndicator } from "./loading-indicator";
 type Toast = { id: string; content: ReactNode; loading: boolean; complete: boolean; revision: number };
 type Notifications = { messages: Toast[]; show: (id: string, content: ReactNode, loading: boolean) => void; finish: (id: string) => void; dismiss: (id: string) => void };
 const NotificationContext = createContext<Notifications | null>(null);
-const lifetime = 5000;
+const lifetime = 2500;
 
 function messageSignature(node: ReactNode): { text: string; loading: boolean } {
   let text = "", loading = false;
