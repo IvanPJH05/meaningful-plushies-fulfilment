@@ -1,0 +1,61 @@
+{% liquid
+  assign meaningful_note = metaobject.meaningful_note.value | default: '' | strip
+  if request.design_mode and section.settings.preview_note != blank
+    assign meaningful_note = section.settings.preview_note | strip
+  endif
+  assign note_length = meaningful_note | size
+  assign note_size = 'standard'
+  if note_length < 180
+    assign note_size = 'short'
+  elsif note_length > 600
+    assign note_size = 'long'
+  endif
+  assign artwork = section.settings.artwork | default: images['4_Bottom.png']
+%}
+
+<section class="certificate-fluid-note certificate-fluid-note--{{ note_size }}" aria-label="{{ section.settings.heading | escape }}" style="--certificate-note-surround: {{ section.settings.surround }}; --certificate-note-panel: {{ section.settings.panel }}; --certificate-note-ink: {{ section.settings.ink }}; --certificate-note-font-size: {{ section.settings.font_size }}px; --certificate-note-width: {{ section.settings.content_width }}px;" data-certificate-note {{ section.shopify_attributes }}>
+  <div class="certificate-fluid-note__panel">
+  {% if artwork != blank %}
+    <div class="certificate-fluid-note__divider" aria-hidden="true">
+      {{ artwork | image_url: width: 2000 | image_tag: widths: '400, 800, 1200, 1600, 2000', sizes: '100vw', loading: 'lazy', alt: '' }}
+    </div>
+  {% endif %}
+  {% if meaningful_note != blank %}
+    <div class="certificate-fluid-note__body">
+      <div class="certificate-fluid-note__content">
+        <p class="certificate-fluid-note__text"><strong>{{ section.settings.heading | escape }}: </strong>{{ meaningful_note | escape }}</p>
+      </div>
+    </div>
+  {% endif %}
+  </div>
+</section>
+
+{% stylesheet %}
+  .certificate-fluid-note { width: 100%; padding-bottom: clamp(8px, 2vw, 24px); background: var(--certificate-note-surround, #ceeeff); color: var(--certificate-note-ink, #fff); }
+  .certificate-fluid-note__panel { margin-inline: 2.8%; padding-bottom: clamp(8px, 1vw, 18px); background: var(--certificate-note-panel, #618497); border-radius: 0 0 clamp(6px, 1vw, 14px) clamp(6px, 1vw, 14px); overflow: hidden; }
+  .certificate-fluid-note__divider { position: relative; overflow: hidden; width: 100%; aspect-ratio: 1132.8 / 80; }
+  .certificate-fluid-note__divider img { position: absolute; display: block; top: 0; left: -2.9661%; width: 105.9322%; max-width: none; height: auto; clip-path: inset(0 11% 0 11%); }
+  .certificate-fluid-note__body { padding: 8px 18px 12px; }
+  .certificate-fluid-note__content { max-width: var(--certificate-note-width, 280px); margin-inline: auto; }
+  .certificate-fluid-note__text { margin: 0; color: inherit; font-family: inherit; font-size: var(--certificate-note-font-size, 14px); font-weight: 700; line-height: 1.25; letter-spacing: normal; text-transform: none; text-align: center; white-space: pre-wrap; overflow-wrap: anywhere; word-break: normal; }
+  .certificate-fluid-note__text strong { font: inherit; }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Meaningful note (fluid)",
+  "settings": [
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Meaningful Note" },
+    { "type": "image_picker", "id": "artwork", "label": "Certificate bottom artwork", "info": "Use the original 4_Bottom artwork for its decorative divider. The panel and rounded bottom are drawn continuously in CSS." },
+    { "type": "range", "id": "font_size", "label": "Text size", "min": 12, "max": 24, "step": 1, "default": 14, "unit": "px" },
+    { "type": "range", "id": "content_width", "label": "Maximum text width", "min": 240, "max": 1000, "step": 20, "default": 280, "unit": "px" },
+    { "type": "color", "id": "surround", "label": "Outside background", "default": "#ceeeff" },
+    { "type": "color", "id": "panel", "label": "Note background", "default": "#618497" },
+    { "type": "color", "id": "ink", "label": "Text colour", "default": "#ffffff" },
+    { "type": "textarea", "id": "preview_note", "label": "Preview note (editor only)", "info": "Try different note lengths here without changing saved certificates. Leave blank to show the real note." }
+  ],
+  "presets": [{ "name": "Meaningful note (fluid)" }]
+}
+{% endschema %}
+
+
