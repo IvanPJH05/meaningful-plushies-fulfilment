@@ -6,6 +6,8 @@ import { LoadingIndicator } from "../components/loading-indicator";
 import "./settings.css";
 
 import dynamic from "next/dynamic";
+import { isUgcOrder } from "../lib/marketing-ugc";
+const MarketingUgcWorkspace = dynamic(() => import("../components/marketing-ugc-workspace").then(module => module.MarketingUgcWorkspace), { loading: () => <WorkspaceLoading /> });
 import { compactOrderLabel, normalizeTableLayout, tableColumns, type TableColumn, type TableLayouts, type TableView } from "../lib/table-layout";
 const TableLayoutEditor = dynamic(() => import("../components/table-layout-editor"));
 import { OrderTableRow } from "../components/order-table-row";
@@ -113,6 +115,7 @@ import { ManualOrderIntakeRecords } from "../components/manual-order-intake-reco
 type Session = DashboardSession;
 const CreatorProfilesContext = createContext<CreatorProfile[]>([]);
 const FreeCreatorSampleCodesContext = createContext<string[]>([]);
+const UgcCodesContext = createContext<string[]>([]);
 type View =
   | "orders" | "fulfilment" | "packing_slips" | "print_envelope" | "nfc_card" | "import" | "tiktok_shop" | "fulfilled" | "history" | "settings" | "meta_capi" | "stock" | "sales_report"
   | "accounting_dashboard" | "accounting_documents" | "accounting_transactions" | "accounting_csv_import" | "accounting_profit_loss" | "accounting_balance_sheet"
@@ -123,8 +126,8 @@ type View =
   | "monthly_journal_inbox" | "monthly_journal_import" | "monthly_journal_shopee" | "monthly_journal_shortcuts" | "monthly_journal_source_documents" | "monthly_journal_general_journal" | "monthly_journal_reports" | "monthly_journal_accounts" | "monthly_journal_account_activity"
   | "content_dashboard" | "content_plan" | "content_ideas"
   | "manual_orders_dashboard" | "manual_orders_preorders" | "manual_orders_leads"
-  | "creator_dashboard" | "creator_accounts" | "creator_sales" | "creator_commissions" | "creator_payouts" | "creator_analytics" | "creator_free_samples" | "plush_charm_orders" | "shopify_app" | "audio_scanner" | "batch_fulfilment";
-type Workspace = "batch_fulfilment" | "fulfilment" | "manual_orders" | "accounting" | "formal_accounting" | "monthly_journal" | "creator" | "inventory" | "reports" | "content" | "settings" | "shopify_app" | "audio_scanner";
+  | "marketing_ugc" | "creator_dashboard" | "creator_accounts" | "creator_sales" | "creator_commissions" | "creator_payouts" | "creator_analytics" | "creator_free_samples" | "plush_charm_orders" | "shopify_app" | "audio_scanner" | "batch_fulfilment";
+type Workspace = "marketing" | "batch_fulfilment" | "fulfilment" | "manual_orders" | "accounting" | "formal_accounting" | "monthly_journal" | "creator" | "inventory" | "reports" | "content" | "settings" | "shopify_app" | "audio_scanner";
 type SalesRange = "active" | "today" | "7d" | "30d" | "lifetime";
 type SortKey = "orderNumber" | "importedAt" | "updatedAt";
 type SortDirection = "asc" | "desc";
@@ -663,9 +666,10 @@ const manualOrderViews: readonly View[] = ["manual_orders_dashboard", "manual_or
 const manualOrderCharacters = ["Billy", "Tootsie", "Hunnie", "Dragon Warrior"] as const;
 const creatorViews: readonly View[] = ["creator_dashboard", "creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
 const creatorAdminViews: readonly View[] = ["creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
-const dashboardViews: readonly View[] = ["batch_fulfilment", ...fulfilmentViews, "history", "settings", "meta_capi", "stock", "sales_report", "plush_charm_orders", "shopify_app", "audio_scanner", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...creatorViews];
-const adminOnlyViews = new Set<View>(["history", "settings", "meta_capi", "stock", "sales_report", "shopify_app", "audio_scanner", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...creatorAdminViews]);
+const dashboardViews: readonly View[] = ["marketing_ugc","batch_fulfilment", ...fulfilmentViews, "history", "settings", "meta_capi", "stock", "sales_report", "plush_charm_orders", "shopify_app", "audio_scanner", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...creatorViews];
+const adminOnlyViews = new Set<View>(["marketing_ugc","history", "settings", "meta_capi", "stock", "sales_report", "shopify_app", "audio_scanner", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...creatorAdminViews]);
 const workspaceDefaultViews: Record<Workspace, View> = {
+  marketing: "marketing_ugc",
   batch_fulfilment: "batch_fulfilment",
   fulfilment: "orders",
   manual_orders: "manual_orders_dashboard",
@@ -681,6 +685,7 @@ const workspaceDefaultViews: Record<Workspace, View> = {
   audio_scanner: "audio_scanner",
 };
 const workspaceLabels: Record<Workspace, string> = {
+  marketing: "Marketing",
   batch_fulfilment: "Batch Fulfilment",
   fulfilment: "Fulfilment",
   manual_orders: "Manual Orders",
@@ -1343,6 +1348,8 @@ function OrderMarkers({ order, manualOrders }: { order: Order; manualOrders: Man
   const creatorProfiles = useContext(CreatorProfilesContext);
   const freeCreatorSampleCodes = useContext(FreeCreatorSampleCodesContext);
   const source = fulfilmentSource(order, manualOrders);
+  const ugcCodes = useContext(UgcCodesContext);
+  if (isUgcOrder(order, ugcCodes)) return <span className="order-marker ugc">UGC</span>;
   const unrecordedManualOrder = source === "shopify" && order.totalAmount === 0 && !isInfluencerFulfilmentOrder(order, creatorProfiles, freeCreatorSampleCodes);
   if (isInfluencerFulfilmentOrder(order, creatorProfiles, freeCreatorSampleCodes)) return <span className="order-marker influencer">{t("Influencer")}</span>;
   return <>
@@ -1482,6 +1489,7 @@ function permittedView(value: unknown, role?: UserRole) {
 }
 
 function workspaceForView(view: View): Workspace {
+  if (view === "marketing_ugc") return "marketing";
   if (view === "batch_fulfilment") return "batch_fulfilment";
   if (creatorViews.includes(view)) return "creator";
   if (contentViews.includes(view)) return "content";
@@ -1505,6 +1513,7 @@ function navItemsForWorkspace(workspace: Workspace, role: UserRole): NavItem[] {
   if (workspace === "formal_accounting") return formalAccountingNavItems;
   if (workspace === "monthly_journal") return monthlyJournalNavItems;
   if (workspace === "creator") return creatorAdminNavItems;
+  if (workspace === "marketing") return [{ view: "marketing_ugc", label: "Customer UGC", icon: "report" }];
   if (workspace === "inventory") return inventoryNavItems;
   if (workspace === "reports") return reportsNavItems;
   if (workspace === "content") return contentNavItems;
@@ -1517,6 +1526,7 @@ function navItemsForWorkspace(workspace: Workspace, role: UserRole): NavItem[] {
 
 function viewTitle(view: View) {
   const titleOverrides: Partial<Record<View, string>> = {
+    marketing_ugc: "Customer UGC",
     batch_fulfilment: "Batch Fulfilment",
     orders: "Orders Dashboard",
     import: "Import Shopify Orders",
@@ -1749,6 +1759,7 @@ function Home() {
   const [newAccount, setNewAccount] = useState({ username: "", displayName: "", role: "staff" as UserRole, password: "" });
   const [creatorProfiles, setCreatorProfiles] = useState<CreatorProfile[]>([]);
   const [freeCreatorSampleCodes, setFreeCreatorSampleCodes] = useState<string[]>([]);
+  const [ugcCodes, setUgcCodes] = useState<string[]>([]);
   const [creatorCommissions, setCreatorCommissions] = useState<CreatorCommission[]>([]);
   const [creatorPayouts, setCreatorPayouts] = useState<CreatorPayout[]>([]);
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
@@ -1856,7 +1867,7 @@ function Home() {
       const sharedSamples = session.role === "admin"
         ? (await syncLocalFreeCreatorSamples(session.token)).samples
         : [];
-      const sharedCodes = await fetchCreatorFreeSampleCodes(session.token);
+      const sharedCodes = await fetchCreatorFreeSampleCodes(session.token, setUgcCodes);
       if (cancelled) return;
       if (session.role === "admin") writeJson(freeCreatorSamplesStorageKey, sharedSamples);
       setFreeCreatorSampleCodes(sharedCodes.map((code) => code.trim().toUpperCase()).filter(Boolean));
@@ -1870,7 +1881,7 @@ function Home() {
   useEffect(() => {
     if (!session || !supabaseConfigured || (session.role !== "admin" && session.role !== "staff")) return;
     const refreshSharedCodes = () => {
-      void fetchCreatorFreeSampleCodes(session.token)
+      void fetchCreatorFreeSampleCodes(session.token, setUgcCodes)
         .then((codes) => setFreeCreatorSampleCodes(codes.map((code) => code.trim().toUpperCase()).filter(Boolean)))
         .catch(() => undefined);
     };
@@ -2041,7 +2052,7 @@ function Home() {
       catch (error) { setDatabaseError(readableError(error, "Order refresh failed. Your displayed data is kept.")); }
     }
     if (changedTables.includes("creator_free_samples") && (dataRole === "admin" || dataRole === "staff")) {
-      void fetchCreatorFreeSampleCodes(dataToken).then((codes) => setFreeCreatorSampleCodes(codes.map((code) => code.trim().toUpperCase()).filter(Boolean)))
+      void fetchCreatorFreeSampleCodes(dataToken, setUgcCodes).then((codes) => setFreeCreatorSampleCodes(codes.map((code) => code.trim().toUpperCase()).filter(Boolean)))
         .catch(() => setNotice("Creator sample codes could not refresh. Please retry."));
     }
     await loadWorkspaceSupport();
@@ -5959,12 +5970,12 @@ function Home() {
 
   const workspace = workspaceForView(view);
   const availableWorkspaces: Workspace[] = session.role === "admin"
-    ? ["fulfilment", "batch_fulfilment", "manual_orders", "accounting", "formal_accounting", "monthly_journal", "creator", "inventory", "reports", "content", "shopify_app", "audio_scanner", "settings"]
+    ? ["fulfilment", "batch_fulfilment", "manual_orders", "accounting", "formal_accounting", "monthly_journal", "creator", "marketing", "inventory", "reports", "content", "shopify_app", "audio_scanner", "settings"]
     : session.role === "creator" ? ["creator"] : ["fulfilment", "batch_fulfilment", "shopify_app"];
   const sidebarNavItems = navItemsForWorkspace(workspace, session.role);
   const workspaceTitle = workspaceLabels[workspace];
 
-  return <CreatorProfilesContext.Provider value={creatorProfiles}><FreeCreatorSampleCodesContext.Provider value={freeCreatorSampleCodes}><main className="app-shell">
+  return <CreatorProfilesContext.Provider value={creatorProfiles}><FreeCreatorSampleCodesContext.Provider value={freeCreatorSampleCodes}><UgcCodesContext.Provider value={ugcCodes}><main className="app-shell">
     <aside className="side-nav">
       <div className="workspace-switcher">
         <div className="logo"><span>{t("MP")}</span><div>{t("Meaningful Plushies")}<small>{t(workspaceTitle)}</small></div></div>
@@ -6163,6 +6174,7 @@ function Home() {
       {workspace === "batch_fulfilment" && <BatchFulfilmentWorkspace token={session.token} initialBatchId={activeBatchId} onOrdersChanged={() => loadSharedData()} onPrint={batchOrders => printPackingSlips("both", batchOrders)} onEnvelopes={printEnvelopes} onNfc={writeCertificateLinkToNfc} onStartNfc={startNfcHelper} certificateFor={certificateLink} onOpenOrder={async order => { const full = await fetchSharedOrderById(order.id); if (!full) throw new Error("Order could not be loaded. Try again."); setBatchSelectedOrder(full); hydratedOrderIds.current.add(full.id); setSelectedId(full.id); }} />}
       {workspace === "audio_scanner" && session.role === "admin" && <AudioScannerWorkspace orders={orders} audioSourceFor={meaningfulMessageLink} />}
 
+      {workspace === "marketing" && session.role === "admin" && <MarketingUgcWorkspace token={session.token} orders={orders} />}
       {workspace === "creator" && (session.role === "admin" || session.role === "creator") && <CreatorProgramWorkspacePage
         view={view}
         session={session}
@@ -6488,7 +6500,7 @@ function Home() {
       const transactions = accountingTransactions.filter((item) => matchedIds.has(item.id));
       return line && transactions.length ? <LinkedBankTransactionModal line={line} transactions={transactions} documents={accountingDocuments} ledgerEntries={accountingLedgerEntries.filter((entry) => matchedIds.has(entry.transactionId))} onOpenDocument={(item) => { setPreviewBankLineId(""); openAccountingDocument(item); }} onClose={() => setPreviewBankLineId("")} /> : null;
     })()}
-  </main></FreeCreatorSampleCodesContext.Provider></CreatorProfilesContext.Provider>;
+  </main></UgcCodesContext.Provider></FreeCreatorSampleCodesContext.Provider></CreatorProfilesContext.Provider>;
 }
 
 function getBankLineAmount(line: AccountingBankStatementLine) {
