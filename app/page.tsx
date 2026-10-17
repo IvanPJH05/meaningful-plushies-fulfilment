@@ -20,6 +20,7 @@ import { parseBankStatementCsv } from "../lib/bank-statements";
 import { buildSalesReportRows, isCreatorFreeOrder, isCreatorSampleOrder, manualOrderFor, summarizeSales, type SalesReportRow, type SalesSummary } from "../lib/sales";
 import { stockCharacters, summarizeStock } from "../lib/stock";
 import { mediaFileExtension, voiceBackupFileName } from "../lib/voice-file-name";
+import { isRemovedFromQueue } from "../lib/order-queue";
 import { productionPrintNextStatus, shouldAdvanceAfterProductionPrint } from "../lib/fulfilment-transitions";
 import { mergeRefreshedOrder } from "../lib/order-refresh";
 import { canJoinBatch } from "../lib/fulfilment-batches";
@@ -32,7 +33,6 @@ import {
   deleteContentPlanItem,
   deleteDashboardAccount,
   deleteCreatorFreeSample,
-  deleteSharedOrders,
   deleteAccountingDocument,
   deleteAccountingTransaction,
   deleteAccountingBankStatementLine,
@@ -1600,6 +1600,8 @@ function Home() {
   const [packingProductFilter, setPackingProductFilter] = useState<PackingProductFilter>(() => choice(storedUi.packingProductFilter, "all", packingProductFilterValues));
   const [envelopeStatusFilter, setEnvelopeStatusFilter] = useState<"all" | OrderStatus>(() => choice(storedUi.envelopeStatusFilter, "all", orderStatusFilterValues));
   const [tikTokStatusFilter, setTikTokStatusFilter] = useState<"all" | OrderStatus>(() => choice(storedUi.tikTokStatusFilter, "all", orderStatusFilterValues));
+  const [influencerOnly, setInfluencerOnly] = useState(false);
+  const [removingOrders, setRemovingOrders] = useState(false);
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>(() => choice(storedUi.sourceFilter, "all", sourceFilterValues));
   const [dashboardStatus, setDashboardStatus] = useState<OrderStatus | "total">(() => choice(storedUi.dashboardStatus, "packed", dashboardMetricValues));
   const [dashboardStatusTwo, setDashboardStatusTwo] = useState<OrderStatus | "total">(() => choice(storedUi.dashboardStatusTwo, "issue", dashboardMetricValues));
@@ -1761,7 +1763,9 @@ function Home() {
   const [tikTokDetailEntries, setTikTokDetailEntries] = useState<TikTokDetailFormEntry[]>(() => [emptyTikTokDetailEntry()]);
   const [selectedTikTokJsonOrders, setSelectedTikTokJsonOrders] = useState<string[]>([]);
   const [exportingTikTokShopify, setExportingTikTokShopify] = useState(false);
-  const [notice, setNotice] = useState("");
+  const [notice, setNoticeText] = useState("");
+  const [noticeRevision, setNoticeRevision] = useState(0);
+  const setNotice = useCallback((message: string) => { setNoticeText(message); setNoticeRevision(revision => revision + 1); }, []);
   const [accountingRetryIds, setAccountingRetryIds] = useState<string[]>(() => {
     const saved = readJson<unknown>("meaningful-plushies-accounting-retry-orders");
     return Array.isArray(saved) ? saved.filter((id): id is string => typeof id === "string") : [];
@@ -2255,21 +2259,25 @@ function Home() {
     "orderNumber",
     "desc",
   ), [orders, manualOrders, envelopeStatusFilter, sourceFilter]);
+  const influencerOrderIds = useMemo(() => new Set(orders
+    .filter((order) => isInfluencerFulfilmentOrder(order, creatorProfiles, freeCreatorSampleCodes))
+    .map((order) => order.id)), [orders, creatorProfiles, freeCreatorSampleCodes]);
   const filtered = useMemo(() => {
     const source = view === "fulfilled" ? orders.filter((order) => order.status === "shipped") : orders;
     const search = query.trim().toLowerCase();
     const matching = source
+      .filter((order) => !["orders", "fulfilment"].includes(view) || !influencerOnly || influencerOrderIds.has(order.id))
       .filter((order) => orderSourceMatches(order, sourceFilter, manualOrders))
-      .filter((order) => statusFilter === "all" || order.status === statusFilter)
+      .filter((order) => statusFilter === "all" ? !isRemovedFromQueue(order) : order.status === statusFilter)
       .filter((order) => {
         if (view !== "orders" || (!fulfilmentStartDate && !fulfilmentEndDate)) return true;
         const date = dateKey(order.orderDate);
         return (!fulfilmentStartDate || date >= fulfilmentStartDate) && (!fulfilmentEndDate || date <= fulfilmentEndDate);
       })
-      .filter((order) => !search || [order.orderNumber, compactOrderLabel(order), order.customerName, order.phone, order.address, order.email, order.trackingNumber, order.plushName, order.product, order.character, order.shippingMethod]
+      .filter((order) => !search || [order.orderNumber, compactOrderLabel(order), order.customerName, order.phone, order.address, order.email, order.trackingNumber, order.plushName, order.product, order.character, order.shippingMethod, order.discountCodeUsed, ...(order.discountCodes ?? [])]
         .join(" ").toLowerCase().includes(search));
     return sortOrderRecords(matching, sortKey, sortDirection);
-  }, [orders, manualOrders, query, sourceFilter, statusFilter, view, sortKey, sortDirection, fulfilmentStartDate, fulfilmentEndDate]);
+  }, [orders, manualOrders, query, sourceFilter, statusFilter, view, sortKey, sortDirection, fulfilmentStartDate, fulfilmentEndDate, influencerOnly, influencerOrderIds]);
   const plushCharmOrders = useMemo(() => {
     const search = query.trim().toLowerCase();
     const matching = orders
@@ -3528,15 +3536,24 @@ function Home() {
   }
 
   async function deleteOrders(orderIds: string[]) {
-    const deleting = orders.filter((order) => orderIds.includes(order.id));
-    if (!deleting.length || !window.confirm(`Delete ${deleting.length} selected order${deleting.length === 1 ? "" : "s"}? This cannot be undone.`)) return;
-    try { await deleteSharedOrders(orderIds); }
-    catch (error) { setNotice(error instanceof Error ? error.message : "Orders could not be deleted."); return; }
-    setOrders((current) => current.filter((order) => !orderIds.includes(order.id)));
-    setSelectedOrders([]);
-    setSelectedId(null);
-    await Promise.all(deleting.map((order) => logActivity("Order deleted", `${order.customerName || "Customer"} - ${order.product || "Order"}.`, order.orderNumber)));
-    setNotice(`${deleting.length} order${deleting.length === 1 ? "" : "s"} deleted.`);
+    if (removingOrders || currentSession.role !== "admin") return;
+    const removing = orders.filter((order) => orderIds.includes(order.id));
+    if (!removing.length || !window.confirm(`Move ${removing.length} selected order${removing.length === 1 ? "" : "s"} to Issues with the note "deleted order"? You can find them in Issues.`)) return;
+    setRemovingOrders(true);
+    try {
+      const transitions = removing.filter(order => order.status !== "issue")
+        .map(order => ({ order, toStatus: "issue" as const, note: "deleted order" }));
+      await persistOrderTransitions(transitions);
+      for (const order of removing.filter(order => order.status === "issue" && !isRemovedFromQueue(order))) {
+        await updateOrder(order.id, { internalNotes: [order.internalNotes, "deleted order"].filter(Boolean).join("\n") }, order.updatedAt);
+      }
+      setSelectedOrders([]);
+      setSelectedId(null);
+      setNotice(`${removing.length} order${removing.length === 1 ? "" : "s"} moved to Issues with the note "deleted order".`);
+    } catch (error) {
+      setNotice(readableError(error, "Orders could not be moved to Issues. Refresh and try again."));
+      await loadSharedData();
+    } finally { setRemovingOrders(false); }
   }
 
   async function readFile(file: File | undefined, target: "orders" | "metafields" | "tiktok") {
@@ -5932,7 +5949,7 @@ function Home() {
     const columns = tableLayouts[tableView].filter(column => column.visible);
     return <VirtualOrderTable items={filtered} className={`orders-table adaptive-order-table compact-order-table ${tableView === "fulfilment" ? "fulfilment-table" : ""}`} minWidth={38 + columns.reduce((width, column) => width + column.width, 0)} columnCount={columns.length + 1}
       label={t(tableView === "fulfilment" ? "Fulfilment" : "Orders")}
-      resetKey={JSON.stringify([view, query, sourceFilter, statusFilter, sortKey, sortDirection, fulfilmentStartDate, fulfilmentEndDate])}
+      resetKey={JSON.stringify([view, query, sourceFilter, statusFilter, sortKey, sortDirection, fulfilmentStartDate, fulfilmentEndDate, influencerOnly])}
       columns={<colgroup><col style={{ width: 38 }} />{columns.map(column => <col key={column.key} style={{ width: column.width }} />)}</colgroup>}
       header={<tr><th className="order-col-select"><input type="checkbox" aria-label={t("Select visible orders")} checked={Boolean(filtered.length) && filtered.every(order => selectedOrders.includes(order.id))} onChange={event => setSelectedOrders(event.target.checked ? filtered.map(order => order.id) : [])} /></th>{columns.map(column => <th key={column.key} className={`order-col-${column.key}`}>{t(tableColumns[column.key][0])}</th>)}</tr>}
       renderRow={(order, index) => <OrderTableRow key={order.id} rowIndex={index + 2} selected={selectedOrders.includes(order.id)} className={[isExpressShipping(order) ? "express-shipping-row" : "", isPlushCharm(order) ? "plush-charm-row" : ""].filter(Boolean).join(" ")} hint={t("Click to select. Double-click to view.")} onToggle={() => toggleOrderSelection(order.id)} onOpen={() => setSelectedId(order.id)}>
@@ -5968,14 +5985,14 @@ function Home() {
     </aside>
 
     <section className="main-area">
-      <NotificationBar label={t("Notifications")} emptyLabel={t("No notifications")} />
-      {(documentTask || shippingLabelImporting || refreshingOrderNumber || exportingTikTokShopify || savingAccounting || retryingAccounting || generatingPlushCharmLinks || nfcWritingOrderId || nfcUnlocking || nfcHelperStatus === "checking" || nfcHelperStatus === "starting" || loadingMoreOrderSummaries) && <NotificationMessage><LoadingIndicator>{t(documentTask || (shippingLabelImporting ? "Importing shipping labels..." : refreshingOrderNumber ? "Refreshing orders..." : nfcWritingOrderId || nfcUnlocking ? "Waiting for NFC reader..." : nfcHelperStatus === "checking" || nfcHelperStatus === "starting" ? "Connecting to NFC helper..." : savingAccounting || retryingAccounting ? "Saving..." : loadingMoreOrderSummaries ? "Loading more orders..." : "Processing..."))}</LoadingIndicator></NotificationMessage>}
+      <NotificationBar label={t("Notifications")} completedLabel={t("Loading complete")} />
+      {(documentTask || shippingLabelImporting || refreshingOrderNumber || exportingTikTokShopify || savingAccounting || retryingAccounting || generatingPlushCharmLinks || nfcWritingOrderId || nfcUnlocking || nfcHelperStatus === "checking" || nfcHelperStatus === "starting" || loadingMoreOrderSummaries) && <NotificationMessage completionText={t(documentTask ? "Document preparation finished" : shippingLabelImporting ? "Shipping label import finished" : refreshingOrderNumber ? "Order refresh finished" : exportingTikTokShopify ? "TikTok export finished" : nfcWritingOrderId ? "NFC writing finished" : nfcUnlocking ? "NFC unlock finished" : nfcHelperStatus === "checking" || nfcHelperStatus === "starting" ? "NFC helper check complete" : savingAccounting || retryingAccounting ? "Accounting update finished" : generatingPlushCharmLinks ? "Plush charm link preparation finished" : "More orders loaded")}><LoadingIndicator>{t(documentTask || (shippingLabelImporting ? "Importing shipping labels..." : refreshingOrderNumber ? "Refreshing orders..." : nfcWritingOrderId || nfcUnlocking ? "Waiting for NFC reader..." : nfcHelperStatus === "checking" || nfcHelperStatus === "starting" ? "Connecting to NFC helper..." : savingAccounting || retryingAccounting ? "Saving..." : loadingMoreOrderSummaries ? "Loading more orders..." : "Processing..."))}</LoadingIndicator></NotificationMessage>}
       <header className="topbar"><div><p>{t("{workspace} workspace", { workspace: t(workspaceTitle) }).toUpperCase()}</p><h1>{t(viewTitle(view))}</h1></div><div className="top-actions"><LanguageSwitcher /><span className={`role-badge ${session.role}`}>{t(session.role === "admin" ? "Administrator" : session.role === "creator" ? "Creator" : "Fulfilment staff")}</span>{view === "packing_slips" && <div className="packing-print-actions"><button className="button secondary print-trigger" onClick={() => printPackingSlips("packing")}>{t("Packing slips")}</button><button className="button secondary print-trigger" onClick={() => printPackingSlips("labels")}>{t("Shipping labels")}</button><button className="button primary print-trigger" onClick={() => printPackingSlips("both")}>{t("Packing slip + label")}</button></div>}{view === "print_envelope" && <button className="button primary" disabled={!envelopePrintableNames.length || !envelopePrintSettings.fontBase64} onClick={printEnvelopes}>{t("Generate") + " "}{Math.ceil(envelopePrintableNames.length / 2)} {" " + t("A4 page")}{Math.ceil(envelopePrintableNames.length / 2) === 1 ? "" : t("s")}</button>}{view === "sales_report" && <button className="button primary" onClick={() => printView("print-sales-report")}>{t("Print / Save PDF")}</button>}{workspace === "fulfilment" && view !== "import" && <button className="button secondary" onClick={() => setView("import")}>{t("Import CSV")}</button>}</div></header>
       {databaseError && <NotificationMessage><div className="notice"><span>{t("Database connection:") + " "}{databaseError}</span></div></NotificationMessage>}
-      {workspaceDataLoading && <NotificationMessage><LoadingIndicator>{t("Loading workspace data...")}</LoadingIndicator></NotificationMessage>}
+      {workspaceDataLoading && <NotificationMessage completionText={null}><LoadingIndicator>{t("Loading workspace data...")}</LoadingIndicator></NotificationMessage>}
       {workspaceDataError && <NotificationMessage><div className="notice" role="status"><span>{workspaceDataError}</span><button onClick={() => void loadWorkspaceSupport(true)}>{t("Retry")}</button></div></NotificationMessage>}
-      {loadingOrders && <NotificationMessage><LoadingIndicator>{t("Loading shared orders from Supabase...")}</LoadingIndicator></NotificationMessage>}
-      {notice && <NotificationMessage><div className="notice"><span>{t(notice)}</span><button onClick={() => setNotice("")}>{t("x")}</button></div></NotificationMessage>}
+      {loadingOrders && <NotificationMessage completionText={t("Orders loaded")}><LoadingIndicator>{t("Loading shared orders from Supabase...")}</LoadingIndicator></NotificationMessage>}
+      {notice && <NotificationMessage key={noticeRevision}><div className="notice"><span>{t(notice)}</span></div></NotificationMessage>}
       {session.role === "admin" && accountingRetryMessage && <div className="notice" role="status"><span>{accountingRetryMessage}</span>{accountingRetryIds.length > 0 ? <button disabled={retryingAccounting} onClick={() => void retryAccountingSync()}>{retryingAccounting ? t("Retrying...") : t("Retry accounting sync")}</button> : <button onClick={() => setAccountingRetryMessage("")}>{t("x")}</button>}</div>}
 
       {workspace === "manual_orders" && view === "manual_orders_dashboard" && session.role === "admin" && <ManualOrdersWorkspacePage
@@ -6253,9 +6270,10 @@ function Home() {
 
         {view !== "fulfilment" && <section className="card orders-card adaptive-orders-card">
           <div className="table-layout-toolbar"><button className="button secondary small" onClick={() => setLayoutEditorView("orders")}>{t("Layout settings")}</button></div>
-          <div className={`toolbar ${view === "orders" ? "orders-toolbar" : ""}`}>
-            <div className="toolbar-row toolbar-filter-row"><OrderSearch value={query} onChange={setQuery} placeholder={t("Search order, customer, phone or tracking...")} /><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /></div>
-            <div className="toolbar-row toolbar-action-row"><button className="button primary" disabled={!batchSelectionReady} title={t("Select up to 200 New Order or Uploading Audio orders.")} onClick={() => setAssigningBatch(true)}>{t("Move to Batch Fulfilment")}</button>{view === "orders" && <button className="button secondary" disabled={!selectedShopifyOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshShopifyOrders}>{refreshingOrderNumber === "bulk" ? t("Refreshing...") : `Refresh ${selectedShopifyOrderCount} Shopify`}</button>}{view === "orders" && <button className="button secondary" disabled={!selectedTikTokOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshTikTokOrders}>{refreshingOrderNumber === "tiktok-bulk" ? t("Syncing...") : `Sync ${selectedTikTokOrderCount} TikTok`}</button>}{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>{t("Move") + " "}{selectedOrders.length} {" " + t("to next status")}</button>}{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>{t("Delete")}</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>{t("Export CSV")}</button>}</div>
+          <div className="toolbar queue-toolbar">
+            <div className="toolbar-row toolbar-filter-row"><OrderSearch value={query} onChange={setQuery} placeholder={t("Search order, customer, phone, tracking or influencer code...")} /><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} influencerOnly={view === "orders" && influencerOnly} onInfluencerChange={view === "orders" ? setInfluencerOnly : undefined} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /></div>
+            <div className="toolbar-row queue-status-row"><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /></div>
+            <div className="toolbar-row toolbar-action-row"><button className="button primary" disabled={!batchSelectionReady} title={t("Select up to 200 New Order or Uploading Audio orders.")} onClick={() => setAssigningBatch(true)}>{t("Move to Batch Fulfilment")}</button>{view === "orders" && <button className="button secondary" disabled={!selectedShopifyOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshShopifyOrders}>{refreshingOrderNumber === "bulk" ? t("Refreshing...") : `Refresh ${selectedShopifyOrderCount} Shopify`}</button>}{view === "orders" && <button className="button secondary" disabled={!selectedTikTokOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshTikTokOrders}>{refreshingOrderNumber === "tiktok-bulk" ? t("Syncing...") : `Sync ${selectedTikTokOrderCount} TikTok`}</button>}{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>{t("Move") + " "}{selectedOrders.length} {" " + t("to next status")}</button>}{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length || removingOrders} onClick={() => deleteOrders(selectedOrders)}>{t("Delete")}</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>{t("Export CSV")}</button>}</div>
           </div>
           <div className="table-scroll">{compactTable("orders")}{!filtered.length && <div className="empty"><strong>{t("No orders found")}</strong><p>{t("Try another search or status filter.")}</p></div>}</div>
           <div className="table-footer">{t("Showing") + " "}{filtered.length} {" " + t("of") + " "}{view === "fulfilled" ? orders.filter((order) => order.status === "shipped").length : orders.length} {" " + t("orders")}</div>
@@ -6265,7 +6283,11 @@ function Home() {
         {assigningBatch && <BatchAssignment token={session.token} orderIds={selectedOrders} onClose={() => setAssigningBatch(false)} onAssigned={id => { setAssigningBatch(false); setSelectedOrders([]); setActiveBatchId(id); setView("batch_fulfilment"); void loadSharedData(); }} />}
         {view === "fulfilment" && <section className="card orders-card adaptive-orders-card">
           <div className="table-layout-toolbar"><button className="button secondary small" onClick={() => setLayoutEditorView("fulfilment")}>{t("Layout settings")}</button></div>
-          <div className="toolbar"><OrderSearch value={query} onChange={setQuery} placeholder={t("Search order, plush name, character, customer or phone...")} /><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /><button className="button primary" disabled={!batchSelectionReady} title={t("Select up to 200 New Order or Uploading Audio orders.")} onClick={() => setAssigningBatch(true)}>{t("Move to Batch Fulfilment")}</button><button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>{t("Move") + " "}{selectedOrders.length} {" " + t("to next status")}</button>{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length} onClick={() => deleteOrders(selectedOrders)}>{t("Delete")}</button>}</div>
+          <div className="toolbar queue-toolbar">
+            <div className="toolbar-row toolbar-filter-row"><OrderSearch value={query} onChange={setQuery} placeholder={t("Search order, customer, phone, tracking or influencer code...")} /><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} influencerOnly={influencerOnly} onInfluencerChange={setInfluencerOnly} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /></div>
+            <div className="toolbar-row queue-status-row"><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /></div>
+            <div className="toolbar-row toolbar-action-row"><button className="button primary" disabled={!batchSelectionReady} title={t("Select up to 200 New Order or Uploading Audio orders.")} onClick={() => setAssigningBatch(true)}>{t("Move to Batch Fulfilment")}</button><button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>{t("Move") + " "}{selectedOrders.length} {" " + t("to next status")}</button>{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length || removingOrders} onClick={() => deleteOrders(selectedOrders)}>{t("Delete")}</button>}</div>
+          </div>
           <div className={`nfc-helper-panel ${nfcHelperStatus}`}>
             <div>
               <strong>{t("Windows NFC Helper")}</strong>
@@ -9910,10 +9932,14 @@ function StatusFilterPills({ value, onChange }: { value: "all" | OrderStatus; on
   return <div className="status-filter-pills" aria-label={t("Filter by stage")}>{(["all", ...orderStatuses] as ("all" | OrderStatus)[]).map((status) => <button type="button" key={status} className={value === status ? "active" : ""} onClick={() => onChange(status)}>{status === "all" ? t("All") : t(statusLabels[status])}</button>)}</div>;
 }
 
-function SourceFilterSelect({ value, onChange }: { value: SourceFilter; onChange: (source: SourceFilter) => void }) {
+function SourceFilterSelect({ value, onChange, influencerOnly = false, onInfluencerChange }: { value: SourceFilter; onChange: (source: SourceFilter) => void; influencerOnly?: boolean; onInfluencerChange?: (enabled: boolean) => void }) {
   const { t } = useLanguage();
   const labels: Record<SourceFilter, string> = { all: "All", shopify: "Shopify", tiktok: "TikTok", whatsapp: "WhatsApp" };
-  return <select className="source-filter-select" aria-label={t("Filter by source")} value={value} onChange={(event) => onChange(event.target.value as SourceFilter)}>{sourceFilterValues.map((source) => <option key={source} value={source}>{labels[source]}</option>)}</select>;
+  return <select className="source-filter-select" aria-label={t("Filter by source")} value={influencerOnly ? "influencer" : value} onChange={(event) => {
+    const influencer = event.target.value === "influencer";
+    onInfluencerChange?.(influencer);
+    onChange(influencer ? "all" : event.target.value as SourceFilter);
+  }}>{sourceFilterValues.map((source) => <option key={source} value={source}>{labels[source]}</option>)}{onInfluencerChange && <option value="influencer">{t("Influencer")}</option>}</select>;
 }
 
 function StatusPill({ status }: { status: OrderStatus }) {

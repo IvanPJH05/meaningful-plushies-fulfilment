@@ -82,5 +82,5 @@ export function LanguageSwitcher() {
 
 export function WorkspaceLoading() {
   const { t } = useLanguage();
-  return <NotificationMessage><LoadingIndicator>{t("Opening workspace...")}</LoadingIndicator></NotificationMessage>;
+  return <NotificationMessage completionText={null}><LoadingIndicator>{t("Opening workspace...")}</LoadingIndicator></NotificationMessage>;
 }
