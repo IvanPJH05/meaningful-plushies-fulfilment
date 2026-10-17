@@ -12,12 +12,15 @@ export async function GET(request: Request) {
       .order("creator_name", { ascending: true });
     if (error) throw error;
 
+    const { data: ugc, error: ugcError } = await mobileServiceClient().from("marketing_ugc_samples").select("sample_code").neq("shopify_discount_id", "");
+    if (ugcError) throw ugcError;
+    const ugcCodes = (ugc || []).map(sample => String(sample.sample_code));
     // Staff only need the discount-code list to recognise an influencer order.
     // Full creator names, links, and notes remain visible to admins only.
     if (session.role !== "admin") {
-      return NextResponse.json({ codes: (data ?? []).map((sample) => String(sample.sample_code || "")).filter(Boolean) });
+      return NextResponse.json({ codes: (data ?? []).map((sample) => String(sample.sample_code || "")).filter(Boolean), ugcCodes });
     }
-    return NextResponse.json({ samples: data ?? [] });
+    return NextResponse.json({ samples: data ?? [], ugcCodes });
   } catch (error) {
     const message = error instanceof Error ? error.message : "CREATOR_SAMPLES_LOAD_FAILED";
     const status = message.includes("REQUIRED") ? 401 : 500;
