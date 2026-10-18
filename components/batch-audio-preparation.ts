@@ -12,7 +12,7 @@ export function useBatchAudioPreparation(token: string, detail: BatchDetail | nu
   // Stage/version changes must not restart work. Replaced audio or changed ZIP
   // filenames must invalidate it, so never key this cache by batch ID alone.
   const inputs = detail ? { id: detail.batch.id, orders: detail.orders.map(order => ({
-    id: order.id, name: voiceBackupFileName(order, "mp3"), source: batchAudioSource(order),
+    id: order.id, name: voiceBackupFileName(order, "mp3"), source: batchAudioSource(order) + "|" + (order.tikTokFileName || ""),
   })) } : null;
   const previous = useRef(inputs);
   if (previous.current?.id !== inputs?.id || previous.current?.orders.length !== inputs?.orders.length || inputs?.orders.some((order, index) => {

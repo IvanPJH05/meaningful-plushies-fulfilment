@@ -5,16 +5,20 @@ import type { Order } from "./types";
 const order = (id:string, source="") => ({id,orderNumber:id,character:"Billy",salesChannel:"tiktok",meaningfulMessage:"Gender: Male",tikTokFileDataUrl:source}) as Order;
 test("missing submissions do not block the remaining batch audio", async () => {
  const original=globalThis.fetch, called:string[]=[];
- globalThis.fetch=async input=>{called.push(String(input));return new Response('ID3-audio',{headers:{'Content-Type':'audio/mpeg'}});};
+ globalThis.fetch=async input=>{called.push(String(input));if(String(input).includes('orderId=missing')) return Response.json({code:'VOICE_NOT_UPLOADED'},{status:400});return new Response('ID3-audio',{headers:{'Content-Type':'audio/mpeg'}});};
  try {
   const result=await prepareBatchAudioFiles([order('missing'),order('ready','data:audio/mp3;base64,AA=='),order('later','data:audio/mp3;base64,AA==')],'batch','token',new AbortController().signal);
-  assert.equal(result.available,2);assert.deepEqual(result.missing,['missing']);assert.equal(called.length,2);
+  assert.equal(result.available,2);assert.deepEqual(result.missing,['missing']);assert.equal(called.length,3);
   assert.equal(result.files.length,3);assert.equal(result.files[2].name,'voice-not-uploaded.txt');assert.match(new TextDecoder().decode(result.files[2].bytes),/#missing/);
  } finally {globalThis.fetch=original;}
 });
 test("all-missing batches finish preparation without downloading or building an empty ZIP", async()=>{
+ const original=globalThis.fetch;
+ globalThis.fetch=async()=>Response.json({code:'VOICE_NOT_UPLOADED'},{status:400});
+ try {
  const result=await prepareBatchAudioFiles([order('a'),order('b')],'batch','token',new AbortController().signal);
  assert.equal(result.available,0);assert.equal(result.files.length,0);assert.deepEqual(result.missing,['a','b']);
+ } finally {globalThis.fetch=original;}
 });
 test("server-confirmed missing uploads are skipped, while genuine failures remain errors",async()=>{
  const original=globalThis.fetch;
