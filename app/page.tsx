@@ -6287,7 +6287,7 @@ function Home() {
             <div className="toolbar-row queue-status-row"><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /></div>
             <div className="toolbar-row toolbar-action-row"><button className="button primary" disabled={!batchSelectionReady} title={t("Select up to 200 New Order or Uploading Audio orders.")} onClick={() => setAssigningBatch(true)}>{t("Move to Batch Fulfilment")}</button>{view === "orders" && <button className="button secondary" disabled={!selectedShopifyOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshShopifyOrders}>{refreshingOrderNumber === "bulk" ? t("Refreshing...") : `Refresh ${selectedShopifyOrderCount} Shopify`}</button>}{view === "orders" && <button className="button secondary" disabled={!selectedTikTokOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshTikTokOrders}>{refreshingOrderNumber === "tiktok-bulk" ? t("Syncing...") : `Sync ${selectedTikTokOrderCount} TikTok`}</button>}{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>{t("Move") + " "}{selectedOrders.length} {" " + t("to next status")}</button>}{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length || removingOrders} onClick={() => deleteOrders(selectedOrders)}>{t("Delete")}</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>{t("Export CSV")}</button>}</div>
           </div>
-          <div className="table-scroll">{compactTable("orders")}{!filtered.length && <div className="empty"><strong>{t("No orders found")}</strong><p>{t("Try another search or status filter.")}</p></div>}</div>
+          <div className="queue-results">{filtered.length ? compactTable("orders") : <div className="empty"><strong>{t("No orders found")}</strong><p>{t("Try another search or status filter.")}</p></div>}</div>
           <div className="table-footer">{t("Showing") + " "}{filtered.length} {" " + t("of") + " "}{view === "fulfilled" ? orders.filter((order) => order.status === "shipped").length : orders.length} {" " + t("orders")}</div>
           {hasMoreOrderSummaries && <div ref={orderSummaryLoadMoreSentinel} className="table-footer"><button className="button secondary small" type="button" disabled={loadingMoreOrderSummaries} onClick={() => void loadNextOrderSummaries()}>{loadingMoreOrderSummaries ? t("Loading more orders...") : t("Load next 100 orders")}</button></div>}
         </section>}
@@ -6311,7 +6311,7 @@ function Home() {
               <button className="button secondary small" type="button" onClick={copyNfcHelperSetupCommand}>{t("Copy setup command")}</button>
             </div>
           </div>
-          <div className="fulfilment-scroll table-scroll">{compactTable("fulfilment")}{!filtered.length && <div className="empty"><strong>{t("No fulfilment orders found")}</strong><p>{t("Try another search or status filter.")}</p></div>}</div>
+          <div className="queue-results">{filtered.length ? compactTable("fulfilment") : <div className="empty"><strong>{t("No fulfilment orders found")}</strong><p>{t("Try another search or status filter.")}</p></div>}</div>
           <div className="table-footer">{t("Showing") + " "}{filtered.length} {" " + t("of") + " "}{orders.length} {" " + t("orders")}</div>
           {hasMoreOrderSummaries && <div ref={orderSummaryLoadMoreSentinel} className="table-footer"><button className="button secondary small" type="button" disabled={loadingMoreOrderSummaries} onClick={() => void loadNextOrderSummaries()}>{loadingMoreOrderSummaries ? t("Loading more orders...") : t("Load next 100 orders")}</button></div>}
         </section>}
@@ -9941,7 +9941,7 @@ function OrderSearch({ value, onChange, placeholder }: { value: string; onChange
 
 function StatusFilterPills({ value, onChange }: { value: "all" | OrderStatus; onChange: (status: "all" | OrderStatus) => void }) {
   const { t } = useLanguage();
-  return <div className="status-filter-pills" aria-label={t("Filter by stage")}>{(["all", ...orderStatuses] as ("all" | OrderStatus)[]).map((status) => <button type="button" key={status} className={value === status ? "active" : ""} onClick={() => onChange(status)}>{status === "all" ? t("All") : t(statusLabels[status])}</button>)}</div>;
+  return <div className="queue-stage-filter"><select className="status-filter-select" aria-label={t("Filter by stage")} value={value} onChange={event => onChange(event.target.value as "all" | OrderStatus)}>{(["all", ...orderStatuses] as ("all" | OrderStatus)[]).map(status => <option key={status} value={status}>{status === "all" ? t("All") : t(statusLabels[status])}</option>)}</select><div className="status-filter-pills" aria-label={t("Filter by stage")}>{(["all", ...orderStatuses] as ("all" | OrderStatus)[]).map((status) => <button type="button" key={status} className={value === status ? "active" : ""} aria-pressed={value === status} onClick={() => onChange(status)}>{status === "all" ? t("All") : t(statusLabels[status])}</button>)}</div></div>;
 }
 
 function SourceFilterSelect({ value, onChange, influencerOnly = false, onInfluencerChange }: { value: SourceFilter; onChange: (source: SourceFilter) => void; influencerOnly?: boolean; onInfluencerChange?: (enabled: boolean) => void }) {
