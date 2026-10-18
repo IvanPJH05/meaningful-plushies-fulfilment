@@ -1,4 +1,5 @@
 import type { Order } from "./types";
+import { isPlushCharmOrder } from "./plush-charm.ts";
 
 export const batchStages = ["labels", "printing", "envelopes", "audio", "nfc", "complete"] as const;
 export type BatchStage = typeof batchStages[number];
@@ -12,3 +13,6 @@ export function matchBatchLabel(orders: Order[], label: { source: string | null;
   if (!label.reference) return [];
   return orders.filter(order => label.source === "jnt" ? order.salesChannel !== "tiktok" && order.orderNumber === label.reference : label.source === "tiktok" && order.salesChannel === "tiktok" && order.orderNumber.replace(/\D/g, "").endsWith(label.reference));
 }
+
+export function batchNeedsEnvelope(order: Pick<Order, "product" | "productType" | "remark">) { return !isPlushCharmOrder(order); }
+export function batchEnvelopeName(order: Pick<Order, "plushName" | "character">, saved?: string) { return saved?.trim() || order.plushName?.trim() || order.character?.trim() || ""; }

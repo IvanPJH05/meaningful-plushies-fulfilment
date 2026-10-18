@@ -1,6 +1,7 @@
 // Interface copy only. Order/customer records are never translated.
 // Tuple order: Bahasa Melayu, Bahasa Indonesia.
 export const dashboardTranslations: Readonly<Record<string, readonly [string, string]>> = {
+  "Meaningful Plush Charms do not need envelopes.": ["Meaningful Plush Charms tidak memerlukan sampul.", "Meaningful Plush Charms tidak memerlukan amplop."],
   "MARKETING": ["PEMASARAN", "PEMASARAN"],
   "Customer UGC": ["UGC Pelanggan", "UGC Pelanggan"],
   "Thank real customers for their content with one free product and free shipping.": ["Hargai kandungan pelanggan dengan satu produk percuma dan penghantaran percuma.", "Hargai konten pelanggan dengan satu produk gratis dan pengiriman gratis."],
