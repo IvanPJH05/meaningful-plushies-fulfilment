@@ -12,11 +12,7 @@ const exec = promisify(execFile);
 export const maxAudioSourceBytes = 50 * 1024 * 1024;
 const maxMp3Bytes = 4 * 1024 * 1024;
 
-// TikTok attachments may be videos containing the customer's voice. Never use
-// the TikTok customisation text as a URL when no attachment has been supplied.
-export function batchAudioSource(order: Order) {
-  return order.salesChannel === "tiktok" ? order.tikTokFileDataUrl || "" : order.meaningfulMessage || "";
-}
+export { batchAudioSource } from "./batch-audio-source";
 
 export function assertAudioMediaType(type: string) {
   if (!/^(audio\/|video\/)/i.test(type) && type !== "application/octet-stream") {

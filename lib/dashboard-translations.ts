@@ -1,6 +1,9 @@
 // Interface copy only. Order/customer records are never translated.
 // Tuple order: Bahasa Melayu, Bahasa Indonesia.
 export const dashboardTranslations: Readonly<Record<string, readonly [string, string]>> = {
+  "Voice not uploaded": ["Suara belum dimuat naik", "Suara belum diunggah"],
+  "No audio uploaded — next step": ["Tiada audio dimuat naik — langkah seterusnya", "Tidak ada audio diunggah — langkah berikutnya"],
+  "No voice files uploaded for this batch.": ["Tiada fail suara dimuat naik untuk kelompok ini.", "Tidak ada file suara diunggah untuk batch ini."],
   "Meaningful Plush Charms do not need envelopes.": ["Meaningful Plush Charms tidak memerlukan sampul.", "Meaningful Plush Charms tidak memerlukan amplop."],
   "MARKETING": ["PEMASARAN", "PEMASARAN"],
   "Customer UGC": ["UGC Pelanggan", "UGC Pelanggan"],
