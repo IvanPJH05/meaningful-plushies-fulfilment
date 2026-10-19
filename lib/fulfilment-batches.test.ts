@@ -16,6 +16,9 @@ test("labels are paired only to batch members and to the correct marketplace", (
 test("COD can use generated labels, and orders requiring audio cannot silently skip it", () => {
   assert.equal(batchNeedsLabel({paymentProcessor:"Cash on delivery (COD)"}),false);
   assert.equal(batchNeedsLabel({paymentProcessor:"Stripe"}),true);
+  assert.equal(batchNeedsLabel({paymentProcessor:"COD",salesChannel:"tiktok"}),true);
+  assert.equal(batchNeedsLabel({paymentProcessor:"Cash on delivery",salesChannel:"tiktok"}),true);
+  assert.equal(batchNeedsLabel({paymentProcessor:"COD",salesChannel:"shopify"}),false);
   assert.equal(batchNeedsAudio({voiceLength:5,meaningfulMessage:""}),true);
   assert.equal(batchNeedsAudio({voiceLength:0,meaningfulMessage:"",tikTokFileName:"voice.mp3"}),true);
   assert.equal(batchNeedsAudio({voiceLength:0,meaningfulMessage:""}),false);
