@@ -1,6 +1,16 @@
 // Interface copy only. Order/customer records are never translated.
 // Tuple order: Bahasa Melayu, Bahasa Indonesia.
 export const dashboardTranslations: Readonly<Record<string, readonly [string, string]>> = {
+  "COD shipping details": ["Butiran penghantaran COD", "Detail pengiriman COD"],
+  "Copy the name, phone number and full address into your courier form. Set the COD amount separately.": ["Salin nama, nombor telefon dan alamat penuh ke borang kurier. Tetapkan jumlah COD secara berasingan.", "Salin nama, nomor telepon dan alamat lengkap ke formulir kurir. Atur jumlah COD secara terpisah."],
+  "Set COD to": ["Tetapkan COD kepada", "Atur COD menjadi"],
+  "Amount unavailable": ["Jumlah tidak tersedia", "Jumlah tidak tersedia"],
+  "Recorded outstanding balance": ["Baki tertunggak yang direkodkan", "Sisa tagihan yang tercatat"],
+  "Recorded order total": ["Jumlah pesanan yang direkodkan", "Total pesanan yang tercatat"],
+  "Customer details are incomplete. Open the order to check before creating a label.": ["Butiran pelanggan tidak lengkap. Buka pesanan untuk semakan sebelum membuat label.", "Detail pelanggan belum lengkap. Buka pesanan untuk diperiksa sebelum membuat label."],
+  "Copy shipping details": ["Salin butiran penghantaran", "Salin detail pengiriman"],
+  "Select the text above and copy it manually.": ["Pilih teks di atas dan salin secara manual.", "Pilih teks di atas dan salin secara manual."],
+
   "Voice not uploaded": ["Suara belum dimuat naik", "Suara belum diunggah"],
   "No audio uploaded — next step": ["Tiada audio dimuat naik — langkah seterusnya", "Tidak ada audio diunggah — langkah berikutnya"],
   "No voice files uploaded for this batch.": ["Tiada fail suara dimuat naik untuk kelompok ini.", "Tidak ada file suara diunggah untuk batch ini."],
