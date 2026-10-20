@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $helperRoot = Join-Path $env:LOCALAPPDATA 'MeaningfulPlushies\NfcHelper'
 New-Item -ItemType Directory -Path $helperRoot -Force | Out-Null
-foreach ($name in @('windows-nfc-writer.ps1', 'launch-nfc-helper.ps1')) {
+foreach ($name in @('windows-nfc-writer.ps1', 'launch-nfc-helper.ps1', 'start-windows-nfc-writer.bat', 'install-windows-nfc-protocol.ps1', 'install-windows-nfc-protocol.bat')) {
   $source = Join-Path $PSScriptRoot $name
   if (-not (Test-Path -LiteralPath $source)) { throw "Missing helper file: $name" }
   $destination = Join-Path $helperRoot $name
