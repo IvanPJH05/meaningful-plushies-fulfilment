@@ -4,6 +4,7 @@ import { NotificationBar, NotificationMessage, NotificationProvider } from "../c
 import { LoadingIndicator } from "../components/loading-indicator";
 
 import "./settings.css";
+import { probeNfcHelper, waitForNfcHelper } from "../lib/nfc-helper";
 
 import dynamic from "next/dynamic";
 import { isUgcOrder } from "../lib/marketing-ugc";
@@ -1792,6 +1793,7 @@ function Home() {
   const [refreshingOrderNumber, setRefreshingOrderNumber] = useState("");
   const [generatingPlushCharmLinks, setGeneratingPlushCharmLinks] = useState(false);
   const [nfcWritingOrderId, setNfcWritingOrderId] = useState("");
+  const nfcHelperAttempt = useRef(0);
   const [nfcHelperStatus, setNfcHelperStatus] = useState<"unknown" | "checking" | "running" | "not_running" | "starting">("unknown");
   const [nfcUnlockPassword, setNfcUnlockPassword] = useState("");
   const [nfcUnlocking, setNfcUnlocking] = useState(false);
@@ -2562,27 +2564,25 @@ function Home() {
 
 
   async function checkNfcHelper(showResult = true) {
+    const attempt = ++nfcHelperAttempt.current;
     setNfcHelperStatus("checking");
-    try {
-      const response = await fetch("http://127.0.0.1:17654/health", { cache: "no-store" });
-      const result = await response.json().catch(() => ({})) as { ok?: boolean };
-      if (!response.ok || !result.ok) throw new Error("Helper did not respond.");
-      setNfcHelperStatus("running");
-      if (showResult) setNotice("Windows NFC helper is running.");
-      return true;
-    } catch {
-      setNfcHelperStatus("not_running");
-      if (showResult) setNotice("Windows NFC helper is not running yet. Click Start NFC Helper, or run the one-time setup first.");
-      return false;
-    }
+    const running = await probeNfcHelper();
+    if (attempt !== nfcHelperAttempt.current) return running;
+    setNfcHelperStatus(running ? "running" : "not_running");
+    if (showResult) setNotice(running ? "Windows NFC helper is running." : "Cannot connect to the NFC helper. Open the helper and allow this site's local network access in Chrome if prompted.");
+    return running;
   }
 
   function startNfcHelper() {
+    const attempt = ++nfcHelperAttempt.current;
     setNfcHelperStatus("starting");
-    setNotice("Opening Windows NFC helper. If Chrome asks for permission, allow it. If nothing opens, run the one-time setup shown below.");
+    setNotice("Opening Windows NFC helper. Choose Open in Chrome's app prompt. Allow local network access if Chrome asks.");
     window.location.href = "meaningful-nfc-helper://start";
-    window.setTimeout(() => void checkNfcHelper(false), 2500);
-    window.setTimeout(() => void checkNfcHelper(false), 6000);
+    void waitForNfcHelper().then(running => {
+      if (attempt !== nfcHelperAttempt.current) return;
+      setNfcHelperStatus(running ? "running" : "not_running");
+      setNotice(running ? "Windows NFC helper is running." : "Chrome has not connected to the NFC helper. Choose Open in the browser's app prompt, then click Check helper. If no prompt appears, run the NFC helper launcher on this computer.");
+    });
   }
 
   async function copyNfcHelperSetupCommand() {

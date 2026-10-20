@@ -363,7 +363,11 @@ Write-Host ""
 while ($true) {
   $client = $listener.AcceptTcpClient()
   try {
+    $client.ReceiveTimeout = 2500
+    $client.SendTimeout = 2500
     $stream = $client.GetStream()
+    $stream.ReadTimeout = 2500
+    $stream.WriteTimeout = 2500
     $requestText = Read-HttpRequest -Stream $stream
     if (-not $requestText) { continue }
     $firstLine = ($requestText -split "`r?`n", 2)[0]
@@ -404,7 +408,7 @@ while ($true) {
     Send-HttpResponse -Stream $stream -StatusCode 200 -Payload @{ ok = $true }
     Write-Host "Card written successfully."
   } catch {
-    Send-HttpResponse -Stream $stream -StatusCode 500 -Payload @{ ok = $false; error = $_.Exception.Message }
+    try { Send-HttpResponse -Stream $stream -StatusCode 500 -Payload @{ ok = $false; error = $_.Exception.Message } } catch { }
     Write-Host "Write failed: $($_.Exception.Message)"
   } finally {
     $client.Close()
