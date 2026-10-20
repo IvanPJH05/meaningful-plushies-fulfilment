@@ -15,8 +15,9 @@ New-ItemProperty -LiteralPath $protocolRoot -Name 'URL Protocol' -Value '' -Prop
 New-Item -Path $commandKey -Force | Out-Null
 $powershellPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $launcherPath = Join-Path $helperRoot 'launch-nfc-helper.ps1'
-Set-Item -LiteralPath $commandKey -Value ('"' + $powershellPath + '" -NoProfile -WindowStyle Hidden -File "' + $launcherPath + '"')
+$backgroundCommand = '"' + $powershellPath + '" -NoProfile -WindowStyle Hidden -File "' + $launcherPath + '"'
+Set-Item -LiteralPath $commandKey -Value ($backgroundCommand + ' -ShowWindow')
 $startupKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 New-Item -Path $startupKey -Force | Out-Null
-New-ItemProperty -LiteralPath $startupKey -Name 'MeaningfulPlushiesNfcHelper' -PropertyType String -Value ((Get-Item -LiteralPath $commandKey).GetValue('')) -Force | Out-Null
+New-ItemProperty -LiteralPath $startupKey -Name 'MeaningfulPlushiesNfcHelper' -PropertyType String -Value $backgroundCommand -Force | Out-Null
 Write-Host 'NFC helper installed. Click Start NFC Helper in the fulfilment app.'

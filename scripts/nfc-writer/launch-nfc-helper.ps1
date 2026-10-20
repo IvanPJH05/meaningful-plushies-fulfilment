@@ -1,3 +1,4 @@
+param([switch]$ShowWindow)
 $ErrorActionPreference = 'Stop'
 $startupLog = Join-Path $PSScriptRoot 'startup.log'
 function Test-Helper {
@@ -9,12 +10,21 @@ function Test-Helper {
 $launchLock = [System.Threading.Mutex]::new($false, 'Local\MeaningfulPlushiesNfcLaunch')
 try {
   if (-not $launchLock.WaitOne(0)) { exit 0 }
-  if (Test-Helper) { exit 0 }
+  if (Test-Helper) {
+    if ($ShowWindow) {
+      (New-Object -ComObject WScript.Shell).Popup('NFC helper is already running. You can return to the fulfilment app and write cards.', 8, 'NFC helper ready', 64) | Out-Null
+    }
+    exit 0
+  }
   "$(Get-Date -Format o) Starting NFC helper" | Set-Content -LiteralPath $startupLog
   $helperScript = Join-Path $PSScriptRoot 'windows-nfc-writer.ps1'
   if (-not (Test-Path -LiteralPath $helperScript)) { throw "The NFC helper files are missing. Run the installer again." }
   $powershellPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-  $process = Start-Process -FilePath $powershellPath -ArgumentList @('-NoProfile', '-WindowStyle', 'Hidden', '-File', ('"' + $helperScript + '"')) -WindowStyle Hidden -RedirectStandardOutput (Join-Path $PSScriptRoot 'helper.log') -RedirectStandardError (Join-Path $PSScriptRoot 'helper-error.log') -PassThru
+  if ($ShowWindow) {
+    $process = Start-Process -FilePath $powershellPath -ArgumentList @('-NoProfile', '-NoExit', '-File', ('"' + $helperScript + '"')) -WindowStyle Normal -PassThru
+  } else {
+    $process = Start-Process -FilePath $powershellPath -ArgumentList @('-NoProfile', '-WindowStyle', 'Hidden', '-File', ('"' + $helperScript + '"')) -WindowStyle Hidden -RedirectStandardOutput (Join-Path $PSScriptRoot 'helper.log') -RedirectStandardError (Join-Path $PSScriptRoot 'helper-error.log') -PassThru
+  }
   for ($attempt = 0; $attempt -lt 10; $attempt++) {
     Start-Sleep -Milliseconds 500
     if (Test-Helper) {
