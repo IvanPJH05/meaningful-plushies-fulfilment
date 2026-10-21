@@ -1796,6 +1796,7 @@ function Home() {
   const nfcHelperAttempt = useRef(0);
   const [nfcHelperStatus, setNfcHelperStatus] = useState<"unknown" | "checking" | "running" | "not_running" | "starting">("unknown");
   const [nfcUnlockPassword, setNfcUnlockPassword] = useState("");
+  const [nfcLegacyUnlock, setNfcLegacyUnlock] = useState(false);
   const [nfcUnlocking, setNfcUnlocking] = useState(false);
 
   const normalizeSharedOrders = useCallback((sharedOrders: Order[]) => sharedOrders.map((order) => {
@@ -2594,6 +2595,15 @@ function Home() {
     }
   }
 
+  async function systemNfcPassword() {
+    const response = await fetch("/api/fulfilment/nfc-password", {
+      headers: { Authorization: `Bearer ${session?.token ?? ""}` }, cache: "no-store",
+    });
+    const result = await response.json() as { password?: string; error?: string };
+    if (!response.ok || !result.password) throw new Error(result.error || "Could not load the system NFC password.");
+    return result.password;
+  }
+
   async function writeCertificateLinkToNfc(order: Order) {
     const link = certificateLink(order);
     if (!link) return setNotice(`#${order.orderNumber} has no certificate code to write.`);
@@ -2603,7 +2613,7 @@ function Home() {
       const response = await fetch("http://127.0.0.1:17654/write", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: link, label: `#${order.orderNumber}`, password: order.orderNumber }),
+        body: JSON.stringify({ url: link, label: `#${order.orderNumber}`, password: await systemNfcPassword() }),
       });
       const result = await response.json().catch(() => ({})) as { ok?: boolean; error?: string };
       if (!response.ok || !result.ok) throw new Error(result.error || "Desktop NFC writer did not confirm the card.");
@@ -2622,15 +2632,14 @@ function Home() {
   }
 
   async function unlockNfcCard() {
-    const password = nfcUnlockPassword.trim();
-    if (!password) return setNotice("Enter the NFC card password first.");
+    if (nfcLegacyUnlock && !nfcUnlockPassword.trim()) return setNotice("Enter the original card password first.");
     setNfcUnlocking(true);
     try {
       setNotice("Sending unlock request. Hold the locked NFC card on the USB reader.");
       const response = await fetch("http://127.0.0.1:17654/unlock", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ password: nfcLegacyUnlock ? nfcUnlockPassword.trim() : await systemNfcPassword() }),
       });
       const result = await response.json().catch(() => ({})) as { ok?: boolean; error?: string };
       if (!response.ok || !result.ok) throw new Error(result.error || "Desktop NFC writer did not confirm the unlock.");
@@ -6321,13 +6330,13 @@ function Home() {
         <div className="card hero-card">
           <span>{t("NFC CARD")}</span>
           <h2>{t("Unlock password-protected NFC cards")}</h2>
-          <p>{t("If a card was locked before rewriting, enter the password and tap the card on your USB reader. For order cards, the password is usually the last 4 letters or numbers of the order number.")}</p>
+          <p>{t("For new cards, click Unlock card and hold the card on the reader. The system enters the password automatically. Older cards still need their original password.")}</p>
         </div>
         <div className="card nfc-unlock-card">
           <div className={`nfc-helper-panel ${nfcHelperStatus}`}>
             <div>
               <strong>{t("Windows NFC Helper")}</strong>
-              <span>{nfcHelperStatus === "running" ? t("Ready. Enter the password, click unlock, then tap the NFC card.") : nfcHelperStatus === "checking" ? t("Checking local helper...") : nfcHelperStatus === "starting" ? t("Opening helper...") : t("Start the helper before unlocking cards from this browser.")}</span>
+              <span>{nfcHelperStatus === "running" ? t("Ready. Click Unlock card, then hold the card on the reader.") : nfcHelperStatus === "checking" ? t("Checking local helper...") : nfcHelperStatus === "starting" ? t("Opening helper...") : t("Start the helper before unlocking cards from this browser.")}</span>
             </div>
             <div className="nfc-helper-actions">
               <a className="button primary small" href="meaningful-nfc-helper://start" onClick={startNfcHelper}>{t("Start NFC Helper")}</a>
@@ -6336,12 +6345,12 @@ function Home() {
             </div>
           </div>
           <div className="nfc-unlock-form">
-            <label>{t("NFC card password")}<input value={nfcUnlockPassword} onChange={(event) => setNfcUnlockPassword(event.target.value)} placeholder={t("Example: 1486")} /></label>
-            <button className="button primary" type="button" disabled={nfcUnlocking || !nfcUnlockPassword.trim()} onClick={unlockNfcCard}>{nfcUnlocking ? t("Unlocking...") : t("Unlock card")}</button>
+            <label><input type="checkbox" checked={nfcLegacyUnlock} onChange={event => setNfcLegacyUnlock(event.target.checked)} />{t("Older card — use original password")}</label>{nfcLegacyUnlock && <label>{t("Original NFC card password")}<input type="password" autoComplete="off" value={nfcUnlockPassword} onChange={(event) => setNfcUnlockPassword(event.target.value)} placeholder={t("Example: 1486")} /></label>}
+            <button className="button primary" type="button" disabled={nfcUnlocking || (nfcLegacyUnlock && !nfcUnlockPassword.trim())} onClick={unlockNfcCard}>{nfcUnlocking ? t("Unlocking...") : t("Unlock card")}</button>
           </div>
           <div className="helper-note">
             <strong>{t("Tip")}</strong>
-            <p>{t("For order numbers longer than 4 characters, use the last 4 letters or numbers. Example: #TT1032 uses 1032.")}</p>
+            <p>{t("Older cards: use the last four letters or digits of the full original order number. After unlocking, write the card again to switch it to the system password.")}</p>
           </div>
         </div>
       </section>}
