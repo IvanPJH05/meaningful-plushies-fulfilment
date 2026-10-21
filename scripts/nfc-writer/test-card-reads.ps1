@@ -24,3 +24,8 @@ $rejected = $false
 try { Read-CardPage -Card ([IntPtr]::Zero) -Protocol 0 -Page 41 | Out-Null } catch { $rejected = $_.Exception.Message -like 'Could not read NFC card page 41*' }
 if (-not $rejected) { throw 'Failed reads must be rejected' }
 Write-Output 'PASS: standard read, native configuration fallback, authentication error rejection, failed read rejection'
+$diagnosticError = ''
+try { Invoke-NativeNfcCommand -Card ([IntPtr]::Zero) -Protocol 0 -NativeCommand ([byte[]]@(0x1B,1,2,3,4)) -FailureContext 'Card authentication' | Out-Null } catch { $diagnosticError = $_.Exception.Message }
+if ($diagnosticError -notlike '*PN532 status 0x01*') { throw 'Authentication must preserve the reader error code' }
+if ($diagnosticError -like '*01 02 03 04*') { throw 'Password must not be logged' }
+Write-Output 'PASS: authentication reader error diagnosis'

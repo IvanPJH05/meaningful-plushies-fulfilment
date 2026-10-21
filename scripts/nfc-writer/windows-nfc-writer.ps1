@@ -206,19 +206,29 @@ function Send-CardCommand {
 }
 
 function Invoke-NativeNfcCommand {
-  param([IntPtr]$Card, [uint32]$Protocol, [byte[]]$NativeCommand)
+  param([IntPtr]$Card, [uint32]$Protocol, [byte[]]$NativeCommand, [string]$FailureContext = '')
   $command = New-Object System.Collections.Generic.List[byte]
   foreach ($value in @(0xFF, 0x00, 0x00, 0x00, [byte](2 + $NativeCommand.Length), 0xD4, 0x42)) {
     $command.Add([byte]$value)
   }
   Add-ByteRange -List $command -Bytes $NativeCommand
   $response = Send-CardCommand -Card $Card -Protocol $Protocol -Command $command.ToArray()
-  if (-not (Test-SuccessResponse -Response $response)) { return $null }
+  if (-not (Test-SuccessResponse -Response $response)) {
+    if ($FailureContext) {
+      $status = if ($response.Length -ge 2) { '{0:X2}{1:X2}' -f $response[$response.Length - 2], $response[$response.Length - 1] } else { 'no response' }
+      throw "$FailureContext failed at the reader (APDU status $status). This does not establish that the password is wrong."
+    }
+    return $null
+  }
   if ($response.Length -ge 5 -and $response[0] -eq 0xD5 -and $response[1] -eq 0x43 -and $response[2] -eq 0x00) {
     $length = $response.Length - 5
     $data = New-Object byte[] $length
     if ($length -gt 0) { [Array]::Copy($response, 3, $data, 0, $length) }
     return $data
+  }
+  if ($FailureContext) {
+    $status = if ($response.Length -ge 5 -and $response[0] -eq 0xD5 -and $response[1] -eq 0x43) { 'PN532 status 0x{0:X2}' -f $response[2] } else { 'unexpected reader response format' }
+    throw "$FailureContext failed ($status). Remove the card, place it back on the reader, and report this error if it repeats. The password has not been verified."
   }
   return $null
 }
@@ -248,8 +258,11 @@ function Get-NtagLayout {
 function Try-AuthenticateNtag {
   param([IntPtr]$Card, [uint32]$Protocol, [byte[]]$Password)
   $auth = New-ByteArray @(0x1B, $Password[0], $Password[1], $Password[2], $Password[3])
-  $response = Invoke-NativeNfcCommand -Card $Card -Protocol $Protocol -NativeCommand $auth
-  return [bool]($response -and $response.Length -ge 2)
+  $response = Invoke-NativeNfcCommand -Card $Card -Protocol $Protocol -NativeCommand $auth -FailureContext 'Card authentication'
+  if ($null -eq $response -or $response.Length -ne 2) {
+    throw 'Card authentication did not return the required two-byte acknowledgement. This may be a card rejection or a reader communication problem; it does not confirm an incorrect password.'
+  }
+  return $true
 }
 
 function Set-NtagPasswordProtection {
