@@ -5,6 +5,6 @@ export async function GET(request: Request) {
   try {
     const session = await requireMobileSession(request);
     if (session.role !== "admin") return NextResponse.json({ error: "Administrator access required." }, { status: 403, headers });
-    return NextResponse.json({ url: process.env.CREATOR_GOOGLE_SHEET_URL || "" }, { headers });
+    return NextResponse.json({ url: process.env.CREATOR_GOOGLE_SHEET_URL?.trim() || "" }, { headers });
   } catch { return NextResponse.json({ error: "Sign in required." }, { status: 401, headers }); }
 }

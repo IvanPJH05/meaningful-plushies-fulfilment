@@ -29,3 +29,9 @@ it('does not present database failures as an empty successful directory',async()
  const response=await GET(new Request('https://app.test/api/creator-sheet/feed?view=profiles&key='+'a'.repeat(64)));
  expect(response.status).toBe(503);expect(await response.text()).not.toContain('private database');
 });
+it('normalizes trailing whitespace in the deployed feed credential',async()=>{
+ process.env.CREATOR_SHEET_FEED_KEY='a'.repeat(64)+'\r\n';
+ mocks.db.mockReturnValue({from:()=>({select:()=>({order:()=>({range:async()=>({data:[],error:null})})})})});
+ const response=await GET(new Request('https://app.test/api/creator-sheet/feed?view=samples&key='+'a'.repeat(64)));
+ expect(response.status).toBe(200);
+});

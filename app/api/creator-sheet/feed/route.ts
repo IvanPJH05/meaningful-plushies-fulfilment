@@ -5,7 +5,7 @@ import { creatorSheetCsv, creatorSampleSheetRows, creatorProfileSheetRows, creat
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex, nofollow", "Referrer-Policy": "no-referrer" };
 export async function GET(request: Request) {
-  const url = new URL(request.url), expected = process.env.CREATOR_SHEET_FEED_KEY;
+  const url = new URL(request.url), expected = process.env.CREATOR_SHEET_FEED_KEY?.trim();
   const supplied = url.searchParams.get("key") ?? "";
   if (!expected || Buffer.byteLength(supplied) !== Buffer.byteLength(expected) || !timingSafeEqual(Buffer.from(supplied), Buffer.from(expected))) {
     return new Response("Not found", { status: 404, headers });
