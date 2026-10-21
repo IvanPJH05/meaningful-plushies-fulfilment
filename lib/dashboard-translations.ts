@@ -1,6 +1,8 @@
 // Interface copy only. Order/customer records are never translated.
 // Tuple order: Bahasa Melayu, Bahasa Indonesia.
 export const dashboardTranslations: Readonly<Record<string, readonly [string, string]>> = {
+  "Download NFC Helper": ["Muat turun NFC Helper", "Unduh NFC Helper"],
+  "New computer? Download the ZIP, extract all files, then run install-windows-nfc-protocol.bat once.": ["Komputer baharu? Muat turun ZIP, ekstrak semua fail, kemudian jalankan install-windows-nfc-protocol.bat sekali.", "Komputer baru? Unduh ZIP, ekstrak semua file, lalu jalankan install-windows-nfc-protocol.bat sekali."],
   "COD shipping details": ["Butiran penghantaran COD", "Detail pengiriman COD"],
   "Copy the name, phone number and full address into your courier form. Set the COD amount separately.": ["Salin nama, nombor telefon dan alamat penuh ke borang kurier. Tetapkan jumlah COD secara berasingan.", "Salin nama, nomor telepon dan alamat lengkap ke formulir kurir. Atur jumlah COD secara terpisah."],
   "Set COD to": ["Tetapkan COD kepada", "Atur COD menjadi"],

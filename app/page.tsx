@@ -6306,8 +6306,9 @@ function Home() {
             </div>
             <div className="nfc-helper-actions">
               <a className="button primary small" href="meaningful-nfc-helper://start" onClick={startNfcHelper}>{t("Start NFC Helper")}</a>
+              <a className="button secondary small" href="/downloads/meaningful-plushies-nfc-helper.zip" download>{t("Download NFC Helper")}</a>
               <button className="button secondary small" type="button" onClick={() => void checkNfcHelper()}>{t("Check helper")}</button>
-              <button className="button secondary small" type="button" onClick={copyNfcHelperSetupCommand}>{t("Copy setup command")}</button>
+              <small>{t("New computer? Download the ZIP, extract all files, then run install-windows-nfc-protocol.bat once.")}</small>
             </div>
           </div>
           <div className="queue-results">{filtered.length ? compactTable("fulfilment") : <div className="empty"><strong>{t("No fulfilment orders found")}</strong><p>{t("Try another search or status filter.")}</p></div>}</div>
@@ -6330,6 +6331,7 @@ function Home() {
             </div>
             <div className="nfc-helper-actions">
               <a className="button primary small" href="meaningful-nfc-helper://start" onClick={startNfcHelper}>{t("Start NFC Helper")}</a>
+              <a className="button secondary small" href="/downloads/meaningful-plushies-nfc-helper.zip" download>{t("Download NFC Helper")}</a>
               <button className="button secondary small" type="button" onClick={() => void checkNfcHelper()}>{t("Check helper")}</button>
             </div>
           </div>
