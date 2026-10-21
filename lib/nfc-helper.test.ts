@@ -14,3 +14,4 @@ test("launch waits for a slow helper and stops polling once ready",async()=>{
  assert.equal(probes,9);assert.equal(waits,8);
  probes=0;assert.equal(await waitForNfcHelper(async()=>{probes++;return false;},async()=>{}),false);assert.equal(probes,30);
 });
+test("launch deadline ends even when a browser probe never resolves", async () => { assert.equal(await waitForNfcHelper(() => new Promise<boolean>(() => {}), async () => {}, 20), false); });

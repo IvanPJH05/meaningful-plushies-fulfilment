@@ -2577,11 +2577,10 @@ function Home() {
     const attempt = ++nfcHelperAttempt.current;
     setNfcHelperStatus("starting");
     setNotice("Opening Windows NFC helper. Choose Open in Chrome's app prompt. Allow local network access if Chrome asks.");
-    window.location.href = "meaningful-nfc-helper://start";
     void waitForNfcHelper().then(running => {
       if (attempt !== nfcHelperAttempt.current) return;
       setNfcHelperStatus(running ? "running" : "not_running");
-      setNotice(running ? "Windows NFC helper is running." : "Chrome has not connected to the NFC helper. Choose Open in the browser's app prompt, then click Check helper. If no prompt appears, run the NFC helper launcher on this computer.");
+      setNotice(running ? "Windows NFC helper is running." : "The NFC helper did not connect within 30 seconds. If Chrome showed no Open prompt, the Windows launcher was not opened.");
     });
   }
 
@@ -6306,7 +6305,7 @@ function Home() {
               <span>{nfcHelperStatus === "running" ? t("Ready. Click Write beside an order, then tap an NFC card.") : nfcHelperStatus === "checking" ? t("Checking local helper...") : nfcHelperStatus === "starting" ? t("Opening helper...") : t("Start the helper before writing NFC cards from this browser.")}</span>
             </div>
             <div className="nfc-helper-actions">
-              <button className="button primary small" type="button" onClick={startNfcHelper}>{t("Start NFC Helper")}</button>
+              <a className="button primary small" href="meaningful-nfc-helper://start" onClick={startNfcHelper}>{t("Start NFC Helper")}</a>
               <button className="button secondary small" type="button" onClick={() => void checkNfcHelper()}>{t("Check helper")}</button>
               <button className="button secondary small" type="button" onClick={copyNfcHelperSetupCommand}>{t("Copy setup command")}</button>
             </div>
@@ -6330,7 +6329,7 @@ function Home() {
               <span>{nfcHelperStatus === "running" ? t("Ready. Enter the password, click unlock, then tap the NFC card.") : nfcHelperStatus === "checking" ? t("Checking local helper...") : nfcHelperStatus === "starting" ? t("Opening helper...") : t("Start the helper before unlocking cards from this browser.")}</span>
             </div>
             <div className="nfc-helper-actions">
-              <button className="button primary small" type="button" onClick={startNfcHelper}>{t("Start NFC Helper")}</button>
+              <a className="button primary small" href="meaningful-nfc-helper://start" onClick={startNfcHelper}>{t("Start NFC Helper")}</a>
               <button className="button secondary small" type="button" onClick={() => void checkNfcHelper()}>{t("Check helper")}</button>
             </div>
           </div>
