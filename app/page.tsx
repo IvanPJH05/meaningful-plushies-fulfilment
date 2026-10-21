@@ -4,6 +4,7 @@ import { NotificationBar, NotificationMessage, NotificationProvider } from "../c
 import { LoadingIndicator } from "../components/loading-indicator";
 
 import "./settings.css";
+import { CreatorSheetLink } from "../components/creator-sheet-link";
 import { probeNfcHelper, waitForNfcHelper } from "../lib/nfc-helper";
 
 import dynamic from "next/dynamic";
@@ -6183,6 +6184,7 @@ function Home() {
       {workspace === "audio_scanner" && session.role === "admin" && <AudioScannerWorkspace orders={orders} audioSourceFor={meaningfulMessageLink} />}
 
       {workspace === "marketing" && session.role === "admin" && <MarketingUgcWorkspace token={session.token} orders={orders} />}
+      {workspace === "creator" && session.role === "admin" && <CreatorSheetLink token={session.token} />}
       {workspace === "creator" && (session.role === "admin" || session.role === "creator") && <CreatorProgramWorkspacePage
         view={view}
         session={session}
