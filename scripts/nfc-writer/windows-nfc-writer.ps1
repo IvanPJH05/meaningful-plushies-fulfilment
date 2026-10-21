@@ -1,5 +1,13 @@
 $ErrorActionPreference = "Stop"
 
+# Keep one writer per Windows session, including repeated app-button clicks.
+$newHelperInstance = $false
+$helperInstanceMutex = [System.Threading.Mutex]::new($true, 'Local\MeaningfulPlushiesNfcWriter', [ref]$newHelperInstance)
+if (-not $newHelperInstance) {
+  $helperInstanceMutex.Dispose()
+  exit 0
+}
+
 $source = @"
 using System;
 using System.Runtime.InteropServices;
