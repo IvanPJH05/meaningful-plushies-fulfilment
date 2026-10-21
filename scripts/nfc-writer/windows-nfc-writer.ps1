@@ -152,10 +152,19 @@ function Get-ResponseData {
 function Read-CardPage {
   param([IntPtr]$Card, [uint32]$Protocol, [int]$Page)
   $command = New-ByteArray @(0xFF, 0xB0, 0x00, [byte]$Page, 0x04)
-  $response = [PcscNative]::Transmit($Card, $Protocol, $command)
+  $response = Send-CardCommand -Card $Card -Protocol $Protocol -Command $command
   $data = Get-ResponseData -Response $response -Length 4
-  if (-not $data) { throw "Could not read NFC card page $Page." }
-  return $data
+  if ($data) { return $data }
+
+  # Some readers reject the storage APDU for configuration pages. Native
+  # Type 2 READ returns four pages; only the requested first page is needed.
+  $nativeData = Invoke-NativeNfcCommand -Card $Card -Protocol $Protocol -NativeCommand (New-ByteArray @(0x30, [byte]$Page))
+  if ($nativeData -and $nativeData.Length -ge 16) {
+    $pageData = New-Object byte[] 4
+    [Array]::Copy([byte[]]$nativeData, 0, $pageData, 0, 4)
+    return $pageData
+  }
+  throw "Could not read NFC card page $Page. Keep the card on the reader and check that its tag type was detected correctly."
 }
 
 function Write-CardPage {
@@ -211,7 +220,7 @@ function Invoke-NativeNfcCommand {
     if ($length -gt 0) { [Array]::Copy($response, 3, $data, 0, $length) }
     return $data
   }
-  return $response
+  return $null
 }
 
 function Get-NfcPasswordBytes {
