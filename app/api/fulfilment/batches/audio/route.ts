@@ -16,7 +16,7 @@ export async function GET(request: Request) {
     if (error || !data) return NextResponse.json({ error: "Order is not in this batch." }, { status: 404 });
     const order = (data.fulfilment_orders as unknown as { data: Order }).data;
     const source = batchAudioSource(order);
-    if (!source) throw new Error("No message file is attached to this order. Attach an audio or video file and retry.");
+    if (!source) return NextResponse.json({ code: "VOICE_NOT_UPLOADED", error: "Voice not uploaded" }, { status: 400, headers: { "Cache-Control": "private, no-store" } });
     let bytes: Buffer | null = null, type = "";
     const inline = source.match(/^data:([^;,]+)(?:;[^,]*)?;base64,([\s\S]+)$/i);
     if (inline) {

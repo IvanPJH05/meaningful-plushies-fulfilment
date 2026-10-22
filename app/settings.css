@@ -1766,3 +1766,14 @@ body.print-sales-report .report-table th,
   .queue-toolbar .toolbar-filter-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .queue-toolbar .toolbar-filter-row .search { grid-column: 1 / -1; }
 }
+
+.marketing-ugc-workspace{display:grid;gap:20px}.ugc-offer-summary{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:18px 22px}.ugc-offer-summary span{padding:6px 12px;border-radius:999px;background:#e4f6ed;color:#24644d;font-size:13px;font-weight:700}.ugc-entry-form{padding:24px;display:grid;gap:18px}.ugc-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.ugc-form-grid label{display:grid;gap:7px}.ugc-wide{grid-column:1/-1}.ugc-list-toolbar{display:flex;align-items:center;gap:14px;padding:18px 20px;flex-wrap:wrap}.ugc-list-toolbar input{flex:1;min-width:180px}.ugc-offers-table{width:100%;min-width:950px;border-collapse:collapse}.ugc-offers-table th,.ugc-offers-table td{text-align:left;vertical-align:top;padding:15px;border-bottom:1px solid #e7edf5}.ugc-offers-table th{background:#f5f8fc;font-size:12px}.ugc-offers-table small,.ugc-offers-table td>a,.ugc-offers-table td>strong{display:block;margin-top:6px}.ugc-offers-table td button{margin:6px 6px 0 0}.ugc-offers-table textarea{min-width:150px;min-height:72px}.ugc-offers-table input{max-width:150px;margin-top:8px}.order-marker.ugc{background:#e1f5ef;color:#14664d}
+@media(max-width:700px){.ugc-form-grid{grid-template-columns:1fr}.ugc-wide{grid-column:auto}}
+
+.batch-cod { padding: 24px; min-width: 0; }
+.batch-cod-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr)); gap: 16px; }
+.batch-cod-grid article { border: 1px solid #dbe3ef; border-radius: 12px; padding: 16px; min-width: 0; overflow-wrap: anywhere; }
+.batch-cod textarea { display: block; width: 100%; box-sizing: border-box; margin: 12px 0; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; font: inherit; line-height: 1.6; resize: vertical; background: #f8fafc; color: #142b49; }
+.batch-cod-amount { margin-bottom: 4px; }
+.batch-cod small { display: block; margin-bottom: 14px; color: #64748b; }
+.batch-cod button { max-width: 100%; white-space: normal; }

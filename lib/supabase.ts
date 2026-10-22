@@ -905,12 +905,13 @@ export async function fetchCreatorFreeSamples(token: string): Promise<CreatorFre
   return result.samples.map((row) => creatorFreeSampleFromRow(row));
 }
 
-export async function fetchCreatorFreeSampleCodes(token: string): Promise<string[]> {
+export async function fetchCreatorFreeSampleCodes(token: string, onUgcCodes?: (codes: string[]) => void): Promise<string[]> {
   const response = await fetch("/api/creator-samples", {
     headers: { authorization: `Bearer ${token}` },
   });
-  const result = await response.json().catch(() => ({})) as { samples?: Record<string, unknown>[]; codes?: string[]; error?: string };
+  const result = await response.json().catch(() => ({})) as { samples?: Record<string, unknown>[]; codes?: string[]; ugcCodes?: string[]; error?: string };
   if (!response.ok) throw new Error(result.error || "Creator sample codes could not be loaded.");
+  onUgcCodes?.(result.ugcCodes ?? []);
   return result.codes ?? result.samples?.map((sample) => String(sample.sample_code ?? "")) ?? [];
 }
 

@@ -4,8 +4,12 @@ import { NotificationBar, NotificationMessage, NotificationProvider } from "../c
 import { LoadingIndicator } from "../components/loading-indicator";
 
 import "./settings.css";
+import { CreatorSheetLink } from "../components/creator-sheet-link";
+import { probeNfcHelper, waitForNfcHelper } from "../lib/nfc-helper";
 
 import dynamic from "next/dynamic";
+import { isUgcOrder } from "../lib/marketing-ugc";
+const MarketingUgcWorkspace = dynamic(() => import("../components/marketing-ugc-workspace").then(module => module.MarketingUgcWorkspace), { loading: () => <WorkspaceLoading /> });
 import { compactOrderLabel, normalizeTableLayout, tableColumns, type TableColumn, type TableLayouts, type TableView } from "../lib/table-layout";
 const TableLayoutEditor = dynamic(() => import("../components/table-layout-editor"));
 import { OrderTableRow } from "../components/order-table-row";
@@ -113,6 +117,7 @@ import { ManualOrderIntakeRecords } from "../components/manual-order-intake-reco
 type Session = DashboardSession;
 const CreatorProfilesContext = createContext<CreatorProfile[]>([]);
 const FreeCreatorSampleCodesContext = createContext<string[]>([]);
+const UgcCodesContext = createContext<string[]>([]);
 type View =
   | "orders" | "fulfilment" | "packing_slips" | "print_envelope" | "nfc_card" | "import" | "tiktok_shop" | "fulfilled" | "history" | "settings" | "meta_capi" | "stock" | "sales_report"
   | "accounting_dashboard" | "accounting_documents" | "accounting_transactions" | "accounting_csv_import" | "accounting_profit_loss" | "accounting_balance_sheet"
@@ -123,8 +128,8 @@ type View =
   | "monthly_journal_inbox" | "monthly_journal_import" | "monthly_journal_shopee" | "monthly_journal_shortcuts" | "monthly_journal_source_documents" | "monthly_journal_general_journal" | "monthly_journal_reports" | "monthly_journal_accounts" | "monthly_journal_account_activity"
   | "content_dashboard" | "content_plan" | "content_ideas"
   | "manual_orders_dashboard" | "manual_orders_preorders" | "manual_orders_leads"
-  | "creator_dashboard" | "creator_accounts" | "creator_sales" | "creator_commissions" | "creator_payouts" | "creator_analytics" | "creator_free_samples" | "plush_charm_orders" | "shopify_app" | "audio_scanner" | "batch_fulfilment";
-type Workspace = "batch_fulfilment" | "fulfilment" | "manual_orders" | "accounting" | "formal_accounting" | "monthly_journal" | "creator" | "inventory" | "reports" | "content" | "settings" | "shopify_app" | "audio_scanner";
+  | "marketing_ugc" | "creator_dashboard" | "creator_accounts" | "creator_sales" | "creator_commissions" | "creator_payouts" | "creator_analytics" | "creator_free_samples" | "plush_charm_orders" | "shopify_app" | "audio_scanner" | "batch_fulfilment";
+type Workspace = "marketing" | "batch_fulfilment" | "fulfilment" | "manual_orders" | "accounting" | "formal_accounting" | "monthly_journal" | "creator" | "inventory" | "reports" | "content" | "settings" | "shopify_app" | "audio_scanner";
 type SalesRange = "active" | "today" | "7d" | "30d" | "lifetime";
 type SortKey = "orderNumber" | "importedAt" | "updatedAt";
 type SortDirection = "asc" | "desc";
@@ -663,9 +668,10 @@ const manualOrderViews: readonly View[] = ["manual_orders_dashboard", "manual_or
 const manualOrderCharacters = ["Billy", "Tootsie", "Hunnie", "Dragon Warrior"] as const;
 const creatorViews: readonly View[] = ["creator_dashboard", "creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
 const creatorAdminViews: readonly View[] = ["creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
-const dashboardViews: readonly View[] = ["batch_fulfilment", ...fulfilmentViews, "history", "settings", "meta_capi", "stock", "sales_report", "plush_charm_orders", "shopify_app", "audio_scanner", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...creatorViews];
-const adminOnlyViews = new Set<View>(["history", "settings", "meta_capi", "stock", "sales_report", "shopify_app", "audio_scanner", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...creatorAdminViews]);
+const dashboardViews: readonly View[] = ["marketing_ugc","batch_fulfilment", ...fulfilmentViews, "history", "settings", "meta_capi", "stock", "sales_report", "plush_charm_orders", "shopify_app", "audio_scanner", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...creatorViews];
+const adminOnlyViews = new Set<View>(["marketing_ugc","history", "settings", "meta_capi", "stock", "sales_report", "shopify_app", "audio_scanner", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...creatorAdminViews]);
 const workspaceDefaultViews: Record<Workspace, View> = {
+  marketing: "marketing_ugc",
   batch_fulfilment: "batch_fulfilment",
   fulfilment: "orders",
   manual_orders: "manual_orders_dashboard",
@@ -681,6 +687,7 @@ const workspaceDefaultViews: Record<Workspace, View> = {
   audio_scanner: "audio_scanner",
 };
 const workspaceLabels: Record<Workspace, string> = {
+  marketing: "Marketing",
   batch_fulfilment: "Batch Fulfilment",
   fulfilment: "Fulfilment",
   manual_orders: "Manual Orders",
@@ -1343,6 +1350,8 @@ function OrderMarkers({ order, manualOrders }: { order: Order; manualOrders: Man
   const creatorProfiles = useContext(CreatorProfilesContext);
   const freeCreatorSampleCodes = useContext(FreeCreatorSampleCodesContext);
   const source = fulfilmentSource(order, manualOrders);
+  const ugcCodes = useContext(UgcCodesContext);
+  if (isUgcOrder(order, ugcCodes)) return <span className="order-marker ugc">UGC</span>;
   const unrecordedManualOrder = source === "shopify" && order.totalAmount === 0 && !isInfluencerFulfilmentOrder(order, creatorProfiles, freeCreatorSampleCodes);
   if (isInfluencerFulfilmentOrder(order, creatorProfiles, freeCreatorSampleCodes)) return <span className="order-marker influencer">{t("Influencer")}</span>;
   return <>
@@ -1482,6 +1491,7 @@ function permittedView(value: unknown, role?: UserRole) {
 }
 
 function workspaceForView(view: View): Workspace {
+  if (view === "marketing_ugc") return "marketing";
   if (view === "batch_fulfilment") return "batch_fulfilment";
   if (creatorViews.includes(view)) return "creator";
   if (contentViews.includes(view)) return "content";
@@ -1505,6 +1515,7 @@ function navItemsForWorkspace(workspace: Workspace, role: UserRole): NavItem[] {
   if (workspace === "formal_accounting") return formalAccountingNavItems;
   if (workspace === "monthly_journal") return monthlyJournalNavItems;
   if (workspace === "creator") return creatorAdminNavItems;
+  if (workspace === "marketing") return [{ view: "marketing_ugc", label: "Customer UGC", icon: "report" }];
   if (workspace === "inventory") return inventoryNavItems;
   if (workspace === "reports") return reportsNavItems;
   if (workspace === "content") return contentNavItems;
@@ -1517,6 +1528,7 @@ function navItemsForWorkspace(workspace: Workspace, role: UserRole): NavItem[] {
 
 function viewTitle(view: View) {
   const titleOverrides: Partial<Record<View, string>> = {
+    marketing_ugc: "Customer UGC",
     batch_fulfilment: "Batch Fulfilment",
     orders: "Orders Dashboard",
     import: "Import Shopify Orders",
@@ -1749,6 +1761,7 @@ function Home() {
   const [newAccount, setNewAccount] = useState({ username: "", displayName: "", role: "staff" as UserRole, password: "" });
   const [creatorProfiles, setCreatorProfiles] = useState<CreatorProfile[]>([]);
   const [freeCreatorSampleCodes, setFreeCreatorSampleCodes] = useState<string[]>([]);
+  const [ugcCodes, setUgcCodes] = useState<string[]>([]);
   const [creatorCommissions, setCreatorCommissions] = useState<CreatorCommission[]>([]);
   const [creatorPayouts, setCreatorPayouts] = useState<CreatorPayout[]>([]);
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
@@ -1781,8 +1794,10 @@ function Home() {
   const [refreshingOrderNumber, setRefreshingOrderNumber] = useState("");
   const [generatingPlushCharmLinks, setGeneratingPlushCharmLinks] = useState(false);
   const [nfcWritingOrderId, setNfcWritingOrderId] = useState("");
+  const nfcHelperAttempt = useRef(0);
   const [nfcHelperStatus, setNfcHelperStatus] = useState<"unknown" | "checking" | "running" | "not_running" | "starting">("unknown");
   const [nfcUnlockPassword, setNfcUnlockPassword] = useState("");
+  const [nfcLegacyUnlock, setNfcLegacyUnlock] = useState(false);
   const [nfcUnlocking, setNfcUnlocking] = useState(false);
 
   const normalizeSharedOrders = useCallback((sharedOrders: Order[]) => sharedOrders.map((order) => {
@@ -1856,7 +1871,7 @@ function Home() {
       const sharedSamples = session.role === "admin"
         ? (await syncLocalFreeCreatorSamples(session.token)).samples
         : [];
-      const sharedCodes = await fetchCreatorFreeSampleCodes(session.token);
+      const sharedCodes = await fetchCreatorFreeSampleCodes(session.token, setUgcCodes);
       if (cancelled) return;
       if (session.role === "admin") writeJson(freeCreatorSamplesStorageKey, sharedSamples);
       setFreeCreatorSampleCodes(sharedCodes.map((code) => code.trim().toUpperCase()).filter(Boolean));
@@ -1870,7 +1885,7 @@ function Home() {
   useEffect(() => {
     if (!session || !supabaseConfigured || (session.role !== "admin" && session.role !== "staff")) return;
     const refreshSharedCodes = () => {
-      void fetchCreatorFreeSampleCodes(session.token)
+      void fetchCreatorFreeSampleCodes(session.token, setUgcCodes)
         .then((codes) => setFreeCreatorSampleCodes(codes.map((code) => code.trim().toUpperCase()).filter(Boolean)))
         .catch(() => undefined);
     };
@@ -2041,7 +2056,7 @@ function Home() {
       catch (error) { setDatabaseError(readableError(error, "Order refresh failed. Your displayed data is kept.")); }
     }
     if (changedTables.includes("creator_free_samples") && (dataRole === "admin" || dataRole === "staff")) {
-      void fetchCreatorFreeSampleCodes(dataToken).then((codes) => setFreeCreatorSampleCodes(codes.map((code) => code.trim().toUpperCase()).filter(Boolean)))
+      void fetchCreatorFreeSampleCodes(dataToken, setUgcCodes).then((codes) => setFreeCreatorSampleCodes(codes.map((code) => code.trim().toUpperCase()).filter(Boolean)))
         .catch(() => setNotice("Creator sample codes could not refresh. Please retry."));
     }
     await loadWorkspaceSupport();
@@ -2551,27 +2566,24 @@ function Home() {
 
 
   async function checkNfcHelper(showResult = true) {
+    const attempt = ++nfcHelperAttempt.current;
     setNfcHelperStatus("checking");
-    try {
-      const response = await fetch("http://127.0.0.1:17654/health", { cache: "no-store" });
-      const result = await response.json().catch(() => ({})) as { ok?: boolean };
-      if (!response.ok || !result.ok) throw new Error("Helper did not respond.");
-      setNfcHelperStatus("running");
-      if (showResult) setNotice("Windows NFC helper is running.");
-      return true;
-    } catch {
-      setNfcHelperStatus("not_running");
-      if (showResult) setNotice("Windows NFC helper is not running yet. Click Start NFC Helper, or run the one-time setup first.");
-      return false;
-    }
+    const running = await probeNfcHelper();
+    if (attempt !== nfcHelperAttempt.current) return running;
+    setNfcHelperStatus(running ? "running" : "not_running");
+    if (showResult) setNotice(running ? "Windows NFC helper is running." : "Cannot connect to the NFC helper. Open the helper and allow this site's local network access in Chrome if prompted.");
+    return running;
   }
 
   function startNfcHelper() {
+    const attempt = ++nfcHelperAttempt.current;
     setNfcHelperStatus("starting");
-    setNotice("Opening Windows NFC helper. If Chrome asks for permission, allow it. If nothing opens, run the one-time setup shown below.");
-    window.location.href = "meaningful-nfc-helper://start";
-    window.setTimeout(() => void checkNfcHelper(false), 2500);
-    window.setTimeout(() => void checkNfcHelper(false), 6000);
+    setNotice("Opening Windows NFC helper. Choose Open in Chrome's app prompt. Allow local network access if Chrome asks.");
+    void waitForNfcHelper().then(running => {
+      if (attempt !== nfcHelperAttempt.current) return;
+      setNfcHelperStatus(running ? "running" : "not_running");
+      setNotice(running ? "Windows NFC helper is running." : "The NFC helper did not connect within 30 seconds. If Chrome showed no Open prompt, the Windows launcher was not opened.");
+    });
   }
 
   async function copyNfcHelperSetupCommand() {
@@ -2584,6 +2596,15 @@ function Home() {
     }
   }
 
+  async function systemNfcPassword() {
+    const response = await fetch("/api/fulfilment/nfc-password", {
+      headers: { Authorization: `Bearer ${session?.token ?? ""}` }, cache: "no-store",
+    });
+    const result = await response.json() as { password?: string; error?: string };
+    if (!response.ok || !result.password) throw new Error(result.error || "Could not load the system NFC password.");
+    return result.password;
+  }
+
   async function writeCertificateLinkToNfc(order: Order) {
     const link = certificateLink(order);
     if (!link) return setNotice(`#${order.orderNumber} has no certificate code to write.`);
@@ -2593,7 +2614,7 @@ function Home() {
       const response = await fetch("http://127.0.0.1:17654/write", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: link, label: `#${order.orderNumber}`, password: order.orderNumber }),
+        body: JSON.stringify({ url: link, label: `#${order.orderNumber}`, password: await systemNfcPassword() }),
       });
       const result = await response.json().catch(() => ({})) as { ok?: boolean; error?: string };
       if (!response.ok || !result.ok) throw new Error(result.error || "Desktop NFC writer did not confirm the card.");
@@ -2612,15 +2633,14 @@ function Home() {
   }
 
   async function unlockNfcCard() {
-    const password = nfcUnlockPassword.trim();
-    if (!password) return setNotice("Enter the NFC card password first.");
+    if (nfcLegacyUnlock && !nfcUnlockPassword.trim()) return setNotice("Enter the original card password first.");
     setNfcUnlocking(true);
     try {
       setNotice("Sending unlock request. Hold the locked NFC card on the USB reader.");
       const response = await fetch("http://127.0.0.1:17654/unlock", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ password: nfcLegacyUnlock ? nfcUnlockPassword.trim() : await systemNfcPassword() }),
       });
       const result = await response.json().catch(() => ({})) as { ok?: boolean; error?: string };
       if (!response.ok || !result.ok) throw new Error(result.error || "Desktop NFC writer did not confirm the unlock.");
@@ -5959,12 +5979,12 @@ function Home() {
 
   const workspace = workspaceForView(view);
   const availableWorkspaces: Workspace[] = session.role === "admin"
-    ? ["fulfilment", "batch_fulfilment", "manual_orders", "accounting", "formal_accounting", "monthly_journal", "creator", "inventory", "reports", "content", "shopify_app", "audio_scanner", "settings"]
+    ? ["fulfilment", "batch_fulfilment", "manual_orders", "accounting", "formal_accounting", "monthly_journal", "creator", "marketing", "inventory", "reports", "content", "shopify_app", "audio_scanner", "settings"]
     : session.role === "creator" ? ["creator"] : ["fulfilment", "batch_fulfilment", "shopify_app"];
   const sidebarNavItems = navItemsForWorkspace(workspace, session.role);
   const workspaceTitle = workspaceLabels[workspace];
 
-  return <CreatorProfilesContext.Provider value={creatorProfiles}><FreeCreatorSampleCodesContext.Provider value={freeCreatorSampleCodes}><main className="app-shell">
+  return <CreatorProfilesContext.Provider value={creatorProfiles}><FreeCreatorSampleCodesContext.Provider value={freeCreatorSampleCodes}><UgcCodesContext.Provider value={ugcCodes}><main className="app-shell">
     <aside className="side-nav">
       <div className="workspace-switcher">
         <div className="logo"><span>{t("MP")}</span><div>{t("Meaningful Plushies")}<small>{t(workspaceTitle)}</small></div></div>
@@ -6163,6 +6183,8 @@ function Home() {
       {workspace === "batch_fulfilment" && <BatchFulfilmentWorkspace token={session.token} initialBatchId={activeBatchId} onOrdersChanged={() => loadSharedData()} onPrint={batchOrders => printPackingSlips("both", batchOrders)} onEnvelopes={printEnvelopes} onNfc={writeCertificateLinkToNfc} onStartNfc={startNfcHelper} certificateFor={certificateLink} onOpenOrder={async order => { const full = await fetchSharedOrderById(order.id); if (!full) throw new Error("Order could not be loaded. Try again."); setBatchSelectedOrder(full); hydratedOrderIds.current.add(full.id); setSelectedId(full.id); }} />}
       {workspace === "audio_scanner" && session.role === "admin" && <AudioScannerWorkspace orders={orders} audioSourceFor={meaningfulMessageLink} />}
 
+      {workspace === "marketing" && session.role === "admin" && <MarketingUgcWorkspace token={session.token} orders={orders} />}
+      {workspace === "creator" && session.role === "admin" && <CreatorSheetLink token={session.token} />}
       {workspace === "creator" && (session.role === "admin" || session.role === "creator") && <CreatorProgramWorkspacePage
         view={view}
         session={session}
@@ -6275,7 +6297,7 @@ function Home() {
             <div className="toolbar-row queue-status-row"><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /></div>
             <div className="toolbar-row toolbar-action-row"><button className="button primary" disabled={!batchSelectionReady} title={t("Select up to 200 New Order or Uploading Audio orders.")} onClick={() => setAssigningBatch(true)}>{t("Move to Batch Fulfilment")}</button>{view === "orders" && <button className="button secondary" disabled={!selectedShopifyOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshShopifyOrders}>{refreshingOrderNumber === "bulk" ? t("Refreshing...") : `Refresh ${selectedShopifyOrderCount} Shopify`}</button>}{view === "orders" && <button className="button secondary" disabled={!selectedTikTokOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshTikTokOrders}>{refreshingOrderNumber === "tiktok-bulk" ? t("Syncing...") : `Sync ${selectedTikTokOrderCount} TikTok`}</button>}{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>{t("Move") + " "}{selectedOrders.length} {" " + t("to next status")}</button>}{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length || removingOrders} onClick={() => deleteOrders(selectedOrders)}>{t("Delete")}</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>{t("Export CSV")}</button>}</div>
           </div>
-          <div className="table-scroll">{compactTable("orders")}{!filtered.length && <div className="empty"><strong>{t("No orders found")}</strong><p>{t("Try another search or status filter.")}</p></div>}</div>
+          <div className="queue-results">{filtered.length ? compactTable("orders") : <div className="empty"><strong>{t("No orders found")}</strong><p>{t("Try another search or status filter.")}</p></div>}</div>
           <div className="table-footer">{t("Showing") + " "}{filtered.length} {" " + t("of") + " "}{view === "fulfilled" ? orders.filter((order) => order.status === "shipped").length : orders.length} {" " + t("orders")}</div>
           {hasMoreOrderSummaries && <div ref={orderSummaryLoadMoreSentinel} className="table-footer"><button className="button secondary small" type="button" disabled={loadingMoreOrderSummaries} onClick={() => void loadNextOrderSummaries()}>{loadingMoreOrderSummaries ? t("Loading more orders...") : t("Load next 100 orders")}</button></div>}
         </section>}
@@ -6294,12 +6316,13 @@ function Home() {
               <span>{nfcHelperStatus === "running" ? t("Ready. Click Write beside an order, then tap an NFC card.") : nfcHelperStatus === "checking" ? t("Checking local helper...") : nfcHelperStatus === "starting" ? t("Opening helper...") : t("Start the helper before writing NFC cards from this browser.")}</span>
             </div>
             <div className="nfc-helper-actions">
-              <button className="button primary small" type="button" onClick={startNfcHelper}>{t("Start NFC Helper")}</button>
+              <a className="button primary small" href="meaningful-nfc-helper://start" onClick={startNfcHelper}>{t("Start NFC Helper")}</a>
+              <a className="button secondary small" href="/downloads/meaningful-plushies-nfc-helper.zip" download>{t("Download NFC Helper")}</a>
               <button className="button secondary small" type="button" onClick={() => void checkNfcHelper()}>{t("Check helper")}</button>
-              <button className="button secondary small" type="button" onClick={copyNfcHelperSetupCommand}>{t("Copy setup command")}</button>
+              <small>{t("New computer? Download the ZIP, extract all files, then run install-windows-nfc-protocol.bat once.")}</small>
             </div>
           </div>
-          <div className="fulfilment-scroll table-scroll">{compactTable("fulfilment")}{!filtered.length && <div className="empty"><strong>{t("No fulfilment orders found")}</strong><p>{t("Try another search or status filter.")}</p></div>}</div>
+          <div className="queue-results">{filtered.length ? compactTable("fulfilment") : <div className="empty"><strong>{t("No fulfilment orders found")}</strong><p>{t("Try another search or status filter.")}</p></div>}</div>
           <div className="table-footer">{t("Showing") + " "}{filtered.length} {" " + t("of") + " "}{orders.length} {" " + t("orders")}</div>
           {hasMoreOrderSummaries && <div ref={orderSummaryLoadMoreSentinel} className="table-footer"><button className="button secondary small" type="button" disabled={loadingMoreOrderSummaries} onClick={() => void loadNextOrderSummaries()}>{loadingMoreOrderSummaries ? t("Loading more orders...") : t("Load next 100 orders")}</button></div>}
         </section>}
@@ -6309,26 +6332,27 @@ function Home() {
         <div className="card hero-card">
           <span>{t("NFC CARD")}</span>
           <h2>{t("Unlock password-protected NFC cards")}</h2>
-          <p>{t("If a card was locked before rewriting, enter the password and tap the card on your USB reader. For order cards, the password is usually the last 4 letters or numbers of the order number.")}</p>
+          <p>{t("For new cards, click Unlock card and hold the card on the reader. The system enters the password automatically. Older cards still need their original password.")}</p>
         </div>
         <div className="card nfc-unlock-card">
           <div className={`nfc-helper-panel ${nfcHelperStatus}`}>
             <div>
               <strong>{t("Windows NFC Helper")}</strong>
-              <span>{nfcHelperStatus === "running" ? t("Ready. Enter the password, click unlock, then tap the NFC card.") : nfcHelperStatus === "checking" ? t("Checking local helper...") : nfcHelperStatus === "starting" ? t("Opening helper...") : t("Start the helper before unlocking cards from this browser.")}</span>
+              <span>{nfcHelperStatus === "running" ? t("Ready. Click Unlock card, then hold the card on the reader.") : nfcHelperStatus === "checking" ? t("Checking local helper...") : nfcHelperStatus === "starting" ? t("Opening helper...") : t("Start the helper before unlocking cards from this browser.")}</span>
             </div>
             <div className="nfc-helper-actions">
-              <button className="button primary small" type="button" onClick={startNfcHelper}>{t("Start NFC Helper")}</button>
+              <a className="button primary small" href="meaningful-nfc-helper://start" onClick={startNfcHelper}>{t("Start NFC Helper")}</a>
+              <a className="button secondary small" href="/downloads/meaningful-plushies-nfc-helper.zip" download>{t("Download NFC Helper")}</a>
               <button className="button secondary small" type="button" onClick={() => void checkNfcHelper()}>{t("Check helper")}</button>
             </div>
           </div>
           <div className="nfc-unlock-form">
-            <label>{t("NFC card password")}<input value={nfcUnlockPassword} onChange={(event) => setNfcUnlockPassword(event.target.value)} placeholder={t("Example: 1486")} /></label>
-            <button className="button primary" type="button" disabled={nfcUnlocking || !nfcUnlockPassword.trim()} onClick={unlockNfcCard}>{nfcUnlocking ? t("Unlocking...") : t("Unlock card")}</button>
+            <label><input type="checkbox" checked={nfcLegacyUnlock} onChange={event => setNfcLegacyUnlock(event.target.checked)} />{t("Older card — use original password")}</label>{nfcLegacyUnlock && <label>{t("Original NFC card password")}<input type="password" autoComplete="off" value={nfcUnlockPassword} onChange={(event) => setNfcUnlockPassword(event.target.value)} placeholder={t("Example: 1486")} /></label>}
+            <button className="button primary" type="button" disabled={nfcUnlocking || (nfcLegacyUnlock && !nfcUnlockPassword.trim())} onClick={unlockNfcCard}>{nfcUnlocking ? t("Unlocking...") : t("Unlock card")}</button>
           </div>
           <div className="helper-note">
             <strong>{t("Tip")}</strong>
-            <p>{t("For order numbers longer than 4 characters, use the last 4 letters or numbers. Example: #TT1032 uses 1032.")}</p>
+            <p>{t("Older cards: use the last four letters or digits of the full original order number. After unlocking, write the card again to switch it to the system password.")}</p>
           </div>
         </div>
       </section>}
@@ -6488,7 +6512,7 @@ function Home() {
       const transactions = accountingTransactions.filter((item) => matchedIds.has(item.id));
       return line && transactions.length ? <LinkedBankTransactionModal line={line} transactions={transactions} documents={accountingDocuments} ledgerEntries={accountingLedgerEntries.filter((entry) => matchedIds.has(entry.transactionId))} onOpenDocument={(item) => { setPreviewBankLineId(""); openAccountingDocument(item); }} onClose={() => setPreviewBankLineId("")} /> : null;
     })()}
-  </main></FreeCreatorSampleCodesContext.Provider></CreatorProfilesContext.Provider>;
+  </main></UgcCodesContext.Provider></FreeCreatorSampleCodesContext.Provider></CreatorProfilesContext.Provider>;
 }
 
 function getBankLineAmount(line: AccountingBankStatementLine) {
@@ -9929,7 +9953,7 @@ function OrderSearch({ value, onChange, placeholder }: { value: string; onChange
 
 function StatusFilterPills({ value, onChange }: { value: "all" | OrderStatus; onChange: (status: "all" | OrderStatus) => void }) {
   const { t } = useLanguage();
-  return <div className="status-filter-pills" aria-label={t("Filter by stage")}>{(["all", ...orderStatuses] as ("all" | OrderStatus)[]).map((status) => <button type="button" key={status} className={value === status ? "active" : ""} onClick={() => onChange(status)}>{status === "all" ? t("All") : t(statusLabels[status])}</button>)}</div>;
+  return <div className="queue-stage-filter"><select className="status-filter-select" aria-label={t("Filter by stage")} value={value} onChange={event => onChange(event.target.value as "all" | OrderStatus)}>{(["all", ...orderStatuses] as ("all" | OrderStatus)[]).map(status => <option key={status} value={status}>{status === "all" ? t("All") : t(statusLabels[status])}</option>)}</select><div className="status-filter-pills" aria-label={t("Filter by stage")}>{(["all", ...orderStatuses] as ("all" | OrderStatus)[]).map((status) => <button type="button" key={status} className={value === status ? "active" : ""} aria-pressed={value === status} onClick={() => onChange(status)}>{status === "all" ? t("All") : t(statusLabels[status])}</button>)}</div></div>;
 }
 
 function SourceFilterSelect({ value, onChange, influencerOnly = false, onInfluencerChange }: { value: SourceFilter; onChange: (source: SourceFilter) => void; influencerOnly?: boolean; onInfluencerChange?: (enabled: boolean) => void }) {

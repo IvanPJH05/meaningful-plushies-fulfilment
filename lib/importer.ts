@@ -504,7 +504,9 @@ export function shopifyOrderToFulfilmentOrders(
     const lineName = shopifyLineName(lineItem);
     const id = total === 1 ? number : `${number}-${index + 1}`;
     const current = existingById.get(id) ?? (index === 0 ? existing.find((order) => order.orderNumber === number && !order.setIndicator) : undefined);
-    const initialStatus = current?.status ?? "new_order";
+    // A new voice plushie is not ready for fulfilment until its details arrive.
+    // Successful submitted-session binding promotes this hold to New Order.
+    const initialStatus = current?.status ?? (shopifyLineVoice(lineName) > 0 && !personalization.meaningfulMessage ? "awaiting_customisation" : "new_order");
     const certificateCode = personalization.certificateCode || current?.certificateCode || "";
     orders.push({
       id,

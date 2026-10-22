@@ -55,3 +55,48 @@ test("recognises wallet events retargeted to a shadow host", () => {
   assert.equal(cart.controlForEvent({ target: host, composedPath: () => [host] }, form), host);
   assert.equal(cart.isCheckoutControl(host), true);
 });
+
+
+test("checkout requires the saved line and backup reference in the persisted cart", async () => {
+  const calls: string[] = [];
+  const fetcher = async (url: string) => {
+    calls.push(url);
+    if (url.endsWith("cart/update.js")) return response({});
+    if (calls.length === 1) return response({items: []});
+    if (url.endsWith("cart/add.js")) return response({items: [item]});
+    return response({items: [item], attributes: {mp_customisation_session_id: session}});
+  };
+  await cart.ensureCheckoutReady(item, fetcher, "/ms/");
+  assert.deepEqual(calls, ["/ms/cart.js", "/ms/cart/add.js", "/ms/cart/update.js", "/ms/cart.js"]);
+});
+
+test("stops checkout when the add response succeeds but the persisted cart loses customisation", async () => {
+ for (const finalCart of [
+   {items: []},
+   {items: [item], attributes: {}},
+   {items: [{...item, properties: {customisation_session_id: session}}], attributes: {mp_customisation_session_id: session}},
+ ]) {
+  let calls = 0;
+  await assert.rejects(cart.ensureCheckoutReady(item, async (url: string) => {
+   calls++;
+   if (calls === 1) return response({items: []});
+   if (url.endsWith("cart/add.js")) return response({items: [item]});
+   if (url.endsWith("cart/update.js")) return response({});
+   return response(finalCart);
+  }), /Checkout has been stopped/);
+ }
+});
+
+test("a failed mirror blocks checkout, while retry reuses the existing cart line", async () => {
+ await assert.rejects(cart.ensureCheckoutReady(item, async (url: string) => response(url.endsWith("cart.js") ? {items: [item]} : {}, !url.endsWith("cart/update.js"))), /checkout could not be prepared/);
+ let addCalls = 0;
+ await cart.ensureCheckoutReady(item, async (url: string) => {
+   if (url.endsWith("cart/add.js")) addCalls++;
+   return response({items: [item], attributes: {mp_customisation_session_id: session}});
+ });
+ assert.equal(addCalls, 0);
+});
+
+test("a bare duplicate plushie cannot bypass customisation in the cart", async () => {
+ await assert.rejects(cart.ensureCheckoutReady(item, async () => response({items: [item, {id: 123, quantity: 1, properties: {}}], attributes: {mp_customisation_session_id: session}})), /without customisation/);
+});

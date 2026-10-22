@@ -541,3 +541,9 @@ test("imports TikTok's Meaningful Plush Charms product as a Charm, not a birth c
   assert.equal(order.certificateCode, "");
   assert.equal(order.idWebsiteLink, "");
 });
+
+
+test("new voice plushies with missing customisation cannot enter the ready queue", () => {
+ const rows = shopifyOrderToFulfilmentOrders({ name: "#1938", line_items: [{id: 1, name: "(T,10S) BUILD YOUR MEANINGFUL PLUSHIE - TOOTSIE / INCLUDED / 10 seconds"}] }, "", []);
+ assert.equal(rows[0].status, "awaiting_customisation");
+});
