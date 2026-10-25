@@ -2,11 +2,11 @@ import { randomUUID } from "node:crypto";
 
 import { createClient } from "@supabase/supabase-js";
 
-import { createCompleteNowSession, createVoiceUpload, saveSnowyCharmVoice, saveSubmittedSession, submittedCustomisationsForSessionIds, type CustomisationForm } from "./customisation";
+import { createCompleteNowSession, createVoiceUpload, normaliseCustomisationForm, saveSnowyCharmVoice, saveSubmittedSession, submittedCustomisationsForSessionIds, type CustomisationForm } from "./customisation";
 import { shopifyOrderToFulfilmentOrders } from "./importer";
 import { notifyNewManualOrder } from "./mobile-push-notifications";
 import { shopifyManualOrderCustomerName } from "./manual-order-customer-name";
-import { manualOrderCharactersForProduct, manualOrderProductByKey, manualOrderProductFamily, type ManualOrderProductConfig } from "./manual-order-products";
+import { manualOrderCharactersForProduct, manualOrderProductByKey, manualOrderProductFamily, manualOrderProducts, type ManualOrderProductConfig } from "./manual-order-products";
 import { manualOrderIntakeQuote as quoteManualOrderIntake } from "./manual-order-intake-pricing";
 import { normalizeManualOrderPhone, shopifyManualOrderPhone } from "./manual-order-phone";
 import { manualOrderSpeakerSeconds, normalizeManualOrderCharacter } from "./manual-order-product-paths";
@@ -59,6 +59,22 @@ export type ManualOrderIntakeDetails = {
   voiceUrl: string;
   voiceFileName: string;
   customisationSavedAt: string;
+  products: ManualOrderProductConfig[];
+};
+
+export type ManualOrderIntakeEdit = {
+  expectedUpdatedAt: string;
+  customerName: string;
+  customerEmail: string;
+  phone: string;
+  character: string;
+  productKey: string;
+  shippingRegion: "WEST" | "EAST";
+  shippingAddress: ShippingAddress;
+  form: CustomisationForm;
+  isCod: boolean;
+  paymentReceipts: PaymentReceipt[];
+  voiceStoragePath?: string;
 };
 
 export type ManualOrderIntakeApproval = ManualOrderIntake & {
@@ -130,7 +146,9 @@ function rowToIntake(row: Record<string, unknown>): ManualOrderIntake {
     productDisplayName: String(row.product_display_name || ""),
     shopifyVariantId: String(row.shopify_variant_id || ""),
     shippingRegion: row.shipping_region === "EAST" ? "EAST" : "WEST",
-    shippingAddress: validAddress(address),
+    // Reads must allow incomplete historical submissions to be opened and fixed.
+    // Full address validation happens when submitting, editing or creating.
+    shippingAddress: { address1: String(address.address1 || ""), address2: String(address.address2 || ""), city: String(address.city || ""), province: String(address.province || ""), zip: String(address.zip || ""), countryCode: String(address.countryCode || "MY") },
     customisationSessionId: String(row.customisation_session_id || ""),
     paymentReceipts,
     isCod: paymentReceipts.some((receipt) => receipt.url === COD_PAYMENT_MARKER),
@@ -632,7 +650,54 @@ export async function getManualOrderIntakeDetails(id: string): Promise<ManualOrd
     voiceUrl: voiceStoragePath ? voiceDownloadUrl(voiceStoragePath) : "",
     voiceFileName: voiceStoragePath.split("/").at(-1) || "",
     customisationSavedAt: customisation?.savedAt || "",
+    products: manualOrderProducts,
   };
+}
+
+export async function editManualOrderIntake(id: string, input: ManualOrderIntakeEdit) {
+  const details = await getManualOrderIntakeDetails(id);
+  const intake = details.intake;
+  if (intake.shopifyOrderId || !["awaiting_payment", "ready_to_create"].includes(intake.status)) throw new Error("This order has already been created or cancelled. Open its linked order to make further changes.");
+  if (!input.expectedUpdatedAt) throw new Error("Reopen the submission before saving.");
+  const customerName = clean(input.customerName, 120);
+  shopifyManualOrderCustomerName(customerName);
+  const customerEmail = clean(input.customerEmail, 254).toLowerCase();
+  if (!/^\S+@\S+\.\S+$/.test(customerEmail)) throw new Error("Enter a valid customer email address.");
+  const phoneOriginal = clean(input.phone, 40);
+  const phone = normalizeManualOrderPhone(phoneOriginal);
+  const shippingAddress = validAddress(input.shippingAddress || {} as ShippingAddress);
+  const product = manualOrderProductByKey(input.productKey);
+  const character = product ? characterForProduct(input.character, product) : "";
+  if (!product || !character) throw new Error("Choose a valid product and character.");
+  const charm = manualOrderProductFamily(product) === "plush_charm";
+  const form = charm ? input.form || {} : normaliseCustomisationForm(input.form);
+  if (!form) throw new Error("Complete every birth certificate field before saving.");
+  const variant = !charm ? knownVariantId(character, Number(manualOrderSpeakerSeconds(product))) : await shopifyVariantForProduct(product);
+  if (!variant) throw new Error("The selected product is not available in Shopify.");
+  const receipts: PaymentReceipt[] = (Array.isArray(input.paymentReceipts) ? input.paymentReceipts : []).filter(receipt => receipt.url !== COD_PAYMENT_MARKER).map(receipt => {
+    const url = clean(receipt.url, 2048);
+    if (!/^https?:\/\//i.test(url)) throw new Error("Use a valid uploaded receipt URL.");
+    return { fileName: clean(receipt.fileName, 200) || "Receipt", url };
+  });
+  if (input.isCod) receipts.push({ fileName: "Cash on delivery", url: COD_PAYMENT_MARKER });
+  const { error } = await serviceClient().rpc("edit_manual_order_submission", {
+    p_id: id, p_expected_updated_at: input.expectedUpdatedAt,
+    p_intake: { customer_name: customerName, customer_email: customerEmail, phone_original: phoneOriginal, phone_normalized: phone.normalized, character, product_key: product.key, product_display_name: `${character} - ${product.displayName}`, shopify_variant_id: asVariantGid(variant), shipping_region: input.shippingRegion === "EAST" ? "EAST" : "WEST", shipping_address: shippingAddress, payment_receipts: receipts },
+    p_form: { ...form, productType: charm ? "plush_charm" : "classic_plushie" },
+    p_voice_path: input.voiceStoragePath || null,
+  });
+  if (error) throw new Error(error.message);
+  return getManualOrderIntakeDetails(id);
+}
+
+export async function prepareManualOrderEditVoice(id: string, fileName: string, contentType: string, size: number) {
+  const { intake } = await getManualOrderIntakeDetails(id);
+  if (intake.shopifyOrderId || !["awaiting_payment", "ready_to_create"].includes(intake.status)) throw new Error("Only pending submissions can have their voice replaced here.");
+  if (!Number.isFinite(size) || size <= 0 || size > 50 * 1024 * 1024 || !/\.(mp3|mp4|m4a|ogg|oga|wav|webm|mov)$/i.test(fileName)) throw new Error("Choose an audio or video file up to 50 MB.");
+  const path = `${intake.customisationSessionId}/${randomUUID()}-${fileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100)}`;
+  const { data, error } = await serviceClient().storage.from("customisation-audio").createSignedUploadUrl(path);
+  if (error || !data) throw new Error("Could not prepare the replacement voice upload.");
+  return { path, signedUrl: data.signedUrl, contentType };
 }
 
 export async function deleteManualOrderIntake(id: string) {
