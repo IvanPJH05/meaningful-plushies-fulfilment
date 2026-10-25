@@ -25,3 +25,11 @@ test("recognizes COD and shows one total per multi-item order", () => {
  assert.equal(isCodOrder({paymentProcessor: "Stripe"}), false);
  assert.equal(batchCodOrders([order, {...order, id: "2"}, {...order, id:"3", paymentProcessor:"Stripe"}]).length, 1);
 });
+
+test("only website and WhatsApp COD orders need manual courier details", () => {
+ const website = {...order, salesChannel: "shopify" as const};
+ const whatsapp = {...order, id: "wa", orderNumber: "124"};
+ const tiktok = {...order, id: "tt", orderNumber: "TT1365", salesChannel: "tiktok" as const};
+ assert.deepEqual(batchCodOrders([website, tiktok, whatsapp]), [website, whatsapp]);
+ assert.deepEqual(batchCodOrders([tiktok]), []);
+});

@@ -31,7 +31,7 @@ export function codDetails(order: Order) {
 export function batchCodOrders(orders: Order[]) {
   const seen = new Set<string>();
   return orders.filter(order => {
-    if (!isCodOrder(order)) return false;
+    if (order.salesChannel === "tiktok" || !isCodOrder(order)) return false;
     const key = `${order.salesChannel || "shopify"}:${order.orderNumber || order.id}`;
     if (seen.has(key)) return false;
     seen.add(key);
