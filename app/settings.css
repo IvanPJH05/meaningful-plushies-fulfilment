@@ -1790,3 +1790,7 @@ body.print-sales-report .report-table th,
 .manual-intake-editor label.manual-intake-cod { display: flex; align-items: center; }
 .manual-intake-receipt { display: grid; grid-template-columns: 1fr 2fr auto; align-items: end; gap: 10px; margin: 14px 0; }
 @media (max-width: 760px) { .manual-intake-editor-grid, .manual-intake-receipt { grid-template-columns: minmax(0, 1fr); } .manual-intake-editor-footer { justify-content: stretch; } .manual-intake-editor-footer button { flex: 1 1 auto; } }
+
+/* Keep the editor inside the padded backdrop on narrow screens. */
+.manual-intake-editor { box-sizing: border-box; width: min(1080px, calc(100vw - 48px)); max-width: calc(100vw - 48px); }
+.manual-intake-editor > header, .manual-intake-editor-footer { flex-shrink: 0; }
