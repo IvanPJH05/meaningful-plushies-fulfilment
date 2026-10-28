@@ -4,7 +4,6 @@ import { NotificationMessage } from "./notification-bar";
 import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { bankRowStatus, contraRows } from "../lib/monthly-journal-contra";
-import { MonthlyJournalStatements } from "./monthly-journal-statements";
 
 type Account = { id: string; name: string; classification: string };
 type Row = { id: string; bank: string; paid_date: string; accounting_date: string; description: string; money_in: number; money_out: number; status: string; note: string; receipt_path: string | null; journal_entry_id: string | null };
@@ -303,7 +302,6 @@ export function MonthlyJournalInbox() {
   }
 
   return <div className="monthly-inbox">
-    <MonthlyJournalStatements />
     {notice && <NotificationMessage><p className="notice">{notice}</p></NotificationMessage>}
     <div className="mj-undo-posted"><span>Need to correct a posted transaction? Tick a posted row, then undo its posting here.</span><button type="button" disabled={postingShortcut || removingRows || !selected.some((id) => rows.find((row) => row.id === id)?.journal_entry_id)} onClick={() => void undoSelectedPostings()}>Undo selected posting</button>{filter.status !== "posted" && <button type="button" className="secondary" disabled={postingShortcut || removingRows} onClick={() => setFilter({ ...filter, status: "posted" })}>Show posted rows</button>}</div>
     <div className="mj-filters"><label>Transaction side<select value={filter.side} onChange={(event) => setFilter({ ...filter, side: event.target.value })}><option value="">All transactions</option><option value="debit">Debit — money in</option><option value="credit">Credit — money out</option></select></label><label>Accounting month<select value={filter.month} onChange={(event) => setFilter({ ...filter, month: event.target.value })}><option value="">All months</option>{[...new Set(rows.map((row) => row.paid_date.slice(0, 7)))].map((month) => <option key={month}>{month}</option>)}</select></label><label>Posting status<select value={filter.status} onChange={(event) => setFilter({ ...filter, status: event.target.value })}><option value="">All</option><option value="unposted">Unposted</option><option value="contra">Contra</option><option value="posted">Posted (including contra)</option></select></label><label>Bank account<select value={filter.bank} onChange={(event) => setFilter({ ...filter, bank: event.target.value })}><option value="">All accounts</option><option>Maybank</option><option>Public Bank</option><option>Touch 'n Go eWallet</option></select></label><label>Exclude name<input placeholder="Hide matching name" value={filter.excludeName} onChange={(event) => setFilter({ ...filter, excludeName: event.target.value })} /></label><label>Search name<input placeholder="Merchant or reference" value={filter.search} onChange={(event) => setFilter({ ...filter, search: event.target.value })} /></label></div>
