@@ -42,6 +42,27 @@ describe("authenticated CSV import saves", () => {
     expect(JSON.parse(fetcher.mock.calls[1][1].body).orders).toHaveLength(1);
     expect(fetcher.mock.calls[0][1].headers.Authorization).toBe("Bearer fixture-session");
   });
+  it("uploads a large video directly to Storage and saves only its reference", async () => {
+    const nativeFetch = globalThis.fetch;
+    const video = "data:video/mp4;base64," + Buffer.alloc(3_434_839,1).toString("base64");
+    const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+      if(url.startsWith("data:")) return nativeFetch(url);
+      if(url.endsWith("/import/attachment")) return Response.json({signedUrl:"https://storage.test/signed",path:"12345678-1234-1234-1234-123456789abc/video.mp4"});
+      if(url==="https://storage.test/signed") { expect(init?.method).toBe("PUT");expect(init?.body).toBeInstanceOf(FormData);return Response.json({}); }
+      const saved=JSON.parse(String(init?.body));expect(saved.orders[0].tikTokFileDataUrl).toBe("supabase-storage:12345678-1234-1234-1234-123456789abc/video.mp4");expect(String(init?.body).length).toBeLessThan(10000);
+      return Response.json({saved:true,accountingWarning:null});
+    });
+    vi.stubGlobal("fetch",fetcher);
+    await saveImportedOrders([{...order,tikTokFileDataUrl:video,tikTokFileName:"video.mp4",tikTokFileType:"video/mp4"}],"fixture-session");
+    expect(fetcher).toHaveBeenCalledTimes(4);
+  });
+  it("keeps orders unsaved if the direct attachment upload fails", async () => {
+    const nativeFetch=globalThis.fetch;
+    const fetcher=vi.fn(async (url:string) => url.startsWith("data:") ? nativeFetch(url) : url.endsWith("/attachment") ? Response.json({signedUrl:"https://storage.test/signed",path:"fixture"}) : Response.json({error:"Storage unavailable"},{status:503}));
+    vi.stubGlobal("fetch",fetcher);
+    await expect(saveImportedOrders([{...order,tikTokFileDataUrl:"data:audio/ogg;base64,YXVkaW8=",tikTokFileName:"voice.ogg"}],"fixture-session")).rejects.toThrow("Storage unavailable");
+    expect(fetcher.mock.calls.some(([url])=>url==="/api/fulfilment/orders/import")).toBe(false);
+  });
   it("stops on a rejected save instead of reporting import success", async () => {
     const fetcher = vi.fn().mockResolvedValue(Response.json({ error: "Sign in again" }, { status: 401 }));
     vi.stubGlobal("fetch", fetcher);

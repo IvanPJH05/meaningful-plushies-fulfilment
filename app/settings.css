@@ -1766,3 +1766,58 @@ body.print-sales-report .report-table th,
   .queue-toolbar .toolbar-filter-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
   .queue-toolbar .toolbar-filter-row .search { grid-column: 1 / -1; }
 }
+
+.marketing-ugc-workspace{display:grid;gap:20px}.ugc-offer-summary{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:18px 22px}.ugc-offer-summary span{padding:6px 12px;border-radius:999px;background:#e4f6ed;color:#24644d;font-size:13px;font-weight:700}.ugc-entry-form{padding:24px;display:grid;gap:18px}.ugc-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.ugc-form-grid label{display:grid;gap:7px}.ugc-wide{grid-column:1/-1}.ugc-list-toolbar{display:flex;align-items:center;gap:14px;padding:18px 20px;flex-wrap:wrap}.ugc-list-toolbar input{flex:1;min-width:180px}.ugc-offers-table{width:100%;min-width:950px;border-collapse:collapse}.ugc-offers-table th,.ugc-offers-table td{text-align:left;vertical-align:top;padding:15px;border-bottom:1px solid #e7edf5}.ugc-offers-table th{background:#f5f8fc;font-size:12px}.ugc-offers-table small,.ugc-offers-table td>a,.ugc-offers-table td>strong{display:block;margin-top:6px}.ugc-offers-table td button{margin:6px 6px 0 0}.ugc-offers-table textarea{min-width:150px;min-height:72px}.ugc-offers-table input{max-width:150px;margin-top:8px}.order-marker.ugc{background:#e1f5ef;color:#14664d}
+@media(max-width:700px){.ugc-form-grid{grid-template-columns:1fr}.ugc-wide{grid-column:auto}}
+
+.batch-cod { padding: 24px; min-width: 0; }
+.batch-cod-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr)); gap: 16px; }
+.batch-cod-grid article { border: 1px solid #dbe3ef; border-radius: 12px; padding: 16px; min-width: 0; overflow-wrap: anywhere; }
+.batch-cod textarea { display: block; width: 100%; box-sizing: border-box; margin: 12px 0; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; font: inherit; line-height: 1.6; resize: vertical; background: #f8fafc; color: #142b49; }
+.batch-cod-amount { margin-bottom: 4px; }
+.batch-cod small { display: block; margin-bottom: 14px; color: #64748b; }
+.batch-cod button { max-width: 100%; white-space: normal; }
+
+.manual-intake-editor { max-width: 1080px; }
+.manual-intake-editor > form { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.manual-intake-editor .linked-transaction-body { overflow-y: auto; min-height: 0; }
+.manual-intake-editor label { display: grid; gap: 6px; font-size: 14px; font-weight: 600; min-width: 0; }
+.manual-intake-editor input:not([type=checkbox]), .manual-intake-editor select, .manual-intake-editor textarea { box-sizing: border-box; width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid #ccd8e8; border-radius: 8px; font: inherit; color: #142b49; background: white; }
+.manual-intake-editor textarea { resize: vertical; }
+.manual-intake-editor-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.manual-intake-editor h3 { margin: 18px 0 12px; }
+.manual-intake-editor-footer { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; padding: 16px 20px; border-top: 1px solid #dbe3ef; background: #fff; }
+.manual-intake-editor label.manual-intake-cod { display: flex; align-items: center; }
+.manual-intake-receipt { display: grid; grid-template-columns: 1fr 2fr auto; align-items: end; gap: 10px; margin: 14px 0; }
+@media (max-width: 760px) { .manual-intake-editor-grid, .manual-intake-receipt { grid-template-columns: minmax(0, 1fr); } .manual-intake-editor-footer { justify-content: stretch; } .manual-intake-editor-footer button { flex: 1 1 auto; } }
+
+/* Keep the editor inside the padded backdrop on narrow screens. */
+.manual-intake-editor { box-sizing: border-box; width: min(1080px, calc(100vw - 48px)); max-width: calc(100vw - 48px); }
+.manual-intake-editor > header, .manual-intake-editor-footer { flex-shrink: 0; }
+
+/* Customer UGC uses the creator sample entry and ledger layout. */
+.marketing-ugc-workspace, .ugc-ledger-layout { min-width: 0; }
+.ugc-entry-form { padding: 20px; gap: 0; }
+.ugc-ledger-layout .ugc-list-toolbar { padding: 12px 16px; }
+.ugc-list-toolbar input, .ugc-offers-table input, .ugc-offers-table textarea { box-sizing: border-box; border: 1px solid #d8e1eb; border-radius: 8px; padding: 9px 10px; font: inherit; color: var(--text); background: #fff; }
+.ugc-offers-table { font-size: 12px; min-width: 1350px; }
+.ugc-offers-table th { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+.ugc-offers-table td { padding: 13px 14px; }
+.ugc-offers-table td:last-child { min-width: 120px; }
+.ugc-offers-table .creator-sample-message-cell textarea { min-height: 100px; }
+.ugc-entry-form .creator-sample-form-fields > button { width: 100%; }
+@media (max-width: 1100px) { .ugc-ledger-layout { grid-template-columns: minmax(0, 1fr); } .ugc-ledger-layout .creator-sample-entry-form { position: static; } }
+@media (max-width: 450px) { .ugc-entry-form .creator-sample-collection-picker > div { grid-template-columns: minmax(0,1fr); } .ugc-list-toolbar input { min-width: 0; width: 100%; flex-basis: 100%; } }
+
+.ugc-submissions { min-width:0; overflow:hidden; padding:20px; }
+.ugc-submissions-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.ugc-submissions-heading h3 { margin:0 0 8px; }.ugc-submissions-heading p { color:var(--muted); }
+.ugc-review-tabs { display:flex; flex-wrap:wrap; gap:8px; margin:18px 0; }
+.ugc-submissions-table { width:100%; min-width:800px; border-collapse:collapse; font-size:12px; }
+.ugc-submissions-table th,.ugc-submissions-table td { padding:14px; border-bottom:1px solid #e5edf6; text-align:left; vertical-align:top; }
+.ugc-submissions-table small { display:block; margin-top:5px; color:var(--muted); }.ugc-submissions-table th { background:#f5f8fc; }
+.ugc-review-modal { width:min(900px,calc(100vw - 48px)); box-sizing:border-box; }
+.ugc-review-modal header,.ugc-review-modal footer { flex-shrink:0; }
+.ugc-review-modal video { width:100%; max-height:400px; background:#101a26; border-radius:10px; }
+.ugc-review-modal label { display:grid; gap:8px; }.ugc-review-modal select,.ugc-review-modal textarea { box-sizing:border-box; max-width:100%; width:100%; font:inherit; padding:10px; border:1px solid #cdd8e8; border-radius:8px; }.ugc-review-modal textarea { min-height:90px; }.ugc-review-copy { white-space:pre-wrap; overflow-wrap:anywhere; }
+@media(max-width:600px){.ugc-submissions{padding:14px}.ugc-submissions-heading{align-items:flex-start;flex-direction:column}.ugc-review-tabs .button{flex:1 1 auto}}

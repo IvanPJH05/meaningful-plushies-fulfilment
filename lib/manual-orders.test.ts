@@ -50,8 +50,9 @@ test("formats Malaysian customer phones for Shopify shipping", () => {
   assert.equal(shopifyManualOrderPhone("123456789"), "+60123456789");
 });
 
-test("keeps the complete customer name in Shopify's required surname field", () => {
-  assert.deepEqual(shopifyManualOrderCustomerName("Dedek"), { firstName: "", lastName: "Dedek" });
-  assert.deepEqual(shopifyManualOrderCustomerName("Sofia   Jasmine"), { firstName: "", lastName: "Sofia Jasmine" });
+test("sends a nonempty Shopify first name while preserving the complete name", () => {
+  assert.deepEqual(shopifyManualOrderCustomerName("Dedek"), { firstName: "Dedek", lastName: "" });
+  assert.deepEqual(shopifyManualOrderCustomerName("Sofia   Jasmine"), { firstName: "Sofia", lastName: "Jasmine" });
+  assert.deepEqual(shopifyManualOrderCustomerName("Nur Zafirah amirah binti hassahfe'e"), { firstName: "Nur", lastName: "Zafirah amirah binti hassahfe'e" });
   assert.throws(() => shopifyManualOrderCustomerName("   "), /full name/);
 });

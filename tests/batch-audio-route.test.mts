@@ -26,7 +26,7 @@ describe("batch MP3 downloads", () => {
   });
   it("does not mistake TikTok certificate details for a voice attachment", async () => {
     mocks.single.mockResolvedValue({ data: { fulfilment_orders: { data: { ...order, tikTokFileDataUrl: "" } } }, error: null });
-    const response = await GET(request()); expect(response.status).toBe(400); expect((await response.json()).error).toContain("No message file"); expect(mocks.mp3).not.toHaveBeenCalled();
+    const response = await GET(request()); expect(response.status).toBe(400); expect((await response.json()).code).toBe("VOICE_NOT_UPLOADED"); expect(mocks.mp3).not.toHaveBeenCalled();
   });
   it("rejects nonmedia attachments and untrusted remote URLs", async () => {
     for (const source of ["data:application/pdf;base64,cGRm", "https://untrusted.example/message.mp4"]) {

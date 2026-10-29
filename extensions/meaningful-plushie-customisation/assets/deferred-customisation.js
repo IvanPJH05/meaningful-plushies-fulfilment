@@ -39,7 +39,14 @@
     const fillLaterDisabled = block.dataset.fillLaterDisabled === "true";
     const apiUrl = (block.dataset.apiUrl || "").replace(/\/$/, "");
     const form = block.closest("form[action*='/cart/add']") || document.querySelector("form[action*='/cart/add']");
-    if (!form) return;
+    if (!form || block.dataset.mpInitialised === "true") return;
+    block.dataset.mpInitialised = "true";
+    if (!window.MPCustomisationCart) {
+      notice.textContent = "Customisation checkout could not load. Please reload this page before buying.";
+      form.querySelectorAll("button[type=submit], input[type=submit], shopify-accelerated-checkout").forEach(control => { control.disabled = true; control.style.pointerEvents = "none"; });
+      form.addEventListener("submit", event => { event.preventDefault(); event.stopImmediatePropagation(); }, true);
+      return;
+    }
     const voiceProgress = document.createElement("div");
     voiceProgress.className = "mp-deferred-customisation__upload-progress";
     voiceProgress.hidden = true;
@@ -564,10 +571,10 @@
       if (isLater() || !completeNowReady() || !apiUrl) return null;
       const upload = await uploadVoiceEarly();
       if (!upload) return null;
+      while (earlySavePromise) await earlySavePromise;
       const details = formData();
       const fingerprint = completeNowFingerprint(details, upload);
       if (savedCompleteNowFingerprint === fingerprint) return upload;
-      if (earlySavePromise) return earlySavePromise;
       earlySavePromise = request(`/api/customisation/${encodeURIComponent(upload.session.token)}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ form: details, voiceStoragePath: upload.voiceStoragePath }),
@@ -575,7 +582,9 @@
         savedCompleteNowFingerprint = fingerprint;
         return upload;
       }).finally(() => { earlySavePromise = null; });
-      return earlySavePromise;
+      const saved = await earlySavePromise;
+      if (selectedVoice() !== upload.file || completeNowFingerprint(formData(), upload) !== fingerprint) return saveCompleteNowEarly();
+      return saved;
     };
     const scheduleCompleteNowSave = () => {
       if (earlySaveTimer) window.clearTimeout(earlySaveTimer);
@@ -654,6 +663,7 @@
       if (!form.reportValidity()) return;
       if (submitter) submitter.disabled = true;
       purchaseInProgress = true;
+      block.inert = true;
       try {
         let checkoutSessionId;
         if (isLater()) {
@@ -666,14 +676,10 @@
           checkoutSessionId = result.sessionId;
           notice.textContent = t("paired");
         } else {
-          const upload = await uploadVoiceEarly();
+          notice.textContent = t("saving");
+          const upload = await saveCompleteNowEarly();
           if (!upload) throw new Error(t("uploadVoiceError"));
           const details = formData();
-          const fingerprint = completeNowFingerprint(details, upload);
-          if (savedCompleteNowFingerprint !== fingerprint) {
-            notice.textContent = t("saving");
-            await saveCompleteNowEarly();
-          }
           appendSessionId(upload.session.sessionId);
           appendCompleteNowProperties(details, upload.voiceStoragePath, upload.session.token);
           checkoutSessionId = upload.session.sessionId;
@@ -686,6 +692,7 @@
         notice.textContent = error instanceof Error ? error.message : "Could not save your customisation.";
         if (submitter) submitter.disabled = false;
         purchaseInProgress = false;
+        block.inert = false;
       }
     };
 

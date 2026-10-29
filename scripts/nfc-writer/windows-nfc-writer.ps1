@@ -1,5 +1,13 @@
 $ErrorActionPreference = "Stop"
 
+# Keep one writer per Windows session, including repeated app-button clicks.
+$newHelperInstance = $false
+$helperInstanceMutex = [System.Threading.Mutex]::new($true, 'Local\MeaningfulPlushiesNfcWriter', [ref]$newHelperInstance)
+if (-not $newHelperInstance) {
+  $helperInstanceMutex.Dispose()
+  exit 0
+}
+
 $source = @"
 using System;
 using System.Runtime.InteropServices;
@@ -144,10 +152,19 @@ function Get-ResponseData {
 function Read-CardPage {
   param([IntPtr]$Card, [uint32]$Protocol, [int]$Page)
   $command = New-ByteArray @(0xFF, 0xB0, 0x00, [byte]$Page, 0x04)
-  $response = [PcscNative]::Transmit($Card, $Protocol, $command)
+  $response = Send-CardCommand -Card $Card -Protocol $Protocol -Command $command
   $data = Get-ResponseData -Response $response -Length 4
-  if (-not $data) { throw "Could not read NFC card page $Page." }
-  return $data
+  if ($data) { return $data }
+
+  # Some readers reject the storage APDU for configuration pages. Native
+  # Type 2 READ returns four pages; only the requested first page is needed.
+  $nativeData = Invoke-NativeNfcCommand -Card $Card -Protocol $Protocol -NativeCommand (New-ByteArray @(0x30, [byte]$Page))
+  if ($nativeData -and $nativeData.Length -ge 16) {
+    $pageData = New-Object byte[] 4
+    [Array]::Copy([byte[]]$nativeData, 0, $pageData, 0, 4)
+    return $pageData
+  }
+  throw "Could not read NFC card page $Page. Keep the card on the reader and check that its tag type was detected correctly."
 }
 
 function Write-CardPage {
@@ -189,21 +206,31 @@ function Send-CardCommand {
 }
 
 function Invoke-NativeNfcCommand {
-  param([IntPtr]$Card, [uint32]$Protocol, [byte[]]$NativeCommand)
+  param([IntPtr]$Card, [uint32]$Protocol, [byte[]]$NativeCommand, [string]$FailureContext = '')
   $command = New-Object System.Collections.Generic.List[byte]
   foreach ($value in @(0xFF, 0x00, 0x00, 0x00, [byte](2 + $NativeCommand.Length), 0xD4, 0x42)) {
     $command.Add([byte]$value)
   }
   Add-ByteRange -List $command -Bytes $NativeCommand
   $response = Send-CardCommand -Card $Card -Protocol $Protocol -Command $command.ToArray()
-  if (-not (Test-SuccessResponse -Response $response)) { return $null }
+  if (-not (Test-SuccessResponse -Response $response)) {
+    if ($FailureContext) {
+      $status = if ($response.Length -ge 2) { '{0:X2}{1:X2}' -f $response[$response.Length - 2], $response[$response.Length - 1] } else { 'no response' }
+      throw "$FailureContext failed at the reader (APDU status $status). This does not establish that the password is wrong."
+    }
+    return $null
+  }
   if ($response.Length -ge 5 -and $response[0] -eq 0xD5 -and $response[1] -eq 0x43 -and $response[2] -eq 0x00) {
     $length = $response.Length - 5
     $data = New-Object byte[] $length
     if ($length -gt 0) { [Array]::Copy($response, 3, $data, 0, $length) }
     return $data
   }
-  return $response
+  if ($FailureContext) {
+    $status = if ($response.Length -ge 5 -and $response[0] -eq 0xD5 -and $response[1] -eq 0x43) { 'PN532 status 0x{0:X2}' -f $response[2] } else { 'unexpected reader response format' }
+    throw "$FailureContext failed ($status). Remove the card, place it back on the reader, and report this error if it repeats. The password has not been verified."
+  }
+  return $null
 }
 
 function Get-NfcPasswordBytes {
@@ -231,8 +258,11 @@ function Get-NtagLayout {
 function Try-AuthenticateNtag {
   param([IntPtr]$Card, [uint32]$Protocol, [byte[]]$Password)
   $auth = New-ByteArray @(0x1B, $Password[0], $Password[1], $Password[2], $Password[3])
-  $response = Invoke-NativeNfcCommand -Card $Card -Protocol $Protocol -NativeCommand $auth
-  return [bool]($response -and $response.Length -ge 2)
+  $response = Invoke-NativeNfcCommand -Card $Card -Protocol $Protocol -NativeCommand $auth -FailureContext 'Card authentication'
+  if ($null -eq $response -or $response.Length -ne 2) {
+    throw 'Card authentication did not return the required two-byte acknowledgement. This may be a card rejection or a reader communication problem; it does not confirm an incorrect password.'
+  }
+  return $true
 }
 
 function Set-NtagPasswordProtection {
@@ -363,7 +393,11 @@ Write-Host ""
 while ($true) {
   $client = $listener.AcceptTcpClient()
   try {
+    $client.ReceiveTimeout = 2500
+    $client.SendTimeout = 2500
     $stream = $client.GetStream()
+    $stream.ReadTimeout = 2500
+    $stream.WriteTimeout = 2500
     $requestText = Read-HttpRequest -Stream $stream
     if (-not $requestText) { continue }
     $firstLine = ($requestText -split "`r?`n", 2)[0]
@@ -404,7 +438,7 @@ while ($true) {
     Send-HttpResponse -Stream $stream -StatusCode 200 -Payload @{ ok = $true }
     Write-Host "Card written successfully."
   } catch {
-    Send-HttpResponse -Stream $stream -StatusCode 500 -Payload @{ ok = $false; error = $_.Exception.Message }
+    try { Send-HttpResponse -Stream $stream -StatusCode 500 -Payload @{ ok = $false; error = $_.Exception.Message } } catch { }
     Write-Host "Write failed: $($_.Exception.Message)"
   } finally {
     $client.Close()

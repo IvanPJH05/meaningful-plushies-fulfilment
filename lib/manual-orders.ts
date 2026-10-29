@@ -19,9 +19,10 @@ export type ManualOrderCreateInput = {
 
 type DiscountUserError = { field?: string[]; message?: string; code?: string };
 
-export type CreatorSampleCollection = "classics" | "plush_charms_v1";
+export type CreatorSampleCollection = "classics" | "plush_charms_v1" | "ugc_all";
 
 const creatorSampleCollections: Record<CreatorSampleCollection, { title: string; customerLink: string }> = {
+  ugc_all: { title: "UGC - All Products", customerLink: "https://meaningfulplushies.com/collections/all" },
   classics: {
     title: "Meaningful Plushies (Classics)",
     customerLink: "https://meaningfulplushies.com/collections/meaningful-plushies-classics",
@@ -33,7 +34,7 @@ const creatorSampleCollections: Record<CreatorSampleCollection, { title: string;
 };
 
 export function creatorSampleCollectionDetail(value: string | undefined) {
-  return creatorSampleCollections[value === "plush_charms_v1" ? "plush_charms_v1" : "classics"];
+  return creatorSampleCollections[value === "ugc_all" ? "ugc_all" : value === "plush_charms_v1" ? "plush_charms_v1" : "classics"];
 }
 
 function asShopifyGid(value: string, type: "Product" | "ProductVariant") {
@@ -408,7 +409,7 @@ export async function createCreatorSampleDiscountCode(code: string, creatorName:
     }
   `, {
     codeAppDiscount: {
-      title: `Creator Sample Claim - ${creatorName.trim() || normalizedCode} - ${creatorSampleCollectionDetail(collection).title}`,
+      title: `${collection === "ugc_all" ? "UGC Sample Claim" : "Creator Sample Claim"} - ${creatorName.trim() || normalizedCode} - ${creatorSampleCollectionDetail(collection).title}`,
       code: normalizedCode,
       functionId,
       startsAt: new Date().toISOString(),
@@ -611,4 +612,25 @@ export async function deactivateManualOrderDiscount(discountId: string) {
   if (result?.errors?.length) throw new Error(result.errors.map((error) => error.message).filter(Boolean).join(" "));
   const errors = result?.data?.discountCodeDeactivate?.userErrors ?? [];
   if (errors.length) throw new Error(userErrorMessage(errors, "Shopify rejected the discount cancellation."));
+}
+
+// Reuse the installed one-unit + free-shipping Function. A distinct automatic
+// collection covers all current and future non-negative-priced products.
+export async function createUgcSampleDiscountCode(code: string, customerName: string, recordId: string, collection: CreatorSampleCollection = "ugc_all") {
+  const domain = shopDomain();
+  if (!domain) throw new Error("SHOPIFY_SHOP_DOMAIN is missing.");
+  const owner = `${customerName.trim()} [${recordId}]`;
+  const title = `${collection === "ugc_all" ? "UGC Sample Claim" : "Creator Sample Claim"} - ${owner} - ${creatorSampleCollectionDetail(collection).title}`;
+  const existing = await shopifyGraphql<{ data?: { codeDiscountNodeByCode?: { id: string; codeDiscount: { title?: string } } }; errors?: {message?: string}[] }>(domain, `
+    query UgcDiscountByCode($code: String!) {
+      codeDiscountNodeByCode(code: $code) { id codeDiscount { ... on DiscountCodeApp { title } } }
+    }
+  `, { code });
+  if (existing?.errors?.length) throw new Error(existing.errors.map(item => item.message).join(" "));
+  const found = existing?.data?.codeDiscountNodeByCode;
+  if (found) {
+    if (found.codeDiscount.title !== title) throw new Error("This discount code already belongs to another offer. Choose a different code.");
+    return found.id;
+  }
+  return createCreatorSampleDiscountCode(code, owner, collection);
 }

@@ -1,0 +1,31 @@
+<div class="mp-ugc" data-ugc-submission data-api-url="/apps/closer/ugc-submission" {{ block.shopify_attributes }}>
+  <form class="mp-ugc__form">
+    <header><p>MADE MEANINGFUL BY YOU</p><h2>{{ block.settings.heading | escape }}</h2><div>{{ block.settings.description | escape | newline_to_br }}</div></header>
+    <div class="mp-ugc__fields">
+      <label>Full name<input name="customerName" required maxlength="200" autocomplete="name" value="{{ customer.name | escape }}"></label>
+      <label>Order number<input name="orderNumber" required maxlength="100" placeholder="#1234"></label>
+      <label>Email address<input name="email" type="email" required maxlength="254" autocomplete="email" value="{{ customer.email | escape }}"></label>
+      <label>Phone number<input name="phone" type="tel" required maxlength="40" autocomplete="tel" value="{{ customer.phone | escape }}"></label>
+    </div>
+    <label class="mp-ugc__upload">Your video<input name="video" type="file" accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm" required><small>MP4, MOV or WebM, up to 50 MB.</small></label>
+    <label>Anything you would like us to know? <small>(optional)</small><textarea name="notes" rows="4" maxlength="5000"></textarea></label>
+    <label class="mp-ugc__consent"><input name="consent" type="checkbox" required><span>I confirm this is my own content and I have permission from anyone shown. I allow Meaningful Plushies to use this content on its website, social media and advertising.</span></label>
+    <div class="mp-ugc__trap" aria-hidden="true"><label>Website<input name="website" tabindex="-1" autocomplete="off"></label></div>
+    <button type="submit">Submit my video</button>
+    <p class="mp-ugc__note">Your submission will be reviewed by our team. Any thank-you gift is subject to approval.</p>
+    <p class="mp-ugc__notice" role="status" aria-live="polite" data-ugc-notice></p>
+  </form>
+</div>
+{% schema %}
+{
+  "name": "Customer UGC submission",
+  "target": "section",
+  "stylesheet": "customer-ugc-submission.css",
+  "javascript": "customer-ugc-submission.js",
+  "enabled_on": { "templates": ["page"] },
+  "settings": [
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Share your meaningful moment" },
+    { "type": "textarea", "id": "description", "label": "Description", "default": "We would love to see your plushie in your world. Send us your video and our team will review it." }
+  ]
+}
+{% endschema %}

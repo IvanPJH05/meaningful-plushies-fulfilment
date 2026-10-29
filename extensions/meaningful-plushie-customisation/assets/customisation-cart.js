@@ -59,18 +59,32 @@
     }
     return saved;
   }
-  async function add(form, sessionId) {
-    const item = buildItem([...new FormData(form).entries()], sessionId);
-    const base = root.Shopify?.routes?.root || "/";
-    const saved = await ensureItem(item, root.fetch.bind(root), base);
-    // The verified line property is authoritative. A cart-level mirror is only
-    // a compatibility fallback, and must not undo a successful item addition.
-    try {
-      await root.fetch(`${base.replace(/\/$/, "")}/cart/update.js`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ attributes: { mp_customisation_session_id: sessionId } }) });
-    } catch { /* The line property was already verified. */ }
+  async function ensureCheckoutReady(item, fetcher, base = "/") {
+    const saved = await ensureItem(item, fetcher, base);
+    const endpoint = (path) => `${base.replace(/\/$/, "")}/${path}`;
+    const mirror = await fetcher(endpoint("cart/update.js"), { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ attributes: { mp_customisation_session_id: item.properties.customisation_session_id } }) });
+    if (!mirror.ok) throw new Error("Your customisation is saved, but checkout could not be prepared. Please try again.");
+    // The add response alone is insufficient: confirm the persisted cart,
+    // including the backup reference, before navigating to checkout.
+    const response = await fetcher(endpoint("cart.js"), { credentials: "same-origin", cache: "no-store" });
+    if (!response.ok) throw new Error("Could not verify your customisation in the cart. Please try again.");
+    const cart = await response.json();
+    const lines = (cart.items || []).filter(line => String(line.variant_id || line.id) === String(item.id));
+    const persisted = lines.find(line => line.properties?.customisation_session_id === item.properties.customisation_session_id);
+    if (!persisted || persisted.quantity !== item.quantity || !Object.entries(item.properties).every(([key, value]) => persisted.properties?.[key] === value)
+      || cart.attributes?.mp_customisation_session_id !== item.properties.customisation_session_id) {
+      throw new Error("Shopify did not retain your customisation reference. Checkout has been stopped; please try again.");
+    }
+    if (lines.some(line => !sessionPattern.test(line.properties?.customisation_session_id || ""))) {
+      throw new Error("Your cart also contains this plushie without customisation. Remove that item from the cart before checking out.");
+    }
     return saved;
   }
-  const api = { buildItem, ensureItem, controls, controlForEvent, isCheckoutControl, add };
+  async function add(form, sessionId) {
+    const item = buildItem([...new FormData(form).entries()], sessionId);
+    return ensureCheckoutReady(item, root.fetch.bind(root), root.Shopify?.routes?.root || "/");
+  }
+  const api = { buildItem, ensureItem, ensureCheckoutReady, controls, controlForEvent, isCheckoutControl, add };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (root) root.MPCustomisationCart = api;
 })(typeof window !== "undefined" ? window : null);
