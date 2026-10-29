@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { useLanguage } from "./dashboard-language";
 import { NotificationMessage } from "./notification-bar";
+import { UgcSubmissions } from "./ugc-submissions";
 import { LoadingIndicator } from "./loading-indicator";
 import { isUgcOrder, ugcClaimLink, ugcCollections, ugcCollection, type UgcCollection, type UgcSample } from "../lib/marketing-ugc";
 import type { Order } from "../lib/types";
@@ -45,6 +46,7 @@ ${t("Valid for one use. Add one product to your cart before checkout.")}`;}
     {busy&&<NotificationMessage completionText={t("UGC update finished")}><LoadingIndicator>{t("Saving UGC offer...")}</LoadingIndicator></NotificationMessage>}
     <section className="creator-hero card"><div><p>{t("MARKETING")}</p><h2>{t("Customer UGC")}</h2><span>{t("Thank real customers for their content with one free product and free shipping.")}</span></div><div className="accounting-status-pill">{samples.length} {t("customer offers")}</div></section>
     
+    <UgcSubmissions token={token} onApproved={()=>void load()}/>
     <section className="creator-sample-ledger-layout ugc-ledger-layout"><form className="creator-form card creator-sample-entry-form ugc-entry-form" onSubmit={create}>
       <div className="accounting-form-heading"><div><h3>{t("New customer offer")}</h3><p>{t("Choose the collection, create one code, then pair the order after the customer claims it.")}</p></div></div><div className="creator-sample-form-fields">
       <label>{t("Customer name")}<input required maxLength={200} value={form.customerName} onChange={e=>setForm({...form,customerName:e.target.value})}/></label>
