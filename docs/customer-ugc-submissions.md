@@ -3,7 +3,7 @@ Customer UGC submission app block
 Copy these three files into the matching paths of the existing Meaningful Fulfilment Shopify app project. Keep its other extension files and app configuration.
 
 Publish from that app project on a computer with access to the organisation:
-  pnpm dlx @shopify/cli@5.0.0 app deploy
+  pnpm --package=@shopify/cli@5.0.0 dlx shopify app deploy --allow-updates
 
 This uploads and releases the Shopify app extensions, including Customer UGC submission. It does not publish your draft storefront theme.
 
@@ -20,3 +20,5 @@ Server notes
 - Submissions, review RPCs and reward linkage are service-role only. Repeated approvals return the existing reward.
 - Draft sessions expire after 24 hours. Incomplete uploads never appear in the review queue.
 - Tests: tests/ugc-submissions.test.mts and tests/ugc-submission-upload.test.mts.
+
+Release attempt: Shopify rejected this computer's signed-in account with HTTP 403: not a member of the app organisation. No app version was released. Run the command from the existing app project on the authorised laptop/account.
