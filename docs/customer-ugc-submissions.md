@@ -1,24 +1,21 @@
-Customer UGC submission app block
+# Customer UGC app block: released Intake project
 
-Copy these three files into the matching paths of the existing Meaningful Fulfilment Shopify app project. Keep its other extension files and app configuration.
+Publish this block from `shopify-intake/`, not the repository root. The root configuration targets a different installed app.
 
-Publish from that app project on a computer with access to the organisation:
-  pnpm --package=@shopify/cli@5.0.0 dlx shopify app deploy --allow-updates
+Verified Shopify app: Meaningful Plushie Intake, client ID 6043167ddb69732554a716e060a35712, organisation 232511034.
+Released version: meaningful-plushie-intake-3, active on 30 October 2026 at 00:10 Malaysia time.
+Version: https://dev.shopify.com/dashboard/232511034/apps/422613352449/versions/1187057467393
 
-This uploads and releases the Shopify app extensions, including Customer UGC submission. It does not publish your draft storefront theme.
+Shopify's release plan confirmed Configuration: No changes. Only customer-ugc-submissions was added. Its extension UID is retained in this project for future updates. No discount Function, existing fulfilment block or other app extension is included here.
 
-In Shopify: Online Store > Themes > Customize > your UGC submission page template > Add block > Apps > Customer UGC submission. Save the template, create/choose the customer-facing page and assign the template. Publish the draft theme separately when ready.
+Preserved live configuration: application URL https://meaningful-plushies-fulfilment.vercel.app; embedded true; write_app_proxy only; webhook API version 2026-07; proxy /apps/customise-your-plushie targeting /collection-proxy.
 
-Customers submit name, order number, phone, email, one MP4/MOV/WebM video (up to 50 MB), optional notes, and permission to use their content.
+Deploy from this directory after authorisation:
+`pnpm --package=@shopify/cli@5.0.0 dlx shopify app deploy`
+Review the release plan; stop on unexpected configuration changes or removals.
 
-Marketing > Customer UGC > Customer submissions is the admin review queue. View the private video, choose the reward collection, then Approve and create reward code or Reject submission. Approved offers appear in the existing ledger. Copy the reward message manually; no email is sent automatically. Every collection, including Plush Charms V1, creates one code for one item with free shipping.
+Theme placement: Add block > Apps > Customer UGC submission. Save the appropriate page template. App release does not publish or modify the storefront theme.
 
-Server notes
-- Storefront endpoint: /apps/closer/ugc-submission via the existing app proxy. Requires SHOPIFY_CLIENT_SECRET and SHOPIFY_SHOP_DOMAIN.
-- Signed Shopify proxy requests, short-lived hashed session tokens and five session starts per client/hour.
-- customer-ugc storage is private. Uploads cannot overwrite an accepted video. Admin video links expire after ten minutes.
-- Submissions, review RPCs and reward linkage are service-role only. Repeated approvals return the existing reward.
-- Draft sessions expire after 24 hours. Incomplete uploads never appear in the review queue.
-- Tests: tests/ugc-submissions.test.mts and tests/ugc-submission-upload.test.mts.
+The form calls the existing /apps/closer/ugc-submission endpoint. It remains connected to the same Marketing approval queue. No server credentials or proxy mapping are changed by this extension release.
 
-Release attempt: Shopify rejected this computer's signed-in account with HTTP 403: not a member of the app organisation. No app version was released. Run the command from the existing app project on the authorised laptop/account.
+Verification: published settings matched the previous active Intake version; /apps/customise-your-plushie/b10 returned 200; the customisation API and UGC endpoint returned their expected validation responses; the fulfilment app and existing /apps/closer endpoint returned 200. No customer records were created or edited during these checks.
