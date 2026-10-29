@@ -616,11 +616,11 @@ export async function deactivateManualOrderDiscount(discountId: string) {
 
 // Reuse the installed one-unit + free-shipping Function. A distinct automatic
 // collection covers all current and future non-negative-priced products.
-export async function createUgcSampleDiscountCode(code: string, customerName: string, recordId: string) {
+export async function createUgcSampleDiscountCode(code: string, customerName: string, recordId: string, collection: CreatorSampleCollection = "ugc_all") {
   const domain = shopDomain();
   if (!domain) throw new Error("SHOPIFY_SHOP_DOMAIN is missing.");
   const owner = `${customerName.trim()} [${recordId}]`;
-  const title = `UGC Sample Claim - ${owner} - UGC - All Products`;
+  const title = `${collection === "ugc_all" ? "UGC Sample Claim" : "Creator Sample Claim"} - ${owner} - ${creatorSampleCollectionDetail(collection).title}`;
   const existing = await shopifyGraphql<{ data?: { codeDiscountNodeByCode?: { id: string; codeDiscount: { title?: string } } }; errors?: {message?: string}[] }>(domain, `
     query UgcDiscountByCode($code: String!) {
       codeDiscountNodeByCode(code: $code) { id codeDiscount { ... on DiscountCodeApp { title } } }
@@ -632,5 +632,5 @@ export async function createUgcSampleDiscountCode(code: string, customerName: st
     if (found.codeDiscount.title !== title) throw new Error("This discount code already belongs to another offer. Choose a different code.");
     return found.id;
   }
-  return createCreatorSampleDiscountCode(code, owner, "ugc_all");
+  return createCreatorSampleDiscountCode(code, owner, collection);
 }

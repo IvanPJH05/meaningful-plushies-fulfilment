@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import { mobileServiceClient, requireMobileSession } from "../../../../lib/mobile-api";
 import { createUgcSampleDiscountCode, deactivateManualOrderDiscount } from "../../../../lib/manual-orders";
-import { normalizeUgcCode } from "../../../../lib/marketing-ugc";
+import { normalizeUgcCode, ugcCollection } from "../../../../lib/marketing-ugc";
 
 export const runtime = "nodejs";
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -39,14 +39,14 @@ export async function POST(request: Request) {
       if (!name || name.length > 200) throw new Error("Add a customer name (up to 200 characters).");
       const customerUrl = typeof body.customerUrl === "string" ? body.customerUrl.trim() : "";
       if (customerUrl && (!/^https?:\/\//i.test(customerUrl) || customerUrl.length > 2000)) throw new Error("Use a valid customer profile URL.");
-      const insert = await db.from("marketing_ugc_samples").insert({ id: body.id, customer_name: name, customer_url: customerUrl, sample_code: normalizeUgcCode(typeof body.code === "string" && body.code.trim() ? body.code : randomBytes(5).toString("hex")), source_order_number: String(body.sourceOrderNumber || "").slice(0,100), notes: String(body.notes || "").slice(0,20000), created_by: session.username }).select("*").single();
+      const insert = await db.from("marketing_ugc_samples").insert({ id: body.id, product_collection: ugcCollection(body.productCollection), customer_name: name, customer_url: customerUrl, sample_code: normalizeUgcCode(typeof body.code === "string" && body.code.trim() ? body.code : randomBytes(5).toString("hex")), source_order_number: String(body.sourceOrderNumber || "").slice(0,100), notes: String(body.notes || "").slice(0,20000), created_by: session.username }).select("*").single();
       if (insert.error) throw new Error(insert.error.code === "23505" ? "This UGC code already exists. Choose a different code." : insert.error.message);
       sample = insert.data;
     }
     if (sample.status === "disabled") throw new Error("This UGC offer has been disabled.");
     if (sample.shopify_discount_id) return NextResponse.json({ sample });
     try {
-      const discountId = await createUgcSampleDiscountCode(sample.sample_code, sample.customer_name, sample.id);
+      const discountId = await createUgcSampleDiscountCode(sample.sample_code, sample.customer_name, sample.id, ugcCollection(sample.product_collection));
       const saved = await db.from("marketing_ugc_samples").update({shopify_discount_id:discountId,status:"active",updated_at:new Date().toISOString()}).eq("id",sample.id).eq("status","pending").select("*").single();
       if (saved.error) {
         const latest = await db.from("marketing_ugc_samples").select("*").eq("id",sample.id).single();
