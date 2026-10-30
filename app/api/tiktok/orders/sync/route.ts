@@ -1,3 +1,4 @@
+import { requireTikTokAdmin } from "@/lib/tiktok-connection";
 import { NextResponse } from "next/server";
 
 import { syncTikTokOrdersByIds } from "../../../../../lib/tiktok-sync";
@@ -9,6 +10,7 @@ function json(status: number, body: Record<string, unknown>) {
 }
 
 export async function POST(request: Request) {
+  try { await requireTikTokAdmin(request); } catch { return json(403, { error: "Administrator sign-in required." }); }
   let body: { orderId?: string; orderIds?: string[] };
   try {
     body = await request.json() as { orderId?: string; orderIds?: string[] };

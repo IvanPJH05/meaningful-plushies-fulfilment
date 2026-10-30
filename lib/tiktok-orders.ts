@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { verifyShopWebhook } from "./tiktok-crypto.ts";
 
 import { isPlushCharmOrder } from "./plush-charm.ts";
 import type { Order, OrderStatus } from "./types";
@@ -81,7 +81,8 @@ function tikTokVariation(value: string) {
 
 function localStatusFromTikTok(value: string, current?: OrderStatus): OrderStatus {
   const status = value.toLowerCase();
-  if (/cancel|refund|return|fail/.test(status)) return current ?? "issue";
+  if (/cancel|refund|return|fail/.test(status)) return "issue";
+  if (/unpaid|on_hold/.test(status)) return "issue";
   if (/delivered|completed|shipped|in_transit/.test(status)) return current ?? "shipped";
   if (/awaiting_collection|ready_to_ship|packed/.test(status)) return current ?? "packed";
   return current ?? "new_order";
@@ -180,7 +181,7 @@ function discountAmount(order: Record<string, unknown>) {
 }
 
 function shippingAmount(order: Record<string, unknown>) {
-  return firstMoney(order, ["shipping_fee", "shipping_fee_after_discount", "original_shipping_fee", "delivery_fee"]);
+  return firstMoney(objectValue(order.payment), ["shipping_fee"]) || firstMoney(order, ["shipping_fee", "shipping_fee_after_discount", "original_shipping_fee", "delivery_fee"]);
 }
 
 function totalAmount(order: Record<string, unknown>) {
@@ -190,7 +191,7 @@ function totalAmount(order: Record<string, unknown>) {
 
 function subtotalAmount(order: Record<string, unknown>) {
   const item = firstLineItem(order);
-  return firstMoney(order, ["subtotal", "sku_subtotal_before_discount", "item_subtotal"])
+  return firstMoney(objectValue(order.payment), ["sub_total"]) || firstMoney(order, ["subtotal", "sku_subtotal_before_discount", "item_subtotal"])
     || firstMoney(item, ["subtotal", "sku_subtotal_before_discount", "original_price", "sale_price"])
     || totalAmount(order);
 }
@@ -205,7 +206,7 @@ export function extractTikTokOrderIds(payload: unknown): string[] {
   const ids = new Set<string>();
   const visit = (value: unknown, key = "") => {
     if (typeof value === "string" || typeof value === "number") {
-      if (/order/i.test(key) || /^\d{8,}$/.test(String(value))) {
+      if (/^(order_id|orderId|order_ids|order_id_list)$/i.test(key) && typeof value === "string") {
         const id = tiktokOrderIdFromValue(String(value));
         if (id.length >= 8) ids.add(id);
       }
@@ -222,14 +223,15 @@ export function extractTikTokOrderIds(payload: unknown): string[] {
   return [...ids];
 }
 
-export function tiktokApiOrderToFulfilmentOrder(apiOrder: Record<string, unknown>, existing: Order[], actor = "TikTok Shop") {
+export function tiktokApiOrderToFulfilmentOrder(apiOrder: Record<string, unknown>, existing: Order[], actor = "TikTok Shop", reservedNumber?: string) {
   const rawOrderId = firstText(apiOrder, ["order_id", "orderId", "id", "order_number", "orderNumber"]);
   const tikTokOrderId = tiktokOrderIdFromValue(rawOrderId);
   if (!tikTokOrderId) return null;
   const id = `tiktok-${tikTokOrderId}`;
   const current = existing.find((order) => order.id === id);
+  if (!current && /^(UNPAID|ON_HOLD|CANCELLED|COMPLETED|DELIVERED|IN_TRANSIT)$/i.test(firstText(apiOrder, ["status", "order_status"]))) return null;
   const timestamp = new Date().toISOString();
-  const assignedNumber = nextTikTokOrderNumber(existing, tikTokOrderId);
+  const assignedNumber = reservedNumber || nextTikTokOrderNumber(existing, tikTokOrderId);
   const displayOrderNumber = `${assignedNumber} ${tikTokOrderId}`;
   const product = productInfo(apiOrder);
   const plushCharm = isPlushCharmOrder({ product: product.product, productType: current?.productType || "", remark: "" });
@@ -242,6 +244,7 @@ export function tiktokApiOrderToFulfilmentOrder(apiOrder: Record<string, unknown
   const createdAt = normalizeApiDate(firstText(apiOrder, ["create_time", "created_time", "created_at", "paid_time", "paid_at"])) || timestamp;
 
   return {
+    ...current,
     id,
     orderNumber: displayOrderNumber,
     salesChannel: "tiktok" as const,
@@ -250,7 +253,7 @@ export function tiktokApiOrderToFulfilmentOrder(apiOrder: Record<string, unknown
     phone: phoneNumber(apiOrder) || current?.phone || "",
     email: current?.email || "",
     address: shippingAddressText(apiOrder) || current?.address || "",
-    currency: firstText(apiOrder, ["currency", "currency_code"]) || current?.currency || "MYR",
+    currency: firstText(objectValue(apiOrder.payment), ["currency"]) || firstText(apiOrder, ["currency", "currency_code"]) || current?.currency || "MYR",
     subtotalAmount: subtotalAmount(apiOrder) || current?.subtotalAmount || 0,
     shippingAmount: shippingAmount(apiOrder) || current?.shippingAmount || 0,
     totalAmount: total || current?.totalAmount || 0,
@@ -283,8 +286,9 @@ export function tiktokApiOrderToFulfilmentOrder(apiOrder: Record<string, unknown
     voiceUploadStatus: current?.voiceUploadStatus ?? "missing",
     courier: shipping.courier || current?.courier || "",
     trackingNumber: shipping.tracking || current?.trackingNumber || "",
-    status: localStatusFromTikTok(orderStatus, current?.status),
-    internalNotes: current?.internalNotes || "",
+    status: arrayValue(apiOrder.line_items).length > 1 ? "issue" : localStatusFromTikTok(orderStatus, current?.status),
+    internalNotes: arrayValue(apiOrder.line_items).length > 1 && !current?.internalNotes?.includes("TikTok multi-item order") ? [current?.internalNotes, `TikTok multi-item order: review all ${arrayValue(apiOrder.line_items).length} line items in Seller Center before production.`].filter(Boolean).join("\n") : current?.internalNotes || "",
+    tikTokShopStatus: orderStatus,
     photoDataUrl: current?.photoDataUrl,
     photoName: current?.photoName,
     tikTokFileDataUrl: current?.tikTokFileDataUrl,
@@ -296,63 +300,6 @@ export function tiktokApiOrderToFulfilmentOrder(apiOrder: Record<string, unknown
     importedAt: current?.importedAt ?? timestamp,
     updatedAt: timestamp,
   } satisfies Order;
-}
-
-function tiktokBaseUrl() {
-  return (process.env.TIKTOK_SHOP_BASE_URL || "https://open-api.tiktokglobalshop.com").replace(/\/$/, "");
-}
-
-function tiktokOrderDetailPath() {
-  return process.env.TIKTOK_SHOP_ORDER_DETAIL_PATH || "/api/orders/detail/query";
-}
-
-function tiktokAccessToken() {
-  return process.env.TIKTOK_SHOP_ACCESS_TOKEN || "";
-}
-
-function tiktokCredentials() {
-  return {
-    appKey: process.env.TIKTOK_SHOP_APP_KEY || "",
-    appSecret: process.env.TIKTOK_SHOP_APP_SECRET || "",
-    accessToken: tiktokAccessToken(),
-    shopId: process.env.TIKTOK_SHOP_ID || "",
-  };
-}
-
-function signTikTokRequest(path: string, params: Record<string, string>, body: string, appSecret: string) {
-  const sorted = Object.keys(params)
-    .filter((key) => key !== "sign" && key !== "access_token")
-    .sort()
-    .map((key) => `${key}${params[key]}`)
-    .join("");
-  const payload = `${path}${sorted}${body}`;
-  return createHmac("sha256", appSecret).update(payload).digest("hex");
-}
-
-async function tiktokPost<T>(path: string, body: Record<string, unknown>) {
-  const { appKey, appSecret, accessToken, shopId } = tiktokCredentials();
-  if (!appKey || !appSecret || !accessToken) {
-    throw new Error("TikTok Shop API is not configured. Add TIKTOK_SHOP_APP_KEY, TIKTOK_SHOP_APP_SECRET, and TIKTOK_SHOP_ACCESS_TOKEN in Vercel.");
-  }
-  const bodyText = JSON.stringify(body);
-  const params: Record<string, string> = {
-    app_key: appKey,
-    timestamp: String(Math.floor(Date.now() / 1000)),
-    access_token: accessToken,
-  };
-  if (shopId) params.shop_id = shopId;
-  params.sign = signTikTokRequest(path, params, bodyText, appSecret);
-  const query = new URLSearchParams(params);
-  const response = await fetch(`${tiktokBaseUrl()}${path}?${query.toString()}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: bodyText,
-  });
-  const result = await response.json().catch(() => ({})) as T & { message?: string; error?: string; code?: number };
-  if (!response.ok || Number(result.code ?? 0) !== 0) {
-    throw new Error(textValue(result.message) || textValue(result.error) || "TikTok Shop API request failed.");
-  }
-  return result;
 }
 
 function collectOrderObjects(value: unknown, found: Record<string, unknown>[] = []) {
@@ -373,10 +320,10 @@ function collectOrderObjects(value: unknown, found: Record<string, unknown>[] = 
 export async function fetchTikTokOrderDetails(orderIds: string[]) {
   const uniqueOrderIds = [...new Set(orderIds.map(tiktokOrderIdFromValue).filter(Boolean))];
   if (!uniqueOrderIds.length) return [];
-  const result = await tiktokPost<Record<string, unknown>>(tiktokOrderDetailPath(), {
-    order_id_list: uniqueOrderIds,
-    order_ids: uniqueOrderIds,
-  });
+  const { tikTokAccess } = await import("./tiktok-connection");
+  const { tikTokRequest } = await import("./tiktok-client");
+  const connection = await tikTokAccess();
+  const result = await tikTokRequest<Record<string, unknown>>("/order/202507/orders", connection.token, { ids: uniqueOrderIds.join(","), shop_cipher: connection.shop_cipher });
   const orders = collectOrderObjects(result);
   const byId = new Map<string, Record<string, unknown>>();
   for (const order of orders) {
@@ -387,20 +334,5 @@ export async function fetchTikTokOrderDetails(orderIds: string[]) {
 }
 
 export function verifyTikTokWebhook(rawBody: string, request: Request) {
-  const secret = process.env.TIKTOK_WEBHOOK_SECRET;
-  if (!secret) return true;
-  const received = [
-    request.headers.get("x-tts-signature"),
-    request.headers.get("x-tiktok-signature"),
-    request.headers.get("x-tiktok-shop-signature"),
-    request.headers.get("x-hub-signature-256")?.replace(/^sha256=/, ""),
-  ].filter(Boolean)[0];
-  if (!received) return false;
-  const hex = createHmac("sha256", secret).update(rawBody, "utf8").digest("hex");
-  const base64 = createHmac("sha256", secret).update(rawBody, "utf8").digest("base64");
-  return [hex, base64].some((expected) => {
-    const left = Buffer.from(expected);
-    const right = Buffer.from(received);
-    return left.length === right.length && timingSafeEqual(left, right);
-  });
+  return verifyShopWebhook(rawBody, request.headers.get("authorization"), process.env.TIKTOK_SHOP_APP_KEY || "", process.env.TIKTOK_SHOP_APP_SECRET || "");
 }

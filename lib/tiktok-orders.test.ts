@@ -13,6 +13,32 @@ test("extracts TikTok order IDs from webhook-like payloads", () => {
   }), ["584697260225955022", "584775415746234364"]);
 });
 
+test("shop IDs and tracking numbers are never treated as order IDs", () => {
+  assert.deepEqual(extractTikTokOrderIds({ shop_id: "7494633634998879636", timestamp: 1790000000, data: { order_id: "584697260225955022", tracking_number: "123456789123" } }), ["584697260225955022"]);
+});
+
+test("unpaid and on-hold orders cannot enter the new production queue", () => {
+  for (const status of ["UNPAID", "ON_HOLD", "CANCELLED"]) assert.equal(tiktokApiOrderToFulfilmentOrder({ id: "584697260225955022", status }, []), null);
+});
+
+test("sync preserves personalization and flags an existing cancelled order", () => {
+  const existing = tiktokApiOrderToFulfilmentOrder({ id: "584697260225955022", status: "AWAITING_SHIPMENT" }, [])!;
+  existing.plushName = "Billy";
+  existing.tikTokFileDataUrl = "private-audio";
+  existing.status = "sent_for_sewing";
+  const synced = tiktokApiOrderToFulfilmentOrder({ id: "584697260225955022", status: "CANCELLED" }, [existing])!;
+  assert.equal(synced.plushName, "Billy");
+  assert.equal(synced.tikTokFileDataUrl, "private-audio");
+  assert.equal(synced.status, "issue");
+  assert.equal(synced.orderNumber, existing.orderNumber);
+});
+
+test("multi-item orders require staff review instead of silently producing just one item", () => {
+  const order = tiktokApiOrderToFulfilmentOrder({ id: "584697260225955022", status: "AWAITING_SHIPMENT", line_items: [{ product_name: "Billy" }, { product_name: "Tootsie" }] }, [])!;
+  assert.equal(order.status, "issue");
+  assert.match(order.internalNotes || "", /2 line items/);
+});
+
 test("converts TikTok API order shell without personalization data", () => {
   const order = tiktokApiOrderToFulfilmentOrder({
     order_id: "584697260225955022",
