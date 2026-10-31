@@ -9,6 +9,10 @@ create table fulfilment_orders(id text primary key,status text,updated_at timest
 create view fulfilment_order_summaries as select id,data from fulfilment_orders;`);
 await db.exec(await readFile(new URL('../supabase/migrations/20261013151356_atomic_fulfilment_transitions.sql',import.meta.url),'utf8'));
 await db.exec(await readFile(new URL('../supabase/migrations/20261031023000_tiktok_customisation_gate.sql',import.meta.url),'utf8'));
+await db.exec(await readFile(new URL('../supabase/migrations/20261031045000_tiktok_customisation_service_access.sql',import.meta.url),'utf8'));
+await db.exec('set role service_role');
+assert.equal((await db.query(`select internal.tiktok_customisation_ready('{}'::jsonb) as ready`)).rows[0].ready,false);
+await db.exec('reset role');
 const shell = {salesChannel:'tiktok',status:'awaiting_customisation',statusHistory:[],plushName:'',character:'Billy',voiceUploadStatus:'missing'};
 await db.query(`insert into fulfilment_orders values('tt','awaiting_customisation',now(),$1)`,[shell]);
 const row = async () => (await db.query(`select status,data from fulfilment_orders where id='tt'`)).rows[0];
