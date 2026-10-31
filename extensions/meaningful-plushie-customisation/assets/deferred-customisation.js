@@ -185,7 +185,10 @@
       const voice = selectedVoice();
       if (!voice || isLater() || !apiUrl) return null;
       if (preparedUpload?.file === voice) return preparedUpload;
-      if (uploadPromise) return uploadPromise;
+      if (uploadPromise) {
+        await uploadPromise;
+        return uploadVoiceEarly();
+      }
       uploadPromise = (async () => {
         notice.textContent = "Uploading your voice…";
         setVoiceProgress(4, "Preparing secure upload…");
@@ -572,6 +575,7 @@
       const upload = await uploadVoiceEarly();
       if (!upload) return null;
       while (earlySavePromise) await earlySavePromise;
+      if (selectedVoice() !== upload.file) return saveCompleteNowEarly();
       const details = formData();
       const fingerprint = completeNowFingerprint(details, upload);
       if (savedCompleteNowFingerprint === fingerprint) return upload;
