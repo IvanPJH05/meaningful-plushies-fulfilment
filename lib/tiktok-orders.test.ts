@@ -72,5 +72,22 @@ test("converts TikTok API order shell without personalization data", () => {
   assert.equal(order.plushName, "");
   assert.equal(order.meaningfulNote, "");
   assert.equal(order.meaningfulMessage, "");
+  assert.equal(order.status, "awaiting_customisation");
+  assert.equal(order.statusHistory[0].status, "awaiting_customisation");
   assert.match(order.orderNumber, /^TT\d+ 584697260225955022$/);
+});
+
+test("marketplace collection status cannot bypass customisation and later sync keeps staff details", () => {
+  const api = { id: "584697260225955022", status: "AWAITING_COLLECTION", line_items: [{product_name: "Billy, 5 seconds"}] };
+  const order = tiktokApiOrderToFulfilmentOrder(api, [])!;
+  assert.equal(order.status, "awaiting_customisation");
+  order.character = "Tootsie";
+  order.voiceLength = 20;
+  order.remark = "Keep this team note";
+  order.status = "new_order";
+  const synced = tiktokApiOrderToFulfilmentOrder(api, [order])!;
+  assert.equal(synced.status, "new_order");
+  assert.equal(synced.character, "Tootsie");
+  assert.equal(synced.voiceLength, 20);
+  assert.equal(synced.remark, "Keep this team note");
 });

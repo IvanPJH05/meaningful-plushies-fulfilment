@@ -83,9 +83,8 @@ function localStatusFromTikTok(value: string, current?: OrderStatus): OrderStatu
   const status = value.toLowerCase();
   if (/cancel|refund|return|fail/.test(status)) return "issue";
   if (/unpaid|on_hold/.test(status)) return "issue";
-  if (/delivered|completed|shipped|in_transit/.test(status)) return current ?? "shipped";
-  if (/awaiting_collection|ready_to_ship|packed/.test(status)) return current ?? "packed";
-  return current ?? "new_order";
+  // Marketplace logistics never advance our customisation/production stages.
+  return current ?? "awaiting_customisation";
 }
 
 function normalizeTikTokPaymentMethod(value: string) {
@@ -267,12 +266,12 @@ export function tiktokApiOrderToFulfilmentOrder(apiOrder: Record<string, unknown
     discountCodeUsed: current?.discountCodeUsed ?? "",
     shippingMethod: shipping.method || current?.shippingMethod || "",
     product: product.product || current?.product || "TikTok Shop Order",
-    character: product.character || current?.character || "",
+    character: current?.character || product.character || "",
     setIndicator: current?.setIndicator || "",
     // Charm orders use Our Link. Keep the stored Our Link through subsequent
     // TikTok syncs instead of reconstructing a classic birth certificate.
     idWebsiteLink: plushCharm ? current?.idWebsiteLink || "" : certificateLink(code),
-    voiceLength: product.voiceLength || current?.voiceLength || 0,
+    voiceLength: current?.voiceLength || product.voiceLength || 0,
     plushName: current?.plushName || "",
     plushGender: current?.plushGender,
     plushBirthDate: current?.plushBirthDate,
@@ -282,7 +281,7 @@ export function tiktokApiOrderToFulfilmentOrder(apiOrder: Record<string, unknown
     certificateCode: plushCharm ? "" : code,
     meaningfulNote: current?.meaningfulNote || "",
     meaningfulMessage: current?.meaningfulMessage || "",
-    remark: username ? `TikTok Shop username: ${username}` : current?.remark || "TikTok Shop order synced. Add plushie details manually.",
+    remark: current?.remark || (username ? `TikTok Shop username: ${username}` : "TikTok Shop order synced. Add plushie details manually."),
     voiceUploadStatus: current?.voiceUploadStatus ?? "missing",
     courier: shipping.courier || current?.courier || "",
     trackingNumber: shipping.tracking || current?.trackingNumber || "",
@@ -295,7 +294,7 @@ export function tiktokApiOrderToFulfilmentOrder(apiOrder: Record<string, unknown
     tikTokFileName: current?.tikTokFileName,
     tikTokFileType: current?.tikTokFileType,
     statusHistory: current?.statusHistory ?? [
-      { id: `${id}-${timestamp}`, status: "new_order" as const, changedAt: timestamp, changedBy: actor, note: "Synced from TikTok Shop. Plushie details need manual input." },
+      { id: `${id}-${timestamp}`, status: arrayValue(apiOrder.line_items).length > 1 ? "issue" as const : "awaiting_customisation" as const, changedAt: timestamp, changedBy: actor, note: "Synced from TikTok Shop. Awaiting customer voice and plushie details before production." },
     ],
     importedAt: current?.importedAt ?? timestamp,
     updatedAt: timestamp,

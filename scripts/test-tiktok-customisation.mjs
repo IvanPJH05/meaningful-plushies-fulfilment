@@ -1,0 +1,36 @@
+import { PGlite } from '@electric-sql/pglite';
+import { readFile } from 'node:fs/promises';
+import assert from 'node:assert/strict';
+
+const db = new PGlite();
+await db.exec(`create role anon; create role authenticated; create role service_role;
+create schema internal;
+create table fulfilment_orders(id text primary key,status text,updated_at timestamptz,data jsonb);
+create view fulfilment_order_summaries as select id,data from fulfilment_orders;`);
+await db.exec(await readFile(new URL('../supabase/migrations/20261013151356_atomic_fulfilment_transitions.sql',import.meta.url),'utf8'));
+await db.exec(await readFile(new URL('../supabase/migrations/20261031023000_tiktok_customisation_gate.sql',import.meta.url),'utf8'));
+const shell = {salesChannel:'tiktok',status:'awaiting_customisation',statusHistory:[],plushName:'',character:'Billy',voiceUploadStatus:'missing'};
+await db.query(`insert into fulfilment_orders values('tt','awaiting_customisation',now(),$1)`,[shell]);
+const row = async () => (await db.query(`select status,data from fulfilment_orders where id='tt'`)).rows[0];
+await assert.rejects(db.query(`select transition_fulfilment_orders('[{"orderId":"tt","fromStatus":"awaiting_customisation","toStatus":"new_order"}]','Admin')`),/customer voice/);
+await db.query(`update fulfilment_orders set data=data||$1 where id='tt'`,[{plushName:'Mochi'}]);
+assert.equal((await row()).status,'awaiting_customisation');
+await db.query(`update fulfilment_orders set data=data||$1 where id='tt'`,[{tikTokFileDataUrl:'data:application/pdf;base64,abc',tikTokFileType:'application/pdf',tikTokFileName:'details.pdf'}]);
+assert.equal((await row()).status,'awaiting_customisation','A details document is not a voice recording');
+await db.query(`update fulfilment_orders set data=data||$1 where id='tt'`,[{tikTokFileDataUrl:'data:audio/mpeg;base64,abc',tikTokFileType:'audio/mpeg',tikTokFileName:'voice.mp3'}]);
+let saved=await row();
+assert.equal(saved.status,'new_order');
+assert.equal(saved.data.status,'new_order');
+assert.equal(saved.data.voiceUploadStatus,'received');
+assert.equal(saved.data.statusHistory.length,1);
+await db.query(`update fulfilment_orders set status='awaiting_customisation',data=data||$1 where id='tt'`,[shell]);
+saved=await row();
+assert.equal(saved.status,'new_order','Stale sync cannot reverse production stage');
+assert.equal(saved.data.statusHistory.length,1);
+// Shopify and existing later production stages are unaffected.
+await db.query(`insert into fulfilment_orders values('shopify','awaiting_customisation',now(),$1)`,[{...shell,salesChannel:'shopify'}]);
+await db.query(`update fulfilment_orders set data=data||$1 where id='shopify'`,[{plushName:'Mochi',meaningfulMessage:'https://example.com/voice.mp3'}]);
+assert.equal((await db.query(`select status from fulfilment_orders where id='shopify'`)).rows[0].status,'awaiting_customisation');
+assert.equal((await db.query(`select internal.tiktok_customisation_ready($1) as ready`,[{...shell,product:'Plush Charm',tikTokFileDataUrl:'data:audio/mpeg;base64,abc'}])).rows[0].ready,true);
+await db.close();
+console.log('TikTok customisation gate: all checks passed');
