@@ -14,12 +14,15 @@ Implementation status: backend and connection page prepared; live seller authori
 - Automatic five-minute recovery sweeps plus admin manual recovery. Initial recovery looks back 24 hours, then uses an overlapping update-time cursor with persisted pagination.
 - Staff personalization and attachments are preserved. Unpaid/on-hold/cancelled historical orders are not created as new production work. Existing cancellations are flagged for review.
 - Multi-item orders are flagged for staff review; automatic per-item production splitting is not part of this release.
+- New single-item TikTok orders enter `awaiting_customisation`, regardless of TikTok's collection/shipping status. Saving a customer audio/video attachment plus plush name and character automatically moves a classic plushie to `new_order`. Audio-only charms require the recording only. A database trigger enforces this for individual and bulk transitions, appends history once, and leaves Shopify unchanged.
 
 ## Required server configuration
 
 `TIKTOK_SHOP_APP_KEY`, `TIKTOK_SHOP_APP_SECRET`, `TIKTOK_SHOP_AUTHORIZATION_URL` (copy the seller link from Partner Center), `TIKTOK_SHOP_REDIRECT_URI`, `TIKTOK_TOKEN_ENCRYPTION_KEY` (64 random hex characters), `CRON_SECRET`, and existing Supabase service credentials. Never prefix secrets with `NEXT_PUBLIC_`.
 
-Migration: `supabase/migrations/20261031000100_tiktok_connection.sql`.
+Migrations: `supabase/migrations/20261031000100_tiktok_connection.sql` and `supabase/migrations/20261031023000_tiktok_customisation_gate.sql`.
+
+Required scopes: `seller.order.info` and `seller.authorization.info` (the latter identifies the authorized shop and its cipher). If callback token exchange succeeds but the shops request returns 105005, check that Shop authorised information is active and reauthorize the seller so the token includes it.
 
 Partner Center redirect: `https://meaningful-plushies-fulfilment.vercel.app/api/tiktok/callback`.
 
