@@ -7,3 +7,7 @@
 .actions { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
 .queue input[readonly] { background:#edf2f8; }
 .queue input[type=file] { height:auto; padding:12px; }
+.dropZone { width:100%; min-height:180px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:28px 16px; border:2px dashed #8aaee5; border-radius:12px; background:#fff; color:#193d70; font:inherit; cursor:pointer; text-align:center; }
+.dropZone:hover, .dragging { background:#eaf2ff; border-color:#2865be; }
+.dropZone:focus-visible { outline:3px solid #2865be; outline-offset:3px; }
+.dropZone:disabled { opacity:.6; cursor:wait; }

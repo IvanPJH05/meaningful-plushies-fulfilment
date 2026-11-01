@@ -10,3 +10,10 @@ export function shopifyManualOrderCustomerName(value: string): ShopifyCustomerNa
   const [firstName, ...rest] = fullName.split(" ");
   return { firstName, lastName: rest.join(" ") };
 }
+
+// Shopify's delivery-address validation requires a last name. A single-word
+// name belongs in that field; repeating it would change the recipient's name.
+export function shopifyManualOrderShippingName(value: string): ShopifyCustomerName {
+  const name = shopifyManualOrderCustomerName(value);
+  return name.lastName ? name : { firstName: "", lastName: name.firstName };
+}

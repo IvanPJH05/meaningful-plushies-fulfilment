@@ -34,7 +34,7 @@ export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: strin
 
   const request = useCallback(async (body?: Record<string, unknown>) => {
     const response = await fetch("/api/manual-order-intakes", { method: body ? "POST" : "GET", cache: "no-store", headers: { "Content-Type": "application/json", "x-dashboard-session": sessionToken }, body: body ? JSON.stringify(body) : undefined });
-    const data = await response.json() as { ok?: boolean; intakes?: ManualOrderIntake[]; intake?: ManualOrderIntake; details?: ManualOrderDetails; order?: { shopifyOrderName?: string }; restoration?: { checked: number; restored: number; failed: number }; error?: string };
+    const data = await response.json() as { ok?: boolean; intakes?: ManualOrderIntake[]; intake?: ManualOrderIntake; details?: ManualOrderDetails; order?: { shopifyOrderName?: string; shippingWarning?: string }; restoration?: { checked: number; restored: number; failed: number }; error?: string };
     if (!response.ok || !data.ok) throw new Error(data.error || "The Manual Order Collection could not be updated.");
     return data;
   }, [sessionToken]);
@@ -56,7 +56,7 @@ export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: strin
       }
       await request({ action: "attach_receipt", id: intake.id, paymentReceipts: receipts });
       const created = await request({ action: "create_shopify_order", id: intake.id });
-      setNotice(`${intake.customerName}'s Shopify order ${created.order?.shopifyOrderName || "was created"}. The receipt was attached.`);
+      setNotice(`${intake.customerName}'s Shopify order ${created.order?.shopifyOrderName || "was created"}. The receipt was attached. ${created.order?.shippingWarning || ""}`.trim());
       await load();
     } catch (error) { setNotice(error instanceof Error ? error.message : "The Shopify order could not be created."); }
     finally { setBusy(""); }
@@ -67,7 +67,7 @@ export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: strin
     try {
       await request({ action: "approve_cod", id: intake.id });
       const created = await request({ action: "create_shopify_order", id: intake.id });
-      setNotice(`${intake.customerName}'s COD Shopify order ${created.order?.shopifyOrderName || "was created"}.`);
+      setNotice(`${intake.customerName}'s COD Shopify order ${created.order?.shopifyOrderName || "was created"}. ${created.order?.shippingWarning || ""}`.trim());
       await load();
     } catch (error) { setNotice(error instanceof Error ? error.message : "The COD Shopify order could not be created."); }
     finally { setBusy(""); }
@@ -78,7 +78,7 @@ export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: strin
     try {
       const created = await request({ action: "create_shopify_order", id: intake.id });
       setIntakes((current) => current.map((item) => item.id === intake.id ? { ...item, status: "created", shopifyOrderName: created.order?.shopifyOrderName || item.shopifyOrderName } : item));
-      setNotice(`${intake.customerName}'s Shopify order ${created.order?.shopifyOrderName || "was created"}.`);
+      setNotice(`${intake.customerName}'s Shopify order ${created.order?.shopifyOrderName || "was created"}. ${created.order?.shippingWarning || ""}`.trim());
       await load();
     } catch (error) { setNotice(error instanceof Error ? error.message : "The Shopify order could not be created."); }
     finally { setBusy(""); }
@@ -166,7 +166,7 @@ export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: strin
     await load();
     if (create) {
       const created = await request({ action: "create_shopify_order", id });
-      setNotice(`${saved.details.intake.customerName}'s Shopify order ${created.order?.shopifyOrderName || "was created"}.`);
+      setNotice(`${saved.details.intake.customerName}'s Shopify order ${created.order?.shopifyOrderName || "was created"}. ${created.order?.shippingWarning || ""}`.trim());
       setDetailsPreview(null);
       await load();
     }
