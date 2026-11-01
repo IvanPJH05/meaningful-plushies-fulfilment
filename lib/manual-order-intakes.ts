@@ -5,7 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createCompleteNowSession, createVoiceUpload, normaliseCustomisationForm, saveSnowyCharmVoice, saveSubmittedSession, submittedCustomisationsForSessionIds, type CustomisationForm } from "./customisation";
 import { shopifyOrderToFulfilmentOrders } from "./importer";
 import { notifyNewManualOrder } from "./mobile-push-notifications";
-import { shopifyManualOrderCustomerName } from "./manual-order-customer-name";
+import { shopifyManualOrderCustomerName, shopifyManualOrderShippingName } from "./manual-order-customer-name";
 import { manualOrderCharactersForProduct, manualOrderProductByKey, manualOrderProductFamily, manualOrderProducts, type ManualOrderProductConfig } from "./manual-order-products";
 import { manualOrderIntakeQuote as quoteManualOrderIntake } from "./manual-order-intake-pricing";
 import { completeManualOrderCreation } from "./manual-order-completion";
@@ -528,7 +528,7 @@ function shopifyAddressForIntake(intake: ManualOrderIntake) {
   // Shopify customer or order write, so an incomplete record stays in Manual
   // Orders until it is corrected instead of creating a partial Shopify order.
   const shippingAddress = validAddress(intake.shippingAddress);
-  const customerName = shopifyManualOrderCustomerName(intake.customerName);
+  const customerName = shopifyManualOrderShippingName(intake.customerName);
   return {
     firstName: customerName.firstName,
     lastName: customerName.lastName,
