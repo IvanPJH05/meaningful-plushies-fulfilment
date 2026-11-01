@@ -50,6 +50,8 @@ function CustomisationEditor({ order, onSave, onDirty }: {
   const [text, setText] = useState("");
   const [saving, setSaving] = useState(false);
   const [reading, setReading] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
   const busy = useRef(false);
   const [message, setMessage] = useState("");
   const [discarding, setDiscarding] = useState(false);
@@ -79,6 +81,7 @@ function CustomisationEditor({ order, onSave, onDirty }: {
   }
   function upload(file?: File) {
     if (!file || busy.current) return;
+    if (!/^(audio|video)\//.test(file.type) && !/\.(mp3|wav|m4a|aac|ogg|oga|opus|flac|aiff?|amr|mp4|mov|webm|mkv|m4v)$/i.test(file.name)) return setMessage("Please choose an audio or video recording.");
     if (file.size > 5_000_000) return setMessage("Please choose a voice file smaller than 5 MB.");
     busy.current = true;
     setReading(true);
@@ -112,7 +115,16 @@ function CustomisationEditor({ order, onSave, onDirty }: {
       <label>Voice length (seconds)<input disabled={locked} type="number" min="0" max="86400" value={draft.voiceLength || ""} onChange={event => edit({ voiceLength: Number(event.target.value) || 0 })} /></label>
       <label className="wide">Meaningful Note<textarea disabled={locked} value={draft.meaningfulNote || ""} onChange={event => edit({ meaningfulNote: event.target.value })} /></label>
     </div>
-    <label>Customer voice<input type="file" accept="audio/*,video/*" disabled={locked} onChange={event => upload(event.target.files?.[0])} /></label>
+    <label>Customer voice</label>
+    <button type="button" className={`${styles.dropZone} ${dragging ? styles.dragging : ""}`} disabled={locked}
+      onClick={() => fileInput.current?.click()}
+      onDragOver={event => { event.preventDefault(); if (!locked) setDragging(true); }}
+      onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }}
+      onDrop={event => { event.preventDefault(); setDragging(false); if (locked) return; if (event.dataTransfer.files.length !== 1) { setMessage("Please drop one recording at a time."); return; } upload(event.dataTransfer.files[0]); }}>
+      <strong>{reading ? "Reading recording…" : "Drag your audio or video here"}</strong>
+      <span>or click to choose a file</span><small>Audio or video · up to 5 MB</small>
+    </button>
+    <input ref={fileInput} type="file" aria-label="Choose customer voice" accept="audio/*,video/*" hidden disabled={locked} onChange={event => { upload(event.target.files?.[0]); event.target.value = ""; }} />
     <small>{draft.tikTokFileName ? `Attached: ${draft.tikTokFileName}` : "Choose the customer's audio or video recording."}</small>
     <p>Save the voice, plush name and character to move this order to New Order. You can save incomplete details and finish later.</p>
     <div className={styles.actions}><button type="button" className="button primary" disabled={!dirty || locked} onClick={() => void save()}>{reading ? "Reading voice..." : saving ? "Saving..." : "Save customisation"}</button>{dirty && <><button type="button" className="button secondary" disabled={locked} onClick={() => setDiscarding(true)}>Discard draft</button><span>Unsaved changes</span></>}</div>
