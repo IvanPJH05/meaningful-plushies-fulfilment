@@ -1,0 +1,125 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { parseTikTokDetailsBlock } from "../lib/importer";
+import { mediaFileExtension, voiceBackupFileName } from "../lib/voice-file-name";
+import { compactOrderLabel } from "../lib/table-layout";
+import type { Order } from "../lib/types";
+import styles from "./tiktok-customisation-queue.module.css";
+
+const fields = [
+  ["customerName", "Username"], ["plushName", "Plushie's Name"],
+  ["plushGender", "Plushie's Gender"], ["plushBirthDate", "Plushie's Birth Date"],
+  ["plushBirthPlace", "Plushie's Birth Place"], ["plushFavouritePerson", "Plushie's Favourite Person"],
+  ["plushBelongsTo", "Plushie Belongs to"], ["character", "Character"],
+] as const;
+const placeholder = "Nama Plushie - Mochi\nJantina Plushie - Female\nTarikh Lahir Plushie - 28/6/2025\nTempat Lahir Plushie - Perak\nOrang Kegemaran Plushie - Panda shomel\nMainan lembut itu milik... Ayangku\nNota bermakna - Your message here";
+
+export function TikTokCustomisationQueue({ orders, onSave }: {
+  orders: Order[];
+  onSave: (id: string, patch: Partial<Order>, expectedUpdatedAt: string) => Promise<Order>;
+}) {
+  const [selected, setSelected] = useState("");
+  const [dirty, setDirty] = useState(false);
+  const [pendingSelection, setPendingSelection] = useState("");
+  const order = orders.find(item => item.id === selected) || orders[0];
+  function select(id: string) {
+    if (id === order?.id) return;
+    if (dirty) { setPendingSelection(id); return; }
+    setDirty(false);
+    setSelected(id);
+  }
+  if (!order) return null;
+  return <section className={styles.queue} aria-label="TikTok awaiting customisation">
+    <div><h2>Awaiting Customisation</h2><p>Choose an order, paste the customer details and check the preview. The order ID is already filled in.</p></div>
+    <label className={styles.choose}>Order to customise<select value={order.id} onChange={event => select(event.target.value)}>{orders.map(item => <option key={item.id} value={item.id}>{compactOrderLabel(item)} · {item.customerName || "TikTok customer"}</option>)}</select></label>
+    {pendingSelection && <div role="alert" className={styles.actions}><span>This order has unsaved details.</span><button type="button" className="button secondary" onClick={() => setPendingSelection("")}>Keep editing</button><button type="button" className="button danger" onClick={() => { setDirty(false); setSelected(pendingSelection); setPendingSelection(""); }}>Discard and switch order</button></div>}
+    <CustomisationEditor key={order.id} order={order} onSave={onSave} onDirty={setDirty} />
+  </section>;
+}
+
+function CustomisationEditor({ order, onSave, onDirty }: {
+  order: Order;
+  onSave: (id: string, patch: Partial<Order>, expectedUpdatedAt: string) => Promise<Order>;
+  onDirty: (dirty: boolean) => void;
+}) {
+  // Keep the version from the start of the draft. A realtime update must never
+  // silently overwrite staff changes or remove the existing media attachment.
+  const baseline = useRef(order);
+  const [patch, setPatch] = useState<Partial<Order>>({});
+  const [text, setText] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [reading, setReading] = useState(false);
+  const busy = useRef(false);
+  const [message, setMessage] = useState("");
+  const [discarding, setDiscarding] = useState(false);
+  const dirty = Object.keys(patch).length > 0;
+  const draft = { ...baseline.current, ...patch };
+  useEffect(() => { onDirty(dirty || reading); }, [dirty, reading, onDirty]);
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+  function edit(changes: Partial<Order>) {
+    setPatch(current => ({ ...current, ...changes }));
+    setMessage("");
+  }
+  function paste(value: string) {
+    setText(value);
+    const parsed = parseTikTokDetailsBlock(value);
+    const changes: Partial<Order> = {};
+    const mapped = { customerName: parsed.username, plushName: parsed.plushName, plushGender: parsed.gender,
+      plushBirthDate: parsed.birthDate, plushBirthPlace: parsed.birthPlace, plushFavouritePerson: parsed.favouritePerson,
+      plushBelongsTo: parsed.belongsTo, meaningfulNote: parsed.meaningfulNote };
+    // Missing fields in a pasted message do not erase details already entered.
+    for (const [key, field] of Object.entries(mapped)) if (field) Object.assign(changes, { [key]: field });
+    if (Object.keys(changes).length) edit(changes);
+  }
+  function upload(file?: File) {
+    if (!file || busy.current) return;
+    if (file.size > 5_000_000) return setMessage("Please choose a voice file smaller than 5 MB.");
+    busy.current = true;
+    setReading(true);
+    const reader = new FileReader();
+    reader.onload = () => edit({ tikTokFileDataUrl: String(reader.result),
+      tikTokFileName: voiceBackupFileName(draft, mediaFileExtension(file.name, file.type, String(reader.result))),
+      tikTokFileType: file.type || "application/octet-stream" });
+    reader.onerror = () => setMessage("The file could not be read. Please choose it again.");
+    reader.onloadend = () => { busy.current = false; setReading(false); };
+    reader.readAsDataURL(file);
+  }
+  async function save() {
+    if (busy.current || !dirty) return;
+    busy.current = true;
+    setSaving(true);
+    try {
+      const saved = await onSave(order.id, patch, baseline.current.updatedAt);
+      baseline.current = { ...draft, ...saved };
+      setPatch({});
+      setMessage(saved.status === "new_order" ? "Saved. This order is now in New Order." : "Details saved. Add the remaining plushie details and voice to move to New Order.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Could not save. Your draft is kept."); }
+    finally { busy.current = false; setSaving(false); }
+  }
+  const locked = saving || reading;
+  return <article className="tiktok-detail-entry">
+    <header className="tiktok-detail-entry-header"><strong>{compactOrderLabel(order)} · TikTok plushie details</strong><span>Awaiting Customisation</span></header>
+    <label>Order ID<input readOnly value={order.id.startsWith("tiktok-") ? order.id.slice(7) : order.orderNumber.match(/\d{8,}/)?.[0] || order.orderNumber} /></label>
+    <label>Paste customer details<textarea disabled={locked} value={text} onChange={event => paste(event.target.value)} placeholder={placeholder} className={styles.paste} /></label>
+    <div className="tiktok-detail-preview"><strong>Editable preview</strong>
+      {fields.map(([key, label]) => <label key={key}>{label}<input disabled={locked} value={draft[key] || ""} onChange={event => edit({ [key]: event.target.value })} /></label>)}
+      <label>Voice length (seconds)<input disabled={locked} type="number" min="0" max="86400" value={draft.voiceLength || ""} onChange={event => edit({ voiceLength: Number(event.target.value) || 0 })} /></label>
+      <label className="wide">Meaningful Note<textarea disabled={locked} value={draft.meaningfulNote || ""} onChange={event => edit({ meaningfulNote: event.target.value })} /></label>
+    </div>
+    <label>Customer voice<input type="file" accept="audio/*,video/*" disabled={locked} onChange={event => upload(event.target.files?.[0])} /></label>
+    <small>{draft.tikTokFileName ? `Attached: ${draft.tikTokFileName}` : "Choose the customer's audio or video recording."}</small>
+    <p>Save the voice, plush name and character to move this order to New Order. You can save incomplete details and finish later.</p>
+    <div className={styles.actions}><button type="button" className="button primary" disabled={!dirty || locked} onClick={() => void save()}>{reading ? "Reading voice..." : saving ? "Saving..." : "Save customisation"}</button>{dirty && <><button type="button" className="button secondary" disabled={locked} onClick={() => setDiscarding(true)}>Discard draft</button><span>Unsaved changes</span></>}</div>
+    {discarding && <div className={styles.actions} role="alert"><span>Discard these unsaved changes?</span><button type="button" className="button secondary" onClick={() => setDiscarding(false)}>Keep editing</button><button type="button" className="button danger" disabled={locked} onClick={() => {
+      baseline.current = order;
+      setPatch({}); setText(""); setMessage(""); setDiscarding(false);
+    }}>Discard changes</button></div>}
+    <p role="status">{message}</p>
+  </article>;
+}

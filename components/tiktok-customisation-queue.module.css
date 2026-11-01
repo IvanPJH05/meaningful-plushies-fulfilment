@@ -1,0 +1,9 @@
+.queue { display:grid; gap:18px; max-width:780px; margin:20px auto; padding:0 16px; }
+.queue h2 { margin:0 0 8px; font-size:22px; }
+.queue p { line-height:1.5; }
+.choose { display:grid; gap:6px; font-weight:700; }
+.choose select { width:100%; min-width:0; border:1px solid #cfdced; border-radius:8px; padding:12px; background:#fff; color:#172033; }
+.paste { min-height:220px; width:100%; resize:vertical; padding:12px; border:1px solid #cfdced; border-radius:8px; font:13px/1.6 monospace; text-transform:none; }
+.actions { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
+.queue input[readonly] { background:#edf2f8; }
+.queue input[type=file] { height:auto; padding:12px; }
