@@ -15,8 +15,9 @@ const fields = [
 ] as const;
 const placeholder = "Nama Plushie - Mochi\nJantina Plushie - Female\nTarikh Lahir Plushie - 28/6/2025\nTempat Lahir Plushie - Perak\nOrang Kegemaran Plushie - Panda shomel\nMainan lembut itu milik... Ayangku\nNota bermakna - Your message here";
 
-export function TikTokCustomisationQueue({ orders, onSave }: {
+export function TikTokCustomisationQueue({ orders, onSave, onFinish }: {
   orders: Order[];
+  onFinish: (order: Order) => Promise<void>;
   onSave: (id: string, patch: Partial<Order>, expectedUpdatedAt: string) => Promise<Order>;
 }) {
   const [selected, setSelected] = useState("");
@@ -34,12 +35,13 @@ export function TikTokCustomisationQueue({ orders, onSave }: {
     <div><h2>Awaiting Customisation</h2><p>Choose an order, paste the customer details and check the preview. The order ID is already filled in.</p></div>
     <label className={styles.choose}>Order to customise<select value={order.id} onChange={event => select(event.target.value)}>{orders.map(item => <option key={item.id} value={item.id}>{compactOrderLabel(item)} · {item.customerName || "TikTok customer"}</option>)}</select></label>
     {pendingSelection && <div role="alert" className={styles.actions}><span>This order has unsaved details.</span><button type="button" className="button secondary" onClick={() => setPendingSelection("")}>Keep editing</button><button type="button" className="button danger" onClick={() => { setDirty(false); setSelected(pendingSelection); setPendingSelection(""); }}>Discard and switch order</button></div>}
-    <CustomisationEditor key={order.id} order={order} onSave={onSave} onDirty={setDirty} />
+    <CustomisationEditor key={order.id} order={order} onSave={onSave} onFinish={onFinish} onDirty={setDirty} />
   </section>;
 }
 
-function CustomisationEditor({ order, onSave, onDirty }: {
+function CustomisationEditor({ order, onSave, onFinish, onDirty }: {
   order: Order;
+  onFinish: (order: Order) => Promise<void>;
   onSave: (id: string, patch: Partial<Order>, expectedUpdatedAt: string) => Promise<Order>;
   onDirty: (dirty: boolean) => void;
 }) {
@@ -106,6 +108,12 @@ function CustomisationEditor({ order, onSave, onDirty }: {
     finally { busy.current = false; setSaving(false); }
   }
   const locked = saving || reading;
+  async function finish() {
+    if (busy.current || dirty) return;
+    busy.current = true; setSaving(true);
+    try { await onFinish(baseline.current); }
+    finally { busy.current = false; setSaving(false); }
+  }
   return <article className="tiktok-detail-entry">
     <header className="tiktok-detail-entry-header"><strong>{compactOrderLabel(order)} · TikTok plushie details</strong><span>Awaiting Customisation</span></header>
     <label>Order ID<input readOnly value={order.id.startsWith("tiktok-") ? order.id.slice(7) : order.orderNumber.match(/\d{8,}/)?.[0] || order.orderNumber} /></label>
@@ -127,6 +135,8 @@ function CustomisationEditor({ order, onSave, onDirty }: {
     <input ref={fileInput} type="file" aria-label="Choose customer voice" accept="audio/*,video/*" hidden disabled={locked} onChange={event => { upload(event.target.files?.[0]); event.target.value = ""; }} />
     <small>{draft.tikTokFileName ? `Attached: ${draft.tikTokFileName}` : "Choose the customer's audio or video recording."}</small>
     <p>Save the voice, plush name and character to move this order to New Order. You can save incomplete details and finish later.</p>
+    <p>If this order was returned here to correct a mistake, save your corrections, then choose Finish customisation to move it back to New Order.</p>
+    <button type="button" className="button secondary" disabled={dirty || locked} onClick={() => void finish()}>Finish customisation</button>
     <div className={styles.actions}><button type="button" className="button primary" disabled={!dirty || locked} onClick={() => void save()}>{reading ? "Reading voice..." : saving ? "Saving..." : "Save customisation"}</button>{dirty && <><button type="button" className="button secondary" disabled={locked} onClick={() => setDiscarding(true)}>Discard draft</button><span>Unsaved changes</span></>}</div>
     {discarding && <div className={styles.actions} role="alert"><span>Discard these unsaved changes?</span><button type="button" className="button secondary" onClick={() => setDiscarding(false)}>Keep editing</button><button type="button" className="button danger" disabled={locked} onClick={() => {
       baseline.current = order;
