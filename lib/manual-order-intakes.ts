@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import {dailyManualPaymentSummary, manualPaymentDayRange, type DailyPaymentRow} from "./daily-manual-payments";
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -604,6 +605,21 @@ export async function listManualOrderIntakes() {
   // particular, customer permission changes must not make the list appear
   // empty even though every submission remains safely stored in Supabase.
   return (data || []).map((row) => rowToIntake(row as Record<string, unknown>));
+}
+
+export async function getDailyManualPayments(day: string) {
+  const {start,end} = manualPaymentDayRange(day);
+  const rows: DailyPaymentRow[] = [];
+  for (let offset = 0; ; offset += 500) {
+    const {data,error} = await serviceClient().from(TABLE)
+      .select("id,customer_name,status,paid_at,shopify_order_id,shopify_order_name,payment_receipts")
+      .gte("paid_at",start).lt("paid_at",end).in("status",["ready_to_create","created"])
+      .order("id").range(offset,offset + 499);
+    if (error) throw Error(error.message);
+    rows.push(...(data || []) as DailyPaymentRow[]);
+    if (!data || data.length < 500) break;
+  }
+  return dailyManualPaymentSummary(rows,day);
 }
 
 /** Compact data for the approval queue. It deliberately excludes transaction

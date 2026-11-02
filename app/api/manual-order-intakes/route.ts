@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import {getDailyManualPayments} from "@/lib/manual-order-intakes";
 
 import { editManualOrderIntake, prepareManualOrderEditVoice, type ManualOrderIntakeEdit, approveManualOrderCod, attachManualOrderReceipt, createPaidShopifyOrder, deleteManualOrderIntake, getManualOrderIntakeDetails, isDashboardAdmin, listManualOrderIntakes, repairManualOrderShipping, restoreManualOrderFulfilment, type PaymentReceipt } from "@/lib/manual-order-intakes";
 
@@ -10,7 +11,11 @@ async function requireAdmin(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   if (!await requireAdmin(request)) return NextResponse.json({ ok: false, error: "Administrator access is required." }, { status: 403 });
-  try { return NextResponse.json({ ok: true, intakes: await listManualOrderIntakes() }); }
+  try {
+    const day = request.nextUrl.searchParams.get("paymentDay");
+    if (day !== null) return NextResponse.json({ok:true, summary:await getDailyManualPayments(day)}, {headers:{"Cache-Control":"no-store"}});
+    return NextResponse.json({ ok: true, intakes: await listManualOrderIntakes() });
+  }
   catch (error) { return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Manual order submissions could not be loaded." }, { status: 500 }); }
 }
 
