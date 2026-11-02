@@ -27,3 +27,10 @@ export function orderBarcodeValue(order: BarcodeOrder) {
 export function normaliseBarcodeValue(value: string) {
   return value.toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
+
+/** New packing slips identify the individual fulfilment row, including split orders. */
+export function packingItemBarcodeValue(order: BarcodeOrder) {
+  const id=clean(order.id).trim();
+  if (!id || /[^A-Za-z0-9_-]/.test(id)) return orderBarcodeValue(order);
+  return `MPI-${id.toUpperCase()}`;
+}

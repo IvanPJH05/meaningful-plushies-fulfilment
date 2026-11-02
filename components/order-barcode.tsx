@@ -1,6 +1,6 @@
 "use client";
 
-export { normaliseBarcodeValue, orderBarcodeValue } from "../lib/order-barcode";
+export { normaliseBarcodeValue, orderBarcodeValue, packingItemBarcodeValue } from "../lib/order-barcode";
 import { code128Modules, code128UnitCount } from "../lib/code128";
 
 // Code 39 is deliberately used here because it is widely supported by inexpensive

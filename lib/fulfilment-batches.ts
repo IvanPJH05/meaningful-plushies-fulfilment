@@ -3,7 +3,7 @@ import { isPlushCharmOrder } from "./plush-charm.ts";
 
 export const batchStages = ["labels", "printing", "envelopes", "audio", "nfc", "complete"] as const;
 export type BatchStage = typeof batchStages[number];
-export type FulfilmentBatch = { id: string; number: number; stage: BatchStage; version: number; created_at: string; completed_at: string | null; orderCount?: number; writtenCount?: number; envelope_names: Record<string, string> };
+export type FulfilmentBatch = { id: string; number: number; stage: BatchStage; version: number; created_at: string; completed_at: string | null; orderCount?: number; writtenCount?: number; nfc_mode?: "direct" | "prewritten"; envelope_names: Record<string, string> };
 export type BatchMember = { order_id: string; nfc_written_at: string | null };
 export type BatchDetail = { batch: FulfilmentBatch; orders: Order[]; members: BatchMember[] };
 export function canJoinBatch(status: unknown) { return status === "new_order" || status === "uploading_audio"; }
