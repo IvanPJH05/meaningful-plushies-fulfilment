@@ -17,7 +17,7 @@ The two fulfilment orders and their submitted customisation sessions now referen
 
 Add `sections/certificate-1970-picker.liquid` and `assets/certificate-1970-picker.js` to the current live theme. Add the `certificate_1970_picker` section to the beginning of the existing `templates/metaobject/version_1_certs.json` order, preserving every other section and setting. The template in this folder is the exact live template read on 3 November 2026 plus that one section. Re-read the live template and compare before writing it, in case the merchant has edited it meanwhile.
 
-The three-file change has been installed and previewed on draft theme `160380125255`. **Live theme installation is pending:** the owner browser's Online Store/Code Editor iframe remained blank. The Shopify connector supports theme file writes on unpublished themes only. Do not claim the shared customer link is live until verified without preview cookies/parameters.
+The three-file change was published through Shopify's owner code editor to active theme `AUG Website Updates` (`144436920391`) on 3 November 2026. The original template sections and settings were preserved. The unrelated draft theme was not published. Admin API readback confirmed all three files were saved.
 
 ## Validation
 
@@ -26,4 +26,4 @@ The three-file change has been installed and previewed on draft theme `160380125
 - `node scripts/test-certificate-1970-links.mjs`: stale-import protection, repaired session binding, unrelated order and stage preservation.
 - Browser draft preview: both certificates display their own correct details; revisiting the root automatically opens the remembered SUPER PAPA selection; Change plushie opens the selector again. The dialog fits a 390px phone viewport without horizontal overflow. An unrelated certificate renders no picker markup.
 
-Before final release verify the published root link in a browser without a theme preview session. Both repaired orders have matching session codes, no duplicate-link warning, and fully synced certificate jobs.
+Live verification after exiting the theme preview session: both choices open their correct details; repeating the original root URL remembers each selection; Change plushie reopens the dialog. The rendered section belongs to live template `19918804156487`, with no preview bar or preview URL parameters. Unrelated certificate `14063493106` renders no picker markup. Screenshot: `artifacts/certificate-1970-picker-live.png` in the parent workspace. Both repaired orders have matching session codes, no duplicate-link warning, and fully synced certificate jobs.
