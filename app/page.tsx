@@ -120,6 +120,10 @@ type Session = DashboardSession;
 const CreatorProfilesContext = createContext<CreatorProfile[]>([]);
 const FreeCreatorSampleCodesContext = createContext<string[]>([]);
 const UgcCodesContext = createContext<string[]>([]);
+const DailyProductionAssistant = dynamic(() => import("../components/daily-production-assistant").then(module => module.DailyProductionAssistant), { loading: () => <WorkspaceLoading /> });
+const ProductionTrackingWorkspace = dynamic(() => import("../components/production-tracking-workspace").then(module => module.ProductionTrackingWorkspace), { loading: () => <WorkspaceLoading /> });
+const ProductionOrderTracking = dynamic(() => import("../components/production-order-tracking").then(module => module.ProductionOrderTracking), { loading: () => <WorkspaceLoading /> });
+
 type View =
   | "orders" | "fulfilment" | "packing_slips" | "print_envelope" | "nfc_card" | "import" | "tiktok_shop" | "fulfilled" | "history" | "settings" | "meta_capi" | "stock" | "sales_report"
   | "accounting_dashboard" | "accounting_documents" | "accounting_transactions" | "accounting_csv_import" | "accounting_profit_loss" | "accounting_balance_sheet"
@@ -130,8 +134,8 @@ type View =
   | "monthly_journal_inbox" | "monthly_journal_import" | "monthly_journal_shopee" | "monthly_journal_shortcuts" | "monthly_journal_source_documents" | "monthly_journal_general_journal" | "monthly_journal_reports" | "monthly_journal_accounts" | "monthly_journal_account_activity"
   | "content_dashboard" | "content_plan" | "content_ideas"
   | "manual_orders_dashboard" | "manual_orders_preorders" | "manual_orders_leads"
-  | "marketing_ugc" | "creator_dashboard" | "creator_accounts" | "creator_sales" | "creator_commissions" | "creator_payouts" | "creator_analytics" | "creator_free_samples" | "plush_charm_orders" | "shopify_app" | "audio_scanner" | "batch_fulfilment";
-type Workspace = "marketing" | "batch_fulfilment" | "fulfilment" | "manual_orders" | "accounting" | "formal_accounting" | "monthly_journal" | "creator" | "inventory" | "reports" | "content" | "settings" | "shopify_app" | "audio_scanner";
+  | "marketing_ugc" | "creator_dashboard" | "creator_accounts" | "creator_sales" | "creator_commissions" | "creator_payouts" | "creator_analytics" | "creator_free_samples" | "plush_charm_orders" | "shopify_app" | "audio_scanner" | "batch_fulfilment" | "production_tracking" | "production_batches" | "production_orders";
+type Workspace = "marketing" | "batch_fulfilment" | "fulfilment" | "manual_orders" | "accounting" | "formal_accounting" | "monthly_journal" | "creator" | "inventory" | "reports" | "content" | "settings" | "shopify_app" | "audio_scanner" | "production_tracking";
 type SalesRange = "active" | "today" | "7d" | "30d" | "lifetime";
 type SortKey = "orderNumber" | "importedAt" | "updatedAt";
 type SortDirection = "asc" | "desc";
@@ -670,9 +674,10 @@ const manualOrderViews: readonly View[] = ["manual_orders_dashboard", "manual_or
 const manualOrderCharacters = ["Billy", "Tootsie", "Hunnie", "Dragon Warrior"] as const;
 const creatorViews: readonly View[] = ["creator_dashboard", "creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
 const creatorAdminViews: readonly View[] = ["creator_accounts", "creator_sales", "creator_commissions", "creator_payouts", "creator_analytics", "creator_free_samples"];
-const dashboardViews: readonly View[] = ["marketing_ugc","batch_fulfilment", ...fulfilmentViews, "history", "settings", "meta_capi", "stock", "sales_report", "plush_charm_orders", "shopify_app", "audio_scanner", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...creatorViews];
+const dashboardViews: readonly View[] = ["production_tracking", "production_batches", "production_orders", "marketing_ugc","batch_fulfilment", ...fulfilmentViews, "history", "settings", "meta_capi", "stock", "sales_report", "plush_charm_orders", "shopify_app", "audio_scanner", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...creatorViews];
 const adminOnlyViews = new Set<View>(["marketing_ugc","history", "settings", "meta_capi", "stock", "sales_report", "shopify_app", "audio_scanner", ...manualOrderViews, ...accountingViews, ...formalAccountingViews, ...monthlyJournalViews, ...contentViews, ...creatorAdminViews]);
 const workspaceDefaultViews: Record<Workspace, View> = {
+  production_tracking: "production_tracking",
   marketing: "marketing_ugc",
   batch_fulfilment: "batch_fulfilment",
   fulfilment: "orders",
@@ -689,6 +694,7 @@ const workspaceDefaultViews: Record<Workspace, View> = {
   audio_scanner: "audio_scanner",
 };
 const workspaceLabels: Record<Workspace, string> = {
+  production_tracking: "Daily Production",
   marketing: "Marketing",
   batch_fulfilment: "Batch Fulfilment",
   fulfilment: "Fulfilment",
@@ -1493,6 +1499,7 @@ function permittedView(value: unknown, role?: UserRole) {
 }
 
 function workspaceForView(view: View): Workspace {
+  if (["production_tracking", "production_batches", "production_orders"].includes(view)) return "production_tracking";
   if (view === "marketing_ugc") return "marketing";
   if (view === "batch_fulfilment") return "batch_fulfilment";
   if (creatorViews.includes(view)) return "creator";
@@ -1510,6 +1517,7 @@ function workspaceForView(view: View): Workspace {
 }
 
 function navItemsForWorkspace(workspace: Workspace, role: UserRole): NavItem[] {
+  if (workspace === "production_tracking" && role !== "creator") return [{view:"production_tracking",label:"Tasks",icon:"orders"},{view:"production_batches",label:"Batches & history",icon:"orders"},{view:"production_orders",label:"Order tracking",icon:"orders"}];
   if (workspace === "batch_fulfilment") return [{view: "batch_fulfilment", label: "Batch Fulfilment", icon: "orders"}];
   if (role === "creator") return creatorNavItems;
   if (role !== "admin") return workspace === "shopify_app" ? shopifyCharmStaffNavItems : fulfilmentNavItems;
@@ -1530,6 +1538,7 @@ function navItemsForWorkspace(workspace: Workspace, role: UserRole): NavItem[] {
 
 function viewTitle(view: View) {
   const titleOverrides: Partial<Record<View, string>> = {
+    production_tracking: "Tasks", production_batches: "Batches & history", production_orders: "Order tracking",
     marketing_ugc: "Customer UGC",
     batch_fulfilment: "Batch Fulfilment",
     orders: "Orders Dashboard",
@@ -1613,6 +1622,7 @@ function Home() {
   const [packingStatusFilter, setPackingStatusFilter] = useState<"all" | OrderStatus>(() => choice(storedUi.packingStatusFilter, "all", orderStatusFilterValues));
   const [packingProductFilter, setPackingProductFilter] = useState<PackingProductFilter>(() => choice(storedUi.packingProductFilter, "all", packingProductFilterValues));
   const [envelopeStatusFilter, setEnvelopeStatusFilter] = useState<"all" | OrderStatus>(() => choice(storedUi.envelopeStatusFilter, "all", orderStatusFilterValues));
+  const [productionCustomisationDirty, setProductionCustomisationDirty] = useState(false);
   const [tikTokStatusFilter, setTikTokStatusFilter] = useState<"all" | OrderStatus>(() => choice(storedUi.tikTokStatusFilter, "all", orderStatusFilterValues));
   const [influencerOnly, setInfluencerOnly] = useState(false);
   const [removingOrders, setRemovingOrders] = useState(false);
@@ -5987,8 +5997,8 @@ function Home() {
 
   const workspace = workspaceForView(view);
   const availableWorkspaces: Workspace[] = session.role === "admin"
-    ? ["fulfilment", "batch_fulfilment", "manual_orders", "accounting", "formal_accounting", "monthly_journal", "creator", "marketing", "inventory", "reports", "content", "shopify_app", "audio_scanner", "settings"]
-    : session.role === "creator" ? ["creator"] : ["fulfilment", "batch_fulfilment", "shopify_app"];
+    ? ["production_tracking", "fulfilment", "batch_fulfilment", "manual_orders", "accounting", "formal_accounting", "monthly_journal", "creator", "marketing", "inventory", "reports", "content", "shopify_app", "audio_scanner", "settings"]
+    : session.role === "creator" ? ["creator"] : ["production_tracking", "fulfilment", "batch_fulfilment", "shopify_app"];
   const sidebarNavItems = navItemsForWorkspace(workspace, session.role);
   const workspaceTitle = workspaceLabels[workspace];
 
@@ -6189,6 +6199,7 @@ function Home() {
       </section>}
       {view === "shopify_app" && session.role === "admin" && <ShopifyAppWorkspace sessionToken={session.token} />}
       {workspace === "batch_fulfilment" && <BatchFulfilmentWorkspace token={session.token} initialBatchId={activeBatchId} onOrdersChanged={() => loadSharedData()} onPrint={batchOrders => printPackingSlips("both", batchOrders)} onEnvelopes={printEnvelopes} onNfc={writeCertificateLinkToNfc} onStartNfc={startNfcHelper} certificateFor={certificateLink} onOpenOrder={async order => { const full = await fetchSharedOrderById(order.id); if (!full) throw new Error("Order could not be loaded. Try again."); setBatchSelectedOrder(full); hydratedOrderIds.current.add(full.id); setSelectedId(full.id); }} />}
+      {workspace === "production_tracking" && (session.role === "admin" || session.role === "staff") && (view === "production_orders" ? <ProductionOrderTracking token={session.token} onOpenOrder={async order=>{const full=await fetchSharedOrderById(order.id);if(!full)throw new Error("Order could not be loaded.");hydratedOrderIds.current.add(full.id);setBatchSelectedOrder(full);setSelectedId(full.id);}}/> : view === "production_batches" ? <ProductionTrackingWorkspace screen={view === "production_batches" ? "manage" : "today"} onScreenChange={screen => setView(screen === "manage" ? "production_batches" : "production_tracking")} token={session.token} admin={session.role === "admin"} onPrint={orders => printPackingSlips("both", orders)} onOpenOrder={async order => { const full = await fetchSharedOrderById(order.id); if (!full) throw new Error("Order could not be loaded."); hydratedOrderIds.current.add(full.id); setBatchSelectedOrder(full); setSelectedId(full.id); }} /> : <DailyProductionAssistant token={session.token} admin={session.role === "admin"} importPanel={<><p>TikTok orders arrive automatically. Finish their voice and plushie details below. <button className="button secondary" onClick={() => setView("import")}>Open CSV import</button></p><TikTokCustomisationQueue onDirtyChange={setProductionCustomisationDirty} orders={orders.filter(order => order.status === "awaiting_customisation" && order.salesChannel === "tiktok")} onSave={updateOrder} onFinish={order => setStatus(order, "new_order")} /></>} importDirty={productionCustomisationDirty} onRefresh={()=>loadSharedData()} production={onCycleComplete=><ProductionTrackingWorkspace assistant onCycleComplete={onCycleComplete} screen="today" onScreenChange={screen => setView(screen === "manage" ? "production_batches" : "production_tracking")} token={session.token} admin={session.role === "admin"} onPrint={orders => printPackingSlips("both", orders)} onOpenOrder={async order => { const full = await fetchSharedOrderById(order.id); if (!full) throw new Error("Order could not be loaded."); hydratedOrderIds.current.add(full.id); setBatchSelectedOrder(full); setSelectedId(full.id); }} />}/>)}
       {workspace === "audio_scanner" && session.role === "admin" && <AudioScannerWorkspace orders={orders} audioSourceFor={meaningfulMessageLink} />}
 
       {workspace === "marketing" && session.role === "admin" && <MarketingUgcWorkspace token={session.token} orders={orders} />}

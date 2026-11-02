@@ -5,6 +5,7 @@ const accounting = ["accounting_categories", "accounting_documents", "accounting
 // Sales classifications/fees are retained because the order dashboard shows totals.
 export function sharedTablesForWorkspace(view: string, workspace: string, role?: string): string[] {
   if (!role) return [];
+  if (workspace === "production_tracking") return ["manual_orders"];
   if (workspace === "batch_fulfilment") return ["manual_orders", "envelope_print_settings"];
   const tables = new Set<string>();
   const add = (keys: string[]) => keys.forEach((key) => tables.add(key));
