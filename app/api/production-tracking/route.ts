@@ -7,11 +7,11 @@ const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export async function GET(request:Request){try{
  const {client}=await context(request);const url=new URL(request.url);const id=url.searchParams.get("batch");
  if(url.searchParams.has("candidates")){
-  const day=url.searchParams.get("day")||"";const plan=batchSchedule(day);
+  const day=url.searchParams.get("day")||"";batchSchedule(day);
   const {data:members,error:memberError}=await client.from("production_items").select("order_id,disposition,deferred_until,issue");if(memberError)throw memberError;
   const {data:existingBatchOrders,error:batchOrdersError}=await client.from("fulfilment_batch_orders").select("order_id");if(batchOrdersError)throw batchOrdersError;
   const deferred=(members||[]).filter(m=>m.disposition==="deferred"&&m.deferred_until<=day);const used=new Set([...(members||[]).filter(m=>!deferred.includes(m)).map(m=>m.order_id),...(existingBatchOrders||[]).map(m=>m.order_id)]);
-  const {data,error}=await client.from("fulfilment_orders").select("id,order_number,updated_at,data").eq("status","new_order").lte("data->>orderDate",new Date(plan.cutoff).toISOString()).order("order_number").limit(1000);if(error)throw error;
+  const {data,error}=await client.from("fulfilment_orders").select("id,order_number,updated_at,data").eq("status","new_order").order("order_number").limit(1000);if(error)throw error;
   const orders=(data||[]).filter(r=>!used.has(r.id)).slice(0,200).map(r=>({id:r.id,...r.data as object,productionCarryover:deferred.find(m=>m.order_id===r.id)?.issue||null}));return NextResponse.json({orders},{headers});
  }
  if(!id){const {data,error}=await client.from("production_batches").select("*,production_items(stage,issue,disposition,carried_issue)").order("production_date",{ascending:false}).limit(60);if(error)throw error;return NextResponse.json({batches:data},{headers});}
