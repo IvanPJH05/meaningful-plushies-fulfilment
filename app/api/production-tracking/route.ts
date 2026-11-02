@@ -2,8 +2,6 @@ import {NextResponse} from "next/server";
 import {context,failure,PairingError,headers,summary} from "@/lib/certificate-cards-server";
 import {certificateCardCode} from "@/lib/certificate-pairing";
 import {batchSchedule,matchesProductionBarcode} from "@/lib/production-tracking";
-import {isPlushCharmOrder} from "@/lib/plush-charm";
-import type {Order} from "@/lib/types";
 export const runtime="nodejs";
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export async function GET(request:Request){try{
@@ -13,8 +11,8 @@ export async function GET(request:Request){try{
   const {data:members,error:memberError}=await client.from("production_items").select("order_id,disposition,deferred_until,issue");if(memberError)throw memberError;
   const {data:existingBatchOrders,error:batchOrdersError}=await client.from("fulfilment_batch_orders").select("order_id");if(batchOrdersError)throw batchOrdersError;
   const deferred=(members||[]).filter(m=>m.disposition==="deferred"&&m.deferred_until<=day);const used=new Set([...(members||[]).filter(m=>!deferred.includes(m)).map(m=>m.order_id),...(existingBatchOrders||[]).map(m=>m.order_id)]);
-  const {data,error}=await client.from("fulfilment_orders").select("id,order_number,updated_at,data").in("data->>status",["new_order","uploading_audio"]).lte("data->>orderDate",new Date(plan.cutoff).toISOString()).order("order_number").limit(1000);if(error)throw error;
-  const {data:carry,error:carryError}=deferred.length?await client.from("fulfilment_orders").select("id,order_number,updated_at,data").in("id",deferred.map(m=>m.order_id)):{data:[],error:null};if(carryError)throw carryError;const all=[...new Map([...(carry||[]),...(data||[])].map(r=>[r.id,r])).values()];const orders=all.filter(r=>!used.has(r.id)&&!isPlushCharmOrder(r.data as Order)).slice(0,200).map(r=>({id:r.id,...r.data as object,productionCarryover:deferred.find(m=>m.order_id===r.id)?.issue||null}));return NextResponse.json({orders},{headers});
+  const {data,error}=await client.from("fulfilment_orders").select("id,order_number,updated_at,data").eq("status","new_order").lte("data->>orderDate",new Date(plan.cutoff).toISOString()).order("order_number").limit(1000);if(error)throw error;
+  const orders=(data||[]).filter(r=>!used.has(r.id)).slice(0,200).map(r=>({id:r.id,...r.data as object,productionCarryover:deferred.find(m=>m.order_id===r.id)?.issue||null}));return NextResponse.json({orders},{headers});
  }
  if(!id){const {data,error}=await client.from("production_batches").select("*,production_items(stage,issue,disposition,carried_issue)").order("production_date",{ascending:false}).limit(60);if(error)throw error;return NextResponse.json({batches:data},{headers});}
  if(!uuid.test(id))throw new PairingError("Invalid batch.");
@@ -31,8 +29,8 @@ export async function POST(request:Request){try{
   if(session.role!=="admin")throw new PairingError("Only admins can close production batches.",403);
   batchSchedule(body.day);if(!uuid.test(body.id||"")||!Array.isArray(body.orderIds)||body.orderIds.length<1||body.orderIds.length>200||body.orderIds.some((id:unknown)=>typeof id!=="string"||id.length>200))throw new PairingError("Choose the orders for this batch.");
   const {data:assigned,error:assignedError}=await client.from("fulfilment_batch_orders").select("order_id").in("order_id",body.orderIds);if(assignedError)throw assignedError;if(assigned?.length)throw new PairingError("An order is already in Batch Fulfilment. Finish it there before starting another production cycle.",409);
-  const {data:rows,error:rowsError}=await client.from("fulfilment_orders").select("data").in("id",body.orderIds);if(rowsError)throw rowsError;
-  if(rows?.some(r=>isPlushCharmOrder(r.data as Order)))throw new PairingError("This production cycle is for classic plushies.");
+  const {data:rows,error:rowsError}=await client.from("fulfilment_orders").select("status,data").in("id",body.orderIds);if(rowsError)throw rowsError;
+  if(rows?.length!==body.orderIds.length||rows.some(r=>r.status!=="new_order"))throw new PairingError("Only New Order items can begin production. Refresh and review the selection.",409);
   if(body.pickupDate)batchSchedule(body.pickupDate);
   const {data,error}=await client.rpc("production_create_batch",{p_actor:actor,p_id:body.id,p_day:body.day,p_order_ids:body.orderIds,p_pickup:body.pickupDate||null});if(error)throw new PairingError(error.message,409);return NextResponse.json({id:data},{headers});
  }
