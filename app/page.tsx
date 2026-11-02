@@ -14,6 +14,7 @@ import { compactOrderLabel, normalizeTableLayout, tableColumns, type TableColumn
 const TableLayoutEditor = dynamic(() => import("../components/table-layout-editor"));
 import { OrderTableRow } from "../components/order-table-row";
 import { TikTokCustomisationQueue } from "../components/tiktok-customisation-queue";
+const NfcCardWorkspace = dynamic(() => import("../components/nfc-card-workspace").then(module => module.NfcCardWorkspace), { loading: () => <WorkspaceLoading /> });
 import { VirtualOrderTable, VirtualPackingList } from "../components/virtual-order-list";
 import { saveImportedOrders } from "../lib/order-import-save";
 import { WorkspaceDataCache, sharedTablesForWorkspace } from "../lib/workspace-data";
@@ -112,7 +113,7 @@ const BatchFulfilmentWorkspace = dynamic(() => import("../components/batch-fulfi
 const BatchAssignment = dynamic(() => import("../components/batch-fulfilment-workspace").then(module => module.BatchAssignment), { ssr: false });
 const CertificateSyncStatus = dynamic(() => import("../components/certificate-sync-status"), { ssr: false });
 const AudioScannerWorkspace = dynamic(() => import("../components/audio-scanner-workspace").then((module) => module.AudioScannerWorkspace), { loading: () => <WorkspaceLoading /> });
-import { OrderBarcode, orderBarcodeValue } from "../components/order-barcode";
+import { OrderBarcode, packingItemBarcodeValue } from "../components/order-barcode";
 import { ManualOrderIntakeRecords } from "../components/manual-order-intake-records";
 
 type Session = DashboardSession;
@@ -6335,7 +6336,7 @@ function Home() {
         </section>}
       </>}
 
-      {view === "nfc_card" && <section className="nfc-card-page">
+      {view === "nfc_card" && <section className="nfc-card-page"><NfcCardWorkspace token={session.token} admin={session.role === "admin"} onStartNfc={startNfcHelper} /><details><summary>Legacy card tools — unlock existing cards</summary>
         <div className="card hero-card">
           <span>{t("NFC CARD")}</span>
           <h2>{t("Unlock password-protected NFC cards")}</h2>
@@ -6362,7 +6363,7 @@ function Home() {
             <p>{t("Older cards: use the last four letters or digits of the full original order number. After unlocking, write the card again to switch it to the system password.")}</p>
           </div>
         </div>
-      </section>}
+      </details></section>}
 
       {view === "packing_slips" && <section className="packing-page">
         <div className="packing-controls card">
@@ -10139,7 +10140,7 @@ function Editable({ label, value, onChange, disabled, placeholder, wide, textare
 function PackingSlip({ order, manualOrders }: { order: Order; manualOrders: ManualOrder[] }) {
   const isCod = isCodFulfilmentOrder(order, manualOrders);
   const charm = isPlushCharm(order);
-  return <article className={`a6-slip${isCod ? " is-cod" : ""}${charm ? " is-plush-charm" : ""}`}>{isCod && <div className="cod-watermark" aria-hidden="true">COD</div>}<header><div className="slip-header-main"><div><span>ORDER ID</span><strong>{packingSlipOrderLabel(order)}</strong></div><div className="slip-order-markers"><OrderMarkers order={order} manualOrders={manualOrders} /></div></div></header><div className="slip-fields"><div className="primary-slip-field"><label>CHARACTER:</label><p>{displayedCharacter(order) || "-"}</p></div><div className="primary-slip-field"><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{packingSlipRemark(order)}</p></div></div><OrderBarcode value={orderBarcodeValue(order)} compact /></article>;
+  return <article className={`a6-slip${isCod ? " is-cod" : ""}${charm ? " is-plush-charm" : ""}`}>{isCod && <div className="cod-watermark" aria-hidden="true">COD</div>}<header><div className="slip-header-main"><div><span>ORDER ID</span><strong>{packingSlipOrderLabel(order)}</strong></div><div className="slip-order-markers"><OrderMarkers order={order} manualOrders={manualOrders} /></div></div></header><div className="slip-fields"><div className="primary-slip-field"><label>CHARACTER:</label><p>{displayedCharacter(order) || "-"}</p></div><div className="primary-slip-field"><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{packingSlipRemark(order)}</p></div></div><OrderBarcode value={packingItemBarcodeValue(order)} compact /></article>;
 }
 
 function ShippingLabelPage({ order, manualOrders }: { order: Order; manualOrders: ManualOrder[] }) {

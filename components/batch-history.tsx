@@ -4,7 +4,7 @@ import { useLanguage } from "./dashboard-language";
 import { LoadingIndicator } from "./loading-indicator";
 type Batch = { id: string; number: number; stage: string; created_at: string; completed_at: string | null };
 type Event = { id: number; action: string; actor: string; created_at: string; details: { legacy?: boolean; fromStage?: string; toStage?: string; orderNumbers?: string[] } };
-const actions: Record<string,string> = { created: "Batch created", add: "Orders added", labels: "Shipping labels paired", envelope_names: "Envelope names saved", nfc: "NFC card written", completed: "Batch completed", packing_slips_generated: "Packing slips generated", envelopes_generated: "Envelopes generated", audio_zip_download_started: "Audio ZIP download started" };
+const actions: Record<string,string> = { prewritten_nfc: "Prewritten cards — pair at packing", created: "Batch created", add: "Orders added", labels: "Shipping labels paired", envelope_names: "Envelope names saved", nfc: "NFC card written", completed: "Batch completed", packing_slips_generated: "Packing slips generated", envelopes_generated: "Envelopes generated", audio_zip_download_started: "Audio ZIP download started" };
 const stages: Record<string,string> = { labels: "Upload shipping labels", printing: "Packing slips + shipping labels", envelopes: "Generate envelopes", audio: "Download audio ZIP", nfc: "Write NFC cards", complete: "Batch complete" };
 function orderLabel(number: string) { const match = number.match(/\b(TT\d+)\b\s+(\d+)/i); return match ? `${match[1]} ${match[2].slice(-4)}` : `#${number}`; }
 export function BatchHistory({ token }: { token: string }) {

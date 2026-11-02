@@ -19,6 +19,7 @@ function failure(error: unknown) {
     ENVELOPE_NAME_REQUIRED: "Enter a name for every envelope before continuing.",
     BATCH_TOO_LARGE: "A batch can contain up to 200 orders.",
     BATCH_COMPLETE: "This batch is already complete.",
+    NFC_BATCH_ALREADY_WRITING: "Some cards in this batch were already written directly. Finish that workflow for this batch.",
   };
   return NextResponse.json({ error: message.includes("duplicate key") ? "One of these orders is already in a batch. Refresh and check the selection." : readable[message] ?? message }, { status, headers });
 }
@@ -43,7 +44,7 @@ export async function POST(request: Request) {
   try {
     const session = await requireMobileSession(request);
     const body = await request.json();
-    if (!body || !uuid.test(body.batchId ?? "") || !["create", "add", "labels", "envelope_names", "advance", "nfc"].includes(body.action) || (body.action !== "create" && (!Number.isInteger(body.version) || body.version < 1))) throw new Error("INVALID_BATCH_REQUEST");
+    if (!body || !uuid.test(body.batchId ?? "") || !["create", "add", "labels", "envelope_names", "advance", "nfc", "prewritten_nfc"].includes(body.action) || (body.action !== "create" && (!Number.isInteger(body.version) || body.version < 1))) throw new Error("INVALID_BATCH_REQUEST");
     const payload = body.payload ?? {};
     if (["create", "add"].includes(body.action) && (!Array.isArray(payload.orderIds) || payload.orderIds.length < 1 || payload.orderIds.length > 200 || payload.orderIds.some((id: unknown) => typeof id !== "string" || !id || id.length > 200) || new Set(payload.orderIds).size !== payload.orderIds.length)) throw new Error("INVALID_ORDERS");
     if (body.action === "advance" && !batchStages.slice(0, 4).includes(payload.stage)) throw new Error("INVALID_STAGE");
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
     }
     if (body.action === "envelope_names" && (!payload.names || Array.isArray(payload.names) || typeof payload.names !== "object" || Object.keys(payload.names).length > 200 || Object.values(payload.names).some(name => typeof name !== "string" || !name.trim() || name.length > 60))) throw new Error("INVALID_ENVELOPE_NAMES");
     const db = mobileServiceClient();
-    const { data: id, error } = await db.rpc("mutate_fulfilment_batch", { p_action: body.action, p_batch_id: body.batchId, p_version: body.version ?? 1, p_payload: payload, p_actor: `${session.displayName} (${session.username})` });
+    const { data: id, error } = body.action === "prewritten_nfc" ? await db.rpc("prepare_prewritten_nfc_batch", { p_batch: body.batchId, p_version: body.version, p_actor: `${session.displayName} (${session.username})` }) : await db.rpc("mutate_fulfilment_batch", { p_action: body.action, p_batch_id: body.batchId, p_version: body.version ?? 1, p_payload: payload, p_actor: `${session.displayName} (${session.username})` });
     if (error) throw new Error(error.message);
     const { data, error: readError } = await db.rpc("read_fulfilment_batch", { p_batch_id: id });
     if (readError) throw new Error(readError.message);
