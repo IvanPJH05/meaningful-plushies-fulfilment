@@ -15,7 +15,7 @@ export function ProductionTrackingWorkspace({token,admin,onPrint,onOpenOrder,scr
  const [,tick]=useState(0);useEffect(()=>{const timer=setInterval(()=>tick(value=>value+1),30000);return()=>clearInterval(timer);},[]);
  const setScreen=onScreenChange;const [taskMode,setTaskMode]=useState(false);
  const [batches,setBatches]=useState<Batch[]>([]),[batch,setBatch]=useState<ProductionBatch|null>(null),[items,setItems]=useState<ProductionItem[]>([]),[events,setEvents]=useState<Event[]>([]),[current,setCurrent]=useState("");
- const [day,setDay]=useState(()=>assistant&&new Date(Date.now()+8*3600000).getUTCHours()<22?new Date(Date.now()+8*3600000-86400000).toISOString().slice(0,10):malaysiaToday()),[pickup,setPickup]=useState(batchSchedule(malaysiaToday()).pickupDate),[candidates,setCandidates]=useState<Order[]>([]),[chosen,setChosen]=useState<string[]>([]),[review,setReview]=useState(false);
+ const [day,setDay]=useState(malaysiaToday),[pickup,setPickup]=useState(batchSchedule(malaysiaToday()).pickupDate),[candidates,setCandidates]=useState<Order[]>([]),[chosen,setChosen]=useState<string[]>([]),[review,setReview]=useState(false);
  const [scan,setScan]=useState(""),[card,setCard]=useState(""),[note,setNote]=useState(""),[filter,setFilter]=useState("all"),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
  const requestId=useRef(crypto.randomUUID()),lock=useRef(false),cardInput=useRef<HTMLInputElement>(null);
  const selected=items.find(i=>i.id===current);const next=selected?taskAction(selected):undefined;
