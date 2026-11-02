@@ -24,8 +24,8 @@ export function TikTokCustomisationQueue({ orders, onSave, onFinish, onDirtyChan
   const [selected, setSelected] = useState("");
   const [dirty, setDirty] = useState(false);
   const [pendingSelection, setPendingSelection] = useState("");
-  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
   const order = orders.find(item => item.id === selected) || orders[0];
+  useEffect(() => { onDirtyChange?.(Boolean(order) && dirty); }, [dirty, onDirtyChange, order]);
   function select(id: string) {
     if (id === order?.id) return;
     if (dirty) { setPendingSelection(id); return; }
