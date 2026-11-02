@@ -15,7 +15,8 @@ const fields = [
 ] as const;
 const placeholder = "Nama Plushie - Mochi\nJantina Plushie - Female\nTarikh Lahir Plushie - 28/6/2025\nTempat Lahir Plushie - Perak\nOrang Kegemaran Plushie - Panda shomel\nMainan lembut itu milik... Ayangku\nNota bermakna - Your message here";
 
-export function TikTokCustomisationQueue({ orders, onSave, onFinish }: {
+export function TikTokCustomisationQueue({ orders, onSave, onFinish, onDirtyChange }: {
+  onDirtyChange?: (dirty: boolean) => void;
   orders: Order[];
   onFinish: (order: Order) => Promise<void>;
   onSave: (id: string, patch: Partial<Order>, expectedUpdatedAt: string) => Promise<Order>;
@@ -23,6 +24,7 @@ export function TikTokCustomisationQueue({ orders, onSave, onFinish }: {
   const [selected, setSelected] = useState("");
   const [dirty, setDirty] = useState(false);
   const [pendingSelection, setPendingSelection] = useState("");
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
   const order = orders.find(item => item.id === selected) || orders[0];
   function select(id: string) {
     if (id === order?.id) return;

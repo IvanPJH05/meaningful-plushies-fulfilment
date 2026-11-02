@@ -1,11 +1,11 @@
 import type { Order } from "./types";
 import { voiceBackupFileName } from "./voice-file-name.ts";
-export async function prepareBatchAudioFiles(expected: Order[], batchId: string, token: string, signal: AbortSignal, onProgress: (progress: { missing?: string[]; completed: number; available?: number }) => void = () => {}) {
+export async function prepareBatchAudioFiles(expected: Order[], batchId: string, token: string, signal: AbortSignal, onProgress: (progress: { missing?: string[]; completed: number; available?: number }) => void = () => {}, endpoint="/api/fulfilment/batches/audio") {
   const files: Array<{ name: string; bytes: Uint8Array }> = [];
   let total = 0;
   const missing: string[] = [];
   for (const [index, order] of expected.entries()) {
-    const response = await fetch(`/api/fulfilment/batches/audio?id=${encodeURIComponent(batchId)}&orderId=${encodeURIComponent(order.id)}`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.any([signal, AbortSignal.timeout(120000)]) });
+    const response = await fetch(`${endpoint}?id=${encodeURIComponent(batchId)}&orderId=${encodeURIComponent(order.id)}`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.any([signal, AbortSignal.timeout(120000)]) });
     if (!response.ok) { const result = await response.json().catch(() => ({})); if (response.status === 400 && result.code === "VOICE_NOT_UPLOADED") { missing.push(order.id); onProgress({ missing: [...missing], completed: index + 1 }); continue; } throw new Error(`Could not download audio for order #${order.orderNumber}: ${result.error ?? response.status}`); }
     const type = (response.headers.get("content-type") ?? "").split(";")[0];
     if (!type.startsWith("audio/") && type !== "application/octet-stream") throw new Error(`This order has no downloadable audio file: #${order.orderNumber}`);
