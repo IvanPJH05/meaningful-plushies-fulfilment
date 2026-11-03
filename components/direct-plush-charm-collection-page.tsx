@@ -91,7 +91,7 @@ export function DirectPlushCharmCollectionPage({ charm, collectionCode, orderSum
       if (!upload.upload?.signedUrl || !upload.upload.path) throw new Error(copy.saveFailed);
       const put = await fetch(upload.upload.signedUrl, { method: "PUT", headers: { "Content-Type": voice.type || "application/octet-stream" }, body: voice });
       if (!put.ok) throw new Error(copy.saveFailed);
-      const saved = await request({ action: "submit", sessionToken: started.session.token, voiceStoragePath: upload.upload.path, customerName: data.get("customerName"), customerEmail: data.get("customerEmail"), phone: data.get("phone"), character: charm.character, productKey: charm.productKey, shippingRegion, shippingAddress: { address1: data.get("address1"), address2: data.get("address2"), city: data.get("city"), province, zip: data.get("zip"), countryCode: "MY" }, form: {} }, collectionCode);
+      const saved = await request({ action: "submit", language, sessionToken: started.session.token, voiceStoragePath: upload.upload.path, customerName: data.get("customerName"), customerEmail: data.get("customerEmail"), phone: data.get("phone"), character: charm.character, productKey: charm.productKey, shippingRegion, shippingAddress: { address1: data.get("address1"), address2: data.get("address2"), city: data.get("city"), province, zip: data.get("zip"), countryCode: "MY" }, form: {} }, collectionCode);
       const reference = saved.reference || "MP-REFERENCE";
       setNotice(saved.whatsAppUrl ? `${copy.saved} ${reference}. ${copy.openingWhatsApp}` : `${copy.saved} ${reference}. ${copy.sendWhatsApp}`);
       if (saved.whatsAppUrl) window.location.assign(saved.whatsAppUrl);

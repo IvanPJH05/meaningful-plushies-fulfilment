@@ -1,0 +1,28 @@
+name: Android notification build check
+on:
+  push:
+    branches: [codex/sale-notification-summary]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - run: npm ci
+      - run: node --experimental-strip-types --test lib/manual-order-notification.test.ts
+      - run: npm run mobile:sync
+      - run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - run: chmod +x android/gradlew
+      - run: ./gradlew :app:compileDebugJavaWithJavac --no-daemon
+        working-directory: android
