@@ -10,6 +10,7 @@ export function TikTokShippingPanel({ orders, token, onChanged, onPrint }: { ord
   const [open, setOpen] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [reviews, setReviews] = useState<ShippingReview[]>([]), [choices, setChoices] = useState<Record<string, string>>({}), [checked, setChecked] = useState<string[]>([]);
   const [notice, setNotice] = useState(""); const lock = useRef(false);
+  const [confirmArrange, setConfirmArrange] = useState(false);
   async function request(body: object) {
     const response = await fetch("/api/tiktok/shipping", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
     const result = await response.json();
@@ -17,7 +18,7 @@ export function TikTokShippingPanel({ orders, token, onChanged, onPrint }: { ord
     return result;
   }
   async function inspect() {
-    if (lock.current) return; lock.current = true; setOpen(true); setBusy(true); setError(""); setNotice(""); setReviews([]); setChecked([]); setChoices({});
+    if (lock.current) return; lock.current = true; setOpen(true); setBusy(true); setConfirmArrange(false); setError(""); setNotice(""); setReviews([]); setChecked([]); setChoices({});
     try {
       const all: ShippingReview[] = [];
       for (let offset = 0; offset < selected.length; offset += 20) {
@@ -39,7 +40,7 @@ export function TikTokShippingPanel({ orders, token, onChanged, onPrint }: { ord
     if (lock.current) return;
     const targets = reviews.filter(r => checked.includes(r.orderId) && !r.error && (action === "arrange" ? r.packageStatus === "TO_FULFILL" : r.packageStatus === "PROCESSING"));
     if (!targets.length) return;
-    if (action === "arrange" && !window.confirm(`Arrange ${targets.length} TikTok shipment(s) using the handover options shown? This updates TikTok and may book carrier collection. TikTok's normal shipping charges and rules apply.`)) return;
+    setConfirmArrange(false);
     lock.current = true; setBusy(true); setError(""); setNotice(""); let passed = 0;
     try {
       for (const review of targets) {
@@ -69,6 +70,7 @@ export function TikTokShippingPanel({ orders, token, onChanged, onPrint }: { ord
       <p>Shipment booking does not complete production or mark a parcel collected. Split or combined packages must be handled in TikTok Seller Center.</p>
       <p><a href="/tiktok-connect" target="_blank" rel="noreferrer">Reconnect TikTok Shop to update shipping permissions</a></p>
       {busy && <p role="status">Processing TikTok shipments… Please keep this window open.</p>}{error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
+      {confirmArrange && <div role="alert"><strong>Arrange {arrange.length} TikTok shipment(s)?</strong><p>This updates TikTok using the handover options shown and may book carrier collection. TikTok’s normal shipping charges and rules apply.</p><button className="button primary" disabled={busy || !arrange.length || arrange.some(r => !handover(r))} onClick={() => void perform("arrange")}>Confirm shipment arrangement</button><button className="button secondary" disabled={busy} onClick={() => setConfirmArrange(false)}>Go back</button></div>}
       <div className="toolbar-row"><button className="button secondary" disabled={busy} onClick={() => setChecked(reviews.filter(r => !r.error || r.labelUrl).map(r => r.orderId))}>Select all available</button><button className="button secondary" disabled={busy} onClick={() => setChecked([])}>Clear selection</button><button className="button secondary" disabled={busy} onClick={() => setChoices(old => ({ ...old, ...Object.fromEntries(reviews.filter(r => r.options?.can_drop_off).map(r => [r.orderId, "DROP_OFF"])) }))}>Use drop-off where available</button></div>
       <div className={styles.list}>{reviews.map(r => <article key={r.orderId}>
         <label><input type="checkbox" disabled={busy || Boolean(r.error && !r.labelUrl)} checked={checked.includes(r.orderId)} onChange={e => setChecked(old => e.target.checked ? [...old, r.orderId] : old.filter(id => id !== r.orderId))} /> <strong>#{r.orderNumber}</strong></label>
@@ -76,7 +78,7 @@ export function TikTokShippingPanel({ orders, token, onChanged, onPrint }: { ord
         {r.labelUrl && <p>Shipping label saved and ready to print.</p>}{r.error && <p role="alert">{r.error}</p>}
         {r.packageStatus === "TO_FULFILL" && !r.error && <label>Handover option<select disabled={busy} value={choices[r.orderId] || ""} onChange={e => setChoices(old => ({ ...old, [r.orderId]: e.target.value }))}><option value="">Choose pickup or drop-off</option>{r.options?.can_drop_off && <option value="DROP_OFF">Drop off at carrier</option>}{r.options?.can_pickup && r.options.pickup_slots?.filter(s => s.avaliable === true || s.available === true).map(s => <option key={s.start_time + ":" + s.end_time} value={s.start_time + ":" + s.end_time}>Pickup · {new Date(s.start_time * 1000).toLocaleString("en-MY", { timeZone: "Asia/Kuala_Lumpur" })} – {new Date(s.end_time * 1000).toLocaleString("en-MY", { timeZone: "Asia/Kuala_Lumpur" })}</option>)}</select></label>}
       </article>)}</div>
-      <div className="toolbar-row"><button className="button secondary" disabled={busy} onClick={() => void inspect()}>Refresh shipment details</button><button className="button primary" disabled={busy || !arrange.length || arrange.some(r => !handover(r))} onClick={() => void perform("arrange")}>Arrange {arrange.length} shipment(s) & get labels</button><button className="button secondary" disabled={busy || !retrieve.length} onClick={() => void perform("label")}>Retrieve {retrieve.length} label(s)</button><button className="button primary" disabled={busy || !printable.length} onClick={() => void print()}>Print {printable.length} label(s) + packing slips</button></div>
+      <div className="toolbar-row"><button className="button secondary" disabled={busy} onClick={() => void inspect()}>Refresh shipment details</button><button className="button primary" disabled={busy || !arrange.length || arrange.some(r => !handover(r))} onClick={() => setConfirmArrange(true)}>Arrange {arrange.length} shipment(s) & get labels</button><button className="button secondary" disabled={busy || !retrieve.length} onClick={() => void perform("label")}>Retrieve {retrieve.length} label(s)</button><button className="button primary" disabled={busy || !printable.length} onClick={() => void print()}>Print {printable.length} label(s) + packing slips</button></div>
     </section></div>}
   </>;
 }
