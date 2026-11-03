@@ -53,7 +53,8 @@ jobs:
           APK=android/app/build/outputs/apk/release/app-release.apk
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/apk-signature.txt"
           grep -qi '1dccf60a09f3edd9c9be3d50a938fb1d9f7a242c22afc926c26843ccd9f6cc3d' "$RUNNER_TEMP/apk-signature.txt"
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | head -1 | tee "$RUNNER_TEMP/apk-version.txt"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/apk-badging.txt"
+          head -1 "$RUNNER_TEMP/apk-badging.txt" | tee "$RUNNER_TEMP/apk-version.txt"
           grep -q "versionCode='18'" "$RUNNER_TEMP/apk-version.txt"
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump resources "$APK" > "$RUNNER_TEMP/apk-resources.txt"
           grep -q 'google_app_id' "$RUNNER_TEMP/apk-resources.txt"
