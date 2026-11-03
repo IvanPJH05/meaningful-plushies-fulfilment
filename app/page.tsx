@@ -1,4 +1,5 @@
 "use client";
+import { TikTokTutorialSettings } from "@/components/tiktok-tutorial-settings";
 import { useLanguage, LanguageProvider, LanguageSwitcher, WorkspaceLoading } from "../components/dashboard-language";
 import { NotificationBar, NotificationMessage, NotificationProvider } from "../components/notification-bar";
 import { LoadingIndicator } from "../components/loading-indicator";
@@ -6462,6 +6463,7 @@ function Home() {
 
       {layoutEditorView && <TableLayoutEditor layouts={tableLayouts} initialView={layoutEditorView} onSave={saveTableLayouts} onClose={() => setLayoutEditorView(null)} />}
       {view === "settings" && session.role === "admin" && <section className="settings-page card">
+        <TikTokTutorialSettings token={session.token} />
         <div className="settings-heading"><div><h2>{t("Table layout")}</h2><p>{t("Configure Orders and Fulfilment columns separately. Saved on this browser.")}</p></div><button className="button secondary" onClick={() => setLayoutEditorView("orders")}>{t("Layout settings")}</button></div>
         <div className="settings-heading"><div><h2>{t("Accounts and permissions")}</h2><p>{t("Admins can edit everything. Staff can use workflow pages and only advance order stages.")}</p></div><span>{accounts.length} {" " + t("accounts")}</span></div>
         <div className="account-create"><input placeholder={t("Username")} value={newAccount.username} onChange={(event) => setNewAccount({ ...newAccount, username: event.target.value.toLowerCase() })} /><input placeholder={t("Display name")} value={newAccount.displayName} onChange={(event) => setNewAccount({ ...newAccount, displayName: event.target.value })} /><select value={newAccount.role} onChange={(event) => setNewAccount({ ...newAccount, role: event.target.value as UserRole })}><option value="staff">{t("Staff")}</option><option value="creator">{t("Creator")}</option><option value="admin">{t("Admin")}</option></select><input type="password" placeholder={t("Password (8+ characters)")} value={newAccount.password} onChange={(event) => setNewAccount({ ...newAccount, password: event.target.value })} /><button className="button primary" onClick={createAccount}>{t("Create account")}</button></div>
