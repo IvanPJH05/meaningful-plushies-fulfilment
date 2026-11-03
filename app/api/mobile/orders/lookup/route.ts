@@ -9,7 +9,7 @@ export async function GET(request: Request) {
     const client = mobileServiceClient();
     // Quote PostgREST values and escape LIKE wildcards: search text is literal.
     const pattern = JSON.stringify(`%${value.replace(/[\\%_*]/g, "\\$&")}%`);
-    const fields = ["order_number", "data->>customisationSessionId", "data->>orderNumber", "data->>customerName", "data->>phone", "data->>email", "data->>address", "data->>trackingNumber", "data->>plushName", "data->>product", "data->>character", "data->>shippingMethod", "data->>discountCodeUsed"];
+    const fields = ["order_number", "data->>customisationSessionId", "data->>orderNumber", "data->>customerName", "data->>phone", "data->>email", "data->>address", "data->>trackingNumber", "data->>plushName", "data->>product", "data->>character", "data->>shippingMethod", "data->>discountCodeUsed", "data->>discountCodes"];
     const filters = fields.map((field) => `${field}.ilike.${pattern}`);
     const barcode = value.replace(/[^a-z0-9]/gi, "").toUpperCase().replace(/^MP/, "");
     if (barcode) filters.push(`order_number.eq.${JSON.stringify(barcode)}`);
