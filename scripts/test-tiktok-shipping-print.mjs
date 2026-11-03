@@ -1,0 +1,16 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import ts from "typescript";
+import * as pdfLib from "pdf-lib";
+import * as barcode from "../lib/order-barcode.ts";
+import * as code128 from "../lib/code128.ts";
+const label=await pdfLib.PDFDocument.create();label.addPage([300,400]);const bytes=Buffer.from(await label.save());
+const source=ts.transpileModule(fs.readFileSync(new URL("../app/api/packing-slips/pdf/route.ts",import.meta.url),"utf8"),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
+const exports={};const fetched=[];
+new Function("exports","require","Buffer","URL","Response","fetch",source)(exports,name=>({"pdf-lib":pdfLib,"next/server":{NextResponse:{json:(body,options)=>Response.json(body,options)}},"@/lib/code128":code128,"@/lib/order-barcode":barcode}[name]),Buffer,URL,Response,async url=>{fetched.push(String(url));return new Response(bytes,{headers:{"content-type":"application/pdf"}});});
+const origin="https://fulfilment.example";
+const orders=[{id:"tiktok-123456789012345678",orderNumber:"TT1 123456789012345678",salesChannel:"tiktok",character:"Billy",plushName:"Test One",shippingLabelUrl:"/media-assets/"+"a".repeat(64)+"/original"},{id:"tiktok-123456789012345679",orderNumber:"TT2 123456789012345679",salesChannel:"tiktok",character:"Hunnie",plushName:"Test Two",shippingLabelUrl:"/media-assets/"+"b".repeat(64)+"/original"}];
+const response=await exports.POST(new Request(origin+"/api/packing-slips/pdf",{method:"POST",body:JSON.stringify({mode:"both",orders})}));
+if(response.status!==200)throw Error(await response.text());const result=await pdfLib.PDFDocument.load(await response.arrayBuffer());assert.equal(result.getPageCount(),4);assert.equal(result.getPage(1).getWidth(),300);assert.equal(result.getPage(3).getHeight(),400);assert.deepEqual(fetched,orders.map(o=>origin+o.shippingLabelUrl));
+const rejected=await exports.POST(new Request(origin+"/api/packing-slips/pdf",{method:"POST",body:JSON.stringify({mode:"both",orders:[{...orders[0],shippingLabelUrl:"https://unrelated.example/label.pdf"}]})}));assert.equal(rejected.status,500);assert.equal(fetched.length,2);
+console.log("Print test passed: each packing slip is followed by its correct cached A6 label; relative same-origin links work; external labels are rejected.");

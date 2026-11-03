@@ -177,7 +177,7 @@ function drawInstructionPage(page: PDFPage, order: PackingPdfOrder, regular: PDF
 }
 
 async function labelBytes(url: string, origin: string) {
-  const parsed = new URL(url);
+  const parsed = new URL(url, origin);
   if (parsed.origin !== origin) throw new Error("A shipping label must come from this fulfilment system.");
   const response = await fetch(parsed, { cache: "no-store" });
   const contentType = response.headers.get("content-type") || "";

@@ -1,0 +1,5 @@
+.backdrop{position:fixed;inset:0;z-index:10000;background:#14263bc9;display:flex;align-items:center;justify-content:center;padding:24px}
+.dialog{background:white;color:#132b48;border-radius:18px;width:min(100%,1000px);max-height:90vh;overflow:auto;padding:28px;box-shadow:0 16px 60px #0004}
+.dialog h2{margin-top:0}.dialog p{line-height:1.5}.dialog [role=alert]{color:#a92323;background:#fff3f3;padding:12px;border-radius:8px}
+.list{display:grid;gap:12px;margin:20px 0}.list article{border:1px solid #d6e2ee;border-radius:12px;padding:16px;background:#f8fbff}.list article p{margin:8px 0}.list label{display:block}.list input[type=checkbox]{width:auto;margin-right:8px}.list select{display:block;width:100%;margin-top:8px;padding:10px;border:1px solid #c6d6e6;border-radius:8px;background:white}
+@media(max-width:600px){.backdrop{padding:8px}.dialog{padding:18px;max-height:96vh}}

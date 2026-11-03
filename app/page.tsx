@@ -14,6 +14,7 @@ import { compactOrderLabel, normalizeTableLayout, tableColumns, type TableColumn
 const TableLayoutEditor = dynamic(() => import("../components/table-layout-editor"));
 import { OrderTableRow } from "../components/order-table-row";
 import { TikTokCustomisationQueue } from "../components/tiktok-customisation-queue";
+import { TikTokShippingPanel } from "../components/tiktok-shipping-panel";
 const NfcCardWorkspace = dynamic(() => import("../components/nfc-card-workspace").then(module => module.NfcCardWorkspace), { loading: () => <WorkspaceLoading /> });
 import { VirtualOrderTable, VirtualPackingList } from "../components/virtual-order-list";
 import { saveImportedOrders } from "../lib/order-import-save";
@@ -3336,14 +3337,14 @@ function Home() {
     }
   }
 
-  async function printPackingSlips(mode: "packing" | "labels" | "both", batchOrders?: Order[]) {
+  async function printPackingSlips(mode: "packing" | "labels" | "both", batchOrders?: Order[], advanceProduction = true) {
     if (documentOperation.current) return false;
     documentOperation.current = true; setDocumentTask("Generating packing slips and shipping labels...");
-    try { return await generatePackingSlips(mode, batchOrders); }
+    try { return await generatePackingSlips(mode, batchOrders, advanceProduction); }
     finally { documentOperation.current = false; setDocumentTask(""); }
   }
-  async function generatePackingSlips(mode: "packing" | "labels" | "both", batchOrders?: Order[]) {
-    const printingOrders = batchOrders ?? packingOrders;
+  async function generatePackingSlips(mode: "packing" | "labels" | "both", batchOrders?: Order[], advanceProduction = true) {
+    let printingOrders = batchOrders ?? packingOrders;
     if (!printingOrders.length) {
       setNotice("Select at least one order before printing.");
       return;
@@ -3359,11 +3360,18 @@ function Home() {
     printWindow.document.body.textContent = "Preparing the high-quality print PDF…";
     // Every sales channel follows the same production flow once staff prepare
     // its packing slip, shipping label, or combined print set.
-    const transitions = packingOrders
-      .filter(shouldAdvanceAfterProductionPrint)
-      .map((order) => ({ order, toStatus: productionPrintNextStatus, note: "Packing slip printed" }));
     let changed: Order[] = [];
     try {
+      // Table summaries omit some print details. Load the current saved rows
+      // after opening the viewer, and only transition the orders being printed.
+      if (batchOrders) printingOrders = await Promise.all(batchOrders.map(async order => {
+        const full = await fetchSharedOrderById(order.id);
+        if (!full) throw new Error(`Order ${order.orderNumber} could not be loaded for printing.`);
+        return full;
+      }));
+      const transitions = (advanceProduction ? printingOrders : [])
+        .filter(shouldAdvanceAfterProductionPrint)
+        .map((order) => ({ order, toStatus: productionPrintNextStatus, note: "Packing slip printed" }));
       const response = await fetch("/api/packing-slips/pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -6316,6 +6324,7 @@ function Home() {
             <div className="toolbar-row queue-status-row"><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /></div>
             <div className="toolbar-row toolbar-action-row"><button className="button primary" disabled={!batchSelectionReady} title={t("Select up to 200 New Order or Uploading Audio orders.")} onClick={() => setAssigningBatch(true)}>{t("Move to Batch Fulfilment")}</button>{view === "orders" && <button className="button secondary" disabled={!selectedShopifyOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshShopifyOrders}>{refreshingOrderNumber === "bulk" ? t("Refreshing...") : `Refresh ${selectedShopifyOrderCount} Shopify`}</button>}{view === "orders" && <button className="button secondary" disabled={!selectedTikTokOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshTikTokOrders}>{refreshingOrderNumber === "tiktok-bulk" ? t("Syncing...") : `Sync ${selectedTikTokOrderCount} TikTok`}</button>}{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>{t("Move") + " "}{selectedOrders.length} {" " + t("to next status")}</button>}{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length || removingOrders} onClick={() => deleteOrders(selectedOrders)}>{t("Delete")}</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>{t("Export CSV")}</button>}</div>
           </div>
+          {session.role === "admin" && <TikTokShippingPanel orders={orders.filter(order => selectedOrders.includes(order.id))} token={session.token} onChanged={() => loadSharedData(false)} onPrint={rows => printPackingSlips("both", rows, false)} />}
           <div className="queue-results">{filtered.length ? queueResults("orders") : <div className="empty"><strong>{t("No orders found")}</strong><p>{t("Try another search or status filter.")}</p></div>}</div>
           <div className="table-footer">{t("Showing") + " "}{filtered.length} {" " + t("of") + " "}{view === "fulfilled" ? orders.filter((order) => order.status === "shipped").length : orders.length} {" " + t("orders")}</div>
           {hasMoreOrderSummaries && <div ref={orderSummaryLoadMoreSentinel} className="table-footer"><button className="button secondary small" type="button" disabled={loadingMoreOrderSummaries} onClick={() => void loadNextOrderSummaries()}>{loadingMoreOrderSummaries ? t("Loading more orders...") : t("Load next 100 orders")}</button></div>}

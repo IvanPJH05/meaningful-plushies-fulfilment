@@ -1,0 +1,1 @@
+create index tiktok_shipping_packages_order_idx on public.tiktok_shipping_packages(order_id);

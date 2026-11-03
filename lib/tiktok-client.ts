@@ -1,5 +1,9 @@
 import { signTikTokRequest } from "./tiktok-crypto.ts";
 
+export class TikTokApiError extends Error {
+  constructor(public code: number | string) { super(`TikTok API failed (code ${code}).`); }
+}
+
 export function tikTokCredentials() {
   const appKey = process.env.TIKTOK_SHOP_APP_KEY;
   const appSecret = process.env.TIKTOK_SHOP_APP_SECRET;
@@ -18,7 +22,7 @@ export async function tikTokRequest<T>(path: string, accessToken: string, query:
     ...(body ? { body: bodyText } : {}),
   });
   const result = await response.json();
-  if (!response.ok || result.code !== 0 || !result.data) throw new Error(`TikTok API failed (code ${result.code ?? response.status}).`);
+  if (!response.ok || result.code !== 0 || !result.data) throw new TikTokApiError(result.code ?? response.status);
   return result.data as T;
 }
 
