@@ -16,6 +16,17 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (System.getenv("ANDROID_KEYSTORE_PATH")) {
+                storeFile file(System.getenv("ANDROID_KEYSTORE_PATH"))
+                storeType "PKCS12"
+                storePassword System.getenv("ANDROID_RELEASE_STORE_PASSWORD")
+                keyAlias System.getenv("ANDROID_RELEASE_KEY_ALIAS")
+                keyPassword System.getenv("ANDROID_RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
