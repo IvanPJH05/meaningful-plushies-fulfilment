@@ -34,6 +34,7 @@ export async function inspectTikTokShipping(orderId: string) {
   const query = { shop_cipher: connection.shop_cipher };
   const pkg = await tikTokRequest<ShippingPackage>(`/fulfillment/202309/packages/${packageId}`, connection.token, query);
   if (pkg.package_id !== packageId || pkg.orders?.length !== 1 || String(pkg.orders[0].id) !== rawId) throw Error("TikTok package ownership does not match this order. Review it in Seller Center.");
+  if (pkg.package_status === "TO_FULFILL" && !["AWAITING_SHIPMENT", "PARTIALLY_SHIPPING"].includes(String(order.status || order.order_status))) throw Error("The order and package shipment states disagree. Refresh later or review this order in TikTok Seller Center.");
   const cached = await db.from("tiktok_shipping_packages").select("label_url,tracking_number,booking_state").eq("shop_id", connection.shop_id).eq("package_id", packageId).maybeSingle();
   if (cached.error) throw Error("Shipping history could not be loaded. Please retry.");
   const review: ShippingReview = { orderId, orderNumber, packageId, packageStatus: pkg.package_status, courier: pkg.shipping_provider_name || "", trackingNumber: cached.data?.tracking_number || pkg.tracking_number || "", labelUrl: cached.data?.label_url || "" };
