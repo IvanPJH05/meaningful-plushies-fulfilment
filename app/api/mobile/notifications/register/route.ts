@@ -4,9 +4,9 @@ import { mobileServiceClient, requireMobileSession } from "../../../../../lib/mo
 export async function POST(request: Request) {
   try {
     const session = await requireMobileSession(request);
-    const body = await request.json() as { token?: unknown; platform?: unknown };
+    const body = await request.json() as { token?: unknown; platform?: unknown; summaryActions?: unknown };
     const token = typeof body.token === "string" ? body.token.trim() : "";
-    const platform = body.platform === "ios" ? "ios" : "android";
+    const platform = body.platform === "ios" ? "ios" : body.summaryActions === true ? "android-summary-v1" : "android";
     if (token.length < 20 || token.length > 4096) {
       return NextResponse.json({ error: "A valid device notification token is required." }, { status: 400 });
     }

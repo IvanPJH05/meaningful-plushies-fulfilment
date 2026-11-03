@@ -85,6 +85,7 @@ export type ManualOrderIntakeApproval = ManualOrderIntake & {
 };
 
 export type ManualOrderIntakeSubmission = {
+  language?: string;
   customerName: string;
   customerEmail: string;
   phone: string;
@@ -594,7 +595,10 @@ export async function submitManualOrderIntake(input: ManualOrderIntakeSubmission
   }).select("*").single();
   if (error || !data) throw new Error(error?.message || "Your details could not be saved.");
   const intake = rowToIntake(data as Record<string, unknown>);
-  await notifyNewManualOrder({ id: intake.id, reference: manualOrderIntakeReference(intake.id), product: intake.productDisplayName });
+  let amountToCollect: number | null = null;
+  try { amountToCollect = (await listManualOrderIntakeApprovals()).find(order => order.id === intake.id)?.amountToCollect ?? null; }
+  catch { /* Still alert staff if pricing is temporarily unavailable. */ }
+  await notifyNewManualOrder({ id: intake.id, reference: manualOrderIntakeReference(intake.id), product: intake.productDisplayName, amountToCollect, shippingRegion: intake.shippingRegion, language: input.language });
   return { ...intake, reference: manualOrderIntakeReference(intake.id), whatsAppUrl: collectionWhatsAppUrl(manualOrderIntakeReference(intake.id)) };
 }
 

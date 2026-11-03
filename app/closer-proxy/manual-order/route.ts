@@ -22,6 +22,7 @@ export async function POST(request: NextRequest) {
     }
     if (action === "submit") {
       const intake = await submitManualOrderIntake({
+        language: String(body.language || "en"),
         customerName: String(body.customerName || ""),
         customerEmail: String(body.customerEmail || ""),
         phone: String(body.phone || ""),

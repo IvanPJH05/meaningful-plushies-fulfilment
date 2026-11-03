@@ -2301,7 +2301,7 @@ function Home() {
         const date = dateKey(order.orderDate);
         return (!fulfilmentStartDate || date >= fulfilmentStartDate) && (!fulfilmentEndDate || date <= fulfilmentEndDate);
       })
-      .filter((order) => !search || [order.orderNumber, compactOrderLabel(order), order.customerName, order.phone, order.address, order.email, order.trackingNumber, order.plushName, order.product, order.character, order.shippingMethod, order.discountCodeUsed, ...(order.discountCodes ?? [])]
+      .filter((order) => !search || [order.customisationSessionId, order.orderNumber, compactOrderLabel(order), order.customerName, order.phone, order.address, order.email, order.trackingNumber, order.plushName, order.product, order.character, order.shippingMethod, order.discountCodeUsed, ...(order.discountCodes ?? [])]
         .join(" ").toLowerCase().includes(search));
     return sortOrderRecords(matching, sortKey, sortDirection);
   }, [orders, manualOrders, query, sourceFilter, statusFilter, view, sortKey, sortDirection, fulfilmentStartDate, fulfilmentEndDate, influencerOnly, influencerOrderIds]);
@@ -2311,7 +2311,7 @@ function Home() {
       .filter(isPlushCharm)
       .filter((order) => orderSourceMatches(order, sourceFilter, manualOrders))
       .filter((order) => statusFilter === "all" || order.status === statusFilter)
-      .filter((order) => !search || [order.orderNumber, order.customerName, order.phone, order.plushName, order.product, displayedCharacter(order), order.idWebsiteLink]
+      .filter((order) => !search || [order.customisationSessionId, order.orderNumber, order.customerName, order.phone, order.plushName, order.product, displayedCharacter(order), order.idWebsiteLink]
         .join(" ").toLowerCase().includes(search));
     return sortOrderRecords(matching, sortKey, sortDirection);
   }, [orders, manualOrders, query, sourceFilter, statusFilter, sortKey, sortDirection]);
@@ -6312,7 +6312,7 @@ function Home() {
         {view !== "fulfilment" && <section className="card orders-card adaptive-orders-card">
           <div className="table-layout-toolbar"><button className="button secondary small" onClick={() => setLayoutEditorView("orders")}>{t("Layout settings")}</button></div>
           <div className="toolbar queue-toolbar">
-            <div className="toolbar-row toolbar-filter-row"><OrderSearch value={query} onChange={setQuery} placeholder={t("Search order, customer, phone, tracking or influencer code...")} /><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} influencerOnly={view === "orders" && influencerOnly} onInfluencerChange={view === "orders" ? setInfluencerOnly : undefined} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /></div>
+            <div className="toolbar-row toolbar-filter-row"><OrderSearch value={query} onChange={setQuery} placeholder={t("Search order, customisation ID, customer, phone, tracking or influencer code...")} /><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} influencerOnly={view === "orders" && influencerOnly} onInfluencerChange={view === "orders" ? setInfluencerOnly : undefined} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /></div>
             <div className="toolbar-row queue-status-row"><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /></div>
             <div className="toolbar-row toolbar-action-row"><button className="button primary" disabled={!batchSelectionReady} title={t("Select up to 200 New Order or Uploading Audio orders.")} onClick={() => setAssigningBatch(true)}>{t("Move to Batch Fulfilment")}</button>{view === "orders" && <button className="button secondary" disabled={!selectedShopifyOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshShopifyOrders}>{refreshingOrderNumber === "bulk" ? t("Refreshing...") : `Refresh ${selectedShopifyOrderCount} Shopify`}</button>}{view === "orders" && <button className="button secondary" disabled={!selectedTikTokOrderCount || Boolean(refreshingOrderNumber)} onClick={bulkRefreshTikTokOrders}>{refreshingOrderNumber === "tiktok-bulk" ? t("Syncing...") : `Sync ${selectedTikTokOrderCount} TikTok`}</button>}{view === "orders" && <button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>{t("Move") + " "}{selectedOrders.length} {" " + t("to next status")}</button>}{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length || removingOrders} onClick={() => deleteOrders(selectedOrders)}>{t("Delete")}</button>}{view === "fulfilled" && <button className="button secondary" onClick={downloadFulfilled}>{t("Export CSV")}</button>}</div>
           </div>
@@ -6325,7 +6325,7 @@ function Home() {
         {view === "fulfilment" && <section className="card orders-card adaptive-orders-card">
           <div className="table-layout-toolbar"><button className="button secondary small" onClick={() => setLayoutEditorView("fulfilment")}>{t("Layout settings")}</button></div>
           <div className="toolbar queue-toolbar">
-            <div className="toolbar-row toolbar-filter-row"><OrderSearch value={query} onChange={setQuery} placeholder={t("Search order, customer, phone, tracking or influencer code...")} /><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} influencerOnly={influencerOnly} onInfluencerChange={setInfluencerOnly} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /></div>
+            <div className="toolbar-row toolbar-filter-row"><OrderSearch value={query} onChange={setQuery} placeholder={t("Search order, customisation ID, customer, phone, tracking or influencer code...")} /><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} influencerOnly={influencerOnly} onInfluencerChange={setInfluencerOnly} /><SortControls sortKey={sortKey} direction={sortDirection} onKey={setSortKey} onDirection={setSortDirection} /></div>
             <div className="toolbar-row queue-status-row"><StatusFilterPills value={statusFilter} onChange={setStatusFilter} /></div>
             <div className="toolbar-row toolbar-action-row"><button className="button primary" disabled={!batchSelectionReady} title={t("Select up to 200 New Order or Uploading Audio orders.")} onClick={() => setAssigningBatch(true)}>{t("Move to Batch Fulfilment")}</button><button className="button primary" disabled={!selectedOrders.length} onClick={bulkMoveNext}>{t("Move") + " "}{selectedOrders.length} {" " + t("to next status")}</button>{session.role === "admin" && <button className="button danger" disabled={!selectedOrders.length || removingOrders} onClick={() => deleteOrders(selectedOrders)}>{t("Delete")}</button>}</div>
           </div>
