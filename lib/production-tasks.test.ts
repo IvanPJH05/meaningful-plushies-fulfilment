@@ -11,14 +11,13 @@ test("guided queue finishes labels across the batch before speaker preparation",
  const updated=queue.map(i=>i.id==="2"?{...i,stage:"labels_printed" as const}:i);
  assert.equal(actionableTasks(updated,batch,"2026-10-26")[0].id,"10");
 });
-test("tailor returns and pickup wait for their scheduled day; packing starts at 6pm",()=>{
- assert.equal(taskReady(batch,"at_tailor","2026-10-26",23),false);
- assert.equal(taskReady(batch,"at_tailor","2026-10-27",9),true);
- assert.equal(taskReady(batch,"audio_passed","2026-10-27",17),false);
- assert.equal(taskReady(batch,"audio_passed","2026-10-27",18),true);
- assert.equal(taskReady(batch,"packed","2026-10-27",23),false);
- assert.equal(taskReady(batch,"packed","2026-10-28",9),true);
- assert.equal(taskReady(batch,"audio_passed","2026-10-28",9),true);
+test("actual work can continue on the same day, before planned dates and times",()=>{
+ for(const stage of ["received","labels_printed","at_tailor","returned","audio_passed"]){
+  assert.equal(taskReady(batch,stage,"2026-10-26",9),true);
+ }
+ assert.equal(taskReady(batch,"packed","2026-10-28",9),false);
+ assert.equal(actionableTasks([item("1","at_tailor")],batch,"2026-10-26")[0].id,"1");
+ assert.equal(actionableTasks([item("1","audio_passed")],batch,"2026-10-26")[0].id,"1");
 });
 test("completed or courier-managed work does not become a new production task",()=>{
  assert.deepEqual(actionableTasks([item("1","collected"),item("2","delivered"),item("3","returned","wrong audio")],batch,"2026-10-29"),[]);

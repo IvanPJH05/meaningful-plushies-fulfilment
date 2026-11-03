@@ -10,8 +10,9 @@ export const taskInstructions:Partial<Record<ProductionStage,{title:string;instr
 
 };
 export function taskDue(batch:Pick<ProductionBatch,"production_date"|"pickup_date">,stage:string){const plan=batchSchedule(batch.production_date);return stage==="packed"?batch.pickup_date:["at_tailor","returned","audio_passed"].includes(stage)?plan.packingDate:batch.production_date;}
-export function taskReady(batch:Pick<ProductionBatch,"production_date"|"pickup_date">,stage:string,day:string,hour=new Date(Date.now()+8*3600000).getUTCHours()){
- const due=taskDue(batch,stage);return due<day||(due===day&&(stage!=="audio_passed"||hour>=18));
+export function taskReady(_batch:Pick<ProductionBatch,"production_date"|"pickup_date">,stage:string,_day:string,_hour?:number){
+ // Planned dates never prevent staff from confirming actual completed work.
+ return Boolean(taskInstructions[stage as ProductionStage]);
 }
 export function actionableTasks(items:ProductionItem[],batch:ProductionBatch,day:string){const active=items.filter(i=>(!i.disposition||i.disposition==="active")&&taskInstructions[i.stage]);const earliest=active.reduce((n,i)=>Math.min(n,["received","labels_printed","audio_ready","stuffed","at_tailor","returned","audio_passed"].indexOf(i.stage)),99);return active.filter(i=>!i.issue&&["received","labels_printed","audio_ready","stuffed","at_tailor","returned","audio_passed"].indexOf(i.stage)===earliest&&taskReady(batch,i.stage,day)).sort((a,b)=>{
  const order=["received","labels_printed","audio_ready","stuffed","at_tailor","returned","audio_passed","packed"];return order.indexOf(a.stage)-order.indexOf(b.stage)||a.order_id.localeCompare(b.order_id,undefined,{numeric:true});});}
