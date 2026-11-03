@@ -1,13 +1,15 @@
 import { randomUUID } from "node:crypto";
+import {dailyManualPaymentSummary, manualPaymentDayRange, type DailyPaymentRow} from "./daily-manual-payments";
 
 import { createClient } from "@supabase/supabase-js";
 
 import { createCompleteNowSession, createVoiceUpload, normaliseCustomisationForm, saveSnowyCharmVoice, saveSubmittedSession, submittedCustomisationsForSessionIds, type CustomisationForm } from "./customisation";
 import { shopifyOrderToFulfilmentOrders } from "./importer";
 import { notifyNewManualOrder } from "./mobile-push-notifications";
-import { shopifyManualOrderCustomerName } from "./manual-order-customer-name";
+import { shopifyManualOrderCustomerName, shopifyManualOrderShippingName } from "./manual-order-customer-name";
 import { manualOrderCharactersForProduct, manualOrderProductByKey, manualOrderProductFamily, manualOrderProducts, type ManualOrderProductConfig } from "./manual-order-products";
 import { manualOrderIntakeQuote as quoteManualOrderIntake } from "./manual-order-intake-pricing";
+import { completeManualOrderCreation } from "./manual-order-completion";
 import { normalizeManualOrderPhone, shopifyManualOrderPhone } from "./manual-order-phone";
 import { manualOrderSpeakerSeconds, normalizeManualOrderCharacter } from "./manual-order-product-paths";
 import { cleanShopifyOrderNumber, fetchShopifyOrderByNumber, shopDomain, shopifyGraphql, shopifyRest, textValue } from "./shopify-orders";
@@ -528,7 +530,7 @@ function shopifyAddressForIntake(intake: ManualOrderIntake) {
   // Shopify customer or order write, so an incomplete record stays in Manual
   // Orders until it is corrected instead of creating a partial Shopify order.
   const shippingAddress = validAddress(intake.shippingAddress);
-  const customerName = shopifyManualOrderCustomerName(intake.customerName);
+  const customerName = shopifyManualOrderShippingName(intake.customerName);
   return {
     firstName: customerName.firstName,
     lastName: customerName.lastName,
@@ -607,6 +609,21 @@ export async function listManualOrderIntakes() {
   // particular, customer permission changes must not make the list appear
   // empty even though every submission remains safely stored in Supabase.
   return (data || []).map((row) => rowToIntake(row as Record<string, unknown>));
+}
+
+export async function getDailyManualPayments(day: string) {
+  const {start,end} = manualPaymentDayRange(day);
+  const rows: DailyPaymentRow[] = [];
+  for (let offset = 0; ; offset += 500) {
+    const {data,error} = await serviceClient().from(TABLE)
+      .select("id,customer_name,status,paid_at,shopify_order_id,shopify_order_name,payment_receipts")
+      .gte("paid_at",start).lt("paid_at",end).in("status",["ready_to_create","created"])
+      .order("id").range(offset,offset + 499);
+    if (error) throw Error(error.message);
+    rows.push(...(data || []) as DailyPaymentRow[]);
+    if (!data || data.length < 500) break;
+  }
+  return dailyManualPaymentSummary(rows,day);
 }
 
 /** Compact data for the approval queue. It deliberately excludes transaction
@@ -829,12 +846,13 @@ export async function createPaidShopifyOrder(intakeId: string) {
     if (!order?.id) throw new Error("Shopify did not return the new order.");
   }
 
-  // Always make the follow-up write. The REST fallback covers the Shopify
-  // behaviour seen in these collection orders where the shipping line saves
-  // but the address itself does not.
-  const shippingAddressSaved = await repairShopifyShippingAddress(domain, order, shopifyAddress);
-  if (!shippingAddressSaved) throw new Error("Shopify did not confirm the shipping address. This order is still ready to retry.");
-  const marked = await markIntakeCreated(intake, order);
+  // Record Shopify's successful creation before attempting address repair.
+  // A failed follow-up must not leave a paid order in Awaiting approval.
+  const createdOrder = order;
+  const marked = await completeManualOrderCreation(
+    () => markIntakeCreated(intake, createdOrder),
+    () => repairShopifyShippingAddress(domain, createdOrder, shopifyAddress),
+  );
   const shopifyOrderId = marked.shopifyOrderId;
   const shopifyOrderName = marked.shopifyOrderName;
   const now = marked.now;
@@ -846,7 +864,7 @@ export async function createPaidShopifyOrder(intakeId: string) {
     phoneNormalized: intake.phoneNormalized, phoneLastFour: intake.phoneNormalized.slice(-4), productKey: intake.productKey,
     productDisplayName: intake.productDisplayName, shopifyProductId: "", shopifyVariantId: intake.shopifyVariantId,
     productPath: "", shippingRegion: intake.shippingRegion, productDiscountCode: `INTAKE-${intake.id}`,
-    productDiscountShopifyId: "", shippingDiscountCode: "", shippingDiscountShopifyId: "", customerLink: "",
+    productDiscountShopifyId: "", shippingDiscountCode: `INTAKE-SHIPPING-${intake.id}`, shippingDiscountShopifyId: "", customerLink: "",
     status: "used", isCod: intake.isCod, shopifyOrderId, shopifyOrderName, createdAt: intake.createdAt, updatedAt: now, usedAt: now,
     paymentReceipts: intake.paymentReceipts,
   };
@@ -874,7 +892,7 @@ export async function createPaidShopifyOrder(intakeId: string) {
       error: error instanceof Error ? error.message : String(error),
     });
   }
-  return { shopifyOrderId, shopifyOrderName, fulfilmentRowsSaved };
+  return { shopifyOrderId, shopifyOrderName, fulfilmentRowsSaved, shippingWarning: marked.shippingWarning };
 }
 
 /** Restore any historical WhatsApp collection orders that were created while
