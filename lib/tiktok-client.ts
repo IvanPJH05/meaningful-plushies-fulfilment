@@ -1,7 +1,8 @@
 import { signTikTokRequest } from "./tiktok-crypto.ts";
 
 export class TikTokApiError extends Error {
-  constructor(public code: number | string) { super(`TikTok API failed (code ${code}).`); }
+  code: number | string;
+  constructor(code: number | string) { super(`TikTok API failed (code ${code}).`); this.code = code; }
 }
 
 export function tikTokCredentials() {
