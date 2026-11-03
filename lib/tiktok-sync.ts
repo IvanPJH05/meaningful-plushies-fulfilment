@@ -64,6 +64,13 @@ async function syncUnlocked(orderIds: string[], actor = "TikTok Shop sync") {
     });
   }
 
+  const savedIds = new Set(syncedOrders.map(order => order.id));
+  await queueTikTokTutorials(apiOrders.flatMap(order => {
+    const id = String(order.id || order.order_id || "");
+    return savedIds.has("tiktok-" + id) && String(order.status || order.order_status) !== "CANCELLED"
+      ? [{ id, create_time: order.create_time }] : [];
+  }));
+
   return {
     ok: true,
     changed: changedOrders.length > 0,
