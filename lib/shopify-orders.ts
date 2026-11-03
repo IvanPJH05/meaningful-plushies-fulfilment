@@ -395,7 +395,7 @@ export async function createCertificateMetaobject(input: Omit<CertificateMetaobj
   if (input.code) {
     const code = input.code;
     const handle = certificateHandle(code);
-    const fields = await certificateFieldsForLiveDefinition(domain, { ...input, code });
+    const fields = (await certificateFieldsForLiveDefinition(domain, { ...input, code })).filter(field => field.value !== "");
     const result = await shopifyGraphql<{ data?: { metaobjectUpsert?: { metaobject?: { id?: string; handle?: string }; userErrors?: { message?: string }[] } } }>(domain, `
       mutation CreateCertificateMetaobject($handle: MetaobjectHandleInput!, $metaobject: MetaobjectUpsertInput!) {
         metaobjectUpsert(handle: $handle, metaobject: $metaobject) {
@@ -415,7 +415,7 @@ export async function createCertificateMetaobject(input: Omit<CertificateMetaobj
     const code = `${prefix}${randomInt(1_000_000, 10_000_000)}`;
     const handle = certificateHandle(code);
     if (await certificateHandleExists(domain, handle)) continue;
-    const fields = await certificateFieldsForLiveDefinition(domain, { ...input, code });
+    const fields = (await certificateFieldsForLiveDefinition(domain, { ...input, code })).filter(field => field.value !== "");
     const result = await shopifyGraphql<{ data?: { metaobjectUpsert?: { metaobject?: { id?: string; handle?: string }; userErrors?: { message?: string }[] } } }>(domain, `
       mutation CreateCertificateMetaobject($handle: MetaobjectHandleInput!, $metaobject: MetaobjectUpsertInput!) {
         metaobjectUpsert(handle: $handle, metaobject: $metaobject) {

@@ -39,16 +39,20 @@ export async function syncLinkedCertificate(order: Order) {
   if (link?.duplicate) throw new Error("This certificate is linked to another order. Review the link.");
   type Result = { errors?: unknown[]; data?: { metaobject?: Metaobject | null; metaobjectByHandle?: Metaobject | null; metaobjectDefinitionByType?: { fieldDefinitions: Array<{ key: string; name: string }> } } };
   const id = session?.certificate_metaobject_id;
-  const result = checkResponse(await shopifyGraphql<Result>(domain, id ? certificateLookupQuery : certificateHandleQuery, id
+  let result = checkResponse(await shopifyGraphql<Result>(domain, id ? certificateLookupQuery : certificateHandleQuery, id
     ? { id, type } : { handle: { type, handle: code.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 255) }, type }));
-  const object = id ? result.data?.metaobject : result.data?.metaobjectByHandle;
+  let object = id ? result.data?.metaobject : result.data?.metaobjectByHandle;
+  // A deleted historical entry may leave a stale session ID. Resolve its
+  // original code before deciding whether the page needs to be recreated.
+  if (!object && id && code) {
+    result = checkResponse(await shopifyGraphql<Result>(domain, certificateHandleQuery,
+      {handle:{type,handle:code.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0,255)},type}));
+    object = result.data?.metaobjectByHandle;
+  }
   const definition = result.data?.metaobjectDefinitionByType?.fieldDefinitions;
   const details = certificateDetails(order);
-  const creating = !object && !id && order.salesChannel === "tiktok";
+  const creating = !object && Boolean(code);
   if ((!object && !creating) || (object && object.type !== type) || !definition?.length) throw new Error("The linked birth certificate or definition was not found.");
-  if (creating && ![details.idName, details.gender, details.bornOn, details.birthplace, details.favouritePerson, details.belongsTo].every(value => value?.trim())) {
-    throw new Error("Complete the TikTok birth certificate details before automatic creation.");
-  }
   const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
   const fieldFor = (key: string) => definition.find(field => normalize(field.key) === normalize(key) || normalize(field.name) === normalize(key));
   const existing = (key: string) => object?.fields.find(field => field.key === fieldFor(key)?.key)?.value;
@@ -65,13 +69,13 @@ export async function syncLinkedCertificate(order: Order) {
     ["certificate", certificateMediaForLineItem(order.product, order.character) || undefined],
   ];
   const fields = values.flatMap(([key, value]) => {
-    if (value === undefined) return [];
+    if (value === undefined || (creating && !value.trim())) return [];
     const field = fieldFor(key);
     if (!field) throw new Error(`The certificate definition is missing ${key}.`);
     return [{ key: field.key, value: value.replace(/[\r\n]+/g, " ").trim() }];
   });
   const updated = checkResponse(await shopifyGraphql<{ errors?: unknown[]; data?: { metaobjectUpsert?: { metaobject?: { id: string }; userErrors?: Array<{ message: string }> } } }>(domain, certificateSyncMutation,
-    { handle: { type, handle: object?.handle || code.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 255) }, metaobject: { fields, ...(creating ? { capabilities: { publishable: { status: "ACTIVE" } } } : {}) } }));
+    { handle: { type, handle: object?.handle || code.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 255) }, metaobject: { fields, capabilities: { publishable: { status: "ACTIVE" } } } }));
   const payload = updated.data?.metaobjectUpsert;
   if (payload?.userErrors?.length) throw new Error("Shopify rejected a certificate field. Review the certificate definition and saved values.");
   if (!payload?.metaobject?.id || (object && payload.metaobject.id !== object.id)) throw new Error("Shopify did not confirm the linked certificate update.");
