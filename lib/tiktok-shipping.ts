@@ -40,7 +40,11 @@ export async function inspectTikTokShipping(orderId: string) {
   const review: ShippingReview = { orderId, orderNumber, packageId, packageStatus: pkg.package_status, courier: pkg.shipping_provider_name || "", trackingNumber: cached.data?.tracking_number || pkg.tracking_number || "", labelUrl: cached.data?.label_url || "" };
   try { validateShippingPackage(pkg, rawId); } catch (error) { review.error = (error as Error).message; }
   if (!review.error && pkg.package_status === "TO_FULFILL") {
-    review.options = await tikTokRequest<HandoverOptions>(`/fulfillment/202309/packages/${packageId}/handover_time_slots`, connection.token, query);
+    // The OAuth callback only accepts MY shops. Since 2024-10-30, SEA local
+    // sellers' collection method is controlled by warehouse settings, not the
+    // Ship Package handover parameter. Do not request the unrelated package-
+    // split scope just to call the handover-time-slots endpoint.
+    review.options = { uses_shop_settings: true };
     // An earlier request may have reached the carrier even if our connection
     // failed. Never automatically submit a second booking in that case.
     if (cached.data && ["attempting", "uncertain", "arranged"].includes(cached.data.booking_state)) review.error = "An earlier booking is awaiting confirmation. Refresh later or check this order in TikTok Seller Center before retrying.";

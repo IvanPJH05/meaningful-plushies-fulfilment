@@ -1,6 +1,6 @@
-export type Handover = { method: "PICKUP" | "DROP_OFF"; start?: number; end?: number };
+export type Handover = { method: "PICKUP" | "DROP_OFF" | "SHOP_DEFAULT"; start?: number; end?: number };
 export type PickupSlot = { start_time: number; end_time: number; avaliable?: boolean; available?: boolean };
-export type HandoverOptions = { can_pickup?: boolean; can_drop_off?: boolean; pickup_slots?: PickupSlot[] };
+export type HandoverOptions = { uses_shop_settings?: boolean; can_pickup?: boolean; can_drop_off?: boolean; pickup_slots?: PickupSlot[] };
 export type ShippingPackage = { package_id: string; package_status: string; shipping_type: string; orders?: { id: string }[]; tracking_number?: string; shipping_provider_name?: string };
 
 export function hasShippingScope(scopes: unknown): boolean {
@@ -17,6 +17,7 @@ export function validateShippingPackage(pkg: ShippingPackage, orderId: string) {
   if (!["TO_FULFILL", "PROCESSING"].includes(pkg.package_status)) throw Error("This package is cancelled, already collected, or not available for shipment and label retrieval.");
 }
 export function validateHandover(input: Handover, options: HandoverOptions, now = Date.now() / 1000) {
+  if (input.method === "SHOP_DEFAULT" && options.uses_shop_settings) return {};
   if (input.method === "DROP_OFF" && options.can_drop_off) return { handover_method: "DROP_OFF" };
   if (input.method === "PICKUP" && options.can_pickup && options.pickup_slots?.some(slot =>
     slot.start_time === input.start && slot.end_time === input.end && slot.end_time > now && (slot.avaliable === true || slot.available === true))) {

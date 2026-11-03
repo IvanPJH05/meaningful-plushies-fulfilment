@@ -19,7 +19,7 @@ export async function POST(request: Request) {
     }
     if (!["arrange", "label"].includes(body.action) || ids.length !== 1 || typeof body.packageId !== "string" || !/^\d{8,25}$/.test(body.packageId)) throw Error("Invalid shipping request. Refresh shipment details.");
     const handover = body.handover as Handover | undefined;
-    if (body.action === "arrange" && (!handover || !["PICKUP", "DROP_OFF"].includes(handover.method))) throw Error("Choose pickup or drop-off before arranging shipment.");
+    if (body.action === "arrange" && (!handover || !["PICKUP", "DROP_OFF", "SHOP_DEFAULT"].includes(handover.method))) throw Error("Confirm the shipping arrangement before continuing.");
     const review = await performTikTokShipping(ids[0], body.packageId, body.action, handover);
     return NextResponse.json({ review }, { headers: { "cache-control": "no-store" } });
   } catch (error) {

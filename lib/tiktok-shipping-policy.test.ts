@@ -17,6 +17,8 @@ test("package ownership, shipping lane and lifecycle must agree before booking",
   assert.throws(() => validateShippingPackage({ ...pkg, shipping_type: "SELLER" }, "12345678"));
 });
 test("handover must be an available, unexpired carrier choice", () => {
+  assert.deepEqual(validateHandover({ method: "SHOP_DEFAULT" }, { uses_shop_settings: true }), {});
+  assert.throws(() => validateHandover({ method: "SHOP_DEFAULT" }, {}));
   const options = { can_drop_off: true, can_pickup: true, pickup_slots: [{ start_time: 150, end_time: 200, avaliable: true }] };
   assert.deepEqual(validateHandover({ method: "PICKUP", start: 150, end: 200 }, options, 100), { handover_method: "PICKUP", pickup_slot: { start_time: 150, end_time: 200 } });
   assert.throws(() => validateHandover({ method: "PICKUP", start: 150, end: 200 }, options, 201));
