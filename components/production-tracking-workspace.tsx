@@ -14,7 +14,7 @@ function batchIsOpen(items: Pick<ProductionItem,"stage"|"disposition">[]) {
  return items.some(item=>(!item.disposition||item.disposition==="active")&&["received","labels_printed","audio_ready","stuffed"].includes(item.stage));
 }
 type Event={actorName?:string;id:number;item_id:string;stage:keyof typeof stageLabels;kind:string;note:string;created_at:string};
-export function ProductionTrackingWorkspace({token,admin,onOpenScanner,onPrint,onOpenOrder,screen,onScreenChange,assistant=false,onCycleComplete}:{onOpenScanner:()=>void;assistant?:boolean;onCycleComplete?:()=>void;screen:"today"|"manage";onScreenChange:(screen:"today"|"manage")=>void;token:string;admin:boolean;onPrint:(orders:Order[])=>Promise<unknown>;onOpenOrder:(order:Order)=>Promise<void>}){
+export function ProductionTrackingWorkspace({token,admin,onOpenScanner,onPrint,onOpenOrder,screen,onScreenChange,assistant=false,onCycleComplete,reviewPreparedOrders=false}:{onOpenScanner:()=>void;assistant?:boolean;onCycleComplete?:()=>void;reviewPreparedOrders?:boolean;screen:"today"|"manage";onScreenChange:(screen:"today"|"manage")=>void;token:string;admin:boolean;onPrint:(orders:Order[])=>Promise<unknown>;onOpenOrder:(order:Order)=>Promise<void>}){
  const [,tick]=useState(0);useEffect(()=>{const timer=setInterval(()=>tick(value=>value+1),30000);return()=>clearInterval(timer);},[]);
  const setScreen=onScreenChange;const [taskMode,setTaskMode]=useState(false),[overview,setOverview]=useState(assistant);
  const [batches,setBatches]=useState<Batch[]>([]),[batch,setBatch]=useState<ProductionBatch|null>(null),[items,setItems]=useState<ProductionItem[]>([]),[events,setEvents]=useState<Event[]>([]),[current,setCurrent]=useState("");
@@ -26,14 +26,14 @@ export function ProductionTrackingWorkspace({token,admin,onOpenScanner,onPrint,o
  async function list(){const rows=(await request()).batches as Batch[];setBatches(rows);return rows;}
  async function load(id:string){const d=await request(`?batch=${id}`);setBatch(d.batch);setItems(d.items);setEvents(d.events);return d.items as ProductionItem[];}
  async function run(work:()=>Promise<unknown>){if(lock.current)return;lock.current=true;setBusy(true);setError("");try{await work();}catch(e){setError((e as Error).message);}finally{lock.current=false;setBusy(false);}}
- useEffect(()=>{void run(async()=>{await list();});/* staff auth is supplied by dashboard */},[token]); // eslint-disable-line react-hooks/exhaustive-deps
+ useEffect(()=>{void run(async()=>{await list();if(reviewPreparedOrders)await loadNewOrderReview();});/* staff auth is supplied by dashboard */},[token,reviewPreparedOrders]); // eslint-disable-line react-hooks/exhaustive-deps
  async function candidatesForDay(){await run(async()=>{const d=await request(`?candidates=1&day=${day}`);setCandidates(d.orders);setChosen(d.orders.filter((o:Order&{productionCarryover?:string})=>o.productionCarryover).map((o:Order)=>o.id));setReview(true);requestId.current=crypto.randomUUID();});}
  async function create(){await run(async()=>{const d=await request("",{action:"create",id:requestId.current,day,pickupDate:assistant?batchSchedule(day).pickupDate:pickup,orderIds:chosen});await list();await load(d.id);setReview(false);setNotice("Batch closed. Review each handover in the production list below.");});}
  async function step(action:string){if(!selected)return;await run(async()=>{await request("",{action,itemId:selected.id,version:selected.version,cardCode:card,orderBarcode:scan,note});await load(selected.batch_id);await list();setCard("");setNote("");setNotice(action==="packed"?"Certificate linked and packing confirmed.":"Progress saved.");});}
  function scanned(e:FormEvent){e.preventDefault();const matches=items.filter(i=>matchesProductionBarcode({id:i.order_id,orderNumber:i.order?.orderNumber},scan));if(matches.length===1){setCurrent(matches[0].id);setCard("");setNote("");setNotice("Order selected. Confirm the next completed task below.");setTimeout(()=>cardInput.current?.focus(),0);}else setError(matches.length?"Multiple plushies match. Choose the correct row below.":"This barcode is not in the selected batch.");}
  const visible=items.filter(i=>filter==="all"||(filter==="issues"?Boolean(i.issue):i.stage===filter));
  async function startTasks(id:string){await run(async()=>{await load(id);setOverview(false);setTaskMode(true);});}
- async function reviewNewOrders(){await run(async()=>{const d=await request(`?candidates=1&day=${day}`);setCandidates(d.orders);setChosen(d.orders.map((o:Order)=>o.id));requestId.current=crypto.randomUUID();setBatch(null);setItems([]);setReview(true);setOverview(false);});}
+ async function loadNewOrderReview(){const d=await request(`?candidates=1&day=${day}`);setCandidates(d.orders);setChosen(d.orders.map((o:Order)=>o.id));requestId.current=crypto.randomUUID();setBatch(null);setItems([]);setReview(true);setOverview(false);}
  async function completeTask(item:ProductionItem,action:string,orderBarcode:string,cardCode:string,taskNote:string){await request("",{action,itemId:item.id,version:item.version,orderBarcode,cardCode,note:taskNote});const updated=await load(item.batch_id);await list();return updated;}
  async function downloadAudio(){if(!batch)throw Error("Choose a batch.");const cohort=items.filter(i=>(!i.disposition||i.disposition==="active")&&i.stage==="labels_printed");const controller=new AbortController();const result=await prepareBatchAudioFiles(cohort.map(i=>({...i.order,id:i.order_id} as Order)),batch.id,token,controller.signal,()=>{},"/api/production-tracking/audio");if(result.missing.length||!result.available)throw Error("Missing audio. Remove or leave behind affected orders before downloading.");const blob=await buildAudioZip(result.files);const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download="production-"+batch.production_date+"-audio.zip";link.click();setTimeout(()=>URL.revokeObjectURL(url),60000);await request("",{action:"audio_complete",batchId:batch.id,versions:Object.fromEntries(cohort.map(i=>[i.id,i.version]))});const updated=await load(batch.id);await list();return updated;}
  if (assistant && overview) {
@@ -53,10 +53,11 @@ export function ProductionTrackingWorkspace({token,admin,onOpenScanner,onPrint,o
          <h2>Today’s production</h2>
          <p>Start a batch from New Orders or pick up an existing batch at its next step.</p>
          {error && <p role="alert" className={styles.error}>{error}</p>}
+         {reviewPreparedOrders && error && <button disabled={busy} onClick={()=>void run(loadNewOrderReview)}>Retry order selection</button>}
          <div className={styles.toolbar}>
            {admin && <button disabled={busy} onClick={() => void reviewNewOrders()}>Start a new batch</button>}
            <button disabled={busy} onClick={() => void run(() => list())}>Refresh batches</button>
-           {admin && <button disabled={busy} onClick={onCycleComplete}>Review customisation &amp; payments</button>}
+
          </div>
        </section>
        {!busy && !error && activeBatches.length === 0 && <p>No batches in progress. Completed batches are in Batches &amp; history.</p>}
