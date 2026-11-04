@@ -1,15 +1,15 @@
 "use client";
 import {useEffect,useRef,useState,type FormEvent} from "react";
-import {batchSchedule,malaysiaToday,matchesProductionBarcode,stageLabels,productionStages,type ProductionItem,type ProductionBatch} from "@/lib/production-tracking";
+import {batchSchedule,malaysiaToday,matchesProductionBarcode,stageLabels,productionStages,type ProductionItem,type ProductionBatch,type ProductionStage} from "@/lib/production-tracking";
 import {ProductionLabelPreparation} from "./production-label-preparation";
 import {ProductionTaskMode} from "./production-task-mode";
-import {taskAction,taskReady,taskInstructions} from "@/lib/production-tasks";
+import {nextProductionStage,taskAction,taskReady,taskInstructions} from "@/lib/production-tasks";
 import {OrderBarcode,packingItemBarcodeValue} from "./order-barcode";
 import {prepareBatchAudioFiles} from "@/lib/prepare-batch-audio";
 import {buildAudioZip} from "@/lib/batch-zip-client";
 import type {Order} from "@/lib/types";
 import styles from "./production-tracking.module.css";
-type Batch=ProductionBatch&{production_items:{stage:string;issue:string;disposition?:string;carried_issue?:string}[]};
+type Batch=ProductionBatch&{production_items:{stage:ProductionStage;issue:string;disposition?:ProductionItem["disposition"];carried_issue?:string}[]};
 type Event={actorName?:string;id:number;item_id:string;stage:keyof typeof stageLabels;kind:string;note:string;created_at:string};
 export function ProductionTrackingWorkspace({token,admin,onPrint,onOpenOrder,screen,onScreenChange,assistant=false,onCycleComplete}:{assistant?:boolean;onCycleComplete?:()=>void;screen:"today"|"manage";onScreenChange:(screen:"today"|"manage")=>void;token:string;admin:boolean;onPrint:(orders:Order[])=>Promise<unknown>;onOpenOrder:(order:Order)=>Promise<void>}){
  const [,tick]=useState(0);useEffect(()=>{const timer=setInterval(()=>tick(value=>value+1),30000);return()=>clearInterval(timer);},[]);
@@ -33,7 +33,43 @@ export function ProductionTrackingWorkspace({token,admin,onPrint,onOpenOrder,scr
  async function reviewNewOrders(){await run(async()=>{const d=await request(`?candidates=1&day=${day}`);setCandidates(d.orders);setChosen(d.orders.map((o:Order)=>o.id));requestId.current=crypto.randomUUID();setBatch(null);setItems([]);setReview(true);setOverview(false);});}
  async function completeTask(item:ProductionItem,action:string,orderBarcode:string,cardCode:string,taskNote:string){await request("",{action,itemId:item.id,version:item.version,orderBarcode,cardCode,note:taskNote});const updated=await load(item.batch_id);await list();return updated;}
  async function downloadAudio(){if(!batch)throw Error("Choose a batch.");const cohort=items.filter(i=>(!i.disposition||i.disposition==="active")&&i.stage==="labels_printed");const controller=new AbortController();const result=await prepareBatchAudioFiles(cohort.map(i=>({...i.order,id:i.order_id} as Order)),batch.id,token,controller.signal,()=>{},"/api/production-tracking/audio");if(result.missing.length||!result.available)throw Error("Missing audio. Remove or leave behind affected orders before downloading.");const blob=await buildAudioZip(result.files);const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download="production-"+batch.production_date+"-audio.zip";link.click();setTimeout(()=>URL.revokeObjectURL(url),60000);await request("",{action:"audio_complete",batchId:batch.id,versions:Object.fromEntries(cohort.map(i=>[i.id,i.version]))});const updated=await load(batch.id);await list();return updated;}
- if(assistant&&overview)return <div className={styles.page}><section className={styles.panel}><h2>Today’s production</h2><p>Start a batch from your New Orders, or continue a batch already in production. Work can continue whenever it is ready.</p>{error&&<p role="alert" className={styles.error}>{error}</p>}<div className={styles.toolbar}>{admin&&<button disabled={busy} onClick={()=>void reviewNewOrders()}>Start a new batch · review New Orders</button>}<button disabled={busy} onClick={()=>void run(()=>list())}>Refresh batches</button>{admin&&<button disabled={busy} onClick={onCycleComplete}>Review customisation & payments</button>}</div></section>{batches.filter(b=>b.production_items.some(i=>(!i.disposition||i.disposition==="active")&&!["packed","collected","delivered"].includes(i.stage))).map(b=>{const active=b.production_items.filter(i=>(!i.disposition||i.disposition==="active")&&!["packed","collected","delivered"].includes(i.stage));return <section className={styles.panel} key={b.id}><h2>Batch · {b.production_date}</h2><p>{active.length} orders in progress · {active.filter(i=>i.issue).length} need attention · Planned pickup {b.pickup_date}</p><ul>{Object.entries(stageLabels).map(([stage,label])=>{const count=active.filter(i=>i.stage===stage).length;return count?<li key={stage}>{label} · {count}</li>:null;})}</ul><button disabled={busy} onClick={()=>void startTasks(b.id)}>Continue this batch</button></section>;})}</div>;
+ if (assistant && overview) {
+   const activeBatches = batches.flatMap(batch => {
+     const active = batch.production_items.filter(item => (!item.disposition || item.disposition === "active") && taskInstructions[item.stage]);
+     const next = nextProductionStage(active);
+     if (!next) return [];
+     return [{
+       batch, active, next,
+       ready: active.filter(item => item.stage === next && !item.issue).length,
+       issues: active.filter(item => item.issue).length,
+     }];
+   });
+   return (
+     <div className={styles.page}>
+       <section className={styles.panel}>
+         <h2>Today’s production</h2>
+         <p>Start a batch from New Orders or pick up an existing batch at its next step.</p>
+         {error && <p role="alert" className={styles.error}>{error}</p>}
+         <div className={styles.toolbar}>
+           {admin && <button disabled={busy} onClick={() => void reviewNewOrders()}>Start a new batch</button>}
+           <button disabled={busy} onClick={() => void run(() => list())}>Refresh batches</button>
+           {admin && <button disabled={busy} onClick={onCycleComplete}>Review customisation &amp; payments</button>}
+         </div>
+       </section>
+       {!busy && !error && activeBatches.length === 0 && <p>No batches in progress. Completed batches are in Batches &amp; history.</p>}
+       {activeBatches.map(({batch, active, next, ready, issues}) => (
+         <section className={styles.panel} key={batch.id}>
+           <h2>Batch · {batch.production_date}</h2>
+           <p>{active.length} orders in progress · {issues} need attention · Planned pickup {batch.pickup_date}</p>
+           <p><strong>{taskInstructions[next]?.title}</strong> · {ready ? ready + " ready at this step" : "Resolve issues to continue"}</p>
+           <button disabled={busy} onClick={() => void startTasks(batch.id)}>
+             {ready ? "Continue this batch" : "Review batch issues"}
+           </button>
+         </section>
+       ))}
+     </div>
+   );
+ }
  if(assistant&&!batch)return <div className={styles.page}><section className={styles.panel}><small>STEP 3 OF 7 · REVIEW ORDERS</small><h2>Choose production orders</h2><button disabled={busy} onClick={()=>setOverview(true)}>Back to production overview</button><p>Only New Order items appear below, including Plush Charms. Orders already in production are excluded. Confirm the selection to begin labels and printing here.</p>{error&&<p role="alert" className={styles.error}>{error}</p>}<div className={styles.toolbar}><label>Production date<input type="date" value={day} onChange={e=>{setDay(e.target.value);setReview(false);setChosen([]);}}/></label><button disabled={busy} onClick={()=>void candidatesForDay()}>Refresh new orders</button><button disabled={busy||!review} onClick={()=>setChosen(candidates.map(o=>o.id))}>Select all</button></div>{review&&<><p>{chosen.length} selected · create this batch whenever you are ready</p><div className={styles.candidates}>{candidates.map(o=><label key={o.id}><input type="checkbox" checked={chosen.includes(o.id)} onChange={e=>setChosen(v=>e.target.checked?[...v,o.id]:v.filter(id=>id!==o.id))}/>#{o.orderNumber} · {o.customerName} · {o.plushName||o.character}{(o as Order&{productionCarryover?:string}).productionCarryover?" · ISSUE carried forward":""}</label>)}</div><button disabled={busy||!chosen.length||!admin} onClick={()=>void create()}>Confirm orders · prepare labels</button>{!candidates.length&&<p>No eligible new orders. Import orders or choose the correct production date.</p>}</>}</section></div>;
  if(assistant&&batch&&items.some(i=>(!i.disposition||i.disposition==="active")&&i.stage==="received"))return <><div className={styles.panel}><button disabled={busy} onClick={()=>setOverview(true)}>Back to production overview</button></div><ProductionLabelPreparation token={token} admin={admin} batch={batch} items={items} request={request} reload={async()=>{await load(batch.id);await list();}} onPrint={onPrint} decide={(item,action,reason)=>completeTask(item,action,"","",reason)}/></>;
  if((taskMode||assistant)&&batch)return <ProductionTaskMode batch={batch} initialItems={items} commit={completeTask} downloadAudio={downloadAudio} onPrint={onPrint} onExit={()=>{if(assistant){setTaskMode(false);setOverview(true);void run(()=>list());return;}setTaskMode(false);void run(async()=>{await list();await load(batch.id);});}}/>;

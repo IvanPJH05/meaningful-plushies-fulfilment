@@ -14,6 +14,16 @@ export function taskReady(_batch:Pick<ProductionBatch,"production_date"|"pickup_
  // Planned dates never prevent staff from confirming actual completed work.
  return Boolean(taskInstructions[stage as ProductionStage]);
 }
-export function actionableTasks(items:ProductionItem[],batch:ProductionBatch,day:string){const active=items.filter(i=>(!i.disposition||i.disposition==="active")&&taskInstructions[i.stage]);const earliest=active.reduce((n,i)=>Math.min(n,["received","labels_printed","audio_ready","stuffed","at_tailor","returned","audio_passed"].indexOf(i.stage)),99);return active.filter(i=>!i.issue&&["received","labels_printed","audio_ready","stuffed","at_tailor","returned","audio_passed"].indexOf(i.stage)===earliest&&taskReady(batch,i.stage,day)).sort((a,b)=>{
- const order=["received","labels_printed","audio_ready","stuffed","at_tailor","returned","audio_passed","packed"];return order.indexOf(a.stage)-order.indexOf(b.stage)||a.order_id.localeCompare(b.order_id,undefined,{numeric:true});});}
+const taskStages: ProductionStage[] = ["received", "labels_printed", "audio_ready", "stuffed", "at_tailor", "returned", "audio_passed"];
+
+export function nextProductionStage(items: Pick<ProductionItem, "stage" | "disposition">[]) {
+  return taskStages.find(stage => items.some(item => item.stage === stage && (!item.disposition || item.disposition === "active")));
+}
+
+export function actionableTasks(items: ProductionItem[], batch: ProductionBatch, day: string) {
+  const next = nextProductionStage(items);
+  return items.filter(item => item.stage === next && (!item.disposition || item.disposition === "active")
+    && !item.issue && taskReady(batch, item.stage, day))
+    .sort((a, b) => a.order_id.localeCompare(b.order_id, undefined, { numeric: true }));
+}
 export function taskAction(item:ProductionItem){return ({received:"labels_printed",labels_printed:"at_tailor",audio_ready:"at_tailor",stuffed:"at_tailor",at_tailor:"audio_passed",returned:"audio_passed",audio_passed:"packed"} as Partial<Record<ProductionStage,ProductionStage>>)[item.stage];}
