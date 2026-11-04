@@ -96,8 +96,33 @@ export function ProductionPairScanner({ findOrder, audioSourceFor, checkCard, sa
   }
 
   useEffect(() => {
-    if (!busy) input.current?.focus();
+    if (busy) return;
+
+    function focusScanner() {
+      input.current?.focus({ preventScroll: true });
+      input.current?.select();
+    }
+
+    function focusFromPage(event: MouseEvent) {
+      if (!(event.target instanceof Element)) return;
+      if (event.target.closest("button, a, input, textarea, select, label, audio, video, summary, [role=button], [contenteditable], [role=dialog]")) return;
+      focusScanner();
+    }
+
+    focusScanner();
+    document.addEventListener("click", focusFromPage);
+    return () => document.removeEventListener("click", focusFromPage);
   }, [busy]);
+
+  // A keyboard scanner sends its characters as a burst. Select any text
+  // left idle so the next burst replaces it, even if the field kept focus.
+  useEffect(() => {
+    if (busy || !scan) return;
+    const timer = window.setTimeout(() => {
+      if (document.activeElement === input.current) input.current?.select();
+    }, 750);
+    return () => window.clearTimeout(timer);
+  }, [busy, scan]);
 
   useEffect(() => {
     if (!pending) return;
@@ -125,8 +150,9 @@ export function ProductionPairScanner({ findOrder, audioSourceFor, checkCard, sa
   function submit(event: FormEvent) {
     event.preventDefault();
     const value = scan.trim();
-    if (!value || lock.current) return;
+    if (lock.current) return;
     setScan("");
+    if (!value) return;
     void run(async () => {
       const previous = current.current;
       if (previous && Date.now() >= previous.expires) {
@@ -188,9 +214,9 @@ export function ProductionPairScanner({ findOrder, audioSourceFor, checkCard, sa
 
   return <section>
     <h2>Scan an order or NFC card</h2>
-    <p>Scan the order or NFC card first. Pairing completes sewing, quality check and packing.</p>
+    <p>Click anywhere on the page to get ready to scan. Scan the order or NFC card first.</p>
     <form onSubmit={submit}>
-      <label>Scan order or NFC card<input ref={input} autoFocus value={scan} onChange={event => setScan(event.target.value)} disabled={busy} autoComplete="off" /></label>
+      <label>Scan order or NFC card<input ref={input} autoFocus onFocus={event => event.currentTarget.select()} onClick={event => event.currentTarget.select()} value={scan} onChange={event => setScan(event.target.value)} disabled={busy} autoComplete="off" /></label>
       <button disabled={busy} type="submit">Scan</button>
     </form>
     {pending && <p>{seconds} seconds remaining · {pending.kind === "card" ? pending.code : "#" + (pending.item.order?.orderNumber || pending.item.order_id)}</p>}
