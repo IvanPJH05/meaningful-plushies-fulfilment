@@ -10,6 +10,9 @@ import {buildAudioZip} from "@/lib/batch-zip-client";
 import type {Order} from "@/lib/types";
 import styles from "./production-tracking.module.css";
 type Batch=ProductionBatch&{production_items:{stage:ProductionStage;issue:string;disposition?:ProductionItem["disposition"];carried_issue?:string}[]};
+function batchIsOpen(items: Pick<ProductionItem,"stage"|"disposition">[]) {
+ return items.some(item=>(!item.disposition||item.disposition==="active")&&["received","labels_printed","audio_ready","stuffed"].includes(item.stage));
+}
 type Event={actorName?:string;id:number;item_id:string;stage:keyof typeof stageLabels;kind:string;note:string;created_at:string};
 export function ProductionTrackingWorkspace({token,admin,onOpenScanner,onPrint,onOpenOrder,screen,onScreenChange,assistant=false,onCycleComplete}:{onOpenScanner:()=>void;assistant?:boolean;onCycleComplete?:()=>void;screen:"today"|"manage";onScreenChange:(screen:"today"|"manage")=>void;token:string;admin:boolean;onPrint:(orders:Order[])=>Promise<unknown>;onOpenOrder:(order:Order)=>Promise<void>}){
  const [,tick]=useState(0);useEffect(()=>{const timer=setInterval(()=>tick(value=>value+1),30000);return()=>clearInterval(timer);},[]);
@@ -82,24 +85,34 @@ export function ProductionTrackingWorkspace({token,admin,onOpenScanner,onPrint,o
  {!batches.length&&<section className={styles.panel}><h2>No production batches yet</h2><p>Prepare your first batch in Batches & history. Once closed, your guided tasks will appear here.</p></section>}
  {batches.map(b=>{const ready=b.production_items.filter(i=>(!i.disposition||i.disposition==="active")&&!i.issue&&taskInstructions[i.stage as keyof typeof taskInstructions]&&taskReady(b,i.stage,malaysiaToday()));const issues=b.production_items.filter(i=>i.issue).length;const upcoming=b.production_items.filter(i=>(!i.disposition||i.disposition==="active")&&!i.issue&&taskInstructions[i.stage as keyof typeof taskInstructions]&&!taskReady(b,i.stage,malaysiaToday())).length;return <section className={styles.panel} key={b.id}><h2>Production date · {b.production_date}</h2><p><strong>{ready.length} ready tasks</strong> · {issues} issues · {upcoming} unavailable · Pickup {b.pickup_date}</p><ul>{Object.entries(taskInstructions).map(([stage,task])=>{const count=ready.filter(i=>i.stage===stage).length;return count?<li key={stage}>{task.title} · {count}</li>:null;})}</ul><div className={styles.toolbar}><button disabled={busy||!ready.length} onClick={()=>void startTasks(b.id)}>Start tasks</button><button disabled={busy} onClick={()=>void run(async()=>{await load(b.id);setScreen("manage");})}>View batch / resolve issues</button></div></section>;})}
  </>}
- {screen==="manage"&&<>
-  <p className={styles.intro}>Create a batch whenever you are ready. Dates are plans; staff confirm each actual handover.</p>
-  {error&&<p role="alert" className={styles.error}>{error}</p>}{notice&&<p role="status" className={styles.notice}>{notice}</p>}
-  <div className={styles.toolbar}><label>Production batch<select disabled={busy} value={batch?.id||""} onChange={e=>void run(()=>load(e.target.value))}><option value="" disabled>Choose a batch</option>{batches.map(b=><option key={b.id} value={b.id}>{productionBatchLabel(b.batch_number)} · {productionBatchCreatedAt(b.created_at)} · {b.production_items.length} plushies · {b.production_items.filter(i=>i.stage==="packed").length} completed</option>)}</select></label><button disabled={busy} onClick={()=>void run(async()=>{await list();if(batch)await load(batch.id);})}>Refresh</button></div>
-  {admin&&<details className={styles.panel}><summary>Close a new daily batch</summary><p>Select New Order plushies and Plush Charms ready for this cycle. Review the list before closing. No order moves automatically.</p><div className={styles.toolbar}><label>Production date<input type="date" value={day} onChange={e=>{setDay(e.target.value);setReview(false);try{setPickup(batchSchedule(e.target.value).pickupDate);}catch{}}}/></label><label>Planned J&T pickup<input type="date" value={pickup} onChange={e=>setPickup(e.target.value)}/></label><button disabled={busy} onClick={()=>void candidatesForDay()}>Review eligible orders</button></div>{review&&<><p>{chosen.length} selected · up to 200 oldest eligible orders shown. Due orders left behind are selected automatically and retain their issue badge.</p><button disabled={busy} onClick={()=>setChosen(candidates.map(o=>o.id))}>Select all shown</button><div className={styles.candidates}>{candidates.map(o=><label key={o.id}><input type="checkbox" checked={chosen.includes(o.id)} onChange={e=>setChosen(old=>e.target.checked?[...old,o.id]:old.filter(id=>id!==o.id))}/>#{o.orderNumber} · {o.customerName||"Name missing"} · {o.plushName||o.character} · {(o as Order&{productionCarryover?:string}).productionCarryover?"ISSUE · carried forward · ":""}{o.voiceUploadStatus==="received"?"Audio received":"Check audio"}</label>)}</div><button disabled={busy||!chosen.length} onClick={()=>void create()}>Close reviewed batch</button><p>You can create a batch at any time. Adjust pickup for weekends and holidays.</p></>}</details>}
-  {!batches.length&&<section className={styles.panel}><h2>Your production cycles start here</h2><p>Create your first reviewed batch whenever you are ready. Existing orders and workflows stay available in their current workspaces.</p></section>}
-  {batch&&<><div className={styles.stats}><article><small>{productionBatchLabel(batch.batch_number)} · Created</small><strong>{productionBatchCreatedAt(batch.created_at)}</strong></article><article><small>Planned packing</small><strong>{batchSchedule(batch.production_date).packingDate}</strong></article><article><small>Planned pickup</small><strong>{batch.pickup_date}</strong></article><article><small>Needs attention</small><strong>{items.filter(i=>i.issue).length}</strong></article></div>
-  <div className={styles.counts}>{productionStages.map(stage=><button key={stage} onClick={()=>setFilter(stage)}>{stageLabels[stage]}<strong>{items.filter(i=>i.stage===stage).length}</strong></button>)}</div>
-  <div className={styles.toolbar}><form onSubmit={scanned}><label>Scan order barcode<input aria-label="Production order barcode" value={scan} onChange={e=>setScan(e.target.value)} placeholder="Scan packing slip, then Enter"/></label><button disabled={busy}>Find plushie</button></form><button onClick={()=>setFilter("all")}>All plushies</button><button onClick={()=>setFilter("issues")}>Issues</button><button disabled={busy} onClick={()=>void onPrint(items.map(i=>({...i.order,id:i.order_id} as Order)))}>Print batch labels & slips</button></div>
-  <div className={styles.layout}><section className={styles.panel}><h2>Batch plushies</h2>{visible.map(i=><button className={styles.item} aria-pressed={current===i.id} key={i.id} onClick={()=>{setCurrent(i.id);setCard("");setNote("");}}><strong>#{String(i.order?.orderNumber||i.order_id)} · {String(i.order?.plushName||i.order?.character||"Plushie")}</strong><span>{stageLabels[i.stage]}{i.issue||i.carried_issue?" · ISSUE":""}{i.disposition&&i.disposition!=="active"?` · ${i.disposition}`:""}</span></button>)}{!visible.length&&<p>No plushies in this queue.</p>}</section>
-  {selected&&<section className={styles.panel}><h2>#{String(selected.order?.orderNumber||selected.order_id)} · {String(selected.order?.plushName||selected.order?.character||"")}</h2><OrderBarcode value={packingItemBarcodeValue({...selected.order,id:selected.order_id} as Order)}/><p>Current stage: <strong>{stageLabels[selected.stage]}</strong></p><button onClick={()=>void onOpenOrder({...selected.order,id:selected.order_id} as Order)}>Open order details</button>{typeof selected.order?.meaningfulMessage==="string"&&selected.order.meaningfulMessage&&<p><a href={selected.order.meaningfulMessage} target="_blank" rel="noreferrer">Open saved audio for checking</a></p>}
-   {selected.issue&&<p className={styles.error}>Issue: {selected.issue}</p>}
-   <label>{selected.issue?"Resolution details":"Task / issue notes"}<textarea maxLength={1000} value={note} onChange={e=>setNote(e.target.value)}/></label>
-   {next==="packed"&&!selected.issue&&<><p>Scan this order first, then its verified certificate card. Only confirm once the plushie is boxed.</p><label>Certificate card barcode<input ref={cardInput} value={card} onChange={e=>setCard(e.target.value)} placeholder="NFC-100001 or legacy six-digit code"/></label><p>Card linking uses the birth details saved on the order. Review them in Order details before packing.</p></>}
-   {(!selected.disposition||selected.disposition==="active")&&selected.stage!=="packed"&&<div className={styles.toolbar}><button disabled={busy} onClick={()=>void startTasks(selected.batch_id)}>Continue guided tasks</button><button disabled={busy||note.trim().length<3} onClick={()=>void step("remove")}>Remove from queue</button><button disabled={busy||note.trim().length<3} onClick={()=>void step("defer")}>Leave for tomorrow</button>{selected.issue&&<button disabled={busy||note.trim().length<3} onClick={()=>void step("resolve")}>Resolve issue</button>}</div>}<p>Packing completes production. J&T pickup needs no task.</p>
-   <label>Customer tracking link<input readOnly value={`https://meaningfulplushies.com/apps/closer/tracking/${selected.tracking_token}`}/></label><p><a target="_blank" rel="noreferrer" href={`https://meaningfulplushies.com/apps/closer/tracking/${selected.tracking_token}`}>Preview customer tracking</a></p>
-   <h3>Tracking history</h3><ol className={styles.timeline}>{events.filter(e=>e.item_id===selected.id).map(e=><li key={e.id}><strong>{e.kind==="issue"?"Issue reported":e.kind==="resolved"?"Issue resolved":stageLabels[e.stage]}</strong><small>{new Date(e.created_at).toLocaleString()}{e.actorName?` · ${e.actorName}`:""}</small>{e.note&&<p>{e.note}</p>}</li>)}</ol>
-  </section>}</div></>}
- </>}
+ {screen==="manage"&&<section className={styles.panel}>
+   {error&&<p role="alert" className={styles.error}>{error}</p>}
+   <div className={styles.toolbar}>
+     {batch&&<button disabled={busy} onClick={()=>{setBatch(null);setItems([]);}}>Back to batches</button>}
+     <button disabled={busy} onClick={()=>void run(async()=>{await list();if(batch)await load(batch.id);})}>Refresh</button>
+   </div>
+   {batch ? <>
+     <h2>{productionBatchLabel(batch.batch_number)}</h2>
+     <p>Created {productionBatchCreatedAt(batch.created_at)} · {batchIsOpen(items) ? "Open" : "Closed"}</p>
+     <div className="table-scroll"><table className="orders-table">
+       <thead><tr><th>Order number</th><th>Status</th></tr></thead>
+       <tbody>{items.map(item=><tr key={item.id}>
+         <td><button onClick={()=>void run(()=>onOpenOrder({...item.order,id:item.order_id} as Order))}>#{String(item.order?.orderNumber||item.order_id)}</button></td>
+         <td>{item.disposition==="removed"?"Removed":item.disposition==="deferred"?"Deferred":stageLabels[item.stage]}{item.issue && " · " + item.issue}</td>
+       </tr>)}</tbody>
+     </table></div>
+     {!items.length&&<p>No orders in this batch.</p>}
+   </> : <>
+     <div className="table-scroll"><table className="orders-table">
+       <thead><tr><th>Batch number</th><th>Created (Malaysia time)</th><th>Status</th></tr></thead>
+       <tbody>{batches.map(row=><tr key={row.id}>
+         <td><button disabled={busy} onClick={()=>void run(()=>load(row.id))}>{productionBatchLabel(row.batch_number)}</button></td>
+         <td>{productionBatchCreatedAt(row.created_at)}</td>
+         <td>{batchIsOpen(row.production_items) ? "Open" : "Closed"}</td>
+       </tr>)}</tbody>
+     </table></div>
+     {!batches.length&&!error&&<p>{busy?"Loading batches…":"No batches yet."}</p>}
+   </>}
+ </section>}
  </div>;
 }
