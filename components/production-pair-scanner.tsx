@@ -1,19 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { matchesProductionBarcode, type ProductionItem } from "@/lib/production-tracking";
+import { type ProductionItem } from "@/lib/production-tracking";
 import type { Order } from "@/lib/types";
 
 type Pending = ({ kind: "order"; item: ProductionItem; barcode: string } | { kind: "card"; code: string }) & { expires: number };
 type Props = {
-  items: ProductionItem[];
+  findOrder: (barcode: string) => Promise<ProductionItem | null>;
   audioSourceFor: (order: Order) => string;
   checkCard: (code: string) => Promise<unknown>;
   save: (item: ProductionItem, action: string, barcode: string, card: string, note: string) => Promise<ProductionItem[]>;
   onBusy: (busy: boolean) => void;
 };
 
-export function ProductionPairScanner({ items, audioSourceFor, checkCard, save, onBusy }: Props) {
+export function ProductionPairScanner({ findOrder, audioSourceFor, checkCard, save, onBusy }: Props) {
   const [scan, setScan] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
   const [seconds, setSeconds] = useState(60);
@@ -133,12 +133,7 @@ export function ProductionPairScanner({ items, audioSourceFor, checkCard, save, 
         await expire(previous);
         return;
       }
-      const matches = items.filter(item => matchesProductionBarcode({ id: item.order_id, orderNumber: item.order?.orderNumber }, value));
-      if (matches.length > 1) {
-        show("This barcode matches multiple items. Scan the individual packing slip barcode.");
-        return;
-      }
-      const item = matches[0];
+      const item = /^NFC-/i.test(value) ? null : await findOrder(value);
       if (item) {
         if (previous?.kind === "order" && previous.item.id !== item.id) {
           show("Finish the current order or wait for its pairing window to expire.");
@@ -152,11 +147,17 @@ export function ProductionPairScanner({ items, audioSourceFor, checkCard, save, 
           else { setStatus("Already paired. Playing the saved recording for review."); play(item); }
           return;
         }
+        if (item.playback_only && previous?.kind !== "card") {
+          setStatus("Playing the saved recording. This order has no Daily Production task.");
+          play(item);
+          return;
+        }
         if (item.issue || (item.disposition && item.disposition !== "active") || !["at_tailor", "returned", "audio_passed"].includes(item.stage)) {
           show("Unable to pair. " + (item.issue || "This order is not ready for packing."), item);
           return;
         }
         if (previous?.kind === "card") {
+          if (Date.now() >= previous.expires) { await expire(previous); return; }
           await pair(item, value, previous.code);
           return;
         }
@@ -185,8 +186,8 @@ export function ProductionPairScanner({ items, audioSourceFor, checkCard, save, 
     });
   }
 
-  return <main>
-    <h1>Barcode Scanner</h1>
+  return <section>
+    <h2>Scan an order or NFC card</h2>
     <p>Scan the order or NFC card first. Pairing completes sewing, quality check and packing.</p>
     <form onSubmit={submit}>
       <label>Scan order or NFC card<input ref={input} autoFocus value={scan} onChange={event => setScan(event.target.value)} disabled={busy} autoComplete="off" /></label>
@@ -201,5 +202,5 @@ export function ProductionPairScanner({ items, audioSourceFor, checkCard, save, 
       {["resolve", "remove", "defer"].map(action => <button key={action} disabled={busy || note.trim().length < 3}
         onClick={() => void run(async () => { await save(selected, action, "", "", note); setSelected(null); show("Issue decision saved."); })}>{action === "resolve" ? "Resolve issue" : action === "remove" ? "Remove from queue" : "Leave for tomorrow"}</button>)}
     </details>}
-  </main>;
+  </section>
 }

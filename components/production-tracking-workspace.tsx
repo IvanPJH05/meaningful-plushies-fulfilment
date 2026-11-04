@@ -11,7 +11,7 @@ import type {Order} from "@/lib/types";
 import styles from "./production-tracking.module.css";
 type Batch=ProductionBatch&{production_items:{stage:ProductionStage;issue:string;disposition?:ProductionItem["disposition"];carried_issue?:string}[]};
 type Event={actorName?:string;id:number;item_id:string;stage:keyof typeof stageLabels;kind:string;note:string;created_at:string};
-export function ProductionTrackingWorkspace({token,admin,audioSourceFor,onPrint,onOpenOrder,screen,onScreenChange,assistant=false,onCycleComplete}:{audioSourceFor:(order:Order)=>string;assistant?:boolean;onCycleComplete?:()=>void;screen:"today"|"manage";onScreenChange:(screen:"today"|"manage")=>void;token:string;admin:boolean;onPrint:(orders:Order[])=>Promise<unknown>;onOpenOrder:(order:Order)=>Promise<void>}){
+export function ProductionTrackingWorkspace({token,admin,onOpenScanner,onPrint,onOpenOrder,screen,onScreenChange,assistant=false,onCycleComplete}:{onOpenScanner:()=>void;assistant?:boolean;onCycleComplete?:()=>void;screen:"today"|"manage";onScreenChange:(screen:"today"|"manage")=>void;token:string;admin:boolean;onPrint:(orders:Order[])=>Promise<unknown>;onOpenOrder:(order:Order)=>Promise<void>}){
  const [,tick]=useState(0);useEffect(()=>{const timer=setInterval(()=>tick(value=>value+1),30000);return()=>clearInterval(timer);},[]);
  const setScreen=onScreenChange;const [taskMode,setTaskMode]=useState(false),[overview,setOverview]=useState(assistant);
  const [batches,setBatches]=useState<Batch[]>([]),[batch,setBatch]=useState<ProductionBatch|null>(null),[items,setItems]=useState<ProductionItem[]>([]),[events,setEvents]=useState<Event[]>([]),[current,setCurrent]=useState("");
@@ -37,7 +37,7 @@ export function ProductionTrackingWorkspace({token,admin,audioSourceFor,onPrint,
    const activeBatches = batches.flatMap(batch => {
      const active = batch.production_items.filter(item => (!item.disposition || item.disposition === "active") && taskInstructions[item.stage]);
      const next = nextProductionStage(active);
-     if (!next) return [];
+     if (!next || ["at_tailor", "returned", "audio_passed"].includes(next)) return [];
      return [{
        batch, active, next,
        ready: active.filter(item => item.stage === next && !item.issue).length,
@@ -73,7 +73,7 @@ export function ProductionTrackingWorkspace({token,admin,audioSourceFor,onPrint,
  }
  if(assistant&&!batch)return <div className={styles.page}><section className={styles.panel}><small>STEP 3 OF 7 · REVIEW ORDERS</small><h2>Choose production orders</h2><button disabled={busy} onClick={()=>setOverview(true)}>Back to production overview</button><p>Only New Order items appear below, including Plush Charms. Orders already in production are excluded. Confirm the selection to begin labels and printing here.</p>{error&&<p role="alert" className={styles.error}>{error}</p>}<div className={styles.toolbar}><label>Production date<input type="date" value={day} onChange={e=>{setDay(e.target.value);setReview(false);setChosen([]);}}/></label><button disabled={busy} onClick={()=>void candidatesForDay()}>Refresh new orders</button><button disabled={busy||!review} onClick={()=>setChosen(candidates.map(o=>o.id))}>Select all</button></div>{review&&<><p>{chosen.length} selected · create this batch whenever you are ready</p><div className={styles.candidates}>{candidates.map(o=><label key={o.id}><input type="checkbox" checked={chosen.includes(o.id)} onChange={e=>setChosen(v=>e.target.checked?[...v,o.id]:v.filter(id=>id!==o.id))}/>#{o.orderNumber} · {o.customerName} · {o.plushName||o.character}{(o as Order&{productionCarryover?:string}).productionCarryover?" · ISSUE carried forward":""}</label>)}</div><button disabled={busy||!chosen.length||!admin} onClick={()=>void create()}>Confirm orders · prepare labels</button>{!candidates.length&&<p>No eligible new orders. Import orders or choose the correct production date.</p>}</>}</section></div>;
  if(assistant&&batch&&items.some(i=>(!i.disposition||i.disposition==="active")&&i.stage==="received"))return <><div className={styles.panel}><button disabled={busy} onClick={()=>setOverview(true)}>Back to production overview</button></div><ProductionLabelPreparation token={token} admin={admin} batch={batch} items={items} request={request} reload={async()=>{await load(batch.id);await list();}} onPrint={onPrint} decide={(item,action,reason)=>completeTask(item,action,"","",reason)}/></>;
- if((taskMode||assistant)&&batch)return <ProductionTaskMode checkCard={code=>request("?nfc="+encodeURIComponent(code))} audioSourceFor={audioSourceFor} batch={batch} initialItems={items} commit={completeTask} downloadAudio={downloadAudio} onPrint={onPrint} onExit={()=>{if(assistant){setTaskMode(false);setOverview(true);void run(()=>list());return;}setTaskMode(false);void run(async()=>{await list();await load(batch.id);});}}/>;
+ if((taskMode||assistant)&&batch)return <ProductionTaskMode onOpenScanner={onOpenScanner} batch={batch} initialItems={items} commit={completeTask} downloadAudio={downloadAudio} onPrint={onPrint} onExit={()=>{if(assistant){setTaskMode(false);setOverview(true);void run(()=>list());return;}setTaskMode(false);void run(async()=>{await list();await load(batch.id);});}}/>;
  return <div className={styles.page}>
 
  {screen==="today"&&<>

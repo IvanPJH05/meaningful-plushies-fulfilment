@@ -6,6 +6,47 @@ export const runtime="nodejs";
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export async function GET(request:Request){try{
  const {client}=await context(request);const url=new URL(request.url);const id=url.searchParams.get("batch");
+ let scanOrder = url.searchParams.get("scanOrder");
+ const barcode = url.searchParams.get("scanBarcode")?.trim();
+ if (barcode && !scanOrder) {
+  const value = barcode.replace(/^MP-?/i,"").replace(/^#/,"");
+  if (!/^[a-z0-9 -]{1,80}$/i.test(value)) return NextResponse.json({item:null},{headers});
+  const query = client.from("fulfilment_orders").select("id,order_number");
+  const result = /^MPI-/i.test(barcode) ? await query.ilike("id",barcode.slice(4)).limit(2)
+    : /^TT\d+$/i.test(value) ? await query.ilike("order_number",value+" %").limit(20)
+    : await query.or("id.ilike."+value+",order_number.ilike."+value).limit(20);
+  if(result.error)throw result.error;
+  const matches=result.data.filter(row=>matchesProductionBarcode({id:row.id,orderNumber:row.order_number},barcode));
+  if(matches.length>1)throw new PairingError("This barcode matches multiple items. Scan the individual packing slip barcode.");
+  scanOrder=matches[0]?.id ?? null;
+  if(!scanOrder)return NextResponse.json({item:null},{headers});
+ }
+ if (scanOrder) {
+  const [order, item, card] = await Promise.all([
+   client.from("fulfilment_orders").select("id,order_number,data").eq("id",scanOrder).maybeSingle(),
+   client.from("production_items").select("*").eq("order_id",scanOrder).maybeSingle(),
+   client.from("nfc_cards").select("id").eq("order_id",scanOrder).eq("status","assigned").maybeSingle(),
+  ]);
+  if(order.error || item.error || card.error) throw order.error || item.error || card.error;
+  if(!order.data) throw new PairingError("Order not found.");
+  const fullOrder = {...order.data.data, id:order.data.id, orderNumber:order.data.order_number};
+  return NextResponse.json({item: item.data
+   ? {...item.data, nfc_paired:Boolean(card.data), order:fullOrder}
+   : {id:scanOrder, order_id:scanOrder, stage:"received", playback_only:true, nfc_paired:Boolean(card.data), order:fullOrder}}, {headers});
+ }
+ if (url.searchParams.has("scannerQueue")) {
+  const queue = [];
+  for(let offset=0;;offset+=200) {
+   const result=await client.from("production_items")
+    .select("id,order_id,stage,issue,production_batches(batch_number),fulfilment_orders(order_number,plush_name:data->>plushName)")
+    .eq("disposition","active").in("stage",["at_tailor","returned","audio_passed"])
+    .order("id").range(offset,offset+199);
+   if(result.error)throw result.error;
+   queue.push(...result.data);
+   if(result.data.length<200)break;
+  }
+  return NextResponse.json({queue},{headers});
+ }
  const card = url.searchParams.get("nfc");
  if (card !== null) {
   if (!/^NFC-\d{6,12}$/i.test(card)) throw new PairingError("Scan a valid NFC card barcode.");
