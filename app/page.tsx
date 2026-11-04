@@ -1,4 +1,5 @@
 "use client";
+import { productionBatchLabel } from "@/lib/production-tracking";
 import { TikTokTutorialSettings } from "@/components/tiktok-tutorial-settings";
 import { useLanguage, LanguageProvider, LanguageSwitcher, WorkspaceLoading } from "../components/dashboard-language";
 import { NotificationBar, NotificationMessage, NotificationProvider } from "../components/notification-bar";
@@ -2317,6 +2318,17 @@ function Home() {
         .join(" ").toLowerCase().includes(search));
     return sortOrderRecords(matching, sortKey, sortDirection);
   }, [orders, manualOrders, query, sourceFilter, statusFilter, sortKey, sortDirection]);
+  const [productionBadges, setProductionBadges] = useState<Record<string, number>>({});
+  useEffect(() => {
+    if (!session?.token || !["admin", "staff"].includes(session.role) || !["orders", "fulfilment"].includes(view)) return;
+    const controller = new AbortController();
+    fetch("/api/production-tracking/orders?badges=1", {
+      headers: { Authorization: "Bearer " + session.token }, cache: "no-store", signal: controller.signal,
+    }).then(async response => {
+      if (response.ok) setProductionBadges((await response.json()).badges);
+    }).catch(() => {});
+    return () => controller.abort();
+  }, [session?.token, session?.role, view, orders.length]);
   const fulfilmentDateRangeSales = useMemo(() => {
     const uniqueSales = new Map<string, Order>();
     for (const order of orders) {
@@ -5976,7 +5988,7 @@ function Home() {
   }
 
   function compactTableCell(order: Order, column: TableColumn) {
-    if (column === "orderNumber") return <div className="compact-order-identity" title={orderLabel(order)}><strong>{compactOrderLabel(order)}</strong><OrderMarkers order={order} manualOrders={manualOrders} /></div>;
+    if (column === "orderNumber") return <div className="compact-order-identity" title={orderLabel(order)}><strong>{compactOrderLabel(order)}</strong>{productionBadges[order.id] && <span className="status-pill">{productionBatchLabel(productionBadges[order.id])}</span>}<OrderMarkers order={order} manualOrders={manualOrders} /></div>;
     if (column === "status") return <StatusPill status={order.status} />;
     if (column === "orderDate") return formatDate(order.orderDate);
     if (column === "updatedAt") return formatDate(order.updatedAt, true);

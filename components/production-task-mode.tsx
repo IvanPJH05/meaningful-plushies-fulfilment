@@ -1,7 +1,7 @@
 "use client";
 import {useState,useRef,useEffect} from "react";
 import {actionableTasks,taskInstructions,taskAction} from "@/lib/production-tasks";
-import {matchesProductionBarcode,malaysiaToday,type ProductionBatch,type ProductionItem} from "@/lib/production-tracking";
+import {productionBatchLabel,productionBatchCreatedAt,matchesProductionBarcode,malaysiaToday,type ProductionBatch,type ProductionItem} from "@/lib/production-tracking";
 import type {Order} from "@/lib/types";
 import styles from "./production-task-mode.module.css";
 export function ProductionTaskMode({batch,initialItems,commit,downloadAudio,onPrint,onExit}:{batch:ProductionBatch;initialItems:ProductionItem[];commit:(item:ProductionItem,action:string,scan:string,card:string,note:string)=>Promise<ProductionItem[]>;downloadAudio:()=>Promise<ProductionItem[]>;onPrint:(orders:Order[])=>Promise<unknown>;onExit:()=>void}){
@@ -13,7 +13,7 @@ export function ProductionTaskMode({batch,initialItems,commit,downloadAudio,onPr
  function focusScanner(){if(!needsScan||busy)return;const field=item?.stage==="audio_passed"&&matched?cardInput.current:orderInput.current;field?.focus({preventScroll:true});field?.select();}
  useEffect(()=>{focusScanner();},[item?.id,item?.stage,matched,busy]); // eslint-disable-line react-hooks/exhaustive-deps
  async function finish(decision?:"remove"|"defer"){if(!item||lock.current)return;lock.current=true;setBusy(true);setError("");try{const updated=!decision&&item.stage==="labels_printed"?await downloadAudio():await commit(item,decision||taskAction(item)!,scan,card,note);setItems(updated);setScan("");setCard("");setNote("");}catch(e){setError((e as Error).message);}finally{lock.current=false;setBusy(false);}}
- return <section className={styles.screen} onClick={e=>{if(!(e.target as HTMLElement).closest("button,a,input,textarea,select,audio,summary,label,[role=button]"))focusScanner();}} aria-label="Production task mode"><header><strong>Production · {batch.production_date}</strong><button disabled={busy} onClick={onExit}>Back to today’s work</button></header>
+ return <section className={styles.screen} onClick={e=>{if(!(e.target as HTMLElement).closest("button,a,input,textarea,select,audio,summary,label,[role=button]"))focusScanner();}} aria-label="Production task mode"><header><strong>{productionBatchLabel(batch.batch_number)} · {productionBatchCreatedAt(batch.created_at)}</strong><button disabled={busy} onClick={onExit}>Back to today’s work</button></header>
  {item&&task?<main key={item.id+item.stage}><span className={styles.kicker}>YOUR CURRENT TASK</span><h1>{task.title}</h1><div className={styles.identity}><strong>#{String(item.order?.orderNumber||item.order_id)}</strong><span>{String(item.order?.plushName||item.order?.character||"Plushie")} · {String(item.order?.character||"")}</span></div><p className={styles.instruction}>{task.instruction}</p>{item.issue&&<p role="alert" className={styles.error}>ISSUE: {item.issue}. Record a decision below to continue.</p>}
  {error&&<p role="alert" className={styles.error}>{error}</p>}
  {item.stage==="received"&&<button disabled={busy} onClick={()=>void onPrint([{...item.order,id:item.order_id} as Order])}>Open label & packing slip PDF</button>}
