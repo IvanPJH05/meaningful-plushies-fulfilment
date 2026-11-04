@@ -6,6 +6,17 @@ export const runtime="nodejs";
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export async function GET(request:Request){try{
  const {client}=await context(request);const url=new URL(request.url);const id=url.searchParams.get("batch");
+ const card = url.searchParams.get("nfc");
+ if (card !== null) {
+  if (!/^NFC-\d{6,12}$/i.test(card)) throw new PairingError("Scan a valid NFC card barcode.");
+  const {data,error}=await client.from("nfc_cards").select("status,programmed_at").eq("id",Number(card.slice(4))).maybeSingle();
+  if(error)throw error;
+  if(!data)throw new PairingError("NFC card not found.");
+  if(data.status==="assigned")throw new PairingError("This NFC card is already activated.");
+  if(data.status!=="available")throw new PairingError("This NFC card is voided.");
+  if(!data.programmed_at)throw new PairingError("This NFC card has not been programmed.");
+  return NextResponse.json({ok:true},{headers});
+ }
  if(url.searchParams.has("candidates")){
   const day=url.searchParams.get("day")||"";batchSchedule(day);
   const {data:members,error:memberError}=await client.from("production_items").select("order_id,disposition,deferred_until,issue");if(memberError)throw memberError;
@@ -21,7 +32,10 @@ export async function GET(request:Request){try{
  const ids=(items||[]).map(i=>i.order_id);
  const {data:orders,error:orderError}=await client.from("fulfilment_orders").select("id,data").in("id",ids);if(orderError)throw orderError;
  const {data:events,error:eventError}=await client.from("production_events").select("*,dashboard_accounts(display_name)").in("item_id",(items||[]).map(i=>i.id)).order("created_at",{ascending:false}).limit(3000);if(eventError)throw eventError;
- return NextResponse.json({batch,items:(items||[]).map(i=>({...i,order:orders?.find(o=>o.id===i.order_id)?.data||{}})),events:(events||[]).map(e=>({...e,actorName:(e.dashboard_accounts as unknown as {display_name:string})?.display_name}))},{headers});
+ const {data:paired,error:pairError}=await client.from("nfc_cards").select("order_id").in("order_id",ids).eq("status","assigned");
+ if(pairError)throw pairError;
+ const pairedIds=new Set(paired?.map(card=>card.order_id));
+ return NextResponse.json({batch,items:(items||[]).map(i=>({...i,nfc_paired:pairedIds.has(i.order_id),order:orders?.find(o=>o.id===i.order_id)?.data||{}})),events:(events||[]).map(e=>({...e,actorName:(e.dashboard_accounts as unknown as {display_name:string})?.display_name}))},{headers});
  }catch(error){return failure(error);}}
 export async function POST(request:Request){try{
  const {client,actor,session}=await context(request);const raw=await request.text();if(raw.length>40000)throw new PairingError("Request too large.");const body=JSON.parse(raw);

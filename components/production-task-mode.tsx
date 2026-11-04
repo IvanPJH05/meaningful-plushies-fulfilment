@@ -3,16 +3,30 @@ import {useState,useRef,useEffect} from "react";
 import {actionableTasks,taskInstructions,taskAction} from "@/lib/production-tasks";
 import {productionBatchLabel,productionBatchCreatedAt,matchesProductionBarcode,malaysiaToday,type ProductionBatch,type ProductionItem} from "@/lib/production-tracking";
 import type {Order} from "@/lib/types";
+import {ProductionPairScanner} from "./production-pair-scanner";
 import styles from "./production-task-mode.module.css";
-export function ProductionTaskMode({batch,initialItems,commit,downloadAudio,onPrint,onExit}:{batch:ProductionBatch;initialItems:ProductionItem[];commit:(item:ProductionItem,action:string,scan:string,card:string,note:string)=>Promise<ProductionItem[]>;downloadAudio:()=>Promise<ProductionItem[]>;onPrint:(orders:Order[])=>Promise<unknown>;onExit:()=>void}){
+export function ProductionTaskMode({batch,initialItems,audioSourceFor,checkCard,commit,downloadAudio,onPrint,onExit}:{batch:ProductionBatch;audioSourceFor:(order:Order)=>string;checkCard:(code:string)=>Promise<unknown>;initialItems:ProductionItem[];commit:(item:ProductionItem,action:string,scan:string,card:string,note:string)=>Promise<ProductionItem[]>;downloadAudio:()=>Promise<ProductionItem[]>;onPrint:(orders:Order[])=>Promise<unknown>;onExit:()=>void}){
  const [,tick]=useState(0);useEffect(()=>{const timer=setInterval(()=>tick(value=>value+1),30000);return()=>clearInterval(timer);},[]);
  const [items,setItems]=useState(initialItems),[scan,setScan]=useState(""),[card,setCard]=useState(""),[note,setNote]=useState(""),[busy,setBusy]=useState(false),[error,setError]=useState("");const lock=useRef(false);const audio=useRef<HTMLAudioElement>(null);const orderInput=useRef<HTMLInputElement>(null),cardInput=useRef<HTMLInputElement>(null);
  const tasks=actionableTasks(items,batch,malaysiaToday()),blocked=items.filter(i=>(!i.disposition||i.disposition==="active")&&Boolean(i.issue)),item=tasks[0]||blocked[0],task=item?taskInstructions[item.stage]:null;
+
  const needsScan=item&&["at_tailor","returned","audio_passed","packed"].includes(item.stage);
  const matched=item&&matchesProductionBarcode({id:item.order_id,orderNumber:item.order?.orderNumber},scan);
  function focusScanner(){if(!needsScan||busy)return;const field=item?.stage==="audio_passed"&&matched?cardInput.current:orderInput.current;field?.focus({preventScroll:true});field?.select();}
  useEffect(()=>{focusScanner();},[item?.id,item?.stage,matched,busy]); // eslint-disable-line react-hooks/exhaustive-deps
  async function finish(decision?:"remove"|"defer"){if(!item||lock.current)return;lock.current=true;setBusy(true);setError("");try{const updated=!decision&&item.stage==="labels_printed"?await downloadAudio():await commit(item,decision||taskAction(item)!,scan,card,note);setItems(updated);setScan("");setCard("");setNote("");}catch(e){setError((e as Error).message);}finally{lock.current=false;setBusy(false);}}
+ if ((item && ["at_tailor","returned","audio_passed"].includes(item.stage)) || (!item && items.some(row => row.stage === "packed"))) {
+   return <section className={styles.screen} aria-label="Production barcode scanner">
+     <header><strong>{productionBatchLabel(batch.batch_number)} · {productionBatchCreatedAt(batch.created_at)}</strong>
+       <button disabled={busy} onClick={onExit}>Back to today’s work</button></header>
+     <ProductionPairScanner items={items} audioSourceFor={audioSourceFor} checkCard={checkCard}
+       onBusy={setBusy} save={async (...args) => {
+         const updated = await commit(...args);
+         setItems(updated);
+         return updated;
+       }} />
+   </section>;
+ }
  return <section className={styles.screen} onClick={e=>{if(!(e.target as HTMLElement).closest("button,a,input,textarea,select,audio,summary,label,[role=button]"))focusScanner();}} aria-label="Production task mode"><header><strong>{productionBatchLabel(batch.batch_number)} · {productionBatchCreatedAt(batch.created_at)}</strong><button disabled={busy} onClick={onExit}>Back to today’s work</button></header>
  {item&&task?<main key={item.id+item.stage}><span className={styles.kicker}>YOUR CURRENT TASK</span><h1>{task.title}</h1><div className={styles.identity}><strong>#{String(item.order?.orderNumber||item.order_id)}</strong><span>{String(item.order?.plushName||item.order?.character||"Plushie")} · {String(item.order?.character||"")}</span></div><p className={styles.instruction}>{task.instruction}</p>{item.issue&&<p role="alert" className={styles.error}>ISSUE: {item.issue}. Record a decision below to continue.</p>}
  {error&&<p role="alert" className={styles.error}>{error}</p>}
