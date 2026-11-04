@@ -117,8 +117,11 @@ export async function deliverTikTokTutorial(orderId: string) {
   }
 }
 
-export async function runTikTokTutorialQueue() {
-  const result = await deliveries().select("order_id").eq("status", "pending")
+export async function runTikTokTutorialQueue(orderIds?: string[]) {
+  if (orderIds?.length === 0) return;
+  const pending = deliveries().select("order_id").eq("status", "pending");
+  if (orderIds) pending.in("order_id", orderIds);
+  const result = await pending
     .lte("retry_after", new Date().toISOString()).order("retry_after").limit(1);
   if (result.error) throw result.error;
   if (result.data[0]) await deliverTikTokTutorial(result.data[0].order_id);

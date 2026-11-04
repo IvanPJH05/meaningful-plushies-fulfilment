@@ -4,6 +4,7 @@ import { mobileServiceClient } from "@/lib/mobile-api";
 import { getTikTokConnection } from "@/lib/tiktok-connection";
 import { extractTikTokOrderIds, verifyTikTokWebhook } from "@/lib/tiktok-orders";
 import { processTikTokEvents } from "@/lib/tiktok-recovery";
+import { runTikTokTutorialQueue } from "@/lib/tiktok-tutorial";
 export const runtime = "nodejs";
 export const maxDuration = 300;
 export async function POST(request: Request) {
@@ -28,7 +29,14 @@ export async function POST(request: Request) {
     const id = createHash("sha256").update(raw).digest("hex");
     const saved = await db.from("tiktok_webhook_events").upsert({ id, shop_id: connection.shop_id, event_type: type, order_ids: ids }, { onConflict: "id", ignoreDuplicates: true });
     if (saved.error) throw saved.error;
-    after(async () => { try { await processTikTokEvents(); } catch { console.error("TikTok event queue needs recovery."); } });
+    after(async () => {
+      try {
+        await processTikTokEvents();
+        await runTikTokTutorialQueue(ids.map(orderId => "tiktok-" + orderId));
+      } catch {
+        console.error("TikTok order or tutorial queue needs recovery.");
+      }
+    });
     return NextResponse.json({ code: 0, message: "success" });
   } catch { return NextResponse.json({ error: "Could not retain event. Please retry." }, { status: 503 }); }
 }
