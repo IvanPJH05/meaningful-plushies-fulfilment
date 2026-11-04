@@ -20,7 +20,7 @@ export async function queueTikTokTutorials(orders: { id: string; create_time?: u
   if (result.error) throw result.error;
 }
 
-async function uploadVideo(file: Blob, token: string, shopCipher: string) {
+export async function uploadTutorialVideo(file: Blob, token: string, shopCipher: string) {
   const chunks: Blob[] = [];
   for (let offset = 0; offset < file.size;) {
     let end = Math.min(offset + 20_000_000, file.size);
@@ -87,7 +87,7 @@ export async function deliverTikTokTutorial(orderId: string) {
     if (!/^\d+$/.test(chat.conversation_id || "")) throw new Error("TikTok did not return a conversation ID.");
     const file = await db.storage.from("tiktok-tutorial").download(settings.data.video_path);
     if (file.error || !file.data?.size) throw new Error("Could not read the active tutorial video.");
-    const vid = await uploadVideo(file.data, connection.token, query.shop_cipher);
+    const vid = await uploadTutorialVideo(file.data, connection.token, query.shop_cipher);
     const path = "/customer_service/202606/conversations/" + chat.conversation_id + "/messages";
     async function send(type: "TEXT" | "VIDEO", content: object) {
       sending = true;

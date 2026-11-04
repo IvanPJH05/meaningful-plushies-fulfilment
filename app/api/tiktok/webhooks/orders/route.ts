@@ -1,3 +1,4 @@
+import { retainTutorialFaq, runTutorialFaq } from "@/lib/tiktok-tutorial-faq";
 import { createHash } from "node:crypto";
 import { NextResponse, after } from "next/server";
 import { mobileServiceClient } from "@/lib/mobile-api";
@@ -18,6 +19,14 @@ export async function POST(request: Request) {
     if (!connection || String(payload.shop_id || "") !== connection.shop_id) return NextResponse.json({ error: "Shop is not connected." }, { status: 403 });
     const type = String(payload.type);
     const db = mobileServiceClient();
+    if (type === "14") {
+      const messageId = await retainTutorialFaq(connection.shop_id, payload.data);
+      if (messageId) after(async () => {
+        try { await runTutorialFaq(connection.shop_id, messageId); }
+        catch { console.error("TikTok tutorial FAQ needs recovery."); }
+      });
+      return new NextResponse(null, { status: 200 });
+    }
     if (type === "6") {
       const result = await db.from("tiktok_connection").delete().eq("shop_id", connection.shop_id);
       if (result.error) throw result.error;

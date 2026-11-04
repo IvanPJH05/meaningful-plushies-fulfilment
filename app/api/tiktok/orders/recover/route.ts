@@ -1,3 +1,5 @@
+import { runTutorialFaq } from "@/lib/tiktok-tutorial-faq";
+import { getTikTokConnection } from "@/lib/tiktok-connection";
 import { runTikTokTutorialQueue } from "@/lib/tiktok-tutorial";
 import { NextResponse } from "next/server";
 import { requireTikTokAdmin } from "@/lib/tiktok-connection";
@@ -13,9 +15,13 @@ export async function POST(request: Request) {
 export async function GET(request: Request) {
   if (!process.env.CRON_SECRET || request.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   try {
-    const results = await Promise.allSettled([recoverTikTokOrders(), runTikTokTutorialQueue()]);
+    const results = await Promise.allSettled([
+      recoverTikTokOrders(),
+      runTikTokTutorialQueue(),
+      getTikTokConnection().then(connection => connection ? runTutorialFaq(connection.shop_id) : undefined),
+    ]);
     if (results[0].status === "rejected") throw results[0].reason;
-    return NextResponse.json({ ...results[0].value, tutorialQueueOk: results[1].status === "fulfilled" });
+    return NextResponse.json({ ...results[0].value, tutorialQueueOk: results[1].status === "fulfilled", faqQueueOk: results[2].status === "fulfilled" });
   }
   catch { return NextResponse.json({ error: "TikTok recovery needs attention." }, { status: 503 }); }
 }
