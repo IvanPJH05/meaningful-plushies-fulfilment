@@ -55,7 +55,7 @@ export function ProductionTrackingWorkspace({token,admin,onOpenScanner,onPrint,o
          {error && <p role="alert" className={styles.error}>{error}</p>}
          {reviewPreparedOrders && error && <button disabled={busy} onClick={()=>void run(loadNewOrderReview)}>Retry order selection</button>}
          <div className={styles.toolbar}>
-           {admin && <button disabled={busy} onClick={() => void reviewNewOrders()}>Start a new batch</button>}
+           {admin && <button disabled={busy} onClick={onCycleComplete}>Start a new batch</button>}
            <button disabled={busy} onClick={() => void run(() => list())}>Refresh batches</button>
 
          </div>
