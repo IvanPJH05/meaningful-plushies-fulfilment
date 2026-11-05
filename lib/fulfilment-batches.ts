@@ -9,7 +9,7 @@ export type BatchDetail = { batch: FulfilmentBatch; orders: Order[]; members: Ba
 export function canJoinBatch(status: unknown) { return status === "new_order" || status === "uploading_audio"; }
 export function batchNeedsLabel(order: Pick<Order, "paymentProcessor" | "salesChannel">) { return order.salesChannel === "tiktok" || !/\bcod\b|cash[ _]on[ _]delivery/i.test(order.paymentProcessor || ""); }
 export function batchNeedsAudio(order: Pick<Order, "voiceLength" | "meaningfulMessage" | "tikTokFileName">) { return Number(order.voiceLength) > 0 || Boolean(order.meaningfulMessage || order.tikTokFileName); }
-export function matchBatchLabel(orders: Order[], label: { source: string | null; reference: string }) {
+export function matchBatchLabel<T extends Pick<Order, "orderNumber" | "salesChannel">>(orders: T[], label: { source: string | null; reference: string }) {
   if (!label.reference) return [];
   return orders.filter(order => label.source === "jnt" ? order.salesChannel !== "tiktok" && order.orderNumber === label.reference : label.source === "tiktok" && order.salesChannel === "tiktok" && order.orderNumber.replace(/\D/g, "").endsWith(label.reference));
 }

@@ -31,6 +31,7 @@ import { stockCharacters, summarizeStock } from "../lib/stock";
 import { mediaFileExtension, voiceBackupFileName } from "../lib/voice-file-name";
 import { isRemovedFromQueue } from "../lib/order-queue";
 import { productionPrintNextStatus, shouldAdvanceAfterProductionPrint } from "../lib/fulfilment-transitions";
+import { matchBatchLabel } from "../lib/fulfilment-batches";
 import { mergeRefreshedOrder } from "../lib/order-refresh";
 import { canJoinBatch } from "../lib/fulfilment-batches";
 import { isPlushCharmOrder } from "../lib/plush-charm";
@@ -105,7 +106,6 @@ import {
   updateCreatorCommissionStatus,
   updateWhatsAppLead,
   uploadAccountingDocumentFile,
-  upsertSharedOrders,
   type DashboardSession,
 } from "../lib/supabase";
 import { manualOrderCharactersForProduct, manualOrderProductFamily, manualOrderProducts } from "../lib/manual-order-products";
@@ -3298,50 +3298,54 @@ function Home() {
     try {
       const body = new FormData();
       body.append("file", file);
-      const result = await fetch("/api/shipping-labels", { method: "POST", body }).then((response) => response.json());
-      if (!result.ok) throw new Error(result.error || "Could not import the shipping-label PDF.");
-      const changedAt = new Date().toISOString();
-      const changed: Order[] = [];
+      const response = await fetch("/api/shipping-labels", { method: "POST", body });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.ok) throw new Error(result.error || "Could not read the shipping-label PDF.");
+      type SavedLabel = Pick<Order, "shippingLabelUrl" | "shippingLabelFileName" | "shippingLabelSource" | "status" | "updatedAt">;
+      const changed = new Map<string, SavedLabel>();
       const transitions: Array<{ order: Order; toStatus: OrderStatus; note: string }> = [];
       const unmatched: string[] = [];
+      const failed: string[] = [];
       for (const label of result.labels as Array<{ page: number; source: "jnt" | "tiktok" | null; reference: string; url: string; fileName: string }>) {
-        const matched = label.source === "jnt"
-          ? orders.find((order) => order.orderNumber === label.reference)
-          : label.source === "tiktok"
-            ? orders.find((order) => order.salesChannel === "tiktok" && order.orderNumber.replace(/\D/g, "").includes(label.reference))
-            : undefined;
-        if (!matched) {
+        const matches = matchBatchLabel(orders, label);
+        if (matches.length !== 1 || changed.has(matches[0].id)) {
           unmatched.push(`page ${label.page}${label.reference ? ` (${label.reference})` : ""}`);
           continue;
         }
-        const advancesProduction = shouldAdvanceAfterProductionPrint(matched);
-        changed.push({
-          ...matched,
-          shippingLabelUrl: label.url,
-          shippingLabelFileName: label.fileName,
-          shippingLabelSource: label.source === "tiktok" ? "tiktok" : "jnt",
-          updatedAt: changedAt,
-        });
-        if (advancesProduction) transitions.push({ order: matched, toStatus: productionPrintNextStatus, note: "Shipping label paired" });
+        const [matched] = matches;
+        try {
+          const save = await fetch("/api/fulfilment/orders/shipping-label", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${currentSession.token}` },
+            body: JSON.stringify({ ...label, orderId: matched.id }),
+          });
+          const saved = await save.json().catch(() => ({})) as { order?: SavedLabel; error?: string };
+          if (!save.ok || !saved.order) throw new Error(saved.error || "The label could not be saved.");
+          changed.set(matched.id, saved.order);
+          const order = { ...matched, ...saved.order };
+          if (shouldAdvanceAfterProductionPrint(order)) transitions.push({ order, toStatus: productionPrintNextStatus, note: "Shipping label paired" });
+        } catch (error) {
+          failed.push(`page ${label.page}: ${error instanceof Error ? error.message : "The label could not be saved."}`);
+        }
       }
-      let moved: Order[] = [];
-      if (changed.length) {
-        // Pairing a label only changes fulfilment information. Never make it
-        // wait for a separate accounting-journal calculation.
-        await upsertSharedOrders(changed, { syncSales: false });
-        // The label is persisted above; the production stage is then changed
-        // server-side from the current row so it cannot be overwritten by an
-        // out-of-date browser tab or background Shopify sync.
-        moved = await persistOrderTransitions(transitions);
-        const changedById = new Map([...changed, ...moved].map((order) => [order.id, order]));
-        setOrders((current) => current.map((order) => mergeRefreshedOrder(order, changedById.get(order.id))));
-        setPackingSelection((current) => [...new Set([...current, ...changed.map((order) => order.id)])]);
+      let advanced = 0;
+      let stageWarning = "";
+      if (changed.size) {
+        setOrders((current) => current.map((order) => {
+          const label = changed.get(order.id);
+          return label ? mergeRefreshedOrder(order, { ...order, ...label }) : order;
+        }));
+        setPackingSelection((current) => [...new Set([...current, ...changed.keys()])]);
+        try {
+          advanced = (await persistOrderTransitions(transitions)).length;
+        } catch (error) {
+          stageWarning = ` Labels saved. ${error instanceof Error ? error.message : "Order stages could not be updated."}`;
+        }
       }
-      const advanced = moved.length;
-      const summary = `${changed.length} label${changed.length === 1 ? "" : "s"} paired.${advanced ? ` ${advanced} new order${advanced === 1 ? "" : "s"} moved to Uploading Audio.` : ""}${unmatched.length ? ` Could not pair: ${unmatched.join(", ")}.` : ""}`;
+      const summary = `${changed.size} label${changed.size === 1 ? "" : "s"} paired.${advanced ? ` ${advanced} new order${advanced === 1 ? "" : "s"} moved to Uploading Audio.` : ""}${unmatched.length ? ` Could not match: ${unmatched.join(", ")}.` : ""}${failed.length ? ` Could not save: ${failed.join(" ")}` : ""}${stageWarning}`;
       setShippingLabelSummary(summary);
       setNotice(summary);
-      if (changed.length) await logActivity("Shipping labels imported", `${changed.length} label${changed.length === 1 ? "" : "s"} paired with packing slips.`);
+      if (changed.size) await logActivity("Shipping labels imported", `${changed.size} label${changed.size === 1 ? "" : "s"} paired with packing slips.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not import the shipping-label PDF.";
       setShippingLabelSummary(message);
