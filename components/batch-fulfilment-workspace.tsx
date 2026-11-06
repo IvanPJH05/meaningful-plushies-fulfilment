@@ -23,6 +23,11 @@ async function batchRequest(token: string, id?: string, mutation?: object): Prom
   return data;
 }
 
+export async function createFulfilmentBatch(token: string, batchId: string, orderIds: string[]) {
+  const result = await batchRequest(token, undefined, { action: "create", batchId, version: 1, payload: { orderIds } });
+  return result.batch.id;
+}
+
 export function BatchAssignment({ token, orderIds, onClose, onAssigned }: { token: string; orderIds: string[]; onClose: () => void; onAssigned: (id: string) => void }) {
   const { t } = useLanguage();
   const [batches, setBatches] = useState<FulfilmentBatch[]>([]), [choice, setChoice] = useState("new"), [busy, setBusy] = useState(false), [error, setError] = useState("");
@@ -32,8 +37,10 @@ export function BatchAssignment({ token, orderIds, onClose, onAssigned }: { toke
     setBusy(true); setError("");
     try {
       const existing = batches.find(batch => batch.id === choice);
-      const result = await batchRequest(token, undefined, { action: existing ? "add" : "create", batchId: existing?.id ?? newId.current, version: existing?.version ?? 1, payload: { orderIds } });
-      onAssigned(result.batch.id);
+      const id = existing
+        ? (await batchRequest(token, undefined, { action: "add", batchId: existing.id, version: existing.version, payload: { orderIds } })).batch.id
+        : await createFulfilmentBatch(token, newId.current, orderIds);
+      onAssigned(id);
     } catch (error) { setError(error instanceof Error ? error.message : "Could not create the batch."); } finally { setBusy(false); }
   }
   return <div className="batch-dialog-overlay"><section className="card batch-dialog" role="dialog" aria-modal="true" aria-labelledby="batch-dialog-title"><h2 id="batch-dialog-title">{t("Move to Batch Fulfilment")}</h2><p>{orderIds.length} {t("orders selected")}. {t("New orders will move to Uploading Audio.")}</p><label>{t("Choose batch")}<select value={choice} disabled={busy} onChange={event => setChoice(event.target.value)}><option value="new">{t("Create a new batch")}</option>{batches.map(batch => <option key={batch.id} value={batch.id}>{t("Batch")} {batch.number} · {batch.orderCount} {t("orders")}</option>)}</select></label>{error && <p role="alert">{t(error)}</p>}<div className="batch-buttons"><button className="button secondary" disabled={busy} onClick={onClose}>{t("Cancel")}</button><button className="button primary" disabled={busy} onClick={() => void assign()}>{busy ? <LoadingIndicator>{t("Saving...")}</LoadingIndicator> : t("Move to batch")}</button></div></section></div>;
