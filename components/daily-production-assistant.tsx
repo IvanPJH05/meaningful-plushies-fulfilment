@@ -5,7 +5,7 @@ import {malaysiaToday} from "@/lib/production-tracking";
 import type {DailyManualPaymentSummary} from "@/lib/daily-manual-payments";
 import styles from "./production-tracking.module.css";
 import assistantStyles from "./daily-production-assistant.module.css";
-export function DailyProductionAssistant({token,admin,importPanel,importDirty,production,onRefresh}:{token:string;admin:boolean;importPanel:ReactNode;importDirty:boolean;production:(startBatch:()=>void,reviewPreparedOrders:boolean)=>ReactNode;onRefresh:()=>Promise<void>}){
+export function DailyProductionAssistant({token,admin,importPanel,importDirty,production,onReviewOrders}:{token:string;admin:boolean;importPanel:ReactNode;importDirty:boolean;production:(startBatch:()=>void,reviewPreparedOrders:boolean)=>ReactNode;onReviewOrders:()=>void}){
  const [step,setStep]=useState(2),[busy,setBusy]=useState(false),[error,setError]=useState("");
  const [noTikTok,setNoTikTok]=useState(false),[count,setCount]=useState(""),[summary,setSummary]=useState<DailyManualPaymentSummary|null>(null);
  useEffect(()=>{
@@ -25,8 +25,8 @@ export function DailyProductionAssistant({token,admin,importPanel,importDirty,pr
    return Number(count)===result.orderCount&&Number(count)===result.paymentCount&&!result.missingOrders.length;
  }
  async function check(){if(busy)return;setBusy(true);setError("");setSummary(null);try{await checkPayments();}catch(e){setError(e instanceof Error ? e.message : "Could not check manual payments. Please try again.");}finally{setBusy(false);}}
- async function next(){if(busy)return;setBusy(true);setError("");try{if(step===0){if(importDirty)throw Error("Save the TikTok import and details before continuing.");go(1);}else{if(!await checkPayments())throw Error("The manual payment count does not tally yet. Check the difference below and any paid orders still waiting to be created.");await onRefresh();go(3);}}catch(e){setError(e instanceof Error ? e.message : "Could not check manual payments. Please try again.");}finally{setBusy(false);}}
- if(step>=2)return production(startBatch,step===3);
+ async function next(){if(busy)return;setBusy(true);setError("");try{if(step===0){if(importDirty)throw Error("Save the TikTok import and details before continuing.");go(1);}else{if(!await checkPayments())throw Error("The manual payment count does not tally yet. Check the difference below and any paid orders still waiting to be created.");onReviewOrders();}}catch(e){setError(e instanceof Error ? e.message : "Could not check manual payments. Please try again.");}finally{setBusy(false);}}
+ if(step>=2)return production(startBatch,false);
  const matches=summary&&Number(count)===summary.orderCount&&Number(count)===summary.paymentCount&&!summary.missingOrders.length;
  return <div className={assistantStyles.flow}><section className={styles.panel}><button type="button" disabled={busy||importDirty} onClick={()=>go(2)}>Back to batches</button><small>DAILY PRODUCTION · STEP {step+1} OF 7</small><h2>{step===0?"Review TikTok orders and customisation":"Approve manual orders and check payments"}</h2><p>{step===0?"Review the automatically imported TikTok orders and save their plushie information below. Then continue to manual payments.":"Enter how many bank transfer / receipt payments you received today. Awaiting approval means unpaid; those orders stay pending and do not block production."}</p>{error&&<p role="alert" className={styles.error}>{error}</p>}</section>
  {step===0?<><div className="import-page">{importPanel}</div><section className={`${styles.panel} ${assistantStyles.controls}`}><label><input type="checkbox" checked={noTikTok} onChange={e=>setNoTikTok(e.target.checked)}/>I have reviewed TikTok orders, or there are none today</label><button type="button" disabled={busy||importDirty||!noTikTok} onClick={()=>void next()}>Continue to manual payments</button></section></>:<>
