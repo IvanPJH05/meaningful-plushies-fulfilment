@@ -19,6 +19,9 @@ export function ProductionTrackingWorkspace({token,admin,onOpenScanner,onPrint,o
  const setScreen=onScreenChange;const [taskMode,setTaskMode]=useState(false),[overview,setOverview]=useState(assistant);
  const [batches,setBatches]=useState<Batch[]>([]),[batch,setBatch]=useState<ProductionBatch|null>(null),[items,setItems]=useState<ProductionItem[]>([]),[events,setEvents]=useState<Event[]>([]),[current,setCurrent]=useState("");
  const [day,setDay]=useState(malaysiaToday),[pickup,setPickup]=useState(batchSchedule(malaysiaToday()).pickupDate),[candidates,setCandidates]=useState<Order[]>([]),[chosen,setChosen]=useState<string[]>([]),[review,setReview]=useState(false);
+ const [search,setSearch]=useState("");
+ const shownCandidates=candidates.filter(order=>[order.orderNumber,order.customerName,order.phone,order.trackingNumber,order.plushName].some(value=>String(value??"").toLowerCase().includes(search.trim().toLowerCase()))).sort((a,b)=>String(b.orderNumber).localeCompare(String(a.orderNumber),undefined,{numeric:true}));
+ const allShownSelected=shownCandidates.length>0&&shownCandidates.every(order=>chosen.includes(order.id));
  const [scan,setScan]=useState(""),[card,setCard]=useState(""),[note,setNote]=useState(""),[filter,setFilter]=useState("all"),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
  const requestId=useRef(crypto.randomUUID()),lock=useRef(false),cardInput=useRef<HTMLInputElement>(null);
  const selected=items.find(i=>i.id===current);const next=selected?taskAction(selected):undefined;
@@ -75,7 +78,34 @@ export function ProductionTrackingWorkspace({token,admin,onOpenScanner,onPrint,o
      </div>
    );
  }
- if(assistant&&!batch)return <div className={styles.page}><section className={styles.panel}><small>STEP 3 OF 7 · REVIEW ORDERS</small><h2>Choose production orders</h2><button disabled={busy} onClick={()=>setOverview(true)}>Back to production overview</button><p>Only New Order items appear below, including Plush Charms. Orders already in production are excluded. Confirm the selection to open the batch in Batch Fulfilment.</p>{error&&<p role="alert" className={styles.error}>{error}</p>}<div className={styles.toolbar}><label>Production date<input type="date" value={day} onChange={e=>{setDay(e.target.value);setReview(false);setChosen([]);}}/></label><button disabled={busy} onClick={()=>void candidatesForDay()}>Refresh new orders</button><button disabled={busy||!review} onClick={()=>setChosen(candidates.map(o=>o.id))}>Select all</button></div>{review&&<><p>{chosen.length} selected · create this batch whenever you are ready</p><div className={styles.candidates}>{candidates.map(o=><label key={o.id}><input type="checkbox" checked={chosen.includes(o.id)} onChange={e=>setChosen(v=>e.target.checked?[...v,o.id]:v.filter(id=>id!==o.id))}/>#{o.orderNumber} · {o.customerName} · {o.plushName||o.character}{(o as Order&{productionCarryover?:string}).productionCarryover?" · ISSUE carried forward":""}</label>)}</div><button disabled={busy||!chosen.length||(!admin&&!onBatchCreated)} onClick={()=>void create()}>Create batch · prepare labels</button>{!candidates.length&&<p>No eligible new orders. Import orders or choose the correct production date.</p>}</>}</section></div>;
+
+ if(assistant&&!batch)return <div className={styles.page}><section className={styles.panel}>
+ <small>STEP 3 OF 7 · REVIEW ORDERS</small><h2>New Orders</h2>
+ <p>Select the orders you want to move to Batch Fulfilment.</p>
+ {error&&<p role="alert" className={styles.error}>{error}</p>}
+ <div className={styles.toolbar}>
+   <input aria-label="Search new orders" placeholder="Search order, customer, phone or tracking" value={search} onChange={e=>setSearch(e.target.value)}/>
+   <button type="button" disabled={busy} onClick={()=>void run(loadNewOrderReview)}>Refresh new orders</button>
+   <button type="button" disabled={busy} onClick={()=>setOverview(true)}>Back to production overview</button>
+ </div>
+ <div className={styles.toolbar}>
+   <button type="button" className="button primary" disabled={busy||!chosen.length||(!admin&&!onBatchCreated)} onClick={()=>void create()}>Move to Batch Fulfilment</button>
+   <span>{chosen.length} selected</span>
+ </div>
+ {busy&&!review&&<p role="status">Loading new orders…</p>}
+ {review&&<div className="table-scroll"><table className="orders-table">
+   <thead><tr><th><input type="checkbox" aria-label="Select all shown orders" checked={allShownSelected} disabled={busy||!shownCandidates.length} onChange={e=>{const ids=new Set(shownCandidates.map(order=>order.id));setChosen(current=>e.target.checked?[...new Set([...current,...ids])]:current.filter(id=>!ids.has(id)));}}/></th><th>Order</th><th>Date</th><th>Customer</th><th>Phone</th><th>Status</th><th>Tracking number</th><th>Actions</th></tr></thead>
+   <tbody>{shownCandidates.map(order=>{
+     const checked=chosen.includes(order.id);
+     return <tr key={order.id} className={checked?"selected-row":undefined}>
+       <td><input type="checkbox" aria-label={"Select order "+order.orderNumber} checked={checked} disabled={busy} onChange={e=>setChosen(current=>e.target.checked?[...current,order.id]:current.filter(id=>id!==order.id))}/></td>
+       <td><strong>#{order.orderNumber}</strong>{" "}{order.salesChannel==="tiktok"&&<span className="source-badge tiktok">TikTok Shop</span>}</td>
+       <td>{String(order.orderDate||"").slice(0,10)||"—"}</td><td>{order.customerName||"—"}</td><td>{order.phone||"—"}</td><td><span className="status-pill">New Order</span></td><td>{order.trackingNumber||"—"}</td>
+       <td><button type="button" className="view-button" disabled={busy} onClick={()=>void run(()=>onOpenOrder(order))}>View</button></td>
+     </tr>;
+   })}</tbody>
+ </table>{!shownCandidates.length&&<p>{candidates.length?"No orders match your search.":"No eligible new orders."}</p>}</div>}
+ </section></div>;
  if(assistant&&batch&&items.some(i=>(!i.disposition||i.disposition==="active")&&i.stage==="received"))return <><div className={styles.panel}><button disabled={busy} onClick={()=>setOverview(true)}>Back to production overview</button></div><ProductionLabelPreparation token={token} admin={admin} batch={batch} items={items} request={request} reload={async()=>{await load(batch.id);await list();}} onPrint={onPrint} decide={(item,action,reason)=>completeTask(item,action,"","",reason)}/></>;
  if((taskMode||assistant)&&batch)return <ProductionTaskMode onOpenScanner={onOpenScanner} batch={batch} initialItems={items} commit={completeTask} downloadAudio={downloadAudio} onPrint={onPrint} onExit={()=>{if(assistant){setTaskMode(false);setOverview(true);void run(()=>list());return;}setTaskMode(false);void run(async()=>{await list();await load(batch.id);});}}/>;
  return <div className={styles.page}>
