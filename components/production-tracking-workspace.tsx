@@ -16,7 +16,7 @@ function batchIsOpen(items: Pick<ProductionItem,"stage"|"disposition">[]) {
 type Event={actorName?:string;id:number;item_id:string;stage:keyof typeof stageLabels;kind:string;note:string;created_at:string};
 export function ProductionTrackingWorkspace({token,admin,onOpenScanner,onPrint,onOpenOrder,screen,onScreenChange,assistant=false,onCycleComplete,reviewPreparedOrders=false,onBatchCreated}:{onOpenScanner:()=>void;assistant?:boolean;onCycleComplete?:()=>void;reviewPreparedOrders?:boolean;onBatchCreated?:(id:string)=>void;screen:"today"|"manage";onScreenChange:(screen:"today"|"manage")=>void;token:string;admin:boolean;onPrint:(orders:Order[])=>Promise<unknown>;onOpenOrder:(order:Order)=>Promise<void>}){
  const [,tick]=useState(0);useEffect(()=>{const timer=setInterval(()=>tick(value=>value+1),30000);return()=>clearInterval(timer);},[]);
- const setScreen=onScreenChange;const [taskMode,setTaskMode]=useState(false),[overview,setOverview]=useState(assistant);
+ const setScreen=onScreenChange;const [taskMode,setTaskMode]=useState(false),[overview,setOverview]=useState(assistant&&!reviewPreparedOrders);
  const [batches,setBatches]=useState<Batch[]>([]),[batch,setBatch]=useState<ProductionBatch|null>(null),[items,setItems]=useState<ProductionItem[]>([]),[events,setEvents]=useState<Event[]>([]),[current,setCurrent]=useState("");
  const [day,setDay]=useState(malaysiaToday),[pickup,setPickup]=useState(batchSchedule(malaysiaToday()).pickupDate),[candidates,setCandidates]=useState<Order[]>([]),[chosen,setChosen]=useState<string[]>([]),[review,setReview]=useState(false);
  const [search,setSearch]=useState("");
@@ -80,16 +80,17 @@ export function ProductionTrackingWorkspace({token,admin,onOpenScanner,onPrint,o
  }
 
  if(assistant&&!batch)return <div className={styles.page}><section className={styles.panel}>
- <small>STEP 3 OF 7 · REVIEW ORDERS</small><h2>New Orders</h2>
- <p>Select the orders you want to move to Batch Fulfilment.</p>
+ <small>STEP 3 OF 7 · REVIEW ORDERS</small><h2>Choose today’s production orders</h2>
+ <p>Choose which New Orders to make for this production date. Confirm your selection to prepare shipping labels.</p>
  {error&&<p role="alert" className={styles.error}>{error}</p>}
  <div className={styles.toolbar}>
+   <label>Production date<input type="date" value={day} disabled={busy} onChange={e=>{setDay(e.target.value);setReview(false);setChosen([]);}}/></label>
    <input aria-label="Search new orders" placeholder="Search order, customer, phone or tracking" value={search} onChange={e=>setSearch(e.target.value)}/>
-   <button type="button" disabled={busy} onClick={()=>void run(loadNewOrderReview)}>Refresh new orders</button>
+   <button type="button" disabled={busy||!day} onClick={()=>void run(loadNewOrderReview)}>Refresh orders for this date</button>
    <button type="button" disabled={busy} onClick={()=>setOverview(true)}>Back to production overview</button>
  </div>
  <div className={styles.toolbar}>
-   <button type="button" className="button primary" disabled={busy||!chosen.length||(!admin&&!onBatchCreated)} onClick={()=>void create()}>Move to Batch Fulfilment</button>
+   <button type="button" className="button primary" disabled={busy||!chosen.length||(!admin&&!onBatchCreated)} onClick={()=>void create()}>Confirm orders · prepare labels</button>
    <span>{chosen.length} selected</span>
  </div>
  {busy&&!review&&<p role="status">Loading new orders…</p>}
