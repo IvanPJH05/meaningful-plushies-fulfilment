@@ -2766,7 +2766,7 @@ function Home() {
     try {
       const response = await fetch("/api/tiktok/orders/sync", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${currentSession.token}` },
         body: JSON.stringify({ orderIds: uniqueOrderIds }),
       });
       const result = await response.json() as { ok?: boolean; changed?: boolean; updated?: number; checked?: number; failed?: number; error?: string; accountingWarning?: string; accountingRetryOrderIds?: string[] };
