@@ -239,6 +239,7 @@ export function tiktokApiOrderToFulfilmentOrder(apiOrder: Record<string, unknown
   const discount = discountAmount(apiOrder);
   const total = totalAmount(apiOrder);
   const orderStatus = firstText(apiOrder, ["status", "order_status", "fulfillment_status"]);
+  const status = arrayValue(apiOrder.line_items).length > 1 ? "issue" : localStatusFromTikTok(orderStatus, current?.status);
   const username = buyerUsername(apiOrder);
   const createdAt = normalizeApiDate(firstText(apiOrder, ["create_time", "created_time", "created_at", "paid_time", "paid_at"])) || timestamp;
 
@@ -285,7 +286,7 @@ export function tiktokApiOrderToFulfilmentOrder(apiOrder: Record<string, unknown
     voiceUploadStatus: current?.voiceUploadStatus ?? "missing",
     courier: shipping.courier || current?.courier || "",
     trackingNumber: shipping.tracking || current?.trackingNumber || "",
-    status: arrayValue(apiOrder.line_items).length > 1 ? "issue" : localStatusFromTikTok(orderStatus, current?.status),
+    status,
     internalNotes: arrayValue(apiOrder.line_items).length > 1 && !current?.internalNotes?.includes("TikTok multi-item order") ? [current?.internalNotes, `TikTok multi-item order: review all ${arrayValue(apiOrder.line_items).length} line items in Seller Center before production.`].filter(Boolean).join("\n") : current?.internalNotes || "",
     tikTokShopStatus: orderStatus,
     photoDataUrl: current?.photoDataUrl,
@@ -293,8 +294,9 @@ export function tiktokApiOrderToFulfilmentOrder(apiOrder: Record<string, unknown
     tikTokFileDataUrl: current?.tikTokFileDataUrl,
     tikTokFileName: current?.tikTokFileName,
     tikTokFileType: current?.tikTokFileType,
-    statusHistory: current?.statusHistory ?? [
-      { id: `${id}-${timestamp}`, status: arrayValue(apiOrder.line_items).length > 1 ? "issue" as const : "awaiting_customisation" as const, changedAt: timestamp, changedBy: actor, note: "Synced from TikTok Shop. Awaiting customer voice and plushie details before production." },
+    statusHistory: current?.status === status ? current.statusHistory ?? [] : [
+      ...(current?.statusHistory ?? []),
+      { id: `${id}-${timestamp}`, status, changedAt: timestamp, changedBy: actor, note: current ? `TikTok Shop reported ${orderStatus}.` : "Synced from TikTok Shop." },
     ],
     importedAt: current?.importedAt ?? timestamp,
     updatedAt: timestamp,
@@ -306,6 +308,19 @@ export function tiktokApiOrderToFulfilmentItems(apiOrder: Record<string, unknown
   if (!parent) return [];
   const lines = arrayValue(apiOrder.line_items);
   const saved = existing.filter(order => order.id === parent.id || order.id.startsWith(parent.id + "-item-"));
+  if (/^cancelled$/i.test(parent.tikTokShopStatus || "")) {
+    return saved.map(order => {
+      const status = "issue" as const;
+      const changedAt = parent.updatedAt;
+      return {
+        ...order, status, tikTokShopStatus: parent.tikTokShopStatus, updatedAt: changedAt,
+        statusHistory: order.status === status ? order.statusHistory : [
+          ...(order.statusHistory ?? []),
+          { id: `${order.id}-${changedAt}`, status, changedAt, changedBy: actor, note: "Order cancelled in TikTok Shop." },
+        ],
+      };
+    });
+  }
   const parentItem = saved.find(order => order.id === parent.id)?.tikTokLineItemId;
   if (lines.length <= 1 && !parentItem) return [parent];
   const byItem = new Map(lines.map(line => [firstText(line, ["id", "order_line_item_id"]), line]));

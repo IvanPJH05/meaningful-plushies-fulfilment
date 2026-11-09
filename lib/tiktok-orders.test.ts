@@ -110,4 +110,10 @@ test("recovers an existing multi-item issue into stable numbered customisation r
   const refreshed = tiktokApiOrderToFulfilmentItems({ ...api, line_items: [...api.line_items].reverse() }, rows, "Test");
   assert.deepEqual(refreshed.map(row => row.id), rows.map(row => row.id));
   assert.equal(refreshed[1].plushName, "Saved plushie");
+  const cancelled = tiktokApiOrderToFulfilmentItems({ id: api.id, status: "CANCELLED" }, refreshed, "Test");
+  assert.deepEqual(cancelled.map(row => row.status), ["issue", "issue"]);
+  assert.deepEqual(cancelled.map(row => row.statusHistory.at(-1)?.status), ["issue", "issue"]);
+  assert.equal(cancelled[1].plushName, "Saved plushie");
+  const repeated = tiktokApiOrderToFulfilmentItems({ id: api.id, status: "CANCELLED" }, cancelled, "Test");
+  assert.deepEqual(repeated.map(row => row.statusHistory), cancelled.map(row => row.statusHistory));
 });
