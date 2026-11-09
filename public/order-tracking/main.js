@@ -118,13 +118,16 @@ const translated = [
   ["#help a", "Contact our team ↗", "Hubungi kami ↗"],
   [".search button", "Track my order →", "Jejak pesanan →"],
 ];
-document.querySelectorAll("[data-language]").forEach(button => button.addEventListener("click", () => {
-  language = button.dataset.language;
+function setLanguage(value) {
+  language = value === "ms" ? "ms" : "en";
   document.documentElement.lang = language;
-  document.querySelectorAll("[data-language]").forEach(choice => choice.setAttribute("aria-pressed", String(choice === button)));
+  document.querySelectorAll("[data-language]").forEach(choice => choice.setAttribute("aria-pressed", String(choice.dataset.language === language)));
   for (const [selector, en, ms] of translated) document.querySelector(selector).textContent = words(en, ms);
   error.hidden = true;
   configure();
   if (stage) render();
-}));
-configure();
+}
+document.querySelectorAll("[data-language]").forEach(button => button.addEventListener("click", () => setLanguage(button.dataset.language)));
+const options = new URLSearchParams(location.search);
+document.body.classList.toggle("embedded", options.get("embedded") === "1");
+setLanguage(options.get("lang"));
