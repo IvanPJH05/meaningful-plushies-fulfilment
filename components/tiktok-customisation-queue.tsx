@@ -121,7 +121,7 @@ function CustomisationEditor({ order, onSave, onFinish, onDirty }: {
       const saved = await onSave(order.id, patch, baseline.current.updatedAt);
       baseline.current = { ...draft, ...saved };
       setPatch({});
-      setMessage(saved.status === "new_order" ? "Saved. This order is now in New Order." : "Details saved. Add the remaining plushie details and voice to move to New Order.");
+      setMessage(saved.status === "new_order" ? "Saved. This order is now in New Order." : "Details saved. Save the customer voice to move to New Order.");
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not save. Your draft is kept."); }
     finally { busy.current = false; setSaving(false); }
   }
@@ -153,7 +153,7 @@ function CustomisationEditor({ order, onSave, onFinish, onDirty }: {
     </button>
     <input ref={fileInput} type="file" aria-label="Choose customer voice" accept="audio/*,video/*" hidden disabled={locked} onChange={event => { upload(event.target.files?.[0]); event.target.value = ""; }} />
     <small>{draft.tikTokFileName ? `Attached: ${draft.tikTokFileName}` : "Choose the customer's audio or video recording."}</small>
-    <p>Save the voice, plush name and character to move this order to New Order. You can save incomplete details and finish later.</p>
+    <p>Save the customer voice to move this order to New Order. Plushie and certificate details are optional.</p>
     <p>If this order was returned here to correct a mistake, save your corrections, then choose Finish customisation to move it back to New Order.</p>
     <button type="button" className="button secondary" disabled={dirty || locked} onClick={() => void finish()}>Finish customisation</button>
     <div className={styles.actions}><button type="button" className="button primary" disabled={!dirty || locked} onClick={() => void save()}>{reading ? "Reading voice..." : saving ? "Saving..." : "Save customisation"}</button>{dirty && <><button type="button" className="button secondary" disabled={locked} onClick={() => setDiscarding(true)}>Discard draft</button><span>Unsaved changes</span></>}</div>
