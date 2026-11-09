@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { extractTikTokOrderIds, tiktokApiOrderToFulfilmentOrder } from "./tiktok-orders.ts";
+import { extractTikTokOrderIds, tiktokApiOrderToFulfilmentItems, tiktokApiOrderToFulfilmentOrder } from "./tiktok-orders.ts";
 
 test("extracts TikTok order IDs from webhook-like payloads", () => {
   assert.deepEqual(extractTikTokOrderIds({
@@ -90,4 +90,24 @@ test("marketplace collection status cannot bypass customisation and later sync k
   assert.equal(synced.character, "Tootsie");
   assert.equal(synced.voiceLength, 20);
   assert.equal(synced.remark, "Keep this team note");
+});
+
+test("recovers an existing multi-item issue into stable numbered customisation rows", () => {
+  const api = { id: "587054972893889798", status: "AWAITING_SHIPMENT", line_items: [
+    { id: "200", product_name: "Billy" }, { id: "100", product_name: "Tootsie" },
+  ] };
+  const legacy = tiktokApiOrderToFulfilmentOrder(api, [], "Test", "TT1445")!;
+  const rows = tiktokApiOrderToFulfilmentItems(api, [legacy], "Test");
+  assert.deepEqual(rows.map(row => [row.status, row.setIndicator, row.tikTokLineItemId]), [
+    ["awaiting_customisation", "(1,2)", "100"], ["awaiting_customisation", "(2,2)", "200"],
+  ]);
+  assert.equal(rows[0].id, legacy.id);
+  assert.equal(rows[0].orderNumber, rows[1].orderNumber);
+  assert.notEqual(rows[0].certificateCode, rows[1].certificateCode);
+  assert.equal(rows[1].totalAmount, 0);
+  assert.equal(rows[0].statusHistory.at(-1)?.status, "awaiting_customisation");
+  rows[1].plushName = "Saved plushie";
+  const refreshed = tiktokApiOrderToFulfilmentItems({ ...api, line_items: [...api.line_items].reverse() }, rows, "Test");
+  assert.deepEqual(refreshed.map(row => row.id), rows.map(row => row.id));
+  assert.equal(refreshed[1].plushName, "Saved plushie");
 });

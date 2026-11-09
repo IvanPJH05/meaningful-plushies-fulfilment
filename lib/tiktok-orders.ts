@@ -301,6 +301,39 @@ export function tiktokApiOrderToFulfilmentOrder(apiOrder: Record<string, unknown
   } satisfies Order;
 }
 
+export function tiktokApiOrderToFulfilmentItems(apiOrder: Record<string, unknown>, existing: Order[], actor: string, reservedNumber?: string): Order[] {
+  const parent = tiktokApiOrderToFulfilmentOrder(apiOrder, existing, actor, reservedNumber);
+  if (!parent) return [];
+  const lines = arrayValue(apiOrder.line_items);
+  const saved = existing.filter(order => order.id === parent.id || order.id.startsWith(parent.id + "-item-"));
+  const parentItem = saved.find(order => order.id === parent.id)?.tikTokLineItemId;
+  if (lines.length <= 1 && !parentItem) return [parent];
+  const byItem = new Map(lines.map(line => [firstText(line, ["id", "order_line_item_id"]), line]));
+  if (byItem.size !== lines.length || [...byItem.keys()].some(id => !/^\d{1,30}$/.test(id))
+      || saved.some(order => order.tikTokLineItemId && !byItem.has(order.tikTokLineItemId))) {
+    return saved.some(order => order.tikTokLineItemId) ? [] : [parent];
+  }
+  const primary = parentItem || [...byItem.keys()].sort()[0];
+  const itemIds = [primary, ...[...byItem.keys()].filter(id => id !== primary).sort()];
+  const number = parent.orderNumber.split(" ")[0];
+  return itemIds.map((lineId, index) => {
+    const id = index === 0 ? parent.id : parent.id + "-item-" + lineId;
+    const prior = saved.find(order => order.id === id);
+    const legacyIssue = prior?.status === "issue" && !prior.tikTokLineItemId && prior.internalNotes?.includes("TikTok multi-item order:");
+    const current = prior && { ...prior, id: parent.id, status: legacyIssue ? "awaiting_customisation" as const : prior.status, ...(legacyIssue ? { character: "", voiceLength: 0 } : {}) };
+    const mapped = tiktokApiOrderToFulfilmentOrder({ ...apiOrder, line_items: [byItem.get(lineId)] }, current ? [current] : [], actor, number)!;
+    const code = prior?.certificateCode || (index === 0 ? mapped.certificateCode : mapped.certificateCode && mapped.certificateCode + "-" + (index + 1));
+    return {
+      ...mapped, id, tikTokLineItemId: lineId, setIndicator: `(${index + 1},${itemIds.length})`,
+      certificateCode: code, idWebsiteLink: code ? certificateLink(code) : mapped.idWebsiteLink,
+      ...(index ? { subtotalAmount: 0, totalAmount: 0, shippingAmount: 0, discountAmount: 0, productDiscountAmount: 0, shippingDiscountAmount: 0, refundedAmount: 0, outstandingBalance: 0 } : {}),
+      statusHistory: prior && prior.status !== mapped.status
+        ? [...(prior.statusHistory || []), { id: id + "-" + mapped.updatedAt, status: mapped.status, changedAt: mapped.updatedAt, changedBy: actor, note: "TikTok item synced separately." }]
+        : mapped.statusHistory,
+    };
+  });
+}
+
 function collectOrderObjects(value: unknown, found: Record<string, unknown>[] = []) {
   if (Array.isArray(value)) {
     const objectRows = value.map(objectValue).filter((row) => firstText(row, ["order_id", "orderId", "id"]));

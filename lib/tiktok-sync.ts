@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mobileServiceClient } from "./mobile-api";
 import { insertSharedActivity, upsertSharedOrders } from "./supabase";
 import { addMissingOurLinks } from "./our-link";
-import { fetchTikTokOrderDetails, tiktokApiOrderToFulfilmentOrder, tiktokOrderIdFromValue } from "./tiktok-orders";
+import { fetchTikTokOrderDetails, tiktokApiOrderToFulfilmentItems, tiktokOrderIdFromValue } from "./tiktok-orders";
 import type { Order } from "./types";
 
 function comparableOrder(order: Order) {
@@ -18,7 +18,7 @@ async function syncUnlocked(orderIds: string[], actor = "TikTok Shop sync") {
   }
 
   const db = mobileServiceClient();
-  const { data: savedRows, error: readError } = await db.from("fulfilment_orders").select("data").in("id", uniqueOrderIds.map(id => "tiktok-" + id));
+  const { data: savedRows, error: readError } = await db.from("fulfilment_orders").select("data").or(uniqueOrderIds.flatMap(id => [`id.eq.tiktok-${id}`, `id.like.tiktok-${id}-item-*`]).join(","));
   if (readError) throw new Error("Could not read existing TikTok orders.");
   const existing = (savedRows ?? []).map(row => row.data as Order);
   const apiOrders = await fetchTikTokOrderDetails(uniqueOrderIds);
@@ -34,8 +34,8 @@ async function syncUnlocked(orderIds: string[], actor = "TikTok Shop sync") {
       if (reserved.error || !reserved.data) throw new Error("Could not reserve TikTok order number.");
       sequence = "TT" + reserved.data;
     }
-    const mapped = tiktokApiOrderToFulfilmentOrder(apiOrder, existing, actor, sequence);
-    if (mapped) syncedOrdersInput.push(mapped);
+    const mapped = tiktokApiOrderToFulfilmentItems(apiOrder, existing, actor, sequence);
+    syncedOrdersInput.push(...mapped);
   }
   let syncedOrders = syncedOrdersInput;
 

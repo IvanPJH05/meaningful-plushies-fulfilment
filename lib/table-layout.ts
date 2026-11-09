@@ -35,6 +35,8 @@ export function normalizeTableLayout(value: unknown, view: TableView): ColumnLay
 }
 export function compactOrderLabel(order: { orderNumber: string; setIndicator?: string | null; salesChannel?: string }) {
   const match = order.salesChannel === "tiktok" && order.orderNumber.match(/\b(TT\d+)\b\s+(\d+)/i);
+  const item = match && order.setIndicator?.match(/^\((\d+),\d+\)$/)?.[1];
+  if (item && match) return match[1].toUpperCase() + "-" + item + " " + match[2].slice(-4);
   const number = match ? `${match[1].toUpperCase()} ${match[2].slice(-4)}` : `#${order.orderNumber}`;
   return `${number}${order.setIndicator ? ` ${order.setIndicator}` : ""}`;
 }

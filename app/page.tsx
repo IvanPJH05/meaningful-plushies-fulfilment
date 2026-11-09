@@ -1209,10 +1209,12 @@ function whatsappLink(order: Order) {
 }
 
 function orderLabel(order: Order) {
+  if (order.salesChannel === "tiktok" && order.tikTokLineItemId) return compactOrderLabel(order);
   return `#${order.orderNumber}${order.setIndicator ? ` ${order.setIndicator}` : ""}`;
 }
 
 function tikTokShortOrderLabel(order: Order) {
+  if (order.tikTokLineItemId) return compactOrderLabel(order);
   const match = order.orderNumber.match(/\b(TT\d+)\b\s+(\d+)/i);
   if (!match) return orderLabel(order);
   return `${match[1].toUpperCase()} ${match[2].slice(-4)}`;
@@ -3308,12 +3310,14 @@ function Home() {
       const failed: string[] = [];
       for (const label of result.labels as Array<{ page: number; source: "jnt" | "tiktok" | null; reference: string; url: string; fileName: string }>) {
         const matches = matchBatchLabel(orders, label);
-        if (matches.length !== 1 || changed.has(matches[0].id)) {
+        const sameTikTokOrder = label.source === "tiktok" && matches.every(order =>
+          /^tiktok-\d+(?:-item-\d+)?$/.test(order.id) && order.orderNumber === matches[0].orderNumber);
+        const pendingMatches = matches.filter(order => !changed.has(order.id));
+        if (!pendingMatches.length || (matches.length !== 1 && !sameTikTokOrder)) {
           unmatched.push(`page ${label.page}${label.reference ? ` (${label.reference})` : ""}`);
           continue;
         }
-        const [matched] = matches;
-        try {
+        for (const matched of pendingMatches) try {
           const save = await fetch("/api/fulfilment/orders/shipping-label", {
             method: "PATCH",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${currentSession.token}` },

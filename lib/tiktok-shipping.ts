@@ -23,7 +23,7 @@ export async function inspectTikTokShipping(orderId: string) {
   const saved = await db.from("fulfilment_orders").select("id,order_number,data").eq("id", orderId).single();
   if (saved.error || saved.data?.data?.salesChannel !== "tiktok") throw Error("This saved TikTok order could not be found.");
   const orderNumber = String(saved.data.data.orderNumber || saved.data.order_number);
-  const rawId = orderId.replace(/^tiktok-/, "");
+  const rawId = orderNumber.match(/\b(\d{8,25})\b/)?.[1] || orderId.replace(/^tiktok-/, "");
   const [order] = await fetchTikTokOrderDetails([rawId]);
   if (!order || String(order.id || order.order_id) !== rawId) throw Error("TikTok did not confirm this order.");
   if (["UNPAID", "ON_HOLD", "CANCELLED"].includes(String(order.status || order.order_status)) || order.is_on_hold_order === true) throw Error("This TikTok order is unpaid, on hold, or cancelled. Shipment is unavailable.");

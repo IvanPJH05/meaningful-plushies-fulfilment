@@ -345,6 +345,7 @@ export type Order = {
   productType?: "plush_charm" | "classic_plushie" | string;
   character: string;
   setIndicator: string;
+  tikTokLineItemId?: string;
   idWebsiteLink: string;
   voiceLength: number;
   plushName: string;
