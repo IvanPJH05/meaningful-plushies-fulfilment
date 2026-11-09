@@ -4,6 +4,7 @@ import {getDailyManualPayments} from "@/lib/manual-order-intakes";
 import { editManualOrderIntake, prepareManualOrderEditVoice, type ManualOrderIntakeEdit, approveManualOrderCod, attachManualOrderReceipt, createPaidShopifyOrder, deleteManualOrderIntake, getManualOrderIntakeDetails, isDashboardAdmin, listManualOrderIntakes, repairManualOrderShipping, restoreManualOrderFulfilment, type PaymentReceipt } from "@/lib/manual-order-intakes";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 async function requireAdmin(request: NextRequest) {
   return isDashboardAdmin(request.headers.get("x-dashboard-session") || "");
@@ -30,6 +31,15 @@ export async function POST(request: NextRequest) {
     if (body.action === "edit_voice_upload") return NextResponse.json({ ok: true, upload: await prepareManualOrderEditVoice(String(body.id || ""), String(body.fileName || ""), String(body.contentType || ""), Number(body.size)) });
     if (body.action === "details") return NextResponse.json({ ok: true, details: await getManualOrderIntakeDetails(String(body.id || "")) });
     if (body.action === "attach_receipt") return NextResponse.json({ ok: true, intake: await attachManualOrderReceipt(String(body.id || ""), Array.isArray(body.paymentReceipts) ? body.paymentReceipts : []) });
+    if (body.action === "attach_receipt_and_create") {
+      const intake = await attachManualOrderReceipt(String(body.id || ""), Array.isArray(body.paymentReceipts) ? body.paymentReceipts : []);
+      try {
+        return NextResponse.json({ ok: true, order: await createPaidShopifyOrder(intake.id) });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Shopify order creation could not be confirmed.";
+        throw new Error(`Receipt saved. ${message}`);
+      }
+    }
     if (body.action === "approve_cod") return NextResponse.json({ ok: true, intake: await approveManualOrderCod(String(body.id || "")) });
     if (body.action === "create_shopify_order") return NextResponse.json({ ok: true, order: await createPaidShopifyOrder(String(body.id || "")) });
     if (body.action === "restore_fulfilment") return NextResponse.json({ ok: true, restoration: await restoreManualOrderFulfilment(body.intakeIds) });

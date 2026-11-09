@@ -2,7 +2,7 @@
 import { ManualOrderIntakeEditor } from "./manual-order-intake-editor";
 import { useLanguage } from "./dashboard-language";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { CustomisationForm } from "@/lib/customisation";
 import type { ManualOrderIntake } from "@/lib/manual-order-intakes";
@@ -27,6 +27,7 @@ export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: strin
   const [intakes, setIntakes] = useState<ManualOrderIntake[]>([]);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState("");
+  const receiptInFlight = useRef(false);
   const [draggingReceiptFor, setDraggingReceiptFor] = useState("");
   const [receiptPreview, setReceiptPreview] = useState<{ url: string; fileName: string } | null>(null);
   const [detailsPreview, setDetailsPreview] = useState<ManualOrderDetails | null>(null);
@@ -43,7 +44,9 @@ export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: strin
   useEffect(() => { void load(); }, [load]);
 
   async function uploadAndCreate(intake: ManualOrderIntake, files: File[]) {
+    if (receiptInFlight.current) return setNotice("Wait for the current receipt to finish before dropping another.");
     if (!files.length) return setNotice("Drag in the payment receipt first.");
+    receiptInFlight.current = true;
     setBusy(intake.id);
     try {
       const receipts: { fileName: string; url: string }[] = [];
@@ -54,12 +57,13 @@ export function ManualOrderIntakeRecords({ sessionToken }: { sessionToken: strin
         if (!response.ok || !data.ok || !data.asset?.originalUrl) throw new Error(data.error || `Could not upload ${file.name}.`);
         receipts.push({ fileName: file.name, url: data.asset.originalUrl });
       }
-      await request({ action: "attach_receipt", id: intake.id, paymentReceipts: receipts });
-      const created = await request({ action: "create_shopify_order", id: intake.id });
+      const created = await request({ action: "attach_receipt_and_create", id: intake.id, paymentReceipts: receipts });
       setNotice(`${intake.customerName}'s Shopify order ${created.order?.shopifyOrderName || "was created"}. The receipt was attached. ${created.order?.shippingWarning || ""}`.trim());
       await load();
-    } catch (error) { setNotice(error instanceof Error ? error.message : "The Shopify order could not be created."); }
-    finally { setBusy(""); }
+    } catch (error) {
+      await load();
+      setNotice(error instanceof Error ? error.message : "The Shopify order could not be created.");
+    } finally { receiptInFlight.current = false; setBusy(""); }
   }
 
   async function approveCodAndCreate(intake: ManualOrderIntake) {
