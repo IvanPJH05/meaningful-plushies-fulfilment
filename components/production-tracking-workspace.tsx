@@ -1,4 +1,5 @@
 "use client";
+import { compactOrderLabel } from "@/lib/table-layout";
 import {useEffect,useRef,useState,type FormEvent} from "react";
 import {productionBatchLabel,productionBatchCreatedAt,batchSchedule,malaysiaToday,matchesProductionBarcode,stageLabels,productionStages,type ProductionItem,type ProductionBatch,type ProductionStage} from "@/lib/production-tracking";
 import {ProductionLabelPreparation} from "./production-label-preparation";
@@ -101,8 +102,8 @@ export function ProductionTrackingWorkspace({token,admin,onOpenScanner,onPrint,o
    <tbody>{shownCandidates.map(order=>{
      const checked=chosen.includes(order.id);
      return <tr key={order.id} className={checked?"selected-row":undefined}>
-       <td><input type="checkbox" aria-label={"Select order "+order.orderNumber} checked={checked} disabled={busy} onChange={e=>{const checked=e.target.checked;setChosen(current=>checked?[...current,order.id]:current.filter(id=>id!==order.id));}}/></td>
-       <td><strong>#{order.orderNumber}</strong>{" "}{order.salesChannel==="tiktok"&&<span className="source-badge tiktok">TikTok Shop</span>}</td>
+       <td><input type="checkbox" aria-label={"Select order "+compactOrderLabel(order)} checked={checked} disabled={busy} onChange={e=>{const checked=e.target.checked;setChosen(current=>checked?[...current,order.id]:current.filter(id=>id!==order.id));}}/></td>
+       <td><strong>{compactOrderLabel(order)}</strong>{" "}{order.salesChannel==="tiktok"&&<span className="source-badge tiktok">TikTok Shop</span>}</td>
        <td>{String(order.orderDate||"").slice(0,10)||"—"}</td><td>{order.customerName||"—"}</td><td>{order.phone||"—"}</td><td>{order.trackingNumber||"—"}</td>
        <td><button type="button" className="view-button" disabled={busy} onClick={()=>void run(()=>onOpenOrder(order))}>View</button></td>
      </tr>;
@@ -132,7 +133,7 @@ export function ProductionTrackingWorkspace({token,admin,onOpenScanner,onPrint,o
      <div className="table-scroll"><table className="orders-table">
        <thead><tr><th>Order number</th><th>Status</th></tr></thead>
        <tbody>{items.map(item=><tr key={item.id}>
-         <td><button onClick={()=>void run(()=>onOpenOrder({...item.order,id:item.order_id} as Order))}>#{String(item.order?.orderNumber||item.order_id)}</button></td>
+         <td><button onClick={()=>void run(()=>onOpenOrder({...item.order,id:item.order_id} as Order))}>{item.order?.orderNumber ? compactOrderLabel(item.order as Order) : item.order_id}</button></td>
          <td>{item.disposition==="removed"?"Removed":item.disposition==="deferred"?"Deferred":stageLabels[item.stage]}{item.issue && " · " + item.issue}</td>
        </tr>)}</tbody>
      </table></div>
