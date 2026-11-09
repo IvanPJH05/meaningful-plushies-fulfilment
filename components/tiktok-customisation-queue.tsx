@@ -24,6 +24,7 @@ export function TikTokCustomisationQueue({ orders, onSave, onFinish, onDirtyChan
   const [selected, setSelected] = useState("");
   const [dirty, setDirty] = useState(false);
   const [pendingSelection, setPendingSelection] = useState("");
+  const [completion, setCompletion] = useState("");
   const order = orders.find(item => item.id === selected) || orders[0];
   useEffect(() => { onDirtyChange?.(Boolean(order) && dirty); }, [dirty, onDirtyChange, order]);
   function select(id: string) {
@@ -32,12 +33,27 @@ export function TikTokCustomisationQueue({ orders, onSave, onFinish, onDirtyChan
     setDirty(false);
     setSelected(id);
   }
-  if (!order) return null;
+  function showNextItem(finished: Order) {
+    const next = orders.find(item => item.id !== finished.id && item.orderNumber === finished.orderNumber);
+    if (next) setSelected(next.id);
+    setCompletion(next
+      ? `${compactOrderLabel(finished)} moved to New Order. Now customising ${compactOrderLabel(next)}.`
+      : `${compactOrderLabel(finished)} moved to New Order.`);
+  }
+  if (!order) return completion ? <p role="status">{completion}</p> : null;
   return <section className={styles.queue} aria-label="TikTok awaiting customisation">
     <div><h2>Awaiting Customisation</h2><p>Choose an order, paste the customer details and check the preview. The order ID is already filled in.</p></div>
     <label className={styles.choose}>Order to customise<select value={order.id} onChange={event => select(event.target.value)}>{orders.map(item => <option key={item.id} value={item.id}>{compactOrderLabel(item)} · {item.customerName || "TikTok customer"}</option>)}</select></label>
     {pendingSelection && <div role="alert" className={styles.actions}><span>This order has unsaved details.</span><button type="button" className="button secondary" onClick={() => setPendingSelection("")}>Keep editing</button><button type="button" className="button danger" onClick={() => { setDirty(false); setSelected(pendingSelection); setPendingSelection(""); }}>Discard and switch order</button></div>}
-    <CustomisationEditor key={order.id} order={order} onSave={onSave} onFinish={onFinish} onDirty={setDirty} />
+    {completion && <p role="status">{completion}</p>}
+    <CustomisationEditor key={order.id} order={order} onSave={async (id, patch, version) => {
+      const saved = await onSave(id, patch, version);
+      if (saved.status === "new_order") showNextItem(order);
+      return saved;
+    }} onFinish={async finished => {
+      await onFinish(finished);
+      showNextItem(finished);
+    }} onDirty={setDirty} />
   </section>;
 }
 
@@ -114,11 +130,12 @@ function CustomisationEditor({ order, onSave, onFinish, onDirty }: {
     if (busy.current || dirty) return;
     busy.current = true; setSaving(true);
     try { await onFinish(baseline.current); }
+    catch (error) { setMessage(error instanceof Error ? error.message : "Could not finish customisation."); }
     finally { busy.current = false; setSaving(false); }
   }
   return <article className="tiktok-detail-entry">
     <header className="tiktok-detail-entry-header"><strong>{compactOrderLabel(order)} · TikTok plushie details</strong><span>Awaiting Customisation</span></header>
-    <label>Order ID<input readOnly value={order.id.startsWith("tiktok-") ? order.id.slice(7) : order.orderNumber.match(/\d{8,}/)?.[0] || order.orderNumber} /></label>
+    <label>Order ID<input readOnly value={order.orderNumber.match(/\d{8,}/)?.[0] || order.orderNumber} /></label>
     <label>Paste customer details<textarea disabled={locked} value={text} onChange={event => paste(event.target.value)} placeholder={placeholder} className={styles.paste} /></label>
     <div className="tiktok-detail-preview"><strong>Editable preview</strong>
       {fields.map(([key, label]) => <label key={key}>{label}<input disabled={locked} value={draft[key] || ""} onChange={event => edit({ [key]: event.target.value })} /></label>)}
