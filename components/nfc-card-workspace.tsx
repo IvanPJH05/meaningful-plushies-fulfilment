@@ -19,6 +19,9 @@ export function NfcCardWorkspace({token,admin,onStartNfc}:{token:string;admin:bo
   const [message,setMessage]=useState("");
   const [success,setSuccess]=useState(false);
   const [scan,setScan]=useState("");
+  const [packagingScan,setPackagingScan]=useState("");
+  const [lastWritten,setLastWritten]=useState<number|null>(null);
+  const packagingInput=useRef<HTMLInputElement>(null);
   const [pendingOrder,setPendingOrder]=useState<{scan:string;order:NfcScanOrder}|null>(null);
   const [pendingCard,setPendingCard]=useState<number|null>(null);
   const [lastPair,setLastPair]=useState<{card:NfcCard;order:NfcScanOrder}|null>(null);
@@ -39,6 +42,7 @@ export function NfcCardWorkspace({token,admin,onStartNfc}:{token:string;admin:bo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[token]);
   useEffect(()=>{if(tab==="pair"&&!busy)input.current?.focus();},[tab,busy]);
+  useEffect(()=>{if(tab==="prepare")packagingInput.current?.focus();},[tab]);
   async function run(action:()=>Promise<void>) {
     if(busyRef.current)return;busyRef.current=true;setBusy(true);setMessage("");setSuccess(false);
     try{await action();}catch(error){setMessage(error instanceof Error?error.message:"Request failed. Please retry.");}
@@ -54,13 +58,49 @@ export function NfcCardWorkspace({token,admin,onStartNfc}:{token:string;admin:bo
     await request({action:"programmed",cardId:card.id,reason:source});await load(card.batch_id);
     setMessage(`NFC-${card.id} is verified and ready to pair.`);setSuccess(true);
   }
-  async function write(card:NfcCard) {
+  async function write(card:NfcCard, fromPackaging=false) {
     const passwordResponse=await fetch("/api/fulfilment/nfc-password",{headers:{Authorization:`Bearer ${token}`},cache:"no-store"});
     const result=await passwordResponse.json();if(!passwordResponse.ok||!result.password)throw new Error(result.error||"Could not load NFC writer settings.");
     setMessage(`Hold card NFC-${card.id} on the reader until writing finishes.`);
-    const response=await fetch("http://127.0.0.1:17654/write",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:nfcCardUrl(publicOrigin,card.public_token),label:`NFC-${card.id}`,password:result.password})});
-    const written=await response.json();if(!response.ok||!written.ok)throw new Error(written.error||"The NFC helper did not confirm this card. Start the helper and retry.");
-    await programmed(card,"Permanent link written and confirmed by Windows NFC helper");
+    const endpoint=fromPackaging?"write-packaging":"write";
+    const response=await fetch(`http://127.0.0.1:17654/${endpoint}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:nfcCardUrl(publicOrigin,card.public_token),label:`NFC-${card.id}`,password:result.password})}).catch(()=>{
+      throw new Error("Could not reach the Windows NFC Helper. Start it, then retry with the same box and card.");
+    });
+    if(fromPackaging&&response.status===404)throw new Error("Install and restart the latest Windows NFC Helper to write from a packaging barcode.");
+    const written=await response.json();
+    if(!response.ok||!written.ok||(fromPackaging&&written.verified!==true))throw new Error(written.error||"The NFC helper did not verify this card.");
+    await programmed(card,fromPackaging?"Packaging barcode scanned and permanent link verified by NFC readback":"Permanent link written and confirmed by Windows NFC helper");
+  }
+  async function submitPackagingScan(event:FormEvent) {
+    event.preventDefault();
+    const value=packagingScan.trim();
+    if(!value||busyRef.current)return;
+    await run(async()=>{
+      try {
+        const id=nfcCardScan(value);
+        if(id===null)throw new Error("Scan a packaging barcode such as NFC-100001.");
+        const data=await request(undefined,`?cardId=${id}`) as Inventory;
+        const card=data.cards[0];
+        if(!card)throw new Error("This packaging barcode is not in the NFC inventory.");
+        if(card.status!=="available")throw new Error(`NFC-${id} is ${card.status} and cannot be written.`);
+        if(card.programmed_at)throw new Error(`NFC-${id} is already programmed. Use the card prepared for this box.`);
+        await write(card,true);
+        setLastWritten(id);
+        setPackagingScan("");
+        setMessage(`NFC-${id} verified. Put this card into the scanned box, then place the next blank card on the reader.`);
+        if ("speechSynthesis" in window && "SpeechSynthesisUtterance" in window) {
+          window.speechSynthesis.speak(new SpeechSynthesisUtterance("Card verified."));
+        }
+      } catch(error) {
+        const reason=error instanceof Error?error.message:"Check the card and try again.";
+        throw new Error(`${value} · ${reason}`);
+      } finally {
+        requestAnimationFrame(()=>{
+          packagingInput.current?.focus();
+          packagingInput.current?.select();
+        });
+      }
+    });
   }
   async function submitScan(event:FormEvent) {
     event.preventDefault();const value=scan.trim();if(!value)return;
@@ -106,6 +146,15 @@ export function NfcCardWorkspace({token,admin,onStartNfc}:{token:string;admin:bo
     </>}
     {tab==="prepare"&&<>
       {admin&&<div className={styles.card}><h3>Generate a card batch</h3><p>Each card gets a permanent link and a matching barcode. Keep each card, sticker and box together.</p><div className={styles.actions}><label>Number of cards<input type="number" min={1} max={1000} disabled={busy||!!generation.current} value={quantity} onChange={event=>setQuantity(Number(event.target.value))}/></label><button className="button primary" disabled={busy||!Number.isInteger(quantity)||quantity<1||quantity>1000} onClick={()=>void run(generate)}>Generate links</button></div></div>}
+      {admin&&<form className={styles.card} onSubmit={submitPackagingScan}>
+        <h3>Write from packaging barcode</h3>
+        <p>Stick the printed barcode on the box, place one blank NFC card on the reader, then scan the box. Keep the card on the reader until the link is verified.</p>
+        <div className={styles.actions}>
+          <label>Packaging barcode<input ref={packagingInput} autoComplete="off" readOnly={busy} value={packagingScan} onFocus={event=>event.target.select()} onChange={event=>setPackagingScan(event.target.value)} placeholder="NFC-100001"/></label>
+          <button className="button primary" disabled={busy||!packagingScan.trim()}>Write and verify card</button>
+        </div>
+        {lastWritten!==null&&<p>Last verified card · NFC-{lastWritten}</p>}
+      </form>}
       <div className={styles.card}><h3>Card inventory</h3><div className={styles.actions}><label>Batch<select value={batchId} disabled={busy} onChange={event=>{const id=event.target.value;setLookup("");void run(()=>load(id));}}><option value="">Choose a batch</option>{inventory.batches.map(batch=><option key={batch.id} value={batch.id}>Batch {batch.number} · {batch.quantity} cards</option>)}</select></label><button className="button secondary" disabled={busy} onClick={()=>void run(()=>load())}>Refresh inventory</button></div>
         <form className={styles.actions} onSubmit={event=>{event.preventDefault();const id=nfcCardScan(lookup);if(id===null){setMessage("Enter the card number or scan its NFC barcode.");return;}void run(()=>load("",String(id)));}}><label>Find a card<input value={lookup} onChange={event=>setLookup(event.target.value)} placeholder="NFC-100001" disabled={busy}/></label><button className="button secondary" disabled={busy||!lookup.trim()}>Find card</button></form>
         {!!inventory.cards.length&&<><div className={styles.actions}><button className="button secondary" disabled={busy} onClick={csv}>Download links CSV</button><label>Sticker layout<select value={labelFormat} onChange={event=>setLabelFormat(event.target.value as "thermal"|"a4")}><option value="thermal">50 × 25 mm thermal labels</option><option value="a4">A4 · 24 labels per sheet</option></select></label><button className="button secondary" disabled={busy} onClick={()=>void run(labels)}>Download barcode labels</button></div><p className={styles.help}>Print the PDF at actual size (100%). Exported links stay the same after pairing or a correction.</p></>}

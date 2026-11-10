@@ -6,8 +6,9 @@ Open **Fulfilment → NFC Card**. Existing card-unlocking tools are below the ne
 
 1. In **Prepare cards**, an administrator generates 1–1,000 permanent links per batch.
 2. Download the links CSV and matching barcode-label PDF. Print at 100% actual size, using 50 × 25 mm thermal labels or the A4 layout.
-3. Write the permanent URL to each physical card using **Write card** and the existing Windows helper. A successful helper response records programming confirmation. If a supplier prewrites the cards, read the physical card and use **Verify prewritten card** to check its URL.
-4. Keep the programmed card, matching `NFC-100001` sticker and box together. Programming is separate from pairing.
+3. Stick each barcode on its box first. Install and start the latest Windows NFC Helper, then open **Write from packaging barcode**.
+4. Place one blank card on the reader and scan the box barcode with an Enter-terminated scanner. The helper writes the matching permanent link and reads the tag back before the app marks it programmed. Wait for confirmation, then immediately put the verified card inside that box before scanning another.
+5. If a supplier prewrites the cards, read the physical card and use **Verify prewritten card** to check its URL. Programming is separate from pairing.
 
 Each customer-facing link uses an opaque random token on the fulfilment app's `/n/` route. The printed sequential number is for staff and does not expose the public token. Keep the production app domain active for the life of these cards.
 
