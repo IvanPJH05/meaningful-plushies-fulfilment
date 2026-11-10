@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { sharedTablesForWorkspace, WorkspaceDataCache } from "./workspace-data.ts";
 
+test("Social Media Manager does not load shared fulfilment tables", () => {
+  assert.deepEqual(sharedTablesForWorkspace("social_media_manager", "social_media_manager", "admin"), []);
+});
+
 test("fulfilment loads sales dependencies without unrelated workspaces", () => {
   assert.deepEqual(sharedTablesForWorkspace("orders", "fulfilment", "admin"), ["manual_orders", "payment_processor_settings", "sales_fee_settings", "creator_profiles"]);
   assert.deepEqual(sharedTablesForWorkspace("orders", "fulfilment"), []);

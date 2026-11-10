@@ -1,0 +1,7 @@
+.frame {
+  display: block;
+  width: 100%;
+  height: max(620px, calc(100dvh - 115px));
+  border: 0;
+  border-radius: 10px;
+}
