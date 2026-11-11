@@ -18,8 +18,8 @@ const orders = ["new_order", "uploading_audio", "sent_for_sewing", "packed"].map
 const manualIntake = {
   id: "demo-manual-1045", reference: "MP-1045", customerName: "Taylor", customerEmail: "",
   phoneOriginal: "", character: "Sample bear", productDisplayName: "Personalised plushie",
-  customisationSessionId: "a1045000-0000-4000-8000-000000000002", shippingAddress: {},
-  paymentReceipts: [], isCod: false, status: "awaiting_payment", shopifyOrderName: "",
+  customisationSessionId: "a1045000-0000-4000-8000-000000000002", shippingAddress: { province: "Selangor" },
+  amountToCollect: 89, shippingRegion: "WEST", paymentReceipts: [], isCod: false, status: "awaiting_payment", shopifyOrderName: "",
   createdAt: "2026-11-11T09:00:00Z", paymentApprovedAt: "",
 };
 
