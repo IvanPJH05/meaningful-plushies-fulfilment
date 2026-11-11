@@ -3,7 +3,7 @@
 import { ChangeEvent, CSSProperties, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
-import { CloserGlyphText } from "./closer-art-text";
+import { closerCharacters, CloserGlyphText } from "./closer-art-text";
 import styles from "./closer-customer-page.module.css";
 
 type UnlinkedState = {
@@ -426,7 +426,7 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
         {!showRequest ? <button className={styles.primaryButton} onClick={() => setShowRequest(true)}><CloserGlyphText text={copy.pair} label={copy.pair} /></button> : <section className={styles.card} role="dialog" aria-modal="true" aria-label={copy.pair}><button type="button" className={styles.closeButton} onClick={() => setShowRequest(false)} aria-label={copy.cancel}>×</button><p className={styles.eyebrow}><CloserGlyphText text={copy.nickname} label={copy.nickname} /></p><form className={styles.form} onSubmit={submitRequest}><label><input value={name} maxLength={60} onChange={(event) => setName(event.target.value)} placeholder={copy.nickname} required /></label><label><CloserGlyphText text={copy.partnerId} label={copy.partnerId} /><input value={partnerCertificateId} maxLength={100} onChange={(event) => setPartnerCertificateId(event.target.value)} placeholder="124" required /></label><button className={styles.primaryButton} disabled={busy}><CloserGlyphText text={busy ? copy.requestSending : copy.pairNow} label={busy ? copy.requestSending : copy.pairNow} /></button></form></section>}
       </>}
     </section> : <section className={styles.sharedSpace}>
-      <div className={styles.namesPill} style={{ "--glyph-count": Math.max(Array.from(`${state.connection.names[0]} + ${state.connection.names[1]}`).length, 1) } as CSSProperties}><CloserGlyphText text={`${state.connection.names[0]} + ${state.connection.names[1]}`} /></div>
+      <div className={styles.namesPill} style={{ "--glyph-count": closerCharacters(`${state.connection.names[0]} + ${state.connection.names[1]}`).length } as CSSProperties}><CloserGlyphText text={`${state.connection.names[0]} + ${state.connection.names[1]}`} /></div>
       <button type="button" className={styles.photoFrame} disabled={busy} onClick={() => setShowPhotoPicker(true)} aria-label="Add or replace the shared photo">
         {state.connection.hasPhoto ? <img className={styles.photo} src={mediaUrl("photo")} alt={`A shared memory from ${state.connection.names.join(" and ")}`} onLoad={() => { setUploadingPhoto(false); setLoadedPhotoVersion(state.connection.photoVersion); }} onError={() => { setUploadingPhoto(false); setLoadedPhotoVersion(state.connection.photoVersion); setError("We could not load the shared photo. Please refresh and try again."); }} /> : <span className={styles.photoEmpty} aria-hidden="true" />}
         {(uploadingPhoto || photoIsLoading) && <span className={styles.photoUploading} role="status" aria-live="polite"><CloserGlyphText text={uploadingPhoto ? copy.updating : copy.loading} label={uploadingPhoto ? copy.updating : copy.loading} /><span className={styles.uploadDots} aria-hidden="true"><i /><i /><i /></span></span>}
