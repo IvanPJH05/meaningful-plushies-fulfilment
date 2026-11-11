@@ -10,6 +10,8 @@ Open **Fulfilment → NFC Card**. Existing card-unlocking tools are below the ne
 4. Place one blank card on the reader and scan the box barcode with an Enter-terminated scanner. The helper writes the matching permanent link and reads the tag back before the app marks it programmed. Wait for confirmation, then immediately put the verified card inside that box before scanning another.
 5. If a supplier prewrites the cards, read the physical card and use **Verify prewritten card** to check its URL. Programming is separate from pairing.
 
+To write VIP cards with a webcam, stick each barcode on its card, then open **Prepare cards → Write VIP cards with a camera**. Install and restart the latest Windows NFC Helper. Start the camera, choose the overhead webcam and click **Start scanning**. The station reads the barcode after it detects a card on the reader. It looks up the permanent link in the live inventory and marks the card programmed after verifying the link on the same chip. Remove the card before starting the next one. For hard-to-read stickers, choose **A4 · larger labels for camera** when downloading labels.
+
 Each customer-facing link uses an opaque random token on the fulfilment app's `/n/` route. The printed sequential number is for staff and does not expose the public token. Keep the production app domain active for the life of these cards.
 
 ## Production and packing

@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { nfcCardScan, nfcCardUrl, type NfcBatch, type NfcCard, type NfcScanOrder } from "../lib/nfc-cards";
 import { OrderBarcode } from "./order-barcode";
+import { NfcCameraWriter } from "./nfc-camera-writer";
 import styles from "./nfc-card-workspace.module.css";
 
 type Log={id:number;card_id:number;order_id:string|null;action:string;actor:string;reason:string;created_at:string};
@@ -28,7 +29,7 @@ export function NfcCardWorkspace({token,admin,onStartNfc}:{token:string;admin:bo
   const [lookup,setLookup]=useState("");
   const [verify,setVerify]=useState<NfcCard|null>(null),[verifyUrl,setVerifyUrl]=useState("");
   const [correction,setCorrection]=useState<{card:NfcCard;action:"unpair"|"void"}|null>(null),[reason,setReason]=useState("");
-  const [labelFormat,setLabelFormat]=useState<"thermal"|"a4">("thermal");
+  const [labelFormat,setLabelFormat]=useState<"thermal"|"a4"|"camera">("thermal");
   const input=useRef<HTMLInputElement>(null);
   async function request(body?:Record<string,unknown>, query="") {
     const response=await fetch(`/api/fulfilment/nfc${query}`,{method:body?"POST":"GET",headers:{Authorization:`Bearer ${token}`,...(body?{"Content-Type":"application/json"}:{})},...(body?{body:JSON.stringify(body)}:{}),cache:"no-store"});
@@ -58,18 +59,46 @@ export function NfcCardWorkspace({token,admin,onStartNfc}:{token:string;admin:bo
     await request({action:"programmed",cardId:card.id,reason:source});await load(card.batch_id);
     setMessage(`NFC-${card.id} is verified and ready to pair.`);setSuccess(true);
   }
-  async function write(card:NfcCard, fromPackaging=false) {
+  async function write(card:NfcCard, fromPackaging=false, uid?:string) {
     const passwordResponse=await fetch("/api/fulfilment/nfc-password",{headers:{Authorization:`Bearer ${token}`},cache:"no-store"});
     const result=await passwordResponse.json();if(!passwordResponse.ok||!result.password)throw new Error(result.error||"Could not load NFC writer settings.");
     setMessage(`Hold card NFC-${card.id} on the reader until writing finishes.`);
-    const endpoint=fromPackaging?"write-packaging":"write";
-    const response=await fetch(`http://127.0.0.1:17654/${endpoint}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:nfcCardUrl(publicOrigin,card.public_token),label:`NFC-${card.id}`,password:result.password})}).catch(()=>{
+    const endpoint=uid?"write-camera":fromPackaging?"write-packaging":"write";
+    const response=await fetch(`http://127.0.0.1:17654/${endpoint}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:nfcCardUrl(publicOrigin,card.public_token),label:`NFC-${card.id}`,password:result.password,uid})}).catch(()=>{
       throw new Error("Could not reach the Windows NFC Helper. Start it, then retry with the same box and card.");
     });
     if(fromPackaging&&response.status===404)throw new Error("Install and restart the latest Windows NFC Helper to write from a packaging barcode.");
     const written=await response.json();
     if(!response.ok||!written.ok||(fromPackaging&&written.verified!==true))throw new Error(written.error||"The NFC helper did not verify this card.");
-    await programmed(card,fromPackaging?"Packaging barcode scanned and permanent link verified by NFC readback":"Permanent link written and confirmed by Windows NFC helper");
+    await programmed(card,uid?"VIP card barcode scanned by camera and permanent link verified by NFC readback":fromPackaging?"Packaging barcode scanned and permanent link verified by NFC readback":"Permanent link written and confirmed by Windows NFC helper");
+  }
+  async function writeScannedCard(value:string, uid?:string) {
+    const id=nfcCardScan(value);
+    if(id===null)throw new Error("Scan an NFC barcode such as NFC-100001.");
+    const data=await request(undefined,`?cardId=${id}`) as Inventory;
+    const card=data.cards[0];
+    if(!card)throw new Error("This barcode is not in the NFC inventory.");
+    if(card.status!=="available")throw new Error(`NFC-${id} is ${card.status} and cannot be written.`);
+    if(card.programmed_at)throw new Error(`NFC-${id} is already programmed.`);
+    await write(card,true,uid);
+    setLastWritten(id);
+    if ("speechSynthesis" in window && "SpeechSynthesisUtterance" in window) {
+      window.speechSynthesis.speak(new SpeechSynthesisUtterance("Card verified."));
+    }
+    return id;
+  }
+  async function writeFromCamera(value:string, uid:string) {
+    if(busyRef.current)throw new Error("Another NFC action is in progress. Remove the card and retry.");
+    busyRef.current=true;
+    setBusy(true);
+    setMessage("");
+    setSuccess(false);
+    try {
+      return await writeScannedCard(value,uid);
+    } finally {
+      busyRef.current=false;
+      setBusy(false);
+    }
   }
   async function submitPackagingScan(event:FormEvent) {
     event.preventDefault();
@@ -77,20 +106,9 @@ export function NfcCardWorkspace({token,admin,onStartNfc}:{token:string;admin:bo
     if(!value||busyRef.current)return;
     await run(async()=>{
       try {
-        const id=nfcCardScan(value);
-        if(id===null)throw new Error("Scan a packaging barcode such as NFC-100001.");
-        const data=await request(undefined,`?cardId=${id}`) as Inventory;
-        const card=data.cards[0];
-        if(!card)throw new Error("This packaging barcode is not in the NFC inventory.");
-        if(card.status!=="available")throw new Error(`NFC-${id} is ${card.status} and cannot be written.`);
-        if(card.programmed_at)throw new Error(`NFC-${id} is already programmed. Use the card prepared for this box.`);
-        await write(card,true);
-        setLastWritten(id);
+        const id=await writeScannedCard(value);
         setPackagingScan("");
         setMessage(`NFC-${id} verified. Put this card into the scanned box, then place the next blank card on the reader.`);
-        if ("speechSynthesis" in window && "SpeechSynthesisUtterance" in window) {
-          window.speechSynthesis.speak(new SpeechSynthesisUtterance("Card verified."));
-        }
       } catch(error) {
         const reason=error instanceof Error?error.message:"Check the card and try again.";
         throw new Error(`${value} · ${reason}`);
@@ -145,6 +163,7 @@ export function NfcCardWorkspace({token,admin,onStartNfc}:{token:string;admin:bo
       {lastPair&&<div className={styles.card}><h3>Last successful pairing</h3><p>NFC-{lastPair.card.id} → #{lastPair.order.orderNumber} · {lastPair.order.plushName||lastPair.order.character}</p>{admin&&<button className="button secondary" disabled={busy} onClick={()=>{setReason("");setCorrection({card:lastPair.card,action:"unpair"});}}>Undo this pairing</button>}</div>}
     </>}
     {tab==="prepare"&&<>
+      {admin&&<NfcCameraWriter onWrite={writeFromCamera}/>}
       {admin&&<div className={styles.card}><h3>Generate a card batch</h3><p>Each card gets a permanent link and a matching barcode. Keep each card, sticker and box together.</p><div className={styles.actions}><label>Number of cards<input type="number" min={1} max={1000} disabled={busy||!!generation.current} value={quantity} onChange={event=>setQuantity(Number(event.target.value))}/></label><button className="button primary" disabled={busy||!Number.isInteger(quantity)||quantity<1||quantity>1000} onClick={()=>void run(generate)}>Generate links</button></div></div>}
       {admin&&<form className={styles.card} onSubmit={submitPackagingScan}>
         <h3>Write from packaging barcode</h3>
@@ -157,7 +176,7 @@ export function NfcCardWorkspace({token,admin,onStartNfc}:{token:string;admin:bo
       </form>}
       <div className={styles.card}><h3>Card inventory</h3><div className={styles.actions}><label>Batch<select value={batchId} disabled={busy} onChange={event=>{const id=event.target.value;setLookup("");void run(()=>load(id));}}><option value="">Choose a batch</option>{inventory.batches.map(batch=><option key={batch.id} value={batch.id}>Batch {batch.number} · {batch.quantity} cards</option>)}</select></label><button className="button secondary" disabled={busy} onClick={()=>void run(()=>load())}>Refresh inventory</button></div>
         <form className={styles.actions} onSubmit={event=>{event.preventDefault();const id=nfcCardScan(lookup);if(id===null){setMessage("Enter the card number or scan its NFC barcode.");return;}void run(()=>load("",String(id)));}}><label>Find a card<input value={lookup} onChange={event=>setLookup(event.target.value)} placeholder="NFC-100001" disabled={busy}/></label><button className="button secondary" disabled={busy||!lookup.trim()}>Find card</button></form>
-        {!!inventory.cards.length&&<><div className={styles.actions}><button className="button secondary" disabled={busy} onClick={csv}>Download links CSV</button><label>Sticker layout<select value={labelFormat} onChange={event=>setLabelFormat(event.target.value as "thermal"|"a4")}><option value="thermal">50 × 25 mm thermal labels</option><option value="a4">A4 · 24 labels per sheet</option></select></label><button className="button secondary" disabled={busy} onClick={()=>void run(labels)}>Download barcode labels</button></div><p className={styles.help}>Print the PDF at actual size (100%). Exported links stay the same after pairing or a correction.</p></>}
+        {!!inventory.cards.length&&<><div className={styles.actions}><button className="button secondary" disabled={busy} onClick={csv}>Download links CSV</button><label>Sticker layout<select value={labelFormat} onChange={event=>setLabelFormat(event.target.value as "thermal"|"a4"|"camera")}><option value="thermal">50 × 25 mm thermal labels</option><option value="a4">A4 · 24 labels per sheet</option><option value="camera">A4 · larger labels for camera</option></select></label><button className="button secondary" disabled={busy} onClick={()=>void run(labels)}>Download barcode labels</button></div><p className={styles.help}>Print the PDF at actual size (100%). Exported links stay the same after pairing or a correction.</p></>}
         {admin&&<div className={styles.actions}><a className="button secondary" href="meaningful-nfc-helper://start" onClick={event=>{if(busy){event.preventDefault();return;}onStartNfc();}}>Start NFC Helper</a><a className="button secondary" href="/downloads/meaningful-plushies-nfc-helper.zip" download>Download NFC Helper</a></div>}
         <div className={styles.tableWrap}><table><thead><tr><th>Card</th><th>Status</th><th>Permanent link</th><th>Actions</th></tr></thead><tbody>{inventory.cards.map(card=><tr key={card.id}><td><OrderBarcode value={`NFC-${card.id}`} compact/></td><td>{card.status}{card.status==="available"&&<small>{card.programmed_at?"Written / verified":"Needs programming"}</small>}{card.order_id&&<small>Item: {card.order_id}</small>}</td><td><a href={nfcCardUrl(publicOrigin,card.public_token)} target="_blank" rel="noreferrer">Open permanent link</a><button className="button secondary small" disabled={busy} onClick={()=>void run(async()=>{await navigator.clipboard.writeText(nfcCardUrl(publicOrigin,card.public_token));setMessage(`NFC-${card.id} link copied.`);setSuccess(true);})}>Copy link</button></td><td>{admin&&<div className={styles.rowActions}>{card.status==="available"&&<><button className="button primary small" disabled={busy} onClick={()=>void run(()=>write(card))}>{card.programmed_at?"Rewrite card":"Write card"}</button>{!card.programmed_at&&<button className="button secondary small" disabled={busy} onClick={()=>{setVerify(card);setVerifyUrl("");}}>Verify prewritten card</button>}</>}{card.status==="assigned"&&<button className="button secondary small" disabled={busy} onClick={()=>{setCorrection({card,action:"unpair"});setReason("");}}>Undo pairing</button>}{card.status!=="voided"&&<button className="button secondary small" disabled={busy} onClick={()=>{setCorrection({card,action:"void"});setReason("");}}>Void card</button>}</div>}</td></tr>)}</tbody></table></div>{!inventory.cards.length&&<p>No cards found. Generate a batch to begin.</p>}
       </div>

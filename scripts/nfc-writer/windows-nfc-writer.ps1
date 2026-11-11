@@ -1,8 +1,11 @@
+param([switch]$WebcamDemo)
+
 $ErrorActionPreference = "Stop"
 
 # Keep one writer per Windows session, including repeated app-button clicks.
 $newHelperInstance = $false
-$helperInstanceMutex = [System.Threading.Mutex]::new($true, 'Local\MeaningfulPlushiesNfcWriter', [ref]$newHelperInstance)
+$mutexName = if ($WebcamDemo) { 'Local\MeaningfulPlushiesNfcWebcamDemo' } else { 'Local\MeaningfulPlushiesNfcWriter' }
+$helperInstanceMutex = [System.Threading.Mutex]::new($true, $mutexName, [ref]$newHelperInstance)
 if (-not $newHelperInstance) {
   $helperInstanceMutex.Dispose()
   exit 0
@@ -279,8 +282,68 @@ function Set-NtagPasswordProtection {
   Write-CardPage -Card $Card -Protocol $Protocol -Page $Layout.Auth0Page -Data $auth0
 }
 
+function Get-CardUid {
+  param([IntPtr]$Card, [uint32]$Protocol)
+  $command = [byte[]]@(0xFF, 0xCA, 0, 0, 0)
+  $response = [PcscNative]::Transmit($Card, $Protocol, $command)
+  if (!(Test-SuccessResponse $response) -or $response.Length -notin @(6, 9, 12)) {
+    throw "The reader could not identify the NFC card. Try a supported reader and tag."
+  }
+  return [BitConverter]::ToString($response, 0, $response.Length - 2).Replace('-', '')
+}
+
+function Get-PresentCard {
+  $context = [IntPtr]::Zero
+  $result = [PcscNative]::SCardEstablishContext([PcscNative]::SCARD_SCOPE_USER, [IntPtr]::Zero, [IntPtr]::Zero, [ref]$context)
+  if ($result -ne 0) { throw "Could not open Windows NFC service. Connect the USB NFC reader." }
+  try {
+    $readers = [PcscNative]::ListReaders($context)
+    if (!$readers) { throw "No USB NFC reader detected by Windows." }
+    $card = [IntPtr]::Zero
+    $protocol = 0
+    $result = [PcscNative]::SCardConnect($context, $readers[0], [PcscNative]::SCARD_SHARE_SHARED, 3, [ref]$card, [ref]$protocol)
+    if ($result -eq -2146434967 -or $result -eq -2146435060) { return $null }
+    if ($result -ne 0) { throw "Could not connect to the NFC reader (0x$($result.ToString('X8')))." }
+    try { return Get-CardUid -Card $card -Protocol $protocol }
+    finally { [void][PcscNative]::SCardDisconnect($card, [PcscNative]::SCARD_LEAVE_CARD) }
+  } finally { [void][PcscNative]::SCardReleaseContext($context) }
+}
+
+function Get-NfcMessageStart {
+  param([byte[]]$Header)
+  $offset = 0
+  $controlEnd = 0
+  while ($offset -lt $Header.Length) {
+    $type = $Header[$offset]
+    if ($type -eq 0) { $offset++; continue }
+    if ($type -eq 0xFE) { return @{ Offset = $controlEnd; Empty = $true } }
+    if ($offset + 1 -ge $Header.Length) { break }
+    $length = $Header[$offset + 1]
+    if ($type -eq 3) {
+      $empty = $length -eq 0 -and ($offset + 2 -ge $Header.Length -or $Header[$offset + 2] -in @(0, 0xFE))
+      $start = if ($empty) { $controlEnd } else { $offset }
+      return @{ Offset = $start; Empty = $empty }
+    }
+    if ($type -notin @(1, 2) -or $length -ne 3 -or $offset + 5 -gt $Header.Length) { break }
+    $offset += 5
+    $controlEnd = $offset
+  }
+  return @{ Offset = $controlEnd; Empty = ($offset -eq $Header.Length) }
+}
+
+function Test-NfcPageContents {
+  param([IntPtr]$Card, [uint32]$Protocol, [byte[]]$Bytes)
+  for ($offset = 0; $offset -lt $Bytes.Length; $offset += 4) {
+    $page = 4 + [int]($offset / 4)
+    if (((Read-CardPage -Card $Card -Protocol $Protocol -Page $page) -join ',') -ne ($Bytes[$offset..($offset+3)] -join ',')) {
+      return $false
+    }
+  }
+  return $true
+}
+
 function Write-NfcUrl {
-  param([Parameter(Mandatory = $true)][string]$Url, [string]$PasswordSource = "", [int]$TimeoutSeconds = 30, [switch]$VerifyPackaging)
+  param([Parameter(Mandatory = $true)][string]$Url, [string]$PasswordSource = "", [int]$TimeoutSeconds = 30, [switch]$VerifyPackaging, [string]$ExpectedUid = "", [string]$PreviousDemoUrl = "")
   $context = [IntPtr]::Zero
   $result = [PcscNative]::SCardEstablishContext([PcscNative]::SCARD_SCOPE_USER, [IntPtr]::Zero, [IntPtr]::Zero, [ref]$context)
   if ($result -ne 0) { throw "Could not open Windows NFC service: 0x$($result.ToString('X8'))" }
@@ -296,25 +359,39 @@ function Write-NfcUrl {
     do {
       $connectResult = [PcscNative]::SCardConnect($context, $reader, [PcscNative]::SCARD_SHARE_SHARED, ([PcscNative]::SCARD_PROTOCOL_T0 -bor [PcscNative]::SCARD_PROTOCOL_T1), [ref]$card, [ref]$protocol)
       if ($connectResult -eq 0) { break }
+      if ($ExpectedUid) { throw "The card was removed before writing. Place it back and try again." }
       Start-Sleep -Milliseconds 300
     } while ((Get-Date) -lt $deadline)
     if ($card -eq [IntPtr]::Zero) { throw "Timed out. Tap the NFC card on the reader within $TimeoutSeconds seconds." }
     try {
+      if ($ExpectedUid -and (Get-CardUid -Card $card -Protocol $protocol) -cne $ExpectedUid) {
+        throw "The card changed before writing. Remove it and start again."
+      }
       $bytes = ConvertTo-Type2TagBytes -Url $Url
       $layout = Get-NtagLayout -Card $card -Protocol $protocol
+      $prefix = [byte[]]@()
+      if ($VerifyPackaging) {
+        $header = [byte[]]@(4..7 | ForEach-Object { Read-CardPage -Card $card -Protocol $protocol -Page $_ })
+        $tag = Get-NfcMessageStart -Header $header
+        if ($tag.Offset -gt 0) {
+          # Preserve factory lock and memory descriptors before the NDEF message.
+          $prefix = [byte[]]$header[0..($tag.Offset - 1)]
+          $bytes = [byte[]]($prefix + $bytes)
+          while ($bytes.Length % 4) { $bytes += [byte]0 }
+        }
+      }
       $endPage = 4 + [int][Math]::Ceiling($bytes.Length / 4) - 1
       if ($endPage -gt $layout.UserEndPage) { throw "The certificate URL is too long for this $($layout.Name) NFC card." }
       $password = if ([string]::IsNullOrWhiteSpace($PasswordSource)) { $null } else { Get-NfcPasswordBytes -PasswordSource $PasswordSource }
-      if ($VerifyPackaging) {
-        $firstPage = (Read-CardPage -Card $card -Protocol $protocol -Page 4) -join ','
-        if ($firstPage -notin @('0,0,0,0','3,0,254,0','3,0,0,0','254,0,0,0')) {
-          for ($offset = 0; $offset -lt $bytes.Length; $offset += 4) {
-            $page = 4 + [int]($offset / 4)
-            if (((Read-CardPage -Card $card -Protocol $protocol -Page $page) -join ',') -ne ($bytes[$offset..($offset+3)] -join ',')) {
-              throw "This NFC card already contains data for a different link. Remove it and use a blank card."
-            }
-          }
-          # Same link on a retry. Reapply protection below before confirming.
+      if ($VerifyPackaging -and !$tag.Empty -and !(Test-NfcPageContents -Card $card -Protocol $protocol -Bytes $bytes)) {
+        $matchesDemo = $false
+        if ($PreviousDemoUrl) {
+          $demoBytes = [byte[]]($prefix + (ConvertTo-Type2TagBytes -Url $PreviousDemoUrl))
+          while ($demoBytes.Length % 4) { $demoBytes += [byte]0 }
+          $matchesDemo = Test-NfcPageContents -Card $card -Protocol $protocol -Bytes $demoBytes
+        }
+        if (!$matchesDemo) {
+          throw "This card holds a different link or unrecognized data. Use a blank card or the test card originally written for this sticker."
         }
       }
       for ($offset = 0; $offset -lt $bytes.Length; $offset += 4) {
@@ -333,13 +410,11 @@ function Write-NfcUrl {
         Set-NtagPasswordProtection -Card $card -Protocol $protocol -Layout $layout -Password $password
         Write-Host "Card write-protected with order password."
       }
-      if ($VerifyPackaging) {
-        for ($offset = 0; $offset -lt $bytes.Length; $offset += 4) {
-          $page = 4 + [int]($offset / 4)
-          if (((Read-CardPage -Card $card -Protocol $protocol -Page $page) -join ',') -ne ($bytes[$offset..($offset+3)] -join ',')) {
-            throw "The link read back from the NFC card did not match. Keep this card with the box and inspect it before retrying."
-          }
-        }
+      if ($VerifyPackaging -and !(Test-NfcPageContents -Card $card -Protocol $protocol -Bytes $bytes)) {
+        throw "The link read back from the NFC card did not match. Inspect the card before retrying."
+      }
+      if ($ExpectedUid -and (Get-CardUid -Card $card -Protocol $protocol) -cne $ExpectedUid) {
+        throw "The card changed during verification."
       }
     } finally {
       [void][PcscNative]::SCardDisconnect($card, [PcscNative]::SCARD_LEAVE_CARD)
@@ -401,6 +476,11 @@ function Read-HttpRequest {
   return [System.Text.Encoding]::UTF8.GetString($buffer, 0, $bytesRead)
 }
 
+if ($WebcamDemo) {
+  . (Join-Path $PSScriptRoot 'webcam-demo/server.ps1')
+  return
+}
+
 $port = 17654
 $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Parse("127.0.0.1"), $port)
 $listener.Start()
@@ -429,7 +509,19 @@ while ($true) {
       Send-HttpResponse -Stream $stream -StatusCode 200 -Payload @{ ok = $true; helper = "windows-nfc-writer" }
       continue
     }
-    if ($firstLine -notmatch '^POST /(write|write-packaging|unlock) ') {
+    $cameraWrite = $firstLine -match '^POST /write-camera '
+    $cameraRead = $firstLine -match '^GET /card-present '
+    if ($cameraWrite -or $cameraRead) {
+      $requestHeaders = ($requestText -split "`r`n`r`n", 2)[0]
+      if ($requestHeaders -notmatch '(?m)^Origin: https://meaningful-plushies-fulfilment\.vercel\.app\r?$') {
+        throw "Open the camera station from the live fulfilment app."
+      }
+    }
+    if ($cameraRead) {
+      Send-HttpResponse -Stream $stream -StatusCode 200 -Payload @{ ok = $true; uid = (Get-PresentCard) }
+      continue
+    }
+    if ($firstLine -notmatch '^POST /(write|write-packaging|write-camera|unlock) ') {
       Send-HttpResponse -Stream $stream -StatusCode 404 -Payload @{ ok = $false; error = "Not found." }
       continue
     }
@@ -454,9 +546,18 @@ while ($true) {
       continue
     }
     Write-Host "Ready to write $label -> $url"
-    $verifyPackaging = $firstLine -match '^POST /write-packaging '
+    $expectedUid = ""
+    if ($cameraWrite) {
+      $expectedUid = [string]$payload.uid
+      if ($expectedUid -cnotmatch '^(?:[0-9A-F]{8}|[0-9A-F]{14}|[0-9A-F]{20})$' -or
+          $url -cnotmatch '^https://meaningful-plushies-fulfilment\.vercel\.app/n/[a-f0-9]{32}$' -or
+          $label -cnotmatch '^NFC-\d{6,12}$' -or !$password) {
+        throw "The camera write needs a detected card, a permanent NFC link and writer settings."
+      }
+    }
+    $verifyPackaging = $cameraWrite -or $firstLine -match '^POST /write-packaging '
     $timeout = if ($verifyPackaging) { 1 } else { 30 }
-    Write-NfcUrl -Url $url -PasswordSource $password -TimeoutSeconds $timeout -VerifyPackaging:$verifyPackaging
+    Write-NfcUrl -Url $url -PasswordSource $password -TimeoutSeconds $timeout -VerifyPackaging:$verifyPackaging -ExpectedUid $expectedUid
     Send-HttpResponse -Stream $stream -StatusCode 200 -Payload @{ ok = $true; verified = $verifyPackaging }
     Write-Host "Card written successfully."
   } catch {

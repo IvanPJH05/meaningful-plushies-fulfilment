@@ -17,6 +17,7 @@
 .success,.notice { padding:16px 20px; border-radius:10px; border:1px solid #c9d9e9; background:#f0f6ff; margin:0; overflow-wrap:anywhere; }
 .success { background:#edf9f1; border-color:#a7d3b5; color:#165d36; }
 .help { font-size:13px; color:#5d7185; }
+.camera { width:100%; max-height:380px; object-fit:contain; border-radius:10px; background:#132333; }
 .tableWrap { overflow:auto; max-height:540px; }
 .workspace table { border-collapse:collapse; width:100%; text-align:left; }
 .workspace th,.workspace td { padding:14px 12px; border-bottom:1px solid #e2e9f1; vertical-align:top; }

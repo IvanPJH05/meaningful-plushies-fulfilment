@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VIP card writing test</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #eef4f8; color: #172c40; font: 16px/1.55 system-ui, sans-serif; }
+  main { width: min(680px, calc(100% - 32px)); margin: 38px auto; }
+  h1 { margin-bottom: 8px; line-height: 1.15; }
+  section { margin-top: 20px; background: white; border: 1px solid #cbd9e4; border-radius: 16px; padding: 22px; }
+  button { background: #1656a3; color: white; border: 0; padding: 10px 16px; border-radius: 8px; font: inherit; cursor: pointer; }
+  button:disabled { opacity: .65; cursor: default; }
+  video { display: block; width: 100%; max-height: 360px; object-fit: contain; background: #132333; border-radius: 10px; margin-top: 16px; }
+  output { display: block; font-weight: 650; margin-top: 14px; }
+  output[data-state="verified"] { color: #12643d; }
+  output[data-state="error"] { color: #a32229; }
+  #timing { margin-bottom: 0; color: #38516a; }
+  figure { margin: 16px 0 0; padding: 12px; border: 1px solid #cbd9e4; border-radius: 8px; text-align: center; }
+  figure svg { display: block; width: min(100%, 420px); height: auto; margin: auto; }
+  @media print {
+    h1, main > p, #station, #demo-labels > :not(#labels) { display: none; }
+    main, #demo-labels { margin: 0; width: 100%; border: 0; }
+    figure { break-inside: avoid; }
+  }
+  [hidden] { display: none; }
+</style>
+<main>
+  <h1>VIP card writing test</h1>
+  <p>Use a blank test card with an NFC barcode sticker. Point the webcam down at the reader and keep one barcode in view.</p>
+  <section id="station">
+    <label>NFC links CSV <input type="file" id="inventory" accept=".csv,text/csv"></label>
+    <p id="inventory-status">Import the links CSV from Fulfilment → NFC Card → Prepare cards to enable writing.</p>
+    <button id="start">Start camera</button>
+    <div id="camera-options" hidden>
+      <label>Webcam <select id="camera-device"></select></label>
+      <button id="camera-test">Test barcode detection</button>
+      <button id="arm" disabled>Start writing website links</button>
+    </div>
+    <video id="camera" autoplay playsinline muted hidden></video>
+    <output id="status" aria-live="polite">Start the webcam to test barcode detection.</output>
+    <p id="timing" hidden></p>
+  </section>
+  <section id="demo-labels">
+    <h2>Demo barcodes</h2>
+    <p>Print these labels or open the page on the computer and hold a printed label up to the webcam, one at a time.</p>
+    <button id="generate">Generate 3 demo barcodes</button>
+    <button id="generate-imported" disabled>Generate labels from CSV</button>
+    <button id="print" hidden>Print barcodes</button>
+    <div id="labels"></div>
+  </section>
+</main>
+<script src="/decoder.js"></script>
+<script>
+  const camera = document.querySelector("#camera");
+  const start = document.querySelector("#start");
+  const stationStatus = document.querySelector("#status");
+  const timing = document.querySelector("#timing");
+  const device = document.querySelector("#camera-device");
+  const arm = document.querySelector("#arm");
+  const cameraTest = document.querySelector("#camera-test");
+  const inventory = document.querySelector("#inventory");
+  const inventoryStatus = document.querySelector("#inventory-status");
+  const generateImported = document.querySelector("#generate-imported");
+  let importedCards = new Map();
+  let links = new Map();
+  let writing = false;
+  let cameraReady = false;
+  let cameraTesting = false;
+  const csvFields = row => row.split(",").map(field => field.trim().replace(/^"(.*)"$/, "$1"));
+
+  function updateControls() {
+    arm.disabled = writing || !cameraReady || !links.size;
+    cameraTest.disabled = writing || !cameraReady;
+    device.disabled = writing || cameraTesting;
+    inventory.disabled = writing;
+    generateImported.disabled = !importedCards.size;
+  }
+
+  inventory.addEventListener("change", async () => {
+    importedCards = new Map();
+    links = new Map();
+    updateControls();
+    try {
+      const file = inventory.files[0];
+      if (!file) return;
+      const rows = (await file.text()).trim().split(/\r?\n/);
+      if (csvFields(rows.shift()).join(",").toLowerCase() !== "card_id,barcode,url,status,programmed") {
+        throw new Error("Choose the NFC links CSV exported from the fulfilment app.");
+      }
+      const imported = new Map();
+      const importedLinks = new Set();
+      for (const row of rows) {
+        const [id, barcode, url, status, programmed, ...extra] = csvFields(row);
+        if (extra.length || !/^\d{6,12}$/.test(id) || barcode !== `NFC-${id}` ||
+            !/^https:\/\/meaningful-plushies-fulfilment\.vercel\.app\/n\/[a-f0-9]{32}$/.test(url) ||
+            !["available", "assigned", "voided"].includes(status) || !["yes", "no"].includes(programmed) ||
+            imported.has(barcode) || importedLinks.has(url)) {
+          throw new Error("The CSV contains an invalid or duplicate card link.");
+        }
+        imported.set(barcode, { url, status, programmed: programmed === "yes" });
+        importedLinks.add(url);
+      }
+      importedCards = imported;
+      links = new Map([...imported].filter(([, card]) => card.status === "available" && !card.programmed)
+        .map(([code, card]) => [code, card.url]));
+      inventoryStatus.textContent = links.size
+        ? `${importedCards.size} imported · ${links.size} ready to write.`
+        : `${importedCards.size} imported · 0 ready to write. Export a batch with available, unprogrammed cards to enable writing.`;
+    } catch (error) {
+      inventoryStatus.textContent = error.message;
+    }
+    updateControls();
+  });
+  const frame = document.createElement("canvas");
+  const context = frame.getContext("2d", { willReadFrequently: true });
+  const adjustedFrame = document.createElement("canvas");
+  const adjustedContext = adjustedFrame.getContext("2d", { willReadFrequently: true });
+  const pause = () => new Promise(resolve => setTimeout(resolve, 150));
+
+  function show(message, state = "") {
+    if (stationStatus.textContent !== message) stationStatus.textContent = message;
+    stationStatus.dataset.state = state;
+  }
+
+  async function request(path, body) {
+    const response = await fetch(path, body ? {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    } : {});
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "The NFC reader did not respond.");
+    return result;
+  }
+
+  async function readFrame(detector) {
+    const width = camera.videoWidth;
+    const height = camera.videoHeight;
+    if (frame.width !== width || frame.height !== height) {
+      frame.width = adjustedFrame.width = width;
+      frame.height = adjustedFrame.height = height;
+    }
+    context.drawImage(camera, 0, 0);
+    const original = await detector.detect(frame);
+    if (original.length) return original;
+
+    const matches = new Map();
+    for (const angle of [0, -10, 10]) {
+      adjustedContext.fillStyle = "white";
+      adjustedContext.fillRect(0, 0, width, height);
+      adjustedContext.save();
+      adjustedContext.translate(width / 2, height / 2);
+      adjustedContext.rotate(angle * Math.PI / 180);
+      adjustedContext.filter = "grayscale(1) contrast(2)";
+      adjustedContext.drawImage(frame, -width / 2, -height / 2);
+      adjustedContext.restore();
+      const detected = await detector.detect(adjustedFrame);
+      if (detected.length > 1) return detected;
+      for (const barcode of detected) {
+        matches.set(barcode.rawValue, barcode);
+      }
+    }
+    if (matches.size) return [...matches.values()];
+
+    // Enlarge the center when a small sticker occupies only part of the frame.
+    const cropWidth = Math.round(width * .65);
+    const cropHeight = Math.round(height * .65);
+    adjustedContext.drawImage(frame, (width - cropWidth) / 2, (height - cropHeight) / 2,
+      cropWidth, cropHeight, 0, 0, width, height);
+    return detector.detect(adjustedFrame);
+  }
+
+  function describeBarcode(barcodes, code) {
+    if (barcodes.length > 1) return "More than one barcode detected. Show just one.";
+    if (code) return `Read ${code}. Expected a code such as NFC-100001.`;
+    return "No barcode detected. Try a printed label in even light, with the white margins visible on both sides.";
+  }
+
+  function createDetector() {
+    return new BarcodeDetectionAPI.BarcodeDetector({ formats: ["code_128", "qr_code", "code_39"] });
+  }
+
+  cameraTest.addEventListener("click", async () => {
+    if (cameraTesting) {
+      cameraTesting = false;
+      return;
+    }
+    cameraTesting = true;
+    updateControls();
+    cameraTest.textContent = "Stop barcode test";
+    show("Looking for a barcode…");
+    try {
+      const detector = createDetector();
+      while (cameraTesting) {
+        if (camera.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+          const barcodes = await readFrame(detector);
+          if (!cameraTesting) break;
+          const code = barcodes.length === 1 ? barcodes[0].rawValue.trim() : null;
+          if (/^NFC-\d{6,12}$/.test(code || "")) {
+            const card = importedCards.get(code);
+            const match = card
+              ? links.has(code) ? "Matched to CSV · Ready to write"
+                : `Matched to CSV · ${card.status === "available" ? "Already programmed" : card.status}`
+              : importedCards.size ? "Missing from the imported CSV" : "Import a CSV to check for a match";
+            show(`Detected ${code} · ${match}`, card ? "verified" : "");
+          } else {
+            show(describeBarcode(barcodes, code));
+          }
+        }
+        await pause();
+      }
+      if (!writing) show("Barcode test stopped.");
+    } catch (error) {
+      if (!writing) show(error.message, "error");
+    } finally {
+      cameraTesting = false;
+      cameraTest.textContent = "Test barcode detection";
+      updateControls();
+    }
+  });
+
+  const code128Patterns = (
+    "212222 222122 222221 121223 121322 131222 122213 122312 132212 221213 221312 231212 " +
+    "112232 122132 122231 113222 123122 123221 223211 221132 221231 213212 223112 312131 " +
+    "311222 321122 321221 312212 322112 322211 212123 212321 232121 111323 131123 131321 " +
+    "112313 132113 132311 211313 231113 231311 112133 112331 132131 113123 113321 133121 " +
+    "313121 211331 231131 213113 213311 213131 311123 311321 331121 312113 312311 332111 " +
+    "314111 221411 431111 111224 111422 121124 121421 141122 141221 112214 112412 122114 " +
+    "122411 142112 142211 241211 221114 413111 241112 134111 111242 121142 121241 114212 " +
+    "124112 124211 411212 421112 421211 212141 214121 412121 111143 111341 131141 114113 " +
+    "114311 411113 411311 113141 114131 311141 411131 211412 211214 211232 2331112"
+  ).split(" ");
+
+  function renderLabels(codes) {
+    document.querySelector("#labels").innerHTML = codes.map(code => {
+      const values = [...code].map(character => character.charCodeAt(0) - 32);
+      const start = 104;
+      const checksum = (start + values.reduce((sum, value, index) => sum + value * (index + 1), 0)) % 103;
+      const pattern = [start, ...values, checksum, 106].map(value => code128Patterns[value]).join("");
+      let x = 12;
+      const bars = [...pattern].map((module, position) => {
+        const width = Number(module);
+        const bar = position % 2 === 0 ? `<rect x="${x}" y="8" width="${width}" height="44"/>` : "";
+        x += width;
+        return bar;
+      }).join("");
+      return `<figure><svg viewBox="0 0 ${x + 12} 60" role="img" aria-label="${code}" shape-rendering="crispEdges"><rect width="100%" height="100%" fill="white"/>${bars}</svg><figcaption>${code}</figcaption></figure>`;
+    }).join("");
+    document.querySelector("#print").hidden = false;
+  }
+  document.querySelector("#generate").addEventListener("click", () => renderLabels(["NFC-100001", "NFC-100002", "NFC-100003"]));
+  generateImported.addEventListener("click", () => renderLabels([...importedCards.keys()]));
+  document.querySelector("#print").addEventListener("click", () => window.print());
+
+  async function scan(detector) {
+    let activeUid = null;
+    let startedAt = 0;
+    let previousCode = null;
+    let waitForRemoval = false;
+    while (true) {
+      try {
+        const { uid } = await request("/card");
+        if (!uid) {
+          activeUid = null;
+          previousCode = null;
+          waitForRemoval = false;
+          show("Waiting for a card on the NFC reader.");
+        } else if (waitForRemoval) {
+          // Require an empty reader before another attempt, even if a new UID appears.
+        } else if (activeUid && uid !== activeUid) {
+          show("Card changed. Clear the reader before trying again.", "error");
+          waitForRemoval = true;
+        } else {
+          if (!activeUid) {
+            activeUid = uid;
+            startedAt = performance.now();
+            show("Card detected. Reading the barcode…");
+          }
+          if (camera.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+            const barcodes = await readFrame(detector);
+            const code = barcodes.length === 1 ? barcodes[0].rawValue.trim() : null;
+            const valid = code && /^NFC-\d{6,12}$/.test(code);
+            if (valid && previousCode === code) {
+              waitForRemoval = true;
+              show(`Writing and verifying ${code}…`);
+              const url = links.get(code);
+              if (!url) throw new Error(`${code} has no available link in the imported CSV.`);
+              const result = await request("/write", { uid, code, url });
+              if (result.verified !== true) throw new Error("The reader did not verify the link.");
+              links.delete(code);
+              inventoryStatus.textContent = `${links.size} card links remaining in this session.`;
+              timing.hidden = false;
+              timing.textContent = `Last verified: ${code} in ${((performance.now() - startedAt) / 1000).toFixed(1)} seconds`;
+              show("Card verified. Remove it from the reader.", "verified");
+              if ("speechSynthesis" in window) {
+                window.speechSynthesis.speak(new SpeechSynthesisUtterance("Card verified."));
+              }
+            } else {
+              previousCode = valid ? code : null;
+              show(valid ? "Confirming the barcode…" : describeBarcode(barcodes, code));
+            }
+          }
+        }
+      } catch (error) {
+        previousCode = null;
+        if (activeUid) waitForRemoval = true;
+        show(error.message + (waitForRemoval ? " Clear the reader before trying again." : ""), "error");
+      }
+      await pause();
+    }
+  }
+
+  const writtenCode = new URLSearchParams(location.search).get("card");
+  if (writtenCode && /^NFC-\d{6,12}$/.test(writtenCode)) {
+    document.querySelector("#station").textContent = `Local NFC test link opened for ${writtenCode}.`;
+    document.querySelector("#demo-labels").hidden = true;
+  }
+  async function openCamera(deviceId) {
+    camera.srcObject?.getTracks().forEach(track => track.stop());
+    camera.srcObject = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { width: { ideal: 1280 }, ...(deviceId ? { deviceId: { exact: deviceId } } : {}) },
+    });
+    return camera.srcObject.getVideoTracks()[0].getSettings().deviceId;
+  }
+
+  start.addEventListener("click", async () => {
+    start.disabled = true;
+    try {
+      if (!window.BarcodeDetectionAPI) throw new Error("The barcode decoder did not load. Reload the page.");
+      BarcodeDetectionAPI.prepareZXingModule({ overrides: { locateFile: () => "/zxing_reader.wasm" } });
+      const currentDevice = await openCamera();
+      const cameras = (await navigator.mediaDevices.enumerateDevices()).filter(entry => entry.kind === "videoinput");
+      device.replaceChildren(...cameras.map((entry, index) => new Option(entry.label || `Camera ${index + 1}`, entry.deviceId)));
+      if (currentDevice) device.value = currentDevice;
+      camera.hidden = false;
+      cameraReady = true;
+      updateControls();
+      document.querySelector("#camera-options").hidden = false;
+      start.hidden = true;
+      show("Choose barcode detection or NFC test writing.");
+    } catch (error) {
+      show(error.message, "error");
+      start.disabled = false;
+    }
+  });
+  device.addEventListener("change", async () => {
+    cameraReady = false;
+    updateControls();
+    device.disabled = true;
+    try {
+      await openCamera(device.value);
+      show("Choose barcode detection or NFC test writing.");
+      cameraReady = true;
+    } catch (error) {
+      show(error.message, "error");
+    } finally { updateControls(); }
+  });
+  arm.addEventListener("click", () => {
+    if (!links.size || !cameraReady || writing) return;
+    cameraTesting = false;
+    writing = true;
+    updateControls();
+    void scan(createDetector());
+  });
+</script>
