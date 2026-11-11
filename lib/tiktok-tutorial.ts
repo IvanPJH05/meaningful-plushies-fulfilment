@@ -2,9 +2,9 @@ import { mobileServiceClient } from "./mobile-api";
 import { tikTokAccess } from "./tiktok-connection";
 import { fetchTikTokOrderDetails } from "./tiktok-orders";
 import { TikTokApiError, tikTokCredentials, tikTokRequest } from "./tiktok-client.ts";
+import { tutorialInstructions } from "./tiktok-tutorial-instructions.ts";
 
 const pilot = "tiktok-586945542722586535";
-const message = "Thank you for ordering from Meaningful Plushies! 💗\n\nPlease watch this short tutorial on how to submit your voice recording for your plushie.\n\nTerima kasih kerana membuat pesanan dengan Meaningful Plushies! 💗\n\nSila tonton video tutorial ringkas ini untuk cara menghantar rakaman suara plushie anda.";
 const deliveries = () => mobileServiceClient().from("tiktok_tutorial_deliveries");
 
 export async function queueTikTokTutorials(orders: { id: string; create_time?: unknown }[]) {
@@ -80,6 +80,7 @@ export async function deliverTikTokTutorial(orderId: string) {
     if (!order || typeof order.user_id !== "string" || !order.user_id || String(order.status || order.order_status) === "CANCELLED") {
       throw new Error("TikTok did not return an eligible buyer for this order.");
     }
+    const message = claim.data.text_id ? null : tutorialInstructions(order.line_items);
     const query = { shop_cipher: String(connection.shop_cipher) };
     const chat = await tikTokRequest<{ conversation_id: string }>(
       "/customer_service/202309/conversations", connection.token, query, { buyer_user_id: order.user_id },
@@ -97,7 +98,7 @@ export async function deliverTikTokTutorial(orderId: string) {
       if (!result.message_id) throw new Error("TikTok did not confirm delivery.");
       return result.message_id;
     }
-    if (!claim.data.text_id) {
+    if (message !== null) {
       const textId = await send("TEXT", { content: message });
       await save({ text_id: textId });
       sending = false;
