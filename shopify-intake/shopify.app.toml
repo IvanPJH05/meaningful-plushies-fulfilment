@@ -1,0 +1,20 @@
+client_id = "6043167ddb69732554a716e060a35712"
+name = "Meaningful Plushie Intake"
+application_url = "https://meaningful-plushies-fulfilment.vercel.app"
+embedded = true
+
+[webhooks]
+api_version = "2026-07"
+
+[access_scopes]
+scopes = "write_app_proxy"
+optional_scopes = []
+use_legacy_install_flow = false
+
+[auth]
+redirect_urls = []
+
+[app_proxy]
+url = "https://meaningful-plushies-fulfilment.vercel.app/collection-proxy"
+prefix = "apps"
+subpath = "customise-your-plushie"

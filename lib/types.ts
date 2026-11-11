@@ -314,6 +314,9 @@ export type StatusEvent = {
 };
 
 export type Order = {
+  tikTokShopStatus?: string;
+  customisationSessionId?: string;
+  shopifyLineItemId?: string;
   id: string;
   orderNumber: string;
   salesChannel?: "shopify" | "tiktok";

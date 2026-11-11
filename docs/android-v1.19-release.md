@@ -1,0 +1,4 @@
+- Four-tab mobile layout with sales reporting, order search, Fulfilment, and Account.
+- Pull down from the top of a screen to refresh it.
+- Updated Meaningful Plushies launcher icon and in-app logo.
+- Live scanner totals require a separate Vercel connection.

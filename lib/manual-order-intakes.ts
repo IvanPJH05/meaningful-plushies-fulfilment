@@ -1,13 +1,15 @@
 import { randomUUID } from "node:crypto";
+import {dailyManualPaymentSummary, manualPaymentDayRange, type DailyPaymentRow} from "./daily-manual-payments";
 
 import { createClient } from "@supabase/supabase-js";
 
-import { createCompleteNowSession, createVoiceUpload, saveSubmittedSession, submittedCustomisationsForSessionIds, type CustomisationForm } from "./customisation";
+import { createCompleteNowSession, createVoiceUpload, normaliseCustomisationForm, saveSnowyCharmVoice, saveSubmittedSession, submittedCustomisationsForSessionIds, type CustomisationForm } from "./customisation";
 import { shopifyOrderToFulfilmentOrders } from "./importer";
 import { notifyNewManualOrder } from "./mobile-push-notifications";
-import { shopifyManualOrderCustomerName } from "./manual-order-customer-name";
-import { manualOrderProductByKey } from "./manual-order-products";
+import { shopifyManualOrderCustomerName, shopifyManualOrderShippingName } from "./manual-order-customer-name";
+import { manualOrderCharactersForProduct, manualOrderProductByKey, manualOrderProductFamily, manualOrderProducts, type ManualOrderProductConfig } from "./manual-order-products";
 import { manualOrderIntakeQuote as quoteManualOrderIntake } from "./manual-order-intake-pricing";
+import { completeManualOrderCreation } from "./manual-order-completion";
 import { normalizeManualOrderPhone, shopifyManualOrderPhone } from "./manual-order-phone";
 import { manualOrderSpeakerSeconds, normalizeManualOrderCharacter } from "./manual-order-product-paths";
 import { cleanShopifyOrderNumber, fetchShopifyOrderByNumber, shopDomain, shopifyGraphql, shopifyRest, textValue } from "./shopify-orders";
@@ -59,6 +61,22 @@ export type ManualOrderIntakeDetails = {
   voiceUrl: string;
   voiceFileName: string;
   customisationSavedAt: string;
+  products: ManualOrderProductConfig[];
+};
+
+export type ManualOrderIntakeEdit = {
+  expectedUpdatedAt: string;
+  customerName: string;
+  customerEmail: string;
+  phone: string;
+  character: string;
+  productKey: string;
+  shippingRegion: "WEST" | "EAST";
+  shippingAddress: ShippingAddress;
+  form: CustomisationForm;
+  isCod: boolean;
+  paymentReceipts: PaymentReceipt[];
+  voiceStoragePath?: string;
 };
 
 export type ManualOrderIntakeApproval = ManualOrderIntake & {
@@ -67,6 +85,7 @@ export type ManualOrderIntakeApproval = ManualOrderIntake & {
 };
 
 export type ManualOrderIntakeSubmission = {
+  language?: string;
   customerName: string;
   customerEmail: string;
   phone: string;
@@ -130,7 +149,9 @@ function rowToIntake(row: Record<string, unknown>): ManualOrderIntake {
     productDisplayName: String(row.product_display_name || ""),
     shopifyVariantId: String(row.shopify_variant_id || ""),
     shippingRegion: row.shipping_region === "EAST" ? "EAST" : "WEST",
-    shippingAddress: validAddress(address),
+    // Reads must allow incomplete historical submissions to be opened and fixed.
+    // Full address validation happens when submitting, editing or creating.
+    shippingAddress: { address1: String(address.address1 || ""), address2: String(address.address2 || ""), city: String(address.city || ""), province: String(address.province || ""), zip: String(address.zip || ""), countryCode: String(address.countryCode || "MY") },
     customisationSessionId: String(row.customisation_session_id || ""),
     paymentReceipts,
     isCod: paymentReceipts.some((receipt) => receipt.url === COD_PAYMENT_MARKER),
@@ -155,13 +176,40 @@ function knownVariantId(character: string, seconds: number) {
   return variants[character.toLowerCase()]?.[seconds] || "";
 }
 
+function characterForProduct(value: string, product: ManualOrderProductConfig) {
+  const requested = value.trim().toLowerCase();
+  return manualOrderCharactersForProduct(product).find((character) => character.toLowerCase() === requested) || "";
+}
+
+function productHandle(product: ManualOrderProductConfig) {
+  return product.productPath.replace(/^https?:\/\/[^/]+\//, "").replace(/^\/+/, "").replace(/^products\//, "").split("/")[0];
+}
+
+async function shopifyVariantForProduct(product: ManualOrderProductConfig) {
+  if (product.shopifyVariantId) return asVariantGid(product.shopifyVariantId);
+  const handle = productHandle(product);
+  const domain = shopDomain();
+  if (!handle || !domain) return "";
+  const result = await shopifyGraphql<{
+    data?: { products?: { nodes?: Array<{ variants?: { nodes?: Array<{ id?: string }> } }> } };
+  }>(domain, `
+    query ManualOrderCollectionProduct($query: String!) {
+      products(first: 1, query: $query) {
+        nodes { variants(first: 10) { nodes { id } } }
+      }
+    }
+  `, { query: `handle:${handle}` });
+  return textValue(result?.data?.products?.nodes?.[0]?.variants?.nodes?.[0]?.id);
+}
+
 function asVariantGid(id: string) {
   return id.startsWith("gid://") ? id : `gid://shopify/ProductVariant/${id}`;
 }
 
 function currentVariantIdForIntake(intake: ManualOrderIntake) {
+  if (intake.shopifyVariantId) return intake.shopifyVariantId;
   const product = manualOrderProductByKey(intake.productKey);
-  const character = normalizeManualOrderCharacter(intake.character);
+  const character = product ? characterForProduct(intake.character, product) : normalizeManualOrderCharacter(intake.character);
   const seconds = Number(product ? manualOrderSpeakerSeconds(product) : 0);
   const currentVariant = character && seconds ? knownVariantId(character, seconds) : "";
   return currentVariant ? asVariantGid(currentVariant) : intake.shopifyVariantId;
@@ -204,6 +252,8 @@ function fallbackFulfilmentOrderForIntake(
   const orderNumber = cleanShopifyOrderNumber(intake.shopifyOrderName || intake.shopifyOrderId);
   if (!orderNumber) return null;
   const quote = manualOrderIntakeQuote(intake);
+  const configuredProduct = manualOrderProductByKey(intake.productKey);
+  const isPlushCharm = Boolean(configuredProduct && manualOrderProductFamily(configuredProduct) === "plush_charm");
   const basePrice = Math.max(0, (quote.amountToCollect ?? 0) - quote.shippingFee);
   const total = quote.amountToCollect ?? 0;
   return {
@@ -230,8 +280,8 @@ function fallbackFulfilmentOrderForIntake(
     creatorFreeOrder: false,
     shippingMethod: intake.shippingRegion === "EAST" ? "East Malaysia delivery" : "Standard delivery",
     product: intake.productDisplayName,
-    productType: "classic_plushie",
-    character: normalizeManualOrderCharacter(intake.character) || intake.character,
+    productType: isPlushCharm ? "plush_charm" : "classic_plushie",
+    character: configuredProduct ? characterForProduct(intake.character, configuredProduct) || intake.character : normalizeManualOrderCharacter(intake.character) || intake.character,
     setIndicator: "",
     idWebsiteLink: "",
     voiceLength: quote.speakerSeconds,
@@ -301,14 +351,17 @@ async function saveManualIntakeToFulfilment(
   // meant a restored order could be stored successfully yet never appear on a
   // device that had already refreshed later that day.
   const syncedAt = new Date().toISOString();
+  const configuredProduct = manualOrderProductByKey(intake.productKey);
+  const isPlushCharm = Boolean(configuredProduct && manualOrderProductFamily(configuredProduct) === "plush_charm");
 
   const enriched = sourceOrders.map((order) => ({
     ...order,
+    productType: isPlushCharm ? "plush_charm" : order.productType,
     customerName: intake.customerName || order.customerName,
     phone: intake.phoneOriginal || order.phone,
     email: intake.customerEmail || order.email,
     address: intakeAddress(intake) || order.address,
-    character: normalizeManualOrderCharacter(intake.character) || order.character,
+    character: configuredProduct ? characterForProduct(intake.character, configuredProduct) || order.character : normalizeManualOrderCharacter(intake.character) || order.character,
     voiceLength: manualOrderIntakeQuote(intake).speakerSeconds || order.voiceLength,
     plushName: form.plushName || order.plushName,
     plushGender: form.gender || order.plushGender,
@@ -477,7 +530,7 @@ function shopifyAddressForIntake(intake: ManualOrderIntake) {
   // Shopify customer or order write, so an incomplete record stays in Manual
   // Orders until it is corrected instead of creating a partial Shopify order.
   const shippingAddress = validAddress(intake.shippingAddress);
-  const customerName = shopifyManualOrderCustomerName(intake.customerName);
+  const customerName = shopifyManualOrderShippingName(intake.customerName);
   return {
     firstName: customerName.firstName,
     lastName: customerName.lastName,
@@ -515,14 +568,21 @@ export async function submitManualOrderIntake(input: ManualOrderIntakeSubmission
   const email = clean(input.customerEmail, 254).toLowerCase();
   if (!customerName) throw new Error("Enter the customer name.");
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) throw new Error("Enter a valid email address.");
-  const character = normalizeManualOrderCharacter(input.character);
   const product = manualOrderProductByKey(input.productKey);
+  const character = product ? characterForProduct(input.character, product) : "";
   const seconds = Number(product ? manualOrderSpeakerSeconds(product) : 0);
-  const variant = character && seconds ? knownVariantId(character, seconds) : "";
+  const classicVariant = product && manualOrderProductFamily(product) === "classic_plushie" && character && seconds
+    ? knownVariantId(character, seconds)
+    : "";
+  const variant = classicVariant || (product && manualOrderProductFamily(product) === "plush_charm" ? await shopifyVariantForProduct(product) : "");
   if (!product || !character || !variant) throw new Error("Choose a valid plushie and voice length.");
   const phone = normalizeManualOrderPhone(input.phone);
   const address = validAddress(input.shippingAddress);
-  await saveSubmittedSession(input.sessionToken, input.form, input.voiceStoragePath);
+  if (manualOrderProductFamily(product) === "plush_charm") {
+    await saveSnowyCharmVoice(input.sessionToken, input.voiceStoragePath);
+  } else {
+    await saveSubmittedSession(input.sessionToken, input.form, input.voiceStoragePath);
+  }
 
   const now = new Date().toISOString();
   const { data, error } = await serviceClient().from(TABLE).insert({
@@ -535,7 +595,10 @@ export async function submitManualOrderIntake(input: ManualOrderIntakeSubmission
   }).select("*").single();
   if (error || !data) throw new Error(error?.message || "Your details could not be saved.");
   const intake = rowToIntake(data as Record<string, unknown>);
-  await notifyNewManualOrder({ id: intake.id, reference: manualOrderIntakeReference(intake.id), product: intake.productDisplayName });
+  let amountToCollect: number | null = null;
+  try { amountToCollect = (await listManualOrderIntakeApprovals()).find(order => order.id === intake.id)?.amountToCollect ?? null; }
+  catch { /* Still alert staff if pricing is temporarily unavailable. */ }
+  await notifyNewManualOrder({ id: intake.id, reference: manualOrderIntakeReference(intake.id), product: intake.productDisplayName, amountToCollect, shippingRegion: intake.shippingRegion, language: input.language });
   return { ...intake, reference: manualOrderIntakeReference(intake.id), whatsAppUrl: collectionWhatsAppUrl(manualOrderIntakeReference(intake.id)) };
 }
 
@@ -546,6 +609,21 @@ export async function listManualOrderIntakes() {
   // particular, customer permission changes must not make the list appear
   // empty even though every submission remains safely stored in Supabase.
   return (data || []).map((row) => rowToIntake(row as Record<string, unknown>));
+}
+
+export async function getDailyManualPayments(day: string) {
+  const {start,end} = manualPaymentDayRange(day);
+  const rows: DailyPaymentRow[] = [];
+  for (let offset = 0; ; offset += 500) {
+    const {data,error} = await serviceClient().from(TABLE)
+      .select("id,customer_name,status,paid_at,shopify_order_id,shopify_order_name,payment_receipts")
+      .gte("paid_at",start).lt("paid_at",end).in("status",["ready_to_create","created"])
+      .order("id").range(offset,offset + 499);
+    if (error) throw Error(error.message);
+    rows.push(...(data || []) as DailyPaymentRow[]);
+    if (!data || data.length < 500) break;
+  }
+  return dailyManualPaymentSummary(rows,day);
 }
 
 /** Compact data for the approval queue. It deliberately excludes transaction
@@ -593,7 +671,54 @@ export async function getManualOrderIntakeDetails(id: string): Promise<ManualOrd
     voiceUrl: voiceStoragePath ? voiceDownloadUrl(voiceStoragePath) : "",
     voiceFileName: voiceStoragePath.split("/").at(-1) || "",
     customisationSavedAt: customisation?.savedAt || "",
+    products: manualOrderProducts,
   };
+}
+
+export async function editManualOrderIntake(id: string, input: ManualOrderIntakeEdit) {
+  const details = await getManualOrderIntakeDetails(id);
+  const intake = details.intake;
+  if (intake.shopifyOrderId || !["awaiting_payment", "ready_to_create"].includes(intake.status)) throw new Error("This order has already been created or cancelled. Open its linked order to make further changes.");
+  if (!input.expectedUpdatedAt) throw new Error("Reopen the submission before saving.");
+  const customerName = clean(input.customerName, 120);
+  shopifyManualOrderCustomerName(customerName);
+  const customerEmail = clean(input.customerEmail, 254).toLowerCase();
+  if (!/^\S+@\S+\.\S+$/.test(customerEmail)) throw new Error("Enter a valid customer email address.");
+  const phoneOriginal = clean(input.phone, 40);
+  const phone = normalizeManualOrderPhone(phoneOriginal);
+  const shippingAddress = validAddress(input.shippingAddress || {} as ShippingAddress);
+  const product = manualOrderProductByKey(input.productKey);
+  const character = product ? characterForProduct(input.character, product) : "";
+  if (!product || !character) throw new Error("Choose a valid product and character.");
+  const charm = manualOrderProductFamily(product) === "plush_charm";
+  const form = charm ? input.form || {} : normaliseCustomisationForm(input.form);
+  if (!form) throw new Error("Complete every birth certificate field before saving.");
+  const variant = !charm ? knownVariantId(character, Number(manualOrderSpeakerSeconds(product))) : await shopifyVariantForProduct(product);
+  if (!variant) throw new Error("The selected product is not available in Shopify.");
+  const receipts: PaymentReceipt[] = (Array.isArray(input.paymentReceipts) ? input.paymentReceipts : []).filter(receipt => receipt.url !== COD_PAYMENT_MARKER).map(receipt => {
+    const url = clean(receipt.url, 2048);
+    if (!/^https?:\/\//i.test(url)) throw new Error("Use a valid uploaded receipt URL.");
+    return { fileName: clean(receipt.fileName, 200) || "Receipt", url };
+  });
+  if (input.isCod) receipts.push({ fileName: "Cash on delivery", url: COD_PAYMENT_MARKER });
+  const { error } = await serviceClient().rpc("edit_manual_order_submission", {
+    p_id: id, p_expected_updated_at: input.expectedUpdatedAt,
+    p_intake: { customer_name: customerName, customer_email: customerEmail, phone_original: phoneOriginal, phone_normalized: phone.normalized, character, product_key: product.key, product_display_name: `${character} - ${product.displayName}`, shopify_variant_id: asVariantGid(variant), shipping_region: input.shippingRegion === "EAST" ? "EAST" : "WEST", shipping_address: shippingAddress, payment_receipts: receipts },
+    p_form: { ...form, productType: charm ? "plush_charm" : "classic_plushie" },
+    p_voice_path: input.voiceStoragePath || null,
+  });
+  if (error) throw new Error(error.message);
+  return getManualOrderIntakeDetails(id);
+}
+
+export async function prepareManualOrderEditVoice(id: string, fileName: string, contentType: string, size: number) {
+  const { intake } = await getManualOrderIntakeDetails(id);
+  if (intake.shopifyOrderId || !["awaiting_payment", "ready_to_create"].includes(intake.status)) throw new Error("Only pending submissions can have their voice replaced here.");
+  if (!Number.isFinite(size) || size <= 0 || size > 50 * 1024 * 1024 || !/\.(mp3|mp4|m4a|ogg|oga|wav|webm|mov)$/i.test(fileName)) throw new Error("Choose an audio or video file up to 50 MB.");
+  const path = `${intake.customisationSessionId}/${randomUUID()}-${fileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100)}`;
+  const { data, error } = await serviceClient().storage.from("customisation-audio").createSignedUploadUrl(path);
+  if (error || !data) throw new Error("Could not prepare the replacement voice upload.");
+  return { path, signedUrl: data.signedUrl, contentType };
 }
 
 export async function deleteManualOrderIntake(id: string) {
@@ -653,23 +778,30 @@ export async function createPaidShopifyOrder(intakeId: string) {
   const customisation = submitted.get(intake.customisationSessionId);
   if (!customisation) throw new Error("The saved customisation for this collection submission could not be found.");
   const form = customisation.form;
+  const configuredProduct = manualOrderProductByKey(intake.productKey);
+  const isPlushCharm = Boolean(configuredProduct && manualOrderProductFamily(configuredProduct) === "plush_charm");
   const shopifyAddress = shopifyAddressForIntake(intake);
   const shopifyVariantId = currentVariantIdForIntake(intake);
   if (!shopifyVariantId) throw new Error("The selected plushie product is not available in Shopify. This order has not been created.");
   if (shopifyVariantId !== intake.shopifyVariantId) {
     await serviceClient().from(TABLE).update({ shopify_variant_id: shopifyVariantId, updated_at: new Date().toISOString() }).eq("id", intake.id);
   }
-  const lineItemProperties = [
-    { name: "customisation_session_id", value: intake.customisationSessionId },
-    { name: "Name", value: form.plushName },
-    { name: "Gender", value: form.gender },
-    { name: "Born On", value: form.birthDate },
-    { name: "Birthplace", value: form.birthPlace },
-    { name: "Favourite Person", value: form.favouritePerson },
-    { name: "Belongs To", value: form.belongsTo },
-    { name: "Meaningful Note", value: form.meaningfulNote },
-    { name: "Meaningful Message", value: voiceDownloadUrl(customisation.voiceStoragePath) },
-  ];
+  const lineItemProperties = isPlushCharm
+    ? [
+      { name: "customisation_session_id", value: intake.customisationSessionId },
+      { name: "Meaningful Message", value: voiceDownloadUrl(customisation.voiceStoragePath) },
+    ]
+    : [
+      { name: "customisation_session_id", value: intake.customisationSessionId },
+      { name: "Name", value: form.plushName },
+      { name: "Gender", value: form.gender },
+      { name: "Born On", value: form.birthDate },
+      { name: "Birthplace", value: form.birthPlace },
+      { name: "Favourite Person", value: form.favouritePerson },
+      { name: "Belongs To", value: form.belongsTo },
+      { name: "Meaningful Note", value: form.meaningfulNote },
+      { name: "Meaningful Message", value: voiceDownloadUrl(customisation.voiceStoragePath) },
+    ];
   // Shopify needs a real customer with a saved default address before this
   // manual paid order is made. Without that sequence it can create the order
   // and shipping line but leave "No shipping address provided" in Admin.
@@ -714,12 +846,13 @@ export async function createPaidShopifyOrder(intakeId: string) {
     if (!order?.id) throw new Error("Shopify did not return the new order.");
   }
 
-  // Always make the follow-up write. The REST fallback covers the Shopify
-  // behaviour seen in these collection orders where the shipping line saves
-  // but the address itself does not.
-  const shippingAddressSaved = await repairShopifyShippingAddress(domain, order, shopifyAddress);
-  if (!shippingAddressSaved) throw new Error("Shopify did not confirm the shipping address. This order is still ready to retry.");
-  const marked = await markIntakeCreated(intake, order);
+  // Record Shopify's successful creation before attempting address repair.
+  // A failed follow-up must not leave a paid order in Awaiting approval.
+  const createdOrder = order;
+  const marked = await completeManualOrderCreation(
+    () => markIntakeCreated(intake, createdOrder),
+    () => repairShopifyShippingAddress(domain, createdOrder, shopifyAddress),
+  );
   const shopifyOrderId = marked.shopifyOrderId;
   const shopifyOrderName = marked.shopifyOrderName;
   const now = marked.now;
@@ -731,7 +864,7 @@ export async function createPaidShopifyOrder(intakeId: string) {
     phoneNormalized: intake.phoneNormalized, phoneLastFour: intake.phoneNormalized.slice(-4), productKey: intake.productKey,
     productDisplayName: intake.productDisplayName, shopifyProductId: "", shopifyVariantId: intake.shopifyVariantId,
     productPath: "", shippingRegion: intake.shippingRegion, productDiscountCode: `INTAKE-${intake.id}`,
-    productDiscountShopifyId: "", shippingDiscountCode: "", shippingDiscountShopifyId: "", customerLink: "",
+    productDiscountShopifyId: "", shippingDiscountCode: `INTAKE-SHIPPING-${intake.id}`, shippingDiscountShopifyId: "", customerLink: "",
     status: "used", isCod: intake.isCod, shopifyOrderId, shopifyOrderName, createdAt: intake.createdAt, updatedAt: now, usedAt: now,
     paymentReceipts: intake.paymentReceipts,
   };
@@ -759,7 +892,7 @@ export async function createPaidShopifyOrder(intakeId: string) {
       error: error instanceof Error ? error.message : String(error),
     });
   }
-  return { shopifyOrderId, shopifyOrderName, fulfilmentRowsSaved };
+  return { shopifyOrderId, shopifyOrderName, fulfilmentRowsSaved, shippingWarning: marked.shippingWarning };
 }
 
 /** Restore any historical WhatsApp collection orders that were created while

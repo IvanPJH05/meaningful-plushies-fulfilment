@@ -1,0 +1,26 @@
+import { beforeEach, expect, it, vi } from "vitest";
+import { createHmac } from "node:crypto";
+const m=vi.hoisted(()=>({db:{serverOnly:true},session:vi.fn(),save:vi.fn(),read:vi.fn(),convert:vi.fn(),fetch:vi.fn(),recent:vi.fn(),activity:vi.fn()}));
+vi.mock("../lib/mobile-api",()=>({mobileServiceClient:()=>m.db,requireMobileSession:m.session}));
+vi.mock("../lib/supabase",()=>({upsertSharedOrders:m.save,fetchSharedOrdersByOrderNumber:m.read,fetchSharedOrders:vi.fn(),insertSharedActivity:m.activity,markManualOrderUsedByDiscountCode:vi.fn(),fetchMetaCapiSettings:vi.fn().mockResolvedValue({})}));
+vi.mock("../lib/importer",()=>({shopifyOrderToFulfilmentOrders:m.convert,shopifyLinePersonalization:()=>({})}));
+vi.mock("../lib/our-link",()=>({addMissingOurLinks:async(orders:unknown)=>orders}));
+vi.mock("../lib/meta-capi",()=>({sendMetaPurchaseEvents:vi.fn()}));
+vi.mock("../lib/customisation",()=>({customisationSessionIds:()=>[],recoverMissingSessionIdForOrder:async()=>[],submittedCustomisationsForSessionIds:async()=>new Map(),submittedCustomisationForOrder:async()=>null,bindSessionsToOrders:async({orders}:{orders:unknown})=>orders}));
+vi.mock("../lib/shopify-orders",()=>({fetchShopifyOrder:m.fetch,fetchShopifyOrderByNumber:m.fetch,fetchShopifyOrdersCreatedSince:m.recent,cleanShopifyOrderNumber:(v:string)=>v.replace(/^#/,""),textValue:(v:unknown)=>v==null?"":String(v),objectValue:(v:unknown)=>v||{},shopifyMetafieldValue:()=>"",uploadLiftCertificateFields:()=>({}),certificateMetaobjectForOrder:async()=>null,createCertificateMetaobject:vi.fn(),flowCertificateCode:()=>"test-code",certificateMediaForLineItem:vi.fn(),plushBackgroundForMeaningfulNote:vi.fn()}));
+import { POST as webhook } from "../app/api/shopify/webhooks/orders-create/route";
+import { POST as updatedWebhook } from "../app/api/shopify/webhooks/orders-updated/route";
+import { POST as catchUp } from "../app/api/shopify/orders/catch-up/route";
+import { POST as refresh } from "../app/api/shopify/orders/refresh/route";
+const source={id:"gid://shopify/Order/7019767562311",name:"#1910",createdAt:"2026-10-15T18:41:35Z",lineItems:[]};
+const order={id:"shopify-1910",orderNumber:"1910",status:"new_order",updatedAt:"2026-10-15T18:41:35Z",meaningfulMessage:"",certificateCode:"19101234567"};
+beforeEach(()=>{vi.clearAllMocks();vi.stubEnv("SHOPIFY_WEBHOOK_SECRET","fixture-secret");m.session.mockResolvedValue({role:"admin"});m.fetch.mockResolvedValue(source);m.recent.mockResolvedValue([source]);m.read.mockResolvedValue([]);m.convert.mockReturnValue([order]);m.save.mockResolvedValue({saved:true});m.activity.mockResolvedValue(undefined);});
+function hookRequest(valid=true){const body=JSON.stringify(source);return new Request("https://app.test/api/shopify/webhooks/orders-create",{method:"POST",headers:{"x-shopify-hmac-sha256":valid?createHmac("sha256","fixture-secret").update(body).digest("base64"):"invalid"},body});}
+function staffRequest(body:unknown){return new Request("https://app.test/api/shopify/orders/refresh",{method:"POST",headers:{Authorization:"Bearer fixture"},body:JSON.stringify(body)});}
+it.each([["create",webhook],["update",updatedWebhook]])("%s webhook saves using the server client after HMAC verification",async(_,handler)=>{const r=await handler(hookRequest());expect(r.status).toBe(200);expect(m.save).toHaveBeenCalledWith([order],{syncSales:false},m.db);expect(m.read).toHaveBeenCalledWith("1910",m.db);expect(m.session).not.toHaveBeenCalled();});
+it("rejects invalid webhook signatures without database access",async()=>{expect((await webhook(hookRequest(false))).status).toBe(401);expect(m.save).not.toHaveBeenCalled();expect(m.read).not.toHaveBeenCalled();});
+it("retains a non-success response when the critical save fails so Shopify retries",async()=>{m.save.mockRejectedValueOnce(new Error("Database unavailable"));expect((await webhook(hookRequest())).status).toBe(500);});
+it("catch-up saves recovered orders with the server connection",async()=>{const r=await catchUp(staffRequest({date:"2026-10-15"}));expect(r.status).toBe(200);expect(m.save).toHaveBeenCalledWith([order],{syncSales:false},m.db);expect(m.read).toHaveBeenCalledWith("1910",m.db);expect(m.session).toHaveBeenCalledOnce();});
+it("missing-only recovery leaves existing staff-edited rows untouched",async()=>{m.read.mockResolvedValue([{...order,status:"sent_for_sewing",plushName:"Staff edit"}]);const r=await catchUp(staffRequest({date:"2026-10-15",onlyMissing:true}));expect(r.status).toBe(200);expect(m.convert).not.toHaveBeenCalled();expect(m.save).not.toHaveBeenCalled();});
+it("manual refresh also saves with the server connection",async()=>{const r=await refresh(staffRequest({orderNumber:"1910"}));expect(r.status).toBe(200);expect(m.save).toHaveBeenCalledWith([order],{syncSales:false},m.db);expect(m.session).toHaveBeenCalledOnce();});
+it.each([["SIGN_IN_REQUIRED",401],["WAREHOUSE_ACCESS_REQUIRED",403]])("protects refresh and recovery from %s",async(message,status)=>{m.session.mockRejectedValue(new Error(message));for(const handler of [refresh,catchUp])expect((await handler(staffRequest({date:"2026-10-15",orderNumber:"1910"}))).status).toBe(status);expect(m.save).not.toHaveBeenCalled();expect(m.recent).not.toHaveBeenCalled();});

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { mobileServiceClient } from "../../../../lib/mobile-api";
 import { fetchSharedOrderById } from "../../../../lib/supabase";
 import { mediaFileExtension, voiceBackupFileName } from "../../../../lib/voice-file-name";
 
@@ -24,7 +25,14 @@ export async function GET(request: Request) {
   try {
     const order = await fetchSharedOrderById(orderId);
     if (!order || order.salesChannel !== "tiktok") return NextResponse.json({ ok: false, error: "TikTok order not found." }, { status: 404 });
-    const media = dataUrlFile(order.tikTokFileDataUrl || "");
+    let media = dataUrlFile(order.tikTokFileDataUrl || "");
+    if (order.tikTokFileDataUrl?.startsWith("supabase-storage:")) {
+      const path = order.tikTokFileDataUrl.slice("supabase-storage:".length);
+      if (!/^[0-9a-f-]{36}\/[A-Za-z0-9._-]+$/i.test(path)) throw new Error("Invalid attachment path.");
+      const { data, error } = await mobileServiceClient().storage.from("customisation-audio").download(path);
+      if (error || !data) throw new Error("Could not download attachment.");
+      media = { contentType: data.type || "application/octet-stream", body: Buffer.from(await data.arrayBuffer()) };
+    }
     if (!media) return NextResponse.json({ ok: false, error: "No message file was saved for this order. Please attach it again." }, { status: 404 });
 
     const filename = voiceBackupFileName(order, mediaFileExtension(order.tikTokFileName, order.tikTokFileType, order.tikTokFileDataUrl));

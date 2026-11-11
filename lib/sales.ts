@@ -17,6 +17,7 @@ export type SalesSummary = {
 export type SalesReportRow = {
   orderNumber: string;
   orderDate: string;
+  source: "shopify" | "tiktok" | "whatsapp";
   customerName: string;
   characters: string[];
   voiceLengths: number[];
@@ -70,13 +71,17 @@ export function manualOrderRevenue(order: Order, manualOrder?: ManualOrder) {
   return Math.max(0, order.subtotalAmount) + eastMalaysiaSurcharge + codFee;
 }
 
-export function isCreatorFreeOrder(order: Order, creatorProfiles?: CreatorProfile[], freeCreatorSampleCodes: string[] = []) {
+/**
+ * Identifies an order that used a known creator code. This intentionally does
+ * not require a RM0 total: older Creator Sample claims could still charge
+ * shipping, and staff must be able to identify those claims in fulfilment.
+ */
+export function isCreatorSampleOrder(order: Order, creatorProfiles?: CreatorProfile[], freeCreatorSampleCodes: string[] = []) {
   const codes = orderDiscountCodes(order);
   // When the Creator Program has been loaded, only an exact program code can
-  // mark a RM0 checkout as an influencer order. A generic FREE-* discount is
+  // mark a checkout as an influencer order. A generic FREE-* discount is
   // never enough on its own.
   if (creatorProfiles) {
-    if (order.totalAmount > 0) return false;
     const creatorCodes = new Set([...creatorProfiles.flatMap((profile) => {
       const code = profile.discountCode.trim().toUpperCase();
       return code ? [code, code.startsWith("FREE-") ? code : `FREE-${code}`] : [];
@@ -89,6 +94,15 @@ export function isCreatorFreeOrder(order: Order, creatorProfiles?: CreatorProfil
     || code.startsWith("CREATOR-FREE")
     || code.includes("INFLUENCER-FREE")
   ));
+}
+
+/**
+ * Creator-programme membership is determined only by an exact registered
+ * code. Checkout totals are not reliable: historic creator claims could
+ * contain delivery fees, while newer ones include free shipping.
+ */
+export function isCreatorFreeOrder(order: Order, creatorProfiles?: CreatorProfile[], freeCreatorSampleCodes: string[] = []) {
+  return isCreatorSampleOrder(order, creatorProfiles, freeCreatorSampleCodes);
 }
 
 export function summarizeSales(orders: Order[], settings: PaymentProcessorSetting[] = [], shopifyPercentage = 0, manualOrders: ManualOrder[] = [], creatorProfiles?: CreatorProfile[], freeCreatorSampleCodes: string[] = []): SalesSummary {
@@ -122,6 +136,11 @@ export function buildSalesReportRows(orders: Order[], settings: PaymentProcessor
       order.totalAmount - order.refundedAmount - order.outstandingBalance,
     );
     const manualOrder = manualOrderFor(order, manualOrders);
+    const source = order.salesChannel === "tiktok"
+      ? "tiktok" as const
+      : manualOrder || /created from manual order collection/i.test(order.remark || "")
+        ? "whatsapp" as const
+        : "shopify" as const;
     const creatorFreeOrder = isCreatorFreeOrder(order, creatorProfiles, freeCreatorSampleCodes);
     const isManualOrder = Boolean(manualOrder) || (cashCollected === 0 && !creatorFreeOrder);
     const manualPrice = manualOrderRevenue(order, manualOrder);
@@ -139,6 +158,7 @@ export function buildSalesReportRows(orders: Order[], settings: PaymentProcessor
     return {
       orderNumber: order.orderNumber,
       orderDate: order.orderDate,
+      source,
       customerName: order.customerName,
       characters: [...new Set(group.map((item) => item.character).filter(Boolean))],
       voiceLengths: [...new Set(group.map((item) => item.voiceLength).filter(Boolean))].sort((a, b) => a - b),

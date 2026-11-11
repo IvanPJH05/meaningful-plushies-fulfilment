@@ -24,7 +24,7 @@ const ORDER_SELECTION = `
   paymentGatewayNames
   discountApplications(first: 10) {
     nodes {
-      ... on DiscountCodeApplication { code title }
+      ... on DiscountCodeApplication { code }
       ... on ManualDiscountApplication { title }
       ... on ScriptDiscountApplication { title }
       ... on AutomaticDiscountApplication { title }
@@ -38,6 +38,7 @@ const ORDER_SELECTION = `
   uploadLiftFormData: metafield(namespace: $uploadLiftNamespace, key: $uploadLiftKey) { value }
   lineItems(first: 50) {
     nodes {
+      id
       name
       title
       quantity
@@ -92,6 +93,7 @@ async function getShopifyAccessToken(domain: string) {
   }
 
   const response = await fetch(`https://${domain}/admin/oauth/access_token`, {
+    signal: AbortSignal.timeout(20_000),
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -149,6 +151,7 @@ export async function shopifyGraphql<T>(domain: string, query: string, variables
 
   const apiVersion = process.env.SHOPIFY_API_VERSION ?? "2026-04";
   const response = await fetch(`https://${domain}/admin/api/${apiVersion}/graphql.json`, {
+    signal: AbortSignal.timeout(20_000),
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -192,7 +195,7 @@ export function flowCertificateCode(orderNumber: string) {
 
 export type CertificateMetaobjectInput = {
   orderNumber: string;
-  createdAt: string;
+  createdAt?: string;
   plushDetails?: string;
   code?: string;
   idName?: string;

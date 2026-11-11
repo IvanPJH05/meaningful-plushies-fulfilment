@@ -140,6 +140,24 @@ export function nextPlushCharmSequence(orders: Array<{ idWebsiteLink?: string }>
 }
 
 /**
+ * Reserves the next Charm sale number with one tiny, atomic database update.
+ *
+ * Do not derive this number by loading fulfilment history: those rows contain
+ * media payloads and a full scan can time out while Shopify is delivering a
+ * new order. The database counter is also safe when Shopify sends the create
+ * and update webhooks at the same time.
+ */
+export async function reservePlushCharmSequence() {
+  const { data, error } = await database().rpc("reserve_plush_charm_link_sequence");
+  throwDatabaseError(error);
+  const sequence = Number(data);
+  if (!Number.isInteger(sequence) || sequence < 1 || sequence > 999) {
+    throw new CloserError("The Plush Charm order counter has reached 999. Please contact support before creating another Our Link.", 409);
+  }
+  return sequence;
+}
+
+/**
  * Creates a private Our Link address in the format yyyy g ccc:
  * original four-digit order number, one random digit, then a Charm-only
  * three-digit running sales number.

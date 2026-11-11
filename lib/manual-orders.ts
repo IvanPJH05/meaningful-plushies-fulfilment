@@ -1,8 +1,8 @@
 import { randomInt, randomUUID } from "node:crypto";
 
 import { buildManualOrderCustomerLink } from "./manual-order-links";
-import { manualOrderProductPathForSelection, manualOrderSpeakerSeconds, normalizeManualOrderCharacter } from "./manual-order-product-paths";
-import { manualOrderProductByKey, type ManualOrderProductConfig } from "./manual-order-products";
+import { manualOrderProductPathForSelection, manualOrderSpeakerSeconds } from "./manual-order-product-paths";
+import { manualOrderCharactersForProduct, manualOrderProductByKey, manualOrderProductFamily, type ManualOrderProductConfig } from "./manual-order-products";
 import { normalizeManualOrderPhone } from "./manual-order-phone";
 import { cleanShopifyOrderNumber, objectValue, shopDomain, shopifyGraphql, textValue } from "./shopify-orders";
 import { fetchManualOrders } from "./supabase";
@@ -19,9 +19,10 @@ export type ManualOrderCreateInput = {
 
 type DiscountUserError = { field?: string[]; message?: string; code?: string };
 
-export type CreatorSampleCollection = "classics" | "plush_charms_v1";
+export type CreatorSampleCollection = "classics" | "plush_charms_v1" | "ugc_all";
 
 const creatorSampleCollections: Record<CreatorSampleCollection, { title: string; customerLink: string }> = {
+  ugc_all: { title: "UGC - All Products", customerLink: "https://meaningfulplushies.com/collections/all" },
   classics: {
     title: "Meaningful Plushies (Classics)",
     customerLink: "https://meaningfulplushies.com/collections/meaningful-plushies-classics",
@@ -33,7 +34,7 @@ const creatorSampleCollections: Record<CreatorSampleCollection, { title: string;
 };
 
 export function creatorSampleCollectionDetail(value: string | undefined) {
-  return creatorSampleCollections[value === "plush_charms_v1" ? "plush_charms_v1" : "classics"];
+  return creatorSampleCollections[value === "ugc_all" ? "ugc_all" : value === "plush_charms_v1" ? "plush_charms_v1" : "classics"];
 }
 
 function asShopifyGid(value: string, type: "Product" | "ProductVariant") {
@@ -78,6 +79,11 @@ function productHandleFromPath(productPath: string) {
 
 function normalizeVariantText(value?: string | null) {
   return (value ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function characterForManualOrderProduct(value: string | undefined, product: ManualOrderProductConfig) {
+  const normalized = (value || "").trim().toLowerCase();
+  return manualOrderCharactersForProduct(product).find((character) => character.toLowerCase() === normalized) || "";
 }
 
 function normalizePhoneDigits(value: string) {
@@ -192,7 +198,7 @@ export async function findShopifyOrderForManualOrder(manualOrder: ManualOrder) {
             billingAddress { phone }
             discountApplications(first: 10) {
               nodes {
-                ... on DiscountCodeApplication { code title }
+                ... on DiscountCodeApplication { code }
                 ... on ManualDiscountApplication { title }
                 ... on ScriptDiscountApplication { title }
                 ... on AutomaticDiscountApplication { title }
@@ -247,8 +253,10 @@ async function resolveManualOrderProductFromStorefront(input: ManualOrderCreateI
     };
   }
 
-  const character = normalizeManualOrderCharacter(input.character);
-  const seconds = manualOrderSpeakerSeconds(product);
+  const character = characterForManualOrderProduct(input.character, product);
+  // Charms are sold as a five-second product, but their Shopify variants are
+  // identified by character rather than a separate speaker-length option.
+  const seconds = manualOrderProductFamily(product) === "plush_charm" ? "" : manualOrderSpeakerSeconds(product);
   const variant = data.variants?.find((item) => {
     const title = normalizeVariantText(item.title);
     const option1 = normalizeVariantText(item.option1);
@@ -262,7 +270,17 @@ async function resolveManualOrderProductFromStorefront(input: ManualOrderCreateI
     return characterMatches && secondsMatches;
   });
   const variantId = textValue(variant?.id);
-  if ((character || seconds) && !variantId) return { productId: "", variantId: "", productPath: "" };
+  if ((character || seconds) && !variantId) {
+    if (manualOrderProductFamily(product) !== "plush_charm") return { productId: "", variantId: "", productPath: "" };
+    // Some Charm storefront setups have one configurable/default variant. In
+    // that case a product-level discount is the correct safe fallback; the
+    // customer still chooses the Charm character on the product page.
+    const hasNamedCharmVariants = data.variants?.some((item) => {
+      const variantText = `${item.title || ""} ${item.option1 || ""}`.toLowerCase();
+      return manualOrderCharactersForProduct(product).some((name) => variantText.includes(name.toLowerCase()));
+    });
+    if (hasNamedCharmVariants) return { productId: "", variantId: "", productPath: "" };
+  }
   return {
     productId: productId ? asShopifyGid(productId, "Product") : "",
     variantId: productOnly ? "" : variantId ? asShopifyGid(variantId, "ProductVariant") : "",
@@ -271,7 +289,7 @@ async function resolveManualOrderProductFromStorefront(input: ManualOrderCreateI
 }
 
 function resolveKnownManualOrderProduct(input: ManualOrderCreateInput, product: ManualOrderProductConfig) {
-  const character = normalizeManualOrderCharacter(input.character).toLowerCase();
+  const character = characterForManualOrderProduct(input.character, product).toLowerCase();
   const seconds = manualOrderSpeakerSeconds(product);
   const variantId = character && seconds ? knownMeaningfulPlushieVariantIds[character]?.[seconds] ?? "" : "";
   const handle = productHandleFromPath(product.productPath);
@@ -344,16 +362,39 @@ async function creatorSampleCollectionId(domain: string, collection: CreatorSamp
   return match.id;
 }
 
+async function creatorSampleFunctionId(domain: string) {
+  // A Function ID is regenerated when its Shopify app version changes. Prefer a
+  // configured value for backwards compatibility, but discover the live
+  // Function by its stable handle so creator codes do not break after releases.
+  const configuredId = process.env.SHOPIFY_CREATOR_SAMPLE_FUNCTION_ID?.trim();
+  if (configuredId) return configuredId;
+
+  const result = await shopifyGraphql<{
+    data?: { shopifyFunctions?: { nodes?: { id?: string; handle?: string }[] } };
+    errors?: { message?: string }[];
+  }>(domain, `
+    query CreatorSampleFunction {
+      shopifyFunctions(first: 25) {
+        nodes { id handle }
+      }
+    }
+  `, {});
+  if (!result) throw new Error("Shopify could not look up the active creator sample Function.");
+  if (result.errors?.length) throw new Error(result.errors.map((error) => error.message).filter(Boolean).join(" "));
+  const functionId = result.data?.shopifyFunctions?.nodes?.find((item) => item.handle === "creator-sample-claim-function")?.id;
+  if (!functionId) {
+    throw new Error("Creator sample Function was not found. Publish the Shopify Function and ensure Meaningful Fulfilment is installed on this store.");
+  }
+  return functionId;
+}
+
 export async function createCreatorSampleDiscountCode(code: string, creatorName: string, collection: CreatorSampleCollection = "classics") {
   const normalizedCode = code.trim().toUpperCase();
   if (!normalizedCode) throw new Error("Discount code is required.");
 
   const domain = shopDomain();
   if (!domain) throw new Error("SHOPIFY_SHOP_DOMAIN is missing in Vercel.");
-  const functionId = process.env.SHOPIFY_CREATOR_SAMPLE_FUNCTION_ID?.trim();
-  if (!functionId) {
-    throw new Error("Creator sample claim function is not connected yet. Add SHOPIFY_CREATOR_SAMPLE_FUNCTION_ID in Vercel after the Shopify Function is deployed.");
-  }
+  const functionId = await creatorSampleFunctionId(domain);
   const collectionId = await creatorSampleCollectionId(domain, collection);
 
   const result = await shopifyGraphql<{
@@ -368,7 +409,7 @@ export async function createCreatorSampleDiscountCode(code: string, creatorName:
     }
   `, {
     codeAppDiscount: {
-      title: `Creator Sample Claim - ${creatorName.trim() || normalizedCode} - ${creatorSampleCollectionDetail(collection).title}`,
+      title: `${collection === "ugc_all" ? "UGC Sample Claim" : "Creator Sample Claim"} - ${creatorName.trim() || normalizedCode} - ${creatorSampleCollectionDetail(collection).title}`,
       code: normalizedCode,
       functionId,
       startsAt: new Date().toISOString(),
@@ -392,6 +433,63 @@ export async function createCreatorSampleDiscountCode(code: string, creatorName:
   const id = textValue(payload?.codeAppDiscount?.discountId);
   if (!id) throw new Error("Shopify did not return the creator sample discount ID.");
   return id;
+}
+
+export type CreatorSampleDiscountUpgrade = {
+  code: string;
+  status: "upgraded" | "already_includes_shipping" | "skipped_inactive" | "skipped_used" | "missing" | "failed";
+  discountId?: string;
+  error?: string;
+};
+
+export async function upgradeCreatorSampleDiscountCode(code: string, creatorName: string, collection: CreatorSampleCollection = "classics"): Promise<CreatorSampleDiscountUpgrade> {
+  const normalizedCode = code.trim().toUpperCase();
+  const domain = shopDomain();
+  if (!normalizedCode) throw new Error("Discount code is required.");
+  if (!domain) throw new Error("SHOPIFY_SHOP_DOMAIN is missing in Vercel.");
+
+  const lookup = await shopifyGraphql<{
+    data?: { codeDiscountNodeByCode?: { id?: string; codeDiscount?: { __typename?: string; status?: string; asyncUsageCount?: number } } };
+    errors?: { message?: string }[];
+  }>(domain, `
+    query CreatorSampleCode($code: String!) {
+      codeDiscountNodeByCode(code: $code) {
+        id
+        codeDiscount {
+          __typename
+          ... on DiscountCodeBasic { status asyncUsageCount }
+          ... on DiscountCodeApp { status asyncUsageCount }
+        }
+      }
+    }
+  `, { code: normalizedCode });
+  if (!lookup) throw new Error("Shopify could not inspect this Creator Sample code.");
+  if (lookup.errors?.length) throw new Error(lookup.errors.map((error) => error.message).filter(Boolean).join(" "));
+  const node = lookup.data?.codeDiscountNodeByCode;
+  const discount = node?.codeDiscount;
+  if (!node?.id || !discount) return { code: normalizedCode, status: "missing" };
+  if (discount.__typename === "DiscountCodeApp") return { code: normalizedCode, status: "already_includes_shipping", discountId: node.id };
+  if (discount.status !== "ACTIVE") return { code: normalizedCode, status: "skipped_inactive" };
+  if ((discount.asyncUsageCount ?? 0) > 0) return { code: normalizedCode, status: "skipped_used" };
+
+  // Native amount-off discounts cannot apply this app's delivery rule. Replace
+  // only unused active codes, retaining the identical code for the creator.
+  const deletion = await shopifyGraphql<{
+    data?: { discountCodeDelete?: { userErrors?: DiscountUserError[] } };
+    errors?: { message?: string }[];
+  }>(domain, `
+    mutation DeleteCreatorSampleCode($id: ID!) {
+      discountCodeDelete(id: $id) {
+        userErrors { field message code }
+      }
+    }
+  `, { id: node.id });
+  if (!deletion) throw new Error("Shopify could not replace this Creator Sample code.");
+  if (deletion.errors?.length) throw new Error(deletion.errors.map((error) => error.message).filter(Boolean).join(" "));
+  const errors = deletion.data?.discountCodeDelete?.userErrors;
+  if (errors?.length) throw new Error(userErrorMessage(errors, "Shopify rejected this Creator Sample code replacement."));
+
+  return { code: normalizedCode, status: "upgraded", discountId: await createCreatorSampleDiscountCode(normalizedCode, creatorName, collection) };
 }
 
 async function createProductDiscount(
@@ -455,7 +553,7 @@ export async function createManualOrderDiscounts(input: ManualOrderCreateInput):
   if (!domain) throw new Error("SHOPIFY_SHOP_DOMAIN is missing in Vercel.");
 
   const phone = normalizeManualOrderPhone(input.phone);
-  const character = normalizeManualOrderCharacter(input.character);
+  const character = characterForManualOrderProduct(input.character, product);
   if (input.character && !character) throw new Error("Choose a valid character.");
   const productCode = await generateManualOrderCode(phone.lastFour);
   const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
@@ -514,4 +612,25 @@ export async function deactivateManualOrderDiscount(discountId: string) {
   if (result?.errors?.length) throw new Error(result.errors.map((error) => error.message).filter(Boolean).join(" "));
   const errors = result?.data?.discountCodeDeactivate?.userErrors ?? [];
   if (errors.length) throw new Error(userErrorMessage(errors, "Shopify rejected the discount cancellation."));
+}
+
+// Reuse the installed one-unit + free-shipping Function. A distinct automatic
+// collection covers all current and future non-negative-priced products.
+export async function createUgcSampleDiscountCode(code: string, customerName: string, recordId: string, collection: CreatorSampleCollection = "ugc_all") {
+  const domain = shopDomain();
+  if (!domain) throw new Error("SHOPIFY_SHOP_DOMAIN is missing.");
+  const owner = `${customerName.trim()} [${recordId}]`;
+  const title = `${collection === "ugc_all" ? "UGC Sample Claim" : "Creator Sample Claim"} - ${owner} - ${creatorSampleCollectionDetail(collection).title}`;
+  const existing = await shopifyGraphql<{ data?: { codeDiscountNodeByCode?: { id: string; codeDiscount: { title?: string } } }; errors?: {message?: string}[] }>(domain, `
+    query UgcDiscountByCode($code: String!) {
+      codeDiscountNodeByCode(code: $code) { id codeDiscount { ... on DiscountCodeApp { title } } }
+    }
+  `, { code });
+  if (existing?.errors?.length) throw new Error(existing.errors.map(item => item.message).join(" "));
+  const found = existing?.data?.codeDiscountNodeByCode;
+  if (found) {
+    if (found.codeDiscount.title !== title) throw new Error("This discount code already belongs to another offer. Choose a different code.");
+    return found.id;
+  }
+  return createCreatorSampleDiscountCode(code, owner, collection);
 }

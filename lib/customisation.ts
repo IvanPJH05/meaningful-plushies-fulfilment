@@ -5,6 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import { certificateMediaForLineItem, certificateMetaobjectForOrder, createCertificateMetaobject, plushBackgroundForMeaningfulNote, setShopifyOrderMetafield, shopDomain, shopifyGraphql, updateCertificateMetaobject } from "./shopify-orders";
 import { isPlushCharmOrder } from "./plush-charm";
 import type { Order } from "./types";
+import { sessionIdForOrder } from "./customisation-links";
 import { voiceBackupFileName } from "./voice-file-name";
 
 const SESSION_TABLE = "customisation_sessions";
@@ -40,6 +41,16 @@ export type CustomisationForm = {
   belongsTo: string;
   meaningfulNote: string;
 };
+
+export const emptyCustomisationForm = (): CustomisationForm => ({
+  plushName: "",
+  gender: "",
+  birthDate: "",
+  birthPlace: "",
+  favouritePerson: "",
+  belongsTo: "",
+  meaningfulNote: "",
+});
 
 type SessionRow = {
   id: string;
@@ -158,7 +169,8 @@ export async function submittedCustomisationForOrder(orderNumber: string) {
     .limit(1)
     .maybeSingle();
   if (error || !data) return null;
-  const form = normaliseCustomisationForm(data.form_data);
+  const formData = data.form_data && typeof data.form_data === "object" ? data.form_data as Record<string, unknown> : {};
+  const form = normaliseCustomisationForm(formData) || (formData.productType === "plush_charm" ? emptyCustomisationForm() : null);
   if (!form || !data.voice_storage_path) return null;
   return {
     form,
@@ -512,30 +524,52 @@ async function applySubmittedSessionToFulfilmentOrder(fulfilmentOrderId: string,
   if (updateError) throw new Error(updateError.message);
 }
 
-export function customisationSessionIds(order: Record<string, unknown>) {
-  const lineItems = Array.isArray(order.lineItems)
-    ? order.lineItems
-    : Array.isArray(order.line_items)
-      ? order.line_items
-      : [];
-  const sessionKeys = new Set(["customisation_session_id", "mp_customisation_session_id"]);
-  const idsFromAttributes = (attributes: unknown) => (Array.isArray(attributes) ? attributes : []).flatMap((attribute) => {
-    const value = attribute && typeof attribute === "object" ? attribute as Record<string, unknown> : {};
-    const key = String(value.key || value.name || "").trim().toLowerCase();
-    const id = String(value.value || "").trim();
-    return sessionKeys.has(key) && id ? [id] : [];
-  });
+export { customisationSessionIds } from "./customisation-links";
 
-  // A line-item property is the preferred link. Cart attributes are a
-  // deliberate fallback for accelerated checkout/theme Ajax flows which can
-  // submit the product before dynamically-added form inputs are serialized.
-  return [...new Set([
-    ...lineItems.flatMap((line) => {
-      const item = line && typeof line === "object" ? line as Record<string, unknown> : {};
-      return idsFromAttributes(item.customAttributes ?? item.custom_attributes ?? item.properties);
-    }),
-    ...idsFromAttributes(order.customAttributes ?? order.custom_attributes ?? order.note_attributes),
-  ])];
+/**
+ * Last-resort recovery for a storefront checkout where Shopify has dropped
+ * both the line-item property and cart attribute.  It is deliberately narrow:
+ * only one submitted, unbound session may exist within the short checkout
+ * window, and it must be the same product family.  Ambiguous sessions are
+ * never guessed or attached.
+ */
+export async function recoverMissingSessionIdForOrder(input: {
+  createdAt: string;
+  orders: Order[];
+}) {
+  if (input.orders.length !== 1) return [];
+  const createdAt = Date.parse(input.createdAt);
+  if (!Number.isFinite(createdAt)) return [];
+
+  // A customer can save their voice and spend a few minutes completing
+  // checkout.  Shopify's order-created timestamp is therefore not always
+  // within two minutes of the saved session.  Five minutes covers that normal
+  // checkout delay; the exact-one-candidate requirement below still prevents
+  // any ambiguous session from being attached.
+  const startsAt = new Date(createdAt - 5 * 60_000).toISOString();
+  const endsAt = new Date(createdAt + 2 * 60_000).toISOString();
+  const expectedCharm = isPlushCharmOrder(input.orders[0]);
+  const { data, error } = await serviceClient()
+    .from(SESSION_TABLE)
+    .select("id,form_data,voice_storage_path,completed_at")
+    .eq("status", "submitted")
+    .is("order_id", null)
+    .is("fulfilment_order_id", null)
+    .not("voice_storage_path", "is", null)
+    .gte("completed_at", startsAt)
+    .lte("completed_at", endsAt)
+    .order("completed_at", { ascending: false })
+    .limit(2);
+  if (error) throw new Error(error.message);
+
+  const candidates = ((data ?? []) as Array<Pick<SessionRow, "id" | "form_data" | "voice_storage_path" | "completed_at">>)
+    .filter((session) => {
+      const productType = String(session.form_data?.productType || "").toLowerCase();
+      const sessionIsCharm = productType === "plush_charm" || productType === "snowy_charm";
+      return Boolean(session.voice_storage_path) && sessionIsCharm === expectedCharm;
+    });
+
+  return candidates.length === 1 ? [candidates[0].id] : [];
 }
 
 /**
@@ -554,7 +588,8 @@ export async function submittedCustomisationsForSessionIds(sessionIds: string[])
   if (error) throw new Error(error.message);
 
   return new Map((data ?? []).flatMap((session) => {
-    const form = normaliseCustomisationForm(session.form_data);
+    const formData = session.form_data && typeof session.form_data === "object" ? session.form_data as Record<string, unknown> : {};
+    const form = normaliseCustomisationForm(formData) || (formData.productType === "plush_charm" ? emptyCustomisationForm() : null);
     const voiceStoragePath = String(session.voice_storage_path || "");
     return form && voiceStoragePath ? [[String(session.id), {
       form,
@@ -609,9 +644,24 @@ export async function bindSessionsToOrders(input: { orderId: string; orderNumber
   if (error) throw new Error(error.message);
   const sessions = (data ?? []) as SessionRow[];
   const byId = new Map(sessions.map((session) => [session.id, session]));
+  const sessionForOrder = (order: Order) => byId.get(sessionIdForOrder(order, input.orders, input.sessionIds));
+  const assignedIds = new Set<string>();
+  for (const order of input.orders) {
+    const session = sessionForOrder(order);
+    if (session && assignedIds.has(session.id)) throw new Error("One customisation session cannot be assigned to multiple fulfilment rows.");
+    if (session) assignedIds.add(session.id);
+    if (sessionIdForOrder(order, input.orders, input.sessionIds) && !session) {
+      throw new Error("Customisation session was not found; order linking will be retried.");
+    }
+    if (session && ((session.order_id && session.order_id !== input.orderId)
+      || (session.fulfilment_order_id && session.fulfilment_order_id !== order.id))) {
+      throw new Error("Customisation session is already linked to a different order or line item.");
+    }
+  }
   const now = new Date().toISOString();
-  const needsCertificate = sessions.some((session, index) => {
-    const order = input.orders[index] || input.orders[0];
+  const needsCertificate = input.orders.some((order) => {
+    const session = sessionForOrder(order);
+    if (!session) return false;
     const productType = session.form_data?.productType === "snowy_charm" ? "plush_charm" : String(session.form_data?.productType || order?.productType || "");
     return session.status === "submitted" && Boolean(order) && !isPlushCharmOrder({ ...order, productType });
   });
@@ -620,7 +670,7 @@ export async function bindSessionsToOrders(input: { orderId: string; orderNumber
     : null;
 
   const updated = input.orders.map((order, index) => {
-    const sessionId = input.sessionIds[index] || input.sessionIds[0];
+    const sessionId = sessionIdForOrder(order, input.orders, input.sessionIds);
     const session = byId.get(sessionId);
     if (!session) return order;
     const form = session.form_data || {};
@@ -630,10 +680,12 @@ export async function bindSessionsToOrders(input: { orderId: string; orderNumber
     const certificateCode = certificate?.code || session.certificate_code || "";
     return {
       ...order,
+      customisationSessionId: sessionId,
       // A linked customisation changes the order payload. Mark it as newly
       // updated so browser and mobile caches retrieve the restored details.
       updatedAt: now,
-      status: submitted ? "new_order" : "awaiting_customisation",
+      status: order.status !== "awaiting_customisation" && order.status !== "new_order"
+        ? order.status : submitted ? "new_order" : "awaiting_customisation",
       // The Plush Charm storefront block records this on the session before
       // checkout. Keep it on the fulfilment order so packing can safely keep
       // charms separate from the classic plushies.
@@ -651,14 +703,15 @@ export async function bindSessionsToOrders(input: { orderId: string; orderNumber
       // certificate. Never replace that link during session reconciliation.
       idWebsiteLink: submitted && certificateCode && !plushCharm ? `https://meaningfulplushies.com/pages/certificate/${certificateCode}` : order.idWebsiteLink,
       voiceUploadStatus: submitted && session.voice_storage_path ? "received" : "missing",
-      statusHistory: submitted
+      statusHistory: session.fulfilment_order_id === order.id || (order.status !== "awaiting_customisation" && order.status !== "new_order")
+        ? order.statusHistory : submitted
         ? [...order.statusHistory, { id: `${order.id}-customisation-${now}`, status: "new_order", changedAt: now, changedBy: "Customer", note: "Customisation submitted through secure link." }]
         : [...order.statusHistory, { id: `${order.id}-awaiting-${now}`, status: "awaiting_customisation", changedAt: now, changedBy: "Customer", note: "Customer chose to complete customisation later." }],
     } as Order;
   });
 
   const boundSessions = updated.map((order, index) => {
-    const sessionId = input.sessionIds[index] || input.sessionIds[0];
+    const sessionId = sessionIdForOrder(order, input.orders, input.sessionIds);
     const session = byId.get(sessionId);
     if (!session) return null;
     const formData = { ...session.form_data, customisationPageUrl: customisationPageForOrder(order) };
@@ -675,18 +728,27 @@ export async function bindSessionsToOrders(input: { orderId: string; orderNumber
       order_id: input.orderId,
       order_number: input.orderNumber,
       fulfilment_order_id: order.id,
+      line_item_id: order.shopifyLineItemId || session.line_item_id || null,
       certificate_code: certificate?.code || session.certificate_code || null,
       certificate_metaobject_id: certificate?.id || session.certificate_metaobject_id || null,
       status: byId.get(sessionId)?.status === "submitted" ? "submitted" : "awaiting_customisation",
       form_data: formData,
       updated_at: now,
-    }).eq("id", sessionId);
+    }).eq("id", sessionId)
+      .or(`order_id.is.null,order_id.eq.${input.orderId}`)
+      .or(`fulfilment_order_id.is.null,fulfilment_order_id.eq.${order.id}`)
+      .select("id");
   });
-  await Promise.all(boundSessions.filter((request) => request !== null));
-  await Promise.all(sessions.filter((session) => session.status === "submitted" && session.voice_storage_path).map(async (session, index) => {
+  const bindingResults = await Promise.all(boundSessions.filter((request) => request !== null));
+  for (const result of bindingResults) {
+    if (result.error) throw new Error(`Could not bind customisation session: ${result.error.message}`);
+    if (result.data?.length !== 1) throw new Error("Customisation session binding changed concurrently; order linking will be retried.");
+  }
+  await Promise.all(sessions.filter((session) => session.status === "submitted" && session.voice_storage_path).map(async (session) => {
     const form = normaliseCustomisationForm(session.form_data);
     if (!form || !session.voice_storage_path) return;
-    const order = updated[index] || updated[0];
+    const order = updated.find((order) => order.customisationSessionId === session.id);
+    if (!order) return;
     const certificateCode = session.certificate_code || order?.certificateCode || "";
     await Promise.all([
       setShopifyOrderMetafield(input.orderId, uploadLiftCompatibleText(form, session.voice_storage_path, {
@@ -699,8 +761,8 @@ export async function bindSessionsToOrders(input: { orderId: string; orderNumber
       submittedCertificateUpdate(session, form, session.voice_storage_path, certificateCode, order).catch(() => false),
     ]);
   }));
-  await Promise.all(sessions.map((session) => sendCustomisationEmail(session).catch(() => false)));
-  await Promise.all(sessions.filter((session) => session.status === "submitted" && session.voice_storage_path).map((session) => backupVoiceToGoogleDrive(session, String(session.form_data?.plushName || "plushie")).catch(() => false)));
+  await Promise.all(sessions.filter((session) => assignedIds.has(session.id)).map((session) => sendCustomisationEmail(session).catch(() => false)));
+  await Promise.all(sessions.filter((session) => assignedIds.has(session.id) && session.status === "submitted" && session.voice_storage_path).map((session) => backupVoiceToGoogleDrive(session, String(session.form_data?.plushName || "plushie")).catch(() => false)));
   return updated;
 }
 

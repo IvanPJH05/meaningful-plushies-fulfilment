@@ -343,7 +343,7 @@ export async function sendMetaPurchaseEvents(options: SendMetaPurchaseOptions): 
     }
   }
 
-  if (updatedOrders.length) await upsertSharedOrders(updatedOrders);
+  if (updatedOrders.length) await upsertSharedOrders(updatedOrders, { syncSales: false });
   return { orders: updatedOrders, sent, skipped, failed, needsReview, logs };
 }
 

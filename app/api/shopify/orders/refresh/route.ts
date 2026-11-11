@@ -1,15 +1,18 @@
+import { mobileServiceClient, requireMobileSession } from "../../../../../lib/mobile-api";
 import { NextResponse } from "next/server";
+import { sessionIdForOrder } from "../../../../../lib/customisation-links";
 
 import { shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
 import { isPlushCharmOrder } from "../../../../../lib/plush-charm";
-import { submittedCustomisationForOrder } from "../../../../../lib/customisation";
+import { addMissingOurLinks } from "../../../../../lib/our-link";
+import { bindSessionsToOrders, customisationSessionIds, recoverMissingSessionIdForOrder, submittedCustomisationForOrder, submittedCustomisationsForSessionIds } from "../../../../../lib/customisation";
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
 import { certificateMediaForLineItem, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrderByNumber, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
 import { fetchMetaCapiSettings, fetchSharedOrders, fetchSharedOrdersByOrderNumber, insertSharedActivity, upsertSharedOrders } from "../../../../../lib/supabase";
-import { createCloserOrderLink, isFormattedPlushCharmLink, nextPlushCharmSequence } from "@/src/modules/closer/service";
 import type { Order } from "../../../../../lib/types";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 function json(status: number, body: Record<string, unknown>) {
   return NextResponse.json(body, { status });
@@ -46,31 +49,37 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
 
   const createdAt = textValue(fullOrder.createdAt) || new Date().toISOString();
   const lineItems = Array.isArray(fullOrder.lineItems) ? fullOrder.lineItems : [];
-  const submitted = await submittedCustomisationForOrder(requestedOrderNumber);
-  const certificateFields = submitted ? {
-    idName: submitted.form.plushName,
-    gender: submitted.form.gender,
-    bornOn: submitted.form.birthDate,
-    birthplace: submitted.form.birthPlace,
-    favouritePerson: submitted.form.favouritePerson,
-    belongsTo: submitted.form.belongsTo,
-    meaningfulNote: submitted.form.meaningfulNote,
-    meaningfulMessage: `supabase-storage:${submitted.voiceStoragePath}`,
-  } : uploadLiftCertificateFields(shopifyMetafieldValue(fullOrder));
-  const needsCharmLink = importedOrders.some((order) => isPlushCharmOrder(order) && !isFormattedPlushCharmLink(order.idWebsiteLink));
-  const charmSequence = needsCharmLink
-    ? nextPlushCharmSequence((await fetchSharedOrders()).filter(isPlushCharmOrder))
-    : 0;
-  let nextSequence = charmSequence;
-  const ordersWithOurLinks = await Promise.all(importedOrders.map(async (order) => (
-    isPlushCharmOrder(order) && !isFormattedPlushCharmLink(order.idWebsiteLink)
-      ? { ...order, idWebsiteLink: await createCloserOrderLink(order, nextSequence++) }
-      : order
-  )));
+  // Prefer the session explicitly carried by this Shopify order.  A lookup by
+  // order number only works after a previous webhook has already bound the
+  // session, which is not true for the very orders this refresh is meant to
+  // recover.
+  let sessionIds = customisationSessionIds(fullOrder);
+  if (!sessionIds.length) {
+    sessionIds = await recoverMissingSessionIdForOrder({ createdAt, orders: importedOrders });
+  }
+  const submittedBySession = await submittedCustomisationsForSessionIds(sessionIds);
+  const legacySubmission = importedOrders.length === 1 ? await submittedCustomisationForOrder(requestedOrderNumber) : null;
+  const submittedForOrder = (order: Order) => {
+    const submission = submittedBySession.get(sessionIdForOrder(order, importedOrders, sessionIds));
+    return submission ? { ...submission, certificateCode: "" } : legacySubmission;
+  };
+  const fieldsForOrder = (order: Order) => {
+    const submitted = submittedForOrder(order);
+    return submitted ? {
+      idName: submitted.form.plushName, gender: submitted.form.gender,
+      bornOn: submitted.form.birthDate, birthplace: submitted.form.birthPlace,
+      favouritePerson: submitted.form.favouritePerson, belongsTo: submitted.form.belongsTo,
+      meaningfulNote: submitted.form.meaningfulNote,
+      meaningfulMessage: "supabase-storage:" + submitted.voiceStoragePath,
+    } : importedOrders.length === 1 ? uploadLiftCertificateFields(shopifyMetafieldValue(fullOrder)) : {};
+  };
+  const ordersWithOurLinks = await addMissingOurLinks(importedOrders, "Shopify refresh");
   const certificates = looksLikePersonalizedPlushie(fullOrder)
     ? await Promise.all(ordersWithOurLinks.map((order, index) => {
       if (isPlushCharmOrder(order)) return null;
       const lineItem = objectValue(lineItems[index]);
+      const submitted = submittedForOrder(order);
+      const certificateFields = fieldsForOrder(order);
       return createCertificateMetaobject({
         orderNumber: requestedOrderNumber,
         createdAt,
@@ -100,12 +109,13 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
     : [];
   const ordersWithCertificates = ordersWithOurLinks.map((order, index) => {
     const certificate = certificates[index];
+    const submitted = submittedForOrder(order);
     return certificate ? {
       ...order,
       certificateCode: certificate.code,
       idWebsiteLink: `https://meaningfulplushies.com/pages/certificate/${certificate.code}`,
       ...(submitted ? {
-        status: "new_order" as const,
+        status: order.status === "awaiting_customisation" ? "new_order" as const : order.status,
         plushName: submitted.form.plushName,
         plushGender: submitted.form.gender,
         plushBirthDate: submitted.form.birthDate,
@@ -119,8 +129,18 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
     } : order;
   });
 
+  const reconciledOrders = sessionIds.length
+    ? await bindSessionsToOrders({
+      orderId: textValue(fullOrder.id),
+      orderNumber: requestedOrderNumber,
+      sessionIds,
+      orders: ordersWithCertificates,
+      certificates,
+    })
+    : ordersWithCertificates;
+
   const previousById = new Map(existing.map((order) => [order.id, order]));
-  const changedOrders = ordersWithCertificates.filter((order) => {
+  const changedOrders = reconciledOrders.filter((order) => {
     const previous = previousById.get(order.id);
     return !previous || JSON.stringify(comparableOrder(previous)) !== JSON.stringify(comparableOrder(order));
   });
@@ -131,12 +151,16 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
     imported: !existing.some((order) => order.orderNumber === requestedOrderNumber && (order.salesChannel ?? "shopify") === "shopify"),
     changed: changedOrders.length > 0,
     updated: changedOrders.length,
-    orders: ordersWithCertificates,
+    orders: reconciledOrders,
     shopifyOrder: fullOrder,
   };
 }
 
 export async function POST(request: Request) {
+  try { await requireMobileSession(request); } catch (error) {
+    const message = error instanceof Error ? error.message : "SIGN_IN_REQUIRED";
+    return json(message === "WAREHOUSE_ACCESS_REQUIRED" ? 403 : 401, { ok: false, error: message });
+  }
   let body: { orderNumber?: string; orderNumbers?: string[] };
   try {
     body = await request.json() as { orderNumber?: string; orderNumbers?: string[] };
@@ -152,9 +176,10 @@ export async function POST(request: Request) {
   if (!uniqueOrderNumbers.length) return json(400, { ok: false, error: "At least one order number is required." });
 
   try {
+    const db = mobileServiceClient();
     const results = [];
     for (const orderNumber of uniqueOrderNumbers) {
-      results.push(await refreshOneOrder(orderNumber, await fetchSharedOrdersByOrderNumber(orderNumber), request));
+      results.push(await refreshOneOrder(orderNumber, await fetchSharedOrdersByOrderNumber(orderNumber, db), request));
     }
 
     const successful = results.filter((result) => result.ok);
@@ -165,7 +190,7 @@ export async function POST(request: Request) {
     if (changedOrders.length) {
       // Restoring an order must not wait for reporting calculations. This is
       // especially important while the database is under IO pressure.
-      await upsertSharedOrders(changedOrders, { syncSales: false });
+      await upsertSharedOrders(changedOrders, { syncSales: false }, db);
       await insertSharedActivity({
         id: `shopify-refresh-${Date.now()}`,
         orderNumber: uniqueOrderNumbers.length === 1 ? uniqueOrderNumbers[0] : undefined,

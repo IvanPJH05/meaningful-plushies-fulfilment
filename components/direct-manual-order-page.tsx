@@ -238,7 +238,7 @@ export function DirectManualOrderPage({
       if (!voiceUpload.ok) throw new Error("Your voice message could not be uploaded. Please try again.");
 
       const submitted = await request(apiUrl, {
-        action: "submit",
+        action: "submit", language,
         sessionToken: started.session.token,
         voiceStoragePath: upload.upload.path,
         customerName: data.get("customerName"),

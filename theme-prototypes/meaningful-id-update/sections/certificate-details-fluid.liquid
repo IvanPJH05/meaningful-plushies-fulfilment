@@ -1,0 +1,64 @@
+{% liquid
+  assign favourite_person = metaobject.favourite_person.value
+  assign belongs_to = metaobject.belongs_to.value
+  assign birthplace = metaobject.birthplace.value
+  if request.design_mode
+    if section.settings.preview_favourite_person != blank
+      assign favourite_person = section.settings.preview_favourite_person
+    endif
+    if section.settings.preview_belongs_to != blank
+      assign belongs_to = section.settings.preview_belongs_to
+    endif
+    if section.settings.preview_birthplace != blank
+      assign birthplace = section.settings.preview_birthplace
+    endif
+  endif
+  assign artwork = section.settings.artwork | default: images['Top_Normal_93e8d398-f7ea-479d-b1b8-af5c3786b95e.png']
+%}
+
+<section class="certificate-fluid-details" aria-label="Birth certificate details" style="--certificate-details-surround: {{ section.settings.surround }}; --certificate-details-panel: {{ section.settings.panel }}; --certificate-details-ink: {{ section.settings.ink }}; --certificate-details-size: {{ section.settings.font_size }}px; --certificate-details-width: {{ section.settings.content_width }}px;" data-certificate-details {{ section.shopify_attributes }}>
+  {% if artwork != blank %}
+    <div class="certificate-fluid-details__top" aria-hidden="true">
+      {{ artwork | image_url: width: 2000 | image_tag: widths: '400, 800, 1200, 1600, 2000', sizes: '100vw', loading: 'lazy', alt: '' }}
+    </div>
+  {% endif %}
+  <div class="certificate-fluid-details__body">
+    <dl class="certificate-fluid-details__list">
+      <div class="certificate-fluid-details__row"><dt>Id:</dt> <dd>{{ metaobject.code.value | default: '-' | escape }}</dd></div>
+      <div class="certificate-fluid-details__row"><dt>Gender:</dt> <dd>{{ metaobject.gender.value | default: '-' | escape }}</dd></div>
+      <div class="certificate-fluid-details__row"><dt>Born On:</dt> <dd>{{ metaobject.born_on.value | default: '-' | escape }}</dd></div>
+      <div class="certificate-fluid-details__row"><dt>Birthplace:</dt> <dd>{{ birthplace | default: '-' | escape }}</dd></div>
+      <div class="certificate-fluid-details__row"><dt>Favourite Person:</dt> <dd>{{ favourite_person | default: '-' | escape }}</dd></div>
+      <div class="certificate-fluid-details__row"><dt>Belongs To:</dt> <dd>{{ belongs_to | default: '-' | escape }}</dd></div>
+    </dl>
+  </div>
+</section>
+
+{% stylesheet %}
+  .certificate-fluid-details { width: 100%; background: var(--certificate-details-surround, #ceeeff); color: var(--certificate-details-ink, #fff); }
+  .certificate-fluid-details__top { position: relative; overflow: hidden; width: 100%; aspect-ratio: 1200 / 56; }
+  .certificate-fluid-details__top img { position: absolute; top: 0; display: block; width: 100%; max-width: none; height: auto; }
+  .certificate-fluid-details__body { margin-inline: 2.8%; padding: 0 14px 8px; background: var(--certificate-details-panel, #618497); }
+  .certificate-fluid-details__list { max-width: var(--certificate-details-width, 330px); margin: 0 auto; padding: 0; font-family: inherit; font-size: var(--certificate-details-size, 18px); font-weight: 700; line-height: 1.25; text-align: center; }
+  .certificate-fluid-details__row { margin: 0; padding: 1px 0; overflow-wrap: anywhere; word-break: normal; }
+  .certificate-fluid-details__row dt, .certificate-fluid-details__row dd { display: inline; margin: 0; padding: 0; color: inherit; font: inherit; letter-spacing: normal; text-transform: none; }
+  .certificate-fluid-details__row dt { white-space: nowrap; }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "ID details (fluid)",
+  "settings": [
+    { "type": "image_picker", "id": "artwork", "label": "Certificate top artwork", "info": "Use the original Top Normal artwork to match the existing certificate frame." },
+    { "type": "range", "id": "font_size", "label": "Text size", "min": 14, "max": 24, "step": 1, "default": 18, "unit": "px" },
+    { "type": "range", "id": "content_width", "label": "Maximum text width", "min": 240, "max": 1000, "step": 10, "default": 330, "unit": "px" },
+    { "type": "color", "id": "surround", "label": "Outside background", "default": "#ceeeff" },
+    { "type": "color", "id": "panel", "label": "Details background", "default": "#618497" },
+    { "type": "color", "id": "ink", "label": "Text colour", "default": "#ffffff" },
+    { "type": "text", "id": "preview_favourite_person", "label": "Preview favourite person", "info": "Editor only. Test long names without changing saved certificate details." },
+    { "type": "text", "id": "preview_belongs_to", "label": "Preview belongs to", "info": "Editor only. Leave blank to show the real value." },
+    { "type": "text", "id": "preview_birthplace", "label": "Preview birthplace", "info": "Editor only. Leave blank to show the real value." }
+  ],
+  "presets": [{ "name": "ID details (fluid)" }]
+}
+{% endschema %}

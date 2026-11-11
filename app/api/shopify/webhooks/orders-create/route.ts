@@ -1,15 +1,19 @@
+import { mobileServiceClient } from "../../../../../lib/mobile-api";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
+import { sessionIdForOrder } from "../../../../../lib/customisation-links";
 
 import { shopifyLinePersonalization, shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
 import { isPlushCharmOrder } from "../../../../../lib/plush-charm";
-import { bindSessionsToOrders, customisationSessionIds, submittedCustomisationsForSessionIds } from "../../../../../lib/customisation";
+import { addMissingOurLinks } from "../../../../../lib/our-link";
+import { bindSessionsToOrders, customisationSessionIds, recoverMissingSessionIdForOrder, submittedCustomisationsForSessionIds } from "../../../../../lib/customisation";
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
 import { certificateMediaForLineItem, certificateMetaobjectForOrder, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrder, flowCertificateCode, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
 import { fetchMetaCapiSettings, fetchSharedOrders, fetchSharedOrdersByOrderNumber, insertSharedActivity, markManualOrderUsedByDiscountCode, upsertSharedOrders } from "../../../../../lib/supabase";
-import { createCloserOrderLink, isFormattedPlushCharmLink, nextPlushCharmSequence } from "@/src/modules/closer/service";
+import type { Order } from "../../../../../lib/types";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 function json(status: number, body: Record<string, unknown>) {
   return NextResponse.json(body, { status });
@@ -75,23 +79,31 @@ export async function POST(request: Request) {
   }
 
   try {
+    const db = mobileServiceClient();
     // Import the sale immediately. Waiting for a delayed optional metafield can
     // make Shopify time out and retry the webhook, leaving the order absent.
     // Line-item properties and later updates still enrich the saved order.
     const payloadSessionIds = customisationSessionIds(payload);
     const fullOrder = await fetchShopifyOrder(payload, request);
     const uploadLiftFormData = shopifyMetafieldValue(fullOrder) || shopifyMetafieldValue(payload);
-    const deferredSessionIds = [...new Set([...payloadSessionIds, ...customisationSessionIds(fullOrder)])];
-    const submittedCustomisations = await submittedCustomisationsForSessionIds(deferredSessionIds);
+    let sessionIds = [...new Set([...payloadSessionIds, ...customisationSessionIds(fullOrder)])];
     const syncedNumber = cleanShopifyOrderNumber(
       textValue(fullOrder.name)
       || textValue(fullOrder.order_number)
       || textValue(payload.name)
       || textValue(payload.order_number),
     );
-    const existing = await fetchSharedOrdersByOrderNumber(syncedNumber);
+    const existing = await fetchSharedOrdersByOrderNumber(syncedNumber, db);
     const importedOrders = shopifyOrderToFulfilmentOrders(fullOrder, uploadLiftFormData, existing, "Shopify");
     let ordersToSave = importedOrders.filter((order) => order.orderNumber === syncedNumber);
+    const createdAt = textValue(fullOrder.createdAt) || new Date().toISOString();
+    // Shopify occasionally drops dynamic product properties during checkout.
+    // In that case recover only an unambiguous session saved within the very
+    // short checkout window; never guess if more than one could belong here.
+    if (!sessionIds.length) {
+      sessionIds = await recoverMissingSessionIdForOrder({ createdAt, orders: ordersToSave });
+    }
+    const submittedCustomisations = await submittedCustomisationsForSessionIds(sessionIds);
     const orderId = textValue(fullOrder.id) || textValue(payload.admin_graphql_api_id) || textValue(payload.id);
     const orderLineItems = Array.isArray(fullOrder.lineItems) ? fullOrder.lineItems : [];
     // The storefront saves this same form data as Shopify line-item properties.
@@ -122,16 +134,7 @@ export async function POST(request: Request) {
     // Reading every order includes historical media and is unnecessary for a
     // classic plushie. Restrict that expensive read to the small subset of
     // new Plush Charm orders that genuinely need a Charm sales sequence.
-    const needsCharmLink = ordersToSave.some((order) => isPlushCharmOrder(order) && !isFormattedPlushCharmLink(order.idWebsiteLink));
-    let nextCharmSequence = needsCharmLink
-      ? nextPlushCharmSequence((await fetchSharedOrders()).filter(isPlushCharmOrder))
-      : 0;
-    ordersToSave = await Promise.all(ordersToSave.map(async (order) => (
-      isPlushCharmOrder(order) && !isFormattedPlushCharmLink(order.idWebsiteLink)
-        ? { ...order, idWebsiteLink: await createCloserOrderLink(order, nextCharmSequence++) }
-        : order
-    )));
-    const createdAt = textValue(fullOrder.createdAt) || new Date().toISOString();
+    ordersToSave = await addMissingOurLinks(ordersToSave, "Shopify webhook");
     const existingCertificate = looksLikePersonalizedPlushie(fullOrder)
       ? await certificateMetaobjectForOrder(syncedNumber).catch(() => null)
       : null;
@@ -146,7 +149,7 @@ export async function POST(request: Request) {
         // saved fulfilment order retains it, so include that as a matching hint
         // to keep the certificate picture aligned with the selected plushie.
         const characterHint = order.character || order.product;
-        const sessionId = deferredSessionIds[index] || deferredSessionIds[0];
+        const sessionId = sessionIdForOrder(order, importedOrders, sessionIds);
         const submitted = submittedCustomisations.get(sessionId);
         return createCertificateMetaobject({
           orderNumber: syncedNumber,
@@ -187,11 +190,11 @@ export async function POST(request: Request) {
         } : order;
       });
     }
-    if (deferredSessionIds.length && ordersToSave.length) {
+    if (sessionIds.length && ordersToSave.length) {
       ordersToSave = await bindSessionsToOrders({
         orderId,
         orderNumber: syncedNumber,
-        sessionIds: deferredSessionIds,
+        sessionIds,
         orders: ordersToSave,
         certificates,
       });
@@ -201,7 +204,7 @@ export async function POST(request: Request) {
     // journals and commission reports are calculated separately; running
     // them here can exceed Postgres's statement timeout and make Shopify
     // retry an otherwise valid order.
-    await upsertSharedOrders(ordersToSave, { syncSales: false });
+    await upsertSharedOrders(ordersToSave, { syncSales: false }, db);
     for (const code of appliedDiscountCodes(fullOrder)) {
       await markManualOrderUsedByDiscountCode(
         code,

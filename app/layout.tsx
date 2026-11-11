@@ -5,6 +5,7 @@ import "./envelope.css";
 import "./fulfilment.css";
 import "./dashboard-upgrades.css";
 import "./workspaces.css";
+import "./responsive.css";
 
 export const metadata: Metadata = {
   title: "Meaningful Plushies Fulfilment",

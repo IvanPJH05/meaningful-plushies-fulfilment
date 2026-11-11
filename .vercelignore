@@ -1,0 +1,11 @@
+node_modules
+.next
+.git
+.env*
+tmp
+work
+outputs
+mobile/dist
+supabase/.temp
+*.tsbuildinfo
+meaningful-plushies-fulfilment

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import {getDailyManualPayments} from "@/lib/manual-order-intakes";
 
-import { approveManualOrderCod, attachManualOrderReceipt, createPaidShopifyOrder, deleteManualOrderIntake, getManualOrderIntakeDetails, isDashboardAdmin, listManualOrderIntakes, repairManualOrderShipping, restoreManualOrderFulfilment, type PaymentReceipt } from "@/lib/manual-order-intakes";
+import { editManualOrderIntake, prepareManualOrderEditVoice, type ManualOrderIntakeEdit, approveManualOrderCod, attachManualOrderReceipt, createPaidShopifyOrder, deleteManualOrderIntake, getManualOrderIntakeDetails, isDashboardAdmin, listManualOrderIntakes, repairManualOrderShipping, restoreManualOrderFulfilment, type PaymentReceipt } from "@/lib/manual-order-intakes";
 
 export const runtime = "nodejs";
 
@@ -10,14 +11,23 @@ async function requireAdmin(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   if (!await requireAdmin(request)) return NextResponse.json({ ok: false, error: "Administrator access is required." }, { status: 403 });
-  try { return NextResponse.json({ ok: true, intakes: await listManualOrderIntakes() }); }
+  try {
+    const day = request.nextUrl.searchParams.get("paymentDay");
+    if (day !== null) return NextResponse.json({ok:true, summary:await getDailyManualPayments(day)}, {headers:{"Cache-Control":"no-store"}});
+    return NextResponse.json({ ok: true, intakes: await listManualOrderIntakes() });
+  }
   catch (error) { return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Manual order submissions could not be loaded." }, { status: 500 }); }
 }
 
 export async function POST(request: NextRequest) {
   if (!await requireAdmin(request)) return NextResponse.json({ ok: false, error: "Administrator access is required." }, { status: 403 });
   try {
-    const body = await request.json() as { action?: string; id?: string; intakeIds?: string[]; paymentReceipts?: PaymentReceipt[] };
+    const body = await request.json() as { action?: string; id?: string; intakeIds?: string[]; paymentReceipts?: PaymentReceipt[]; changes?: ManualOrderIntakeEdit; fileName?: string; contentType?: string; size?: number };
+    if (body.action === "edit") {
+      if (!body.changes) throw new Error("Enter the corrected order details.");
+      return NextResponse.json({ ok: true, details: await editManualOrderIntake(String(body.id || ""), body.changes) });
+    }
+    if (body.action === "edit_voice_upload") return NextResponse.json({ ok: true, upload: await prepareManualOrderEditVoice(String(body.id || ""), String(body.fileName || ""), String(body.contentType || ""), Number(body.size)) });
     if (body.action === "details") return NextResponse.json({ ok: true, details: await getManualOrderIntakeDetails(String(body.id || "")) });
     if (body.action === "attach_receipt") return NextResponse.json({ ok: true, intake: await attachManualOrderReceipt(String(body.id || ""), Array.isArray(body.paymentReceipts) ? body.paymentReceipts : []) });
     if (body.action === "approve_cod") return NextResponse.json({ ok: true, intake: await approveManualOrderCod(String(body.id || "")) });

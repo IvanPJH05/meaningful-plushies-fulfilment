@@ -4,6 +4,12 @@ import path from "node:path";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   outputFileTracingRoot: path.resolve(__dirname),
+  serverExternalPackages: ["ffmpeg-static"],
+  outputFileTracingIncludes: {
+    "/api/production-tracking/audio": ["./node_modules/ffmpeg-static/ffmpeg*"],
+    "/api/fulfilment/batches/audio": ["./node_modules/ffmpeg-static/ffmpeg*"],
+    "/api/customisation/audio-download": ["./node_modules/ffmpeg-static/ffmpeg*"],
+  },
   // Shopify forwards the root app-proxy URL with a trailing slash. Preserve it
   // instead of sending Shopify an internal redirect that becomes a storefront 404.
   skipTrailingSlashRedirect: true,

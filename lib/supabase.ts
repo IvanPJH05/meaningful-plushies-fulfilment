@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { writeOrdersThenSyncAccounting, type OrderSaveOutcome } from "./order-save-outcome";
 import type { AccountingBankStatementLine, AccountingCategory, AccountingDocument, AccountingLedgerEntry, AccountingTransaction, AiAccountantReview, CommissionStatus, ContentIdeaItem, ContentIdeaReference, ContentPlanItem, CreatorCommission, CreatorPayout, CreatorProfile, CreatorStatus, CreatorTier, DashboardAccount, EnvelopePrintSettings, ManualOrder, MetaCapiLog, MetaCapiSettings, Order, PaymentProcessorSetting, SalesConsumptionMapping, SalesFeeSetting, StockSetting, UserRole, WhatsAppLead } from "./types";
 
 export type DashboardSession = DashboardAccount & { token: string };
@@ -75,11 +76,47 @@ function creatorEmailLoginSetupError() {
   return new Error("Supabase still has the old username rule, so email logins are being rejected. Run the updated supabase/schema.sql in Supabase SQL Editor to allow creator email usernames.");
 }
 
-export async function fetchSharedOrders(): Promise<Order[]> {
+export async function fetchSharedOrders(onPage?: (orders: Order[]) => void): Promise<Order[]> {
+  const client = requireSupabase();
+  const orders: Order[] = [];
+  // Rows may contain embedded legacy files. Loading the entire history in one
+  // response can make PostgREST and the browser wait for minutes under IO
+  // pressure. Small newest-first pages let staff start working immediately while
+  // the older history is collected safely behind it.
+  const pageSize = 25;
+  // The dashboard supplies a page callback and must become usable from the
+  // newest operational slice. Server-side maintenance callers omit it and can
+  // still intentionally read the complete history when they need to.
+  const dashboardFirstPageOnly = Boolean(onPage);
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await client
+      .from("fulfilment_orders")
+      .select("data")
+      .order("order_date", { ascending: false, nullsFirst: false })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    const page = (data ?? []).map((row) => row.data as Order);
+    if (!page.length) break;
+    orders.push(...page);
+    onPage?.(page);
+    if (dashboardFirstPageOnly) break;
+    if (page.length < pageSize) break;
+  }
+  return orders;
+}
+
+// The dashboard list intentionally reads from the compact summary table.  It
+// has every field needed for filtering and fulfilment, but never carries the
+// legacy embedded TikTok/photo file payloads.  Full records are fetched only
+// when staff opens a specific order.
+export async function fetchSharedOrderSummaryPage(offset: number, limit = 100): Promise<Order[]> {
+  const safeOffset = Math.max(0, Math.floor(offset));
+  const safeLimit = Math.min(100, Math.max(1, Math.floor(limit)));
   const { data, error } = await requireSupabase()
-    .from("fulfilment_orders")
+    .from("fulfilment_order_summaries")
     .select("data")
-    .order("order_number", { ascending: true });
+    .order("order_date", { ascending: false, nullsFirst: false })
+    .range(safeOffset, safeOffset + safeLimit - 1);
   if (error) throw error;
   return (data ?? []).map((row) => row.data as Order);
 }
@@ -92,6 +129,18 @@ export async function fetchSharedOrdersByOrderNumber(orderNumber: string, client
     .from("fulfilment_orders")
     .select("data")
     .eq("order_number", orderNumber);
+  if (error) throw error;
+  return (data ?? []).map((row) => row.data as Order);
+}
+
+/** Reads only explicitly requested orders, for targeted server-side repairs. */
+export async function fetchSharedOrdersByIds(orderIds: string[], client: SupabaseClient = requireSupabase()): Promise<Order[]> {
+  const ids = [...new Set(orderIds.map((id) => String(id || "").trim()).filter(Boolean))];
+  if (!ids.length) return [];
+  const { data, error } = await client
+    .from("fulfilment_orders")
+    .select("data")
+    .in("id", ids);
   if (error) throw error;
   return (data ?? []).map((row) => row.data as Order);
 }
@@ -112,32 +161,41 @@ export type SharedOrderChanges = {
   changedOrders: Order[];
 };
 
-// This deliberately reads only IDs and timestamps first. The fulfilment payload can
-// contain attached media, so a browser refresh should only download complete rows
-// that actually changed since its last successful check.
+// Ask Postgres to filter by its indexed update timestamp.  The former version read
+// the ID and timestamp of every historical order on every browser refresh, then
+// filtered those rows in JavaScript.  With several staff devices open that became a
+// constant full-table read even when no order had changed.
 export async function fetchSharedOrderChangesSince(checkedAt: string): Promise<SharedOrderChanges> {
   const client = requireSupabase();
-  const { data: indexRows, error: indexError } = await client
+  const parsedCheckedAt = Date.parse(checkedAt);
+  // A small overlap makes the refresh resilient to clock precision and a write
+  // landing exactly as a previous request completes. Duplicate rows are merged by
+  // ID in the caller, so this cannot duplicate an order in the workspace.
+  const safeCheckedAt = Number.isFinite(parsedCheckedAt)
+    ? new Date(parsedCheckedAt - 5_000).toISOString()
+    : "1970-01-01T00:00:00.000Z";
+  const { data, error } = await client
     .from("fulfilment_orders")
-    .select("id, updated_at");
-  if (indexError) throw indexError;
+    .select("data")
+    .gt("updated_at", safeCheckedAt)
+    .order("updated_at", { ascending: true });
+  if (error) throw error;
+  return { changedOrders: (data ?? []).map((row) => row.data as Order) };
+}
 
-  const since = Date.parse(checkedAt);
-  const changedIds = (indexRows ?? [])
-    .filter((row) => !Number.isFinite(since) || Date.parse(String(row.updated_at ?? "")) > since)
-    .map((row) => String(row.id));
-  if (!changedIds.length) return { changedOrders: [] };
-
-  const changedOrders: Order[] = [];
-  for (let start = 0; start < changedIds.length; start += 100) {
-    const { data, error } = await client
-      .from("fulfilment_orders")
-      .select("data")
-      .in("id", changedIds.slice(start, start + 100));
-    if (error) throw error;
-    changedOrders.push(...(data ?? []).map((row) => row.data as Order));
-  }
-  return { changedOrders };
+export async function fetchSharedOrderSummaryChangesSince(checkedAt: string): Promise<SharedOrderChanges> {
+  const client = requireSupabase();
+  const parsedCheckedAt = Date.parse(checkedAt);
+  const safeCheckedAt = Number.isFinite(parsedCheckedAt)
+    ? new Date(parsedCheckedAt - 5_000).toISOString()
+    : "1970-01-01T00:00:00.000Z";
+  const { data, error } = await client
+    .from("fulfilment_order_summaries")
+    .select("data")
+    .gt("updated_at", safeCheckedAt)
+    .order("updated_at", { ascending: true });
+  if (error) throw error;
+  return { changedOrders: (data ?? []).map((row) => row.data as Order) };
 }
 
 function creatorFreeSampleError(error: unknown, fallback: string) {
@@ -210,8 +268,8 @@ export async function upsertSharedOrders(
   orders: Order[],
   options?: { syncSales?: boolean },
   client: SupabaseClient = requireSupabase(),
-) {
-  if (!orders.length) return;
+): Promise<OrderSaveOutcome> {
+  if (!orders.length) return { saved: true, accountingWarning: null };
   // The browser cache deliberately excludes inline files. When a cached order
   // is later moved to another fulfilment stage, keep any server-side file
   // instead of treating that lightweight cache entry as a file removal.
@@ -273,13 +331,16 @@ export async function upsertSharedOrders(
   // uploaded files. Smaller writes keep large CSV imports below Postgres's
   // statement timeout while preserving the same upsert behaviour.
   const batchSize = 25;
-  for (let start = 0; start < rows.length; start += batchSize) {
-    const { error } = await client
-      .from("fulfilment_orders")
-      .upsert(rows.slice(start, start + batchSize), { onConflict: "id" });
-    if (error) throw error;
-  }
-  if (options?.syncSales !== false) await syncFulfilmentSalesToMonthlyJournal(orders);
+  return writeOrdersThenSyncAccounting(async () => {
+    for (let start = 0; start < rows.length; start += batchSize) {
+      const { error } = await client
+        .from("fulfilment_orders")
+        .upsert(rows.slice(start, start + batchSize), { onConflict: "id" });
+      if (error) throw error;
+    }
+  }, async () => {
+    if (options?.syncSales !== false) await syncFulfilmentSalesToMonthlyJournal(orders);
+  });
 }
 
 export async function deleteSharedOrders(ids: string[]) {
@@ -836,9 +897,22 @@ function creatorFreeSampleFromRow(row: Record<string, unknown>): CreatorFreeSamp
 }
 
 export async function fetchCreatorFreeSamples(token: string): Promise<CreatorFreeSampleRecord[]> {
-  const { data, error } = await requireSupabase().rpc("creator_list_free_samples", { p_session_token: token });
-  if (error) throw new Error(creatorFreeSampleError(error, "Free creator samples could not be loaded."));
-  return (data ?? []).map((row: Record<string, unknown>) => creatorFreeSampleFromRow(row));
+  const response = await fetch("/api/creator-samples", {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  const result = await response.json().catch(() => ({})) as { samples?: Record<string, unknown>[]; error?: string };
+  if (!response.ok || !result.samples) throw new Error(result.error || "Free creator samples could not be loaded.");
+  return result.samples.map((row) => creatorFreeSampleFromRow(row));
+}
+
+export async function fetchCreatorFreeSampleCodes(token: string, onUgcCodes?: (codes: string[]) => void): Promise<string[]> {
+  const response = await fetch("/api/creator-samples", {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  const result = await response.json().catch(() => ({})) as { samples?: Record<string, unknown>[]; codes?: string[]; ugcCodes?: string[]; error?: string };
+  if (!response.ok) throw new Error(result.error || "Creator sample codes could not be loaded.");
+  onUgcCodes?.(result.ugcCodes ?? []);
+  return result.codes ?? result.samples?.map((sample) => String(sample.sample_code ?? "")) ?? [];
 }
 
 export async function saveCreatorFreeSample(token: string, sample: CreatorFreeSampleRecord) {

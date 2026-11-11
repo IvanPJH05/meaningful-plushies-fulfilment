@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildSalesReportRows, summarizeSales } from "./sales.ts";
+import { buildSalesReportRows, isCreatorSampleOrder, summarizeSales } from "./sales.ts";
 import type { ManualOrder, Order } from "./types";
 
 function order(overrides: Partial<Order>): Order {
@@ -89,6 +89,21 @@ test("recognizes an exact Free Creator Sample code as an influencer order", () =
   assert.equal(row.paymentProcessor, "Influencer (RM0)");
   assert.equal(row.salePrice, 0);
   assert.equal(row.totalDiscount, 123);
+});
+
+test("pairs a Creator Sample claim that still charged legacy shipping from its code", () => {
+  const creatorClaim = order({
+    totalAmount: 9,
+    shippingAmount: 9,
+    discountCodes: ["STARLITTLETWINKLEE"],
+    discountCodeUsed: "STARLITTLETWINKLEE",
+  });
+
+  assert.equal(isCreatorSampleOrder(creatorClaim, [], ["STARLITTLETWINKLEE"]), true);
+  // The Creator Programme code, not the checkout total, determines pairing.
+  const [row] = buildSalesReportRows([creatorClaim], [], 0, [], [], ["STARLITTLETWINKLEE"]);
+  assert.equal(row.paymentProcessor, "Influencer (RM0)");
+  assert.equal(row.salePrice, 0);
 });
 
 test("adds East Malaysia and COD charges to a manual order's revenue", () => {
@@ -194,4 +209,14 @@ test("builds one report row and charges one fee for a multi-item order", () => {
   assert.deepEqual(rows[0].voiceLengths, [5, 20]);
   assert.equal(rows[0].processingFee, 4);
   assert.equal(rows[0].cashAfterFees, 96);
+});
+
+test("labels report rows by their actual sales source", () => {
+  const [shopify] = buildSalesReportRows([order({ totalAmount: 100 })]);
+  const [tiktok] = buildSalesReportRows([order({ totalAmount: 100, salesChannel: "tiktok" })]);
+  const [whatsapp] = buildSalesReportRows([order({ totalAmount: 100, remark: "Created from manual order collection" })]);
+
+  assert.equal(shopify.source, "shopify");
+  assert.equal(tiktok.source, "tiktok");
+  assert.equal(whatsapp.source, "whatsapp");
 });

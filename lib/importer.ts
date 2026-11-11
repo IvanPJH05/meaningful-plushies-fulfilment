@@ -1,4 +1,5 @@
 import type { ImportResult, Order } from "./types";
+import { isPlushCharmOrder } from "./plush-charm.ts";
 import { mediaFileExtension, voiceBackupFileName } from "./voice-file-name.ts";
 
 function clean(value: string | undefined) {
@@ -503,11 +504,15 @@ export function shopifyOrderToFulfilmentOrders(
     const lineName = shopifyLineName(lineItem);
     const id = total === 1 ? number : `${number}-${index + 1}`;
     const current = existingById.get(id) ?? (index === 0 ? existing.find((order) => order.orderNumber === number && !order.setIndicator) : undefined);
-    const initialStatus = current?.status ?? "new_order";
+    // A new voice plushie is not ready for fulfilment until its details arrive.
+    // Successful submitted-session binding promotes this hold to New Order.
+    const initialStatus = current?.status ?? (shopifyLineVoice(lineName) > 0 && !personalization.meaningfulMessage ? "awaiting_customisation" : "new_order");
     const certificateCode = personalization.certificateCode || current?.certificateCode || "";
     orders.push({
       id,
       orderNumber: number,
+      customisationSessionId: shopifyLineAttributeValue(lineItem, ["customisation_session_id", "mp_customisation_session_id"]) || current?.customisationSessionId,
+      shopifyLineItemId: String(objectValue(lineItem).id || current?.shopifyLineItemId || ""),
       salesChannel: "shopify",
       orderDate: createdAt || paidAt || current?.orderDate || timestamp,
       customerName: customerName || current?.customerName || "",
@@ -917,8 +922,10 @@ export function importTikTokShopData(
     );
     const assignedNumber = current?.orderNumber.match(/\bTT\d{4,}\b/i)?.[0] ?? nextTikTokOrderNumber(existing, importedOrders.length);
     const displayOrderNumber = `${assignedNumber} ${tikTokOrderId}`;
-    const code = current?.certificateCode || tikTokCertificateCode(assignedNumber, tikTokOrderId);
-    const { character, voiceLength } = tikTokVariation(row.Variation || row["Product Name"] || "");
+    const productName = row["Product Name"] || current?.product || "TikTok Shop Order";
+    const plushCharm = isPlushCharmOrder({ product: productName, productType: current?.productType || "", remark: "" });
+    const code = plushCharm ? "" : current?.certificateCode || tikTokCertificateCode(assignedNumber, tikTokOrderId);
+    const { character, voiceLength } = tikTokVariation(row.Variation || productName);
     const totalAmount = money(row["Order Amount"] || row["SKU Subtotal After Discount"]);
     const originalPrice = money(row["SKU Subtotal Before Discount"] || row["SKU Unit Original Price"]);
     const sellerDiscount = money(row["SKU Seller Discount"]);
@@ -946,13 +953,21 @@ export function importTikTokShopData(
       outstandingBalance: current?.outstandingBalance ?? 0,
       paymentProcessor: normalizeTikTokPaymentMethod(row["Payment Method"]),
       shippingMethod: row["Delivery Option"] || current?.shippingMethod || "",
-      product: row["Product Name"] || current?.product || "TikTok Shop Order",
+      product: productName,
+      productType: plushCharm ? "plush_charm" : current?.productType || "",
       character: character || current?.character || "",
       setIndicator: current?.setIndicator || "",
-      idWebsiteLink: certificateLink(code),
+      // Plush Charms use Our Link, never a birth-certificate page. The
+      // existing Our Link generator fills this after import.
+      idWebsiteLink: plushCharm ? current?.idWebsiteLink || "" : certificateLink(code),
       voiceLength: voiceLength || current?.voiceLength || 0,
       plushName: details.plushName || current?.plushName || "",
-      certificateCode: code,
+      plushGender: details.gender || current?.plushGender,
+      plushBirthDate: details.birthDate || current?.plushBirthDate,
+      plushBirthPlace: details.birthPlace || current?.plushBirthPlace,
+      plushFavouritePerson: details.favouritePerson || current?.plushFavouritePerson,
+      plushBelongsTo: details.belongsTo || current?.plushBelongsTo,
+      certificateCode: plushCharm ? "" : code,
       meaningfulNote: details.meaningfulNote || current?.meaningfulNote || "",
       meaningfulMessage: [
         details.gender ? `Gender: ${details.gender}` : "",
@@ -1024,6 +1039,11 @@ export function applyTikTokDetailEntries(
       ...current,
       customerName: details.username || current.customerName,
       plushName: details.plushName || current.plushName,
+      plushGender: details.gender || current.plushGender,
+      plushBirthDate: details.birthDate || current.plushBirthDate,
+      plushBirthPlace: details.birthPlace || current.plushBirthPlace,
+      plushFavouritePerson: details.favouritePerson || current.plushFavouritePerson,
+      plushBelongsTo: details.belongsTo || current.plushBelongsTo,
       meaningfulNote: details.meaningfulNote || current.meaningfulNote,
       meaningfulMessage: meaningfulMessage || current.meaningfulMessage,
       tikTokFileDataUrl: entry.fileDataUrl || current.tikTokFileDataUrl,
@@ -1052,11 +1072,11 @@ export function tikTokCertificateJson(order: Order) {
     "Plush Details": `${order.character}${order.voiceLength ? ` ${order.voiceLength}S` : ""}`.trim(),
     "Id Picture": order.character,
     Name: order.plushName.toUpperCase(),
-    Gender: details.gender,
-    "Birth Date": details.birthDate,
-    "Birth Place": details.birthPlace,
-    "Favourite Person": details.favouritePerson,
-    "Belongs To": details.belongsTo,
+    Gender: order.plushGender ?? details.gender,
+    "Birth Date": order.plushBirthDate ?? details.birthDate,
+    "Birth Place": order.plushBirthPlace ?? details.birthPlace,
+    "Favourite Person": order.plushFavouritePerson ?? details.favouritePerson,
+    "Belongs To": order.plushBelongsTo ?? details.belongsTo,
     "Meaningful Note": order.meaningfulNote,
   };
 }

@@ -4,6 +4,17 @@ import { applyTikTokDetailEntries, importShopifyData, importTikTokShopData, norm
 import { summarizeSales } from "./sales.ts";
 import type { Order } from "./types.ts";
 
+test("keeps customisation references with their Shopify line when another line has no form", () => {
+  const orders = shopifyOrderToFulfilmentOrders({ name: "#2000", lineItems: { nodes: [
+    { id: "gid://shopify/LineItem/1", title: "Accessory", customAttributes: [] },
+    { id: "gid://shopify/LineItem/2", title: "Plushie", customAttributes: [{ key: "customisation_session_id", value: "session-b" }, { key: "Name", value: "Example" }] },
+  ] } });
+  assert.equal(orders[0].customisationSessionId, undefined);
+  assert.equal(orders[1].customisationSessionId, "session-b");
+  assert.equal(orders[1].shopifyLineItemId, "gid://shopify/LineItem/2");
+  assert.equal(orders[1].plushName, "Example");
+});
+
 const headers = [
   "Name", "Currency", "Subtotal", "Shipping", "Total", "Discount Amount", "Created at",
   "Lineitem quantity", "Lineitem name", "Lineitem price", "Shipping Name", "Lineitem discount",
@@ -164,6 +175,27 @@ test("keeps free-looking Shopify codes unclassified until Creator Program matchi
 
   assert.equal(orders[0]?.creatorFreeOrder, false);
   assert.equal(orders[0]?.discountCodeUsed, "FREE-CREATOR10");
+});
+
+test("imports a Plush Charm creator claim with its code and exact charm character", () => {
+  const orders = shopifyOrderToFulfilmentOrders({
+    name: "#1842",
+    createdAt: "2026-10-07T08:00:00Z",
+    currencyCode: "MYR",
+    currentSubtotalPriceSet: { shopMoney: { amount: "65.00", currencyCode: "MYR" } },
+    currentTotalPriceSet: { shopMoney: { amount: "0.00", currencyCode: "MYR" } },
+    currentTotalDiscountsSet: { shopMoney: { amount: "73.00", currencyCode: "MYR" } },
+    totalShippingPriceSet: { shopMoney: { amount: "8.00", currencyCode: "MYR" } },
+    discountApplications: { nodes: [{ code: "MARS-1" }] },
+    shippingAddress: { name: "Creator", phone: "0123456789" },
+    lineItems: { nodes: [{ name: "(P,5S) MEANINGFUL PLUSH CHARM", quantity: 1 }] },
+  }, "", []);
+
+  assert.equal(orders.length, 1);
+  assert.equal(orders[0]?.productType, "plush_charm");
+  assert.equal(orders[0]?.character, "PENNY");
+  assert.equal(orders[0]?.voiceLength, 5);
+  assert.deepEqual(orders[0]?.discountCodes, ["MARS-1"]);
 });
 
 test("preserves a creator claim's zero total when Shopify refreshes an existing order", () => {
@@ -493,4 +525,25 @@ test("imports TikTok Shop orders with certificate JSON", () => {
     "Meaningful Note": "happy birthday sayang mama..moge yang baik2 tok kakak",
   });
   assert.equal(summarizeSales(orders).bankTransfer, 123.3);
+});
+
+test("imports TikTok's Meaningful Plush Charms product as a Charm, not a birth certificate", () => {
+  const tiktok = [
+    "Order ID,Order Status,Order Substatus,Product Name,Variation,SKU Unit Original Price,SKU Subtotal Before Discount,Order Amount,Created Time,Buyer Username,Recipient,Phone #,Country,State,Post Town,Detail Address,Payment Method",
+    "586534617998853699,To ship,Awaiting shipment,Meaningful Plush Charms | Personalised Custom Plushie Keychain with Voice Message | Perfect Gift,\"Benny, 5 seconds\",75,75,35,11/10/2026 17:57:49,w***yy033,p****,(+60)112*****52,Malaysia,Sabah,Kota Belud,Address,Cash on delivery",
+  ].join("\n");
+  const { importedOrders } = importTikTokShopData(tiktok, [], []);
+  const order = importedOrders[0];
+
+  assert.equal(order.productType, "plush_charm");
+  assert.equal(order.character, "Benny");
+  assert.equal(order.voiceLength, 5);
+  assert.equal(order.certificateCode, "");
+  assert.equal(order.idWebsiteLink, "");
+});
+
+
+test("new voice plushies with missing customisation cannot enter the ready queue", () => {
+ const rows = shopifyOrderToFulfilmentOrders({ name: "#1938", line_items: [{id: 1, name: "(T,10S) BUILD YOUR MEANINGFUL PLUSHIE - TOOTSIE / INCLUDED / 10 seconds"}] }, "", []);
+ assert.equal(rows[0].status, "awaiting_customisation");
 });
