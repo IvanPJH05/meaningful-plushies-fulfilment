@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Meaningful Fulfilment | Preview Studio</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #eaf0f7; color: #13233a; font: 15px system-ui, sans-serif; }
+    header { padding: 16px 20px; background: white; border-bottom: 1px solid #d7e1ee; }
+    h1 { font-size: 20px; margin: 0 0 6px; }
+    p { margin: 0 0 12px; }
+    nav { display: flex; flex-wrap: wrap; gap: 8px; }
+    button { min-height: 44px; padding: 0 14px; border: 1px solid #a4b5cb; border-radius: 8px; background: white; color: inherit; font: inherit; cursor: pointer; }
+    button[aria-pressed="true"] { background: #eaf2ff; border-color: #1769e0; }
+    main { padding: 20px; overflow: auto; }
+    iframe { display: block; width: var(--width, 390px); height: var(--height, 780px); margin: auto; border: 0; outline: 6px solid #13233a; border-radius: 16px; background: white; }
+    @media (max-width: 430px) { main { padding: 10px; } iframe { max-width: 100%; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Meaningful Fulfilment Preview</h1>
+    <p>Local demo with sample orders. Switch views without losing your place.</p>
+    <nav aria-label="Preview size">
+      <button type="button" data-width="390" data-height="780" aria-pressed="true">Phone</button>
+      <button type="button" data-width="820" data-height="500" aria-pressed="false">Landscape</button>
+      <button type="button" data-width="1100" data-height="780" aria-pressed="false">Desktop</button>
+    </nav>
+  </header>
+  <main>
+    <iframe title="Meaningful Fulfilment mobile demo" src="/?demo=1"></iframe>
+  </main>
+  <script>
+    const frame = document.querySelector("iframe");
+    const buttons = document.querySelectorAll("nav button");
+    buttons.forEach(button => button.addEventListener("click", () => {
+      frame.style.setProperty("--width", button.dataset.width + "px");
+      frame.style.setProperty("--height", button.dataset.height + "px");
+      buttons.forEach(option => option.setAttribute("aria-pressed", String(option === button)));
+    }));
+  </script>
+</body>
+</html>

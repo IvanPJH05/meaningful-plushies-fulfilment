@@ -28,10 +28,33 @@ export async function GET(request: Request) {
     }
     // The full `data` JSON can include uploaded media. Only extract the small
     // order fields needed by the phone, so the query is fast and reliable.
-    let query = mobileServiceClient()
+    const client = mobileServiceClient();
+    let query = client
       .from("fulfilment_orders")
       .select("id,status,order_number,updated_at,orderNumber:data->>orderNumber,orderDate:data->>orderDate,customerName:data->>customerName,phone:data->>phone,address:data->>address,plushName:data->>plushName,character:data->>character,product:data->>product,voiceLength:data->>voiceLength,voiceUploadStatus:data->>voiceUploadStatus,salesChannel:data->>salesChannel,paymentProcessor:data->>paymentProcessor,totalAmount:data->>totalAmount,courier:data->>courier,trackingNumber:data->>trackingNumber,meaningfulMessage:data->>meaningfulMessage,photoName:data->>photoName,tikTokFileName:data->>tikTokFileName,shippingLabelFileName:data->>shippingLabelFileName", includeTotal ? { count: "exact" } : undefined)
       .order("updated_at", { ascending: false });
+    const search = url.searchParams.get("q")?.trim().slice(0, 120) || "";
+    if (search) {
+      // Quote PostgREST filter values and escape LIKE pattern metacharacters.
+      const literal = search.replace(/^#(?=\d)/, "").replace(/[\\%_*]/g, "\\$&");
+      const pattern = JSON.stringify(`%${literal}%`);
+      const fields = ["order_number", "data->>customerName", "data->>phone", "data->>trackingNumber",
+        "data->>plushName", "data->>product", "data->>character", "data->>shippingMethod"];
+      const matches = fields.map((field) => `${field}.ilike.${pattern}`);
+      if (/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(search)) {
+        const [session, intakes] = await Promise.all([
+          client.from("customisation_sessions").select("fulfilment_order_id").eq("id", search).maybeSingle(),
+          client.from("manual_order_intakes").select("shopify_order_id").eq("customisation_session_id", search),
+        ]);
+        if (session.error) throw session.error;
+        if (intakes.error) throw intakes.error;
+        const linkedIds = new Set([session.data?.fulfilment_order_id, ...(intakes.data ?? []).map((row) => row.shopify_order_id)]);
+        for (const id of linkedIds) {
+          if (id) matches.push(`id.eq.${JSON.stringify(String(id))}`);
+        }
+      }
+      query = query.or(matches.join(","));
+    }
     if (status !== "all") query = query.eq("status", status);
     if (fromDate) query = query.gte("order_date", `${fromDate}T00:00:00.000Z`);
     if (toDate) query = query.lte("order_date", `${toDate}T23:59:59.999Z`);
