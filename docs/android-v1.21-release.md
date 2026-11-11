@@ -1,0 +1,2 @@
+- Orders shows the first 100 records as soon as they are available, with more available as sync progresses.
+- Update app can download the latest APK when GitHub's version check is unavailable.

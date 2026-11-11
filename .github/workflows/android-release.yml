@@ -55,14 +55,14 @@ jobs:
           grep -qi '1dccf60a09f3edd9c9be3d50a938fb1d9f7a242c22afc926c26843ccd9f6cc3d' "$RUNNER_TEMP/apk-signature.txt"
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" > "$RUNNER_TEMP/apk-badging.txt"
           head -1 "$RUNNER_TEMP/apk-badging.txt" | tee "$RUNNER_TEMP/apk-version.txt"
-          grep -q "versionCode='20'" "$RUNNER_TEMP/apk-version.txt"
+          grep -q "versionCode='21'" "$RUNNER_TEMP/apk-version.txt"
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump resources "$APK" > "$RUNNER_TEMP/apk-resources.txt"
           grep -q 'google_app_id' "$RUNNER_TEMP/apk-resources.txt"
           cp "$APK" app-debug.apk
           sha256sum app-debug.apk > app-debug.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: meaningful-fulfilment-v1.20-signed
+          name: meaningful-fulfilment-v1.21-signed
           path: |
             app-debug.apk
             app-debug.apk.sha256
@@ -70,7 +70,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create v1.20 app-debug.apk app-debug.apk.sha256 --target "$GITHUB_SHA" --title "Meaningful Fulfilment v1.20" --notes-file docs/android-v1.20-release.md --latest
+          gh release create v1.21 app-debug.apk app-debug.apk.sha256 --target "$GITHUB_SHA" --title "Meaningful Fulfilment v1.21" --notes-file docs/android-v1.21-release.md --latest
       - name: Remove temporary signing files
         if: always()
         run: rm -f "$RUNNER_TEMP/android-release.p12" android/app/google-services.json
