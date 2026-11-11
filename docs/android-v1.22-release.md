@@ -1,0 +1,4 @@
+- Sort orders by update time, order date or order number.
+- Open saved order details immediately and scroll through the full saved list.
+- Remove the Android tap highlight.
+- Download app updates directly from the latest APK link, with a browser download option in Account.
