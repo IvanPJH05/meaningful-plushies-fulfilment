@@ -315,18 +315,29 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
   }
 
   async function imageDataUrl(file: File) {
-    const bitmap = await createImageBitmap(file);
-    const limit = 2048;
-    const scale = Math.min(1, limit / Math.max(bitmap.width, bitmap.height));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-    canvas.getContext("2d")?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    bitmap.close();
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    let canvas: HTMLCanvasElement;
+    try {
+      image.src = url;
+      await image.decode();
+      const limit = 2048;
+      const scale = Math.min(1, limit / Math.max(image.naturalWidth, image.naturalHeight));
+      canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("We could not prepare that image.");
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    } catch {
+      throw new Error("We could not open that photo. Try a JPEG or PNG.");
+    } finally {
+      URL.revokeObjectURL(url);
+    }
     for (const quality of [0.82, 0.72, 0.62]) {
       const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
       if (!blob) continue;
-      if (blob.size <= 3 * 1024 * 1024 || quality === 0.62) return new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error("We could not prepare that image.")); reader.readAsDataURL(blob); });
+      if (blob.size <= 3 * 1024 * 1024) return new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error("We could not prepare that image.")); reader.readAsDataURL(blob); });
     }
     throw new Error("We could not prepare that image.");
   }
@@ -348,19 +359,23 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
 
   async function toggleRecording() {
     if (recording) { recorder.current?.stop(); return; }
+    const type = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm", "audio/ogg"]
+      .find((format) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(format));
+    if (!type) { setError("This browser does not support voice recording."); return; }
+    let stream: MediaStream | undefined;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const type = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
+      const microphone = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = microphone;
       const chunks: Blob[] = [];
-      const activeRecorder = new MediaRecorder(stream, { mimeType: type });
+      const activeRecorder = new MediaRecorder(microphone, { mimeType: type });
       recorder.current = activeRecorder;
       recordingStream.current = stream;
       activeRecorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
       activeRecorder.onstop = async () => {
-        stream.getTracks().forEach((track) => track.stop());
+        microphone.getTracks().forEach((track) => track.stop());
         setRecording(false);
         setSendingVoice(true);
-        const blob = new Blob(chunks, { type: activeRecorder.mimeType || "audio/webm" });
+        const blob = new Blob(chunks, { type: activeRecorder.mimeType || type });
         const reader = new FileReader();
         reader.onload = async () => {
           await sendMedia("voice", String(reader.result));
@@ -374,7 +389,10 @@ export function CloserCustomerPage({ proxyPath = "" }: { proxyPath?: string }) {
       };
       activeRecorder.start();
       setRecording(true);
-    } catch { setError("Microphone access is needed to record a voice note."); }
+    } catch {
+      stream?.getTracks().forEach((track) => track.stop());
+      setError(stream ? "We could not start recording on this browser." : "Microphone access is needed to record a voice note.");
+    }
   }
 
   if (loading) return <main className={styles.page} style={themedStyle}><div className={`${styles.scene} ${styles.loadingScene}`}><div className={styles.loading} role="status" aria-live="polite"><div className={styles.loadingContent}><CloserGlyphText className={styles.loadingLabel} text={copy.opening} label={copy.opening} /><span className={styles.loadingDots} aria-hidden="true"><i /><i /><i /></span></div></div></div></main>;
