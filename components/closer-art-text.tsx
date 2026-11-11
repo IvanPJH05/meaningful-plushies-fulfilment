@@ -4,11 +4,22 @@ const ASSET_BASE = "https://meaningful-plushies-fulfilment.vercel.app/closer/gly
 
 const glyphName = (character: string) => ({ ":": "colon", "+": "plus", "-": "dash" }[character] || character);
 
+const segmenter = typeof Intl.Segmenter === "function" ? new Intl.Segmenter() : null;
+
+export function closerCharacters(text: string): string[] {
+  return segmenter ? Array.from(segmenter.segment(text), ({ segment }) => segment) : Array.from(text);
+}
+
 export function CloserGlyphText({ text, className = "", label }: { text: string; className?: string; label?: string }) {
   return <span className={`${styles.glyphText} ${className}`} aria-label={label || text} role="img">
-    {Array.from(text.toUpperCase()).map((character, index) => character === " " || !/^[A-Z0-9:+-]$/.test(character)
-      ? <span className={styles.space} key={`${character}-${index}`} />
-      : <img key={`${character}-${index}`} src={`${ASSET_BASE}/${glyphName(character)}.png`} alt="" />)}
+    {closerCharacters(text).map((character, index) => {
+      const key = `${character}-${index}`;
+      if (/^\s+$/u.test(character)) return <span className={styles.space} key={key} />;
+      if (/^[a-zA-Z0-9:+-]$/.test(character)) {
+        return <img key={key} src={`${ASSET_BASE}/${glyphName(character.toUpperCase())}.png`} alt="" />;
+      }
+      return <span className={styles.fallback} aria-hidden="true" key={key}>{character}</span>;
+    })}
   </span>;
 }
 

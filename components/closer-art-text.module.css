@@ -1,1 +1,2 @@
 .glyphText { align-items:center; display:inline-flex; gap:.16em; line-height:1; vertical-align:middle; }.glyphText img { display:block; height:1em; object-fit:contain; width:auto; }.space { display:block; height:1px; width:.55em; }.wordArt { display:block; height:1em; margin:0 auto; max-width:100%; object-fit:contain; width:auto; }
+.fallback { font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", Arial, sans-serif; -webkit-text-stroke: 0; }
