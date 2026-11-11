@@ -446,12 +446,12 @@ export async function uploadCloserMedia(args: { certificateId: string; type: "ph
   const certificate = await certificateById(args.certificateId);
   const connection = await connectionForCertificate(certificate);
   if (!connection) throw new CloserError("Link your plushies before sharing media.", 409);
-  const extension = args.type === "photo" ? "jpg" : args.contentType === "audio/mp4" ? "m4a" : "webm";
+  const extension = args.type === "photo" ? "jpg" : ({ "audio/mp4": "m4a", "audio/ogg": "ogg", "audio/mpeg": "mp3" }[args.contentType] || "webm");
   const path = `${connection.id}/${args.type}-${randomUUID()}.${extension}`;
   await storeCloserMedia(path, args.bytes, args.contentType);
+  const isFirst = connection.first_certificate_id === args.certificateId;
+  const previousVoicePath = isFirst ? connection.second_voice_path : connection.first_voice_path;
   try {
-    const isFirst = connection.first_certificate_id === args.certificateId;
-    const previousVoicePath = isFirst ? connection.second_voice_path : connection.first_voice_path;
     const update = args.type === "photo"
       ? { photo_path: path, photo_content_type: args.contentType }
       : isFirst
@@ -460,10 +460,16 @@ export async function uploadCloserMedia(args: { certificateId: string; type: "ph
     const { data, error } = await database().from("closer_app_connections").update(update).eq("id", connection.id).select("id");
     throwDatabaseError(error);
     if (!data?.length) throw new CloserError("This shared space is no longer available.", 404);
-    await logActivity(connection.id, args.certificateId, `${args.type}_updated`);
-    await deleteCloserMedia([args.type === "photo" ? connection.photo_path : previousVoicePath]);
   } catch (error) {
     await deleteCloserMedia([path]);
     throw error;
   }
+  await Promise.allSettled([
+    logActivity(connection.id, args.certificateId, `${args.type}_updated`),
+    deleteCloserMedia([args.type === "photo" ? connection.photo_path : previousVoicePath]),
+  ]).then((results) => {
+    for (const result of results) {
+      if (result.status === "rejected") console.error("Closer media follow-up failed", result.reason);
+    }
+  });
 }
