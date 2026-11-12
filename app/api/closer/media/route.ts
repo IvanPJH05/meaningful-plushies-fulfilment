@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { authenticateCloserAccess, closerConnectionForCertificate, closerIncomingVoice, CloserError } from "@/src/modules/closer/service";
 import { readCloserMedia } from "@/src/modules/closer/media-storage";
+import { closerVoiceResponse, convertCloserVoiceToMp3 } from "@/src/modules/closer/voice-audio";
 
 export const runtime = "nodejs";
 
@@ -21,6 +22,19 @@ export async function GET(request: NextRequest) {
     if (!path || !contentType) return NextResponse.json({ error: "No media has been shared yet." }, { status: 404 });
     const bytes = await readCloserMedia(path);
     if (!bytes) return NextResponse.json({ error: "That media is no longer available." }, { status: 404 });
+    if (type === "voice") {
+      const range = request.headers.has("if-range") ? null : request.headers.get("range");
+      if (contentType !== "audio/mpeg") {
+        try {
+          // Play existing recordings without changing the stored original.
+          const mp3 = await convertCloserVoiceToMp3(bytes);
+          return closerVoiceResponse(mp3, "audio/mpeg", range);
+        } catch {
+          console.warn("Closer could not convert an existing voice note to MP3.");
+        }
+      }
+      return closerVoiceResponse(bytes, contentType, range);
+    }
     return new NextResponse(bytes, { headers: { "Content-Type": contentType, "Cache-Control": "private, no-store" } });
   } catch (error) {
     const status = error instanceof CloserError ? error.status : 500;
