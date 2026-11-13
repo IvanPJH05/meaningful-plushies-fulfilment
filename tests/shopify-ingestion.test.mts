@@ -6,7 +6,7 @@ vi.mock("../lib/supabase",()=>({upsertSharedOrders:m.save,fetchSharedOrdersByOrd
 vi.mock("../lib/importer",()=>({shopifyOrderToFulfilmentOrders:m.convert,shopifyLinePersonalization:()=>({})}));
 vi.mock("../lib/our-link",()=>({addMissingOurLinks:async(orders:unknown)=>orders}));
 vi.mock("../lib/meta-capi",()=>({sendMetaPurchaseEvents:vi.fn()}));
-vi.mock("../lib/customisation",()=>({customisationSessionIds:()=>[],recoverMissingSessionIdForOrder:async()=>[],submittedCustomisationsForSessionIds:async()=>new Map(),submittedCustomisationForOrder:async()=>null,bindSessionsToOrders:async({orders}:{orders:unknown})=>orders}));
+vi.mock("../lib/customisation",()=>({customisationSessionIds:()=>[],eligibleWebhookCustomisationOrders:async(_id:unknown,orders:unknown)=>orders,recoverMissingSessionIdForOrder:async()=>[],submittedCustomisationsForSessionIds:async()=>new Map(),submittedCustomisationForOrder:async()=>null,bindSessionsToOrders:async({orders}:{orders:unknown})=>orders}));
 vi.mock("../lib/shopify-orders",()=>({fetchShopifyOrder:m.fetch,fetchShopifyOrderByNumber:m.fetch,fetchShopifyOrdersCreatedSince:m.recent,cleanShopifyOrderNumber:(v:string)=>v.replace(/^#/,""),textValue:(v:unknown)=>v==null?"":String(v),objectValue:(v:unknown)=>v||{},shopifyMetafieldValue:()=>"",uploadLiftCertificateFields:()=>({}),certificateMetaobjectForOrder:async()=>null,createCertificateMetaobject:vi.fn(),flowCertificateCode:()=>"test-code",certificateMediaForLineItem:vi.fn(),plushBackgroundForMeaningfulNote:vi.fn()}));
 import { POST as webhook } from "../app/api/shopify/webhooks/orders-create/route";
 import { POST as updatedWebhook } from "../app/api/shopify/webhooks/orders-updated/route";

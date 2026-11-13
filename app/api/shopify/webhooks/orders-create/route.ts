@@ -1,12 +1,11 @@
 import { mobileServiceClient } from "../../../../../lib/mobile-api";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
-import { sessionIdForOrder } from "../../../../../lib/customisation-links";
 
 import { shopifyLinePersonalization, shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
 import { isPlushCharmOrder } from "../../../../../lib/plush-charm";
 import { addMissingOurLinks } from "../../../../../lib/our-link";
-import { bindSessionsToOrders, customisationSessionIds, recoverMissingSessionIdForOrder, submittedCustomisationsForSessionIds } from "../../../../../lib/customisation";
+import { bindSessionsToOrders, customisationSessionIds, eligibleWebhookCustomisationOrders, recoverMissingSessionIdForOrder, submittedCustomisationsForSessionIds } from "../../../../../lib/customisation";
 import { sendMetaPurchaseEvents } from "../../../../../lib/meta-capi";
 import { certificateMediaForLineItem, certificateMetaobjectForOrder, cleanShopifyOrderNumber, createCertificateMetaobject, fetchShopifyOrder, flowCertificateCode, objectValue, plushBackgroundForMeaningfulNote, shopifyMetafieldValue, textValue, uploadLiftCertificateFields } from "../../../../../lib/shopify-orders";
 import { fetchMetaCapiSettings, fetchSharedOrders, fetchSharedOrdersByOrderNumber, insertSharedActivity, markManualOrderUsedByDiscountCode, upsertSharedOrders } from "../../../../../lib/supabase";
@@ -103,8 +102,10 @@ export async function POST(request: Request) {
     if (!sessionIds.length) {
       sessionIds = await recoverMissingSessionIdForOrder({ createdAt, orders: ordersToSave });
     }
-    const submittedCustomisations = await submittedCustomisationsForSessionIds(sessionIds);
     const orderId = textValue(fullOrder.id) || textValue(payload.admin_graphql_api_id) || textValue(payload.id);
+    ordersToSave = await eligibleWebhookCustomisationOrders(orderId, ordersToSave, sessionIds);
+    sessionIds = [...new Set(ordersToSave.flatMap(order => order.customisationSessionId ? [order.customisationSessionId] : []))];
+    const submittedCustomisations = await submittedCustomisationsForSessionIds(sessionIds);
     const orderLineItems = Array.isArray(fullOrder.lineItems) ? fullOrder.lineItems : [];
     // The storefront saves this same form data as Shopify line-item properties.
     // Read those first: they arrive with the webhook and do not depend on a
@@ -149,7 +150,7 @@ export async function POST(request: Request) {
         // saved fulfilment order retains it, so include that as a matching hint
         // to keep the certificate picture aligned with the selected plushie.
         const characterHint = order.character || order.product;
-        const sessionId = sessionIdForOrder(order, importedOrders, sessionIds);
+        const sessionId = order.customisationSessionId || "";
         const submitted = submittedCustomisations.get(sessionId);
         return createCertificateMetaobject({
           orderNumber: syncedNumber,

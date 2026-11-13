@@ -5,10 +5,21 @@ vi.mock("@supabase/supabase-js",()=>({createClient:()=>({from:()=>{
  const query:any={select:()=>query,in:()=>query,or:()=>query,eq:(key:string,value:string)=>{if(key==="id")filter=value;return query;},update:(payload:any)=>{mutation=payload;return query;},then:(ok:any,fail:any)=>Promise.resolve(mutation?(mocks.writes.push({id:filter,...mutation}),{data:mocks.failBind?[]:[{id:filter}],error:null}):{data:mocks.rows,error:null}).then(ok,fail)};return query;
 }})}));
 vi.mock("../lib/shopify-orders",()=>({certificateMediaForLineItem:()=>({}),certificateMetaobjectForOrder:async()=>null,createCertificateMetaobject:vi.fn(),plushBackgroundForMeaningfulNote:()=>"",setShopifyOrderMetafield:mocks.metafield,shopDomain:()=>"test.myshopify.com",shopifyGraphql:vi.fn(),updateCertificateMetaobject:mocks.certificate}));
-import {bindSessionsToOrders} from "../lib/customisation";
+import {bindSessionsToOrders,eligibleWebhookCustomisationOrders} from "../lib/customisation";
 const a="00000000-0000-4000-8000-000000000001",b="00000000-0000-4000-8000-000000000002";
 function session(id:string,name:string){return {id,status:"submitted",order_id:null,order_number:null,fulfilment_order_id:null,form_data:{plushName:name,gender:"Female",birthDate:"01/01/2020",birthPlace:"Home",favouritePerson:"Person",belongsTo:"Owner",meaningfulNote:"Note"},voice_storage_path:`${id}/voice.mp3`,completed_at:"2026-10-22T15:00:00Z",delivery_method:null};}
 function order(id:string,sessionId?:string){return {id,customisationSessionId:sessionId,shopifyLineItemId:`line-${id}`,character:"Billy",product:"Billy 10s",voiceLength:10,status:"awaiting_customisation",statusHistory:[],certificateCode:"cert",idWebsiteLink:"existing"} as any;}
+it("ignores a stale webhook session reference while retaining the valid line binding",async()=>{
+  mocks.rows=[{...session(a,"OTHER"),order_id:"other-order"},{...session(b,"CURRENT"),order_id:"shopify-1",fulfilment_order_id:"two"}];
+  const rows=await eligibleWebhookCustomisationOrders("shopify-1",[order("one",a),order("two",b)],[a,b]);
+  expect(rows.map(row=>row.customisationSessionId)).toEqual([undefined,b]);
+  expect(mocks.writes).toEqual([]);
+});
+it("keeps a repeated webhook reference only on its existing owner line",async()=>{
+  mocks.rows=[{...session(a,"CURRENT"),order_id:"shopify-1",fulfilment_order_id:"one"}];
+  const rows=await eligibleWebhookCustomisationOrders("shopify-1",[order("one",a),order("two",a)],[a]);
+  expect(rows.map(row=>row.customisationSessionId)).toEqual([a,undefined]);
+});
 beforeEach(()=>{vi.clearAllMocks();mocks.rows=[];mocks.writes=[];mocks.failBind=false;mocks.certificate.mockResolvedValue(true);mocks.metafield.mockResolvedValue(true);vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY","fixture-only");vi.stubEnv("GOOGLE_DRIVE_CLIENT_ID","");});
 it("two saved submissions never override the exact session carried by the purchased line",async()=>{mocks.rows=[session(a,"OLDER"),session(b,"LATEST")];const result=await bindSessionsToOrders({orderId:"shopify-1",orderNumber:"1937",sessionIds:[a,b],orders:[order("one",b)],certificates:[{id:"meta",code:"cert"}]});expect(result[0].plushName).toBe("LATEST");expect(result[0].meaningfulMessage).toBe(`supabase-storage:${b}/voice.mp3`);expect(mocks.writes.map(x=>x.id)).toEqual([b]);expect(mocks.certificate).toHaveBeenCalledOnce();});
 it("multiple purchased lines keep their own sessions regardless of query order",async()=>{mocks.rows=[session(b,"SECOND"),session(a,"FIRST")];const result=await bindSessionsToOrders({orderId:"shopify-1",orderNumber:"1937",sessionIds:[b,a],orders:[order("one",a),order("two",b)],certificates:[{id:"m1",code:"c1"},{id:"m2",code:"c2"}]});expect(result.map(x=>x.plushName)).toEqual(["FIRST","SECOND"]);expect(result.map(x=>x.certificateCode)).toEqual(["c1","c2"]);});

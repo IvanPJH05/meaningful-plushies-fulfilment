@@ -637,6 +637,26 @@ function submittedCertificateUpdate(session: SessionRow, form: CustomisationForm
   });
 }
 
+export async function eligibleWebhookCustomisationOrders(orderId: string, orders: Order[], sessionIds: string[]) {
+  if (!sessionIds.length && !orders.some(order => order.customisationSessionId)) return orders;
+  const candidates = orders.map(order => sessionIdForOrder(order, orders, sessionIds));
+  const ids = [...new Set(candidates.filter(Boolean))];
+  if (!ids.length) return orders;
+  const { data, error } = await serviceClient().from(SESSION_TABLE)
+    .select("id,order_id,fulfilment_order_id").in("id", ids);
+  if (error) throw new Error(error.message);
+  const sessions = new Map(data.map(session => [session.id, session]));
+  return orders.map((order, index) => {
+    const id = candidates[index];
+    const session = sessions.get(id);
+    const eligible = session
+      && (!session.order_id || session.order_id === orderId)
+      && (session.fulfilment_order_id ? session.fulfilment_order_id === order.id
+        : candidates.indexOf(id) === candidates.lastIndexOf(id));
+    return { ...order, customisationSessionId: eligible ? id : undefined };
+  });
+}
+
 export async function bindSessionsToOrders(input: { orderId: string; orderNumber: string; sessionIds: string[]; orders: Order[]; certificates?: Array<CertificateReference | null> }) {
   if (!input.sessionIds.length) return input.orders;
   const client = serviceClient();
