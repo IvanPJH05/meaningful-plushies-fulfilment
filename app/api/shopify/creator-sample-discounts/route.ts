@@ -29,24 +29,26 @@ export async function POST(request: Request) {
     }));
     await Promise.all(pendingSamples.map((sample) => saveCreatorFreeSample(sessionToken, sample)));
 
-    try {
-      const savedSamples = await Promise.all(pendingSamples.map(async (sample) => {
-        const discountId = await createCreatorSampleDiscountCode(sample.sampleCode, sample.creatorName, sample.productCollection);
+    const savedSamples = [];
+    const failures = [];
+    for (const sample of pendingSamples) {
+      try {
+        const discountId = await createCreatorSampleDiscountCode(sample.sampleCode, sample.creatorName, sample.productCollection, { recoverExisting: true });
         const savedSample = { ...sample, shopifyDiscountId: discountId };
         await saveCreatorFreeSample(sessionToken, savedSample);
-        return savedSample;
-      }));
-      return json(200, { ok: true, saved: true, discountIds: savedSamples.map((sample) => sample.shopifyDiscountId), samples: savedSamples });
-    } catch (error) {
-      // The creator record is still retained so staff can resolve an already-used
-      // code without accidentally giving the same sample twice.
-      return json(200, {
-        ok: false,
-        saved: true,
-        samples: pendingSamples,
-        error: error instanceof Error ? error.message : "Shopify could not create this discount code.",
-      });
+        savedSamples.push(savedSample);
+      } catch (error) {
+        savedSamples.push(sample);
+        failures.push(`${sample.sampleCode} · ${error instanceof Error ? error.message : "Shopify could not create this discount code."}`);
+      }
     }
+    return json(200, {
+      ok: failures.length === 0,
+      saved: true,
+      discountIds: savedSamples.flatMap((sample) => sample.shopifyDiscountId ? [sample.shopifyDiscountId] : []),
+      samples: savedSamples,
+      ...(failures.length ? { error: failures.join(" ") } : {}),
+    });
   } catch (error) {
     return json(500, { ok: false, error: error instanceof Error ? error.message : "Creator sample discount could not be created." });
   }
