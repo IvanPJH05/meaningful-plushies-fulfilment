@@ -432,6 +432,20 @@ function firstMetafieldValue(order: Record<string, unknown>, key: string) {
   return String(match?.value ?? "").trim();
 }
 
+export function isShopifyShirtLine(line: unknown) {
+  const item = objectValue(line);
+  return String(objectValue(item.variant).id ?? item.variant_id ?? "").split("/").pop() === "50099395887175"
+    || /^(?:custom plushie shirt add-on)$/i.test(textValue(item.title) || textValue(item.name));
+}
+
+export function shopifyShirtPhoto(line: unknown) {
+  const value = shopifyLineAttributeValue(line, ["Shirt photo"]);
+  try {
+    const url = new URL(value);
+    return url.origin === "https://cdn.shopify.com" && /^\/s\/files\/1\/0634\/4438\/5863\/uploads\/[\w.-]+$/.test(url.pathname) ? url.href : "";
+  } catch { return ""; }
+}
+
 export function shopifyOrderToFulfilmentOrders(
   shopifyOrder: Record<string, unknown>,
   uploadLiftFormData = "",
@@ -450,7 +464,24 @@ export function shopifyOrderToFulfilmentOrders(
       : Array.isArray(lineItemNodes)
         ? lineItemNodes
         : [];
-  const lineItems = rawLineItems.length ? rawLineItems : [{}];
+  const plushieLines = rawLineItems.filter(line => !isShopifyShirtLine(line));
+  if (rawLineItems.length && !plushieLines.length) return [];
+  const lineItems = plushieLines.length ? plushieLines : [{}];
+  const sessionFor = (line: unknown) => shopifyLineAttributeValue(line, ["customisation_session_id", "mp_customisation_session_id"]);
+  const plushiesBySession = new Map<string, number>();
+  for (const line of plushieLines) {
+    const session = sessionFor(line);
+    if (session) plushiesBySession.set(session, (plushiesBySession.get(session) ?? 0) + 1);
+  }
+  const shirtsBySession = new Map<string, Record<string, unknown>[]>();
+  for (const line of rawLineItems.filter(isShopifyShirtLine)) {
+    const shirt = objectValue(line);
+    const session = shopifyLineAttributeValue(shirt, ["customisation_session_id"]);
+    if (!session || Number(shirt.currentQuantity ?? shirt.current_quantity ?? shirt.quantity ?? 1) <= 0) continue;
+    const matches = shirtsBySession.get(session) ?? [];
+    matches.push(shirt);
+    shirtsBySession.set(session, matches);
+  }
   const metafieldPersonalizations = personalizationBlocks(rawPersonalization);
   const total = Math.max(lineItems.length, metafieldPersonalizations.length, 1);
   const shippingAddress = shopifyOrder.shipping_address ?? shopifyOrder.shippingAddress ?? {};
@@ -471,7 +502,7 @@ export function shopifyOrderToFulfilmentOrders(
   const isZeroCashOrder = totalAmount === 0;
   const productDiscountAmount = creatorFreeOrder
     ? subtotalAmount
-    : isZeroCashOrder ? 0 : lineItems.reduce((sum, lineItem) => sum + shopifyLineDiscount(lineItem), 0);
+    : isZeroCashOrder ? 0 : rawLineItems.reduce((sum, lineItem) => sum + shopifyLineDiscount(lineItem), 0);
   const shippingDiscountAmount = isZeroCashOrder ? shippingAmount : Math.max(0, discountAmount - productDiscountAmount);
   const customerName = shopifyAddressName(shippingAddress)
     || shopifyAddressName(billingAddress)
@@ -508,10 +539,17 @@ export function shopifyOrderToFulfilmentOrders(
     // Successful submitted-session binding promotes this hold to New Order.
     const initialStatus = current?.status ?? (shopifyLineVoice(lineName) > 0 && !personalization.meaningfulMessage ? "awaiting_customisation" : "new_order");
     const certificateCode = personalization.certificateCode || current?.certificateCode || "";
+    const session = sessionFor(lineItem);
+    const shirts = plushiesBySession.get(session) === 1 ? shirtsBySession.get(session) ?? [] : [];
     orders.push({
       id,
       orderNumber: number,
-      customisationSessionId: shopifyLineAttributeValue(lineItem, ["customisation_session_id", "mp_customisation_session_id"]) || current?.customisationSessionId,
+      customisationSessionId: session || current?.customisationSessionId,
+      customShirts: shirts.length ? shirts.map(shirt => ({
+        lineItemId: String(shirt.id ?? ""),
+        name: shopifyLineAttributeValue(shirt, ["Plushie name"]),
+        hasPhoto: Boolean(shopifyShirtPhoto(shirt)),
+      })) : undefined,
       shopifyLineItemId: String(objectValue(lineItem).id || current?.shopifyLineItemId || ""),
       salesChannel: "shopify",
       orderDate: createdAt || paidAt || current?.orderDate || timestamp,
@@ -521,7 +559,7 @@ export function shopifyOrderToFulfilmentOrders(
       address: address || current?.address || "",
       currency: String(shopifyOrder.currency ?? shopifyOrder.currencyCode ?? current?.currency ?? "MYR"),
       subtotalAmount: isZeroCashOrder && subtotalAmount <= 0
-        ? lineItems.reduce((sum, item) => sum + shopifyLinePrice(item) * shopifyLineQuantity(item), 0)
+        ? rawLineItems.reduce((sum, item) => sum + shopifyLinePrice(item) * shopifyLineQuantity(item), 0)
         : subtotalAmount || current?.subtotalAmount || 0,
       shippingAmount: shippingAmount || current?.shippingAmount || 0,
       // A zero total is meaningful for an influencer claim. Do not let a

@@ -1,6 +1,31 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { applyTikTokDetailEntries, importShopifyData, importTikTokShopData, normalizePaymentProcessor, parseTikTokDetailsBlock, shopifyOrderToFulfilmentOrders, tikTokCertificateJson } from "./importer.ts";
+import { shopifyShirtPhoto } from "./importer.ts";
+
+test("pairs two shirts by session and downloads only the approved crop", () => {
+  const properties = (session: string) => [{ name: "customisation_session_id", value: session }];
+  const url = "https://cdn.shopify.com/s/files/1/0634/4438/5863/uploads/source.jpg";
+  const plushie = (id: number, session: string) => ({ id, variant_id: 42, name: "Meaningful Plushie", properties: properties(session) });
+  const shirt = (id: number, session: string, name: string) => ({
+    id, variant_id: 50099395887175,
+    properties: [...properties(session), { name: "Plushie name", value: name },
+      { name: "Shirt photo", value: url.replace("source.jpg", "crop.png") },
+      { name: "Original shirt photo", value: url }],
+  });
+  const one = shirt(3, "A", "Milo");
+  const two = shirt(4, "B", "Luna");
+  const order = { name: "#3100", line_items: [two, plushie(1, "A"), one, plushie(2, "B"), shirt(5, "missing", "Unknown")] };
+  const rows = shopifyOrderToFulfilmentOrders(order);
+  assert.deepEqual(rows.map(row => [row.shopifyLineItemId, row.customShirts]), [
+    ["1", [{ lineItemId: "3", name: "Milo", hasPhoto: true }]],
+    ["2", [{ lineItemId: "4", name: "Luna", hasPhoto: true }]],
+  ]);
+  assert.equal(shopifyShirtPhoto(one), url.replace("source.jpg", "crop.png"));
+  assert.equal(shopifyShirtPhoto({ ...one, properties: one.properties.filter(property => property.name !== "Shirt photo") }), "");
+  assert.equal(shopifyOrderToFulfilmentOrders({ ...order, line_items: [one, plushie(1, "A"), plushie(2, "A")] })
+    .some(row => row.customShirts?.length), false);
+});
 import { summarizeSales } from "./sales.ts";
 import type { Order } from "./types.ts";
 

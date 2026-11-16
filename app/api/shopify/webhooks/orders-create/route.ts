@@ -2,7 +2,7 @@ import { mobileServiceClient } from "../../../../../lib/mobile-api";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 
-import { shopifyLinePersonalization, shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
+import { isShopifyShirtLine, shopifyLinePersonalization, shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
 import { isPlushCharmOrder } from "../../../../../lib/plush-charm";
 import { addMissingOurLinks } from "../../../../../lib/our-link";
 import { bindSessionsToOrders, customisationSessionIds, eligibleWebhookCustomisationOrders, recoverMissingSessionIdForOrder, submittedCustomisationsForSessionIds } from "../../../../../lib/customisation";
@@ -106,12 +106,15 @@ export async function POST(request: Request) {
     ordersToSave = await eligibleWebhookCustomisationOrders(orderId, ordersToSave, sessionIds);
     sessionIds = [...new Set(ordersToSave.flatMap(order => order.customisationSessionId ? [order.customisationSessionId] : []))];
     const submittedCustomisations = await submittedCustomisationsForSessionIds(sessionIds);
-    const orderLineItems = Array.isArray(fullOrder.lineItems) ? fullOrder.lineItems : [];
+    const orderLineItems = Array.isArray(fullOrder.lineItems) ? fullOrder.lineItems.filter(line => !isShopifyShirtLine(line)) : [];
+    const lineForOrder = (order: typeof ordersToSave[number], index: number) =>
+      orderLineItems.find(line => String(objectValue(line).id) === order.shopifyLineItemId)
+      ?? (order.shopifyLineItemId ? undefined : orderLineItems[index] ?? orderLineItems[0]);
     // The storefront saves this same form data as Shopify line-item properties.
     // Read those first: they arrive with the webhook and do not depend on a
     // separate session lookup or delayed order metafield.
-    const certificateFieldsByLine = ordersToSave.map((_, index) => certificateFieldsForLineItem(
-      objectValue(orderLineItems[index] ?? orderLineItems[0]),
+    const certificateFieldsByLine = ordersToSave.map((order, index) => certificateFieldsForLineItem(
+      objectValue(lineForOrder(order, index)),
       uploadLiftFormData,
     ));
     ordersToSave = ordersToSave.map((order, index) => {
@@ -142,7 +145,7 @@ export async function POST(request: Request) {
     const certificates = looksLikePersonalizedPlushie(fullOrder) && ordersToSave.length
       ? await Promise.all(ordersToSave.map((order, index) => {
         if (isPlushCharmOrder(order)) return null;
-        const lineItem = objectValue(orderLineItems[index]);
+        const lineItem = objectValue(lineForOrder(order, index));
         const lineItemTitle = textValue(lineItem.title);
         const lineItemVariantTitle = textValue(lineItem.variantTitle);
         const certificateFields = certificateFieldsByLine[index] ?? {};

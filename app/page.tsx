@@ -1377,6 +1377,7 @@ function OrderMarkers({ order, manualOrders }: { order: Order; manualOrders: Man
     {isCodFulfilmentOrder(order, manualOrders) && <span className="order-marker cod" title={t("Collect payment when this order is delivered")}>{t("COD — COLLECT ON DELIVERY")}</span>}
     {isInfluencerFulfilmentOrder(order, creatorProfiles, freeCreatorSampleCodes) && <span className="order-marker influencer">{t("Influencer")}</span>}
     {isExpressShipping(order) && <span className="shipping-badge">{t("Express")}</span>}
+    {!!order.customShirts?.length && <span className="shipping-badge">{t("Custom Tee")}</span>}
   </>;
 }
 
@@ -10061,6 +10062,27 @@ function ImportBox({ number, title, required, value, onChange, onFile, placehold
 }
 
 function OrderDrawer({ order, manualOrders, role, actor, token, onClose, onUpdate, onStatus }: { order: Order; manualOrders: ManualOrder[]; role: UserRole; actor: string; token: string; onClose: () => void; onUpdate: (patch: Partial<Order>, expectedUpdatedAt: string) => Promise<Order>; onStatus: (status: OrderStatus) => void }) {
+  const [shirtDownloadError, setShirtDownloadError] = useState("");
+  const [downloadingShirt, setDownloadingShirt] = useState(false);
+  async function downloadShirtPhoto(lineItemId: string) {
+    setShirtDownloadError("");
+    setDownloadingShirt(true);
+    try {
+      const params = new URLSearchParams({ orderId: order.id, lineId: lineItemId });
+      const response = await fetch(`/api/fulfilment/shirt-photo?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!response.ok) throw new Error("The shirt photo could not be downloaded. Try again.");
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = response.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] || "shirt-photo";
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      setShirtDownloadError(error instanceof Error ? error.message : "The shirt photo could not be downloaded.");
+    } finally {
+      setDownloadingShirt(false);
+    }
+  }
   const { t } = useLanguage();
   const [draft, setDraft] = useState<Partial<Order>>({});
   const [saving, setSaving] = useState(false);
@@ -10171,6 +10193,13 @@ function OrderDrawer({ order, manualOrders, role, actor, token, onClose, onUpdat
       ["Favourite person", "plushFavouritePerson"], ["Belongs to", "plushBelongsTo"],
     ] as const).map(([label, key]) => <Editable key={key} label={t(label)} value={displayOrder[key] || ""} disabled={!admin || saving} onChange={value => editDraft({ [key]: value })} />)}</div><CertificateSyncStatus orderId={order.id} updatedAt={order.updatedAt} token={token} /><p>{t("Save changes to update the linked birth certificate automatically.")}</p></section>
     <section className="detail-section"><h3>{t("Plushie details")}</h3><div className="field-grid"><Editable label={t("Product name")} value={displayOrder.product} disabled={!admin || saving} onChange={(value) => editDraft({ product: value })} /><Editable label={t("Character")} value={displayOrder.character} disabled={!admin || saving} onChange={(value) => editDraft({ character: value })} /><Editable label={t("Set indicator")} value={displayOrder.setIndicator ?? ""} disabled={!admin || saving} onChange={(value) => editDraft({ setIndicator: value })} /><Editable label={t("ID website link")} value={displayOrder.idWebsiteLink ?? ""} disabled={!admin || saving} onChange={(value) => editDraft({ idWebsiteLink: value })} /><Editable label={t("Voice length")} value={String(displayOrder.voiceLength || "")} disabled={!admin || saving} onChange={(value) => editDraft({ voiceLength: Number(value) || 0 })} /><Editable label={t("Plush name")} value={displayOrder.plushName} disabled={!admin || saving} onChange={(value) => editDraft({ plushName: value })} /><Editable wide label={t("Remark")} value={displayOrder.remark ?? ""} disabled={!admin || saving} onChange={(value) => editDraft({ remark: value })} /><Editable wide textarea label={t("Meaningful note")} value={displayOrder.meaningfulNote} disabled={!admin || saving} onChange={(value) => editDraft({ meaningfulNote: value })} /><div className="field wide"><label>{t("Meaningful message")}</label>{missingTikTokAttachment ? <span>{t("Attachment needs to be uploaded again in the TikTok order file section.")}</span> : messageLink ? <a href={messageLink} download={messageDownloadName} target={messageDownloadName ? undefined : "_blank"} rel="noreferrer">{messageDownloadName ? t("Download customer message") : t("Open customer message")}</a> : <span>{order.salesChannel === "tiktok" ? t("No TikTok file uploaded") : t("Not provided")}</span>}</div><div className="field"><label>{t("Voice upload")}</label>{admin ? <select disabled={saving} value={displayOrder.voiceUploadStatus} onChange={(event) => editDraft({ voiceUploadStatus: event.target.value as Order["voiceUploadStatus"] })}><option value="missing">{t("Missing")}</option><option value="received">{t("Received")}</option><option value="checked">{t("Checked")}</option></select> : <strong>{order.voiceUploadStatus}</strong>}</div></div></section>
+    {!!order.customShirts?.length && <section className="detail-section"><h3>{t("Custom Tee")}</h3>
+      {order.customShirts.map(shirt => <div key={shirt.lineItemId} className="field-grid">
+        <Field label={t("Shirt name")} value={shirt.name || "—"} />
+        {shirt.hasPhoto && <button className="button secondary small" disabled={downloadingShirt} onClick={() => void downloadShirtPhoto(shirt.lineItemId)}>{t("Download cropped shirt photo")}</button>}
+      </div>)}
+      {shirtDownloadError && <p role="alert">{shirtDownloadError}</p>}
+    </section>}
     <section className="detail-section"><h3>{t("Delivery")}</h3><div className="field-grid"><Field label={t("Shipping method")} value={displayOrder.shippingMethod || "Not imported"} /><Editable label={t("Courier")} value={displayOrder.courier} disabled={!admin || saving} placeholder={t("J&T Express")} onChange={(value) => editDraft({ courier: value })} /><Editable label={t("Tracking number")} value={displayOrder.trackingNumber} disabled={!admin || saving} placeholder={t("Enter tracking number")} onChange={(value) => editDraft({ trackingNumber: value })} /></div></section>
     <section className="detail-section"><h3>{t("Tailor / packing photo")}</h3><div className="photo-field">{displayOrder.photoDataUrl ? <img src={displayOrder.photoDataUrl} alt="Tailor or packing evidence" /> : <div className="photo-placeholder">{t("No photo uploaded")}</div>}{admin && <FileDropZone accept="image/*" title={displayOrder.photoDataUrl ? t("Replace photo") : t("Upload photo")} description={t("Click or drop an image")} selectedName={displayOrder.photoName} onFile={(file) => uploadPhoto(file ?? undefined)} className="photo-file-drop" />}</div></section>
     <section className="detail-section"><h3>{t("Internal notes")}</h3><textarea className="notes" value={displayOrder.internalNotes} disabled={!admin || saving} onChange={(event) => editDraft({ internalNotes: event.target.value })} placeholder={t("Add notes visible to your team...")} /></section>

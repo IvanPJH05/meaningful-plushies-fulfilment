@@ -317,6 +317,7 @@ export type Order = {
   tikTokShopStatus?: string;
   customisationSessionId?: string;
   shopifyLineItemId?: string;
+  customShirts?: { lineItemId: string; name: string; hasPhoto: boolean }[];
   id: string;
   orderNumber: string;
   salesChannel?: "shopify" | "tiktok";

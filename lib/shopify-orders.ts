@@ -42,6 +42,8 @@ const ORDER_SELECTION = `
       name
       title
       quantity
+      currentQuantity
+      variant { id }
       originalUnitPriceSet { shopMoney { amount currencyCode } }
       totalDiscountSet { shopMoney { amount currencyCode } }
       customAttributes { key value }

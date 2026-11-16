@@ -2,7 +2,7 @@ import { mobileServiceClient, requireMobileSession } from "../../../../../lib/mo
 import { NextResponse } from "next/server";
 import { sessionIdForOrder } from "../../../../../lib/customisation-links";
 
-import { shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
+import { isShopifyShirtLine, shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
 import { isPlushCharmOrder } from "../../../../../lib/plush-charm";
 import { addMissingOurLinks } from "../../../../../lib/our-link";
 import { bindSessionsToOrders, customisationSessionIds, recoverMissingSessionIdForOrder, submittedCustomisationForOrder, submittedCustomisationsForSessionIds } from "../../../../../lib/customisation";
@@ -48,7 +48,7 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
   }
 
   const createdAt = textValue(fullOrder.createdAt) || new Date().toISOString();
-  const lineItems = Array.isArray(fullOrder.lineItems) ? fullOrder.lineItems : [];
+  const lineItems = Array.isArray(fullOrder.lineItems) ? fullOrder.lineItems.filter(line => !isShopifyShirtLine(line)) : [];
   // Prefer the session explicitly carried by this Shopify order.  A lookup by
   // order number only works after a previous webhook has already bound the
   // session, which is not true for the very orders this refresh is meant to
