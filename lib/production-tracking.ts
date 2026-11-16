@@ -19,6 +19,11 @@ export function matchesProductionBarcode(order:{id?:unknown;orderNumber?:unknown
 export type ProductionBatch={id:string;batch_number?:number;production_date:string;cutoff_at:string;pickup_date:string;created_at:string};
 export type ProductionItem={id:string;batch_id:string;order_id:string;stage:ProductionStage;issue:string;tracking_token:string;version:number;disposition?:"active"|"deferred"|"removed";deferred_until?:string|null;carried_issue?:string;certificate_code:string|null;nfc_paired?:boolean;playback_only?:boolean;order?:Record<string,unknown>};
 
+export function canRedownloadProductionAudio(item: Pick<ProductionItem, "stage" | "disposition">) {
+  return (!item.disposition || item.disposition === "active")
+    && productionStages.indexOf(item.stage) >= productionStages.indexOf("audio_ready");
+}
+
 export function productionBatchLabel(number?: number) {
   return number ? "Batch #" + String(number).padStart(4, "0") : "Batch";
 }

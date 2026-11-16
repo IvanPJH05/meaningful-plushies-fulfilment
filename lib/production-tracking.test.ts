@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {batchSchedule,matchesProductionBarcode,nextProductionStage} from "./production-tracking.ts";
+import {batchSchedule,canRedownloadProductionAudio,matchesProductionBarcode,nextProductionStage} from "./production-tracking.ts";
 import {renderCustomerTracking} from "./customer-production-tracking.ts";
 test("10pm Malaysia cycle crosses month and year boundaries correctly",()=>{
  assert.deepEqual(batchSchedule("2026-12-31"),{cutoff:"2026-12-31T22:00:00+08:00",tailorDate:"2027-01-01",packingDate:"2027-01-01",pickupDate:"2027-01-02",arrivalDate:"2027-01-03"});
@@ -29,4 +29,14 @@ test("production scans identify each split plushie with the new packing barcode"
  assert.equal(matchesProductionBarcode(a,"MP-1970"),false);
  assert.equal(matchesProductionBarcode(b,"1970"),false);
  assert.equal(matchesProductionBarcode({id:"abc-uuid",orderNumber:"TT12345 987"},"MPI-ABC-UUID"),true);
+});
+
+test("history can download audio after an order moves past labels", () => {
+  assert.equal(canRedownloadProductionAudio({ stage: "received", disposition: "active" }), false);
+  assert.equal(canRedownloadProductionAudio({ stage: "labels_printed", disposition: "active" }), false);
+  assert.equal(canRedownloadProductionAudio({ stage: "audio_ready" }), true);
+  assert.equal(canRedownloadProductionAudio({ stage: "at_tailor", disposition: "active" }), true);
+  assert.equal(canRedownloadProductionAudio({ stage: "delivered", disposition: "active" }), true);
+  assert.equal(canRedownloadProductionAudio({ stage: "at_tailor", disposition: "deferred" }), false);
+  assert.equal(canRedownloadProductionAudio({ stage: "at_tailor", disposition: "removed" }), false);
 });

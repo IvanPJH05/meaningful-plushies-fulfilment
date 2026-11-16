@@ -1,7 +1,7 @@
 "use client";
 import { compactOrderLabel } from "@/lib/table-layout";
 import {useEffect,useRef,useState,type FormEvent} from "react";
-import {productionBatchLabel,productionBatchCreatedAt,batchSchedule,malaysiaToday,matchesProductionBarcode,stageLabels,productionStages,type ProductionItem,type ProductionBatch,type ProductionStage} from "@/lib/production-tracking";
+import {productionBatchLabel,productionBatchCreatedAt,batchSchedule,canRedownloadProductionAudio,malaysiaToday,matchesProductionBarcode,stageLabels,type ProductionItem,type ProductionBatch,type ProductionStage} from "@/lib/production-tracking";
 import {ProductionLabelPreparation} from "./production-label-preparation";
 import {ProductionTaskMode} from "./production-task-mode";
 import {nextProductionStage,taskAction,taskReady,taskInstructions} from "@/lib/production-tasks";
@@ -30,7 +30,7 @@ export function ProductionTrackingWorkspace({token,admin,onOpenScanner,onPrint,o
  const selected=items.find(i=>i.id===current);const next=selected?taskAction(selected):undefined;
  async function request(path="",body?:object){const r=await fetch(`/api/production-tracking${path}`,{method:body?"POST":"GET",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},cache:"no-store",body:body?JSON.stringify(body):undefined});const d=await r.json();if(!r.ok)throw Error(d.error||"Could not load production.");return d;}
  async function list(){const rows=(await request()).batches as Batch[];setBatches(rows);return rows;}
- async function load(id:string){const d=await request(`?batch=${id}`);setBatch(d.batch);setItems(d.items);setEvents(d.events);setAudioIssue(null);return d.items as ProductionItem[];}
+ async function load(id:string){const d=await request(`?batch=${id}`);setBatch(d.batch);setItems(d.items);setEvents(d.events);setAudioIssue(null);if(screen==="manage")setNotice("");return d.items as ProductionItem[];}
  async function run(work:()=>Promise<unknown>){if(lock.current)return;lock.current=true;setBusy(true);setError("");try{await work();}catch(e){setError((e as Error).message);}finally{lock.current=false;setBusy(false);}}
  useEffect(()=>{void run(async()=>{if(reviewPreparedOrders)await loadNewOrderReview();else await list();});/* staff auth is supplied by dashboard */},[token,reviewPreparedOrders]); // eslint-disable-line react-hooks/exhaustive-deps
  async function candidatesForDay(){await run(async()=>{const d=await request(`?candidates=1&day=${day}`);setCandidates(d.orders);setChosen(d.orders.filter((o:Order&{productionCarryover?:string})=>o.productionCarryover).map((o:Order)=>o.id));setReview(true);requestId.current=crypto.randomUUID();});}
@@ -41,26 +41,29 @@ export function ProductionTrackingWorkspace({token,admin,onOpenScanner,onPrint,o
  async function startTasks(id:string){await run(async()=>{await load(id);setOverview(false);setTaskMode(true);});}
  async function loadNewOrderReview(){const d=await request(`?candidates=1&day=${day}`);setCandidates(d.orders);setChosen([]);requestId.current=draftId||crypto.randomUUID();setBatch(null);setItems([]);setReview(true);setOverview(false);}
  async function completeTask(item:ProductionItem,action:string,orderBarcode:string,cardCode:string,taskNote:string){await request("",{action,itemId:item.id,version:item.version,orderBarcode,cardCode,note:taskNote});const updated=await load(item.batch_id);await list();return updated;}
+ async function saveAudioZip(batch: ProductionBatch, cohort: ProductionItem[]) {
+   const orders = cohort.map(i => ({ ...i.order, id: i.order_id } as Order));
+   const controller = new AbortController();
+   const result = await prepareBatchAudioFiles(orders, batch.id, token, controller.signal, undefined, "/api/production-tracking/audio");
+   if (result.missing.length) {
+     const order = orders.find(o => o.id === result.missing[0]) ?? { id: result.missing[0], orderNumber: result.missing[0] };
+     throw new BatchAudioOrderError(order, "Attach the customer recording to download this batch’s audio ZIP.", true);
+   }
+   if (!result.available) throw Error("This batch has no audio to download.");
+   const blob = await buildAudioZip(result.files);
+   const url = URL.createObjectURL(blob);
+   const link = document.createElement("a");
+   link.href = url;
+   link.download = "production-" + batch.production_date + "-audio.zip";
+   link.click();
+   setTimeout(() => URL.revokeObjectURL(url), 60000);
+ }
  async function downloadAudio() {
    if (!batch) throw Error("Choose a batch.");
    setAudioIssue(null);
    const cohort = items.filter(i => (!i.disposition || i.disposition === "active") && i.stage === "labels_printed");
-   const orders = cohort.map(i => ({ ...i.order, id: i.order_id } as Order));
-   const controller = new AbortController();
    try {
-     const result = await prepareBatchAudioFiles(orders, batch.id, token, controller.signal, undefined, "/api/production-tracking/audio");
-     if (result.missing.length) {
-       const order = orders.find(o => o.id === result.missing[0]) ?? { id: result.missing[0], orderNumber: result.missing[0] };
-       throw new BatchAudioOrderError(order, "Attach the customer recording before sending this order to sewing.", true);
-     }
-     if (!result.available) throw Error("This batch has no audio to download.");
-     const blob = await buildAudioZip(result.files);
-     const url = URL.createObjectURL(blob);
-     const link = document.createElement("a");
-     link.href = url;
-     link.download = "production-" + batch.production_date + "-audio.zip";
-     link.click();
-     setTimeout(() => URL.revokeObjectURL(url), 60000);
+     await saveAudioZip(batch, cohort);
      await request("", { action: "audio_complete", batchId: batch.id, versions: Object.fromEntries(cohort.map(i => [i.id, i.version])) });
      const updated = await load(batch.id);
      await list();
@@ -70,6 +73,7 @@ export function ProductionTrackingWorkspace({token,admin,onOpenScanner,onPrint,o
      throw error;
    }
  }
+ const downloadableItems = items.filter(canRedownloadProductionAudio);
  if (assistant && overview) {
    const activeBatches = batches.flatMap(batch => {
      const active = batch.production_items.filter(item => (!item.disposition || item.disposition === "active") && taskInstructions[item.stage]);
@@ -187,6 +191,19 @@ export function ProductionTrackingWorkspace({token,admin,onOpenScanner,onPrint,o
    {batch ? <>
      <h2>{productionBatchLabel(batch.batch_number)}</h2>
      <p>Created {productionBatchCreatedAt(batch.created_at)} · {batchIsOpen(items) ? "Open" : "Closed"}</p>
+     {downloadableItems.length > 0 && <div className={styles.toolbar}>
+       <button type="button" className="button primary" disabled={busy} onClick={() => void run(async () => {
+         setNotice("Preparing audio ZIP…");
+         try {
+           await saveAudioZip(batch, downloadableItems);
+           setNotice("Audio ZIP download started.");
+         } catch (error) {
+           setNotice("");
+           throw error;
+         }
+       })}>Download audio ZIP</button>
+     </div>}
+     {notice && <p role="status">{notice}</p>}
      <div className="table-scroll"><table className="orders-table">
        <thead><tr><th>Order number</th><th>Status</th></tr></thead>
        <tbody>{items.map(item=><tr key={item.id}>
