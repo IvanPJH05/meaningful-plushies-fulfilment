@@ -12,7 +12,9 @@ const exec = promisify(execFile);
 export const maxAudioSourceBytes = 50 * 1024 * 1024;
 const maxMp3Bytes = 4 * 1024 * 1024;
 
-export { batchAudioSource } from "./batch-audio-source";
+export class InvalidRecordingError extends Error {}
+
+export { batchAudioSource } from "./batch-audio-source.ts";
 
 export function assertAudioMediaType(type: string) {
   if (!/^(audio\/|video\/)/i.test(type) && type !== "application/octet-stream") {
@@ -36,7 +38,7 @@ export async function boundedAudioBytes(body: ReadableStream<Uint8Array>) {
 }
 
 export async function convertAudioToMp3(input: Buffer): Promise<Buffer> {
-  if (!input.length || input.length > maxAudioSourceBytes) throw new Error("The message file is empty or exceeds 50 MB.");
+  if (!input.length || input.length > maxAudioSourceBytes) throw new InvalidRecordingError("The message file is empty or exceeds 50 MB.");
   // Resolved on the server only. Next includes the platform binary exclusively
   // in the batch-audio function, never in the staff browser bundle.
   const binary = ffmpegPath;
@@ -45,20 +47,33 @@ export async function convertAudioToMp3(input: Buffer): Promise<Buffer> {
   try {
     const source = join(directory, "source"), output = join(directory, "message.mp3");
     await writeFile(source, input);
+    let scan: string;
     try {
-      await exec(binary, [
-        "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+      const result = await exec(binary, [
+        "-hide_banner", "-loglevel", "info", "-nostats", "-nostdin", "-y",
         "-protocol_whitelist", "file,pipe",
         "-format_whitelist", "mov,mp3,ogg,wav,matroska,webm,flac,aac,amr,aiff,asf",
         "-threads", "1", "-i", source, "-map", "0:a:0", "-vn", "-sn", "-dn",
-        "-map_metadata", "-1", "-c:a", "libmp3lame", "-b:a", "96k",
+        "-map_metadata", "-1", "-af", "aformat=channel_layouts=mono,volumedetect",
+        "-c:a", "libmp3lame", "-b:a", "96k",
         "-ac", "1", "-ar", "44100", "-threads", "1", "-fs", String(maxMp3Bytes + 1), output,
       ], { timeout: 40_000, maxBuffer: 64 * 1024, windowsHide: true });
-    } catch {
-      throw new Error("This file could not be converted to MP3. It may contain no audio or be damaged. Attach a playable audio or video file and retry.");
+      scan = result.stderr;
+    } catch (error) {
+      const stderr = (error as { stderr?: string }).stderr ?? "";
+      if (/Stream map .* matches no streams/i.test(stderr)) {
+        throw new InvalidRecordingError("This video has no audio track. Attach the original recording with sound.");
+      }
+      if (stderr) throw new InvalidRecordingError("This file could not be converted to MP3. Attach a playable audio or video file and retry.");
+      throw error;
+    }
+    const peak = /max_volume:\s*(-?\d+(?:\.\d+)?)\s*dB/i.exec(scan);
+    // volumedetect's 16-bit silence floor is -91 dB. Leave quiet recordings alone.
+    if (peak && Number(peak[1]) <= -91) {
+      throw new InvalidRecordingError("This recording is silent. Attach a recording with sound.");
     }
     const size = (await stat(output)).size;
-    if (!size || size > maxMp3Bytes) throw new Error("The converted audio exceeds 4 MB. Attach a shorter message.");
+    if (!size || size > maxMp3Bytes) throw new InvalidRecordingError("The converted audio is empty or exceeds 4 MB. Attach a playable, shorter recording.");
     return await readFile(output);
   } finally { await rm(directory, { recursive: true, force: true }); }
 }

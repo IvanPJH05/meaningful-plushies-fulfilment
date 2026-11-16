@@ -8,6 +8,8 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/production-tracking/audio": ["./node_modules/ffmpeg-static/ffmpeg*"],
     "/api/fulfilment/batches/audio": ["./node_modules/ffmpeg-static/ffmpeg*"],
+    "/api/fulfilment/orders/edit": ["./node_modules/ffmpeg-static/ffmpeg*"],
+    "/api/fulfilment/orders/import": ["./node_modules/ffmpeg-static/ffmpeg*"],
     "/api/customisation/audio-download": ["./node_modules/ffmpeg-static/ffmpeg*"],
   },
   // Shopify forwards the root app-proxy URL with a trailing slash. Preserve it

@@ -16,6 +16,7 @@ import { compactOrderLabel, normalizeTableLayout, tableColumns, type TableColumn
 const TableLayoutEditor = dynamic(() => import("../components/table-layout-editor"));
 import { OrderTableRow } from "../components/order-table-row";
 import { TikTokCustomisationQueue } from "../components/tiktok-customisation-queue";
+import { voiceReviewReason, VoiceReviewFlaggedError, withoutTikTokAttachment } from "../lib/voice-review";
 import { TikTokShippingPanel } from "../components/tiktok-shipping-panel";
 const NfcCardWorkspace = dynamic(() => import("../components/nfc-card-workspace").then(module => module.NfcCardWorkspace), { loading: () => <WorkspaceLoading /> });
 import { VirtualOrderTable, VirtualPackingList } from "../components/virtual-order-list";
@@ -2528,8 +2529,14 @@ function Home() {
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${currentSession.token}` },
       body: JSON.stringify({ orderId, expectedUpdatedAt, patch }),
     });
-    const result = await response.json().catch(() => ({})) as { order?: Order; error?: string };
+    const result = await response.json().catch(() => ({})) as { order?: Order; reviewedOrder?: Order; error?: string };
     if (!response.ok || !result.order) {
+      if (response.status === 422 && result.reviewedOrder) {
+        const reviewedOrder = result.reviewedOrder;
+        setOrders(current => current.map(item => item.id === orderId ? mergeRefreshedOrder(item, reviewedOrder) : item));
+        setBatchSelectedOrder(current => current?.id === orderId ? mergeRefreshedOrder(current, reviewedOrder) : current);
+        throw new VoiceReviewFlaggedError(result.error || "Recording needs review.", reviewedOrder);
+      }
       if (response.status === 409) {
         const latest = await fetchSharedOrderById(orderId).catch(() => null);
         if (latest) setOrders((current) => current.map((item) => item.id === orderId ? mergeRefreshedOrder(item, latest) : item));
@@ -10118,7 +10125,11 @@ function OrderDrawer({ order, manualOrders, role, actor, token, onClose, onUpdat
       baseline.current = null;
       setSaveMessage("Saved.");
     } catch (error) {
-      setSaveMessage(error instanceof Error ? error.message : "Save failed. Your draft is kept.");
+      if (error instanceof VoiceReviewFlaggedError) {
+        baseline.current = { ...order, ...error.reviewedOrder };
+        setDraft(withoutTikTokAttachment);
+        setSaveMessage("Recording needs review. Other draft changes are kept.");
+      } else setSaveMessage(error instanceof Error ? error.message : "Save failed. Your draft is kept.");
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -10145,6 +10156,7 @@ function OrderDrawer({ order, manualOrders, role, actor, token, onClose, onUpdat
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty, readingFile]);
   const admin = role === "admin";
+  const reviewReason = voiceReviewReason(order.internalNotes);
   const following = nextStatus[order.status];
   const messageLink = meaningfulMessageLink(displayOrder);
   const messageDownloadName = meaningfulMessageDownloadName(displayOrder);
@@ -10185,6 +10197,7 @@ function OrderDrawer({ order, manualOrders, role, actor, token, onClose, onUpdat
   return <div className="drawer-backdrop" onMouseDown={(event) => event.target === event.currentTarget && closeDrawer()}><aside className="order-drawer"><div className="drawer-header"><div><p>{t("ORDER DETAIL")}</p><h2>{orderLabel(order)}</h2></div><button onClick={closeDrawer}>{t("x")}</button></div><div className="drawer-body">
     {admin && <section className="detail-section" aria-live="polite"><div className="toolbar"><button className="button primary" disabled={!dirty || saving || readingFile} onClick={() => void saveDraft()}>{saving ? <LoadingIndicator>{t("Saving...")}</LoadingIndicator> : t("Save changes")}</button><button className="button" disabled={!dirty || saving || readingFile} onClick={discardDraft}>{t("Discard draft")}</button></div><p>{readingFile ? <LoadingIndicator>{t("Reading file...")}</LoadingIndicator> : saveMessage || (dirty ? t("Unsaved changes") : t("No unsaved changes"))}</p>{dirty && baseline.current?.updatedAt !== order.updatedAt && <p>{t("The order has changed. Your draft is shown above. Discard the draft to review the latest saved values before editing again.")}</p>}</section>}
     <section className="detail-summary"><div><span>{t("Current status")}</span><StatusPill status={order.status} /></div><div><span>{t("Last updated")}</span><strong>{formatDate(order.updatedAt, true)}</strong></div></section>
+    {reviewReason && <p role="alert"><strong>Recording needs review.</strong> {reviewReason}</p>}
     <section className="detail-section"><h3>{t("Quick actions")}</h3><div className="status-actions">{admin && order.salesChannel === "tiktok" && order.status === "new_order" && <button className="button secondary" disabled={dirty || saving || readingFile} onClick={() => onStatus("awaiting_customisation")}>Undo customisation completion</button>}{following && <button className="button primary" disabled={dirty || saving || readingFile} onClick={() => onStatus(following)}>{t("Move to") + " "}{t(statusLabels[following])}</button>}{admin && <button className="button issue-button" disabled={dirty || saving || readingFile} onClick={() => onStatus("issue")}>{t("Mark issue")}</button>}{admin && order.status === "issue" && <button className="button secondary" disabled={dirty || saving || readingFile} onClick={() => onStatus("sent_for_sewing")}>{t("Resolve issue")}</button>}<a className="button whatsapp" href={whatsappLink(order)} target="_blank">{t("Open WhatsApp")}</a></div></section>
     <section className="detail-section"><h3>{t("Customer and order")}</h3><div className="field-grid"><Field label={t("Order number")} value={`#${order.orderNumber}`} /><Field label={t("Source")} value={source} /><Field label={t("Order date")} value={formatDate(order.orderDate, true)} /><Field label={t("Payment method")} value={paymentMethod} />{isCod && <Field label={t("Collection instruction")} value="COD — collect payment on delivery" />}<Editable label={t("Customer name")} value={displayOrder.customerName} disabled={!admin || saving} onChange={(value) => editDraft({ customerName: value })} /><Editable label={t("Phone")} value={displayOrder.phone} disabled={!admin || saving} onChange={(value) => editDraft({ phone: value })} /><Editable wide label={t("Address")} value={displayOrder.address} disabled={!admin || saving} onChange={(value) => editDraft({ address: value })} /></div></section>
     {order.salesChannel === "tiktok" && <section className="detail-section"><h3>{t("TikTok order file")}</h3>{order.status === "awaiting_customisation" && <p>Upload the customer voice and fill in the plush name and character, then save changes. This order will move to New Order when those details are complete.</p>}<div className="field-grid"><div className="field wide"><label>{t("Attached file")}</label>{missingTikTokAttachment ? <span>{t("This earlier attachment is unavailable. Upload it again below.")}</span> : messageLink ? <a href={messageLink} download={messageDownloadName} rel="noreferrer">{messageDownloadName || t("Download TikTok order file")}</a> : <span>{t("No file attached")}</span>}</div>{admin && <div className="field wide"><FileDropZone accept="audio/*,video/*,application/pdf,image/png,image/jpeg,image/webp,.txt,.doc,.docx" title={order.tikTokFileDataUrl ? t("Replace TikTok file") : t("Upload TikTok file")} description={t("Choose or drop the customer's audio, video, or document")} selectedName={order.tikTokFileDataUrl ? order.tikTokFileName : undefined} onFile={uploadTikTokOrderFile} className="compact-file-drop" /></div>}</div></section>}

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { prepareBatchAudioFiles } from "./prepare-batch-audio.ts";
+import { BatchAudioOrderError, prepareBatchAudioFiles } from "./prepare-batch-audio.ts";
 import type { Order } from "./types";
 const order = (id:string, source="") => ({id,orderNumber:id,character:"Billy",salesChannel:"tiktok",meaningfulMessage:"Gender: Male",tikTokFileDataUrl:source}) as Order;
 test("missing submissions do not block the remaining batch audio", async () => {
@@ -27,5 +27,10 @@ test("server-confirmed missing uploads are skipped, while genuine failures remai
   assert.deepEqual((await prepareBatchAudioFiles([order('a','source')],'batch','token',new AbortController().signal)).missing,['a']);
   globalThis.fetch=async()=>Response.json({error:'Conversion failed'},{status:400});
   await assert.rejects(prepareBatchAudioFiles([order('a','source')],'batch','token',new AbortController().signal),/Conversion failed/);
+  globalThis.fetch=async()=>Response.json({code:'VOICE_INVALID',error:'This video has no audio track.'},{status:422});
+  await assert.rejects(
+    prepareBatchAudioFiles([order('a','source')],'batch','token',new AbortController().signal),
+    error => error instanceof BatchAudioOrderError && error.orderId === "a" && error.canDefer,
+  );
  } finally {globalThis.fetch=original;}
 });

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { mobileServiceClient, requireMobileSession } from "../../../../lib/mobile-api";
 import { voiceBackupFileName } from "../../../../lib/voice-file-name";
-import { assertAudioMediaType, batchAudioSource, boundedAudioBytes, cachedBatchMp3, maxAudioSourceBytes } from "../../../../lib/batch-audio";
+import { assertAudioMediaType, batchAudioSource, boundedAudioBytes, cachedBatchMp3, InvalidRecordingError, maxAudioSourceBytes } from "../../../../lib/batch-audio";
 import type { Order } from "../../../../lib/types";
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -47,5 +47,11 @@ export async function GET(request: Request) {
     const mp3 = await cachedBatchMp3(db, bytes);
     const name = voiceBackupFileName({ ...order, character: order.character ?? "" }, "mp3");
     return new Response(new Uint8Array(mp3), { headers: { "Content-Type": "audio/mpeg", "Content-Disposition": `attachment; filename="${name}"`, "Cache-Control": "private, no-store" } });
-  } catch (error) { const message = error instanceof Error ? error.message : "Audio download failed."; return NextResponse.json({ error: message }, { status: message === "WAREHOUSE_ACCESS_REQUIRED" ? 403 : message === "SIGN_IN_REQUIRED" ? 401 : 400 }); }
+  } catch (error) {
+    if (error instanceof InvalidRecordingError) {
+      return NextResponse.json({ code: "VOICE_INVALID", error: error.message }, { status: 422, headers: { "Cache-Control": "private, no-store" } });
+    }
+    const message = error instanceof Error ? error.message : "Audio download failed.";
+    return NextResponse.json({ error: message }, { status: message === "WAREHOUSE_ACCESS_REQUIRED" ? 403 : message === "SIGN_IN_REQUIRED" ? 401 : 400 });
+  }
 }

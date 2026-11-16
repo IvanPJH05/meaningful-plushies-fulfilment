@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { parseTikTokDetailsBlock } from "../lib/importer";
 import { mediaFileExtension, voiceBackupFileName } from "../lib/voice-file-name";
 import { compactOrderLabel } from "../lib/table-layout";
+import { voiceReviewReason, VoiceReviewFlaggedError, withoutTikTokAttachment } from "../lib/voice-review";
 import type { Order } from "../lib/types";
 import styles from "./tiktok-customisation-queue.module.css";
 
@@ -43,7 +44,7 @@ export function TikTokCustomisationQueue({ orders, onSave, onFinish, onDirtyChan
   if (!order) return completion ? <p role="status">{completion}</p> : null;
   return <section className={styles.queue} aria-label="TikTok awaiting customisation">
     <div><h2>Awaiting Customisation</h2><p>Choose an order, paste the customer details and check the preview. The order ID is already filled in.</p></div>
-    <label className={styles.choose}>Order to customise<select value={order.id} onChange={event => select(event.target.value)}>{orders.map(item => <option key={item.id} value={item.id}>{compactOrderLabel(item)} · {item.customerName || "TikTok customer"}</option>)}</select></label>
+    <label className={styles.choose}>Order to customise<select value={order.id} onChange={event => select(event.target.value)}>{orders.map(item => <option key={item.id} value={item.id}>{compactOrderLabel(item)} · {item.customerName || "TikTok customer"}{voiceReviewReason(item.internalNotes) ? " · Recording needs review" : ""}</option>)}</select></label>
     {pendingSelection && <div role="alert" className={styles.actions}><span>This order has unsaved details.</span><button type="button" className="button secondary" onClick={() => setPendingSelection("")}>Keep editing</button><button type="button" className="button danger" onClick={() => { setDirty(false); setSelected(pendingSelection); setPendingSelection(""); }}>Discard and switch order</button></div>}
     {completion && <p role="status">{completion}</p>}
     <CustomisationEditor key={order.id} order={order} onSave={async (id, patch, version) => {
@@ -77,6 +78,7 @@ function CustomisationEditor({ order, onSave, onFinish, onDirty }: {
   const [discarding, setDiscarding] = useState(false);
   const dirty = Object.keys(patch).length > 0;
   const draft = { ...baseline.current, ...patch };
+  const reviewReason = voiceReviewReason(order.internalNotes);
   useEffect(() => { onDirty(dirty || reading); }, [dirty, reading, onDirty]);
   useEffect(() => {
     if (!dirty) return;
@@ -122,7 +124,13 @@ function CustomisationEditor({ order, onSave, onFinish, onDirty }: {
       baseline.current = { ...draft, ...saved };
       setPatch({});
       setMessage(saved.status === "new_order" ? "Saved. This order is now in New Order." : "Details saved. Save the customer voice to move to New Order.");
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Could not save. Your draft is kept."); }
+    } catch (error) {
+      if (error instanceof VoiceReviewFlaggedError) {
+        baseline.current = { ...baseline.current, ...error.reviewedOrder };
+        setPatch(withoutTikTokAttachment);
+        setMessage("Recording needs review. Other draft changes are kept.");
+      } else setMessage(error instanceof Error ? error.message : "Could not save. Your draft is kept.");
+    }
     finally { busy.current = false; setSaving(false); }
   }
   const locked = saving || reading;
@@ -152,7 +160,8 @@ function CustomisationEditor({ order, onSave, onFinish, onDirty }: {
       <span>or click to choose a file</span><small>Audio or video · up to 5 MB</small>
     </button>
     <input ref={fileInput} type="file" aria-label="Choose customer voice" accept="audio/*,video/*" hidden disabled={locked} onChange={event => { upload(event.target.files?.[0]); event.target.value = ""; }} />
-    <small>{draft.tikTokFileName ? `Attached: ${draft.tikTokFileName}` : "Choose the customer's audio or video recording."}</small>
+    <small>{patch.tikTokFileDataUrl ? `Selected: ${draft.tikTokFileName}. Audio is checked on save.` : draft.tikTokFileName ? `Attached: ${draft.tikTokFileName}` : "Choose the customer's audio or video recording."}</small>
+    {reviewReason && <p role="alert"><strong>Recording needs review.</strong> {reviewReason}</p>}
     <p>Save the customer voice to move this order to New Order. Plushie and certificate details are optional.</p>
     <p>If this order was returned here to correct a mistake, save your corrections, then choose Finish customisation to move it back to New Order.</p>
     <button type="button" className="button secondary" disabled={dirty || locked} onClick={() => void finish()}>Finish customisation</button>

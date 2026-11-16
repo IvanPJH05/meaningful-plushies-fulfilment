@@ -7,7 +7,8 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import ffmpegPath from "ffmpeg-static";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { assertAudioMediaType, boundedAudioBytes, cachedBatchMp3, convertAudioToMp3 } from "./batch-audio.ts";
+import { assertAudioMediaType, boundedAudioBytes, cachedBatchMp3, convertAudioToMp3, InvalidRecordingError } from "./batch-audio.ts";
+import { validateTikTokVoice } from "./tiktok-voice-validation.ts";
 
 const exec = promisify(execFile);
 test("streamed browser-style WebM converts to MP3 without losing its duration", async () => {
@@ -35,7 +36,21 @@ test("video audio is extracted as a playable MP3; silent video fails", async () 
     await writeFile(mp3, bytes);
     await exec(ffmpegPath!, ["-loglevel", "error", "-i", mp3, "-map", "0:a:0", "-f", "null", "-"], { windowsHide: true });
     await exec(ffmpegPath!, ["-loglevel", "error", "-i", video, "-an", "-c:v", "copy", silent], { windowsHide: true });
-    await assert.rejects(convertAudioToMp3(await readFile(silent)), /no audio or be damaged/);
+    const invalid = await readFile(silent);
+    await assert.rejects(convertAudioToMp3(invalid), /no audio track/);
+    const attachment = (buffer: Buffer) => ({
+      tikTokFileDataUrl: `data:video/mp4;base64,${buffer.toString("base64")}`,
+      tikTokFileName: "recording.mp4",
+    });
+    const db = {} as SupabaseClient;
+    await validateTikTokVoice(db, attachment(await readFile(video)));
+    await assert.rejects(validateTikTokVoice(db, attachment(invalid)),
+      error => error instanceof InvalidRecordingError && /no audio track/.test(error.message));
+    const muted = join(dir, "muted.mp4");
+    await exec(ffmpegPath!, ["-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono", "-t", "1", muted], { windowsHide: true });
+    await assert.rejects(validateTikTokVoice(db, attachment(await readFile(muted))),
+      error => error instanceof InvalidRecordingError && /silent/.test(error.message));
+    await validateTikTokVoice(db, { tikTokFileDataUrl: "data:application/pdf;base64,JVBERg==", tikTokFileName: "receipt.pdf" });
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 

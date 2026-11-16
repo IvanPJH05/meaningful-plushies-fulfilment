@@ -6,7 +6,7 @@ import {ProductionLabelPreparation} from "./production-label-preparation";
 import {ProductionTaskMode} from "./production-task-mode";
 import {nextProductionStage,taskAction,taskReady,taskInstructions} from "@/lib/production-tasks";
 import {OrderBarcode,packingItemBarcodeValue} from "./order-barcode";
-import {prepareBatchAudioFiles} from "@/lib/prepare-batch-audio";
+import {BatchAudioOrderError, prepareBatchAudioFiles} from "@/lib/prepare-batch-audio";
 import {buildAudioZip} from "@/lib/batch-zip-client";
 import type {Order} from "@/lib/types";
 import { DailyProductionProgress } from "./daily-production-progress";
@@ -22,6 +22,7 @@ export function ProductionTrackingWorkspace({token,admin,onOpenScanner,onPrint,o
  const [batches,setBatches]=useState<Batch[]>([]),[batch,setBatch]=useState<ProductionBatch|null>(null),[items,setItems]=useState<ProductionItem[]>([]),[events,setEvents]=useState<Event[]>([]),[current,setCurrent]=useState("");
  const [day,setDay]=useState(malaysiaToday),[pickup,setPickup]=useState(batchSchedule(malaysiaToday()).pickupDate),[candidates,setCandidates]=useState<Order[]>([]),[chosen,setChosen]=useState<string[]>([]),[review,setReview]=useState(false);
  const [search,setSearch]=useState("");
+ const [audioIssue,setAudioIssue]=useState<BatchAudioOrderError|null>(null);
  const shownCandidates=candidates.filter(order=>[order.orderNumber,order.customerName,order.phone,order.trackingNumber,order.plushName].some(value=>String(value??"").toLowerCase().includes(search.trim().toLowerCase()))).sort((a,b)=>String(b.orderNumber).localeCompare(String(a.orderNumber),undefined,{numeric:true}));
  const allShownSelected=shownCandidates.length>0&&shownCandidates.every(order=>chosen.includes(order.id));
  const [scan,setScan]=useState(""),[card,setCard]=useState(""),[note,setNote]=useState(""),[filter,setFilter]=useState("all"),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
@@ -29,7 +30,7 @@ export function ProductionTrackingWorkspace({token,admin,onOpenScanner,onPrint,o
  const selected=items.find(i=>i.id===current);const next=selected?taskAction(selected):undefined;
  async function request(path="",body?:object){const r=await fetch(`/api/production-tracking${path}`,{method:body?"POST":"GET",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},cache:"no-store",body:body?JSON.stringify(body):undefined});const d=await r.json();if(!r.ok)throw Error(d.error||"Could not load production.");return d;}
  async function list(){const rows=(await request()).batches as Batch[];setBatches(rows);return rows;}
- async function load(id:string){const d=await request(`?batch=${id}`);setBatch(d.batch);setItems(d.items);setEvents(d.events);return d.items as ProductionItem[];}
+ async function load(id:string){const d=await request(`?batch=${id}`);setBatch(d.batch);setItems(d.items);setEvents(d.events);setAudioIssue(null);return d.items as ProductionItem[];}
  async function run(work:()=>Promise<unknown>){if(lock.current)return;lock.current=true;setBusy(true);setError("");try{await work();}catch(e){setError((e as Error).message);}finally{lock.current=false;setBusy(false);}}
  useEffect(()=>{void run(async()=>{if(reviewPreparedOrders)await loadNewOrderReview();else await list();});/* staff auth is supplied by dashboard */},[token,reviewPreparedOrders]); // eslint-disable-line react-hooks/exhaustive-deps
  async function candidatesForDay(){await run(async()=>{const d=await request(`?candidates=1&day=${day}`);setCandidates(d.orders);setChosen(d.orders.filter((o:Order&{productionCarryover?:string})=>o.productionCarryover).map((o:Order)=>o.id));setReview(true);requestId.current=crypto.randomUUID();});}
@@ -40,7 +41,35 @@ export function ProductionTrackingWorkspace({token,admin,onOpenScanner,onPrint,o
  async function startTasks(id:string){await run(async()=>{await load(id);setOverview(false);setTaskMode(true);});}
  async function loadNewOrderReview(){const d=await request(`?candidates=1&day=${day}`);setCandidates(d.orders);setChosen([]);requestId.current=draftId||crypto.randomUUID();setBatch(null);setItems([]);setReview(true);setOverview(false);}
  async function completeTask(item:ProductionItem,action:string,orderBarcode:string,cardCode:string,taskNote:string){await request("",{action,itemId:item.id,version:item.version,orderBarcode,cardCode,note:taskNote});const updated=await load(item.batch_id);await list();return updated;}
- async function downloadAudio(){if(!batch)throw Error("Choose a batch.");const cohort=items.filter(i=>(!i.disposition||i.disposition==="active")&&i.stage==="labels_printed");const controller=new AbortController();const result=await prepareBatchAudioFiles(cohort.map(i=>({...i.order,id:i.order_id} as Order)),batch.id,token,controller.signal,()=>{},"/api/production-tracking/audio");if(result.missing.length||!result.available)throw Error("Missing audio. Remove or leave behind affected orders before downloading.");const blob=await buildAudioZip(result.files);const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download="production-"+batch.production_date+"-audio.zip";link.click();setTimeout(()=>URL.revokeObjectURL(url),60000);await request("",{action:"audio_complete",batchId:batch.id,versions:Object.fromEntries(cohort.map(i=>[i.id,i.version]))});const updated=await load(batch.id);await list();return updated;}
+ async function downloadAudio() {
+   if (!batch) throw Error("Choose a batch.");
+   setAudioIssue(null);
+   const cohort = items.filter(i => (!i.disposition || i.disposition === "active") && i.stage === "labels_printed");
+   const orders = cohort.map(i => ({ ...i.order, id: i.order_id } as Order));
+   const controller = new AbortController();
+   try {
+     const result = await prepareBatchAudioFiles(orders, batch.id, token, controller.signal, undefined, "/api/production-tracking/audio");
+     if (result.missing.length) {
+       const order = orders.find(o => o.id === result.missing[0]) ?? { id: result.missing[0], orderNumber: result.missing[0] };
+       throw new BatchAudioOrderError(order, "Attach the customer recording before sending this order to sewing.", true);
+     }
+     if (!result.available) throw Error("This batch has no audio to download.");
+     const blob = await buildAudioZip(result.files);
+     const url = URL.createObjectURL(blob);
+     const link = document.createElement("a");
+     link.href = url;
+     link.download = "production-" + batch.production_date + "-audio.zip";
+     link.click();
+     setTimeout(() => URL.revokeObjectURL(url), 60000);
+     await request("", { action: "audio_complete", batchId: batch.id, versions: Object.fromEntries(cohort.map(i => [i.id, i.version])) });
+     const updated = await load(batch.id);
+     await list();
+     return updated;
+   } catch (error) {
+     if (error instanceof BatchAudioOrderError) setAudioIssue(error);
+     throw error;
+   }
+ }
  if (assistant && overview) {
    const activeBatches = batches.flatMap(batch => {
      const active = batch.production_items.filter(item => (!item.disposition || item.disposition === "active") && taskInstructions[item.stage]);
@@ -111,7 +140,35 @@ export function ProductionTrackingWorkspace({token,admin,onOpenScanner,onPrint,o
  </table>{!shownCandidates.length&&<p>{candidates.length?"No orders match your search.":"No eligible new orders."}</p>}</div>}
  </section></div>;
  if(assistant&&batch&&!overview&&items.some(i=>(!i.disposition||i.disposition==="active")&&i.stage==="received"))return <><div className={styles.panel}><button disabled={busy} onClick={()=>setOverview(true)}>Back to production overview</button></div><ProductionLabelPreparation token={token} admin={admin} batch={batch} items={items} request={request} reload={async()=>{await load(batch.id);await list();}} onPrint={onPrint} decide={(item,action,reason)=>completeTask(item,action,"","",reason)}/></>;
- if(assistant&&batch&&!overview&&items.some(i=>(!i.disposition||i.disposition==="active")&&i.stage==="labels_printed"))return <div className="batch-workspace"><DailyProductionProgress step={6}/><section className="card batch-step"><small>STEP 6 OF 6</small><h2>Download ZIP</h2><p>Download this batch’s audio ZIP to close it and send the selected orders to sewing.</p>{error&&<p role="alert">{error}</p>}<div className="batch-buttons"><button type="button" className="button primary" disabled={busy} onClick={()=>void run(async()=>{await downloadAudio();setTaskMode(false);setOverview(true);setNotice("Batch closed and sent to sewing.");})}>{busy?"Preparing ZIP…":"Download ZIP · close batch"}</button><button type="button" className="button secondary" disabled={busy} onClick={()=>setOverview(true)}>Back to today’s production</button></div></section></div>;
+ if (assistant && batch && !overview && items.some(i => (!i.disposition || i.disposition === "active") && i.stage === "labels_printed")) {
+   const blockedItem = audioIssue && items.find(i => i.order_id === audioIssue.orderId && (!i.disposition || i.disposition === "active"));
+   return <div className="batch-workspace"><DailyProductionProgress step={6}/><section className="card batch-step">
+     <small>STEP 6 OF 6</small><h2>Download ZIP</h2>
+     <p>Download this batch’s audio ZIP to close it and send the selected orders to sewing.</p>
+     {(error || audioIssue) && <p role="alert">{error || audioIssue?.message}</p>}
+     {audioIssue && blockedItem && <div className="batch-buttons">
+       <button type="button" className="button secondary" disabled={busy} onClick={() => void run(() => onOpenOrder({ ...blockedItem.order, id: blockedItem.order_id } as Order))}>Open order {blockedItem.order ? compactOrderLabel(blockedItem.order as Order) : blockedItem.order_id}</button>
+       {audioIssue.canDefer && admin && <details>
+         <summary>Leave this order out of the batch</summary>
+         <p>The order will carry over. Keep its parcel and label on hold until you have a playable recording.</p>
+         <button type="button" className="button secondary" disabled={busy} onClick={() => void run(async () => {
+           await completeTask(blockedItem, "defer", "", "", audioIssue.message);
+           setNotice("Order held for the next batch. Retry the download for the remaining orders.");
+         })}>Confirm hold</button>
+       </details>}
+     </div>}
+     {notice && <p role="status">{notice}</p>}
+     <div className="batch-buttons">
+       <button type="button" className="button primary" disabled={busy} onClick={() => void run(async () => {
+         await downloadAudio();
+         setTaskMode(false);
+         setOverview(true);
+         setNotice("Batch closed and sent to sewing.");
+       })}>{busy ? "Preparing ZIP…" : "Download ZIP · close batch"}</button>
+       <button type="button" className="button secondary" disabled={busy} onClick={() => setOverview(true)}>Back to today’s production</button>
+     </div>
+   </section></div>;
+ }
  if((taskMode||assistant)&&batch)return <ProductionTaskMode onOpenScanner={onOpenScanner} batch={batch} initialItems={items} commit={completeTask} downloadAudio={downloadAudio} onPrint={onPrint} onExit={()=>{if(assistant){setTaskMode(false);setOverview(true);void run(()=>list());return;}setTaskMode(false);void run(async()=>{await list();await load(batch.id);});}}/>;
  return <div className={styles.page}>
 
