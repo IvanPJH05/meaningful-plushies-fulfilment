@@ -21,6 +21,7 @@ export function NfcCardWorkspace({token,admin,onStartNfc}:{token:string;admin:bo
   const [message,setMessage]=useState("");
   const [success,setSuccess]=useState(false);
   const [scan,setScan]=useState("");
+  const [writingMethod,setWritingMethod]=useState<"camera"|"scanner">("camera");
   const [packagingScan,setPackagingScan]=useState("");
   const [lastWritten,setLastWritten]=useState<number|null>(null);
   const packagingInput=useRef<HTMLInputElement>(null);
@@ -44,7 +45,7 @@ export function NfcCardWorkspace({token,admin,onStartNfc}:{token:string;admin:bo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[token]);
   useEffect(()=>{if(tab==="pair"&&!busy)input.current?.focus();},[tab,busy]);
-  useEffect(()=>{if(tab==="prepare")packagingInput.current?.focus();},[tab]);
+  useEffect(()=>{if(tab==="prepare"&&writingMethod==="scanner")packagingInput.current?.focus();},[tab,writingMethod]);
   async function run(action:()=>Promise<void>) {
     if(busyRef.current)return;busyRef.current=true;setBusy(true);setMessage("");setSuccess(false);
     try{await action();}catch(error){setMessage(error instanceof Error?error.message:"Request failed. Please retry.");}
@@ -109,7 +110,7 @@ export function NfcCardWorkspace({token,admin,onStartNfc}:{token:string;admin:bo
       try {
         const id=await writeScannedCard(value);
         setPackagingScan("");
-        setMessage(`NFC-${id} verified. Put this card into the scanned box, then place the next blank card on the reader.`);
+        setMessage(`NFC-${id} verified. Remove the card, keep it with its matching barcode, then place the next blank card on the reader.`);
       } catch(error) {
         const reason=error instanceof Error?error.message:"Check the card and try again.";
         throw new Error(`${value} · ${reason}`);
@@ -164,17 +165,21 @@ export function NfcCardWorkspace({token,admin,onStartNfc}:{token:string;admin:bo
       {lastPair&&<div className={styles.card}><h3>Last successful pairing</h3><p>NFC-{lastPair.card.id} → #{lastPair.order.orderNumber} · {lastPair.order.plushName||lastPair.order.character}</p>{admin&&<button className="button secondary" disabled={busy} onClick={()=>{setReason("");setCorrection({card:lastPair.card,action:"unpair"});}}>Undo this pairing</button>}</div>}
     </>}
     {tab==="prepare"&&<>
-      {admin&&<NfcCameraWriter onWrite={writeFromCamera}/>}
-      {admin&&<div className={styles.card}><h3>Generate a card batch</h3><p>Each card gets a permanent link and a matching barcode. Keep each card, sticker and box together.</p><div className={styles.actions}><label>Number of cards<input type="number" min={1} max={1000} disabled={busy||!!generation.current} value={quantity} onChange={event=>setQuantity(Number(event.target.value))}/></label><button className="button primary" disabled={busy||!Number.isInteger(quantity)||quantity<1||quantity>1000} onClick={()=>void run(generate)}>Generate links</button></div></div>}
-      {admin&&<form className={styles.card} onSubmit={submitPackagingScan}>
-        <h3>Write from packaging barcode</h3>
-        <p>Stick the printed barcode on the box, place one blank NFC card on the reader, then scan the box. Keep the card on the reader until the link is verified.</p>
+      {admin&&<div className={styles.tabs} role="group" aria-label="NFC barcode scanning method">
+        <button type="button" aria-pressed={writingMethod==="camera"} disabled={busy} onClick={()=>setWritingMethod("camera")}>Camera</button>
+        <button type="button" aria-pressed={writingMethod==="scanner"} disabled={busy} onClick={()=>setWritingMethod("scanner")}>Barcode scanner</button>
+      </div>}
+      {admin&&writingMethod==="camera"&&<NfcCameraWriter onWrite={writeFromCamera}/>}
+      {admin&&writingMethod==="scanner"&&<form className={styles.card} onSubmit={submitPackagingScan}>
+        <h3>Write NFC cards with a barcode scanner</h3>
+        <p>Start the Windows NFC Helper, place one blank card on the reader, then scan its matching NFC barcode on the card or box. A scanner that sends Enter starts writing automatically. Keep the card on the reader until verification finishes.</p>
         <div className={styles.actions}>
-          <label>Packaging barcode<input ref={packagingInput} autoComplete="off" readOnly={busy} value={packagingScan} onFocus={event=>event.target.select()} onChange={event=>setPackagingScan(event.target.value)} placeholder="NFC-100001"/></label>
+          <label>NFC barcode<input ref={packagingInput} autoComplete="off" readOnly={busy} value={packagingScan} onFocus={event=>event.target.select()} onChange={event=>setPackagingScan(event.target.value)} placeholder="NFC-100001"/></label>
           <button className="button primary" disabled={busy||!packagingScan.trim()}>Write and verify card</button>
         </div>
         {lastWritten!==null&&<p>Last verified card · NFC-{lastWritten}</p>}
       </form>}
+      {admin&&<div className={styles.card}><h3>Generate a card batch</h3><p>Each card gets a permanent link and a matching barcode. Keep each card, sticker and box together.</p><div className={styles.actions}><label>Number of cards<input type="number" min={1} max={1000} disabled={busy||!!generation.current} value={quantity} onChange={event=>setQuantity(Number(event.target.value))}/></label><button className="button primary" disabled={busy||!Number.isInteger(quantity)||quantity<1||quantity>1000} onClick={()=>void run(generate)}>Generate links</button></div></div>}
       <div className={styles.card}><h3>Card inventory</h3><div className={styles.actions}><label>Batch<select value={batchId} disabled={busy} onChange={event=>{const id=event.target.value;setLookup("");void run(()=>load(id));}}><option value="">Choose a batch</option>{inventory.batches.map(batch=><option key={batch.id} value={batch.id}>Batch {batch.number} · {batch.quantity} cards</option>)}</select></label><button className="button secondary" disabled={busy} onClick={()=>void run(()=>load())}>Refresh inventory</button></div>
         <form className={styles.actions} onSubmit={event=>{event.preventDefault();const id=nfcCardScan(lookup);if(id===null){setMessage("Enter the card number or scan its NFC barcode.");return;}void run(()=>load("",String(id)));}}><label>Find a card<input value={lookup} onChange={event=>setLookup(event.target.value)} placeholder="NFC-100001" disabled={busy}/></label><button className="button secondary" disabled={busy||!lookup.trim()}>Find card</button></form>
         {!!inventory.cards.length&&<><div className={styles.actions}><button className="button secondary" disabled={busy} onClick={csv}>Download links CSV</button><label>Sticker layout<select value={labelFormat} onChange={event=>setLabelFormat(event.target.value as NfcLabelFormat)}><option value="thermal">50 × 25 mm thermal labels</option><option value="thermal-5x10">5 × 10 cm thermal labels</option><option value="a4">A4 · 24 labels per sheet</option><option value="camera">A4 · larger labels for camera</option></select></label><button className="button secondary" disabled={busy} onClick={()=>void run(labels)}>Download barcode labels</button></div><p className={styles.help}>Print the PDF at actual size (100%). Exported links stay the same after pairing or a correction.</p></>}
