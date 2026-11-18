@@ -16,6 +16,22 @@ type VipInvitation = {
 
 const programUrl = "https://meaningfulplushies.com/apps/closer/creators";
 
+async function readInvitationResponse<T>(response: Response, fallback: string): Promise<T> {
+  if (response.status === 404) {
+    throw new Error("VIP invitations are unavailable on this version of Fulfilment. Refresh the page and try again.");
+  }
+  if (response.status === 401 || response.status === 403) {
+    throw new Error("Sign back in as an administrator to manage VIP invitations.");
+  }
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) throw new Error(fallback);
+  const body = await response.json().catch(() => null);
+  if (!response.ok || !body) {
+    throw new Error(typeof body?.error === "string" ? body.error : fallback);
+  }
+  return body as T;
+}
+
 export function CreatorVipInvitations({ token }: { token: string }) {
   const [username, setUsername] = useState("");
   const [invites, setInvites] = useState<VipInvitation[]>([]);
@@ -24,13 +40,12 @@ export function CreatorVipInvitations({ token }: { token: string }) {
 
   const load = useCallback(async () => {
     const response = await fetch("/api/creator-vip", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
-    if (!response.ok) throw new Error("Could not load VIP invitations.");
-    const { invitations } = await response.json() as { invitations: VipInvitation[] };
+    const { invitations } = await readInvitationResponse<{ invitations: VipInvitation[] }>(response, "Could not load VIP invitations. Refresh the page to retry.");
     setInvites(invitations);
   }, [token]);
 
   useEffect(() => {
-    void load().catch(() => setMessage("Could not load VIP invitations."));
+    void load().catch((error: Error) => setMessage(error.message));
   }, [load]);
 
   async function issue(event: FormEvent<HTMLFormElement>) {
@@ -43,9 +58,9 @@ export function CreatorVipInvitations({ token }: { token: string }) {
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ username }),
       });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error || "Could not create an invitation.");
-      const invite = body.invitation as VipInvitation;
+      const { invitation: invite } = await readInvitationResponse<{ invitation: VipInvitation }>(
+        response, "Could not create the invitation. Submit the same TikTok username to retry.",
+      );
       setUsername("");
       setInvites(current => [invite, ...current.filter(item => item.id !== invite.id)]);
       setMessage(`Invitation ready for @${invite.username}.`);
