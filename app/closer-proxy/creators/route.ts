@@ -1,9 +1,10 @@
-import { checkVipInvite, registerVipCreator } from "@/lib/creator-vip";
+import { checkVipInvite, claimVipProduct, registerVipCreator } from "@/lib/creator-vip";
 import { renderCreatorVipPage } from "@/lib/creator-vip-page";
 import { verifyUgcProxy } from "@/lib/shopify-proxy-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const headers = { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" };
 
@@ -60,12 +61,17 @@ export async function POST(request: Request) {
     return Response.json({ error: "unavailable" }, { status: 403, headers });
   }
   const action = url.searchParams.get("action");
-  if (action !== "check" && action !== "register") return Response.json({ error: "invalid_details" }, { status: 400, headers });
+  if (action !== "check" && action !== "register" && action !== "claim") {
+    return Response.json({ error: "invalid_details" }, { status: 400, headers });
+  }
   const input = await readSignup(request).catch(() => null);
   if (!input) return Response.json({ error: "invalid_details" }, { status: 400, headers });
   try {
-    const result = action === "check" ? await checkVipInvite(input.invite) : await registerVipCreator(input);
-    const status = result.error === "invalid_invite" ? 404 : result.error === "invalid_details" ? 422 : result.error ? 409 : 200;
+    const result = action === "check" ? await checkVipInvite(input.invite)
+      : action === "register" ? await registerVipCreator(input)
+        : await claimVipProduct(input);
+    const error = "error" in result ? result.error : undefined;
+    const status = error === "invalid_invite" ? 404 : error === "invalid_details" ? 422 : error ? 409 : 200;
     return Response.json(result, { status, headers });
   } catch (error) {
     console.error("VIP creator signup failed", error);

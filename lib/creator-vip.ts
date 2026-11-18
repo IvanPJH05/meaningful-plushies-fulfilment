@@ -1,8 +1,26 @@
-import { randomBytes } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { provisionVipNativeDiscounts, vipProductHandle, vipShippingCode } from "./creator-vip-native-discounts";
 import { createCreatorSampleDiscountCode } from "./manual-orders";
 import { mobileServiceClient } from "./mobile-api";
 
-const inviteFields = "id,code,username,discount_code,sample_id,activated_at,registered_at,name,phone,created_at";
+const inviteFields = "id,code,username,discount_code,sample_id,activated_at,registered_at,name,phone,created_at,discount_mode,selected_product_handle,shipping_discount_id";
+const usableInvite = "sample_id.not.is.null,and(discount_mode.eq.native,activated_at.not.is.null,shipping_discount_id.is.null)";
+
+export function isVipInviteReady(invite: { sample_id: string | null; activated_at: string | null; discount_mode: string; shipping_discount_id: string | null }) {
+  return !!invite.sample_id || (invite.discount_mode === "native" && !!invite.activated_at && !invite.shipping_discount_id);
+}
+
+function vipClaimToken(code: string) {
+  const secret = process.env.SHOPIFY_CLIENT_SECRET;
+  if (!secret) throw new Error("Creator claim signing is not configured.");
+  return createHmac("sha256", secret).update(`vip-claim:${code}`).digest("hex");
+}
+
+function claimResponse(invite: { code: string; discount_code: string; discount_mode: string; selected_product_handle: string | null }) {
+  return invite.discount_mode === "native"
+    ? { discount: invite.discount_code, claimToken: vipClaimToken(invite.code), selectedProduct: invite.selected_product_handle }
+    : { discount: invite.discount_code };
+}
 
 export function creatorUsername(value: unknown) {
   if (typeof value !== "string") return "";
@@ -65,23 +83,18 @@ export async function issueVipInvite(username: string) {
   if (invite.activated_at) return invite;
 
   const db = mobileServiceClient();
-  const creatorName = `@${invite.username}`;
-  const discountId = await createCreatorSampleDiscountCode(invite.discount_code, creatorName, "classics", { recoverExisting: true });
-  const { error: ledgerError } = await db.from("creator_free_samples").upsert({
-    id: invite.id,
-    creator_name: creatorName,
-    creator_url: `https://www.tiktok.com/@${invite.username}`,
-    sample_code: invite.discount_code,
-    product_collection: "classics",
-    shopify_discount_id: discountId,
-    given_at: invite.created_at,
-    notes: "VIP Creator Program",
-  }, { onConflict: "id", ignoreDuplicates: true });
-  if (ledgerError) throw ledgerError;
+  let activation: { sample_id: string | null; discount_mode: "native" | "function"; activated_at: string };
+  try {
+    const discountId = await createCreatorSampleDiscountCode(invite.discount_code, `@${invite.username}`, "classics", { recoverExisting: true });
+    await saveVipLedgerSample(invite, discountId);
+    activation = { sample_id: invite.id, discount_mode: "function", activated_at: new Date().toISOString() };
+  } catch (error) {
+    if (!(error instanceof Error) || !/Shop must be on a Shopify Plus plan to activate functions from a custom app/i.test(error.message)) throw error;
+    activation = { sample_id: null, discount_mode: "native", activated_at: new Date().toISOString() };
+  }
 
   const { data, error } = await db.from("creator_vip_invites")
-    .update({ sample_id: invite.id, activated_at: new Date().toISOString() })
-    .eq("id", invite.id).is("activated_at", null).select(inviteFields).maybeSingle();
+    .update(activation).eq("id", invite.id).is("activated_at", null).select(inviteFields).maybeSingle();
   if (error) throw error;
   if (data) return data;
   const { data: activated, error: readError } = await db.from("creator_vip_invites")
@@ -90,14 +103,29 @@ export async function issueVipInvite(username: string) {
   return activated;
 }
 
+async function saveVipLedgerSample(invite: { id: string; username: string; discount_code: string; created_at: string }, discountId: string) {
+  const db = mobileServiceClient();
+  const { error: ledgerError } = await db.from("creator_free_samples").upsert({
+    id: invite.id,
+    creator_name: `@${invite.username}`,
+    creator_url: `https://www.tiktok.com/@${invite.username}`,
+    sample_code: invite.discount_code,
+    product_collection: "classics",
+    shopify_discount_id: discountId,
+    given_at: invite.created_at,
+    notes: "VIP Creator Program",
+  }, { onConflict: "id", ignoreDuplicates: true });
+  if (ledgerError) throw ledgerError;
+}
+
 export async function checkVipInvite(value: unknown) {
   const code = inviteCode(value);
   if (!code) return { error: "invalid_invite" };
   const { data, error } = await mobileServiceClient().from("creator_vip_invites")
-    .select("username,sample_id,registered_at").eq("code", code).maybeSingle();
+    .select("username,sample_id,registered_at,activated_at,discount_mode,shipping_discount_id").eq("code", code).maybeSingle();
   if (error) throw error;
-  if (!data?.sample_id) return { error: "invalid_invite" };
-  if (data.registered_at) return { error: "used_invite" };
+  if (!data || !isVipInviteReady(data)) return { error: "invalid_invite" };
+  if (data.registered_at && data.discount_mode !== "native") return { error: "used_invite" };
   return { username: `@${data.username}` };
 }
 
@@ -111,16 +139,49 @@ export async function registerVipCreator(input: { invite?: unknown; name?: unkno
   const db = mobileServiceClient();
   const { data, error } = await db.from("creator_vip_invites")
     .update({ name, phone, registered_at: new Date().toISOString(), consent_version: "creator-marketing-v1" })
-    .eq("code", code).is("registered_at", null).not("sample_id", "is", null)
-    .select("discount_code").maybeSingle();
+    .eq("code", code).is("registered_at", null).or(usableInvite)
+    .select("code,discount_code,discount_mode,selected_product_handle").maybeSingle();
   if (error?.code === "23505") return { error: "duplicate_creator" };
   if (error) throw error;
-  if (data) return { discount: data.discount_code };
+  if (data) return claimResponse(data);
 
   const { data: previous, error: readError } = await db.from("creator_vip_invites")
-    .select("name,phone,discount_code,sample_id").eq("code", code).maybeSingle();
+    .select(inviteFields).eq("code", code).maybeSingle();
   if (readError) throw readError;
-  if (!previous?.sample_id) return { error: "invalid_invite" };
-  if (previous.name === name && previous.phone === phone) return { discount: previous.discount_code };
+  if (!previous || !isVipInviteReady(previous)) return { error: "invalid_invite" };
+  if (previous.name === name && previous.phone === phone) return claimResponse(previous);
   return { error: "used_invite" };
+}
+
+export async function claimVipProduct(input: { invite?: unknown; claimToken?: unknown; product?: unknown }) {
+  const code = inviteCode(input.invite);
+  const token = input.claimToken;
+  const product = vipProductHandle(input.product);
+  if (!code || !product || typeof token !== "string" || !/^[0-9a-f]{64}$/.test(token) ||
+      !timingSafeEqual(Buffer.from(token, "hex"), Buffer.from(vipClaimToken(code), "hex"))) return { error: "invalid_invite" };
+
+  const db = mobileServiceClient();
+  const { data: reserved, error: reserveError } = await db.from("creator_vip_invites")
+    .update({ selected_product_handle: product }).eq("code", code).eq("discount_mode", "native")
+    .not("registered_at", "is", null).is("selected_product_handle", null).or(usableInvite)
+    .select(inviteFields).maybeSingle();
+  if (reserveError) throw reserveError;
+  let invite = reserved;
+  if (!invite) {
+    const { data, error } = await db.from("creator_vip_invites")
+      .select(inviteFields).eq("code", code).eq("discount_mode", "native").not("registered_at", "is", null).maybeSingle();
+    if (error) throw error;
+    invite = data;
+  }
+  if (!invite || !isVipInviteReady(invite)) return { error: "invalid_invite" };
+  if (invite.selected_product_handle !== product) return { error: "product_already_selected" };
+
+  if (!invite.shipping_discount_id || !invite.sample_id) {
+    const discounts = await provisionVipNativeDiscounts(invite, product);
+    await saveVipLedgerSample(invite, discounts.productId);
+    const { error } = await db.from("creator_vip_invites")
+      .update({ sample_id: invite.id, shipping_discount_id: discounts.shippingId }).eq("id", invite.id);
+    if (error) throw error;
+  }
+  return { discount: invite.discount_code, shippingDiscount: vipShippingCode(invite.id) };
 }

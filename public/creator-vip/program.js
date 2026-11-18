@@ -17,23 +17,84 @@ const customiserProducts = {
 };
 let signupSession;
 let verifiedInvite = "";
+let nativeClaimToken;
+let lockedProduct = "";
+let openingCheckout = false;
 
-function updateClaimLink() {
+const claimMessage = document.createElement("p");
+claimMessage.setAttribute("role", "alert");
+claimMessage.hidden = true;
+claimLink.before(claimMessage);
+
+function selectedProduct() {
   const character = creatorConfirmation.querySelector('[name="claim-character"]:checked')?.value;
   const length = creatorConfirmation.querySelector('[name="claim-length"]:checked')?.value;
-  const product = customiserProducts[character]?.[length];
-  if (!product || !claimCode.textContent) {
+  return customiserProducts[character]?.[length];
+}
+
+function updateClaimLink() {
+  const product = selectedProduct();
+  if (openingCheckout || !product || !claimCode.textContent || (lockedProduct && product !== lockedProduct)) {
     claimLink.removeAttribute("href");
     claimLink.setAttribute("aria-disabled", "true");
     return;
   }
-  const url = new URL(`/discount/${encodeURIComponent(claimCode.textContent)}`, "https://meaningfulplushies.com");
-  url.searchParams.set("redirect", `${malay ? "/ms" : ""}/products/${product}`);
+  const path = `${malay ? "/ms" : ""}/products/${product}`;
+  const url = new URL(nativeClaimToken ? path : `/discount/${encodeURIComponent(claimCode.textContent)}`, location.origin);
+  if (!nativeClaimToken) url.searchParams.set("redirect", path);
   claimLink.href = url;
   claimLink.removeAttribute("aria-disabled");
 }
 
 creatorConfirmation.addEventListener("change", updateClaimLink);
+
+function lockProduct(product) {
+  lockedProduct = product;
+  for (const [character, lengths] of Object.entries(customiserProducts)) {
+    for (const [length, handle] of Object.entries(lengths)) {
+      if (handle !== product) continue;
+      creatorConfirmation.querySelector(`[name="claim-character"][value="${character}"]`).checked = true;
+      creatorConfirmation.querySelector(`[name="claim-length"][value="${length}"]`).checked = true;
+    }
+  }
+  creatorConfirmation.querySelectorAll('input[type="radio"]').forEach(input => { input.disabled = true; });
+}
+
+claimLink.addEventListener("click", async event => {
+  if (!nativeClaimToken) return;
+  event.preventDefault();
+  const product = selectedProduct();
+  if (openingCheckout || !product || (lockedProduct && product !== lockedProduct)) return;
+  const destination = claimLink.href;
+  openingCheckout = true;
+  claimMessage.textContent = localized("Preparing your free plushie and shipping…", "Sedang menyediakan plushie dan penghantaran percuma…");
+  claimMessage.hidden = false;
+  updateClaimLink();
+  try {
+    const response = await fetch(new URL("?action=claim", location.href), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ invite: verifiedInvite, claimToken: nativeClaimToken, product }),
+    });
+    const result = await response.json().catch(() => null);
+    if (result?.error === "product_already_selected") throw new Error(localized("A plushie has already been selected. Reopen your invitation to continue with it.", "Plushie telah dipilih. Buka semula jemputan anda untuk meneruskan."));
+    if (!response.ok || !result?.discount || !result.shippingDiscount) {
+      throw new Error(localized("Your discounts could not be prepared. Select the same plushie and try again.", "Diskaun anda belum dapat disediakan. Pilih plushie yang sama dan cuba lagi."));
+    }
+    lockProduct(product);
+    const cart = await fetch(`${malay ? "/ms" : ""}/cart/update.js`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ discount: `${result.discount},${result.shippingDiscount}` }),
+    });
+    if (!cart.ok) throw new Error(localized("Could not apply your discounts. Please try again.", "Diskaun anda tidak dapat digunakan. Sila cuba lagi."));
+    if (creatorApplication.open) location.assign(destination);
+  } catch (error) {
+    claimMessage.textContent = error instanceof Error && error.message
+      ? error.message : localized("Could not open customisation. Please try again.", "Penyesuaian tidak dapat dibuka. Sila cuba lagi.");
+  } finally {
+    openingCheckout = false;
+    updateClaimLink();
+  }
+});
 
 const signupErrors = {
   invalid_invite: localized("That invitation code is invalid. Check the code we sent you.", "Kod jemputan tidak sah. Semak kod yang kami hantar."),
@@ -136,6 +197,13 @@ creatorForm.addEventListener("submit", async event => {
   creatorForm.reset();
   creatorForm.hidden = true;
   claimCode.textContent = result.discount;
+  nativeClaimToken = result.claimToken;
+  if (nativeClaimToken) {
+    document.querySelector("#creator-discount-heading").textContent = localized("Your 100% off code is reserved", "Kod diskaun 100% anda telah ditempah");
+    document.querySelector(".creator-claim p").textContent = localized("Choose your plushie and voice length to apply your free plushie and shipping discounts.", "Pilih plushie dan tempoh suara untuk menggunakan diskaun plushie dan penghantaran percuma.");
+    if (result.selectedProduct) lockProduct(result.selectedProduct);
+    updateClaimLink();
+  }
   creatorConfirmation.hidden = false;
   creatorApplication.scrollTop = 0;
   document.querySelector("#creator-discount-heading").focus();
