@@ -1,0 +1,33 @@
+<section class="mp-nfc-certificate" data-nfc-certificate data-proxy-path="{{ block.settings.proxy_path | escape }}" {{ block.shopify_attributes }}>
+  <p data-nfc-status role="status">{{ 'nfc_certificate.loading' | t }}</p>
+  <article data-nfc-details hidden>
+    <p class="mp-nfc-certificate__eyebrow">{{ 'nfc_certificate.title' | t }}</p>
+    <h1 data-nfc-field="name"></h1>
+    <p data-nfc-field="character"></p>
+    <dl>
+      <div><dt>{{ 'nfc_certificate.code' | t }}</dt><dd data-nfc-field="code"></dd></div>
+      <div><dt>{{ 'nfc_certificate.gender' | t }}</dt><dd data-nfc-field="gender"></dd></div>
+      <div><dt>{{ 'nfc_certificate.birth_date' | t }}</dt><dd data-nfc-field="birthDate"></dd></div>
+      <div><dt>{{ 'nfc_certificate.birthplace' | t }}</dt><dd data-nfc-field="birthplace"></dd></div>
+      <div><dt>{{ 'nfc_certificate.favourite_person' | t }}</dt><dd data-nfc-field="favouritePerson"></dd></div>
+      <div><dt>{{ 'nfc_certificate.belongs_to' | t }}</dt><dd data-nfc-field="belongsTo"></dd></div>
+    </dl>
+    <div data-nfc-note hidden><h2>{{ 'nfc_certificate.note' | t }}</h2><p data-nfc-field="note"></p></div>
+  </article>
+  <a data-nfc-our-link hidden>{{ 'nfc_certificate.our_link' | t }}</a>
+  <template data-nfc-inactive>{{ 'nfc_certificate.inactive' | t }}</template>
+  <template data-nfc-error>{{ 'nfc_certificate.error' | t }}</template>
+</section>
+
+{% schema %}
+{
+  "name": "NFC certificate",
+  "target": "section",
+  "stylesheet": "nfc-certificate.css",
+  "javascript": "nfc-certificate.js",
+  "enabled_on": { "templates": ["page"] },
+  "settings": [
+    { "type": "text", "id": "proxy_path", "label": "App proxy path", "default": "/apps/closer", "info": "Use the app proxy path configured for Meaningful Fulfilment." }
+  ]
+}
+{% endschema %}

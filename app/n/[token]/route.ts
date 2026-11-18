@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { mobileServiceClient } from "@/lib/mobile-api";
-import { nfcDestination, nfcTokenPattern } from "@/lib/nfc-cards";
+import { nfcCardUrl, nfcDestination, nfcTokenPattern } from "@/lib/nfc-cards";
 import type { Order } from "@/lib/types";
 
 export const runtime="nodejs";
@@ -13,6 +13,9 @@ export async function GET(_request: Request,{params}:{params:Promise<{token:stri
   const {token}=await params;
   if(!nfcTokenPattern.test(token)) return pending(404);
   try {
+    if (process.env.NEXT_PUBLIC_NFC_CERTIFICATE_PAGE_URL) {
+      return NextResponse.redirect(nfcCardUrl("https://meaningful-plushies-fulfilment.vercel.app",token),{status:307,headers});
+    }
     const db=mobileServiceClient();
     const {data:card,error}=await db.from("nfc_cards").select("status,order_id").eq("public_token",token).maybeSingle();
     if(error) throw error;

@@ -1,1 +1,16 @@
-{}
+{
+  "nfc_certificate": {
+    "loading": "Opening your certificate…",
+    "title": "Birth certificate",
+    "code": "Certificate number",
+    "gender": "Gender",
+    "birth_date": "Date of birth",
+    "birthplace": "Place of birth",
+    "favourite_person": "Favourite person",
+    "belongs_to": "Belongs to",
+    "note": "A meaningful note",
+    "our_link": "Open Our Link",
+    "inactive": "Your plushie’s link isn’t active yet. If you have just received this card, please contact Meaningful Plushies for help.",
+    "error": "Your certificate could not be loaded. Please refresh to try again."
+  }
+}

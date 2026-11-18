@@ -5,11 +5,24 @@ export type NfcCard = { id: number; batch_id: string; public_token: string; stat
 export type NfcBatch = { id: string; number: number; quantity: number; created_at: string; created_by: string };
 export type NfcScanOrder = { id: string; orderNumber: string; plushName: string; customerName: string; character: string; status: string; cardId: number | null };
 export const nfcTokenPattern = /^[a-f0-9]{32}$/;
-export function nfcCardUrl(origin: string, token: string) {
+export function nfcCardUrl(origin: string, token: string, storefrontPage = process.env.NEXT_PUBLIC_NFC_CERTIFICATE_PAGE_URL || "") {
   if (!nfcTokenPattern.test(token)) throw new Error("Invalid NFC link.");
+  if (storefrontPage) {
+    const page = new URL(storefrontPage);
+    if (page.protocol !== "https:" || !["meaningfulplushies.com", "www.meaningfulplushies.com"].includes(page.hostname)
+      || page.port || page.username || page.password || !/^\/pages\/[a-z0-9-]+\/?$/.test(page.pathname) || page.search || page.hash) {
+      throw new Error("Invalid Shopify certificate page.");
+    }
+    page.searchParams.set("card", token);
+    return page.href;
+  }
   const url = new URL(origin);
   if (url.protocol !== "https:" && url.hostname !== "localhost") throw new Error("Invalid NFC host.");
   return `${url.origin}/n/${token}`;
+}
+
+export function nfcCardUrlMatches(value: string, origin: string, token: string) {
+  return value.trim() === nfcCardUrl(origin, token) || value.trim() === nfcCardUrl(origin, token, "");
 }
 export function nfcCardScan(value: string): number | null {
   const match = value.trim().match(/^(?:NFC[- ]?)?(\d{6,12})$/i);
