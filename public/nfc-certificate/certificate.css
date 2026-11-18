@@ -1,0 +1,247 @@
+@font-face {
+  font-family: "MP Certificate Grandstander";
+  src: url("./grandstander-regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "MP Certificate Grandstander";
+  src: url("./grandstander-bold.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+
+.mp-birth-certificate,
+.mp-birth-certificate * {
+  box-sizing: border-box;
+}
+
+.mp-birth-certificate {
+  width: 100%;
+  max-width: 500px;
+  min-height: min(177.7778vw, 888.889px);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  isolation: isolate;
+  container-type: inline-size;
+  background: #ceeeff;
+  color: #355e72;
+  font: 400 16px/1.4 "MP Certificate Grandstander", sans-serif;
+  box-shadow: 0 12px 48px #244e6110;
+}
+
+.mp-birth-certificate .globe {
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: auto;
+  max-width: none;
+  opacity: 1;
+  pointer-events: none;
+}
+
+.mp-birth-certificate .certified {
+  display: block;
+  overflow: hidden;
+  padding: 12px 0;
+  text-align: left;
+}
+
+.mp-birth-certificate .certified-track {
+  display: flex;
+  width: max-content;
+  animation: mp-certificate-scroll 36s linear infinite;
+}
+
+.mp-birth-certificate .certified-group {
+  display: flex;
+  flex: none;
+  gap: 28px;
+  padding-right: 28px;
+}
+
+.mp-birth-certificate .certified-group span {
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.mp-birth-certificate .certificate-layout {
+  position: relative;
+  padding-bottom: 20px;
+}
+
+.mp-birth-certificate .identity-panel {
+  position: relative;
+  padding: 30px 22px 10px;
+  text-align: center;
+  min-width: 0;
+}
+
+.mp-birth-certificate .portrait-frame {
+  width: 64%;
+  max-width: 260px;
+  aspect-ratio: 1 / 1.06;
+  margin: auto;
+  background: #fff;
+  mask: url("./portrait-mask.webp") center / 100% 100% no-repeat;
+  -webkit-mask: url("./portrait-mask.webp") center / 100% 100% no-repeat;
+}
+
+.mp-birth-certificate .portrait {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+.mp-birth-certificate .name-panel {
+  margin-top: 12px;
+  padding: 0 8px 4px;
+}
+
+.mp-birth-certificate .name-panel h1 {
+  margin: 0;
+  color: #426f83;
+  font: 700 clamp(32px, 10cqw, 48px) / 1.15 "MP Certificate Grandstander", sans-serif;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+  text-shadow: 0 0 5px #758f9c99, 0 0 14px #758f9c80, 0 0 24px #ffffff90;
+  animation: mp-certificate-name-glow 4s ease-in-out infinite;
+}
+
+.mp-birth-certificate .information-panel {
+  position: relative;
+  min-width: 0;
+  margin: 0 18px;
+  padding: 24px 22px 26px;
+  border: 1px solid #ffffff65;
+  border-radius: 18px;
+  background: #618497;
+  color: #fff;
+  box-shadow: 0 3px 0 #40647812;
+}
+
+.mp-birth-certificate .details-panel dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px 18px;
+}
+
+.mp-birth-certificate .details-panel dl > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.mp-birth-certificate .details-panel .certificate-id {
+  grid-column: 1 / -1;
+  border-bottom: 1px solid #ffffff35;
+  padding-bottom: 16px;
+}
+
+.mp-birth-certificate .details-panel dt {
+  margin: 0 0 5px;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: .7px;
+  line-height: 1.4;
+  opacity: .8;
+}
+
+.mp-birth-certificate .details-panel dd {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.mp-birth-certificate .certificate-id dd {
+  font-size: 15px;
+  letter-spacing: 1.3px;
+}
+
+.mp-birth-certificate .note-panel {
+  margin-top: 22px;
+}
+
+.mp-birth-certificate .note-divider {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0 auto 14px;
+}
+
+.mp-birth-certificate .note-panel h2 {
+  margin: 0 0 10px;
+  color: inherit;
+  font: 700 14px/1.4 "MP Certificate Grandstander", sans-serif;
+}
+
+.mp-birth-certificate .note-panel p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@keyframes mp-certificate-scroll {
+  to { transform: translateX(-50%); }
+}
+
+@keyframes mp-certificate-name-glow {
+  0%, 100% { text-shadow: 0 0 5px #758f9c99, 0 0 14px #758f9c80, 0 0 24px #ffffff90; }
+  50% { text-shadow: 0 0 8px #758f9ccc, 0 0 20px #758f9c99, 0 0 32px #ffffffcc; }
+}
+
+@media (min-width: 600px) {
+  .mp-birth-certificate { margin-block: 24px; border-radius: 16px; }
+}
+
+@media (min-width: 560px) and (orientation: landscape) {
+  .mp-birth-certificate {
+    width: 100%;
+    max-width: none;
+    min-height: calc(100svh - 66px);
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .mp-birth-certificate .certificate-layout {
+    flex: 1;
+    width: 100%;
+    max-width: 1160px;
+    margin-inline: auto;
+    padding: 30px clamp(20px, 4vw, 60px);
+    display: grid;
+    grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+    align-items: center;
+    gap: 22px;
+  }
+  .mp-birth-certificate .identity-panel { padding: 18px 0 12px; }
+  .mp-birth-certificate .portrait-frame { width: 76%; max-width: 290px; }
+  .mp-birth-certificate .name-panel h1 { font-size: clamp(32px, 4.5vw, 52px); }
+  .mp-birth-certificate .information-panel { margin: 0; padding: 24px; }
+  .mp-birth-certificate .details-panel dl { gap: 18px; }
+  .mp-birth-certificate .certified { padding: 14px 0; }
+  .mp-birth-certificate .globe { width: 100%; height: 100%; object-fit: cover; opacity: .55; }
+}
+
+@media (max-width: 340px) {
+  .mp-birth-certificate .information-panel { margin: 0 12px; padding: 22px 18px; }
+  .mp-birth-certificate .details-panel dl { gap: 16px 12px; }
+  .mp-birth-certificate .details-panel dd { font-size: 14px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mp-birth-certificate .certified-track,
+  .mp-birth-certificate .name-panel h1 { animation: none; }
+}

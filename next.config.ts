@@ -21,6 +21,9 @@ const nextConfig: NextConfig = {
   // app host for a read-only state check when that happens.
   async headers() {
     return [{
+      source: "/nfc-certificate/:path*",
+      headers: [{ key: "Access-Control-Allow-Origin", value: "https://meaningfulplushies.com" }],
+    }, {
       source: "/api/closer",
       headers: [{ key: "Access-Control-Allow-Origin", value: "https://meaningfulplushies.com" }],
     }, {

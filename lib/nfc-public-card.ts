@@ -42,7 +42,7 @@ export async function publicNfcCertificate(order: Order) {
   return {
     code: value("code"),
     name: value("id_name"),
-    character: order.character || "",
+    character: order.character || value("plush_details") || order.product || "",
     gender: value("gender"),
     birthDate: value("born_on"),
     birthplace: value("birthplace"),

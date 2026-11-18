@@ -20,3 +20,16 @@ test("inactive and temporarily unavailable certificates have distinct messages",
   assert.ok(nfcCertificateHtml().includes("isn't active yet"));
   assert.ok(nfcCertificateHtml(undefined, true).includes("Please refresh this page"));
 });
+
+test("the demo layout selects each character and allows long notes to flow", () => {
+  const certificate = { code: "123456", name: "BAMBAM", character: "", gender: "Female", birthDate: "1/11/2026", birthplace: "Batu Pahat", favouritePerson: "Family", belongsTo: "Someone special", note: "A long meaningful note. ".repeat(200) };
+  for (const [character, portrait] of [["Tootsie", "tootsie"], ["Billy", "billy"], ["Hunnie", "hunnie"], ["Dragon Warrior", "dragon-warrior"]]) {
+    const html = nfcCertificateHtml({ ...certificate, character });
+    assert.ok(html.includes(`/${portrait}.webp`));
+    assert.ok(html.includes(certificate.note));
+    assert.ok(html.includes('class="mp-birth-certificate"'));
+    assert.ok(html.includes("earth-portrait.webp"));
+  }
+  assert.ok(!nfcCertificateHtml({ ...certificate, character: "Unknown" }).includes('class="portrait"'));
+  assert.ok(!nfcCertificateHtml({ ...certificate, note: "" }).includes('class="note-panel"'));
+});

@@ -22,14 +22,45 @@ export function nfcCertificateHtml(certificate?: PublicNfcCertificate, unavailab
     const message = unavailable ? "Please refresh this page to try again." : "If you have just received this card, please contact Meaningful Plushies for help.";
     return `${styles}<section class="mp-nfc-certificate"><h1>${title}</h1><p>${message}</p></section>`;
   }
-  const fields: Array<[string, string]> = [
-    ["Certificate number", certificate.code], ["Gender", certificate.gender], ["Date of birth", certificate.birthDate],
-    ["Place of birth", certificate.birthplace], ["Favourite person", certificate.favouritePerson], ["Belongs to", certificate.belongsTo],
+  const assets = "https://meaningful-plushies-fulfilment.vercel.app/nfc-certificate";
+  const characters: Array<[RegExp, string, string]> = [
+    [/tootsie/i, "tootsie", "Tootsie"], [/hunn?ie|hunny/i, "hunnie", "Hunnie"],
+    [/dragon/i, "dragon-warrior", "Dragon Warrior"], [/billy/i, "billy", "Billy"],
   ];
-  return `${styles}<article class="mp-nfc-certificate" aria-label="Plushie birth certificate">
-    <p>Birth certificate</p><h1>${escapeLiquidHtml(certificate.name || "Meaningful Plushie")}</h1>
-    <p>${escapeLiquidHtml(certificate.character)}</p>
-    <dl>${fields.map(([label, value]) => `<div><dt>${label}</dt><dd>${escapeLiquidHtml(value || "—")}</dd></div>`).join("")}</dl>
-    ${certificate.note.trim() ? `<section><h2>A meaningful note</h2><p>${escapeLiquidHtml(certificate.note)}</p></section>` : ""}
+  const character = characters.find(([pattern]) => pattern.test(certificate.character));
+  const fields: Array<[string, string]> = [
+    ["Gender", certificate.gender], ["Born on", certificate.birthDate], ["Birthplace", certificate.birthplace],
+    ["Favourite person", certificate.favouritePerson], ["Belongs to", certificate.belongsTo],
+  ];
+  const certification = '<span>Certified Original Meaningful Plushie</span>'.repeat(4);
+  return `<link rel="stylesheet" href="${assets}/certificate.css">
+  <article class="mp-birth-certificate" aria-label="Plushie birth certificate">
+    <div class="certified" aria-label="Certified Original Meaningful Plushie">
+      <div class="certified-track" aria-hidden="true">
+        <div class="certified-group">${certification}</div><div class="certified-group">${certification}</div>
+      </div>
+    </div>
+    <picture aria-hidden="true">
+      <source media="(min-width: 560px) and (orientation: landscape)" srcset="${assets}/earth-landscape.webp">
+      <img class="globe" src="${assets}/earth-portrait.webp" width="1000" height="1500" alt="">
+    </picture>
+    <div class="certificate-layout">
+      <section class="identity-panel" aria-label="Plushie identity">
+        ${character ? `<div class="portrait-frame"><img class="portrait" src="${assets}/${character[1]}.webp" width="1080" height="1080" alt="${character[2]} character portrait" fetchpriority="high"></div>` : ""}
+        <div class="name-panel"><h1>${escapeLiquidHtml(certificate.name || "Meaningful Plushie")}</h1></div>
+      </section>
+      <div class="information-panel">
+        <section class="details-panel" aria-label="Certificate details">
+          <dl>
+            <div class="certificate-id"><dt>Certificate ID</dt><dd>${escapeLiquidHtml(certificate.code)}</dd></div>
+            ${fields.map(([label, value]) => `<div><dt>${label}</dt><dd>${escapeLiquidHtml(value || "—")}</dd></div>`).join("")}
+          </dl>
+        </section>
+        ${certificate.note.trim() ? `<section class="note-panel" aria-label="Meaningful note">
+          <img class="note-divider" src="${assets}/note-divider.webp" width="1080" height="108" alt="" aria-hidden="true">
+          <h2>Meaningful Note</h2><p>${escapeLiquidHtml(certificate.note)}</p>
+        </section>` : ""}
+      </div>
+    </div>
   </article>`;
 }
