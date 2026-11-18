@@ -245,3 +245,34 @@
   .mp-birth-certificate .certified-track,
   .mp-birth-certificate .name-panel h1 { animation: none; }
 }
+
+.mp-nfc-activation {
+  box-sizing: border-box;
+  max-width: 760px;
+  margin: 36px auto;
+  padding: clamp(24px, 5vw, 48px);
+  border: 1px solid #c5dce7;
+  border-radius: 20px;
+  background: #edf8fe;
+  color: #355e72;
+  font: 400 16px/1.6 "MP Certificate Grandstander", sans-serif;
+}
+.mp-nfc-activation [hidden] { display: none; }
+.mp-nfc-activation h1,
+.mp-nfc-activation h2 { margin: 0 0 16px; color: inherit; font: 700 28px/1.25 "MP Certificate Grandstander", sans-serif; }
+.mp-nfc-activation form { display: grid; gap: 20px; }
+.mp-nfc-activation p { margin: 0 0 20px; }
+.mp-nfc-activation label { display: grid; gap: 7px; font-size: 14px; }
+.mp-nfc-activation input,
+.mp-nfc-activation select,
+.mp-nfc-activation textarea { box-sizing: border-box; width: 100%; min-width: 0; min-height: 48px; padding: 12px; border: 1px solid #aac5d2; border-radius: 9px; background: #fff; color: #294f60; font: inherit; }
+.mp-nfc-activation button { min-height: 48px; padding: 12px 20px; border: 0; border-radius: 9px; background: #618497; color: #fff; font: 700 15px/1.5 "MP Certificate Grandstander", sans-serif; cursor: pointer; }
+.mp-nfc-activation button:disabled { opacity: .6; cursor: wait; }
+.mp-nfc-activation [data-nfc-change-phone] { border: 1px solid #aac5d2; background: transparent; color: #355e72; }
+.mp-nfc-activation :focus-visible { outline: 3px solid #294f60; outline-offset: 3px; }
+.mp-nfc-activation__fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.mp-nfc-activation [data-nfc-feedback] { margin: 20px 0 0; }
+@media (max-width: 540px) {
+  .mp-nfc-activation { margin: 20px 12px; }
+  .mp-nfc-activation__fields { grid-template-columns: 1fr; }
+}
