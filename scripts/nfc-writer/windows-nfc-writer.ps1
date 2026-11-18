@@ -550,7 +550,7 @@ while ($true) {
     if ($cameraWrite) {
       $expectedUid = [string]$payload.uid
       if ($expectedUid -cnotmatch '^(?:[0-9A-F]{8}|[0-9A-F]{14}|[0-9A-F]{20})$' -or
-          $url -cnotmatch '^https://(?:meaningful-plushies-fulfilment\.vercel\.app/n/[a-f0-9]{32}|(?:www\.)?meaningfulplushies\.com/pages/[a-z0-9-]+\?card=[a-f0-9]{32})$' -or
+          $url -cnotmatch '^https://(?:meaningful-plushies-fulfilment\.vercel\.app/n/[a-f0-9]{32}|(?:www\.)?meaningfulplushies\.com/apps/closer/n/[a-f0-9]{32})$' -or
           $label -cnotmatch '^NFC-\d{6,12}$' -or !$password) {
         throw "The camera write needs a detected card, a permanent NFC link and writer settings."
       }

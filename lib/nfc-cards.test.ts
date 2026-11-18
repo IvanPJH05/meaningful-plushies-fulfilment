@@ -9,16 +9,15 @@ test("card stickers are distinct from order barcodes", () => {
 });
 test("Shopify card links preserve each token and accept older cards for verification", () => {
   const token = "a".repeat(32);
-  const page = "https://meaningfulplushies.com/pages/nfc-certificate";
-  assert.equal(nfcCardUrl("https://example.com", token, page), `${page}?card=${token}`);
-  for (const invalid of ["https://evil.com/pages/certificate", "https://meaningfulplushies.com/account", `${page}?card=other`, "https://meaningfulplushies.com.evil.com/pages/certificate"]) {
-    assert.throws(() => nfcCardUrl("https://example.com", token, invalid));
+  assert.equal(nfcCardUrl(token), `https://meaningfulplushies.com/apps/closer/n/${token}`);
+  for (const invalid of ["123", "../account", "a".repeat(32) + "?redirect=other", "A".repeat(32)]) {
+    assert.throws(() => nfcCardUrl(invalid));
   }
   assert.equal(nfcCardUrlMatches(`https://example.com/n/${token}`, "https://example.com", token), true);
   assert.equal(nfcCardUrlMatches(`https://example.com/n/${"b".repeat(32)}`, "https://example.com", token), false);
 });
 test("public card links use opaque tokens and approved certificate destinations", () => {
-  assert.equal(nfcCardUrl("https://example.com", "a".repeat(32)),`https://example.com/n/${"a".repeat(32)}`);
+  assert.equal(nfcCardUrl("a".repeat(32)),`https://meaningfulplushies.com/apps/closer/n/${"a".repeat(32)}`);
   const order = {product:"Billy",remark:"",productType:"",certificateCode:"abc123",idWebsiteLink:""};
   assert.equal(nfcDestination(order),"https://meaningfulplushies.com/pages/certificate/abc123");
   assert.equal(nfcDestination({...order,certificateCode:"",idWebsiteLink:"https://evil.com/pages/certificate/abc"}),null);
