@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import { mobileServiceClient, requireMobileSession } from "../../../../lib/mobile-api";
 
 export const runtime = "nodejs";
-// The inventory database is in Seoul. Avoid US-to-Korea round trips on each tap.
-export const preferredRegion = "icn1";
 const headers = { "Cache-Control": "private, no-store", Vary: "Authorization" };
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const errors: Record<string,string> = {

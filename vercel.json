@@ -1,3 +1,7 @@
 {
-  "crons": [{ "path": "/api/tiktok/orders/recover", "schedule": "*/5 * * * *" }]
+  "crons": [{ "path": "/api/tiktok/orders/recover", "schedule": "*/5 * * * *" }],
+  "functions": {
+    "app/api/fulfilment/nfc/route.ts": { "regions": ["icn1"] },
+    "app/api/fulfilment/nfc-password/route.ts": { "regions": ["icn1"] }
+  }
 }
