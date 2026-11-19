@@ -58,15 +58,21 @@ export function NfcCardWorkspace({token,admin,onStartNfc}:{token:string;admin:bo
     await load(result.batchId);generation.current=null;setMessage(`Generated ${pending.quantity} permanent card links. Write each link to its matching card before pairing.`);setSuccess(true);
   }
   async function programmed(card:NfcCard,source:string) {
-    await request({action:"programmed",cardId:card.id,reason:source});await load(card.batch_id);
+    const result=await request({action:"programmed",cardId:card.id,reason:source});
+    // The mutation already returns the saved card. History refreshes when opened.
+    setInventory(current=>({...current,cards:current.cards.map(value=>value.id===card.id?result.card:value)}));
     setMessage(`NFC-${card.id} is verified and ready to pair.`);setSuccess(true);
   }
-  async function write(card:NfcCard, fromPackaging=false, uid?:string) {
-    const passwordResponse=await fetch("/api/fulfilment/nfc-password",{headers:{Authorization:`Bearer ${token}`},cache:"no-store"});
-    const result=await passwordResponse.json();if(!passwordResponse.ok||!result.password)throw new Error(result.error||"Could not load NFC writer settings.");
+  async function write(card:NfcCard, fromPackaging=false, uid?:string, preparedPassword?:string) {
+    let password=preparedPassword;
+    if (!password) {
+      const passwordResponse=await fetch("/api/fulfilment/nfc-password",{headers:{Authorization:`Bearer ${token}`},cache:"no-store"});
+      const result=await passwordResponse.json();if(!passwordResponse.ok||!result.password)throw new Error(result.error||"Could not load NFC writer settings.");
+      password=result.password;
+    }
     setMessage(`Hold card NFC-${card.id} on the reader until writing finishes.`);
     const endpoint=uid?"write-camera":fromPackaging?"write-packaging":"write";
-    const response=await fetch(`http://127.0.0.1:17654/${endpoint}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:nfcCardUrl(card.public_token),label:`NFC-${card.id}`,password:result.password,uid})}).catch(()=>{
+    const response=await fetch(`http://127.0.0.1:17654/${endpoint}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:nfcCardUrl(card.public_token),label:`NFC-${card.id}`,password,uid})}).catch(()=>{
       throw new Error("Could not reach the Windows NFC Helper. Start it, then retry with the same box and card.");
     });
     if(fromPackaging&&response.status===404)throw new Error("Install and restart the latest Windows NFC Helper to write from a packaging barcode.");
@@ -77,12 +83,12 @@ export function NfcCardWorkspace({token,admin,onStartNfc}:{token:string;admin:bo
   async function writeScannedCard(value:string, uid?:string) {
     const id=nfcCardScan(value);
     if(id===null)throw new Error("Scan an NFC barcode such as NFC-100001.");
-    const data=await request(undefined,`?cardId=${id}`) as Inventory;
-    const card=data.cards[0];
+    const data=await request(undefined,`?cardId=${id}&prepareWrite=1`) as {card:NfcCard|null;password:string};
+    const card=data.card;
     if(!card)throw new Error("This barcode is not in the NFC inventory.");
     if(card.status!=="available")throw new Error(`NFC-${id} is ${card.status} and cannot be written.`);
     if(card.programmed_at)throw new Error(`NFC-${id} is already programmed.`);
-    await write(card,true,uid);
+    await write(card,true,uid,data.password);
     setLastWritten(id);
     if ("speechSynthesis" in window && "SpeechSynthesisUtterance" in window) {
       window.speechSynthesis.speak(new SpeechSynthesisUtterance("Card verified."));

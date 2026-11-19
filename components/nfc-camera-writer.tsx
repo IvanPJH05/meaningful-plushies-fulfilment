@@ -2,13 +2,14 @@
 
 import Script from "next/script";
 import { useEffect, useRef, useState } from "react";
+import { confirmedCameraCode, createCameraScan } from "../lib/nfc-camera-scan";
 import styles from "./nfc-card-workspace.module.css";
 
 type Barcode = { rawValue: string };
 type Decoder = { detect(frame: HTMLCanvasElement): Promise<Barcode[]> };
 type DecoderApi = {
   BarcodeDetector: new (options: { formats: string[] }) => Decoder;
-  prepareZXingModule(options: { overrides: { locateFile: () => string } }): void;
+  prepareZXingModule(options: { overrides: { locateFile: () => string }; fireImmediately: true }): Promise<unknown>;
 };
 
 async function cardOnReader(signal: AbortSignal): Promise<string | null> {
@@ -88,6 +89,8 @@ export function NfcCameraWriter({ onWrite }: { onWrite: (code: string, uid: stri
       let activeUid: string | null = null;
       let previousCode: string | null = null;
       let waitForRemoval = false;
+      let lastFrameTime = -1;
+      const detectFrame = createCameraScan();
       while (!signal.aborted) {
         const uid = await cardOnReader(signal);
         if (signal.aborted) break;
@@ -99,15 +102,18 @@ export function NfcCameraWriter({ onWrite }: { onWrite: (code: string, uid: stri
         } else if (activeUid && uid !== activeUid && !waitForRemoval) {
           waitForRemoval = true;
           setMessage("The card changed. Clear the reader before trying again.");
-        } else if (!waitForRemoval && camera && camera.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+        } else if (!waitForRemoval && camera && camera.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && camera.currentTime !== lastFrameTime) {
           activeUid = uid;
-          frame.width = enhanced.width = camera.videoWidth;
-          frame.height = enhanced.height = camera.videoHeight;
+          lastFrameTime = camera.currentTime;
+          // Resizing clears the canvas and reallocates its backing store. Reuse it.
+          if (frame.width !== camera.videoWidth || frame.height !== camera.videoHeight) {
+            frame.width = enhanced.width = camera.videoWidth;
+            frame.height = enhanced.height = camera.videoHeight;
+          }
           context.drawImage(camera, 0, 0);
-          let barcodes = await reader.detect(frame);
-          if (!barcodes.length && !signal.aborted) {
-            const matches = new Map<string, Barcode>();
-            for (const angle of [0, -10, 10]) {
+          const barcodes = await detectFrame(async pass => {
+              if (pass === "original") return reader.detect(frame);
+              const angle = pass === "left" ? -10 : pass === "right" ? 10 : 0;
               enhancedContext.fillStyle = "white";
               enhancedContext.fillRect(0, 0, enhanced.width, enhanced.height);
               enhancedContext.save();
@@ -116,18 +122,11 @@ export function NfcCameraWriter({ onWrite }: { onWrite: (code: string, uid: stri
               enhancedContext.filter = "grayscale(1) contrast(2)";
               enhancedContext.drawImage(frame, -frame.width / 2, -frame.height / 2);
               enhancedContext.restore();
-              const detected = await reader.detect(enhanced);
-              if (detected.length > 1) {
-                barcodes = detected;
-                break;
-              }
-              for (const barcode of detected) matches.set(barcode.rawValue, barcode);
-            }
-            if (!barcodes.length) barcodes = [...matches.values()];
-          }
+              return reader.detect(enhanced);
+          }, signal);
           if (signal.aborted) break;
-          const code = barcodes.length === 1 ? barcodes[0].rawValue.trim().toUpperCase() : null;
-          if (code && /^NFC-\d{6,12}$/.test(code) && code === previousCode) {
+          const { code, confirmed } = confirmedCameraCode(barcodes, previousCode);
+          if (code && confirmed) {
             waitForRemoval = true;
             setWriting(true);
             setMessage(`Writing and verifying ${code}. Keep the card on the reader.`);
@@ -146,7 +145,7 @@ export function NfcCameraWriter({ onWrite }: { onWrite: (code: string, uid: stri
               : "Card detected. Center the sticker and keep the bars in focus.");
           }
         }
-        await new Promise(resolve => setTimeout(resolve, 180));
+        await new Promise(resolve => setTimeout(resolve, waitForRemoval || !uid ? 120 : 40));
       }
     } catch (error) {
       if (!signal.aborted) setMessage(error instanceof Error ? error.message : "Camera scanning failed.");
@@ -172,8 +171,10 @@ export function NfcCameraWriter({ onWrite }: { onWrite: (code: string, uid: stri
     <Script src="/nfc-camera/decoder.js" strategy="afterInteractive" onReady={() => {
       const api = (window as Window & { BarcodeDetectionAPI?: DecoderApi }).BarcodeDetectionAPI;
       if (!api) return;
-      api.prepareZXingModule({ overrides: { locateFile: () => "/nfc-camera/zxing_reader.wasm" } });
-      setDecoder(api);
+      // Download/compile while staff position the camera, before the first card.
+      void api.prepareZXingModule({ overrides: { locateFile: () => "/nfc-camera/zxing_reader.wasm" }, fireImmediately: true })
+        .then(() => setDecoder(api))
+        .catch(() => setMessage("The barcode decoder could not load. Refresh and try again."));
     }} onError={() => setMessage("The barcode decoder could not load. Refresh and try again.")} />
     <h3>Write VIP cards with a camera</h3>
     <div className={styles.actions}>

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { mobileServiceClient, requireMobileSession } from "@/lib/mobile-api";
+import { mobileServiceClient, requireMobileSession } from "../../../../lib/mobile-api";
 
 export const runtime = "nodejs";
 const headers = { "Cache-Control": "private, no-store", Vary: "Authorization" };
@@ -32,10 +32,20 @@ function fail(error: unknown) {
 }
 export async function GET(request: Request) {
   try {
-    await requireMobileSession(request);
+    const session=await requireMobileSession(request);
     const db=mobileServiceClient(), query=new URL(request.url).searchParams;
     const batchId=query.get("batchId"), cardId=query.get("cardId");
     if (batchId && !uuid.test(batchId) || cardId && !/^\d{6,12}$/.test(cardId)) throw new Error("INVALID_NFC_FILTER");
+    if (query.get("prepareWrite") === "1") {
+      if (session.role !== "admin") throw new Error("ADMIN_REQUIRED");
+      if (!cardId) throw new Error("INVALID_NFC_FILTER");
+      const password=process.env.NFC_SHARED_CARD_PASSWORD?.trim();
+      if (!password || !/^[A-Z0-9]{4}$/.test(password)) return NextResponse.json({error:"The system NFC password is not configured. Contact the administrator."},{status:503,headers});
+      // A scan needs one current inventory record, not batch lists and history.
+      const {data:card,error}=await db.from("nfc_cards").select("id,batch_id,public_token,status,order_id,programmed_at,paired_at").eq("id",Number(cardId)).maybeSingle();
+      if(error) throw new Error(error.message);
+      return NextResponse.json({card,password},{headers});
+    }
     const {data:batches,error:batchError}=await db.from("nfc_card_batches").select("*").order("number",{ascending:false}).limit(100);
     if (batchError) throw new Error(batchError.message);
     const selected=batchId || batches?.[0]?.id;
