@@ -26,6 +26,8 @@ export async function notifyNewManualOrder(input: { id: string; reference: strin
     const { data, error } = await mobileServiceClient().from("mobile_push_devices").select("token,platform").eq("active", true);
     if (error || !data?.length) return;
     const alert = manualOrderNotification(input);
+    const summaryEnglish = manualOrderNotification({ ...input, language: "en" }).summary;
+    const summaryMalay = manualOrderNotification({ ...input, language: "ms" }).summary;
     const devices = data.filter(row => typeof row.token === "string" && row.token);
     const tokens: string[] = [];
     const responses = [];
@@ -39,7 +41,7 @@ export async function notifyNewManualOrder(input: { id: string; reference: strin
         const result = await getMessaging(app).sendEachForMulticast({
           tokens: batch,
           ...(!native ? { notification: { title: alert.title, body: alert.body } } : {}),
-          data: { workspace: "manual_orders", intakeId: input.id, reference: input.reference, product: input.product.slice(0, 120), title: alert.title, body: alert.body, summary: alert.summary, language: alert.language, amountToCollect: input.amountToCollect === null ? "" : String(input.amountToCollect) },
+          data: { workspace: "manual_orders", intakeId: input.id, reference: input.reference, product: input.product.slice(0, 120), title: alert.title, body: alert.body, summary: alert.summary, summaryEnglish, summaryMalay, language: alert.language, amountToCollect: input.amountToCollect === null ? "" : String(input.amountToCollect) },
           android: { priority: "high", ...(!native ? { notification: { channelId: "manual-orders", sound: "default" } } : {}) },
         });
         tokens.push(...batch); responses.push(...result.responses);
