@@ -36,14 +36,26 @@ public class SaleMessagingService extends MessagingService {
             .setContentText(body).setStyle(new NotificationCompat.BigTextStyle().bigText(body + (summary == null || summary.isEmpty() ? "" : "\n\n" + summary)))
             .setPriority(NotificationCompat.PRIORITY_HIGH).setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setContentIntent(content).setAutoCancel(true);
-        if (summary != null && !summary.isEmpty()) {
-            Intent copy = new Intent(this, CopyOrderSummaryActivity.class);
-            copy.setAction("copy-sale:" + id); copy.putExtra("summary", summary);
-            copy.putExtra("reference", reference); copy.putExtra("language", data.get("language"));
-            PendingIntent action = PendingIntent.getActivity(this, notificationId, copy, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-            builder.addAction(0, "ms".equals(data.get("language")) ? "Salin ringkasan" : "Copy summary", action);
+        String english = data.get("summaryEnglish");
+        String malay = data.get("summaryMalay");
+        if (english != null && !english.isEmpty() && malay != null && !malay.isEmpty()) {
+            addCopyAction(builder, notificationId, id, english, "en", "Copy English");
+            addCopyAction(builder, notificationId, id, malay, "ms", "Copy Malay");
+        } else if (summary != null && !summary.isEmpty()) {
+            addCopyAction(builder, notificationId, id, summary, data.get("language"),
+                "ms".equals(data.get("language")) ? "Salin ringkasan" : "Copy summary");
         }
         try { NotificationManagerCompat.from(this).notify(notificationId, builder.build()); }
         catch (SecurityException ignored) { /* Notification permission is controlled by the user. */ }
     }
-}
+
+    private void addCopyAction(NotificationCompat.Builder builder, int notificationId,
+            String id, String summary, String language, String label) {
+        Intent copy = new Intent(this, CopyOrderSummaryActivity.class);
+        copy.setAction("copy-sale:" + id + ":" + language);
+        copy.putExtra("summary", summary);
+        copy.putExtra("language", language);
+        PendingIntent action = PendingIntent.getActivity(this, notificationId, copy,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        builder.addAction(0, label, action);
+    }}

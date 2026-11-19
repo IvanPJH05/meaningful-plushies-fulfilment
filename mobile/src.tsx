@@ -259,7 +259,7 @@ function App() {
       const response = await mobileFetch(`${API}/notifications/register`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${activeSession.token}` },
-        body: JSON.stringify({ token, platform: Capacitor.getPlatform() }),
+        body: JSON.stringify({ token, platform: Capacitor.getPlatform(), summaryActions: Capacitor.getPlatform() === "android" }),
       });
       if (!response.ok) throw new Error("Could not enable notifications on this device.");
     }
