@@ -46,7 +46,7 @@ export function nfcCertificateHtml(certificate?: PublicNfcCertificate, unavailab
     </picture>
     <div class="certificate-layout">
       <section class="identity-panel" aria-label="Plushie identity">
-        ${character ? `<div class="portrait-frame"><img class="portrait" src="${assets}/${character[1]}.webp" width="1080" height="1080" alt="${character[2]} character portrait" fetchpriority="high"></div>` : ""}
+        ${character ? `<div class="portrait-frame"><img class="portrait" src="${assets}/${character[1]}.webp?v=2" width="1080" height="1080" alt="${character[2]} character portrait" fetchpriority="high"></div>` : ""}
         <div class="name-panel"><h1>${escapeLiquidHtml(certificate.name || "Meaningful Plushie")}</h1></div>
       </section>
       <div class="information-panel">
