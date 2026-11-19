@@ -134,6 +134,7 @@ export async function checkVipInvite(value: unknown) {
     name: invite.name ?? "",
     phone: invite.phone ?? "",
     consent: !!invite.consent_version,
+    ...(invite.registered_at ? claimResponse(invite) : {}),
   };
 }
 

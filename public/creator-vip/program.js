@@ -176,6 +176,23 @@ creatorApplication.addEventListener("close", () => {
 });
 creatorPhone.addEventListener("input", () => creatorPhone.setCustomValidity(""));
 
+function showCreatorConfirmation(result) {
+  creatorVideo.pause();
+  inviteForm.hidden = true;
+  creatorForm.hidden = true;
+  claimCode.textContent = result.discount;
+  nativeClaimToken = result.claimToken;
+  if (nativeClaimToken) {
+    document.querySelector("#creator-discount-heading").textContent = localized("Your 100% off code is reserved", "Kod diskaun 100% anda telah ditempah");
+    document.querySelector(".creator-claim p").textContent = localized("Choose your plushie and voice length to apply your free plushie and shipping discounts.", "Pilih plushie dan tempoh suara untuk menggunakan diskaun plushie dan penghantaran percuma.");
+    if (result.selectedProduct) lockProduct(result.selectedProduct);
+  }
+  updateClaimLink();
+  creatorConfirmation.hidden = false;
+  creatorApplication.scrollTop = 0;
+  document.querySelector("#creator-discount-heading").focus();
+}
+
 inviteForm.addEventListener("submit", async event => {
   event.preventDefault();
   const invite = inviteForm.elements.invite.value;
@@ -186,6 +203,10 @@ inviteForm.addEventListener("submit", async event => {
   creatorForm.elements.name.value = result.name || "";
   creatorForm.elements.phone.value = result.phone || "";
   creatorForm.elements.marketing_consent.checked = result.consent === true;
+  if (result.discount) {
+    showCreatorConfirmation(result);
+    return;
+  }
   inviteForm.hidden = true;
   creatorForm.hidden = false;
   creatorForm.elements.name.focus();
@@ -208,17 +229,5 @@ creatorForm.addEventListener("submit", async event => {
     consent: creatorForm.elements.marketing_consent.checked,
   });
   if (!result) return;
-  creatorVideo.pause();
-  creatorForm.hidden = true;
-  claimCode.textContent = result.discount;
-  nativeClaimToken = result.claimToken;
-  if (nativeClaimToken) {
-    document.querySelector("#creator-discount-heading").textContent = localized("Your 100% off code is reserved", "Kod diskaun 100% anda telah ditempah");
-    document.querySelector(".creator-claim p").textContent = localized("Choose your plushie and voice length to apply your free plushie and shipping discounts.", "Pilih plushie dan tempoh suara untuk menggunakan diskaun plushie dan penghantaran percuma.");
-    if (result.selectedProduct) lockProduct(result.selectedProduct);
-    updateClaimLink();
-  }
-  creatorConfirmation.hidden = false;
-  creatorApplication.scrollTop = 0;
-  document.querySelector("#creator-discount-heading").focus();
+  showCreatorConfirmation(result);
 });
