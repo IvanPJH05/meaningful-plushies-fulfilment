@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireMobileSession } from "../../../../lib/mobile-api";
 
+export const preferredRegion = "icn1";
+
 const headers = { "Cache-Control": "private, no-store", "Vary": "Authorization" };
 export async function GET(request: Request) {
   try {
