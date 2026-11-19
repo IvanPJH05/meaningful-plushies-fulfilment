@@ -30,8 +30,8 @@ export async function POST(request: Request) {
   if (!username) return json({ error: "Enter a valid TikTok username." }, 422);
   try {
     const invitation = await issueVipInvite(username);
-    if (!isVipInviteReady(invitation)) return json({ error: "This invitation’s sample code was removed from the ledger." }, 409);
-    return json({ invitation: { ...invitation, ready: true } });
+    if (!invitation.redeemed_at && !isVipInviteReady(invitation)) return json({ error: "This invitation’s sample code was removed from the ledger." }, 409);
+    return json({ invitation: { ...invitation, ready: isVipInviteReady(invitation) } });
   } catch (error) {
     console.error("VIP invitation creation failed", error);
     return json({ error: "The invitation is pending. Submit the same username to retry Shopify setup." }, 503);
