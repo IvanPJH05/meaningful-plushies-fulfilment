@@ -31,6 +31,8 @@ export function NfcCameraWriter({ onWrite }: { onWrite: (code: string, uid: stri
   const stream = useRef<MediaStream | null>(null);
   const session = useRef<AbortController | null>(null);
   const scanning = useRef(false);
+  const writingCard = useRef(false);
+  const cardCycle = useRef(createCameraCardCycle());
   const writeCard = useRef(onWrite);
   const [decoder, setDecoder] = useState<DecoderApi>();
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
@@ -49,11 +51,17 @@ export function NfcCameraWriter({ onWrite }: { onWrite: (code: string, uid: stri
   }, []);
 
   async function openCamera(selected?: string) {
+    if (writingCard.current) return;
     setStarting(true);
     setPreview(false);
     const cameraSession = new AbortController();
     session.current?.abort();
     session.current = cameraSession;
+    scanning.current = false;
+    setRunning(false);
+    // Forget the old camera's partial barcode, but retain the current card's
+    // verified/failed-write lock so switching cannot write that card twice.
+    cardCycle.current.interrupt();
     try {
       stream.current?.getTracks().forEach(track => track.stop());
       const next = await navigator.mediaDevices.getUserMedia({
@@ -92,7 +100,7 @@ export function NfcCameraWriter({ onWrite }: { onWrite: (code: string, uid: stri
       const enhanced = document.createElement("canvas");
       const enhancedContext = enhanced.getContext("2d", { willReadFrequently: true });
       if (!context || !enhancedContext) throw new Error("The camera frame could not be read.");
-      const cycle = createCameraCardCycle();
+      const cycle = cardCycle.current;
       let lastFrameTime = -1;
       const detectFrame = createCameraScan();
       while (!signal.aborted) {
@@ -139,6 +147,7 @@ export function NfcCameraWriter({ onWrite }: { onWrite: (code: string, uid: stri
           const { code, confirmed } = cycle.read(barcodes);
           if (code && confirmed) {
             cycle.beginWrite();
+            writingCard.current = true;
             setWriting(true);
             setMessage(`Writing and verifying ${code}. Keep the card on the reader.`);
             try {
@@ -149,6 +158,7 @@ export function NfcCameraWriter({ onWrite }: { onWrite: (code: string, uid: stri
               cycle.finishWrite(false);
               if (!signal.aborted) setMessage(`${code} · ${error instanceof Error ? error.message : "Write failed."} Clear the reader before retrying.`);
             } finally {
+              writingCard.current = false;
               if (!signal.aborted) setWriting(false);
             }
           } else {
@@ -172,9 +182,10 @@ export function NfcCameraWriter({ onWrite }: { onWrite: (code: string, uid: stri
 
   useEffect(() => {
     if (decoder && preview) void scanCards();
-  }, [decoder, preview, scanCards]);
+  }, [decoder, preview, deviceId, scanCards]);
 
   function stopCamera() {
+    if (writingCard.current) return;
     session.current?.abort();
     session.current = null;
     stream.current?.getTracks().forEach(track => track.stop());
@@ -197,10 +208,10 @@ export function NfcCameraWriter({ onWrite }: { onWrite: (code: string, uid: stri
     <h3>Write VIP cards with a camera</h3>
     <div className={styles.actions}>
       {!preview && <button type="button" className="button secondary" disabled={starting} onClick={() => void openCamera()}>Start camera</button>}
-      {preview && <>
-        <label>Webcam<select value={deviceId} disabled={running || starting} onChange={event => void openCamera(event.target.value)}>
+      {cameras.length > 0 && <label>Webcam<select value={deviceId} disabled={writing || starting} onChange={event => void openCamera(event.target.value)}>
           {cameras.map((camera, index) => <option key={camera.deviceId} value={camera.deviceId}>{camera.label || `Camera ${index + 1}`}</option>)}
-        </select></label>
+        </select></label>}
+      {preview && <>
         {running ? <span role="status">Continuous scanning is on</span>
           : <button type="button" className="button primary" disabled={!decoder} onClick={() => void scanCards()}>{decoder ? "Restart scanning" : "Preparing scanner…"}</button>}
         <button type="button" className="button secondary" disabled={writing} onClick={stopCamera}>Stop camera</button>
