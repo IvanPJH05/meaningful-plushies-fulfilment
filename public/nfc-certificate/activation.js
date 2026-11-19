@@ -8,6 +8,9 @@
   const processing = root.querySelector('[data-nfc-processing]');
   const feedback = root.querySelector('[data-nfc-feedback]');
   const check = root.querySelector('[data-nfc-check]');
+  const phoneField = root.querySelector('[data-nfc-phone-field]');
+  const tiktokField = root.querySelector('[data-nfc-tiktok-field]');
+  const fullOrderField = root.querySelector('[data-nfc-full-order-field]');
   let session = '';
   let orders = [];
   let busy = false;
@@ -28,7 +31,32 @@
   function setBusy(value) {
     busy = value;
     root.querySelectorAll('button[type="submit"]').forEach(button => { button.disabled = value; });
+    phoneForm.querySelectorAll('input[name="verificationMethod"]').forEach(radio => { radio.disabled = value; });
   }
+
+  function verificationMethod() {
+    return phoneForm.elements.verificationMethod.value;
+  }
+
+  phoneForm.querySelectorAll('input[name="verificationMethod"]').forEach(radio => radio.addEventListener('change', () => {
+    const tiktok = verificationMethod() === 'tiktok';
+    phoneField.hidden = tiktok;
+    phoneForm.elements.phone.disabled = tiktok;
+    tiktokField.hidden = !tiktok;
+    phoneForm.elements.orderDigits.disabled = !tiktok;
+    fullOrderField.hidden = true;
+    phoneForm.elements.fullOrderId.disabled = true;
+    phoneForm.elements.fullOrderId.value = '';
+    session = '';
+    feedback.textContent = '';
+    (tiktok ? phoneForm.elements.orderDigits : phoneForm.elements.phone).focus();
+  }));
+  phoneForm.elements.orderDigits.addEventListener('input', () => {
+    fullOrderField.hidden = true;
+    phoneForm.elements.fullOrderId.disabled = true;
+    phoneForm.elements.fullOrderId.value = '';
+    feedback.textContent = '';
+  });
 
   function selectedOrder() {
     const order = orders.find(item => item.id === detailsForm.elements.orderId.value);
@@ -78,7 +106,19 @@
     setBusy(true);
     feedback.textContent = 'Checking your order…';
     try {
-      const data = await request({ action: 'verify', phone: phoneForm.elements.phone.value });
+      const method = verificationMethod();
+      const data = await request({ action: 'verify', method,
+        ...(method === 'tiktok'
+          ? { orderDigits: phoneForm.elements.orderDigits.value, fullOrderId: phoneForm.elements.fullOrderId.value }
+          : { phone: phoneForm.elements.phone.value }),
+      });
+      if (data.needsFullOrderId) {
+        fullOrderField.hidden = false;
+        phoneForm.elements.fullOrderId.disabled = false;
+        phoneForm.elements.fullOrderId.focus();
+        feedback.textContent = 'More than one TikTok order ends with those six digits. Enter your full order ID to find yours.';
+        return;
+      }
       session = data.session;
       orders = data.orders;
       const select = detailsForm.elements.orderId;
@@ -86,7 +126,8 @@
       for (const order of orders) {
         const option = document.createElement('option');
         option.value = order.id;
-        option.textContent = `#${order.orderNumber || order.id} · ${order.character || 'Plushie'}${order.plushName ? ` · ${order.plushName}` : ''}`;
+        const label = order.itemNumber ? `Item ${order.itemNumber}` : `#${order.orderNumber || order.id}`;
+        option.textContent = `${label} · ${order.character || 'Plushie'}${order.plushName ? ` · ${order.plushName}` : ''}`;
         select.append(option);
       }
       selectedOrder();
@@ -95,7 +136,7 @@
       detailsForm.elements.plushName.focus();
       feedback.textContent = '';
     } catch (error) {
-      feedback.textContent = error.message || 'Your phone number could not be checked. Please try again.';
+      feedback.textContent = error.message || 'Your order could not be checked. Please try again.';
     } finally {
       setBusy(false);
     }
@@ -107,7 +148,7 @@
     detailsForm.hidden = true;
     phoneForm.hidden = false;
     feedback.textContent = '';
-    phoneForm.elements.phone.focus();
+    (verificationMethod() === 'tiktok' ? phoneForm.elements.orderDigits : phoneForm.elements.phone).focus();
   });
   detailsForm.addEventListener('submit', async event => {
     event.preventDefault();

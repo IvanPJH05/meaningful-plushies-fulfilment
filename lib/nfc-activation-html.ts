@@ -10,8 +10,13 @@ export function nfcActivationHtml(endpoint: string, processing = false) {
     </div>
     <form data-nfc-phone-form hidden>
       <h2>Find your order</h2>
-      <p>Enter the phone number used when placing your order.</p>
-      <label>Order phone number<input name="phone" type="tel" autocomplete="tel" required maxlength="50" placeholder="0123456789"></label>
+      <fieldset class="mp-nfc-activation__methods"><legend>Where did you place your order?</legend>
+        <label><input name="verificationMethod" type="radio" value="phone" checked>Website / WhatsApp</label>
+        <label><input name="verificationMethod" type="radio" value="tiktok">TikTok Shop</label>
+      </fieldset>
+      <label data-nfc-phone-field>Order phone number<input name="phone" type="tel" autocomplete="tel" required maxlength="50" placeholder="0123456789"></label>
+      <label data-nfc-tiktok-field hidden>Last 6 digits of your TikTok order ID<input name="orderDigits" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="off" required disabled placeholder="123456"></label>
+      <label data-nfc-full-order-field hidden>Full TikTok order ID<input name="fullOrderId" inputmode="numeric" pattern="[0-9]{8,32}" minlength="8" maxlength="32" autocomplete="off" required disabled></label>
       <button type="submit">Continue</button>
     </form>
     <form data-nfc-details-form hidden>
@@ -29,7 +34,7 @@ export function nfcActivationHtml(endpoint: string, processing = false) {
       <label>Meaningful note<textarea name="meaningfulNote" rows="5" maxlength="4000"></textarea></label>
       <p>Check your details before activating this card.</p>
       <button type="submit">Save details &amp; activate card</button>
-      <button type="button" data-nfc-change-phone>Verify phone again</button>
+      <button type="button" data-nfc-change-phone>Verify order again</button>
     </form>
     <div data-nfc-processing ${processing ? "" : "hidden"}>
       <h2>Your details are saved</h2><p>Your card is linked to your plushie. We’re preparing its birth certificate.</p>

@@ -18,6 +18,7 @@ await db.exec(`
   create table nfc_pairing_logs(card_id bigint,order_id text,action text,actor text,reason text);
 `);
 await db.exec(await readFile(new URL('../supabase/migrations/20261118193729_nfc_customer_activation.sql', import.meta.url), 'utf8'));
+await db.exec(await readFile(new URL('../supabase/migrations/20261119043205_nfc_tiktok_customer_activation.sql', import.meta.url), 'utf8'));
 await db.exec(`
   insert into fulfilment_orders(id,status,data) values
     ('one','shipped','{"orderNumber":"2000-1","phone":"+60123456789","character":"Billy","status":"shipped"}'),
@@ -75,5 +76,46 @@ await db.exec("update nfc_cards set status='available',order_id=null,paired_at=n
 assert.equal((await db.query('select count(*)::int as total from nfc_customer_activations')).rows[0].total, 0);
 await assert.rejects(submit('a'.repeat(32), 'a'.repeat(64), 'one', fields), /NFC_ACTIVATION_CHANGED/);
 assert.equal((await verify('a'.repeat(32), '0123456789', '1'.repeat(64))).verified, true);
+await db.exec(`
+  insert into fulfilment_orders(id,status,data) values
+    ('tiktok-587054972893001234','shipped','{"orderNumber":"TT1500 587054972893001234-1","salesChannel":"tiktok","phone":"***","character":"Billy"}'),
+    ('tiktok-587054972893001234-item-987654','shipped','{"orderNumber":"TT1500 587054972893001234-2","salesChannel":"tiktok","phone":"***","character":"Tootsie"}'),
+    ('tiktok-587011111111999999','shipped','{"orderNumber":"TT1501 587011111111999999","salesChannel":"tiktok","phone":"***","character":"Billy"}'),
+    ('tiktok-587054972893889798','shipped','{"orderNumber":"TT1502 587054972893889798","salesChannel":"tiktok","character":"Billy"}'),
+    ('tiktok-587099999999889798','issue','{"orderNumber":"TT1503 587099999999889798","salesChannel":"tiktok","character":"Billy"}'),
+    ('legacy-tiktok-item','shipped','{"orderNumber":"TT1504 587011111111003456-1","salesChannel":"tiktok","character":"Hunnie"}'),
+    ('shopify-123456','shipped','{"orderNumber":"999999","salesChannel":"shopify","character":"Billy"}');
+  insert into nfc_cards(id,public_token,status,programmed_at) values
+    (100006,repeat('f',32),'available',now()),(100007,repeat('1',32),'available',now()),(100008,repeat('2',32),'available',now());
+`);
+async function verifyTiktok(token, digits, session, full = '') {
+  return (await db.query('select verify_customer_nfc_tiktok($1,$2,$3,$4,$5) as result', [token, digits, session, '9'.repeat(64), full])).rows[0].result;
+}
+assert.equal((await verifyTiktok('f'.repeat(32), '01234', '5'.repeat(64))).verified, false);
+const tiktokMatch = await verifyTiktok('f'.repeat(32), '001234', '5'.repeat(64));
+assert.equal(tiktokMatch.verified, true);
+assert.equal(tiktokMatch.orders.length, 2);
+assert.deepEqual(tiktokMatch.orders.map(order => order.itemNumber), ['1','2']);
+assert.ok(tiktokMatch.orders.every(order => order.id.startsWith('tiktok-587054972893001234')));
+await assert.rejects(submit('f'.repeat(32), '5'.repeat(64), 'tiktok-587011111111999999', fields), /NFC_ACTIVATION_ORDER/);
+await submit('f'.repeat(32), '5'.repeat(64), 'tiktok-587054972893001234-item-987654', {...fields,character:'Tootsie'});
+await submit('f'.repeat(32), '5'.repeat(64), 'tiktok-587054972893001234-item-987654', {...fields,character:'Tootsie'});
+assert.equal((await db.query("select verification_method from nfc_activation_sessions where token_hash=repeat('5',64)")).rows[0].verification_method, 'tiktok');
+const remaining = await verifyTiktok('1'.repeat(32), '001234', '6'.repeat(64));
+assert.equal(remaining.orders.length, 1);
+assert.equal(remaining.orders[0].id, 'tiktok-587054972893001234');
+const collision = await verifyTiktok('1'.repeat(32), '889798', '7'.repeat(64));
+assert.equal(collision.verified, false);
+assert.equal(collision.needsFullOrderId, true);
+assert.equal(collision.orders, undefined);
+assert.equal((await verifyTiktok('1'.repeat(32), '889798', '7'.repeat(64), '587011111111999999')).verified, false);
+const resolved = await verifyTiktok('1'.repeat(32), '889798', '7'.repeat(64), '587054972893889798');
+assert.equal(resolved.verified, true);
+assert.equal(resolved.orders.length, 1);
+const legacy = await verifyTiktok('2'.repeat(32), '003456', '8'.repeat(64));
+assert.equal(legacy.verified, true);
+assert.equal(legacy.orders[0].id, 'legacy-tiktok-item');
+assert.equal((await verifyTiktok('c'.repeat(32), '999999', '0'.repeat(64))).limited, true);
+assert.equal((await db.query("select has_function_privilege('anon','public.verify_customer_nfc_tiktok(text,text,text,text,text)','EXECUTE') as allowed")).rows[0].allowed, false);
 await db.close();
-console.log('PASS: phone matching, individual items, atomic activation, retry safety, order ownership, expired verification, inactive cards, rate limits and service-only access.');
+console.log('PASS: phone and TikTok verification, leading-zero suffixes, individual items, suffix collisions, atomic activation, retry safety, order ownership, expired verification, rate limits and service-only access.');

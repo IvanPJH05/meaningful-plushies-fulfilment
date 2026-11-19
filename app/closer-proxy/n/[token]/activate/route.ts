@@ -1,7 +1,7 @@
 import { after, NextResponse } from "next/server";
 import { verifyUgcProxy } from "@/lib/shopify-proxy-auth";
 import { nfcTokenPattern } from "@/lib/nfc-cards";
-import { customerNfcActivationState, submitCustomerNfcActivation, verifyCustomerNfcPhone } from "@/lib/nfc-customer-activation";
+import { customerNfcActivationState, submitCustomerNfcActivation, verifyCustomerNfcOrder } from "@/lib/nfc-customer-activation";
 import { processCertificateSync } from "@/lib/certificate-sync";
 
 export const runtime = "nodejs";
@@ -31,7 +31,7 @@ export async function POST(request: Request, { params }: Context) {
     if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Choose a valid customisation action.");
     if (body.action === "verify") {
       const client = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-      return NextResponse.json(await verifyCustomerNfcPhone(token, body.phone, client), { headers });
+      return NextResponse.json(await verifyCustomerNfcOrder(token, body, client), { headers });
     }
     if (body.action !== "submit") throw new Error("Choose a valid customisation action.");
     await submitCustomerNfcActivation(token, body);
