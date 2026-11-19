@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { confirmedCameraCode, createCameraScan, type CameraPass } from "./nfc-camera-scan.ts";
+import { confirmedCameraCode, createCameraCardCycle, createCameraScan, type CameraPass } from "./nfc-camera-scan.ts";
 
 test("a readable contrast frame needs three passes across two frames instead of eight", async () => {
   const scan=createCameraScan(), passes:CameraPass[]=[];
@@ -32,4 +32,55 @@ test("stopping scanning discards a pending decode and skips further passes", asy
   assert.deepEqual(await scan(async()=>{calls++;controller.abort();return [{rawValue:"NFC-100001"}];},controller.signal),[]);
   await scan(async()=>{calls++;return [];},controller.signal);
   assert.equal(calls,1);
+});
+
+test("continuous writing advances through cards even when a quick swap misses the empty poll", () => {
+  const cycle=createCameraCardCycle(), written:string[]=[];
+  for(const [uid,code] of [["UID1","NFC-100001"],["UID2","NFC-100002"],["UID3","NFC-100003"]]) {
+    assert.equal(cycle.observe(uid),"ready");
+    assert.equal(cycle.read([{rawValue:code}]).confirmed,false);
+    assert.equal(cycle.observe(uid),"ready");
+    assert.equal(cycle.read([{rawValue:code}]).confirmed,true);
+    cycle.beginWrite();written.push(code);cycle.finishWrite(true);
+    for(let poll=0;poll<5;poll++)assert.equal(cycle.observe(uid),"waiting-removal");
+  }
+  assert.deepEqual(written,["NFC-100001","NFC-100002","NFC-100003"]);
+});
+
+test("normal removal clears the previous barcode before the next card", () => {
+  const cycle=createCameraCardCycle();
+  cycle.observe("UID1");cycle.read([{rawValue:"NFC-100001"}]);
+  assert.equal(cycle.observe(null),"empty");
+  assert.equal(cycle.observe("UID2"),"ready");
+  assert.equal(cycle.read([{rawValue:"NFC-100001"}]).confirmed,false);
+});
+
+test("swapping a card before writing blocks both cards until the reader is cleared", () => {
+  const cycle=createCameraCardCycle();
+  cycle.observe("UID1");cycle.read([{rawValue:"NFC-100001"}]);
+  assert.equal(cycle.observe("UID2"),"changed");
+  assert.equal(cycle.observe("UID1"),"waiting-removal");
+  assert.equal(cycle.observe(null),"empty");
+  assert.equal(cycle.observe("UID2"),"ready");
+  assert.equal(cycle.read([{rawValue:"NFC-100001"}]).confirmed,false);
+});
+
+test("failed writes do not repeat or advance automatically until physical removal", () => {
+  const cycle=createCameraCardCycle();
+  cycle.observe("UID1");cycle.beginWrite();cycle.finishWrite(false);
+  assert.equal(cycle.observe("UID1"),"waiting-removal");
+  assert.equal(cycle.observe("UID2"),"changed");
+  cycle.observe(null);
+  assert.equal(cycle.observe("UID2"),"ready");
+});
+
+test("a temporary reader disconnect requires fresh barcode confirmation and retains write locks", () => {
+  const cycle=createCameraCardCycle();
+  cycle.observe("UID1");cycle.read([{rawValue:"NFC-100001"}]);
+  cycle.interrupt();
+  assert.equal(cycle.observe("UID1"),"ready");
+  assert.equal(cycle.read([{rawValue:"NFC-100001"}]).confirmed,false);
+  cycle.beginWrite();cycle.finishWrite(true);cycle.interrupt();
+  assert.equal(cycle.observe("UID1"),"waiting-removal");
+  assert.equal(cycle.observe("UID2"),"ready");
 });

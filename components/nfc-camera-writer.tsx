@@ -1,8 +1,8 @@
 "use client";
 
 import Script from "next/script";
-import { useEffect, useRef, useState } from "react";
-import { confirmedCameraCode, createCameraScan } from "../lib/nfc-camera-scan";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createCameraCardCycle, createCameraScan } from "../lib/nfc-camera-scan";
 import styles from "./nfc-card-workspace.module.css";
 
 type Barcode = { rawValue: string };
@@ -11,6 +11,7 @@ type DecoderApi = {
   BarcodeDetector: new (options: { formats: string[] }) => Decoder;
   prepareZXingModule(options: { overrides: { locateFile: () => string }; fireImmediately: true }): Promise<unknown>;
 };
+class ReaderSetupError extends Error {}
 
 async function cardOnReader(signal: AbortSignal): Promise<string | null> {
   const response = await fetch("http://127.0.0.1:17654/card-present", {
@@ -19,7 +20,7 @@ async function cardOnReader(signal: AbortSignal): Promise<string | null> {
   }).catch(() => {
     throw new Error("Could not reach the Windows NFC Helper. Start it and allow local network access if prompted.");
   });
-  if (response.status === 404) throw new Error("Install and restart the latest Windows NFC Helper to use the camera.");
+  if (response.status === 404) throw new ReaderSetupError("Install and restart the latest Windows NFC Helper to use the camera.");
   const result = await response.json();
   if (!response.ok || !result.ok) throw new Error(result.error || "The reader could not detect a card.");
   return result.uid;
@@ -29,6 +30,8 @@ export function NfcCameraWriter({ onWrite }: { onWrite: (code: string, uid: stri
   const video = useRef<HTMLVideoElement>(null);
   const stream = useRef<MediaStream | null>(null);
   const session = useRef<AbortController | null>(null);
+  const scanning = useRef(false);
+  const writeCard = useRef(onWrite);
   const [decoder, setDecoder] = useState<DecoderApi>();
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState("");
@@ -37,6 +40,8 @@ export function NfcCameraWriter({ onWrite }: { onWrite: (code: string, uid: stri
   const [running, setRunning] = useState(false);
   const [writing, setWriting] = useState(false);
   const [message, setMessage] = useState("Place one stickered VIP card on the reader at a time.");
+
+  useEffect(() => { writeCard.current = onWrite; }, [onWrite]);
 
   useEffect(() => () => {
     session.current?.abort();
@@ -65,7 +70,7 @@ export function NfcCameraWriter({ onWrite }: { onWrite: (code: string, uid: stri
       setCameras((await navigator.mediaDevices.enumerateDevices()).filter(device => device.kind === "videoinput"));
       if (cameraSession.signal.aborted) return;
       setPreview(true);
-      setMessage("Check the camera view, then start scanning.");
+      setMessage("Camera ready. Scanning starts automatically when the decoder is ready.");
     } catch (error) {
       if (!cameraSession.signal.aborted) setMessage(error instanceof Error ? error.message : "Could not open the camera.");
     } finally {
@@ -73,8 +78,9 @@ export function NfcCameraWriter({ onWrite }: { onWrite: (code: string, uid: stri
     }
   }
 
-  async function scanCards() {
-    if (!decoder || !preview || running) return;
+  const scanCards = useCallback(async () => {
+    if (!decoder || !preview || scanning.current) return;
+    scanning.current = true;
     const scanSession = new AbortController();
     session.current = scanSession;
     const { signal } = scanSession;
@@ -86,24 +92,29 @@ export function NfcCameraWriter({ onWrite }: { onWrite: (code: string, uid: stri
       const enhanced = document.createElement("canvas");
       const enhancedContext = enhanced.getContext("2d", { willReadFrequently: true });
       if (!context || !enhancedContext) throw new Error("The camera frame could not be read.");
-      let activeUid: string | null = null;
-      let previousCode: string | null = null;
-      let waitForRemoval = false;
+      const cycle = createCameraCardCycle();
       let lastFrameTime = -1;
       const detectFrame = createCameraScan();
       while (!signal.aborted) {
-        const uid = await cardOnReader(signal);
+        let uid: string | null;
+        try {
+          uid = await cardOnReader(signal);
+        } catch (error) {
+          if (signal.aborted) break;
+          if (error instanceof ReaderSetupError) throw error;
+          cycle.interrupt();
+          setMessage(`${error instanceof Error ? error.message : "Reader temporarily unavailable."} Reconnecting automatically…`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          continue;
+        }
         if (signal.aborted) break;
         const camera = video.current;
-        if (!uid) {
-          activeUid = previousCode = null;
-          waitForRemoval = false;
+        const state = cycle.observe(uid);
+        if (state === "empty") {
           setMessage("Waiting for a card on the NFC reader.");
-        } else if (activeUid && uid !== activeUid && !waitForRemoval) {
-          waitForRemoval = true;
+        } else if (state === "changed") {
           setMessage("The card changed. Clear the reader before trying again.");
-        } else if (!waitForRemoval && camera && camera.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && camera.currentTime !== lastFrameTime) {
-          activeUid = uid;
+        } else if (state === "ready" && uid && camera && camera.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && camera.currentTime !== lastFrameTime) {
           lastFrameTime = camera.currentTime;
           // Resizing clears the canvas and reallocates its backing store. Reuse it.
           if (frame.width !== camera.videoWidth || frame.height !== camera.videoHeight) {
@@ -125,37 +136,43 @@ export function NfcCameraWriter({ onWrite }: { onWrite: (code: string, uid: stri
               return reader.detect(enhanced);
           }, signal);
           if (signal.aborted) break;
-          const { code, confirmed } = confirmedCameraCode(barcodes, previousCode);
+          const { code, confirmed } = cycle.read(barcodes);
           if (code && confirmed) {
-            waitForRemoval = true;
+            cycle.beginWrite();
             setWriting(true);
             setMessage(`Writing and verifying ${code}. Keep the card on the reader.`);
             try {
-              const id = await onWrite(code, uid);
-              if (!signal.aborted) setMessage(`NFC-${id} verified. Remove the card from the reader.`);
+              const id = await writeCard.current(code, uid);
+              cycle.finishWrite(true);
+              if (!signal.aborted) setMessage(`NFC-${id} verified. Replace it with the next card. Scanning stays on.`);
             } catch (error) {
+              cycle.finishWrite(false);
               if (!signal.aborted) setMessage(`${code} · ${error instanceof Error ? error.message : "Write failed."} Clear the reader before retrying.`);
             } finally {
               if (!signal.aborted) setWriting(false);
             }
           } else {
-            previousCode = code;
             setMessage(barcodes.length > 1 ? "More than one barcode is visible. Show only the card’s sticker."
               : code ? `Read ${code}. Waiting for a clear NFC card barcode.`
               : "Card detected. Center the sticker and keep the bars in focus.");
           }
         }
-        await new Promise(resolve => setTimeout(resolve, waitForRemoval || !uid ? 120 : 40));
+        await new Promise(resolve => setTimeout(resolve, state === "ready" ? 40 : 120));
       }
     } catch (error) {
       if (!signal.aborted) setMessage(error instanceof Error ? error.message : "Camera scanning failed.");
     } finally {
       if (session.current === scanSession) {
+        scanning.current = false;
         setRunning(false);
         setWriting(false);
       }
     }
-  }
+  }, [decoder, preview]);
+
+  useEffect(() => {
+    if (decoder && preview) void scanCards();
+  }, [decoder, preview, scanCards]);
 
   function stopCamera() {
     session.current?.abort();
@@ -163,6 +180,7 @@ export function NfcCameraWriter({ onWrite }: { onWrite: (code: string, uid: stri
     stream.current?.getTracks().forEach(track => track.stop());
     stream.current = null;
     setPreview(false);
+    scanning.current = false;
     setRunning(false);
     setMessage("Camera stopped.");
   }
@@ -183,10 +201,12 @@ export function NfcCameraWriter({ onWrite }: { onWrite: (code: string, uid: stri
         <label>Webcam<select value={deviceId} disabled={running || starting} onChange={event => void openCamera(event.target.value)}>
           {cameras.map((camera, index) => <option key={camera.deviceId} value={camera.deviceId}>{camera.label || `Camera ${index + 1}`}</option>)}
         </select></label>
-        <button type="button" className="button primary" disabled={!decoder || running} onClick={() => void scanCards()}>Start scanning</button>
+        {running ? <span role="status">Continuous scanning is on</span>
+          : <button type="button" className="button primary" disabled={!decoder} onClick={() => void scanCards()}>{decoder ? "Restart scanning" : "Preparing scanner…"}</button>}
         <button type="button" className="button secondary" disabled={writing} onClick={stopCamera}>Stop camera</button>
       </>}
     </div>
+    <p>Start the camera once. Place one stickered card on the reader, wait for verification, then replace it with the next card. Each barcode is scanned and written automatically.</p>
     <video ref={video} muted autoPlay playsInline hidden={!preview} className={styles.camera} />
     <p role="status">{message}</p>
   </section>;
