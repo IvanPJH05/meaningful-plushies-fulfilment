@@ -2,12 +2,13 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { provisionVipNativeDiscounts, vipProductHandle, vipShippingCode } from "./creator-vip-native-discounts";
 import { createCreatorSampleDiscountCode } from "./manual-orders";
 import { mobileServiceClient } from "./mobile-api";
+import { syncVipRedemptions } from "./creator-vip-redemption";
 
-const inviteFields = "id,code,username,discount_code,sample_id,activated_at,registered_at,name,phone,created_at,discount_mode,selected_product_handle,shipping_discount_id";
+const inviteFields = "id,code,username,discount_code,sample_id,activated_at,registered_at,name,phone,consent_version,created_at,discount_mode,selected_product_handle,shipping_discount_id,redeemed_at";
 const usableInvite = "sample_id.not.is.null,and(discount_mode.eq.native,activated_at.not.is.null,shipping_discount_id.is.null)";
 
-export function isVipInviteReady(invite: { sample_id: string | null; activated_at: string | null; discount_mode: string; shipping_discount_id: string | null }) {
-  return !!invite.sample_id || (invite.discount_mode === "native" && !!invite.activated_at && !invite.shipping_discount_id);
+export function isVipInviteReady(invite: { sample_id: string | null; activated_at: string | null; discount_mode: string; shipping_discount_id: string | null; redeemed_at: string | null }) {
+  return !invite.redeemed_at && (!!invite.sample_id || (invite.discount_mode === "native" && !!invite.activated_at && !invite.shipping_discount_id));
 }
 
 function vipClaimToken(code: string) {
@@ -50,7 +51,7 @@ export async function listVipInvites() {
   const { data, error } = await mobileServiceClient().from("creator_vip_invites")
     .select(inviteFields).order("created_at", { ascending: false }).limit(50);
   if (error) throw error;
-  return data;
+  return syncVipRedemptions(data);
 }
 
 async function reserveVipInvite(username: string) {
@@ -80,7 +81,7 @@ async function reserveVipInvite(username: string) {
 
 export async function issueVipInvite(username: string) {
   const invite = await reserveVipInvite(username);
-  if (invite.activated_at) return invite;
+  if (invite.activated_at) return (await syncVipRedemptions([invite]))[0];
 
   const db = mobileServiceClient();
   let activation: { sample_id: string | null; discount_mode: "native" | "function"; activated_at: string };
@@ -122,11 +123,18 @@ export async function checkVipInvite(value: unknown) {
   const code = inviteCode(value);
   if (!code) return { error: "invalid_invite" };
   const { data, error } = await mobileServiceClient().from("creator_vip_invites")
-    .select("username,sample_id,registered_at,activated_at,discount_mode,shipping_discount_id").eq("code", code).maybeSingle();
+    .select(inviteFields).eq("code", code).maybeSingle();
   if (error) throw error;
-  if (!data || !isVipInviteReady(data)) return { error: "invalid_invite" };
-  if (data.registered_at && data.discount_mode !== "native") return { error: "used_invite" };
-  return { username: `@${data.username}` };
+  if (!data) return { error: "invalid_invite" };
+  const [invite] = await syncVipRedemptions([data]);
+  if (invite.redeemed_at) return { error: "used_invite" };
+  if (!isVipInviteReady(invite)) return { error: "invalid_invite" };
+  return {
+    username: `@${invite.username}`,
+    name: invite.name ?? "",
+    phone: invite.phone ?? "",
+    consent: !!invite.consent_version,
+  };
 }
 
 export async function registerVipCreator(input: { invite?: unknown; name?: unknown; phone?: unknown; consent?: unknown }) {
@@ -137,19 +145,22 @@ export async function registerVipCreator(input: { invite?: unknown; name?: unkno
   if (!name || name.length > 100 || !phone || input.consent !== true) return { error: "invalid_details" };
 
   const db = mobileServiceClient();
+  const { data: previous, error: readError } = await db.from("creator_vip_invites")
+    .select(inviteFields).eq("code", code).maybeSingle();
+  if (readError) throw readError;
+  if (!previous) return { error: "invalid_invite" };
+  const [invite] = await syncVipRedemptions([previous]);
+  if (invite.redeemed_at) return { error: "used_invite" };
+  if (!isVipInviteReady(invite)) return { error: "invalid_invite" };
+
   const { data, error } = await db.from("creator_vip_invites")
-    .update({ name, phone, registered_at: new Date().toISOString(), consent_version: "creator-marketing-v1" })
-    .eq("code", code).is("registered_at", null).or(usableInvite)
+    .update({ name, phone, registered_at: invite.registered_at ?? new Date().toISOString(), consent_version: "creator-marketing-v1" })
+    .eq("id", invite.id).is("redeemed_at", null).or(usableInvite)
     .select("code,discount_code,discount_mode,selected_product_handle").maybeSingle();
   if (error?.code === "23505") return { error: "duplicate_creator" };
   if (error) throw error;
   if (data) return claimResponse(data);
 
-  const { data: previous, error: readError } = await db.from("creator_vip_invites")
-    .select(inviteFields).eq("code", code).maybeSingle();
-  if (readError) throw readError;
-  if (!previous || !isVipInviteReady(previous)) return { error: "invalid_invite" };
-  if (previous.name === name && previous.phone === phone) return claimResponse(previous);
   return { error: "used_invite" };
 }
 
@@ -161,9 +172,15 @@ export async function claimVipProduct(input: { invite?: unknown; claimToken?: un
       !timingSafeEqual(Buffer.from(token, "hex"), Buffer.from(vipClaimToken(code), "hex"))) return { error: "invalid_invite" };
 
   const db = mobileServiceClient();
+  const { data: previous, error: readError } = await db.from("creator_vip_invites")
+    .select(inviteFields).eq("code", code).eq("discount_mode", "native").not("registered_at", "is", null).maybeSingle();
+  if (readError) throw readError;
+  if (!previous) return { error: "invalid_invite" };
+  const [current] = await syncVipRedemptions([previous]);
+  if (current.redeemed_at) return { error: "used_invite" };
   const { data: reserved, error: reserveError } = await db.from("creator_vip_invites")
     .update({ selected_product_handle: product }).eq("code", code).eq("discount_mode", "native")
-    .not("registered_at", "is", null).is("selected_product_handle", null).or(usableInvite)
+    .not("registered_at", "is", null).is("redeemed_at", null).is("selected_product_handle", null).or(usableInvite)
     .select(inviteFields).maybeSingle();
   if (reserveError) throw reserveError;
   let invite = reserved;

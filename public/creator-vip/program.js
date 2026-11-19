@@ -25,6 +25,17 @@ const claimMessage = document.createElement("p");
 claimMessage.setAttribute("role", "alert");
 claimMessage.hidden = true;
 claimLink.before(claimMessage);
+const editDetailsButton = document.createElement("button");
+editDetailsButton.type = "button";
+editDetailsButton.className = "creator-application__submit";
+editDetailsButton.textContent = localized("Edit your details", "Sunting maklumat anda");
+creatorConfirmation.append(editDetailsButton);
+editDetailsButton.addEventListener("click", () => {
+  creatorConfirmation.hidden = true;
+  creatorForm.hidden = false;
+  creatorApplication.scrollTop = 0;
+  creatorForm.elements.name.focus();
+});
 
 function selectedProduct() {
   const character = creatorConfirmation.querySelector('[name="claim-character"]:checked')?.value;
@@ -76,6 +87,7 @@ claimLink.addEventListener("click", async event => {
       body: JSON.stringify({ invite: verifiedInvite, claimToken: nativeClaimToken, product }),
     });
     const result = await response.json().catch(() => null);
+    if (result?.error === "used_invite") throw new Error(signupErrors.used_invite);
     if (result?.error === "product_already_selected") throw new Error(localized("A plushie has already been selected. Reopen your invitation to continue with it.", "Plushie telah dipilih. Buka semula jemputan anda untuk meneruskan."));
     if (!response.ok || !result?.discount || !result.shippingDiscount) {
       throw new Error(localized("Your discounts could not be prepared. Select the same plushie and try again.", "Diskaun anda belum dapat disediakan. Pilih plushie yang sama dan cuba lagi."));
@@ -98,7 +110,7 @@ claimLink.addEventListener("click", async event => {
 
 const signupErrors = {
   invalid_invite: localized("That invitation code is invalid. Check the code we sent you.", "Kod jemputan tidak sah. Semak kod yang kami hantar."),
-  used_invite: localized("That invitation code has already been used.", "Kod jemputan itu sudah digunakan."),
+  used_invite: localized("Your product discount has already been redeemed on an order.", "Diskaun produk anda telah ditebus dalam pesanan."),
   duplicate_creator: localized("That TikTok username or phone number is already registered.", "Nama pengguna TikTok atau nombor telefon itu telah didaftarkan."),
   invalid_details: localized("Check your details and tick the marketing consent box.", "Semak maklumat anda dan tandakan kotak kebenaran pemasaran."),
   unavailable: localized("Could not complete this step. Please try again.", "Langkah ini tidak dapat diselesaikan. Sila cuba lagi."),
@@ -171,6 +183,9 @@ inviteForm.addEventListener("submit", async event => {
   if (!result) return;
   verifiedInvite = invite;
   creatorForm.elements.tiktok.value = result.username;
+  creatorForm.elements.name.value = result.name || "";
+  creatorForm.elements.phone.value = result.phone || "";
+  creatorForm.elements.marketing_consent.checked = result.consent === true;
   inviteForm.hidden = true;
   creatorForm.hidden = false;
   creatorForm.elements.name.focus();
@@ -194,7 +209,6 @@ creatorForm.addEventListener("submit", async event => {
   });
   if (!result) return;
   creatorVideo.pause();
-  creatorForm.reset();
   creatorForm.hidden = true;
   claimCode.textContent = result.discount;
   nativeClaimToken = result.claimToken;

@@ -115,7 +115,7 @@ export const creatorVipEnglish = `
     </section>
     <form id="creator-invite-form" class="creator-application__form" method="post">
       <h3>Enter your invitation code</h3>
-      <p>Use the single-use code we sent with your signup link.</p>
+      <p>Enter your VIP code to sign up or return to your saved details. You can make changes until your product discount is redeemed.</p>
       <label for="creator-invitation-code">Invitation code</label>
       <input id="creator-invitation-code" name="invite" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="32" required>
       <p class="creator-application__error" role="alert" hidden></p>
@@ -286,7 +286,7 @@ export const creatorVipMalay = `
     </section>
     <form id="creator-invite-form" class="creator-application__form" method="post">
       <h3>Masukkan kod jemputan anda</h3>
-      <p>Gunakan kod sekali guna yang kami hantar bersama pautan pendaftaran anda.</p>
+      <p>Masukkan kod VIP anda untuk mendaftar atau kembali ke maklumat yang disimpan. Anda boleh membuat perubahan sehingga diskaun produk anda ditebus.</p>
       <label for="creator-invitation-code">Kod jemputan</label>
       <input id="creator-invitation-code" name="invite" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="32" required>
       <p class="creator-application__error" role="alert" hidden></p>

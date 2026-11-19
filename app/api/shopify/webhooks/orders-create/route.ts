@@ -206,6 +206,15 @@ export async function POST(request: Request) {
     // them here can exceed Postgres's statement timeout and make Shopify
     // retry an otherwise valid order.
     await upsertSharedOrders(ordersToSave, { syncSales: false }, db);
+    const redeemedCodes = [...new Set(ordersToSave.flatMap(order => [
+      ...(order.discountCodes ?? []), order.discountCodeUsed ?? "",
+    ]).map(code => code.trim().toUpperCase()).filter(Boolean))];
+    if (redeemedCodes.length) {
+      const { error } = await db.from("creator_vip_invites")
+        .update({ redeemed_at: new Date().toISOString() })
+        .in("discount_code", redeemedCodes).is("redeemed_at", null);
+      if (error) throw error;
+    }
     for (const code of appliedDiscountCodes(fullOrder)) {
       await markManualOrderUsedByDiscountCode(
         code,

@@ -13,6 +13,7 @@ type VipInvitation = {
   name: string | null;
   phone: string | null;
   ready: boolean;
+  redeemed_at: string | null;
 };
 
 const programUrl = "https://meaningfulplushies.com/apps/closer/creators";
@@ -64,7 +65,7 @@ export function CreatorVipInvitations({ token }: { token: string }) {
       );
       setUsername("");
       setInvites(current => [invite, ...current.filter(item => item.id !== invite.id)]);
-      setMessage(`Invitation ready for @${invite.username}.`);
+      setMessage(invite.redeemed_at ? `@${invite.username} has already redeemed their product discount.` : `Invitation ready for @${invite.username}.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not create an invitation.");
     } finally {
@@ -102,8 +103,8 @@ export function CreatorVipInvitations({ token }: { token: string }) {
           <td><strong>@{invite.username}</strong>{invite.name && <small>{invite.name} · {invite.phone}</small>}</td>
           <td><code>{invite.code}</code></td>
           <td><code>{invite.discount_code}</code></td>
-          <td>{invite.registered_at ? "Signed up" : invite.ready ? "Ready to send" : invite.activated_at ? "Removed" : "Shopify setup pending"}</td>
-          <td>{invite.ready && !invite.registered_at && <div className="creator-vip-admin__copy">
+          <td>{invite.redeemed_at ? "Redeemed" : invite.registered_at ? "Details saved · Awaiting order" : invite.ready ? "Ready to send" : invite.activated_at ? "Removed" : "Shopify setup pending"}</td>
+          <td>{invite.ready && <div className="creator-vip-admin__copy">
             <button className="button secondary small" type="button" onClick={() => copyInvite(invite, false)}>Copy English invite</button>
             <button className="button secondary small" type="button" onClick={() => copyInvite(invite, true)}>Copy Malay invite</button>
           </div>}</td>
