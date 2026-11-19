@@ -142,6 +142,8 @@ async function submitSignupStep(form, path, data) {
 }
 
 document.querySelector("#creator-customise").addEventListener("click", () => {
+  signupSession?.abort();
+  signupSession = new AbortController();
   if (!creatorConfirmation.hidden) {
     creatorApplication.showModal();
     creatorApplication.scrollTop = 0;
@@ -149,8 +151,6 @@ document.querySelector("#creator-customise").addEventListener("click", () => {
     return;
   }
 
-  signupSession?.abort();
-  signupSession = new AbortController();
   verifiedInvite = "";
   for (const form of [inviteForm, creatorForm]) {
     form.reset();
