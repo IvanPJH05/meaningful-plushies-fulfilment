@@ -1,8 +1,30 @@
 {
-  "crons": [{ "path": "/api/tiktok/orders/recover", "schedule": "*/5 * * * *" }],
+  "crons": [
+    {
+      "path": "/api/tiktok/orders/recover",
+      "schedule": "*/5 * * * *"
+    }
+  ],
   "functions": {
-    "app/api/production-tracking/proofs/route.ts": { "regions": ["icn1"] },
-    "app/api/fulfilment/nfc/route.ts": { "regions": ["icn1"] },
-    "app/api/fulfilment/nfc-password/route.ts": { "regions": ["icn1"] }
+    "app/api/production-tracking/proofs/route.ts": {
+      "regions": [
+        "icn1"
+      ]
+    },
+    "app/api/fulfilment/nfc/route.ts": {
+      "regions": [
+        "icn1"
+      ]
+    },
+    "app/api/fulfilment/nfc-password/route.ts": {
+      "regions": [
+        "icn1"
+      ]
+    },
+    "app/api/mobile/packing/route.ts": {
+      "regions": [
+        "icn1"
+      ]
+    }
   }
 }
