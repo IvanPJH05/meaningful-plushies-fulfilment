@@ -67,6 +67,27 @@
     detailsForm.elements.character.value = match ? match[0] : '';
   }
 
+  function showDetails(data) {
+    session = data.session;
+    orders = data.orders;
+    const select = detailsForm.elements.orderId;
+    select.replaceChildren();
+    for (const order of orders) {
+      const option = document.createElement('option');
+      option.value = order.id;
+      const label = order.itemNumber ? `Item ${order.itemNumber}` : `#${order.orderNumber || order.id}`;
+      option.textContent = `${label} · ${order.character || 'Plushie'}${order.plushName ? ` · ${order.plushName}` : ''}`;
+      select.append(option);
+    }
+    detailsForm.querySelector('[data-nfc-order-choice]').hidden = root.dataset.linked === 'true';
+    selectedOrder();
+    phoneForm.hidden = true;
+    introduction.hidden = true;
+    detailsForm.hidden = false;
+    detailsForm.elements.plushName.focus();
+    feedback.textContent = '';
+  }
+
   async function waitForCertificate() {
     if (checking) return;
     checking = true;
@@ -95,7 +116,16 @@
     check.hidden = false;
   }
 
-  root.querySelector('[data-nfc-customise]').addEventListener('click', () => {
+  root.querySelector('[data-nfc-customise]').addEventListener('click', async () => {
+    if (busy) return;
+    if (root.dataset.linked === 'true') {
+      setBusy(true);
+      feedback.textContent = 'Opening your plushie’s details…';
+      try { showDetails(await request({ action: 'linked' })); }
+      catch (error) { feedback.textContent = error.message || 'Please refresh and try again.'; }
+      finally { setBusy(false); }
+      return;
+    }
     introduction.hidden = true;
     phoneForm.hidden = false;
     phoneForm.elements.phone.focus();
@@ -119,22 +149,7 @@
         feedback.textContent = 'More than one TikTok order ends with those six digits. Enter your full order ID to find yours.';
         return;
       }
-      session = data.session;
-      orders = data.orders;
-      const select = detailsForm.elements.orderId;
-      select.replaceChildren();
-      for (const order of orders) {
-        const option = document.createElement('option');
-        option.value = order.id;
-        const label = order.itemNumber ? `Item ${order.itemNumber}` : `#${order.orderNumber || order.id}`;
-        option.textContent = `${label} · ${order.character || 'Plushie'}${order.plushName ? ` · ${order.plushName}` : ''}`;
-        select.append(option);
-      }
-      selectedOrder();
-      phoneForm.hidden = true;
-      detailsForm.hidden = false;
-      detailsForm.elements.plushName.focus();
-      feedback.textContent = '';
+      showDetails(data);
     } catch (error) {
       feedback.textContent = error.message || 'Your order could not be checked. Please try again.';
     } finally {

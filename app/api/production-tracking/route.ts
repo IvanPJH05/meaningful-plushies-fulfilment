@@ -80,6 +80,25 @@ export async function GET(request:Request){try{
  }catch(error){return failure(error);}}
 export async function POST(request:Request){try{
  const {client,actor,session}=await context(request);const raw=await request.text();if(raw.length>40000)throw new PairingError("Request too large.");const body=JSON.parse(raw);
+ if(body.action==="scanner_pack" || body.action==="scanner_pair") {
+  if(typeof body.orderId!=="string" || !body.orderId || body.orderId.length>200 || typeof body.orderBarcode!=="string" || body.orderBarcode.length>512) throw new PairingError("Scan a valid order barcode.");
+  let result;
+  if(body.action==="scanner_pack") {
+   result=await client.rpc("production_scanner_pack",{p_actor:actor,p_order:body.orderId,p_barcode:body.orderBarcode});
+  } else {
+   const card=String(body.cardCode||"").trim().toUpperCase();
+   if(!/^NFC-\d{6,12}$/.test(card) && !/^\d{6}$/.test(card)) throw new PairingError("Scan a valid NFC card barcode.");
+   let details=null;
+   if(!card.startsWith("NFC-")) {
+    const {data:row,error}=await client.from("fulfilment_orders").select("id,order_number,updated_at,data").eq("id",body.orderId).single();
+    if(error || !row) throw new PairingError("Order not found.");
+    details=summary(row as Parameters<typeof summary>[0]).fields;
+   }
+   result=await client.rpc("production_scanner_pair",{p_actor:actor,p_order:body.orderId,p_barcode:body.orderBarcode,p_card:card,p_details:details});
+  }
+  if(result.error) throw new PairingError(result.error.message,409);
+  return NextResponse.json({ok:true},{headers});
+ }
  if(body.action==="create"){
   if(session.role!=="admin")throw new PairingError("Only admins can close production batches.",403);
   batchSchedule(body.day);if(!uuid.test(body.id||"")||!Array.isArray(body.orderIds)||body.orderIds.length<1||body.orderIds.length>200||body.orderIds.some((id:unknown)=>typeof id!=="string"||id.length>200))throw new PairingError("Choose the orders for this batch.");

@@ -91,8 +91,7 @@ export function ProductionPairScanner({ findOrder, audioSourceFor, checkCard, sa
       show("Card scan expired. Scan the card again.");
       return;
     }
-    if (window.item.stage !== "audio_passed") await save(window.item, "audio_passed", window.barcode, "", "");
-    show("Time expired. Sewing and quality check complete. Scan the order again to pack it.");
+    show("Pairing window expired. The order stays packed. Scan the order again to pair its card.");
   }
 
   useEffect(() => {
@@ -154,32 +153,19 @@ export function ProductionPairScanner({ findOrder, audioSourceFor, checkCard, sa
     setScan("");
     if (!value) return;
     void run(async () => {
-      const previous = current.current;
+      let previous = current.current;
       if (previous && Date.now() >= previous.expires) {
         await expire(previous);
-        return;
+        previous = null;
       }
       const item = /^NFC-/i.test(value) ? null : await findOrder(value);
       if (item) {
-        if (previous?.kind === "order" && previous.item.id !== item.id) {
-          show("Finish the current order or wait for its pairing window to expire.");
-          return;
-        }
         setSelected(item);
         setNote("");
-        if (item.certificate_code || item.nfc_paired || ["packed", "collected", "delivered"].includes(item.stage)) {
+        if (item.certificate_code || item.nfc_paired) {
           update(null);
-          if (previous?.kind === "card") show("Unable to pair. This order already has an activated card.", item);
-          else { setStatus("Already paired. Playing the saved recording for review."); play(item); }
-          return;
-        }
-        if (item.playback_only && previous?.kind !== "card") {
-          setStatus("Playing the saved recording. This order has no Daily Production task.");
-          play(item);
-          return;
-        }
-        if (item.issue || (item.disposition && item.disposition !== "active") || !["at_tailor", "returned", "audio_passed"].includes(item.stage)) {
-          show("Unable to pair. " + (item.issue || "This order is not ready for packing."), item);
+          if (previous?.kind === "card") show("Order packed. This order already has an activated card.", item);
+          else { setStatus("Order packed. Already paired. Playing the saved recording for review."); play(item); }
           return;
         }
         if (previous?.kind === "card") {
@@ -187,8 +173,8 @@ export function ProductionPairScanner({ findOrder, audioSourceFor, checkCard, sa
           await pair(item, value, previous.code);
           return;
         }
-        if (!previous) update({ kind: "order", item, barcode: value, expires: Date.now() + 60000 });
-        setStatus("Scan the NFC card within one minute.");
+        update({ kind: "order", item, barcode: value, expires: Date.now() + 60000 });
+        setStatus("Order packed. Scan the NFC card within one minute to pair it.");
         play(item);
         return;
       }
@@ -214,7 +200,7 @@ export function ProductionPairScanner({ findOrder, audioSourceFor, checkCard, sa
 
   return <section>
     <h2>Scan an order or NFC card</h2>
-    <p>Click anywhere on the page to get ready to scan. Scan the order or NFC card first.</p>
+    <p>Scanning an order marks it Packed from any stage and confirms any previous issue was fixed. Scan its NFC card to pair it. You can scan either barcode first.</p>
     <form onSubmit={submit}>
       <label>Scan order or NFC card<input ref={input} autoFocus onFocus={event => event.currentTarget.select()} onClick={event => event.currentTarget.select()} value={scan} onChange={event => setScan(event.target.value)} disabled={busy} autoComplete="off" /></label>
       <button disabled={busy} type="submit">Scan</button>

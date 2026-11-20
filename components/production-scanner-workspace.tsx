@@ -51,11 +51,16 @@ export function ProductionScannerWorkspace({ token, orders, audioSourceFor }: {
     if (matches.length > 1) throw new Error("This barcode matches multiple items. Scan the individual packing slip barcode.");
     const path = matches[0] ? "?scanOrder=" + encodeURIComponent(matches[0].id)
       : "?scanBarcode=" + encodeURIComponent(barcode);
-    return (await request(path)).item;
+    const item = (await request(path)).item;
+    if (!item) return null;
+    await request("", { action: "scanner_pack", orderId: item.order_id, orderBarcode: barcode });
+    const packed = (await request("?scanOrder=" + encodeURIComponent(item.order_id))).item;
+    void refresh();
+    return packed;
   }
 
   async function save(item: ProductionItem, action: string, barcode: string, card: string, note: string) {
-    await request("", { action, itemId: item.id, version: item.version, orderBarcode: barcode, cardCode: card, note });
+    await request("", { action: action === "packed" ? "scanner_pair" : action, orderId: item.order_id, itemId: item.id, version: item.version, orderBarcode: barcode, cardCode: card, note });
     await refresh();
     return [];
   }

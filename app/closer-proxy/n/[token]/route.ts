@@ -21,9 +21,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
   if (!nfcTokenPattern.test(token)) return new NextResponse(nfcCertificateHtml(), { status: 404, headers });
   try {
     const state = await customerNfcActivationState(token);
-    if (state === "customise" || state === "processing") {
+    if (state === "customise" || state === "linked_customise" || state === "processing") {
       const prefix = new URL(request.url).searchParams.get("path_prefix") || "/apps/closer";
-      return new NextResponse(nfcActivationHtml(`${prefix}/n/${token}/activate`, state === "processing"), { headers });
+      return new NextResponse(nfcActivationHtml(`${prefix}/n/${token}/activate`, state === "processing", state === "linked_customise"), { headers });
     }
     const order = await publicNfcOrder(token);
     if (!order) return new NextResponse(nfcCertificateHtml(), { headers });

@@ -8,6 +8,17 @@ export async function customerNfcActivationState(token: string): Promise<string>
   return data;
 }
 
+export async function startLinkedNfcCustomisation(token: string) {
+  if (!nfcTokenPattern.test(token)) throw new Error("Invalid card link.");
+  const session = randomBytes(32).toString("hex");
+  const { data, error } = await mobileServiceClient().rpc("start_linked_nfc_customisation", {
+    p_token: token, p_session_hash: createHash("sha256").update(session).digest("hex"),
+  });
+  if (data?.limited) throw new Error("Too many attempts. Please wait 15 minutes before trying again.");
+  if (error || !data?.verified) throw new Error("This card’s details have changed. Refresh the page to continue.");
+  return { session, orders: data.orders };
+}
+
 export async function verifyCustomerNfcOrder(token: string, body: Record<string, unknown>, clientAddress: string) {
   const method = body.method ?? "phone";
   if (!nfcTokenPattern.test(token) || (method !== "phone" && method !== "tiktok")) throw new Error("Choose where you placed your order.");

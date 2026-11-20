@@ -1,11 +1,11 @@
-export function nfcActivationHtml(endpoint: string, processing = false) {
+export function nfcActivationHtml(endpoint: string, processing = false, linked = false) {
   if (!/^\/[a-z0-9-]+\/[a-z0-9-]+\/n\/[a-f0-9]{32}\/activate$/.test(endpoint)) throw new Error("Invalid activation endpoint.");
   const assets = "https://meaningful-plushies-fulfilment.vercel.app/nfc-certificate";
   return `<link rel="stylesheet" href="${assets}/certificate.css">
-  <section class="mp-nfc-activation" data-nfc-activation data-endpoint="${endpoint}" data-processing="${processing}">
+  <section class="mp-nfc-activation" data-nfc-activation data-endpoint="${endpoint}" data-processing="${processing}" data-linked="${linked}">
     <div data-nfc-introduction ${processing ? "hidden" : ""}>
       <h1>Make this plushie yours</h1>
-      <p>Your card is ready to customise. Add your plushie’s details to activate its birth certificate.</p>
+      <p>${linked ? "Your card is already linked to your order. Just add your plushie details to activate its birth certificate." : "Your card is ready to customise. Add your plushie details to activate its birth certificate."}</p>
       <button type="button" data-nfc-customise>Customise</button>
     </div>
     <form data-nfc-phone-form hidden>
@@ -21,7 +21,7 @@ export function nfcActivationHtml(endpoint: string, processing = false) {
     </form>
     <form data-nfc-details-form hidden>
       <h2>Your plushie’s birth certificate</h2>
-      <label>Choose your plushie<select name="orderId" required></select></label>
+      <label data-nfc-order-choice>Choose your plushie<select name="orderId" required></select></label>
       <div class="mp-nfc-activation__fields">
         <label>Character<select name="character" required><option value="">Choose a character</option><option>Billy</option><option>Tootsie</option><option>Hunnie</option><option>Dragon Warrior</option></select></label>
         <label>Plushie’s name<input name="plushName" required maxlength="100" autocomplete="off"></label>
@@ -34,7 +34,7 @@ export function nfcActivationHtml(endpoint: string, processing = false) {
       <label>Meaningful note<textarea name="meaningfulNote" rows="5" maxlength="4000"></textarea></label>
       <p>Check your details before activating this card.</p>
       <button type="submit">Save details &amp; activate card</button>
-      <button type="button" data-nfc-change-phone>Verify order again</button>
+      <button type="button" data-nfc-change-phone ${linked ? "hidden" : ""}>Verify order again</button>
     </form>
     <div data-nfc-processing ${processing ? "" : "hidden"}>
       <h2>Your details are saved</h2><p>Your card is linked to your plushie. We’re preparing its birth certificate.</p>
