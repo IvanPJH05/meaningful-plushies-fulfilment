@@ -17,6 +17,7 @@ final class RollingEncoder implements AutoCloseable {
     RollingEncoder(int width,int height,Listener listener) throws Exception {
         MediaFormat format=MediaFormat.createVideoFormat("video/avc",width,height);
         format.setInteger(MediaFormat.KEY_COLOR_FORMAT,MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
+        format.setInteger(MediaFormat.KEY_PROFILE,MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline);
         format.setInteger(MediaFormat.KEY_BIT_RATE,2_000_000);format.setInteger(MediaFormat.KEY_FRAME_RATE,24);format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL,1);
         codec=MediaCodec.createEncoderByType("video/avc");
         codec.configure(format,null,null,MediaCodec.CONFIGURE_FLAG_ENCODE);surface=codec.createInputSurface();codec.start();

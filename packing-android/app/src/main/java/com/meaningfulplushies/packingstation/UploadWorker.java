@@ -15,7 +15,7 @@ public final class UploadWorker extends Worker {
     static void scheduleRecovery(Context context){WorkManager.getInstance(context).enqueueUniquePeriodicWork("packing-video-recovery",ExistingPeriodicWorkPolicy.KEEP,new PeriodicWorkRequest.Builder(UploadWorker.class,15,TimeUnit.MINUTES).setConstraints(new Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build());}
     @NonNull @Override public Result doWork(){
         synchronized(LOCK){
-            Context context=getApplicationContext();String token=SessionStore.token(context);if(token.isEmpty())return Result.retry();
+            Context context=getApplicationContext();ProofQueue.recoverCompleted(context);String token=SessionStore.token(context);if(token.isEmpty())return Result.retry();
             PackingApi api=new PackingApi(token);boolean failed=false;HashSet<String> attempted=new HashSet<>();
             // Re-read between files so a clip completed during upload joins this run.
             for(;;){File selected=null;for(File f:ProofQueue.entries(context))if(!attempted.contains(f.getName())){selected=f;break;}if(selected==null || isStopped())break;attempted.add(selected.getName());
