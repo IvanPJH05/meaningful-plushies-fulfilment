@@ -41,14 +41,15 @@ final class RollingEncoder implements AutoCloseable {
             } catch(Exception error){if(running){ring.fail("The camera encoder stopped. Reconnect the webcam and scan again.");PacketRing.Capture failed=ring.takeFinished();if(failed!=null)listener.finished(failed,outputFormat);listener.error("The camera encoder stopped. Reconnect the webcam.");}}
         },"packing-h264");drain.start();
     }
-    static void save(File file,PacketRing.Capture capture,MediaFormat format) throws Exception {
+    static void save(File file,PacketRing.Capture capture,MediaFormat format) throws Exception {save(file,capture,format,0);}
+    static void save(File file,PacketRing.Capture capture,MediaFormat format,int rotation) throws Exception {
         if(!capture.error.isEmpty() || !capture.verified || format==null || capture.packets.isEmpty() || !capture.packets.get(0).key)throw new Exception("No complete verified packing recording is available.");
         PacketRing.Packet last=capture.packets.get(capture.packets.size()-1);
         if(last.pts<capture.scanPts+20_750_000)throw new Exception("The recording ended before the parcel was completely captured.");
         MediaMuxer muxer=new MediaMuxer(file.getAbsolutePath(),MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
         boolean started=false;
         try{
-            int track=muxer.addTrack(format);muxer.start();started=true;
+            muxer.setOrientationHint(rotation);int track=muxer.addTrack(format);muxer.start();started=true;
             for(PacketRing.Packet packet:capture.packets){MediaCodec.BufferInfo info=new MediaCodec.BufferInfo();info.set(0,packet.bytes.length,packet.pts-capture.startPts,packet.key?MediaCodec.BUFFER_FLAG_KEY_FRAME:0);muxer.writeSampleData(track,ByteBuffer.wrap(packet.bytes),info);}
             muxer.stop();started=false;
         } finally{if(started)try{muxer.stop();}catch(Exception ignored){}muxer.release();}

@@ -11,6 +11,45 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.Assert.*;
 @RunWith(AndroidJUnit4.class)
 public class NativeRecordingTest {
+    @org.junit.Rule public androidx.test.rule.GrantPermissionRule cameraPermission=androidx.test.rule.GrantPermissionRule.grant(android.Manifest.permission.CAMERA);
+    @Test public void tabletCameraRecordsAndCanSwitchToAnotherCamera() throws Exception {
+        android.app.Instrumentation instrumentation=InstrumentationRegistry.getInstrumentation();
+        Context context=instrumentation.getTargetContext();
+        android.app.Activity activity=instrumentation.startActivitySync(new android.content.Intent(context,MainActivity.class).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
+        android.hardware.camera2.CameraManager manager=(android.hardware.camera2.CameraManager)context.getSystemService(Context.CAMERA_SERVICE);
+        String[] ids=manager.getCameraIdList();assertTrue("The emulator must expose a tablet camera",ids.length>0);
+        try {
+            for(int cameraIndex=0;cameraIndex<Math.min(2,ids.length);cameraIndex++){
+                String cameraId=ids[cameraIndex];AtomicReference<RollingEncoder> encoder=new AtomicReference<>();
+                AtomicReference<PacketRing.Capture> completed=new AtomicReference<>();AtomicReference<MediaFormat> format=new AtomicReference<>();AtomicReference<String> error=new AtomicReference<>();
+                java.util.concurrent.atomic.AtomicInteger rotation=new java.util.concurrent.atomic.AtomicInteger();
+                TabletCamera camera=new TabletCamera();android.view.TextureView preview=new android.view.TextureView(activity);
+                instrumentation.runOnMainSync(()->activity.setContentView(preview));
+                long until=System.currentTimeMillis()+5000;while(!preview.isAvailable()&&System.currentTimeMillis()<until)Thread.sleep(50);
+                assertTrue("Attached camera preview is available",preview.isAvailable());
+                File video=new File(context.getCacheDir(),"tablet-camera-test-"+cameraIndex+".mp4");
+                try{
+                    instrumentation.runOnMainSync(()->{try{camera.open(context,cameraId,preview,0,new TabletCamera.Listener(){
+                        public android.view.Surface prepare(int width,int height,int degrees) throws Exception {
+                            rotation.set(degrees);RollingEncoder recorder=new RollingEncoder(width,height,new RollingEncoder.Listener(){public void finished(PacketRing.Capture clip,MediaFormat f){completed.set(clip);format.set(f);}public void error(String message){error.set(message);}});encoder.set(recorder);return recorder.surface;
+                        }
+                        public void ready(){}
+                        public void error(String message){error.set(message);}
+                    });}catch(Exception failure){error.set(failure.toString());}});
+                    until=System.currentTimeMillis()+15000;
+                    while(error.get()==null&&(encoder.get()==null||!encoder.get().ring.ready(System.nanoTime()/1000))&&System.currentTimeMillis()<until)Thread.sleep(50);
+                    assertNull(error.get());assertNotNull(encoder.get());assertTrue("Camera supplies fresh rolling history",encoder.get().ring.ready(System.nanoTime()/1000));
+                    if(cameraIndex==0){
+                        PacketRing.Capture clip=encoder.get().ring.begin(System.nanoTime()/1000,System.currentTimeMillis());clip.verified=true;
+                        until=System.currentTimeMillis()+27000;while(completed.get()==null&&error.get()==null&&System.currentTimeMillis()<until)Thread.sleep(50);
+                        assertNull(error.get());assertNotNull("Tablet camera completes a packing clip",completed.get());assertEquals("",completed.get().error);
+                        RollingEncoder.save(video,completed.get(),format.get(),rotation.get());
+                        MediaMetadataRetriever metadata=new MediaMetadataRetriever();try{metadata.setDataSource(video.getPath());assertEquals(String.valueOf(rotation.get()),metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION));assertTrue(Long.parseLong(metadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION))>=23700);}finally{metadata.release();}
+                    }
+                }finally{instrumentation.runOnMainSync(camera::close);if(encoder.get()!=null)encoder.get().close();video.delete();}
+            }
+        }finally{instrumentation.runOnMainSync(activity::finish);}
+    }
     @Test public void nativeEncoderKeepsHistoryAndWritesACompleteSeekableMp4() throws Exception {
         Context context=InstrumentationRegistry.getInstrumentation().getTargetContext();
         AtomicReference<PacketRing.Capture> completed=new AtomicReference<>();AtomicReference<MediaFormat> format=new AtomicReference<>();AtomicReference<String> failure=new AtomicReference<>();
