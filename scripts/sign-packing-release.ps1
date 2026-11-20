@@ -20,7 +20,7 @@ $aligned = [System.IO.Path]::GetFullPath($OutputApk)+'.aligned.apk'
 try {
     if (Test-Path -LiteralPath $keyFile) {
         if (!(Test-Path -LiteralPath $passwordFile)) { throw 'Restore the existing signing password; do not generate a replacement key.' }
-        $securePassword = Get-Content -LiteralPath $passwordFile -Raw | ConvertTo-SecureString
+        $securePassword = (Get-Content -LiteralPath $passwordFile -Raw).Trim() | ConvertTo-SecureString
         $env:MP_PACKING_SIGNING_PASSWORD = [System.Net.NetworkCredential]::new('', $securePassword).Password
     } else {
         if (Test-Path -LiteralPath $passwordFile) { throw 'The signing key is missing. Restore it before building another release.' }
