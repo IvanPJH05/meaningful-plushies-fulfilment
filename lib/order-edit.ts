@@ -1,3 +1,4 @@
+import { validDeliveryDay } from "./order-delivery-schedule.ts";
 import type { Order } from "./types";
 
 // Financial fields, stage/history, identifiers and integration metadata are
@@ -25,6 +26,10 @@ export function parseOrderEdit(value: unknown): OrderEdit {
   for (const [key, field] of entries) {
     if (textFields.has(key)) {
       if (typeof field !== "string" || field.length > 20_000) return fail();
+    } else if (key === "deliveryNeededBy") {
+      if (typeof field !== "string" || (field !== "" && !validDeliveryDay(field))) return fail();
+    } else if (key === "deliveryRegion") {
+      if (typeof field !== "string" || !["", "west", "east"].includes(field)) return fail();
     } else if (assetFields.has(key)) {
       if (typeof field !== "string" || field.length > 7_000_000
         || (field !== "" && !/^data:[^,]*;base64,/.test(field))) return fail();

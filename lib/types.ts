@@ -340,6 +340,10 @@ export type Order = {
   creatorId?: string;
   creatorFreeOrder?: boolean;
   shippingMethod?: string;
+  deliveryNeededBy?: string;
+  deliveryRegion?: "west" | "east" | "";
+  shipByDate?: string;
+  fulfilmentUnlockDate?: string;
   product: string;
   /** Distinguishes the audio-only Plush Charm flow from a classic plushie. */
   productType?: "plush_charm" | "classic_plushie" | string;

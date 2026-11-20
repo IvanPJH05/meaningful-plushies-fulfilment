@@ -24,6 +24,8 @@ export async function PATCH(request: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "SAVE_FAILED";
     if (message === "INVALID_ORDER_EDIT") return NextResponse.json({ error: "Invalid order edit." }, { status: 400 });
+    if (message === "INVALID_DELIVERY_SCHEDULE") return NextResponse.json({ error: "Choose a valid future needed-by date and West or East Malaysia." }, { status: 400 });
+    if (message === "DELIVERY_SCHEDULE_STARTED") return NextResponse.json({ error: "This order has already entered production. Its delivery schedule cannot be changed here." }, { status: 409 });
     if (message === "ORDER_CHANGED") return NextResponse.json({ error: "This order changed since you started editing. Your draft is kept. Review the latest order before saving again." }, { status: 409 });
     if (message === "ORDER_NOT_FOUND") return NextResponse.json({ error: "This order no longer exists." }, { status: 404 });
     if (message === "LOGIN_REQUIRED") return NextResponse.json({ error: "Sign in again to save this order." }, { status: 401 });
