@@ -1,4 +1,4 @@
-import { matchesProductionBarcode } from "./production-tracking";
+import { matchesProductionBarcode } from "./production-tracking.ts";
 
 // Extract only scalar packing fields in Postgres. Voice and label attachments
 // can be tens of megabytes and must never enter a scanner lookup response.
