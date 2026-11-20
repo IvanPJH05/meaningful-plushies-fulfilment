@@ -100,14 +100,14 @@ public final class MainActivity extends Activity {
         if(scan==null||networkBusy||capture!=null||savingLocal||feedback.isBusy())return;if(!serviceReady){pairingProblem(new Exception("Check the connection before scanning live orders."),"");return;}String code=scan.getText().toString().trim().toUpperCase(Locale.ROOT);scan.setText("");if(code.isEmpty())return;
         long mono=System.nanoTime()/1000,epoch=System.currentTimeMillis();
         if(code.matches("NFC-[0-9]{6,12}")||(pendingOrder!=null&&code.matches("[0-9]{6}"))){if(pendingOrder!=null)beginCard(code,mono,epoch);else validateFirstCard(code);return;}
-        pendingOrder=null;pendingUntil=0;lastOrderId="";networkBusy=true;tell("Finding order...");refreshState();
+        pendingOrder=null;if(pendingCard.isEmpty())pendingUntil=0;lastOrderId="";networkBusy=true;tell("Finding order...");refreshState();
         io.execute(()->{try{
             PackingApi api=new PackingApi(SessionStore.token(this));JSONObject item=api.request(PackingApi.PACKING+"?scanBarcode="+PackingApi.encode(code),null).optJSONObject("item");
             if(item==null)throw new Exception("Order barcode not recognised. Scan the individual packing-slip barcode.");
             JSONObject packed=api.request(PackingApi.SCAN,new JSONObject().put("action","scanner_pack").put("orderId",item.getString("order_id")).put("orderBarcode",code));
             if(!packed.optBoolean("ok"))throw new Exception("Packed status was not confirmed. Scan the order again.");
             JSONObject found=item;runOnUiThread(()->{networkBusy=false;pendingOrder=found;lastOrderId=found.optString("order_id");pendingBarcode=code;pendingUntil=System.currentTimeMillis()+60000;JSONObject order=found.optJSONObject("order");orderLabel.setText("#"+order.optString("orderNumber")+" - PACKED\n"+order.optString("customerName")+"\n"+order.optString("plushName")+" · "+order.optString("character"));tell("Order packed. Scan its matching ID card.");if(!pendingCard.isEmpty()){String card=pendingCard;pendingCard="";beginCard(card,mono,epoch);}else focusScan();});
-        }catch(Exception error){runOnUiThread(()->pairingProblem(error,""));}});
+        }catch(Exception error){runOnUiThread(()->{pendingCard="";pendingUntil=0;pairingProblem(error,"");});}});
     }
 
     private void validateFirstCard(String code){networkBusy=true;refreshState();io.execute(()->{try{new PackingApi(SessionStore.token(this)).request(PackingApi.SCAN+"?nfc="+PackingApi.encode(code)+"&packingProof=1",null);runOnUiThread(()->{networkBusy=false;pendingCard=code;pendingUntil=System.currentTimeMillis()+60000;tell("Card ready. Scan its order within one minute.");focusScan();});}catch(Exception error){runOnUiThread(()->pairingProblem(error,""));}});}
