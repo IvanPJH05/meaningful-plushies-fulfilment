@@ -3,17 +3,21 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { type ProductionItem } from "@/lib/production-tracking";
 import type { Order } from "@/lib/types";
+import type { PackingProofTicket } from "./packing-camera-station";
 
 type Pending = ({ kind: "order"; item: ProductionItem; barcode: string } | { kind: "card"; code: string }) & { expires: number };
 type Props = {
   findOrder: (barcode: string) => Promise<ProductionItem | null>;
   audioSourceFor: (order: Order) => string;
-  checkCard: (code: string) => Promise<unknown>;
+  checkCard: (code: string, orderId?: string) => Promise<unknown>;
   save: (item: ProductionItem, action: string, barcode: string, card: string, note: string) => Promise<ProductionItem[]>;
   onBusy: (busy: boolean) => void;
+  proofEnabled?: boolean;
+  recording?: boolean;
+  preparePackingProof?: (item: ProductionItem, barcode: string, card: string, scannedAt: number) => PackingProofTicket | null;
 };
 
-export function ProductionPairScanner({ findOrder, audioSourceFor, checkCard, save, onBusy }: Props) {
+export function ProductionPairScanner({ findOrder, audioSourceFor, checkCard, save, onBusy, proofEnabled=false, recording=false, preparePackingProof }: Props) {
   const [scan, setScan] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
   const [seconds, setSeconds] = useState(60);
@@ -95,7 +99,7 @@ export function ProductionPairScanner({ findOrder, audioSourceFor, checkCard, sa
   }
 
   useEffect(() => {
-    if (busy) return;
+    if (busy || recording) return;
 
     function focusScanner() {
       input.current?.focus({ preventScroll: true });
@@ -111,7 +115,7 @@ export function ProductionPairScanner({ findOrder, audioSourceFor, checkCard, sa
     focusScanner();
     document.addEventListener("click", focusFromPage);
     return () => document.removeEventListener("click", focusFromPage);
-  }, [busy]);
+  }, [busy, recording, proofEnabled]);
 
   // A keyboard scanner sends its characters as a burst. Select any text
   // left idle so the next burst replaces it, even if the field kept focus.
@@ -133,14 +137,18 @@ export function ProductionPairScanner({ findOrder, audioSourceFor, checkCard, sa
     return () => clearInterval(timer);
   }, [pending]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function pair(item: ProductionItem, barcode: string, code: string) {
+  async function pair(item: ProductionItem, barcode: string, code: string, scannedAt: number) {
     const previous = current.current;
     player.current?.pause();
+    let ticket: PackingProofTicket | null = null;
     try {
+      ticket = preparePackingProof?.(item, barcode, code, scannedAt) || null;
       await save(item, "packed", barcode, code, "");
+      ticket?.confirm();
       update(null);
       show("NFC card paired successfully. Order packed and ready for J and T pickup.", item);
     } catch (error) {
+      ticket?.cancel();
       if (previous?.kind === "card") update(null);
       show("Unable to pair. " + failureText(error), item);
     }
@@ -149,7 +157,8 @@ export function ProductionPairScanner({ findOrder, audioSourceFor, checkCard, sa
   function submit(event: FormEvent) {
     event.preventDefault();
     const value = scan.trim();
-    if (lock.current) return;
+    if (lock.current || recording) return;
+    const scannedAt = performance.now();
     setScan("");
     if (!value) return;
     void run(async () => {
@@ -162,7 +171,7 @@ export function ProductionPairScanner({ findOrder, audioSourceFor, checkCard, sa
       if (item) {
         setSelected(item);
         setNote("");
-        if (item.certificate_code || item.nfc_paired) {
+        if ((item.certificate_code || item.nfc_paired) && !proofEnabled) {
           update(null);
           if (previous?.kind === "card") show("Order packed. This order already has an activated card.", item);
           else { setStatus("Order packed. Already paired. Playing the saved recording for review."); play(item); }
@@ -170,7 +179,7 @@ export function ProductionPairScanner({ findOrder, audioSourceFor, checkCard, sa
         }
         if (previous?.kind === "card") {
           if (Date.now() >= previous.expires) { await expire(previous); return; }
-          await pair(item, value, previous.code);
+          await pair(item, value, previous.code, scannedAt);
           return;
         }
         update({ kind: "order", item, barcode: value, expires: Date.now() + 60000 });
@@ -185,12 +194,12 @@ export function ProductionPairScanner({ findOrder, audioSourceFor, checkCard, sa
         return;
       }
       if (code.startsWith("NFC-")) {
-        try { await checkCard(code); }
+        try { await checkCard(code, previous?.kind === "order" ? previous.item.order_id : undefined); }
         catch (error) { show("Unable to pair. " + failureText(error), previous?.kind === "order" ? previous.item : undefined); return; }
       }
       if (previous?.kind === "order") {
         if (Date.now() >= previous.expires) { await expire(previous); return; }
-        await pair(previous.item, previous.barcode, code);
+        await pair(previous.item, previous.barcode, code, scannedAt);
       } else {
         update({ kind: "card", code, expires: Date.now() + 60000 });
         show("Card ready. Scan the order within one minute.");
@@ -202,8 +211,8 @@ export function ProductionPairScanner({ findOrder, audioSourceFor, checkCard, sa
     <h2>Scan an order or NFC card</h2>
     <p>Scanning an order marks it Packed from any stage and confirms any previous issue was fixed. Scan its NFC card to pair it. You can scan either barcode first.</p>
     <form onSubmit={submit}>
-      <label>Scan order or NFC card<input ref={input} autoFocus onFocus={event => event.currentTarget.select()} onClick={event => event.currentTarget.select()} value={scan} onChange={event => setScan(event.target.value)} disabled={busy} autoComplete="off" /></label>
-      <button disabled={busy} type="submit">Scan</button>
+      <label>Scan order or NFC card<input ref={input} autoFocus onFocus={event => event.currentTarget.select()} onClick={event => event.currentTarget.select()} value={scan} onChange={event => setScan(event.target.value)} disabled={busy || recording} autoComplete="off" /></label>
+      <button disabled={busy || recording} type="submit">Scan</button>
     </form>
     {pending && <p>{seconds} seconds remaining · {pending.kind === "card" ? pending.code : "#" + (pending.item.order?.orderNumber || pending.item.order_id)}</p>}
     <p role="status">{status}</p>

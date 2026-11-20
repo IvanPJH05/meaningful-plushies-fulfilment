@@ -50,10 +50,13 @@ export async function GET(request:Request){try{
  const card = url.searchParams.get("nfc");
  if (card !== null) {
   if (!/^NFC-\d{6,12}$/i.test(card)) throw new PairingError("Scan a valid NFC card barcode.");
-  const {data,error}=await client.from("nfc_cards").select("status,programmed_at").eq("id",Number(card.slice(4))).maybeSingle();
+  const {data,error}=await client.from("nfc_cards").select("status,programmed_at,order_id").eq("id",Number(card.slice(4))).maybeSingle();
   if(error)throw error;
   if(!data)throw new PairingError("NFC card not found.");
-  if(data.status==="assigned")throw new PairingError("This NFC card is already activated.");
+  if(data.status==="assigned") {
+   if(url.searchParams.get("packingProof")==="1" && (!url.searchParams.get("orderId") || data.order_id===url.searchParams.get("orderId"))) return NextResponse.json({ok:true},{headers});
+   throw new PairingError("This NFC card is already activated.");
+  }
   if(data.status!=="available")throw new PairingError("This NFC card is voided.");
   if(!data.programmed_at)throw new PairingError("This NFC card has not been programmed.");
   return NextResponse.json({ok:true},{headers});
