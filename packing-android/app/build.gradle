@@ -11,7 +11,7 @@ android {
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
-    buildTypes { release { minifyEnabled false; signingConfig signingConfigs.debug } }
+    buildTypes { release { minifyEnabled false } }
     packaging { jniLibs { useLegacyPackaging false } }
     lint { abortOnError true; checkReleaseBuilds true }
 }
