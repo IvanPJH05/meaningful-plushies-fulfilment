@@ -1,0 +1,53 @@
+name: Packing Station Android APK
+on:
+  push:
+    branches: [codex/packing-station-android]
+    paths: ['packing-android/**', '.github/workflows/packing-station-android.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install Android platform
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"'
+      - name: Compile, lint, unit test and assemble the separate app
+        working-directory: packing-android
+        run: chmod +x gradlew && ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon
+      - name: Prepare installable APK
+        run: mkdir -p packing-apk && cp packing-android/app/build/outputs/apk/debug/app-debug.apk packing-apk/meaningful-packing-station-test.apk && cp packing-android/INSTALL.md packing-apk/ && sha256sum packing-apk/*.apk > packing-apk/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: meaningful-packing-station-apk
+          path: packing-apk/
+          retention-days: 14
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Verify native video recording on Android
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_c
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          script: cd packing-android && ./gradlew :app:connectedDebugAndroidTest --no-daemon
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: packing-station-test-reports
+          path: |
+            packing-android/app/build/reports/
+            packing-android/app/build/outputs/androidTest-results/
+          retention-days: 14

@@ -1,0 +1,156 @@
+package com.meaningfulplushies.packingstation;
+
+import android.Manifest;
+import android.app.*;
+import android.content.*;
+import android.content.pm.PackageManager;
+import android.graphics.*;
+import android.graphics.drawable.GradientDrawable;
+import android.hardware.usb.*;
+import android.media.*;
+import android.net.Uri;
+import android.os.*;
+import android.provider.Settings;
+import android.view.*;
+import android.view.inputmethod.*;
+import android.widget.*;
+import com.herohan.uvcapp.*;
+import com.serenegiant.usb.Size;
+import org.json.JSONObject;
+import java.io.File;
+import java.util.*;
+import java.util.concurrent.*;
+
+public final class MainActivity extends Activity {
+    private final Handler ui=new Handler(Looper.getMainLooper());
+    private final ExecutorService io=Executors.newSingleThreadExecutor();
+    private final int NAVY=Color.rgb(20,38,60),BLUE=Color.rgb(37,99,235),MUTED=Color.rgb(98,119,142);
+    private EditText scan;private TextView cameraState,status,orderLabel,uploadLabel;private TextureView preview;
+    private Button cameraButton;private boolean demo=false,networkBusy=false,savingLocal=false,cameraRequested=false,foreground=false;
+    private ICameraHelper helper;private UsbDevice selectedUsb;private RollingEncoder encoder;private MediaPlayer player;
+    private JSONObject pendingOrder;private String pendingBarcode="",pendingCard="";private long pendingUntil;
+    private PacketRing.Capture capture;private JSONObject clipOrder;private String clipBarcode,clipCard,clipId;
+    private boolean clipDemo;private long scanAtMono,scanAtEpoch;private int ticks=0;
+    private final Runnable heartbeat=new Runnable(){public void run(){if(!foreground)return;refreshState();if(++ticks%60==0&&!demo)UploadWorker.enqueue(MainActivity.this);ui.postDelayed(this,250);}};
+
+    @Override public void onCreate(Bundle state){super.onCreate(state);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);if(SessionStore.token(this).isEmpty())loginScreen();else stationScreen();}
+    @Override public void onStart(){super.onStart();foreground=true;ui.post(heartbeat);}
+    @Override public void onStop(){foreground=false;ui.removeCallbacks(heartbeat);stopCamera("Webcam stopped because the app left the packing screen. Reconnect before scanning.");super.onStop();}
+    @Override public void onDestroy(){if(player!=null)player.release();if(helper!=null)helper.release();io.shutdown();super.onDestroy();}
+    private int dp(float value){return (int)(value*getResources().getDisplayMetrics().density+.5f);}
+    private GradientDrawable background(int color){GradientDrawable drawable=new GradientDrawable();drawable.setColor(color);drawable.setCornerRadius(dp(16));return drawable;}
+    private TextView text(String value,int size,int color){TextView view=new TextView(this);view.setText(value);view.setTextSize(size);view.setTextColor(color);view.setPadding(0,dp(5),0,dp(5));return view;}
+    private TextView title(String value,int size){TextView view=text(value,size,NAVY);view.setTypeface(null,android.graphics.Typeface.BOLD);return view;}
+    private LinearLayout column(){LinearLayout view=new LinearLayout(this);view.setOrientation(LinearLayout.VERTICAL);return view;}
+    private LinearLayout card(){LinearLayout view=column();view.setPadding(dp(22),dp(18),dp(22),dp(18));view.setBackground(background(Color.WHITE));LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2);params.setMargins(0,dp(12),0,dp(12));view.setLayoutParams(params);return view;}
+    private Button button(String label,Runnable action){Button button=new Button(this);button.setText(label);button.setAllCaps(false);button.setTextColor(Color.WHITE);button.setBackgroundTintList(android.content.res.ColorStateList.valueOf(BLUE));button.setOnClickListener(v->action.run());return button;}
+    private EditText field(String hint,boolean password){EditText field=new EditText(this);field.setSingleLine(true);field.setHint(hint);field.setTextSize(18);field.setPadding(dp(14),dp(12),dp(14),dp(12));field.setBackground(background(Color.rgb(241,245,250)));if(password)field.setInputType(129);return field;}
+    private LinearLayout root(){ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(Color.rgb(242,246,251));LinearLayout root=column();root.setPadding(dp(26),dp(20),dp(26),dp(20));scroll.addView(root);setContentView(scroll);return root;}
+
+    private void loginScreen(){
+        demo=false;pendingOrder=null;pendingCard="";scan=null;LinearLayout root=root();root.addView(title("MEANINGFUL PLUSHIES",15));root.addView(title("Packing Station",32));root.addView(text("A dedicated station for your Bluetooth scanner and USB webcam.",16,MUTED));
+        LinearLayout box=card();root.addView(box);box.addView(title("Staff sign-in",23));EditText name=field("Username",false),password=field("Password",true);box.addView(name);box.addView(password);TextView message=text("Use your existing fulfilment staff account.",15,MUTED);box.addView(message);
+        Button sign=button("Sign in",()->{});box.addView(sign);sign.setOnClickListener(v->{sign.setEnabled(false);message.setText("Signing in...");io.execute(()->{try{JSONObject result=new PackingApi("").request("/api/mobile/login",new JSONObject().put("username",name.getText().toString().trim()).put("password",password.getText().toString()));SessionStore.save(this,result.getString("token"));getSharedPreferences("station",MODE_PRIVATE).edit().putString("staff",result.optString("displayName","Staff")).apply();runOnUiThread(()->{password.setText("");stationScreen();UploadWorker.enqueue(this);});}catch(Exception error){runOnUiThread(()->{message.setText(error.getMessage());sign.setEnabled(true);});}});});
+        root.addView(button("Test webcam and scanner - demo only",()->{demo=true;stationScreen();}));root.addView(text("Demo mode never updates live orders or uploads test recordings.",14,MUTED));
+    }
+
+    private void stationScreen(){
+        pendingOrder=null;pendingCard="";LinearLayout root=root();root.addView(title("MEANINGFUL PLUSHIES  /  "+(demo?"DEMO MODE":"PACKING"),14));root.addView(title("Scan. Check. Pack.",32));root.addView(text(demo?"No live orders will be changed. Test codes: MPDEMO1001 + NFC-100001.":"Order scan marks Packed. Matching ID-card scan saves the packing video.",15,MUTED));
+        LinearLayout row=new LinearLayout(this);row.setOrientation(getResources().getConfiguration().screenWidthDp>=850?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);root.addView(row);
+        LinearLayout left=card(),right=card();if(row.getOrientation()==LinearLayout.HORIZONTAL){left.setLayoutParams(new LinearLayout.LayoutParams(0,-2,1));right.setLayoutParams(new LinearLayout.LayoutParams(0,-2,1));((LinearLayout.LayoutParams)right.getLayoutParams()).leftMargin=dp(18);}row.addView(left);row.addView(right);
+        left.addView(title("USB webcam",22));cameraState=text("CAMERA OFF",14,MUTED);left.addView(cameraState);preview=new TextureView(this);preview.setBackgroundColor(NAVY);left.addView(preview,new LinearLayout.LayoutParams(-1,dp(280)));
+        preview.setSurfaceTextureListener(new TextureView.SurfaceTextureListener(){public void onSurfaceTextureAvailable(SurfaceTexture s,int w,int h){if(helper!=null&&helper.isCameraOpened())helper.addSurface(s,false);}public void onSurfaceTextureSizeChanged(SurfaceTexture s,int w,int h){}public boolean onSurfaceTextureDestroyed(SurfaceTexture s){if(helper!=null)helper.removeSurface(s);return true;}public void onSurfaceTextureUpdated(SurfaceTexture s){}});
+        cameraButton=button("Connect / choose USB webcam",this::connectCamera);left.addView(cameraButton);left.addView(text("3 seconds before the matching scan + 20 seconds after. Video only; no microphone.",14,MUTED));
+        right.addView(title("Barcode scanner",22));orderLabel=title("Waiting for an order",23);right.addView(orderLabel);scan=field("Scan order or ID-card barcode",false);scan.setShowSoftInputOnFocus(false);scan.setImeOptions(EditorInfo.IME_ACTION_DONE);scan.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(512)});right.addView(scan);
+        scan.setOnEditorActionListener((v,action,event)->{if(action==EditorInfo.IME_ACTION_DONE || (event!=null&&event.getKeyCode()==KeyEvent.KEYCODE_ENTER&&event.getAction()==KeyEvent.ACTION_DOWN)){submit();return true;}return false;});scan.setOnKeyListener((v,key,event)->{if(key==KeyEvent.KEYCODE_ENTER&&event.getAction()==KeyEvent.ACTION_DOWN){submit();return true;}return false;});
+        right.addView(button("Submit scan",this::submit));status=text("Connect the webcam, wait for READY, then scan the order and its matching ID card.",17,MUTED);right.addView(status);
+        Button keyboard=button("Type a code manually",()->{scan.setShowSoftInputOnFocus(true);scan.requestFocus();((InputMethodManager)getSystemService(INPUT_METHOD_SERVICE)).showSoftInput(scan,InputMethodManager.SHOW_IMPLICIT);});right.addView(keyboard);
+        LinearLayout uploads=card();root.addView(uploads);uploads.addView(title(demo?"Local demo recording":"Video uploads",21));uploadLabel=text("",15,MUTED);uploads.addView(uploadLabel);uploads.addView(button(demo?"Play last demo video":"Retry uploads now",()->{if(demo)playDemo();else{UploadWorker.enqueue(this);tell("Retry requested. Local videos stay safe until the server confirms saving.");}}));
+        LinearLayout actions=new LinearLayout(this);root.addView(actions);actions.addView(button("Bluetooth settings",()->startActivity(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS))));actions.addView(button(demo?"Exit demo":"Sign out",()->{if(capture!=null||savingLocal||networkBusy){tell("Finish this parcel before signing out.");return;}stopCamera("");if(!demo)SessionStore.clear(this);loginScreen();}));
+        root.setOnClickListener(v->focusScan());focusScan();refreshState();
+    }
+
+    private void tell(String message){if(status!=null)status.setText(message);}
+    private void focusScan(){if(scan!=null&&!networkBusy&&capture==null&&!savingLocal){scan.requestFocus();scan.selectAll();}}
+    private void refreshState(){
+        if(scan==null)return;
+        long now=System.nanoTime()/1000;boolean ready=encoder!=null&&encoder.ring.ready(now);
+        cameraState.setText(capture!=null?"RECORDING - "+Math.max(0,21-(System.currentTimeMillis()-capture.scanEpochMs)/1000)+"s":ready?"READY - USB webcam connected":encoder!=null?"WARMING UP - 3-second history":"CAMERA OFF");
+        cameraState.setTextColor(capture!=null?Color.rgb(170,45,45):ready?Color.rgb(19,125,84):MUTED);
+        scan.setEnabled(!networkBusy&&capture==null&&!savingLocal);cameraButton.setEnabled(capture==null&&!savingLocal&&!networkBusy);
+        if(!demo){File[] files=ProofQueue.entries(this);String summary=files.length==0?getSharedPreferences("station",MODE_PRIVATE).getString("lastSaved","No videos waiting to upload."):files.length+" video(s) safely on this tablet, waiting to finish uploading.";
+            if(files.length>0)try{String error=ProofQueue.read(files[0]).optString("lastError","");if(!error.isEmpty())summary+="\n"+error;}catch(Exception ignored){}uploadLabel.setText(summary);
+        }else uploadLabel.setText(getSharedPreferences("station",MODE_PRIVATE).getString("lastDemo", "Complete a demo order/card scan to save a test video on this tablet."));
+        if(pendingUntil>0 && System.currentTimeMillis()>pendingUntil && !networkBusy && capture==null){pendingOrder=null;pendingCard="";pendingUntil=0;orderLabel.setText("Waiting for an order");tell("Pairing window expired. Scan the order again; its Packed status is preserved.");}
+    }
+
+    private void submit(){
+        if(scan==null||networkBusy||capture!=null||savingLocal)return;String code=scan.getText().toString().trim().toUpperCase(Locale.ROOT);scan.setText("");if(code.isEmpty())return;
+        long mono=System.nanoTime()/1000,epoch=System.currentTimeMillis();
+        if(code.matches("NFC-[0-9]{6,12}")||(pendingOrder!=null&&code.matches("[0-9]{6}"))){if(pendingOrder!=null)beginCard(code,mono,epoch);else validateFirstCard(code);return;}
+        networkBusy=true;tell("Finding order...");refreshState();
+        io.execute(()->{try{
+            JSONObject item;
+            if(demo){if(!code.equals("MPDEMO1001")&&!code.equals("DEMO1001"))throw new Exception("Demo order code is MPDEMO1001.");item=new JSONObject().put("order_id","demo-1001").put("order",new JSONObject().put("orderNumber","DEMO1001").put("plushName","Demo plushie"));}
+            else{PackingApi api=new PackingApi(SessionStore.token(this));item=api.request(PackingApi.SCAN+"?scanBarcode="+PackingApi.encode(code),null).optJSONObject("item");if(item==null)throw new Exception("Order barcode not recognised. Scan the individual packing-slip barcode.");api.request(PackingApi.SCAN,new JSONObject().put("action","scanner_pack").put("orderId",item.getString("order_id")).put("orderBarcode",code));}
+            JSONObject found=item;runOnUiThread(()->{networkBusy=false;pendingOrder=found;pendingBarcode=code;pendingUntil=System.currentTimeMillis()+60000;JSONObject order=found.optJSONObject("order");orderLabel.setText("#"+order.optString("orderNumber")+" - PACKED");tell("Order packed. Scan its matching ID card.");if(!demo)playVoice(found.optString("order_id"));if(!pendingCard.isEmpty()){String card=pendingCard;pendingCard="";beginCard(card,mono,epoch);}else focusScan();});
+        }catch(Exception error){fail(error);}});
+    }
+
+    private void validateFirstCard(String code){networkBusy=true;refreshState();io.execute(()->{try{if(demo){if(!code.equals("NFC-100001"))throw new Exception("Demo ID-card code is NFC-100001.");}else new PackingApi(SessionStore.token(this)).request(PackingApi.SCAN+"?nfc="+PackingApi.encode(code)+"&packingProof=1",null);runOnUiThread(()->{networkBusy=false;pendingCard=code;pendingUntil=System.currentTimeMillis()+60000;tell("Card ready. Scan its order within one minute.");focusScan();});}catch(Exception error){fail(error);}});}
+
+    private void beginCard(String card,long mono,long epoch){
+        if(encoder==null||!encoder.ring.ready(System.nanoTime()/1000)){tell("Connect the webcam and wait for READY, then scan the card again.");focusScan();return;}
+        if(new StatFs(getFilesDir().getPath()).getAvailableBytes()<150*1024*1024L){tell("Tablet storage is low. Upload the waiting videos before packing another parcel.");return;}
+        try{capture=encoder.ring.begin(mono,epoch);}catch(Exception error){tell(error.getMessage());return;}
+        PacketRing.Capture clip=capture;clipOrder=pendingOrder;clipBarcode=pendingBarcode;clipCard=card;clipId=UUID.randomUUID().toString();clipDemo=demo;
+        networkBusy=true;tell("Checking matching ID card and recording the packing video...");refreshState();JSONObject item=pendingOrder;
+        ui.postDelayed(()->{if(capture==clip&&!clip.verified){if(encoder!=null)encoder.ring.cancel(clip);capture=null;networkBusy=false;tell("Card verification timed out. Scan again; the video was not marked saved.");focusScan();}},20000);
+        io.execute(()->{try{
+            if(demo){if(!card.equals("NFC-100001"))throw new Exception("Wrong demo ID card; use NFC-100001.");}
+            else{PackingApi api=new PackingApi(SessionStore.token(this));api.request(PackingApi.SCAN,new JSONObject().put("action","scanner_pair").put("orderId",item.getString("order_id")).put("orderBarcode",clipBarcode).put("cardCode",card));}
+            runOnUiThread(()->{if(capture!=clip)return;clip.verified=true;networkBusy=false;pendingOrder=null;pendingCard="";pendingUntil=0;tell("Matching card confirmed. Keep packing until the recording countdown finishes.");});
+        }catch(Exception error){runOnUiThread(()->{if(encoder!=null)encoder.ring.cancel(clip);if(capture==clip)capture=null;networkBusy=false;tell(error.getMessage());focusScan();});}});
+    }
+
+    private void finished(PacketRing.Capture clip,MediaFormat format){runOnUiThread(()->{
+        if(capture!=clip)return;if(!clip.error.isEmpty()||!clip.verified){capture=null;tell(clip.error.isEmpty()?"Card verification was not complete. Scan again.":clip.error);focusScan();return;}
+        capture=null;savingLocal=true;JSONObject item=clipOrder;String code=clipBarcode,card=clipCard,id=clipId;boolean test=clipDemo;tell("Saving the packing video safely on the tablet...");
+        io.execute(()->{try{
+            File dir=test?new File(getFilesDir(),"packing-demo"):ProofQueue.folder(this);dir.mkdirs();File video=new File(dir,id+".mp4");RollingEncoder.save(video,clip,format);
+            String number=item.getJSONObject("order").optString("orderNumber",item.getString("order_id"));
+            if(test)getSharedPreferences("station",MODE_PRIVATE).edit().putString("lastDemo","Demo video saved locally - "+number+". No live order changed.").putString("demoPath",video.getAbsolutePath()).apply();
+            else{ProofQueue.write(new File(dir,id+".json"),ProofQueue.metadata(id,item.getString("order_id"),number,code,card,clip,video));UploadWorker.enqueue(this);}
+            runOnUiThread(()->{savingLocal=false;tell(test?"Demo video saved on this tablet. Use Play last demo video to review it.":"Packing video secured on tablet and queued for automatic upload to #"+number+". Ready for the next order.");focusScan();refreshState();});
+        }catch(Exception error){runOnUiThread(()->{savingLocal=false;tell("Video could not be saved: "+error.getMessage()+" Scan the parcel again.");focusScan();});}});
+    });}
+
+    private void fail(Exception error){runOnUiThread(()->{networkBusy=false;tell(error.getMessage());if(error instanceof PackingApi.ApiError&&((PackingApi.ApiError)error).status==401){stopCamera("");SessionStore.clear(this);loginScreen();}else focusScan();});}
+    private void playVoice(String id){try{if(player!=null)player.release();player=new MediaPlayer();player.setDataSource(PackingApi.BASE+"/api/mobile/orders/"+PackingApi.encode(id)+"/assets?kind=voice",Collections.singletonMap("Authorization","Bearer "+SessionStore.token(this)));player.setOnPreparedListener(MediaPlayer::start);player.setOnErrorListener((p,what,extra)->true);player.prepareAsync();}catch(Exception ignored){}}
+    private void playDemo(){String path=getSharedPreferences("station",MODE_PRIVATE).getString("demoPath","");if(path.isEmpty()||!new File(path).isFile()){tell("Complete a demo recording first.");return;}VideoView video=new VideoView(this);video.setVideoPath(path);MediaController controls=new MediaController(this);video.setMediaController(controls);video.setOnPreparedListener(MediaPlayer::start);AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Local packing demo").setView(video).setPositiveButton("Close",(d,w)->video.stopPlayback()).create();dialog.setOnDismissListener(d->video.stopPlayback());dialog.show();video.getLayoutParams().height=dp(350);}
+
+    private void connectCamera(){
+        if(capture!=null||networkBusy||savingLocal)return;
+        if(checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.CAMERA},100);return;}
+        cameraRequested=true;
+        if(helper==null){helper=new CameraHelper();helper.setStateCallback(new ICameraHelper.StateCallback(){
+            public void onAttach(UsbDevice device){if(cameraRequested&&selectedUsb==null&&videoDevice(device)){selectedUsb=device;helper.selectDevice(device);}}
+            public void onDeviceOpen(UsbDevice device,boolean first){List<Size> sizes=helper.getSupportedSizeList();Size chosen=null;if(sizes!=null)for(Size s:sizes)if(s.width==1280&&s.height==720){chosen=s;break;}if(chosen==null)helper.openCamera();else helper.openCamera(chosen);}
+            public void onCameraOpen(UsbDevice device){runOnUiThread(()->{try{Size size=helper.getPreviewSize();int width=size==null?640:size.width,height=size==null?480:size.height;encoder=new RollingEncoder(width,height,new RollingEncoder.Listener(){public void finished(PacketRing.Capture clip,MediaFormat format){MainActivity.this.finished(clip,format);}public void error(String message){runOnUiThread(()->tell(message));}});helper.addSurface(encoder.surface,true);if(preview.getSurfaceTexture()!=null)helper.addSurface(preview.getSurfaceTexture(),false);helper.startPreview();tell("USB webcam connected ("+width+" x "+height+"). Preparing 3 seconds of history...");focusScan();}catch(Exception error){stopCamera("Could not start webcam recording: "+error.getMessage());}});}
+            public void onCameraClose(UsbDevice device){runOnUiThread(()->closeEncoder("Webcam closed. Incomplete recordings are not saved."));}
+            public void onDeviceClose(UsbDevice device){}
+            public void onDetach(UsbDevice device){if(selectedUsb!=null&&selectedUsb.equals(device))runOnUiThread(()->{selectedUsb=null;closeEncoder("Webcam unplugged. Reconnect it and scan again.");});}
+            public void onCancel(UsbDevice device){runOnUiThread(()->{selectedUsb=null;tell("USB webcam permission was cancelled. Tap Connect / choose USB webcam to retry.");});}
+            public void onError(UsbDevice device,CameraException error){runOnUiThread(()->stopCamera("The USB webcam could not open. Check the dongle and reconnect it, then tap Connect."));}
+        });}
+        List<UsbDevice> all=helper.getDeviceList();ArrayList<UsbDevice> cameras=new ArrayList<>();if(all!=null)for(UsbDevice d:all)if(videoDevice(d))cameras.add(d);
+        if(cameras.isEmpty()){tell("Waiting for a USB webcam. Connect it through your dongle, allow USB access, then retry.");return;}
+        if(cameras.size()==1){selectCamera(cameras.get(0));return;}String[] names=new String[cameras.size()];for(int i=0;i<names.length;i++)names[i]=cameraName(cameras.get(i));new AlertDialog.Builder(this).setTitle("Choose USB webcam").setItems(names,(d,index)->selectCamera(cameras.get(index))).show();
+    }
+    private String cameraName(UsbDevice device){return (device.getProductName()==null?"USB webcam":device.getProductName())+" ("+device.getVendorId()+":"+device.getProductId()+")";}
+    private boolean videoDevice(UsbDevice device){if(device.getDeviceClass()==UsbConstants.USB_CLASS_VIDEO)return true;for(int i=0;i<device.getInterfaceCount();i++)if(device.getInterface(i).getInterfaceClass()==UsbConstants.USB_CLASS_VIDEO)return true;return false;}
+    private void selectCamera(UsbDevice device){if(encoder!=null&&device.equals(selectedUsb)){tell("This webcam is already connected.");focusScan();return;}if(helper!=null&&helper.isCameraOpened())helper.closeCamera();closeEncoder("");selectedUsb=device;tell("Connecting "+cameraName(device)+"...");helper.selectDevice(device);}
+    private void closeEncoder(String reason){if(capture!=null){if(encoder!=null)encoder.ring.cancel(capture);capture=null;}if(encoder!=null){if(helper!=null)helper.removeSurface(encoder.surface);encoder.close();encoder=null;}if(!reason.isEmpty())tell(reason);}
+    private void stopCamera(String reason){cameraRequested=false;closeEncoder(reason);if(helper!=null){helper.closeCamera();helper.release();helper=null;}selectedUsb=null;}
+    @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){super.onRequestPermissionsResult(request,permissions,results);if(request==100&&results.length>0&&results[0]==PackageManager.PERMISSION_GRANTED)connectCamera();else if(request==100)tell("Camera permission is needed for the USB webcam. Tap Connect to retry.");}
+}
