@@ -26,13 +26,14 @@ public final class MainActivity extends Activity {
     private final ExecutorService io=Executors.newSingleThreadExecutor();
     private final int NAVY=Color.rgb(20,38,60),BLUE=Color.rgb(37,99,235),MUTED=Color.rgb(98,119,142);
     private EditText scan;private TextView cameraState,status,orderLabel,uploadLabel;private TextureView preview;
-    private Button cameraButton;private boolean demo=false,networkBusy=false,savingLocal=false,cameraRequested=false,foreground=false;
+    private TextView connectionLabel;private boolean serviceReady=false;
+    private Button cameraButton;private boolean networkBusy=false,savingLocal=false,cameraRequested=false,foreground=false;
     private TabletCamera tabletCamera;private String activeCamera="Camera";private int videoRotation,clipRotation;
     private ICameraHelper helper;private UsbDevice selectedUsb;private RollingEncoder encoder;private MediaPlayer player;
     private JSONObject pendingOrder;private String pendingBarcode="",pendingCard="";private long pendingUntil;
     private PacketRing.Capture capture;private JSONObject clipOrder;private String clipBarcode,clipCard,clipId;
-    private boolean clipDemo;private long scanAtMono,scanAtEpoch;private int ticks=0;
-    private final Runnable heartbeat=new Runnable(){public void run(){if(!foreground)return;refreshState();if(++ticks%60==0&&!demo)UploadWorker.enqueue(MainActivity.this);ui.postDelayed(this,250);}};
+    private long scanAtMono,scanAtEpoch;private int ticks=0;
+    private final Runnable heartbeat=new Runnable(){public void run(){if(!foreground)return;refreshState();if(++ticks%60==0)UploadWorker.enqueue(MainActivity.this);ui.postDelayed(this,250);}};
 
     @Override public void onCreate(Bundle state){super.onCreate(state);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);if(SessionStore.token(this).isEmpty())loginScreen();else stationScreen();}
     @Override public void onStart(){super.onStart();foreground=true;ui.post(heartbeat);}
@@ -49,14 +50,14 @@ public final class MainActivity extends Activity {
     private LinearLayout root(){ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(Color.rgb(242,246,251));LinearLayout root=column();root.setPadding(dp(26),dp(20),dp(26),dp(20));scroll.addView(root);setContentView(scroll);return root;}
 
     private void loginScreen(){
-        demo=false;pendingOrder=null;pendingCard="";scan=null;LinearLayout root=root();root.addView(title("MEANINGFUL PLUSHIES",15));root.addView(title("Packing Station",32));root.addView(text("A dedicated station for your Bluetooth scanner and USB webcam.",16,MUTED));
+        serviceReady=false;pendingOrder=null;pendingCard="";scan=null;LinearLayout root=root();root.addView(title("MEANINGFUL PLUSHIES",15));root.addView(title("Packing Station · 1.2",32));root.addView(text("A dedicated station for your Bluetooth scanner and USB webcam.",16,MUTED));
         LinearLayout box=card();root.addView(box);box.addView(title("Staff sign-in",23));EditText name=field("Username",false),password=field("Password",true);box.addView(name);box.addView(password);TextView message=text("Use your existing fulfilment staff account.",15,MUTED);box.addView(message);
         Button sign=button("Sign in",()->{});box.addView(sign);sign.setOnClickListener(v->{sign.setEnabled(false);message.setText("Signing in...");io.execute(()->{try{JSONObject result=new PackingApi("").request("/api/mobile/login",new JSONObject().put("username",name.getText().toString().trim()).put("password",password.getText().toString()));SessionStore.save(this,result.getString("token"));getSharedPreferences("station",MODE_PRIVATE).edit().putString("staff",result.optString("displayName","Staff")).apply();runOnUiThread(()->{password.setText("");stationScreen();UploadWorker.enqueue(this);});}catch(Exception error){runOnUiThread(()->{message.setText(error.getMessage());sign.setEnabled(true);});}});});
-        root.addView(button("Test webcam and scanner - demo only",()->{demo=true;stationScreen();}));root.addView(text("Demo mode never updates live orders or uploads test recordings.",14,MUTED));
     }
 
     private void stationScreen(){
-        pendingOrder=null;pendingCard="";LinearLayout root=root();root.addView(title("MEANINGFUL PLUSHIES  /  "+(demo?"DEMO MODE":"PACKING"),14));root.addView(title("Scan. Check. Pack.",32));root.addView(text(demo?"No live orders will be changed. Test codes: MPDEMO1001 + NFC-100001.":"Order scan marks Packed. Matching ID-card scan saves the packing video.",15,MUTED));
+        pendingOrder=null;pendingCard="";LinearLayout root=root();root.addView(title("MEANINGFUL PLUSHIES  /  LIVE PACKING · 1.2",14));root.addView(title("Scan. Check. Pack.",32));root.addView(text("Order scan marks Packed. Matching ID-card scan saves the packing video to the live order.",15,MUTED));
+        connectionLabel=text("Checking order service...",15,MUTED);root.addView(connectionLabel);root.addView(button("Check connection",this::checkConnection));
         LinearLayout row=new LinearLayout(this);row.setOrientation(getResources().getConfiguration().screenWidthDp>=850?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);root.addView(row);
         LinearLayout left=card(),right=card();if(row.getOrientation()==LinearLayout.HORIZONTAL){left.setLayoutParams(new LinearLayout.LayoutParams(0,-2,1));right.setLayoutParams(new LinearLayout.LayoutParams(0,-2,1));((LinearLayout.LayoutParams)right.getLayoutParams()).leftMargin=dp(18);}row.addView(left);row.addView(right);
         left.addView(title("Camera",22));cameraState=text("CAMERA OFF",14,MUTED);left.addView(cameraState);preview=new TextureView(this);left.addView(preview,new LinearLayout.LayoutParams(-1,dp(280)));
@@ -66,11 +67,19 @@ public final class MainActivity extends Activity {
         scan.setOnEditorActionListener((v,action,event)->{if(action==EditorInfo.IME_ACTION_DONE || (event!=null&&event.getKeyCode()==KeyEvent.KEYCODE_ENTER&&event.getAction()==KeyEvent.ACTION_DOWN)){submit();return true;}return false;});scan.setOnKeyListener((v,key,event)->{if(key==KeyEvent.KEYCODE_ENTER&&event.getAction()==KeyEvent.ACTION_DOWN){submit();return true;}return false;});
         right.addView(button("Submit scan",this::submit));status=text("Choose a camera, wait for READY, then scan the order and its matching ID card.",17,MUTED);right.addView(status);
         Button keyboard=button("Type a code manually",()->{scan.setShowSoftInputOnFocus(true);scan.requestFocus();((InputMethodManager)getSystemService(INPUT_METHOD_SERVICE)).showSoftInput(scan,InputMethodManager.SHOW_IMPLICIT);});right.addView(keyboard);
-        LinearLayout uploads=card();root.addView(uploads);uploads.addView(title(demo?"Local demo recording":"Video uploads",21));uploadLabel=text("",15,MUTED);uploads.addView(uploadLabel);uploads.addView(button(demo?"Play last demo video":"Retry uploads now",()->{if(demo)playDemo();else{UploadWorker.enqueue(this);tell("Retry requested. Local videos stay safe until the server confirms saving.");}}));
-        LinearLayout actions=new LinearLayout(this);root.addView(actions);actions.addView(button("Bluetooth settings",()->startActivity(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS))));actions.addView(button(demo?"Exit demo":"Sign out",()->{if(capture!=null||savingLocal||networkBusy){tell("Finish this parcel before signing out.");return;}stopCamera("");if(!demo)SessionStore.clear(this);loginScreen();}));
-        root.setOnClickListener(v->focusScan());focusScan();refreshState();
+        LinearLayout uploads=card();root.addView(uploads);uploads.addView(title("Video uploads",21));uploadLabel=text("",15,MUTED);uploads.addView(uploadLabel);uploads.addView(button("Retry uploads now",()->{UploadWorker.enqueue(this);tell("Retry requested. Local videos stay safe until the server confirms saving.");}));
+        LinearLayout actions=new LinearLayout(this);root.addView(actions);actions.addView(button("Bluetooth settings",()->startActivity(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS))));actions.addView(button("Sign out",()->{if(capture!=null||savingLocal||networkBusy){tell("Finish this parcel before signing out.");return;}stopCamera("");SessionStore.clear(this);loginScreen();}));
+        root.setOnClickListener(v->focusScan());focusScan();refreshState();checkConnection();
     }
 
+    private void checkConnection(){
+        if(scan==null||networkBusy||capture!=null||savingLocal)return;
+        networkBusy=true;serviceReady=false;connectionLabel.setText("Connecting to live order database and private video storage...");refreshState();
+        io.execute(()->{try{JSONObject result=new PackingApi(SessionStore.token(this)).request(PackingApi.PACKING,null);
+            if(!result.optBoolean("connected")||result.optInt("protocol")!=1)throw new Exception("The packing service needs an update. Contact the administrator.");
+            runOnUiThread(()->{if(scan==null)return;serviceReady=true;networkBusy=false;JSONObject staff=result.optJSONObject("staff");connectionLabel.setText("CONNECTED · Live orders and private video storage\nSigned in as "+(staff==null?"Staff":staff.optString("displayName")));connectionLabel.setTextColor(Color.rgb(19,125,84));focusScan();refreshState();});
+        }catch(Exception error){runOnUiThread(()->{if(connectionLabel!=null){connectionLabel.setText("NOT CONNECTED · "+error.getMessage());connectionLabel.setTextColor(Color.rgb(170,45,45));}});fail(error);}});
+    }
     private void tell(String message){if(status!=null)status.setText(message);}
     private void focusScan(){if(scan!=null&&!networkBusy&&capture==null&&!savingLocal){scan.requestFocus();scan.selectAll();}}
     private void refreshState(){
@@ -79,55 +88,53 @@ public final class MainActivity extends Activity {
         cameraState.setText(capture!=null?"RECORDING - "+Math.max(0,21-(System.currentTimeMillis()-capture.scanEpochMs)/1000)+"s":ready?"READY - "+activeCamera:encoder!=null?"WARMING UP - 3-second history":"CAMERA OFF");
         cameraState.setTextColor(capture!=null?Color.rgb(170,45,45):ready?Color.rgb(19,125,84):MUTED);
         scan.setEnabled(!networkBusy&&capture==null&&!savingLocal);cameraButton.setEnabled(capture==null&&!savingLocal&&!networkBusy);
-        if(!demo){File[] files=ProofQueue.entries(this);String summary=files.length==0?getSharedPreferences("station",MODE_PRIVATE).getString("lastSaved","No videos waiting to upload."):files.length+" video(s) safely on this tablet, waiting to finish uploading.";
+        {File[] files=ProofQueue.entries(this);String summary=files.length==0?getSharedPreferences("station",MODE_PRIVATE).getString("lastSaved","No videos waiting to upload."):files.length+" video(s) safely on this tablet, waiting to finish uploading.";
             if(files.length>0)try{String error=ProofQueue.read(files[0]).optString("lastError","");if(!error.isEmpty())summary+="\n"+error;}catch(Exception ignored){}uploadLabel.setText(summary);
-        }else uploadLabel.setText(getSharedPreferences("station",MODE_PRIVATE).getString("lastDemo", "Complete a demo order/card scan to save a test video on this tablet."));
+        }
         if(pendingUntil>0 && System.currentTimeMillis()>pendingUntil && !networkBusy && capture==null){pendingOrder=null;pendingCard="";pendingUntil=0;orderLabel.setText("Waiting for an order");tell("Pairing window expired. Scan the order again; its Packed status is preserved.");}
     }
 
     private void submit(){
-        if(scan==null||networkBusy||capture!=null||savingLocal)return;String code=scan.getText().toString().trim().toUpperCase(Locale.ROOT);scan.setText("");if(code.isEmpty())return;
+        if(scan==null||networkBusy||capture!=null||savingLocal)return;if(!serviceReady){tell("Check the connection before scanning live orders.");return;}String code=scan.getText().toString().trim().toUpperCase(Locale.ROOT);scan.setText("");if(code.isEmpty())return;
         long mono=System.nanoTime()/1000,epoch=System.currentTimeMillis();
         if(code.matches("NFC-[0-9]{6,12}")||(pendingOrder!=null&&code.matches("[0-9]{6}"))){if(pendingOrder!=null)beginCard(code,mono,epoch);else validateFirstCard(code);return;}
         networkBusy=true;tell("Finding order...");refreshState();
         io.execute(()->{try{
-            JSONObject item;
-            if(demo){if(!code.equals("MPDEMO1001")&&!code.equals("DEMO1001"))throw new Exception("Demo order code is MPDEMO1001.");item=new JSONObject().put("order_id","demo-1001").put("order",new JSONObject().put("orderNumber","DEMO1001").put("plushName","Demo plushie"));}
-            else{PackingApi api=new PackingApi(SessionStore.token(this));item=api.request(PackingApi.SCAN+"?scanBarcode="+PackingApi.encode(code),null).optJSONObject("item");if(item==null)throw new Exception("Order barcode not recognised. Scan the individual packing-slip barcode.");api.request(PackingApi.SCAN,new JSONObject().put("action","scanner_pack").put("orderId",item.getString("order_id")).put("orderBarcode",code));}
-            JSONObject found=item;runOnUiThread(()->{networkBusy=false;pendingOrder=found;pendingBarcode=code;pendingUntil=System.currentTimeMillis()+60000;JSONObject order=found.optJSONObject("order");orderLabel.setText("#"+order.optString("orderNumber")+" - PACKED");tell("Order packed. Scan its matching ID card.");if(!demo)playVoice(found.optString("order_id"));if(!pendingCard.isEmpty()){String card=pendingCard;pendingCard="";beginCard(card,mono,epoch);}else focusScan();});
+            PackingApi api=new PackingApi(SessionStore.token(this));JSONObject item=api.request(PackingApi.PACKING+"?scanBarcode="+PackingApi.encode(code),null).optJSONObject("item");
+            if(item==null)throw new Exception("Order barcode not recognised. Scan the individual packing-slip barcode.");
+            JSONObject packed=api.request(PackingApi.SCAN,new JSONObject().put("action","scanner_pack").put("orderId",item.getString("order_id")).put("orderBarcode",code));
+            if(!packed.optBoolean("ok"))throw new Exception("Packed status was not confirmed. Scan the order again.");
+            JSONObject found=item;runOnUiThread(()->{networkBusy=false;pendingOrder=found;pendingBarcode=code;pendingUntil=System.currentTimeMillis()+60000;JSONObject order=found.optJSONObject("order");orderLabel.setText("#"+order.optString("orderNumber")+" - PACKED\n"+order.optString("customerName")+"\n"+order.optString("plushName")+" · "+order.optString("character"));tell("Order packed. Scan its matching ID card.");playVoice(found.optString("order_id"));if(!pendingCard.isEmpty()){String card=pendingCard;pendingCard="";beginCard(card,mono,epoch);}else focusScan();});
         }catch(Exception error){fail(error);}});
     }
 
-    private void validateFirstCard(String code){networkBusy=true;refreshState();io.execute(()->{try{if(demo){if(!code.equals("NFC-100001"))throw new Exception("Demo ID-card code is NFC-100001.");}else new PackingApi(SessionStore.token(this)).request(PackingApi.SCAN+"?nfc="+PackingApi.encode(code)+"&packingProof=1",null);runOnUiThread(()->{networkBusy=false;pendingCard=code;pendingUntil=System.currentTimeMillis()+60000;tell("Card ready. Scan its order within one minute.");focusScan();});}catch(Exception error){fail(error);}});}
+    private void validateFirstCard(String code){networkBusy=true;refreshState();io.execute(()->{try{new PackingApi(SessionStore.token(this)).request(PackingApi.SCAN+"?nfc="+PackingApi.encode(code)+"&packingProof=1",null);runOnUiThread(()->{networkBusy=false;pendingCard=code;pendingUntil=System.currentTimeMillis()+60000;tell("Card ready. Scan its order within one minute.");focusScan();});}catch(Exception error){fail(error);}});}
 
     private void beginCard(String card,long mono,long epoch){
         if(encoder==null||!encoder.ring.ready(System.nanoTime()/1000)){tell("Choose a camera and wait for READY, then scan the card again.");focusScan();return;}
         if(new StatFs(getFilesDir().getPath()).getAvailableBytes()<150*1024*1024L){tell("Tablet storage is low. Upload the waiting videos before packing another parcel.");return;}
         try{capture=encoder.ring.begin(mono,epoch);}catch(Exception error){tell(error.getMessage());return;}
-        PacketRing.Capture clip=capture;clipOrder=pendingOrder;clipBarcode=pendingBarcode;clipCard=card;clipId=UUID.randomUUID().toString();clipDemo=demo;clipRotation=videoRotation;
+        PacketRing.Capture clip=capture;clipOrder=pendingOrder;clipBarcode=pendingBarcode;clipCard=card;clipId=UUID.randomUUID().toString();clipRotation=videoRotation;
         networkBusy=true;tell("Checking matching ID card and recording the packing video...");refreshState();JSONObject item=pendingOrder;
         ui.postDelayed(()->{if(capture==clip&&!clip.verified){if(encoder!=null)encoder.ring.cancel(clip);capture=null;networkBusy=false;tell("Card verification timed out. Scan again; the video was not marked saved.");focusScan();}},20000);
         io.execute(()->{try{
-            if(demo){if(!card.equals("NFC-100001"))throw new Exception("Wrong demo ID card; use NFC-100001.");}
-            else{PackingApi api=new PackingApi(SessionStore.token(this));api.request(PackingApi.SCAN,new JSONObject().put("action","scanner_pair").put("orderId",item.getString("order_id")).put("orderBarcode",clipBarcode).put("cardCode",card));}
+            {PackingApi api=new PackingApi(SessionStore.token(this));JSONObject paired=api.request(PackingApi.SCAN,new JSONObject().put("action","scanner_pair").put("orderId",item.getString("order_id")).put("orderBarcode",clipBarcode).put("cardCode",card));if(!paired.optBoolean("ok"))throw new Exception("The matching card was not confirmed. Scan again.");}
             runOnUiThread(()->{if(capture!=clip)return;clip.verified=true;networkBusy=false;pendingOrder=null;pendingCard="";pendingUntil=0;tell("Matching card confirmed. Keep packing until the recording countdown finishes.");});
         }catch(Exception error){runOnUiThread(()->{if(encoder!=null)encoder.ring.cancel(clip);if(capture==clip)capture=null;networkBusy=false;tell(error.getMessage());focusScan();});}});
     }
 
     private void finished(PacketRing.Capture clip,MediaFormat format){runOnUiThread(()->{
         if(capture!=clip)return;if(!clip.error.isEmpty()||!clip.verified){capture=null;tell(clip.error.isEmpty()?"Card verification was not complete. Scan again.":clip.error);focusScan();return;}
-        capture=null;savingLocal=true;JSONObject item=clipOrder;String code=clipBarcode,card=clipCard,id=clipId;boolean test=clipDemo;int rotation=clipRotation;tell("Saving the packing video safely on the tablet...");
+        capture=null;savingLocal=true;JSONObject item=clipOrder;String code=clipBarcode,card=clipCard,id=clipId;int rotation=clipRotation;tell("Saving the packing video safely on the tablet...");
         io.execute(()->{try{
-            File dir=test?new File(getFilesDir(),"packing-demo"):ProofQueue.folder(this);dir.mkdirs();File video=new File(dir,id+".mp4");String number=item.getJSONObject("order").optString("orderNumber",item.getString("order_id"));JSONObject metadata=ProofQueue.metadata(id,item.getString("order_id"),number,code,card,clip,video);if(!test)ProofQueue.write(new File(dir,id+".pending"),metadata);RollingEncoder.save(video,clip,format,rotation);
-            if(test)getSharedPreferences("station",MODE_PRIVATE).edit().putString("lastDemo","Demo video saved locally - "+number+". No live order changed.").putString("demoPath",video.getAbsolutePath()).apply();
-            else{metadata.put("size",video.length());ProofQueue.write(new File(dir,id+".json"),metadata);new File(dir,id+".pending").delete();UploadWorker.enqueue(this);}
-            runOnUiThread(()->{savingLocal=false;tell(test?"Demo video saved on this tablet. Use Play last demo video to review it.":"Packing video secured on tablet and queued for automatic upload to #"+number+". Ready for the next order.");focusScan();refreshState();});
+            File dir=ProofQueue.folder(this);dir.mkdirs();File video=new File(dir,id+".mp4");String number=item.getJSONObject("order").optString("orderNumber",item.getString("order_id"));JSONObject metadata=ProofQueue.metadata(id,item.getString("order_id"),number,code,card,clip,video);ProofQueue.write(new File(dir,id+".pending"),metadata);RollingEncoder.save(video,clip,format,rotation);
+            {metadata.put("size",video.length());ProofQueue.write(new File(dir,id+".json"),metadata);new File(dir,id+".pending").delete();UploadWorker.enqueue(this);}
+            runOnUiThread(()->{savingLocal=false;tell("Packing video secured on tablet and queued for automatic upload to #"+number+". Ready for the next order.");focusScan();refreshState();});
         }catch(Exception error){runOnUiThread(()->{savingLocal=false;tell("Video could not be saved: "+error.getMessage()+" Scan the parcel again.");focusScan();});}});
     });}
 
     private void fail(Exception error){runOnUiThread(()->{networkBusy=false;tell(error.getMessage());if(error instanceof PackingApi.ApiError&&((PackingApi.ApiError)error).status==401){stopCamera("");SessionStore.clear(this);loginScreen();}else focusScan();});}
     private void playVoice(String id){try{if(player!=null)player.release();player=new MediaPlayer();player.setDataSource(this,Uri.parse(PackingApi.BASE+"/api/mobile/orders/"+PackingApi.encode(id)+"/assets?kind=voice"),Collections.singletonMap("Authorization","Bearer "+SessionStore.token(this)));player.setOnPreparedListener(MediaPlayer::start);player.setOnErrorListener((p,what,extra)->true);player.prepareAsync();}catch(Exception ignored){}}
-    private void playDemo(){String path=getSharedPreferences("station",MODE_PRIVATE).getString("demoPath","");if(path.isEmpty()||!new File(path).isFile()){tell("Complete a demo recording first.");return;}VideoView video=new VideoView(this);video.setVideoPath(path);MediaController controls=new MediaController(this);video.setMediaController(controls);video.setOnPreparedListener(MediaPlayer::start);AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Local packing demo").setView(video).setPositiveButton("Close",(d,w)->video.stopPlayback()).create();dialog.setOnDismissListener(d->video.stopPlayback());dialog.show();video.getLayoutParams().height=dp(350);}
 
     private void connectCamera(){
         if(capture!=null||networkBusy||savingLocal)return;

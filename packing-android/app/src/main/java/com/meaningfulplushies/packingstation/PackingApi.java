@@ -10,6 +10,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 final class PackingApi {
     static final String BASE="https://meaningful-plushies-fulfilment.vercel.app";
+    static final String PACKING="/api/mobile/packing";
     static final String SCAN="/api/production-tracking",PROOFS=SCAN+"/proofs";
     private final String token;
     PackingApi(String token){this.token=token;}

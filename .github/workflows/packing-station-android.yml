@@ -25,9 +25,9 @@ jobs:
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"'
       - name: Compile, lint, unit test and assemble the separate app
         working-directory: packing-android
-        run: chmod +x gradlew && ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon
+        run: chmod +x gradlew && ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleRelease --no-daemon
       - name: Prepare installable APK
-        run: mkdir -p packing-apk && cp packing-android/app/build/outputs/apk/debug/app-debug.apk packing-apk/meaningful-packing-station-test.apk && cp packing-android/INSTALL.md packing-apk/ && sha256sum packing-apk/*.apk > packing-apk/SHA256SUMS.txt
+        run: mkdir -p packing-apk && cp packing-android/app/build/outputs/apk/release/app-release.apk packing-apk/MP-Packing-Station.apk && cp packing-android/INSTALL.md packing-apk/ && sha256sum packing-apk/*.apk > packing-apk/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
           name: meaningful-packing-station-apk
