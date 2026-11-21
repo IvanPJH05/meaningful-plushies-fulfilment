@@ -149,9 +149,17 @@ form.addEventListener("submit", async event => {
     return;
   }
   const shareUrl = new URL(location.href);
-  shareUrl.searchParams.set('order', number);
-  if (source === 'tiktok') shareUrl.searchParams.set('channel', 'tiktok');
-  else shareUrl.searchParams.delete('channel');
+  const trackingPath = shareUrl.pathname.match(/^(\/(?:[a-z]{2}(?:-[a-zA-Z]{2})?\/)?pages\/track-your-order)(?:\/\d+)?\/?$/);
+  if (trackingPath && (source === 'tiktok' || number.length === 4)) {
+    shareUrl.pathname = `${trackingPath[1]}/${number}`;
+    shareUrl.searchParams.delete('order');
+    shareUrl.searchParams.delete('channel');
+  } else {
+    if (trackingPath) shareUrl.pathname = trackingPath[1];
+    shareUrl.searchParams.set('order', number);
+    if (source === 'tiktok') shareUrl.searchParams.set('channel', 'tiktok');
+    else shareUrl.searchParams.delete('channel');
+  }
   history.replaceState(null, '', shareUrl);
   error.hidden = true;
   result.textContent = words("Checking your order…", "Menyemak pesanan anda…");
@@ -232,9 +240,12 @@ setLanguage(options.get("lang"));
 
 // Shared links use the same validation and lookup flow as a manual search.
 const sharedLink = new URLSearchParams(location.search);
-const initialOrder = (sharedLink.get('order') || '').trim().replace(/^#/, '');
-const initialChannel = sharedLink.get('channel') === 'tiktok' || initialOrder.length > 10 ? 'tiktok' : 'website';
-if ((initialChannel === 'tiktok' ? /^\d{8,30}$/ : /^\d{1,10}$/).test(initialOrder)) {
+const pathOrder = location.pathname.match(/^\/(?:[a-z]{2}(?:-[a-zA-Z]{2})?\/)?pages\/track-your-order\/(\d{4,30})\/?$/)?.[1];
+const initialOrder = pathOrder || (sharedLink.get('order') || '').trim().replace(/^#/, '');
+const initialChannel = pathOrder
+  ? (pathOrder.length === 4 ? 'website' : 'tiktok')
+  : sharedLink.get('channel') === 'tiktok' || initialOrder.length > 4 ? 'tiktok' : 'website';
+if (pathOrder || (initialChannel === 'tiktok' ? /^\d{8,30}$/ : /^\d{1,10}$/).test(initialOrder)) {
   document.querySelector(`input[name="channel"][value="${initialChannel}"]`).checked = true;
   input.value = initialOrder;
   configure();

@@ -1,6 +1,7 @@
 // Keep the app block's presentation in step with the existing public tracker.
 import fs from 'node:fs/promises';
 import postcss from 'postcss';
+import { transformWithEsbuild } from 'vite';
 const base='extensions/meaningful-plushie-customisation';
 const original=await fs.readFile('public/order-tracking/index.html','utf8');
 let markup=original.slice(original.indexOf('<main>')+6,original.indexOf('<script type="module"'))
@@ -26,7 +27,8 @@ js=js.replaceAll('document.querySelector','root.querySelector')
 // Translation selectors are local to this block; do not change the theme language.
 js=js.replace(/\["#([^"\s]+)([^"\n]*)",/g,(_,id,tail)=>`['[data-tracking="${id}"]${tail}',`);
 js=js.replaceAll('const controller = new AbortController();','const controller = new AbortController();\n  root.pendingLookup = controller;');
-await fs.writeFile(`${base}/assets/customer-order-tracking.js`,`(() => {\nif (customElements.get('mp-order-tracking')) return;\ncustomElements.define('mp-order-tracking', class extends HTMLElement {\nconnectedCallback() {\nif (this.initialised) return;\nthis.initialised = true;\nconst root = this;\n${js}\n}\ndisconnectedCallback() { this.pendingLookup?.abort(); this.querySelector('dialog')?.close(); }\n});\n})();\n`);
+const compiled=await transformWithEsbuild(`(() => {\nif (customElements.get('mp-order-tracking')) return;\ncustomElements.define('mp-order-tracking', class extends HTMLElement {\nconnectedCallback() {\nif (this.initialised) return;\nthis.initialised = true;\nconst root = this;\n${js}\n}\ndisconnectedCallback() { this.pendingLookup?.abort(); this.querySelector('dialog')?.close(); }\n});\n})();\n`,'customer-order-tracking.js',{minify:true,target:'es2020'});
+await fs.writeFile(`${base}/assets/customer-order-tracking.js`,compiled.code);
 const css=postcss.parse(await fs.readFile('public/order-tracking/style.css','utf8'));
 // Shopify theme extensions do not allow font files. Inherit the actual theme font.
 css.walkAtRules('font-face',rule=>rule.remove());
