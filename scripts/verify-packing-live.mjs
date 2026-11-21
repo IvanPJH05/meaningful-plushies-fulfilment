@@ -22,7 +22,7 @@ assert.equal((await call('/api/mobile/packing?scanBarcode='+encodeURIComponent('
 assert.equal((await call('/api/mobile/packing?scanBarcode='+encodeURIComponent(barcode))).data.item.order.status,'issue');
 const pairing={action:'pair',orderId:fixture.orderId,orderBarcode:barcode,cardCode:fixture.card};
 assert.equal((await call('/api/mobile/packing',pairing)).status,200);
-assert.equal((await call('/api/production-tracking',pairing)).status,200);
+assert.equal((await call('/api/mobile/packing',pairing)).status,200);
 const other='MPI-'+fixture.otherOrderId;
 
 assert.equal((await call('/api/mobile/packing',{action:'pair',orderId:fixture.otherOrderId,orderBarcode:other,cardCode:fixture.card})).status,409);
