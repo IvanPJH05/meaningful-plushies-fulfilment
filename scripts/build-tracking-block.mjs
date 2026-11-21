@@ -16,7 +16,7 @@ let js=await fs.readFile('public/order-tracking/main.js','utf8');
 js=js.replaceAll('document.querySelector','root.querySelector')
   .replace(/root\.querySelector\("#([^"\s]+)"\)/g,(_,id)=>`root.querySelector('[data-tracking="${id}"]')`)
   .replace('input[name="channel"]:checked','input[type="radio"]:checked').replaceAll('input[name="channel"]','input[type="radio"]')
-  .replace('fetch("/api/customer-order-progress",','fetch(root.dataset.endpoint,')
+  .replaceAll('fetch("/api/customer-order-progress",','fetch(root.dataset.endpoint,')
   .replace('document.documentElement.lang = language;','root.lang = language;')
   .replace('document.body.classList.toggle("embedded", options.get("embedded") === "1");','')
   .replace('setLanguage(options.get("lang"));','setLanguage((root.lang || document.documentElement.lang).toLowerCase().split("-")[0]);')
@@ -25,7 +25,7 @@ js=js.replaceAll('document.querySelector','root.querySelector')
   .replace('root.querySelectorAll("[data-language]").forEach(button => button.addEventListener("click", () => setLanguage(button.dataset.language)));','');
 // Translation selectors are local to this block; do not change the theme language.
 js=js.replace(/\["#([^"\s]+)([^"\n]*)",/g,(_,id,tail)=>`['[data-tracking="${id}"]${tail}',`);
-js=js.replace('const controller = new AbortController();','const controller = new AbortController();\n  root.pendingLookup = controller;');
+js=js.replaceAll('const controller = new AbortController();','const controller = new AbortController();\n  root.pendingLookup = controller;');
 await fs.writeFile(`${base}/assets/customer-order-tracking.js`,`(() => {\nif (customElements.get('mp-order-tracking')) return;\ncustomElements.define('mp-order-tracking', class extends HTMLElement {\nconnectedCallback() {\nif (this.initialised) return;\nthis.initialised = true;\nconst root = this;\n${js}\n}\ndisconnectedCallback() { this.pendingLookup?.abort(); this.querySelector('dialog')?.close(); }\n});\n})();\n`);
 const css=postcss.parse(await fs.readFile('public/order-tracking/style.css','utf8'));
 // Shopify theme extensions do not allow font files. Inherit the actual theme font.

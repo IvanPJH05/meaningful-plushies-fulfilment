@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { mobileServiceClient } from "@/lib/mobile-api";
 import { customerOrderShipments } from "@/lib/customer-order-shipments";
+import { customerPackingVideo } from "@/lib/customer-packing-video";
 
 export const dynamic = "force-dynamic";
 
@@ -41,5 +42,16 @@ export async function POST(request: Request) {
   const shipments = customerOrderShipments(orders.map((order, index) => ({
     shipped: stages[index] === "shipped", courier: order.courier, trackingNumber: order.trackingNumber,
   })));
-  return NextResponse.json({ stage, shipments }, { headers });
+  // Video verification is separate from progress. Storage stays private and
+  // only short-lived links to this exact order's finished clips are returned.
+  let packingVideo = null;
+  try {
+    packingVideo = await customerPackingVideo(db, orders.map(order => order.id), tiktok ? 'tiktok' : 'website',
+      typeof body.phoneLast4 === 'string' ? body.phoneLast4 : '',
+      request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown');
+  } catch {
+    // Unavailable footage must never break order tracking or expose internals.
+    console.warn('Customer packing video lookup unavailable');
+  }
+  return NextResponse.json({ stage, shipments, packingVideo }, { headers });
 }

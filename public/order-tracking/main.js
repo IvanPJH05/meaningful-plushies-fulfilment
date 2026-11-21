@@ -14,6 +14,7 @@ let language = "en";
 let stage = "";
 let reference = "";
 let shipments = [];
+let packingVideo = null;
 let lookup;
 const words = (english, malay) => language === "ms" ? malay : english;
 const channel = () => document.querySelector('input[name="channel"]:checked').value;
@@ -59,6 +60,71 @@ function render() {
     card.querySelector(".milestones").append(step);
   });
   result.append(card);
+  renderPackingVideo();
+}
+
+function renderPackingVideo() {
+  if (!packingVideo || (!packingVideo.verificationRequired && !packingVideo.videos?.length)) return;
+  const panel = document.createElement('section');
+  panel.className = 'packing-video';
+  const heading = document.createElement('h3');
+  heading.textContent = words('Your packing video', 'Video pembungkusan anda');
+  panel.append(heading);
+  if (!packingVideo.verificationRequired) {
+    for (const clip of packingVideo.videos) {
+      const url = new URL(clip.url, location.href);
+      if (url.protocol !== 'https:' && url.origin !== location.origin) continue;
+      const video = document.createElement('video');
+      video.controls = true; video.playsInline = true; video.preload = 'metadata';
+      video.setAttribute('aria-label', heading.textContent);
+      video.src = url.href;
+      panel.append(video);
+    }
+    result.append(panel);
+    return;
+  }
+  const verify = document.createElement('form');
+  const label = document.createElement('label');
+  label.textContent = words('Last 4 digits of the phone number used for this order', '4 digit terakhir nombor telefon yang digunakan untuk pesanan ini');
+  const phone = document.createElement('input');
+  phone.type = 'text'; phone.inputMode = 'numeric'; phone.pattern = '[0-9]{4}';
+  phone.maxLength = 4; phone.required = true; phone.autocomplete = 'off';
+  label.append(phone);
+  const button = document.createElement('button');
+  button.type = 'submit'; button.textContent = words('Watch video', 'Tonton video');
+  const note = document.createElement('p');
+  note.setAttribute('role', 'alert');
+  const failure = value => value === 'rate_limited'
+    ? words('Too many attempts. Please try again in 15 minutes.', 'Terlalu banyak percubaan. Sila cuba lagi dalam 15 minit.')
+    : words('The phone digits do not match this order. Please check and try again.', 'Digit telefon tidak sepadan dengan pesanan ini. Sila semak dan cuba lagi.');
+  if (packingVideo.error) note.textContent = failure(packingVideo.error);
+  verify.append(label, button, note); panel.append(verify); result.append(panel);
+  verify.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (!/^\d{4}$/.test(phone.value)) return;
+    lookup?.abort();
+    const controller = new AbortController();
+    lookup = controller;
+    const number = reference, source = channel();
+    button.disabled = true;
+    note.textContent = words('Checking…', 'Menyemak…');
+    try {
+      const response = await fetch("/api/customer-order-progress", {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ number, channel: source, phoneLast4: phone.value }), signal: controller.signal,
+      });
+      if (!response.ok) throw new Error('Video unavailable');
+      const data = await response.json();
+      if (controller.signal.aborted || reference !== number || channel() !== source) return;
+      if (!data.packingVideo) throw new Error('Video unavailable');
+      packingVideo = data.packingVideo;
+      render();
+    } catch {
+      if (!controller.signal.aborted) note.textContent = words('The video is temporarily unavailable. Please try again.', 'Video tidak tersedia buat sementara waktu. Sila cuba lagi.');
+    } finally {
+      button.disabled = false;
+    }
+  });
 }
 
 function configure() {
@@ -73,6 +139,7 @@ form.addEventListener("submit", async event => {
   lookup?.abort();
   stage = "";
   shipments = [];
+  packingVideo = null;
   render();
   const number = input.value.trim().replace(/^#/, "");
   const source = channel();
@@ -81,6 +148,11 @@ form.addEventListener("submit", async event => {
     error.hidden = false;
     return;
   }
+  const shareUrl = new URL(location.href);
+  shareUrl.searchParams.set('order', number);
+  if (source === 'tiktok') shareUrl.searchParams.set('channel', 'tiktok');
+  else shareUrl.searchParams.delete('channel');
+  history.replaceState(null, '', shareUrl);
   error.hidden = true;
   result.textContent = words("Checking your order…", "Menyemak pesanan anda…");
   const controller = new AbortController();
@@ -103,6 +175,7 @@ form.addEventListener("submit", async event => {
     reference = number;
     stage = data.stage;
     shipments = Array.isArray(data.shipments) ? data.shipments : [];
+    packingVideo = data.packingVideo || null;
     render();
   } catch {
     if (controller.signal.aborted) return;
@@ -116,6 +189,7 @@ document.querySelectorAll('input[name="channel"]').forEach(radio => radio.addEve
   lookup?.abort();
   input.value = "";
   shipments = [];
+  packingVideo = null;
   error.hidden = true;
   stage = "";
   render();
@@ -155,3 +229,14 @@ document.querySelectorAll("[data-language]").forEach(button => button.addEventLi
 const options = new URLSearchParams(location.search);
 document.body.classList.toggle("embedded", options.get("embedded") === "1");
 setLanguage(options.get("lang"));
+
+// Shared links use the same validation and lookup flow as a manual search.
+const sharedLink = new URLSearchParams(location.search);
+const initialOrder = (sharedLink.get('order') || '').trim().replace(/^#/, '');
+const initialChannel = sharedLink.get('channel') === 'tiktok' || initialOrder.length > 10 ? 'tiktok' : 'website';
+if ((initialChannel === 'tiktok' ? /^\d{8,30}$/ : /^\d{1,10}$/).test(initialOrder)) {
+  document.querySelector(`input[name="channel"][value="${initialChannel}"]`).checked = true;
+  input.value = initialOrder;
+  configure();
+  form.requestSubmit();
+}
