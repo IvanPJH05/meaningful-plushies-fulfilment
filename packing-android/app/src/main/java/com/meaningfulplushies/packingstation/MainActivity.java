@@ -51,13 +51,13 @@ public final class MainActivity extends Activity {
     private LinearLayout root(){ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(Color.rgb(242,246,251));LinearLayout root=column();root.setPadding(dp(26),dp(20),dp(26),dp(20));scroll.addView(root);setContentView(scroll);return root;}
 
     private void loginScreen(){
-        serviceReady=false;lastOrderId="";audioLabel=null;pendingOrder=null;pendingCard="";scan=null;LinearLayout root=root();root.addView(title("MEANINGFUL PLUSHIES",15));root.addView(title("Packing Station · 1.3",32));root.addView(text("A dedicated station for your Bluetooth scanner and USB webcam.",16,MUTED));
+        serviceReady=false;lastOrderId="";audioLabel=null;pendingOrder=null;pendingCard="";scan=null;LinearLayout root=root();root.addView(title("MEANINGFUL PLUSHIES",15));root.addView(title("Packing Station · 1.4",32));root.addView(text("A dedicated station for your Bluetooth scanner and USB webcam.",16,MUTED));
         LinearLayout box=card();root.addView(box);box.addView(title("Staff sign-in",23));EditText name=field("Username",false),password=field("Password",true);box.addView(name);box.addView(password);TextView message=text("Use your existing fulfilment staff account.",15,MUTED);box.addView(message);
         Button sign=button("Sign in",()->{});box.addView(sign);sign.setOnClickListener(v->{sign.setEnabled(false);message.setText("Signing in...");io.execute(()->{try{JSONObject result=new PackingApi("").request("/api/mobile/login",new JSONObject().put("username",name.getText().toString().trim()).put("password",password.getText().toString()));SessionStore.save(this,result.getString("token"));getSharedPreferences("station",MODE_PRIVATE).edit().putString("staff",result.optString("displayName","Staff")).apply();runOnUiThread(()->{password.setText("");stationScreen();UploadWorker.enqueue(this);});}catch(Exception error){runOnUiThread(()->{message.setText(error.getMessage());sign.setEnabled(true);});}});});
     }
 
     private void stationScreen(){
-        pendingOrder=null;pendingCard="";LinearLayout root=root();root.addView(title("MEANINGFUL PLUSHIES  /  LIVE PACKING · 1.3",14));root.addView(title("Scan. Check. Pack.",32));root.addView(text("Order scan marks Packed. Matching ID-card scan saves the packing video to the live order.",15,MUTED));
+        pendingOrder=null;pendingCard="";LinearLayout root=root();root.addView(title("MEANINGFUL PLUSHIES  /  LIVE PACKING · 1.4",14));root.addView(title("Scan. Check. Pack.",32));root.addView(text("Packed only after the matching ID card is paired and its packing video is saved online.",15,MUTED));
         connectionLabel=text("Checking order service...",15,MUTED);root.addView(connectionLabel);root.addView(button("Check connection",this::checkConnection));
         LinearLayout row=new LinearLayout(this);row.setOrientation(getResources().getConfiguration().screenWidthDp>=850?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);root.addView(row);
         LinearLayout left=card(),right=card();if(row.getOrientation()==LinearLayout.HORIZONTAL){left.setLayoutParams(new LinearLayout.LayoutParams(0,-2,1));right.setLayoutParams(new LinearLayout.LayoutParams(0,-2,1));((LinearLayout.LayoutParams)right.getLayoutParams()).leftMargin=dp(18);}row.addView(left);row.addView(right);
@@ -78,7 +78,7 @@ public final class MainActivity extends Activity {
         if(scan==null||networkBusy||capture!=null||savingLocal)return;
         networkBusy=true;serviceReady=false;connectionLabel.setText("Connecting to live order database and private video storage...");refreshState();
         io.execute(()->{try{JSONObject result=new PackingApi(SessionStore.token(this)).request(PackingApi.PACKING,null);
-            if(!result.optBoolean("connected")||result.optInt("protocol")!=1)throw new Exception("The packing service needs an update. Contact the administrator.");
+            if(!result.optBoolean("connected")||result.optInt("protocol")!=2||!result.optBoolean("packingRequiresSavedVideo"))throw new Exception("The packing service needs an update. Contact the administrator.");
             runOnUiThread(()->{if(scan==null)return;serviceReady=true;networkBusy=false;JSONObject staff=result.optJSONObject("staff");connectionLabel.setText("CONNECTED · Live orders and private video storage\nSigned in as "+(staff==null?"Staff":staff.optString("displayName")));connectionLabel.setTextColor(Color.rgb(19,125,84));focusScan();refreshState();});
         }catch(Exception error){runOnUiThread(()->{if(connectionLabel!=null){connectionLabel.setText("NOT CONNECTED · "+error.getMessage());connectionLabel.setTextColor(Color.rgb(170,45,45));}});fail(error);}});
     }
@@ -93,7 +93,8 @@ public final class MainActivity extends Activity {
         {File[] files=ProofQueue.entries(this);String summary=files.length==0?getSharedPreferences("station",MODE_PRIVATE).getString("lastSaved","No videos waiting to upload."):files.length+" video(s) safely on this tablet, waiting to finish uploading.";
             if(files.length>0)try{String error=ProofQueue.read(files[0]).optString("lastError","");if(!error.isEmpty())summary+="\n"+error;}catch(Exception ignored){}uploadLabel.setText(summary);
         }
-        if(pendingUntil>0 && System.currentTimeMillis()>pendingUntil && !networkBusy && capture==null){pendingOrder=null;pendingCard="";pendingUntil=0;orderLabel.setText("Waiting for an order");tell("Pairing window expired. Scan the order again; its Packed status is preserved.");}
+        if(clipId!=null&&clipId.equals(getSharedPreferences("station",MODE_PRIVATE).getString("lastPackedProofId",""))&&lastOrderId.equals(clipOrder==null?"":clipOrder.optString("order_id"))){orderLabel.setText("#"+clipOrder.optJSONObject("order").optString("orderNumber")+" - PACKED\nCard paired and packing video saved online.");}
+        if(pendingUntil>0 && System.currentTimeMillis()>pendingUntil && !networkBusy && capture==null){pendingOrder=null;pendingCard="";pendingUntil=0;orderLabel.setText("Waiting for an order");tell("Pairing window expired. Scan the order again; its status has not been changed by this scan.");}
     }
 
     private void submit(){
@@ -104,9 +105,7 @@ public final class MainActivity extends Activity {
         io.execute(()->{try{
             PackingApi api=new PackingApi(SessionStore.token(this));JSONObject item=api.request(PackingApi.PACKING+"?scanBarcode="+PackingApi.encode(code),null).optJSONObject("item");
             if(item==null)throw new Exception("Order barcode not recognised. Scan the individual packing-slip barcode.");
-            JSONObject packed=api.request(PackingApi.SCAN,new JSONObject().put("action","scanner_pack").put("orderId",item.getString("order_id")).put("orderBarcode",code));
-            if(!packed.optBoolean("ok"))throw new Exception("Packed status was not confirmed. Scan the order again.");
-            JSONObject found=item;runOnUiThread(()->{networkBusy=false;pendingOrder=found;lastOrderId=found.optString("order_id");pendingBarcode=code;pendingUntil=System.currentTimeMillis()+60000;JSONObject order=found.optJSONObject("order");orderLabel.setText("#"+order.optString("orderNumber")+" - PACKED\n"+order.optString("customerName")+"\n"+order.optString("plushName")+" · "+order.optString("character"));tell("Order packed. Scan its matching ID card.");if(!pendingCard.isEmpty()){String card=pendingCard;pendingCard="";beginCard(card,mono,epoch);}else focusScan();});
+            JSONObject found=item;runOnUiThread(()->{networkBusy=false;pendingOrder=found;lastOrderId=found.optString("order_id");pendingBarcode=code;pendingUntil=System.currentTimeMillis()+60000;JSONObject order=found.optJSONObject("order");orderLabel.setText("#"+order.optString("orderNumber")+" - "+order.optString("status").replace('_',' ').toUpperCase(Locale.ROOT)+"\n"+order.optString("customerName")+"\n"+order.optString("plushName")+" · "+order.optString("character"));tell("Order found. Scan its matching ID card. Status will change only after the video is saved online.");if(!pendingCard.isEmpty()){String card=pendingCard;pendingCard="";beginCard(card,mono,epoch);}else focusScan();});
         }catch(Exception error){runOnUiThread(()->{pendingCard="";pendingUntil=0;pairingProblem(error,"");});}});
     }
 
@@ -120,8 +119,8 @@ public final class MainActivity extends Activity {
         networkBusy=true;tell("Checking matching ID card and recording the packing video...");refreshState();JSONObject item=pendingOrder;
         ui.postDelayed(()->{if(capture==clip&&!clip.verified){if(encoder!=null)encoder.ring.cancel(clip);capture=null;networkBusy=false;pairingProblem(new Exception("Card verification timed out. Scan again; the video was not marked saved."),clipOrder.optString("order_id"));}},20000);
         io.execute(()->{try{
-            {PackingApi api=new PackingApi(SessionStore.token(this));JSONObject paired=api.request(PackingApi.SCAN,new JSONObject().put("action","scanner_pair").put("orderId",item.getString("order_id")).put("orderBarcode",clipBarcode).put("cardCode",card));if(!paired.optBoolean("ok"))throw new Exception("The matching card was not confirmed. Scan again.");}
-            runOnUiThread(()->{if(capture!=clip)return;clip.verified=true;networkBusy=false;pendingOrder=null;pendingCard="";pendingUntil=0;tell("Matching card confirmed. Verify the plushie audio and keep packing until the recording countdown finishes.");audioWarning=false;if(audioLabel!=null)audioLabel.setTextColor(MUTED);feedback.result(true,"",item.optString("order_id"));});
+            {PackingApi api=new PackingApi(SessionStore.token(this));JSONObject paired=api.request(PackingApi.PACKING,new JSONObject().put("action","pair").put("orderId",item.getString("order_id")).put("orderBarcode",clipBarcode).put("cardCode",card));if(!paired.optBoolean("ok")||!paired.optBoolean("paired"))throw new Exception("The matching card was not confirmed. Scan again.");}
+            runOnUiThread(()->{if(capture!=clip)return;clip.verified=true;networkBusy=false;pendingOrder=null;pendingCard="";pendingUntil=0;tell("Matching card confirmed. Verify the audio and finish packing. Packed status waits for the video to save online.");audioWarning=false;if(audioLabel!=null)audioLabel.setTextColor(MUTED);feedback.result(true,"",item.optString("order_id"));});
         }catch(Exception error){runOnUiThread(()->{if(capture!=clip)return;if(encoder!=null)encoder.ring.cancel(clip);capture=null;pairingProblem(error,item.optString("order_id"));});}});
     }
 
@@ -129,9 +128,9 @@ public final class MainActivity extends Activity {
         if(capture!=clip)return;if(!clip.error.isEmpty()||!clip.verified){capture=null;tell(clip.error.isEmpty()?"Card verification was not complete. Scan again.":clip.error);focusScan();return;}
         capture=null;savingLocal=true;JSONObject item=clipOrder;String code=clipBarcode,card=clipCard,id=clipId;int rotation=clipRotation;tell("Saving the packing video safely on the tablet...");
         io.execute(()->{try{
-            File dir=ProofQueue.folder(this);dir.mkdirs();File video=new File(dir,id+".mp4");String number=item.getJSONObject("order").optString("orderNumber",item.getString("order_id"));JSONObject metadata=ProofQueue.metadata(id,item.getString("order_id"),number,code,card,clip,video);ProofQueue.write(new File(dir,id+".pending"),metadata);RollingEncoder.save(video,clip,format,rotation);
+            File dir=ProofQueue.folder(this);dir.mkdirs();File video=new File(dir,id+".mp4");String number=item.getJSONObject("order").optString("orderNumber",item.getString("order_id"));JSONObject metadata=ProofQueue.metadata(id,item.getString("order_id"),number,code,card,clip,video).put("packAfterSave",true);ProofQueue.write(new File(dir,id+".pending"),metadata);RollingEncoder.save(video,clip,format,rotation);
             {metadata.put("size",video.length());ProofQueue.write(new File(dir,id+".json"),metadata);new File(dir,id+".pending").delete();UploadWorker.enqueue(this);}
-            runOnUiThread(()->{savingLocal=false;tell("Packing video secured on tablet and queued for automatic upload to #"+number+". Ready for the next order.");focusScan();refreshState();});
+            runOnUiThread(()->{savingLocal=false;tell("Video saved on tablet and queued for upload. Packed status waits for online saving. Order #"+number+". Ready for the next order.");focusScan();refreshState();});
         }catch(Exception error){runOnUiThread(()->{savingLocal=false;tell("Video could not be saved: "+error.getMessage()+" Scan the parcel again.");focusScan();});}});
     });}
 

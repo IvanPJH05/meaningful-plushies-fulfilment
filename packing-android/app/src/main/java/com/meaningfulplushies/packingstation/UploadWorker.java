@@ -28,10 +28,12 @@ public final class UploadWorker extends Worker {
                         ready=api.request(PackingApi.PROOFS,new JSONObject().put("action","complete").put("id",meta.getString("id")));
                     }
                     if(!ready.optBoolean("ready")){failed=true;continue;}
+                    if(meta.optBoolean("packAfterSave")&&!ready.optBoolean("packed"))throw new Exception("Video saving and Packed status were not both confirmed. Retrying safely.");
                     // Only a verified cloud 'ready' response releases the local source.
                     if(!selected.delete())throw new Exception("Video is saved online; local queue cleanup will retry.");
                     if(video.exists())video.delete();
-                    context.getSharedPreferences("station",Context.MODE_PRIVATE).edit().putString("lastSaved","Video saved to #"+meta.optString("orderNumber")).apply();
+                    android.content.SharedPreferences.Editor saved=context.getSharedPreferences("station",Context.MODE_PRIVATE).edit().putString("lastSaved",meta.optBoolean("packAfterSave")?"Video saved online and #"+meta.optString("orderNumber")+" marked Packed.":"Video saved to #"+meta.optString("orderNumber"));
+                    if(meta.optBoolean("packAfterSave"))saved.putString("lastPackedProofId",meta.getString("id"));saved.apply();
                 }catch(Exception error){failed=true;try{JSONObject meta=ProofQueue.read(selected);meta.put("lastError",error instanceof PackingApi.ApiError && ((PackingApi.ApiError)error).status==401?"Sign in again to resume uploads.":String.valueOf(error.getMessage()));ProofQueue.write(selected,meta);}catch(Exception ignored){} }
             }
             return failed?Result.retry():Result.success();
