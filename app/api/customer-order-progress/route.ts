@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { mobileServiceClient } from "@/lib/mobile-api";
+import { customerOrderShipments } from "@/lib/customer-order-shipments";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,7 @@ export async function POST(request: Request) {
   }
 
   const db = mobileServiceClient();
-  const query = db.from("fulfilment_orders").select("id,status").limit(50);
+  const query = db.from("fulfilment_orders").select("id,status,courier:data->>courier,trackingNumber:data->>trackingNumber").limit(50);
   const { data: orders, error } = tiktok
     ? await query.eq("data->>salesChannel", "tiktok").like("order_number", "% " + number)
     : await query.neq("data->>salesChannel", "tiktok").in("order_number", [number, "#" + number]);
@@ -25,7 +26,7 @@ export async function POST(request: Request) {
     .in("order_id", orders.map(order => order.id)).eq("disposition", "active");
   if (itemsError) return NextResponse.json({ error: "unavailable" }, { status: 503, headers });
 
-  // An order number is a lookup reference, so return only a coarse milestone.
+  // Return only coarse progress and courier references, never private order data.
   // For split orders show the earliest item that still needs to progress.
   const stages = orders.map(order => {
     const stage = items?.find(item => item.order_id === order.id)?.stage;
@@ -37,5 +38,8 @@ export async function POST(request: Request) {
     return "preparing";
   });
   const stage = (["review", "preparing", "sewing", "qc", "packed", "shipped"] as const).find(value => stages.includes(value));
-  return NextResponse.json({ stage }, { headers });
+  const shipments = customerOrderShipments(orders.map((order, index) => ({
+    shipped: stages[index] === "shipped", courier: order.courier, trackingNumber: order.trackingNumber,
+  })));
+  return NextResponse.json({ stage, shipments }, { headers });
 }

@@ -13,6 +13,7 @@ const milestones = [
 let language = "en";
 let stage = "";
 let reference = "";
+let shipments = [];
 let lookup;
 const words = (english, malay) => language === "ms" ? malay : english;
 const channel = () => document.querySelector('input[name="channel"]:checked').value;
@@ -27,6 +28,26 @@ function render() {
   card.innerHTML = `<div class="status"><div class="status-copy"><small></small><h3></h3></div></div><div class="milestones with-shipped" aria-label="Order progress"></div>`;
   card.querySelector("small").textContent = words("Your order", "Pesanan anda") + " #" + reference;
   card.querySelector("h3").textContent = title ? words(title[3], title[4]) : words("Please contact our team for an update.", "Sila hubungi pasukan kami untuk maklumat terkini.");
+  shipments.forEach(shipment => {
+    const delivery = document.createElement('div');
+    delivery.className = 'jnt-handoff';
+    const details = document.createElement('span');
+    const courier = shipment.courier || words('Courier', 'Kurier');
+    details.append(`${courier} · ${words('Tracking number', 'Nombor penjejakan')}`);
+    const number = document.createElement('strong');
+    number.textContent = shipment.trackingNumber;
+    details.append(number);
+    delivery.append(details);
+    // Build links only for the recognised courier, never an arbitrary API URL.
+    if (shipment.courier === 'J&T Express' && /^[A-Za-z0-9-]{6,40}$/.test(shipment.trackingNumber)) {
+      const link = document.createElement('a');
+      link.href = `https://www.jtexpress.my/tracking/${encodeURIComponent(shipment.trackingNumber)}`;
+      link.target = '_blank'; link.rel = 'noopener noreferrer';
+      link.textContent = words('Track with J&T ↗', 'Jejak dengan J&T ↗');
+      delivery.append(link);
+    }
+    card.querySelector('.status-copy').append(delivery);
+  });
   if (title) milestones.forEach(([, en, ms], position) => {
     const step = document.createElement("div");
     step.className = "milestone" + (position < index ? " done" : position === index ? " current" : "");
@@ -51,6 +72,7 @@ form.addEventListener("submit", async event => {
   event.preventDefault();
   lookup?.abort();
   stage = "";
+  shipments = [];
   render();
   const number = input.value.trim().replace(/^#/, "");
   const source = channel();
@@ -80,6 +102,7 @@ form.addEventListener("submit", async event => {
     if (controller.signal.aborted) return;
     reference = number;
     stage = data.stage;
+    shipments = Array.isArray(data.shipments) ? data.shipments : [];
     render();
   } catch {
     if (controller.signal.aborted) return;
@@ -92,6 +115,7 @@ form.addEventListener("submit", async event => {
 document.querySelectorAll('input[name="channel"]').forEach(radio => radio.addEventListener("change", () => {
   lookup?.abort();
   input.value = "";
+  shipments = [];
   error.hidden = true;
   stage = "";
   render();
