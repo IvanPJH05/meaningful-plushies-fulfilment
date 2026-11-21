@@ -3421,6 +3421,7 @@ function Home() {
           shippingLabelUrl: order.shippingLabelUrl,
           source: fulfilmentSourceLabel(order, manualOrders),
           isCod: isCodFulfilmentOrder(order, manualOrders),
+          isInfluencer: isInfluencerFulfilmentOrder(order, creatorProfiles, freeCreatorSampleCodes),
           address: order.address,
           codAmount: codCollectionAmount(order, manualOrders),
         })) }),
@@ -10197,7 +10198,17 @@ function Editable({ label, value, onChange, disabled, placeholder, wide, textare
 function PackingSlip({ order, manualOrders }: { order: Order; manualOrders: ManualOrder[] }) {
   const isCod = isCodFulfilmentOrder(order, manualOrders);
   const charm = isPlushCharm(order);
-  return <article className={`a6-slip${isCod ? " is-cod" : ""}${charm ? " is-plush-charm" : ""}`}>{isCod && <div className="cod-watermark" aria-hidden="true">COD</div>}<header><div className="slip-header-main"><div><span>ORDER ID</span><strong>{packingSlipOrderLabel(order)}</strong></div><div className="slip-order-markers"><OrderMarkers order={order} manualOrders={manualOrders} /></div></div></header><div className="slip-fields"><div className="primary-slip-field"><label>CHARACTER:</label><p>{displayedCharacter(order) || "-"}</p></div><div className="primary-slip-field"><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{packingSlipRemark(order)}</p></div></div><OrderBarcode value={packingItemBarcodeValue(order)} compact /></article>;
+  const creatorProfiles = useContext(CreatorProfilesContext);
+  const sampleCodes = useContext(FreeCreatorSampleCodesContext);
+  const influencer = isInfluencerFulfilmentOrder(order, creatorProfiles, sampleCodes);
+  return <article className={`a6-slip${isCod ? " is-cod" : ""}${charm ? " is-plush-charm" : ""}`}>
+    {isCod && <div className="cod-watermark" aria-hidden="true">COD</div>}
+    <header><div className="slip-header-main"><div><span>ORDER ID</span><strong>{packingSlipOrderLabel(order)}</strong></div><div className="slip-order-markers"><OrderMarkers order={order} manualOrders={manualOrders} /></div></div>
+      {influencer && <div className="slip-influencer-banner">INFLUENCER ORDER</div>}
+    </header>
+    <div className="slip-fields"><div className="primary-slip-field"><label>CHARACTER:</label><p>{displayedCharacter(order) || "-"}</p></div><div className="primary-slip-field"><label>PLUSH NAME:</label><p>{order.plushName || "-"}</p></div><div><label>CUSTOMER:</label><p>{order.customerName || "-"}</p></div><div><label>PHONE:</label><p>{order.phone || "-"}</p></div><div className="remark-row"><label>REMARK:</label><p>{packingSlipRemark(order)}</p></div></div>
+    <OrderBarcode value={packingItemBarcodeValue(order)} compact />
+  </article>;
 }
 
 function ShippingLabelPage({ order, manualOrders }: { order: Order; manualOrders: ManualOrder[] }) {

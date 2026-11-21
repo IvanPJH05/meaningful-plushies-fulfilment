@@ -23,6 +23,7 @@ type PackingPdfOrder = {
   shippingLabelUrl?: string;
   source?: string;
   isCod?: boolean;
+  isInfluencer?: boolean;
   address?: string;
   codAmount?: number;
 };
@@ -103,6 +104,11 @@ function drawPackingSlip(page: PDFPage, order: PackingPdfOrder, regular: PDFFont
     drawText(cod, right - codWidth + 4, top - sourceHeight - 11, codFontSize, true, rgb(1, 1, 1));
   }
   drawText(orderLabel, margin, top - 38, 38, true);
+  if (order.isInfluencer === true) {
+    const banner = "INFLUENCER ORDER";
+    page.drawRectangle({ x: margin, y: top - 64, width: right - margin, height: 17, color: rgb(0, 0, 0) });
+    drawText(banner, (A6_WIDTH - bold.widthOfTextAtSize(banner, 12)) / 2, top - 60, 12, true, rgb(1, 1, 1));
+  }
   const headerRuleY = top - 70;
   page.drawLine({ start: { x: margin, y: headerRuleY }, end: { x: right, y: headerRuleY }, thickness: 2.25, color: rgb(0, 0, 0) });
 
