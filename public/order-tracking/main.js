@@ -18,6 +18,7 @@ let packingVideo = null;
 let lookup;
 const words = (english, malay) => language === "ms" ? malay : english;
 const channel = () => document.querySelector('input[name="channel"]:checked').value;
+const customisationCode = value => /^(?:MP-)?[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
 
 function render() {
   result.replaceChildren();
@@ -127,27 +128,7 @@ function renderPackingVideo() {
   });
 }
 
-function configure() {
-  const tiktok = channel() === "tiktok";
-  input.maxLength = tiktok ? 30 : 11;
-  input.inputMode = "numeric";
-  input.setAttribute("aria-label", tiktok ? words("TikTok Shop order ID", "ID Pesanan TikTok Shop") : words("Shopify order number", "Nombor pesanan Shopify"));
-}
-
-form.addEventListener("submit", async event => {
-  event.preventDefault();
-  lookup?.abort();
-  stage = "";
-  shipments = [];
-  packingVideo = null;
-  render();
-  const number = input.value.trim().replace(/^#/, "");
-  const source = channel();
-  if (!(source === "tiktok" ? /^\d{8,30}$/ : /^\d{1,10}$/).test(number)) {
-    error.textContent = words("Enter the order number from your confirmation.", "Masukkan nombor pesanan daripada pengesahan anda.");
-    error.hidden = false;
-    return;
-  }
+function updateShareLink(number, source) {
   const shareUrl = new URL(location.href);
   const trackingPath = shareUrl.pathname.match(/^(\/(?:[a-z]{2}(?:-[a-zA-Z]{2})?\/)?pages\/track-your-order)(?:\/\d+)?\/?$/);
   if (trackingPath && (source === 'tiktok' || number.length === 4)) {
@@ -161,6 +142,33 @@ form.addEventListener("submit", async event => {
     else shareUrl.searchParams.delete('channel');
   }
   history.replaceState(null, '', shareUrl);
+}
+
+function configure() {
+  const tiktok = channel() === "tiktok";
+  input.maxLength = tiktok ? 30 : 39;
+  input.inputMode = tiktok ? 'numeric' : 'text';
+  const label = tiktok ? words('TikTok Shop order ID', 'ID Pesanan TikTok Shop') : words('Order number or customisation code', 'Nombor pesanan atau kod kustomisasi');
+  input.setAttribute('aria-label', label);
+  input.placeholder = label;
+}
+
+form.addEventListener("submit", async event => {
+  event.preventDefault();
+  lookup?.abort();
+  stage = "";
+  shipments = [];
+  packingVideo = null;
+  render();
+  const number = input.value.trim().replace(/^#/, "");
+  const source = channel();
+  const isCode = source === 'website' && customisationCode(number);
+  if (!isCode && !(source === "tiktok" ? /^\d{8,30}$/ : /^\d{1,10}$/).test(number)) {
+    error.textContent = words("Enter your order number or full customisation code.", "Masukkan nombor pesanan atau kod kustomisasi penuh anda.");
+    error.hidden = false;
+    return;
+  }
+  if (!isCode) updateShareLink(number, source);
   error.hidden = true;
   result.textContent = words("Checking your order…", "Menyemak pesanan anda…");
   const controller = new AbortController();
@@ -171,8 +179,14 @@ form.addEventListener("submit", async event => {
       body: JSON.stringify({ number, channel: source }), signal: controller.signal,
     });
     if (controller.signal.aborted) return;
+    if (response.status === 409) {
+      error.textContent = words('Your customisation is saved. Tracking will be available once your order is confirmed.', 'Kustomisasi anda telah disimpan. Penjejakan akan tersedia setelah pesanan anda disahkan.');
+      error.hidden = false;
+      render();
+      return;
+    }
     if (response.status === 404) {
-      error.textContent = words("No tracking found. Check your order number and try again.", "Penjejakan tidak ditemui. Semak nombor pesanan anda dan cuba lagi.");
+      error.textContent = words("No tracking found. Check your order number or customisation code and try again.", "Penjejakan tidak ditemui. Semak nombor pesanan atau kod kustomisasi anda dan cuba lagi.");
       error.hidden = false;
       render();
       return;
@@ -180,7 +194,11 @@ form.addEventListener("submit", async event => {
     if (!response.ok) throw new Error("Lookup failed");
     const data = await response.json();
     if (controller.signal.aborted) return;
-    reference = number;
+    const resolved = typeof data.orderNumber === 'string' && (source === 'tiktok' ? /^\d{8,30}$/ : /^\d{1,10}$/).test(data.orderNumber) ? data.orderNumber : number;
+    if (isCode && resolved === number) throw new Error('Order not linked');
+    reference = resolved;
+    input.value = resolved;
+    updateShareLink(resolved, source);
     stage = data.stage;
     shipments = Array.isArray(data.shipments) ? data.shipments : [];
     packingVideo = data.packingVideo || null;
@@ -209,7 +227,7 @@ document.querySelector("#order-help").addEventListener("click", () => {
   document.querySelector("#help-channel").textContent = tiktok ? "TikTok Shop" : words("Website / WhatsApp", "Laman web / WhatsApp");
   document.querySelector("#help-note").textContent = tiktok
     ? words("Open the order in TikTok Shop and copy the full numeric Order ID.", "Buka pesanan dalam TikTok Shop dan salin ID pesanan penuh.")
-    : words("Use the Shopify order number from your email or WhatsApp confirmation.", "Gunakan nombor pesanan Shopify dalam e-mel atau mesej WhatsApp anda.");
+    : words("Use your Shopify order number or full MP- customisation code from your email or WhatsApp confirmation.", "Gunakan nombor pesanan Shopify atau kod kustomisasi MP- penuh daripada e-mel atau pengesahan WhatsApp anda.");
   help.showModal();
 });
 document.querySelector("#close-help").addEventListener("click", () => help.close());
@@ -244,8 +262,8 @@ const pathOrder = location.pathname.match(/^\/(?:[a-z]{2}(?:-[a-zA-Z]{2})?\/)?pa
 const initialOrder = pathOrder || (sharedLink.get('order') || '').trim().replace(/^#/, '');
 const initialChannel = pathOrder
   ? (pathOrder.length === 4 ? 'website' : 'tiktok')
-  : sharedLink.get('channel') === 'tiktok' || initialOrder.length > 4 ? 'tiktok' : 'website';
-if (pathOrder || (initialChannel === 'tiktok' ? /^\d{8,30}$/ : /^\d{1,10}$/).test(initialOrder)) {
+  : customisationCode(initialOrder) ? 'website' : sharedLink.get('channel') === 'tiktok' || initialOrder.length > 4 ? 'tiktok' : 'website';
+if (pathOrder || customisationCode(initialOrder) || (initialChannel === 'tiktok' ? /^\d{8,30}$/ : /^\d{1,10}$/).test(initialOrder)) {
   document.querySelector(`input[name="channel"][value="${initialChannel}"]`).checked = true;
   input.value = initialOrder;
   configure();

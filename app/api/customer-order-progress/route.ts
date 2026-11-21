@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { mobileServiceClient } from "@/lib/mobile-api";
 import { customerOrderShipments } from "@/lib/customer-order-shipments";
 import { customerPackingVideo } from "@/lib/customer-packing-video";
+import { customisationTrackingReference, resolveCustomisationTracking } from "@/lib/customer-customisation-tracking";
 
 export const dynamic = "force-dynamic";
 
@@ -9,13 +10,23 @@ const headers = { "Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollo
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
-  const number = typeof body?.number === "string" ? body.number : "";
+  let number = typeof body?.number === "string" ? body.number.trim() : "";
   const tiktok = body?.channel === "tiktok";
-  if ((!tiktok && body?.channel !== "website") || !(tiktok ? /^\d{8,30}$/ : /^\d{1,10}$/).test(number)) {
+  const customisation = !tiktok && customisationTrackingReference(number);
+  if ((!tiktok && body?.channel !== "website") || (!customisation && !(tiktok ? /^\d{8,30}$/ : /^\d{1,10}$/).test(number))) {
     return NextResponse.json({ error: "invalid" }, { status: 400, headers });
   }
 
   const db = mobileServiceClient();
+  if (customisation) {
+    try {
+      const linked = await resolveCustomisationTracking(db, number);
+      if ('error' in linked) return NextResponse.json({ error: linked.error }, { status: linked.error === 'order_pending' ? 409 : 404, headers });
+      number = linked.number;
+    } catch {
+      return NextResponse.json({ error: 'unavailable' }, { status: 503, headers });
+    }
+  }
   const query = db.from("fulfilment_orders").select("id,status,courier:data->>courier,trackingNumber:data->>trackingNumber").limit(50);
   const { data: orders, error } = tiktok
     ? await query.eq("data->>salesChannel", "tiktok").like("order_number", "% " + number)
@@ -53,5 +64,5 @@ export async function POST(request: Request) {
     // Unavailable footage must never break order tracking or expose internals.
     console.warn('Customer packing video lookup unavailable');
   }
-  return NextResponse.json({ stage, shipments, packingVideo }, { headers });
+  return NextResponse.json({ stage, shipments, packingVideo, orderNumber: number }, { headers });
 }
