@@ -28,7 +28,7 @@ public final class MainActivity extends Activity {
     private EditText scan;private TextView cameraState,status,orderLabel,uploadLabel;private TextureView preview;
     private TextView connectionLabel;private boolean serviceReady=false;
     private Button cameraButton;private boolean networkBusy=false,savingLocal=false,cameraRequested=false,foreground=false;
-    private int previewWidth,previewHeight,previewDisplay=-1,previewCorrection;private String previewKey="";private Button rotateCameraButton;
+    private int previewWidth,previewHeight,previewDisplay=Surface.ROTATION_0,previewCorrection;private String previewKey="";private Button rotateCameraButton;
     private TabletCamera tabletCamera;private String activeCamera="Camera";private int videoRotation,clipRotation;
     private ICameraHelper helper;private UsbDevice selectedUsb;private RollingEncoder encoder;
     private PackingFeedback feedback;private TextView audioLabel;private String lastOrderId="";private boolean audioWarning;
@@ -205,6 +205,6 @@ public final class MainActivity extends Activity {
     private boolean videoDevice(UsbDevice device){if(device.getDeviceClass()==UsbConstants.USB_CLASS_VIDEO)return true;for(int i=0;i<device.getInterfaceCount();i++)if(device.getInterface(i).getInterfaceClass()==UsbConstants.USB_CLASS_VIDEO)return true;return false;}
     private void selectCamera(UsbDevice device){if(encoder!=null&&device.equals(selectedUsb)){tell("This webcam is already connected.");focusScan();return;}if(helper!=null&&helper.isCameraOpened())helper.closeCamera();closeEncoder("");selectedUsb=device;tell("Connecting "+cameraName(device)+"...");helper.selectDevice(device);}
     private void closeEncoder(String reason){if(capture!=null){if(encoder!=null)encoder.ring.cancel(capture);capture=null;}if(encoder!=null){if(helper!=null)helper.removeSurface(encoder.surface);encoder.close();encoder=null;}if(!reason.isEmpty())tell(reason);}
-    private void stopCamera(String reason){cameraRequested=false;previewWidth=0;previewHeight=0;previewDisplay=-1;selectedUsb=null;if(tabletCamera!=null){tabletCamera.close();tabletCamera=null;}closeEncoder(reason);if(helper!=null){ICameraHelper old=helper;helper=null;old.closeCamera();old.release();}selectedUsb=null;}
+    private void stopCamera(String reason){cameraRequested=false;previewWidth=0;previewHeight=0;previewDisplay=Surface.ROTATION_0;selectedUsb=null;if(tabletCamera!=null){tabletCamera.close();tabletCamera=null;}closeEncoder(reason);if(helper!=null){ICameraHelper old=helper;helper=null;old.closeCamera();old.release();}selectedUsb=null;}
     @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){super.onRequestPermissionsResult(request,permissions,results);if(request==100&&results.length>0&&results[0]==PackageManager.PERMISSION_GRANTED)connectCamera();else if(request==100)tell("Camera permission is needed to record packing videos. Tap Choose camera to retry.");}
 }
