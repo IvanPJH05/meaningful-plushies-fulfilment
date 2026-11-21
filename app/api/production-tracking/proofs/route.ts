@@ -37,7 +37,7 @@ export async function POST(request:Request) {
       if(existingError) throw existingError;
       if(existing) {
         if(existing.pack_after_save!==packAfterSave || existing.order_id!==capture.orderId || existing.card_code!==capture.cardCode || existing.order_barcode!==capture.orderBarcode || Date.parse(existing.scanned_at)!==Date.parse(capture.scannedAt) || existing.source_size!==capture.size || existing.source_type!==capture.contentType || Date.parse(existing.source_started_at)!==Date.parse(capture.sourceStartedAt)) throw new PairingError("This video reference belongs to a different recording.");
-        if(existing.status==="ready") return NextResponse.json({ready:true},{headers});
+        if(existing.status==="ready") return NextResponse.json({ready:true,packed:existing.pack_after_save},{headers});
       } else {
         const {data:order,error}=await client.from("fulfilment_orders").select("id,order_number").eq("id",capture.orderId).maybeSingle();
         if(error || !order || !matchesProductionBarcode({id:order.id,orderNumber:order.order_number},capture.orderBarcode)) throw new PairingError("The packing barcode does not match this order.");
@@ -65,7 +65,7 @@ export async function POST(request:Request) {
       return NextResponse.json({url:signed.data.signedUrl},{headers});
     }
     if(body.action!=="complete") throw new PairingError("Choose a valid video action.");
-    if(proof.status==="ready") return NextResponse.json({ready:true},{headers});
+    if(proof.status==="ready") return NextResponse.json({ready:true,packed:proof.pack_after_save},{headers});
     lease=randomUUID();activeId=proof.id;
     const acquired=await client.from("packing_proof_videos").update({status:"processing",processing_token:lease,lease_until:new Date(Date.now()+120000).toISOString(),error:""}).eq("id",proof.id).or(`status.in.(uploading,failed),lease_until.lt.${new Date().toISOString()}`).select("id").maybeSingle();
     if(acquired.error) throw acquired.error;
@@ -88,7 +88,7 @@ export async function POST(request:Request) {
       if(saved.error || !saved.data) throw new Error("The recording changed while saving. Please retry.");
     }
     await storage.remove([proof.source_path]);
-    return NextResponse.json({ready:true},{headers});
+    return NextResponse.json({ready:true,packed:proof.pack_after_save},{headers});
   } catch(error) {
     if(activeId && lease) await client.from("packing_proof_videos").update({status:"failed",error:error instanceof Error?error.message.slice(0,250):"Saving failed. Please retry.",lease_until:null}).eq("id",activeId).eq("processing_token",lease).neq("status","ready");
     return failure(error);
