@@ -24,6 +24,8 @@ final class TabletCamera implements AutoCloseable {
     private CameraCaptureSession session;
     private Surface previewSurface;
     private boolean closed;
+    int sensorOrientation;
+    boolean frontFacing;
     @SuppressLint("MissingPermission")
     void open(Context context,String id,TextureView preview,int displayDegrees,Listener listener) throws Exception {
         CameraManager manager=(CameraManager)context.getSystemService(Context.CAMERA_SERVICE);
@@ -38,6 +40,7 @@ final class TabletCamera implements AutoCloseable {
         if(common.isEmpty())throw new Exception("No compatible camera recording size was found.");
         Size size=common.get(0);Integer sensor=characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
         Integer facing=characteristics.get(CameraCharacteristics.LENS_FACING);
+        sensorOrientation=sensor==null?0:sensor;frontFacing=Integer.valueOf(CameraCharacteristics.LENS_FACING_FRONT).equals(facing);
         int rotation=((sensor==null?0:sensor)+(Integer.valueOf(CameraCharacteristics.LENS_FACING_FRONT).equals(facing)?displayDegrees:-displayDegrees)+360)%360;
         SurfaceTexture texture=preview.getSurfaceTexture();if(texture==null)throw new Exception("Camera preview is not ready. Try choosing the camera again.");
         texture.setDefaultBufferSize(size.getWidth(),size.getHeight());previewSurface=new Surface(texture);

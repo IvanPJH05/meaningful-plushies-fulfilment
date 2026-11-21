@@ -28,13 +28,14 @@ public final class MainActivity extends Activity {
     private EditText scan;private TextView cameraState,status,orderLabel,uploadLabel;private TextureView preview;
     private TextView connectionLabel;private boolean serviceReady=false;
     private Button cameraButton;private boolean networkBusy=false,savingLocal=false,cameraRequested=false,foreground=false;
+    private int previewWidth,previewHeight,previewDisplay=-1,previewCorrection;private String previewKey="";private Button rotateCameraButton;
     private TabletCamera tabletCamera;private String activeCamera="Camera";private int videoRotation,clipRotation;
     private ICameraHelper helper;private UsbDevice selectedUsb;private RollingEncoder encoder;
     private PackingFeedback feedback;private TextView audioLabel;private String lastOrderId="";private boolean audioWarning;
     private JSONObject pendingOrder;private String pendingBarcode="",pendingCard="";private long pendingUntil;
     private PacketRing.Capture capture;private JSONObject clipOrder;private String clipBarcode,clipCard,clipId;
     private long scanAtMono,scanAtEpoch;private int ticks=0;
-    private final Runnable heartbeat=new Runnable(){public void run(){if(!foreground)return;refreshState();if(++ticks%60==0)UploadWorker.enqueue(MainActivity.this);ui.postDelayed(this,250);}};
+    private final Runnable heartbeat=new Runnable(){public void run(){if(!foreground)return;if(preview!=null&&preview.getDisplay()!=null&&preview.getDisplay().getRotation()!=previewDisplay)refreshCameraPreview();refreshState();if(++ticks%60==0)UploadWorker.enqueue(MainActivity.this);ui.postDelayed(this,250);}};
 
     @Override public void onCreate(Bundle state){super.onCreate(state);feedback=new PackingFeedback(this,new PackingFeedback.Listener(){public void busy(boolean busy){if(audioLabel!=null&&!audioWarning)audioLabel.setText(busy?"Playing pairing feedback / order audio...":"Audio finished. Check the plushie before continuing.");refreshState();focusScan();}public void notice(String message){audioWarning=true;if(audioLabel!=null){audioLabel.setText(message);audioLabel.setTextColor(Color.rgb(170,45,45));}}});getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);if(SessionStore.token(this).isEmpty())loginScreen();else stationScreen();}
     @Override public void onStart(){super.onStart();foreground=true;ui.post(heartbeat);}
@@ -61,9 +62,9 @@ public final class MainActivity extends Activity {
         connectionLabel=text("Checking order service...",15,MUTED);root.addView(connectionLabel);root.addView(button("Check connection",this::checkConnection));
         LinearLayout row=new LinearLayout(this);row.setOrientation(getResources().getConfiguration().screenWidthDp>=850?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);root.addView(row);
         LinearLayout left=card(),right=card();if(row.getOrientation()==LinearLayout.HORIZONTAL){left.setLayoutParams(new LinearLayout.LayoutParams(0,-2,1));right.setLayoutParams(new LinearLayout.LayoutParams(0,-2,1));((LinearLayout.LayoutParams)right.getLayoutParams()).leftMargin=dp(18);}row.addView(left);row.addView(right);
-        left.addView(title("Camera",22));cameraState=text("CAMERA OFF",14,MUTED);left.addView(cameraState);preview=new TextureView(this);left.addView(preview,new LinearLayout.LayoutParams(-1,dp(280)));
-        preview.setSurfaceTextureListener(new TextureView.SurfaceTextureListener(){public void onSurfaceTextureAvailable(SurfaceTexture s,int w,int h){if(helper!=null&&helper.isCameraOpened())helper.addSurface(s,false);}public void onSurfaceTextureSizeChanged(SurfaceTexture s,int w,int h){}public boolean onSurfaceTextureDestroyed(SurfaceTexture s){stopCamera("Camera preview closed. Reconnect before scanning.");return true;}public void onSurfaceTextureUpdated(SurfaceTexture s){}});
-        cameraButton=button("Choose camera",this::connectCamera);left.addView(cameraButton);left.addView(text("3 seconds before the matching scan + 20 seconds after. Video only; no microphone.",14,MUTED));
+        left.addView(title("Camera",22));cameraState=text("CAMERA OFF",14,MUTED);left.addView(cameraState);preview=new TextureView(this);preview.setOpaque(false);FrameLayout cameraFrame=new FrameLayout(this);cameraFrame.setBackgroundColor(Color.BLACK);cameraFrame.addView(preview,new FrameLayout.LayoutParams(-1,-1));left.addView(cameraFrame,new LinearLayout.LayoutParams(-1,dp(280)));preview.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob)->refreshCameraPreview());
+        preview.setSurfaceTextureListener(new TextureView.SurfaceTextureListener(){public void onSurfaceTextureAvailable(SurfaceTexture s,int w,int h){if(helper!=null&&helper.isCameraOpened())helper.addSurface(s,false);}public void onSurfaceTextureSizeChanged(SurfaceTexture s,int w,int h){if(previewWidth>0)s.setDefaultBufferSize(previewWidth,previewHeight);refreshCameraPreview();}public boolean onSurfaceTextureDestroyed(SurfaceTexture s){stopCamera("Camera preview closed. Reconnect before scanning.");return true;}public void onSurfaceTextureUpdated(SurfaceTexture s){}});
+        cameraButton=button("Choose camera",this::connectCamera);left.addView(cameraButton);rotateCameraButton=button("Rotate camera 90°",()->{if(encoder==null)return;previewCorrection=(previewCorrection+90)%360;getSharedPreferences("station",MODE_PRIVATE).edit().putInt(previewKey,previewCorrection).apply();refreshCameraPreview();});left.addView(rotateCameraButton);left.addView(text("3 seconds before the matching scan + 20 seconds after. Video only; no microphone.",14,MUTED));
         right.addView(title("Barcode scanner",22));orderLabel=title("Waiting for an order",23);right.addView(orderLabel);scan=field("Scan order or ID-card barcode",false);scan.setShowSoftInputOnFocus(false);scan.setImeOptions(EditorInfo.IME_ACTION_DONE);scan.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(512)});right.addView(scan);
         scan.setOnEditorActionListener((v,action,event)->{if(action==EditorInfo.IME_ACTION_DONE || (event!=null&&event.getKeyCode()==KeyEvent.KEYCODE_ENTER&&event.getAction()==KeyEvent.ACTION_DOWN)){submit();return true;}return false;});scan.setOnKeyListener((v,key,event)->{if(key==KeyEvent.KEYCODE_ENTER&&event.getAction()==KeyEvent.ACTION_DOWN){submit();return true;}return false;});
         right.addView(button("Submit scan",this::submit));status=text("Choose a camera, wait for READY, then scan the order and its matching ID card.",17,MUTED);right.addView(status);
@@ -89,7 +90,7 @@ public final class MainActivity extends Activity {
         long now=System.nanoTime()/1000;boolean ready=encoder!=null&&encoder.ring.ready(now);
         cameraState.setText(capture!=null?"RECORDING - "+Math.max(0,21-(System.currentTimeMillis()-capture.scanEpochMs)/1000)+"s":ready?"READY - "+activeCamera:encoder!=null?"WARMING UP - 3-second history":"CAMERA OFF");
         cameraState.setTextColor(capture!=null?Color.rgb(170,45,45):ready?Color.rgb(19,125,84):MUTED);
-        scan.setEnabled(!networkBusy&&capture==null&&!savingLocal&&!feedback.isBusy());cameraButton.setEnabled(capture==null&&!savingLocal&&!networkBusy);
+        scan.setEnabled(!networkBusy&&capture==null&&!savingLocal&&!feedback.isBusy());cameraButton.setEnabled(capture==null&&!savingLocal&&!networkBusy);if(rotateCameraButton!=null)rotateCameraButton.setEnabled(encoder!=null&&capture==null&&!savingLocal&&!networkBusy);
         {File[] files=ProofQueue.entries(this);String summary=files.length==0?getSharedPreferences("station",MODE_PRIVATE).getString("lastSaved","No videos waiting to upload."):files.length+" video(s) safely on this tablet, waiting to finish uploading.";
             if(files.length>0)try{String error=ProofQueue.read(files[0]).optString("lastError","");if(!error.isEmpty())summary+="\n"+error;}catch(Exception ignored){}uploadLabel.setText(summary);
         }
@@ -159,13 +160,13 @@ public final class MainActivity extends Activity {
             new AlertDialog.Builder(this).setTitle("Choose camera").setItems(names.toArray(new String[0]),(dialog,index)->{
                 stopCamera("");
                 if(index==ids.size()){connectUsbCamera();return;}
-                String label=names.get(index);TabletCamera selected=new TabletCamera();tabletCamera=selected;activeCamera=label;
+                previewKey="cameraRotation:"+ids.get(index);previewCorrection=getSharedPreferences("station",MODE_PRIVATE).getInt(previewKey,0);String label=names.get(index);TabletCamera selected=new TabletCamera();tabletCamera=selected;activeCamera=label;
                 tell("Connecting "+label+"...");
                 try{int degrees=getWindowManager().getDefaultDisplay().getRotation()*90;
                     selected.open(this,ids.get(index),preview,degrees,new TabletCamera.Listener(){
                         public Surface prepare(int width,int height,int rotation) throws Exception {
                             videoRotation=rotation;encoder=new RollingEncoder(width,height,new RollingEncoder.Listener(){public void finished(PacketRing.Capture clip,MediaFormat format){MainActivity.this.finished(clip,format);}public void error(String message){runOnUiThread(()->tell(message));}});
-                            applyPreviewTransform(width,height,rotation);return encoder.surface;
+                            previewWidth=width;previewHeight=height;refreshCameraPreview();return encoder.surface;
                         }
                         public void ready(){if(tabletCamera!=selected)return;tell(label+" connected. Preparing 3 seconds of history...");focusScan();}
                         public void error(String message){if(tabletCamera==selected)stopCamera(message);}
@@ -174,13 +175,13 @@ public final class MainActivity extends Activity {
             }).show();
         }catch(Exception error){tell("Could not list cameras: "+error.getMessage());}
     }
-    private void applyPreviewTransform(int width,int height,int rotation){
-        float viewWidth=preview.getWidth(),viewHeight=preview.getHeight();if(viewWidth<=0||viewHeight<=0)return;
-        boolean swapped=rotation==90||rotation==270;float aspect=swapped?(float)height/width:(float)width/height;
-        float targetWidth=Math.min(viewWidth,viewHeight*aspect),targetHeight=targetWidth/aspect;
-        Matrix transform=new Matrix();transform.setScale(targetWidth/viewWidth,targetHeight/viewHeight,viewWidth/2,viewHeight/2);
-        if(swapped){transform.setScale(targetHeight/viewWidth,targetWidth/viewHeight,viewWidth/2,viewHeight/2);}
-        transform.postRotate(rotation,viewWidth/2,viewHeight/2);preview.setTransform(transform);
+    private void refreshCameraPreview(){
+        if(preview==null||preview.getDisplay()==null)return;
+        previewDisplay=preview.getDisplay().getRotation();boolean usb=tabletCamera==null;
+        PreviewGeometry geometry=PreviewGeometry.fit(previewWidth,previewHeight,preview.getWidth(),preview.getHeight(),usb?0:tabletCamera.sensorOrientation,!usb&&tabletCamera.frontFacing,previewDisplay*90,usb,previewCorrection);
+        if(geometry==null)return;
+        Matrix transform=new Matrix();float centerX=preview.getWidth()/2f,centerY=preview.getHeight()/2f;
+        transform.setScale(geometry.scaleX,geometry.scaleY,centerX,centerY);transform.postRotate(geometry.previewRotation,centerX,centerY);preview.setTransform(transform);videoRotation=geometry.recordingRotation;
     }
     private void connectUsbCamera(){
         if(capture!=null||networkBusy||savingLocal)return;
@@ -189,7 +190,7 @@ public final class MainActivity extends Activity {
         if(helper==null){final ICameraHelper connection=new CameraHelper();helper=connection;connection.setStateCallback(new ICameraHelper.StateCallback(){
             public void onAttach(UsbDevice device){if(helper==connection&&cameraRequested&&tabletCamera==null&&selectedUsb==null&&videoDevice(device)){selectedUsb=device;helper.selectDevice(device);}}
             public void onDeviceOpen(UsbDevice device,boolean first){if(helper!=connection||!cameraRequested)return;List<Size> sizes=helper.getSupportedSizeList();Size chosen=null;if(sizes!=null)for(Size s:sizes)if(s.width==1280&&s.height==720){chosen=s;break;}if(chosen==null)helper.openCamera();else helper.openCamera(chosen);}
-            public void onCameraOpen(UsbDevice device){runOnUiThread(()->{if(!cameraRequested||tabletCamera!=null||helper!=connection)return;try{Size size=helper.getPreviewSize();int width=size==null?640:size.width,height=size==null?480:size.height;encoder=new RollingEncoder(width,height,new RollingEncoder.Listener(){public void finished(PacketRing.Capture clip,MediaFormat format){MainActivity.this.finished(clip,format);}public void error(String message){runOnUiThread(()->tell(message));}});helper.addSurface(encoder.surface,true);if(preview.getSurfaceTexture()!=null)helper.addSurface(preview.getSurfaceTexture(),false);helper.startPreview();tell("USB webcam connected ("+width+" x "+height+"). Preparing 3 seconds of history...");focusScan();}catch(Exception error){stopCamera("Could not start webcam recording: "+error.getMessage());}});}
+            public void onCameraOpen(UsbDevice device){runOnUiThread(()->{if(!cameraRequested||tabletCamera!=null||helper!=connection)return;try{Size size=helper.getPreviewSize();int width=size==null?640:size.width,height=size==null?480:size.height;encoder=new RollingEncoder(width,height,new RollingEncoder.Listener(){public void finished(PacketRing.Capture clip,MediaFormat format){MainActivity.this.finished(clip,format);}public void error(String message){runOnUiThread(()->tell(message));}});previewWidth=width;previewHeight=height;previewKey="usbRotation:"+device.getVendorId()+":"+device.getProductId();previewCorrection=getSharedPreferences("station",MODE_PRIVATE).getInt(previewKey,0);refreshCameraPreview();helper.addSurface(encoder.surface,true);if(preview.getSurfaceTexture()!=null)helper.addSurface(preview.getSurfaceTexture(),false);helper.startPreview();tell("USB webcam connected ("+width+" x "+height+"). Preparing 3 seconds of history...");focusScan();}catch(Exception error){stopCamera("Could not start webcam recording: "+error.getMessage());}});}
             public void onCameraClose(UsbDevice device){runOnUiThread(()->{if(helper==connection&&tabletCamera==null&&selectedUsb!=null&&selectedUsb.equals(device))closeEncoder("Webcam closed. Incomplete recordings are not saved.");});}
             public void onDeviceClose(UsbDevice device){}
             public void onDetach(UsbDevice device){if(helper==connection&&selectedUsb!=null&&selectedUsb.equals(device))runOnUiThread(()->{selectedUsb=null;closeEncoder("Webcam unplugged. Reconnect it and scan again.");});}
@@ -204,6 +205,6 @@ public final class MainActivity extends Activity {
     private boolean videoDevice(UsbDevice device){if(device.getDeviceClass()==UsbConstants.USB_CLASS_VIDEO)return true;for(int i=0;i<device.getInterfaceCount();i++)if(device.getInterface(i).getInterfaceClass()==UsbConstants.USB_CLASS_VIDEO)return true;return false;}
     private void selectCamera(UsbDevice device){if(encoder!=null&&device.equals(selectedUsb)){tell("This webcam is already connected.");focusScan();return;}if(helper!=null&&helper.isCameraOpened())helper.closeCamera();closeEncoder("");selectedUsb=device;tell("Connecting "+cameraName(device)+"...");helper.selectDevice(device);}
     private void closeEncoder(String reason){if(capture!=null){if(encoder!=null)encoder.ring.cancel(capture);capture=null;}if(encoder!=null){if(helper!=null)helper.removeSurface(encoder.surface);encoder.close();encoder=null;}if(!reason.isEmpty())tell(reason);}
-    private void stopCamera(String reason){cameraRequested=false;selectedUsb=null;if(tabletCamera!=null){tabletCamera.close();tabletCamera=null;}closeEncoder(reason);if(helper!=null){ICameraHelper old=helper;helper=null;old.closeCamera();old.release();}selectedUsb=null;}
+    private void stopCamera(String reason){cameraRequested=false;previewWidth=0;previewHeight=0;previewDisplay=-1;selectedUsb=null;if(tabletCamera!=null){tabletCamera.close();tabletCamera=null;}closeEncoder(reason);if(helper!=null){ICameraHelper old=helper;helper=null;old.closeCamera();old.release();}selectedUsb=null;}
     @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){super.onRequestPermissionsResult(request,permissions,results);if(request==100&&results.length>0&&results[0]==PackageManager.PERMISSION_GRANTED)connectCamera();else if(request==100)tell("Camera permission is needed to record packing videos. Tap Choose camera to retry.");}
 }
