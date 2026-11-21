@@ -1,0 +1,23 @@
+<mp-order-tracking class="mp-order-tracking" data-endpoint="/apps/closer/order-progress" lang="{{ request.locale.iso_code | escape }}" {{ block.shopify_attributes }}>
+<div class="mp-tracking-content"><div class="language-bar" role="group" aria-label="Tracking language"><button type="button" data-language="en" aria-pressed="true">English</button><button type="button" data-language="ms" aria-pressed="false">Malay</button></div><section class="hero"><fieldset class="channel-picker"><legend>Where did you place your order?</legend><label><input type="radio" name="mp-tracking-channel-{{ block.id }}" value="website" checked><span>Website / WhatsApp</span></label><label><input type="radio" name="mp-tracking-channel-{{ block.id }}" value="tiktok"><span>TikTok Shop</span></label></fieldset><form id="mp-tracking-{{ block.id }}-lookup" data-tracking="lookup" class="search"><div class="search-icon" aria-hidden="true">⌕</div><label class="sr-only" for="mp-tracking-{{ block.id }}-order">Your order number</label><input id="mp-tracking-{{ block.id }}-order" data-tracking="order" name="order" placeholder="" autocomplete="off" required maxlength="40"><button type="submit">Track my order <span aria-hidden="true">→</span></button></form><p class="search-note"><button id="mp-tracking-{{ block.id }}-order-help" data-tracking="order-help" type="button" class="help-link">How to find your order number</button></p><p id="mp-tracking-{{ block.id }}-lookup-error" data-tracking="lookup-error" class="lookup-error" role="alert" hidden></p></section>
+<div id="mp-tracking-{{ block.id }}-result" data-tracking="result" aria-live="polite"></div>
+<section id="mp-tracking-{{ block.id }}-help" data-tracking="help" class="help"><div><span class="help-icon">♡</span><div><h2>A little help with your order?</h2><p>Have your order number ready and our team will help you out.</p></div></div><a href="https://meaningfulplushies.com/pages/contact" target="_blank" rel="noreferrer">Contact our team <span>↗</span></a></section>
+
+
+<dialog id="mp-tracking-{{ block.id }}-order-help-dialog" data-tracking="order-help-dialog" aria-labelledby="mp-tracking-{{ block.id }}-help-title"><div class="help-dialog-header"><h2 id="mp-tracking-{{ block.id }}-help-title" data-tracking="help-title">How to find your order number</h2><button id="mp-tracking-{{ block.id }}-close-help" data-tracking="close-help" type="button" aria-label="Close help">×</button></div><p id="mp-tracking-{{ block.id }}-help-channel" data-tracking="help-channel"></p><div id="mp-tracking-{{ block.id }}-help-video-area" data-tracking="help-video-area"></div><ol id="mp-tracking-{{ block.id }}-help-steps" data-tracking="help-steps"></ol><p class="help-dialog-note" id="mp-tracking-{{ block.id }}-help-note" data-tracking="help-note"></p></dialog></div>
+<noscript>Please enable JavaScript to track your order.</noscript>
+</mp-order-tracking>
+{% schema %}
+{
+  "name": "Customer order tracking",
+  "target": "section",
+  "enabled_on": {
+    "templates": [
+      "page"
+    ]
+  },
+  "stylesheet": "customer-order-tracking.css",
+  "javascript": "customer-order-tracking.js",
+  "settings": []
+}
+{% endschema %}
