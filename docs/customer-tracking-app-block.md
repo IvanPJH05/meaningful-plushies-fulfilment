@@ -1,6 +1,6 @@
 # Customer order tracking app block
 
-The `Customer order tracking` block lives in the existing Meaningful Fulfilment theme extension. It renders the current public tracker directly in Shopify, without an iframe, cloned header or cloned footer. Styles and selectors stay inside `mp-order-tracking`; fonts inherit from the real theme.
+The `Customer order tracking` block lives in the existing Meaningful Fulfilment theme extension. It renders the current public tracker directly in Shopify, without an iframe, cloned header or cloned footer. Styles and selectors stay inside `mp-order-tracking`; fonts inherit from the real theme. Its language follows the Shopify request locale selected by the theme header. The block has no separate language controls, and a `lang` query parameter cannot override the header selection.
 
 `scripts/build-tracking-block.mjs` derives its markup, styles and lookup behaviour from `public/order-tracking`. Website/WhatsApp and TikTok lookup, five coarse milestones, English/Malay, help and not-found handling retain their existing behaviour. Each instance has separate IDs, channel selection and request cancellation. Shopify editor unload aborts its request.
 

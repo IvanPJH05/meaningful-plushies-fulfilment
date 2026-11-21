@@ -129,16 +129,16 @@ const translated = [
 function setLanguage(value) {
   language = value === "ms" ? "ms" : "en";
   root.lang = language;
-  root.querySelectorAll("[data-language]").forEach(choice => choice.setAttribute("aria-pressed", String(choice.dataset.language === language)));
+  
   for (const [selector, en, ms] of translated) root.querySelector(selector).textContent = words(en, ms);
   error.hidden = true;
   configure();
   if (stage) render();
 }
-root.querySelectorAll("[data-language]").forEach(button => button.addEventListener("click", () => setLanguage(button.dataset.language)));
-const options = new URLSearchParams(location.search);
 
-setLanguage(options.get("lang") || root.lang);
+
+
+setLanguage((root.lang || document.documentElement.lang).toLowerCase().split("-")[0]);
 
 }
 disconnectedCallback() { this.pendingLookup?.abort(); this.querySelector('dialog')?.close(); }
