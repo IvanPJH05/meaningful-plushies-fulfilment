@@ -1,17 +1,21 @@
-# MP Packing Station 1.3.0
+# MP Packing Station 1.4.0
 
-[Download the signed Android installer](./MP-Packing-Station-1.3.0.apk).
+[Download the signed Android installer](./MP-Packing-Station-1.4.0.apk).
 
-Sign in with your existing fulfilment staff account. Choose the tablet or USB camera, then wait for READY. Scan the order barcode followed by the matching ID-card barcode.
+Install as an update over version 1.2 or 1.3. Keep app data and pending uploads. Sign in with your existing fulfilment staff account, choose the tablet or USB camera, and wait for READY.
 
-- Correct pairing: correct tone, then the matched order's voice recording.
-- Rejected pairing: wrong tone, spoken problem, then the recognised order's voice recording.
-- An unrecognised order never plays another order's voice recording.
-- Stop audio interrupts playback; Replay order audio repeats the recognised order recording. Scans wait for playback to finish or be stopped.
+- Scanning the order barcode immediately plays that order's audio.
+- Scan the matching NFC barcode while the audio continues. Successful pairing plays the correct tone over the customer recording.
+- An error pauses the recording, plays the wrong tone and spoken explanation, then resumes from the same position.
+- The camera preview preserves the complete frame without stretching. Tablet orientation follows the screen; Rotate camera 90° adjusts the webcam mount and future saved clips.
+- The order moves to Packed only after the matching card is paired and its complete packing video is verified online. Failed pairing, failed recording, and pending uploads leave its status unchanged.
 
-Android media volume controls the sounds. Spoken alerts use an installed English Android text-to-speech voice, preferring offline voices. If it is unavailable, the issue stays visible on screen.
+The video retains 3 seconds before and 20 seconds after the matching scan. Completed recordings stay on the tablet until online saving is acknowledged. View saved footage in the fulfilment system under Order details > Packing videos. Keep the app open during recording and do not clear app data while uploads are pending.
 
-The existing Packed status update, private video upload and 3 seconds before / 20 seconds after recording remain active. This update installs over live version 1.2 using the same permanent signing identity.
+Stop audio interrupts playback. Replay order audio restarts the matched recording. Android media volume controls both sound channels. Spoken alerts use an installed English Android text-to-speech voice, preferring offline voices; unavailable speech is reported on screen.
 
-APK SHA-256: 3016f82ed3ebba44e137ad481d74aa4b631d2688901f78b23cbb65c77314248d
+This release requires packing server protocol 2. It uses the same permanent signing identity as versions 1.2 and 1.3.
+
+APK SHA-256: e8f1657a79e985a364f1b99bf08b221d9a9bf6a6fcc3cddf68a0fe593c5023b7
+
 Signing certificate SHA-256: 19935661de88d56ab4ff563f36c87b132d8b87668b6b860920b540508f758308
