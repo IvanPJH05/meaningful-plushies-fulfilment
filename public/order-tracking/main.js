@@ -150,7 +150,7 @@ function configure() {
   input.inputMode = tiktok ? 'numeric' : 'text';
   const label = tiktok ? words('TikTok Shop order ID', 'ID Pesanan TikTok Shop') : words('Order number or customisation code', 'Nombor pesanan atau kod kustomisasi');
   input.setAttribute('aria-label', label);
-  input.placeholder = label;
+  input.placeholder = tiktok ? words('TikTok order ID', 'ID pesanan TikTok') : words('Order no. or MP code', 'No. pesanan / kod MP');
 }
 
 form.addEventListener("submit", async event => {
@@ -235,8 +235,8 @@ document.querySelector("#close-help").addEventListener("click", () => help.close
 const translated = [
   [".channel-picker legend", "Where did you place your order?", "Di manakah anda membuat pesanan?"],
   [".channel-picker label span", "Website / WhatsApp", "Laman web / WhatsApp"],
-  ["#order-help", "How to find your order number", "Cara mencari nombor pesanan anda"],
-  ["#help-title", "How to find your order number", "Cara mencari nombor pesanan anda"],
+  ["#order-help", "Find your order number or code", "Cari nombor pesanan atau kod anda"],
+  ["#help-title", "Find your order number or code", "Cari nombor pesanan atau kod anda"],
   ["#help h2", "A little help with your order?", "Perlukan bantuan dengan pesanan anda?"],
   ["#help p", "Have your order number ready and our team will help you out.", "Sediakan nombor pesanan anda dan pasukan kami akan membantu anda."],
   ["#help a", "Contact our team ↗", "Hubungi kami ↗"],
