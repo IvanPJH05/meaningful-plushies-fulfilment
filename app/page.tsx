@@ -3370,6 +3370,47 @@ function Home() {
     }
   }
 
+  async function printSpeakerTags() {
+    if (documentOperation.current) return;
+    if (!packingOrders.length || packingOrders.length > 100) {
+      setNotice("Select between 1 and 100 orders for speaker tags.");
+      return;
+    }
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      setNotice("Allow pop-ups for this site, then press Speaker tags again.");
+      return;
+    }
+    printWindow.document.title = "Preparing speaker tags";
+    printWindow.document.body.textContent = "Preparing 20 × 10 mm speaker tags…";
+    documentOperation.current = true;
+    setDocumentTask("Generating speaker tags...");
+    try {
+      const rows = await Promise.all(packingOrders.map(async order => {
+        const full = await fetchSharedOrderById(order.id);
+        if (!full) throw new Error(`Order ${order.orderNumber} could not be loaded for printing.`);
+        return { orderLabel: packingSlipOrderLabel(full), character: displayedCharacter(full) };
+      }));
+      const response = await fetch("/api/speaker-tags/pdf", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orders: rows }),
+      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.error || "Could not generate speaker tags.");
+      }
+      const url = URL.createObjectURL(await response.blob());
+      printWindow.location.replace(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setNotice(`${rows.length} speaker tag${rows.length === 1 ? "" : "s"} prepared. Print at Actual size (100%) on 20 × 10 mm labels. Order statuses are unchanged.`);
+    } catch (error) {
+      printWindow.close();
+      setNotice(error instanceof Error ? error.message : "Could not generate speaker tags.");
+    } finally {
+      documentOperation.current = false;
+      setDocumentTask("");
+    }
+  }
+
   async function printPackingSlips(mode: "packing" | "labels" | "both", batchOrders?: Order[], advanceProduction = true) {
     if (documentOperation.current) return false;
     documentOperation.current = true; setDocumentTask("Generating packing slips and shipping labels...");
@@ -6422,6 +6463,7 @@ function Home() {
 
       {view === "packing_slips" && <section className="packing-page">
         <div className="packing-controls card">
+          <div className="packing-manual"><div><h3>{t("Speaker tags")}</h3><p>{t("20 × 10 mm labels: order number on top, chosen character underneath. Print at actual size (100%).")}</p></div><button type="button" className="button secondary" disabled={!packingOrders.length || Boolean(documentTask)} onClick={() => void printSpeakerTags()}>{t("Print speaker tags")}</button></div>
           <div className="packing-manual"><div><h2>{t("Choose orders to print")}</h2><p>{t("Enter order IDs separated by commas or spaces, or select orders from the list below.")}</p></div><div className="manual-entry"><input value={manualOrderIds} onChange={(event) => setManualOrderIds(event.target.value)} onKeyDown={(event) => event.key === "Enter" && selectManualOrders()} placeholder={t("Example: 1359, 1360, 1361")} /><button className="button primary" onClick={selectManualOrders}>{t("Add order IDs")}</button></div></div>
           <div className="shipping-label-import"><div><h3>{t("Import shipping-label PDF")}</h3><p>{t("J&T Shopify labels pair from the Remark order number; TikTok labels pair from the top-left Order ID.")}</p></div><FileDropZone accept="application/pdf,.pdf" title={shippingLabelImporting ? t("Importing labels...") : t("Drop label PDF or open files")} description={shippingLabelSummary || t("Each paired label prints immediately after its packing slip.")} onFile={(file) => void importShippingLabels(file)} className="compact-file-drop" /></div>
           <div className="packing-list-header"><div><strong>{t("Available orders")}</strong><span>{t("Order number, descending")}</span></div><SourceFilterSelect value={sourceFilter} onChange={setSourceFilter} /><select value={packingProductFilter} aria-label={t("Product type")} onChange={(event) => setPackingProductFilter(event.target.value as PackingProductFilter)}><option value="all">{t("All product types")}</option><option value="classic_plushies">{t("Classic plushies")}</option><option value="plush_charms">{t("Plush charms only")}</option></select><select value={packingStatusFilter} onChange={(event) => setPackingStatusFilter(event.target.value as "all" | OrderStatus)}><option value="all">{t("All statuses")}</option>{orderStatuses.map((status) => <option key={status} value={status}>{t(statusLabels[status])}</option>)}</select><div className="packing-list-actions"><button onClick={() => setPackingSelection((current) => [...new Set([...current, ...packingAvailableOrders.map((order) => order.id)])])}>{t("Select shown")}</button><button onClick={() => setPackingSelection([])}>{t("Clear")}</button></div></div>
