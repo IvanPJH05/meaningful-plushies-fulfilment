@@ -6,8 +6,8 @@ Install the signed MP-Packing-Station-1.4.0.apk on the Galaxy Tab S9+. This app 
 2. Wait for CONNECTED. Check connection verifies access to the live Supabase orders and private packing video storage through the authenticated fulfilment service.
 3. Pair the Bluetooth scanner in Android keyboard/HID mode with an Enter suffix.
 4. Tap Choose camera and select the tablet rear/front camera or USB webcam. Allow camera/USB access and wait for READY.
-5. Scan the individual order or packing-slip barcode. The app reads that exact order and keeps its current status.
-6. Scan its matching ID-card barcode. The app checks or pairs the card, plays pairing feedback before the order audio once both scans have been checked, and saves 3 seconds before + 20 seconds after the matching scan. Card-first scanning is also supported.
+5. Scan the individual order or packing-slip barcode. The app reads that exact order, starts its audio immediately, and keeps its current status.
+6. Scan its matching ID-card barcode while the audio continues. A successful match plays the correct tone over the audio. An error pauses it, plays the wrong tone and spoken explanation, then resumes from the paused position. The app saves 3 seconds before + 20 seconds after the matching scan. Card-first scanning is also supported.
 7. The order moves to Packed only after the matching card is paired and the complete video is verified in private online storage. A failed recording, failed pairing, or pending upload leaves the order status unchanged. Completed video sources are kept in private tablet storage until upload and server verification succeed. Finished videos appear in Order details > Packing videos in the main system. Retry uploads now resumes pending uploads. Sign in again if a session expires.
 
 The app never contains the Supabase service key. Staff access is checked by the fulfilment server on each request. Video uploads use short-lived signed URLs to the private packing-proof bucket. Customer order attachments are excluded from the fast scanner response.
