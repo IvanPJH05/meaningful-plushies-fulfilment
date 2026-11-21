@@ -23,7 +23,8 @@
 .mp-order-tracking .language-bar{display:flex;justify-content:center;align-items:center;gap:7px;padding:9px 16px;background:white}.mp-order-tracking .language-bar button{font-family:inherit;font-size:12px;border-radius:999px;padding:7px 18px;border:1px solid #61849755;background:white;color:#426f83;cursor:pointer}.mp-order-tracking .language-bar button[aria-pressed=true]{background:#618497;border-color:#618497;color:white}.mp-order-tracking .language-bar button:hover{box-shadow:0 0 0 2px #61849720}.mp-order-tracking:before{inset:126px 0 0}@media(max-width:760px){.mp-order-tracking:before{inset:112px 0 0}}.mp-order-tracking:before{inset:86px 0 0}@media(max-width:760px){.mp-order-tracking:before{inset:72px 0 0}}@media(max-width:360px){}
 .mp-order-tracking .not-found .eyebrow{color:#fff}
 
-.mp-order-tracking{display:block;position:relative;isolation:isolate;min-height:420px;font-size:14px;line-height:1.5;background:#ceeeff;color:#355e72;padding:10px 0 35px}
+.shopify-app-block:has(> .mp-order-tracking){width:100%;min-width:0;align-self:stretch}
+.mp-order-tracking{width:100%;display:block;position:relative;isolation:isolate;min-height:420px;font-size:14px;line-height:1.5;background:#ceeeff;color:#355e72;padding:10px 0 35px}
 .mp-order-tracking:before{inset:0;z-index:-1}
 .mp-order-tracking .mp-tracking-content{max-width:1100px;margin:auto;padding:0 28px}
 .mp-order-tracking .language-bar{background:transparent;justify-content:flex-end}
