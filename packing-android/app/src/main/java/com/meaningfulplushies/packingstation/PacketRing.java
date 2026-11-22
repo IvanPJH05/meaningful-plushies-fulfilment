@@ -13,9 +13,12 @@ final class PacketRing {
         final long scanPts,scanEpochMs,startPts;
         final List<Packet> packets=new ArrayList<>();
         volatile boolean verified=false;
+        boolean warehouse=false;long endPts,endMonoUs,trackingVerifiedAt,bytes;String trackingNumber="";
         String error="";
         Capture(long scanPts,long scanEpochMs,long startPts){this.scanPts=scanPts;this.scanEpochMs=scanEpochMs;this.startPts=startPts;}
         long sourceEpochMs(){return scanEpochMs-(scanPts-startPts)/1000;}
+        long sourceMonoUs(){return packets.get(0).observedUs;}
+        long durationMs(){return (endPts-startPts)/1000+40;}
     }
     private final ArrayDeque<Packet> ring=new ArrayDeque<>();
     private long lastArrivalUs,ringBytes;
@@ -32,7 +35,9 @@ final class PacketRing {
         if(ringBytes>6*1024*1024){fail("Camera buffer exceeded its limit. Restart the webcam.");ring.clear();ringBytes=0;return;}
         if(active!=null){
             active.packets.add(packet);
-            if(packet.pts>=active.scanPts+AFTER_US){finished=active;active=null;}
+            active.bytes+=packet.bytes.length;
+            if(active.warehouse){if(packet.pts-active.startPts>=180_000_000||active.bytes>24*1024*1024)fail("Recording reached its safety limit. Scan this parcel again.");}
+            else if(packet.pts>=active.scanPts+AFTER_US){finished=active;active=null;}
         }
     }
     synchronized boolean ready(long nowUs) {
@@ -53,6 +58,17 @@ final class PacketRing {
         active=next;return next;
     }
     synchronized void cancel(Capture capture){if(active==capture)active=null;capture.error="Card verification failed. Scan again; no video was saved.";}
+    synchronized boolean warehouseReady(long nowUs){Packet last=ring.peekLast();if(last==null||nowUs-lastArrivalUs>500000)return false;for(Packet p:ring)if(p.key&&last.pts+nowUs-lastArrivalUs-p.pts<=1000000)return true;return false;}
+    synchronized Capture beginWarehouse(long mono,long epoch){
+        if(active!=null||!warehouseReady(mono))throw new IllegalStateException("Wait for the camera and microphone to be READY.");
+        Packet last=ring.peekLast();long at=last.pts+mono-last.observedUs;Packet key=null;for(Packet p:ring)if(p.key&&p.pts<=at)key=p;
+        Capture next=new Capture(at,epoch,key.pts);next.warehouse=true;for(Packet p:ring)if(p.pts>=key.pts){next.packets.add(p);next.bytes+=p.bytes.length;}active=next;return next;
+    }
+    synchronized void finishWarehouse(Capture clip,String tracking,long verifiedAt){
+        if(active!=clip||!clip.warehouse||!clip.verified||!clip.error.isEmpty())throw new IllegalStateException("Pair the NFC card before confirming the shipping label.");
+        Packet last=ring.peekLast();if(last==null||last.pts-clip.startPts<1000000)throw new IllegalStateException("Keep the matching label in view while recording starts.");
+        clip.endPts=last.pts;clip.endMonoUs=last.observedUs+40000;clip.trackingNumber=tracking;clip.trackingVerifiedAt=verifiedAt;finished=clip;active=null;
+    }
     synchronized void fail(String reason){if(active!=null){active.error=reason;finished=active;active=null;}}
     synchronized Capture takeFinished(){Capture value=finished;finished=null;return value;}
     synchronized int bufferedBytes(){return (int)ringBytes;}

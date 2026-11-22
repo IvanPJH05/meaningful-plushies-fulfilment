@@ -20,9 +20,11 @@ final class ProofQueue {
         try{output.write(value.toString().getBytes(StandardCharsets.UTF_8));atomic.finishWrite(output);}catch(Exception error){atomic.failWrite(output);throw error;}
     }
     static JSONObject metadata(String id,String orderId,String number,String barcode,String card,PacketRing.Capture clip,File video) throws Exception {
-        return new JSONObject().put("id",id).put("orderId",orderId).put("orderNumber",number).put("orderBarcode",barcode).put("cardCode",card)
+        JSONObject meta=new JSONObject().put("id",id).put("orderId",orderId).put("orderNumber",number).put("orderBarcode",barcode).put("cardCode",card)
             .put("scannedAt",Instant.ofEpochMilli(clip.scanEpochMs).toString()).put("sourceStartedAt",Instant.ofEpochMilli(clip.sourceEpochMs()).toString())
             .put("size",video.length()).put("contentType","video/mp4");
+        if(clip.warehouse)meta.put("captureMode","warehouse").put("durationMs",clip.durationMs()).put("trackingNumber",clip.trackingNumber).put("trackingVerifiedAt",Instant.ofEpochMilli(clip.trackingVerifiedAt).toString()).put("packAfterSave",true);
+        return meta;
     }
     static void recoverCompleted(Context context){
         File[] pending=folder(context).listFiles((dir,name)->name.endsWith(".pending"));if(pending==null)return;
@@ -31,7 +33,7 @@ final class ProofQueue {
             File video=new File(folder(context),id+".mp4");if(!video.isFile()||video.length()==0||video.length()>25*1024*1024)continue;
             android.media.MediaMetadataRetriever probe=new android.media.MediaMetadataRetriever();long duration;try{probe.setDataSource(video.getAbsolutePath());duration=Long.parseLong(probe.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION));}finally{probe.release();}
             long before=Instant.parse(meta.getString("scannedAt")).toEpochMilli()-Instant.parse(meta.getString("sourceStartedAt")).toEpochMilli();
-            if(duration<before+20700)continue;
+            if(meta.optString("captureMode").equals("warehouse")?duration<meta.optLong("durationMs")-250:duration<before+20700)continue;
             meta.put("size",video.length());write(new File(folder(context),id+".json"),meta);file.delete();
         }catch(Exception ignored){/* An incomplete file is retained, never uploaded as complete. */}
     }
