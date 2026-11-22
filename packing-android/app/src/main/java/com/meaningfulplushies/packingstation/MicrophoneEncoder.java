@@ -27,8 +27,17 @@ final class MicrophoneEncoder implements AutoCloseable {
  }
  boolean ready(){synchronized(samples){return failure.isEmpty()&&format!=null&&!samples.isEmpty()&&System.nanoTime()/1000-last<500000;}}
  Clip clip(long start,long end)throws Exception{
-  synchronized(samples){List<Sample> copy=new ArrayList<>();for(Sample s:samples)if(s.mono>=start&&s.mono<=end)copy.add(s);
-   if(!failure.isEmpty()||format==null||copy.isEmpty()||copy.get(0).mono-start>250000||end-copy.get(copy.size()-1).mono>250000)throw new Exception("The microphone recording is incomplete. Pack this parcel again.");return new Clip(format,copy);}
+  // The camera callback can beat AAC output on a busy device. Wait for actual
+  // samples; never pad silence or relabel an incomplete sound track as ready.
+  long deadline=System.nanoTime()+2000000000L;
+  for(;;){
+   synchronized(samples){List<Sample> copy=new ArrayList<>();for(Sample s:samples)if(s.mono>=start&&s.mono<=end)copy.add(s);
+    long firstGap=copy.isEmpty()?Long.MAX_VALUE:copy.get(0).mono-start,tailGap=copy.isEmpty()?Long.MAX_VALUE:end-copy.get(copy.size()-1).mono;
+    if(failure.isEmpty()&&format!=null&&!copy.isEmpty()&&firstGap<=250000&&tailGap<=100000)return new Clip(format,copy);
+    if(!running||!failure.isEmpty()||System.nanoTime()>=deadline)throw new Exception("The microphone recording is incomplete. Pack this parcel again. Start gap: "+firstGap/1000+" ms; tail gap: "+tailGap/1000+" ms.");
+   }
+   Thread.sleep(20);
+  }
  }
  public void close(){running=false;try{recorder.stop();}catch(Exception ignored){}if(thread!=null)try{thread.join(1500);}catch(InterruptedException e){Thread.currentThread().interrupt();}recorder.release();try{codec.stop();}catch(Exception ignored){}codec.release();}
 }
