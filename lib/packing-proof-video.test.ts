@@ -20,5 +20,9 @@ test("a continuous camera buffer becomes a seekable 23-second MP4; partial clips
     assert.match(result.stderr,/Video: h264/);
     assert.ok(output.includes(Buffer.from("moov")) && output.indexOf(Buffer.from("moov"))<output.indexOf(Buffer.from("mdat")),"fast-start playback metadata precedes the video");
     await assert.rejects(trimPackingVideo(bytes,20000),/complete|23 seconds|stopped/);
+    const warehouse=await trimPackingVideo(bytes,0,27000),warehousePath=join(dir,"warehouse.mp4");await writeFile(warehousePath,warehouse);
+    const warehouseResult=await exec(ffmpeg!,["-hide_banner","-i",warehousePath,"-f","null","-"],{timeout:15000,windowsHide:true});
+    assert.match(warehouseResult.stderr,/Duration: 00:00:27\.00/);
+    await assert.rejects(trimPackingVideo(bytes,0,42000),/complete|stopped/);
   }finally{await rm(dir,{recursive:true,force:true});}
 });

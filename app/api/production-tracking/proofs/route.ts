@@ -4,6 +4,7 @@ import { context,failure,headers,PairingError } from "@/lib/certificate-cards-se
 import { matchesProductionBarcode } from "@/lib/production-tracking";
 import { validatePackingCapture,packingSourceLimit } from "@/lib/packing-proof";
 import { trimPackingVideo } from "@/lib/packing-proof-video";
+import { trackingCode } from "@/lib/warehouse-packing";
 export const runtime="nodejs";
 export const preferredRegion="icn1";
 export const maxDuration=60;
@@ -32,20 +33,22 @@ export async function POST(request:Request) {
       const capture=validatePackingCapture(body);
       if(body.packAfterSave!==undefined&&typeof body.packAfterSave!=="boolean")throw new PairingError("Invalid packing completion mode.");
       const packAfterSave=body.packAfterSave===true;
+      if(capture.captureMode==="warehouse" && !packAfterSave)throw new PairingError("Warehouse packing requires a verified video before completion.");
       const sourcePath=`${capture.id}/source.${capture.contentType==="video/mp4"?"mp4":"webm"}`;
       const {data:existing,error:existingError}=await client.from("packing_proof_videos").select("*").eq("id",capture.id).maybeSingle();
       if(existingError) throw existingError;
       if(existing) {
-        if(existing.pack_after_save!==packAfterSave || existing.order_id!==capture.orderId || existing.card_code!==capture.cardCode || existing.order_barcode!==capture.orderBarcode || Date.parse(existing.scanned_at)!==Date.parse(capture.scannedAt) || existing.source_size!==capture.size || existing.source_type!==capture.contentType || Date.parse(existing.source_started_at)!==Date.parse(capture.sourceStartedAt)) throw new PairingError("This video reference belongs to a different recording.");
+        if((existing.capture_mode||"timed")!==(capture.captureMode||"timed") || (capture.captureMode==="warehouse" && (existing.duration_ms!==capture.durationMs || existing.tracking_number!==capture.trackingNumber || Date.parse(existing.tracking_verified_at)!==Date.parse(capture.trackingVerifiedAt!))) || existing.pack_after_save!==packAfterSave || existing.order_id!==capture.orderId || existing.card_code!==capture.cardCode || existing.order_barcode!==capture.orderBarcode || Date.parse(existing.scanned_at)!==Date.parse(capture.scannedAt) || existing.source_size!==capture.size || existing.source_type!==capture.contentType || Date.parse(existing.source_started_at)!==Date.parse(capture.sourceStartedAt)) throw new PairingError("This video reference belongs to a different recording.");
         if(existing.status==="ready") return NextResponse.json({ready:true,packed:existing.pack_after_save},{headers});
       } else {
-        const {data:order,error}=await client.from("fulfilment_orders").select("id,order_number").eq("id",capture.orderId).maybeSingle();
+        const {data:order,error}=await client.from("fulfilment_orders").select("id,order_number,trackingNumber:data->>trackingNumber").eq("id",capture.orderId).maybeSingle();
         if(error || !order || !matchesProductionBarcode({id:order.id,orderNumber:order.order_number},capture.orderBarcode)) throw new PairingError("The packing barcode does not match this order.");
+        if(capture.captureMode==="warehouse" && (!trackingCode(order.trackingNumber) || trackingCode(order.trackingNumber)!==capture.trackingNumber)) throw new PairingError("The shipping-label barcode does not match the order's current tracking number. Scan the correct label again.");
         const pair=capture.cardCode.startsWith("NFC-")
           ? await client.from("nfc_cards").select("id").eq("id",Number(capture.cardCode.slice(4))).eq("order_id",capture.orderId).eq("status","assigned").maybeSingle()
           : await client.from("bc_v2_certificates").select("code").eq("order_ref",capture.orderId).eq("item_key",capture.orderId).eq("code",capture.cardCode).eq("status","active").maybeSingle();
         if(pair.error || !pair.data) throw new PairingError("Pair this order with its matching ID card before saving the video.");
-        const saved=await client.from("packing_proof_videos").insert({id:capture.id,order_id:capture.orderId,card_code:capture.cardCode,order_barcode:capture.orderBarcode,scanned_at:capture.scannedAt,source_started_at:capture.sourceStartedAt,offset_ms:capture.offsetMs,source_path:sourcePath,source_size:capture.size,source_type:capture.contentType,created_by:actor,pack_after_save:packAfterSave});
+        const saved=await client.from("packing_proof_videos").insert({id:capture.id,order_id:capture.orderId,card_code:capture.cardCode,order_barcode:capture.orderBarcode,scanned_at:capture.scannedAt,source_started_at:capture.sourceStartedAt,offset_ms:capture.offsetMs,source_path:sourcePath,source_size:capture.size,source_type:capture.contentType,created_by:actor,pack_after_save:packAfterSave,...(capture.captureMode==="warehouse"?{capture_mode:"warehouse",duration_ms:capture.durationMs,tracking_number:capture.trackingNumber,tracking_verified_at:capture.trackingVerifiedAt}:{})});
         if(saved.error) throw saved.error;
       }
       const storage=client.storage.from(bucketName),info=await storage.info(sourcePath);
@@ -74,7 +77,7 @@ export async function POST(request:Request) {
     if(info.error || Number(info.data?.size)!==proof.source_size || Number(info.data?.size)>packingSourceLimit || info.data?.contentType?.split(";")[0]!==proof.source_type) throw new Error("The camera video upload is incomplete. Retry saving it.");
     const source=await storage.download(proof.source_path);
     if(source.error || source.data.size!==proof.source_size) throw new Error("The camera video upload is incomplete. Retry saving it.");
-    const bytes=await trimPackingVideo(Buffer.from(await source.data.arrayBuffer()),proof.offset_ms);
+    const bytes=await trimPackingVideo(Buffer.from(await source.data.arrayBuffer()),proof.offset_ms,proof.capture_mode==="warehouse"?proof.duration_ms:undefined);
     const videoPath=`${proof.id}/proof.mp4`;
     const uploaded=await storage.upload(videoPath,bytes,{contentType:"video/mp4",upsert:true});
     if(uploaded.error) throw new Error("Could not save the packing video. Please retry.");

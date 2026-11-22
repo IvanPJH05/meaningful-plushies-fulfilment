@@ -1,13 +1,18 @@
 # Packing videos
 
-In Daily Production → Barcode Scanner, click **Start webcam**, allow webcam access, and choose the overhead webcam. Wait for **READY**. The webcam stays on for the next parcels; it does not need restarting after each scan.
+## Daily Production warehouse station
 
-Scan the individual order barcode, then the matching ID-card barcode. The existing order scan still marks the order Packed from any stage. The successful card check captures the previous 3 seconds and the next 20 seconds. The scanner pauses during this recording so the next parcel is not mixed into the clip. Camera switching and stopping are disabled until the clip finishes.
+Open Daily Production → Barcode Scanner, click Start webcam, allow access, and choose the overhead webcam. Wait for READY. The camera stays on between parcels. Preview preserves the camera's aspect ratio.
 
-The recording is automatically uploaded and prepared as a 23-second MP4. **Saved** appears only after the completed video is verified in private storage. A missing or interrupted recording is not labelled saved. Existing card assignments are checked again, and repeat recordings can be attached to an already-paired order.
+1. Scan the individual order barcode. Its number stays visible immediately and recording starts before lookup finishes. Audio for up to 40 recent sewing-queue orders is preloaded; other orders load their saved audio on demand.
+2. Scan its matching NFC-card barcode immediately. The station retains this scan while loading the order. Pairing does not mark Packed. A correct cue plays over customer audio; an error pauses audio, speaks the problem, and resumes it.
+3. Pack the parcel and attach its shipping label. Show its J&T tracking barcode clearly to the webcam. Two consecutive fresh frames must match the complete tracking number. A wrong label keeps recording. A missing tracking number blocks this workflow until staff add it.
+4. A match stops recording and saves the full clip as an MP4. The server rechecks the current tracking number, NFC ownership, and saved storage object. Only then does it mark Packed, including orders previously in Issue. The next parcel can start while the completed clip uploads.
 
-Open the order details and find **Packing videos** to view the clips. Access requires an active staff account. Videos are not added to the customer's public NFC certificate or tracking page.
+Recording lasts until the label matches, with a three-minute safety limit. Reaching the limit, cancelling, losing the webcam, or incomplete footage does not mark Packed. Stay on the station while recording. Browser recovery cannot preserve footage that was never finalized.
 
-If saving is interrupted, recovery copies stay in this browser's IndexedDB and retry every 15 seconds and when the connection returns. Keep the scanner page open until saving finishes; **Retry saving** can retry immediately. Returning to the scanner on the same browser resumes queued uploads. Changing pages within the app lets an in-progress recording finish and attempt saving. Closing the browser during the actual recording cannot preserve footage that has not yet been recorded.
+Finalized clips remain in this browser's IndexedDB while uploading. They retry every 15 seconds, on reconnection, or with Retry saving. Returning in the same browser restores queued uploads. Keep the station open until saved; errors never count as a successful save.
 
-The webcam records video only; it does not request microphone access. The order's saved voice message continues playing through the existing scanner audio player.
+Open order details → Packing videos to view saved clips. Staff access is required. Existing customer-tracker video access and verification rules are unchanged.
+
+Video records without microphone audio. The customer's voice message plays separately for QC. Existing tablet packing uploads retain their prior timed format and verified-save completion gate.
