@@ -26,3 +26,19 @@ test("a continuous camera buffer becomes a seekable 23-second MP4; partial clips
     await assert.rejects(trimPackingVideo(bytes,0,42000),/complete|stopped/);
   }finally{await rm(dir,{recursive:true,force:true});}
 });
+
+test("packing MP4s preserve audible microphone sound and longer audio cannot hide truncated footage",async()=>{
+ const dir=await mkdtemp(join(tmpdir(),"packing-sound-test-"));
+ try{
+  const source=join(dir,"sound.webm");
+  await exec(ffmpeg!,["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","testsrc2=size=320x180:rate=24","-f","lavfi","-i","sine=frequency=660:sample_rate=48000","-t","6","-c:v","libvpx","-deadline","realtime","-b:v","200k","-c:a","libopus",source],{timeout:30000,windowsHide:true});
+  const output=await trimPackingVideo(await readFile(source),0,5000),saved=join(dir,"sound.mp4");await writeFile(saved,output);
+  const decoded=await exec(ffmpeg!,["-hide_banner","-i",saved,"-map","0:a:0","-ac","1","-ar","8000","-f","s16le","pipe:1"],{encoding:"buffer",timeout:15000,maxBuffer:1024*1024,windowsHide:true});
+  assert.match(decoded.stderr.toString(),/Audio: aac/);assert.ok(decoded.stdout.length>70000,"the saved audio covers the recording");
+  let energy=0;for(let i=0;i<decoded.stdout.length;i+=2)energy+=decoded.stdout.readInt16LE(i)**2;
+  assert.ok(Math.sqrt(energy/(decoded.stdout.length/2))>100,"microphone samples survive conversion, not just an empty audio track");
+  const interrupted=join(dir,"interrupted.webm");
+  await exec(ffmpeg!,["-hide_banner","-loglevel","error","-y","-i",source,"-f","lavfi","-i","sine=frequency=660:sample_rate=48000","-map","0:v:0","-map","1:a:0","-t","12","-c:v","copy","-c:a","libopus",interrupted],{timeout:15000,windowsHide:true});
+  await assert.rejects(trimPackingVideo(await readFile(interrupted),0,10000),/complete|stopped/);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});

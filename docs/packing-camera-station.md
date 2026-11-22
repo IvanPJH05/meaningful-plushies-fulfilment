@@ -2,7 +2,7 @@
 
 ## Daily Production warehouse station
 
-Open Daily Production → Barcode Scanner, click Start webcam, allow access, and choose the overhead webcam. Wait for READY. The camera stays on between parcels. Preview preserves the camera's aspect ratio.
+Open Daily Production → Barcode Scanner, click Start webcam + microphone, allow both permissions, and choose the overhead webcam and microphone. Wait for READY. The camera stays on between parcels. Preview preserves the camera's aspect ratio.
 
 1. Scan the individual order barcode. Its number stays visible immediately and recording starts before lookup finishes. Audio for every order sent for sewing is preloaded, following all pages of the order list. Wait for the ready counter to finish for immediate playback. Use Refresh order audio to include newly added sewing orders or retry unavailable recordings; other orders still load their audio on demand.
 2. Scan its matching NFC-card barcode immediately. The station retains this scan while loading the order. Pairing does not mark Packed. A correct cue plays over customer audio; an error pauses audio, speaks the problem, and resumes it.
@@ -15,4 +15,4 @@ Finalized clips remain in this browser's IndexedDB while uploading. They retry e
 
 Open order details → Packing videos to view saved clips. Staff access is required. Existing customer-tracker video access and verification rules are unchanged.
 
-Video records without microphone audio. The customer's voice message plays separately for QC. Existing tablet packing uploads retain their prior timed format and verified-save completion gate.
+Video records sound from the selected microphone, including packing sounds and customer audio played aloud through the station speakers. The preview stays muted to prevent feedback. Headphone playback is not captured by the microphone. Camera or microphone disconnection cancels the current parcel without marking it Packed. Saved MP4s preserve audio when present; older silent clips remain compatible. Existing tablet packing uploads retain their prior capture settings, timed format and verified-save completion gate.
