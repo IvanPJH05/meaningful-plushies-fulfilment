@@ -15,7 +15,7 @@ final class PackingFeedback implements AutoCloseable {
     interface VoiceSource {void configure(MediaPlayer player,String id) throws Exception;}
     private final Context context;private final Listener listener;private final VoiceSource source;
     private final Handler main=new Handler(Looper.getMainLooper());private final AudioManager manager;private final FeedbackSequence sequence;
-    private TextToSpeech speech;private ToneGenerator tones;private MediaPlayer player;private AudioFocusRequest focus;
+    private TextToSpeech speech;private ToneGenerator tones,successTones;private MediaPlayer player;private AudioFocusRequest focus;private boolean successActive;private int successEpoch;
     private boolean speechReady,speechInitialised,closed,prepared,voicePaused,alertActive;
     private int alertEpoch,voiceEpoch,focusEpoch;private Runnable alertTimeout,voiceTimeout,speechDone;private String speechId="";
     PackingFeedback(Context context,Listener listener){this(context,listener,(player,id)->{
@@ -25,7 +25,7 @@ final class PackingFeedback implements AutoCloseable {
     PackingFeedback(Context context,Listener listener,VoiceSource source){
         this.context=context;this.listener=listener;this.source=source;manager=(AudioManager)context.getSystemService(Context.AUDIO_SERVICE);
         sequence=new FeedbackSequence(new FeedbackSequence.Output(){
-            public void correctTone(){tone(true,()->{alertActive=false;releaseFocusIfIdle();});}
+            public void correctTone(){mixCorrectTone();}
             public void wrongTone(Runnable done){tone(false,done);}
             public void speak(String problem,Runnable done){speakProblem(problem,done,0);}
             public void startVoice(String id){playVoice(id);}
@@ -35,7 +35,7 @@ final class PackingFeedback implements AutoCloseable {
             public void stopAlerts(){stopAlertsOutput();}
             public void busy(boolean busy){listener.busy(busy);}
         });
-        try{tones=new ToneGenerator(AudioManager.STREAM_MUSIC,85);}catch(RuntimeException error){listener.notice("Feedback sounds are unavailable. Check tablet audio settings.");}
+        try{tones=new ToneGenerator(AudioManager.STREAM_MUSIC,85);successTones=new ToneGenerator(AudioManager.STREAM_MUSIC,85);}catch(RuntimeException error){listener.notice("Feedback sounds are unavailable. Check tablet audio settings.");}
         try{speech=new TextToSpeech(context,status->main.post(()->{
             if(closed)return;speechInitialised=true;
             try{if(status==TextToSpeech.SUCCESS){int language=speech.setLanguage(Locale.ENGLISH);speechReady=language!=TextToSpeech.LANG_MISSING_DATA&&language!=TextToSpeech.LANG_NOT_SUPPORTED;speech.setAudioAttributes(attributes());
@@ -59,7 +59,13 @@ final class PackingFeedback implements AutoCloseable {
         if(manager.requestAudioFocus(request)!=AudioManager.AUDIOFOCUS_REQUEST_GRANTED){listener.notice("Audio is in use by another app. Stop it and replay the order audio.");return false;}
         focus=request;if(manager.getStreamVolume(AudioManager.STREAM_MUSIC)==0)listener.notice("Tablet media volume is muted. Turn it up to hear pairing feedback and order audio.");return true;
     }
-    private void releaseFocusIfIdle(){if(player==null&&!alertActive&&focus!=null){focusEpoch++;AudioFocusRequest old=focus;focus=null;manager.abandonAudioFocusRequest(old);}}
+    private void releaseFocusIfIdle(){if(player==null&&!alertActive&&!successActive&&focus!=null){focusEpoch++;AudioFocusRequest old=focus;focus=null;manager.abandonAudioFocusRequest(old);}}
+    private void mixCorrectTone(){
+        if(!acquireFocus())return;successActive=true;int current=++successEpoch;
+        try{if(successTones!=null)successTones.startTone(ToneGenerator.TONE_PROP_ACK,180);}catch(RuntimeException error){listener.notice("Correct pairing sound could not play. Check tablet volume.");}
+        // A rapid correction must not cancel the wrong-tone/TTS continuation timer.
+        main.postDelayed(()->{if(current==successEpoch){successActive=false;releaseFocusIfIdle();}},240);
+    }
     private void later(int current,long delay,Runnable action){if(alertTimeout!=null)main.removeCallbacks(alertTimeout);alertTimeout=()->{if(current==alertEpoch&&!closed){alertTimeout=null;action.run();}};main.postDelayed(alertTimeout,delay);}
     private void tone(boolean correct,Runnable done){
         int current=++alertEpoch;alertActive=true;if(!acquireFocus()){alertActive=false;if(correct)done.run();else sequence.stop();return;}
@@ -95,6 +101,6 @@ final class PackingFeedback implements AutoCloseable {
     private void pauseOrderVoice(){voicePaused=true;if(player!=null&&prepared)try{if(player.isPlaying())player.pause();}catch(RuntimeException error){listener.notice("Order audio could not pause safely. Replay it after checking the error.");releaseVoice();}}
     private void resumeOrderVoice(){voicePaused=false;startPreparedVoice();}
     private void releaseVoice(){voiceEpoch++;if(voiceTimeout!=null){main.removeCallbacks(voiceTimeout);voiceTimeout=null;}if(player!=null){player.release();player=null;}prepared=false;voicePaused=false;releaseFocusIfIdle();}
-    private void stopAlertsOutput(){alertEpoch++;if(alertTimeout!=null){main.removeCallbacks(alertTimeout);alertTimeout=null;}speechDone=null;speechId="";if(speech!=null)try{speech.stop();}catch(RuntimeException ignored){}if(tones!=null)tones.stopTone();alertActive=false;releaseFocusIfIdle();}
-    public void close(){closed=true;sequence.stop();if(speech!=null){speech.shutdown();speech=null;}if(tones!=null){tones.release();tones=null;}}
+    private void stopAlertsOutput(){alertEpoch++;successEpoch++;successActive=false;if(successTones!=null)successTones.stopTone();if(alertTimeout!=null){main.removeCallbacks(alertTimeout);alertTimeout=null;}speechDone=null;speechId="";if(speech!=null)try{speech.stop();}catch(RuntimeException ignored){}if(tones!=null)tones.stopTone();alertActive=false;releaseFocusIfIdle();}
+    public void close(){closed=true;sequence.stop();if(speech!=null){speech.shutdown();speech=null;}if(tones!=null){tones.release();tones=null;}if(successTones!=null){successTones.release();successTones=null;}}
 }
