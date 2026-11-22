@@ -82,11 +82,13 @@ final class PackingFeedback implements AutoCloseable {
     }
     private void playVoice(String id){
         releaseVoice();int current=++voiceEpoch;voicePaused=false;if(!acquireFocus())return;
-        try{player=new MediaPlayer();MediaPlayer active=player;active.setAudioAttributes(attributes());source.configure(active,id);
+        try{player=new MediaPlayer();MediaPlayer active=player;active.setAudioAttributes(attributes());
             active.setOnPreparedListener(p->{if(current!=voiceEpoch||closed)return;if(voiceTimeout!=null){main.removeCallbacks(voiceTimeout);voiceTimeout=null;}prepared=true;if(!voicePaused)startPreparedVoice();});
             active.setOnCompletionListener(p->{if(current==voiceEpoch&&!closed)releaseVoice();});
             active.setOnErrorListener((p,what,extra)->{if(current==voiceEpoch&&!closed){listener.notice("This order's voice recording could not play. Check its audio and use Replay order audio.");releaseVoice();}return true;});
-            voiceTimeout=()->{if(current==voiceEpoch&&!closed){listener.notice("Order audio could not load. Check Wi-Fi and use Replay order audio.");releaseVoice();}};main.postDelayed(voiceTimeout,20000);active.prepareAsync();
+            voiceTimeout=()->{if(current==voiceEpoch&&!closed){listener.notice("Order audio could not load. Check Wi-Fi and use Replay order audio.");releaseVoice();}};main.postDelayed(voiceTimeout,20000);
+            // Network data-source setup must never block HID barcode events on the UI thread.
+            Thread configure=new Thread(()->{try{source.configure(active,id);main.post(()->{if(current!=voiceEpoch||closed)return;try{active.prepareAsync();}catch(RuntimeException failure){listener.notice("Order audio could not play. Use Replay order audio.");releaseVoice();}});}catch(Exception error){main.post(()->{if(current==voiceEpoch&&!closed){listener.notice("Order audio could not load. Check its recording and replay it.");releaseVoice();}});}},"packing-voice-source");configure.setDaemon(true);configure.start();
         }catch(Exception error){listener.notice("This order's voice recording could not play. Check its audio and use Replay order audio.");releaseVoice();}
     }
     private void startPreparedVoice(){if(player==null||!prepared||voicePaused)return;try{player.start();}catch(RuntimeException error){listener.notice("Order audio could not resume. Use Replay order audio to try again.");releaseVoice();}}
