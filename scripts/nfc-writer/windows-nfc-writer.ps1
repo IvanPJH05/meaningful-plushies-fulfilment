@@ -186,6 +186,15 @@ function Write-CardPage {
 
 function Remove-NtagPasswordProtection {
   param([IntPtr]$Card, [uint32]$Protocol, [hashtable]$Layout, [byte[]]$Password)
+  # An interrupted attempt may already have disabled password protection.
+  # Check first: authenticating an unlocked card with an old/different password
+  # can otherwise report failure even though no unlock is needed.
+  $auth0 = $null
+  try { $auth0 = Read-CardPage -Card $Card -Protocol $Protocol -Page $Layout.Auth0Page } catch { }
+  if ($null -ne $auth0 -and $auth0[3] -eq 0xFF) {
+    Write-Host "Card password protection is already disabled. No authentication or write needed."
+    return
+  }
   if (-not (Try-AuthenticateNtag -Card $Card -Protocol $Protocol -Password $Password)) {
     throw "The NFC card did not accept that password."
   }
@@ -196,6 +205,11 @@ function Remove-NtagPasswordProtection {
   $access = Read-CardPage -Card $Card -Protocol $Protocol -Page $Layout.AccessPage
   $access[0] = [byte]($access[0] -band 0x7F)
   Write-CardPage -Card $Card -Protocol $Protocol -Page $Layout.AccessPage -Data $access
+
+  $verifiedAuth0 = Read-CardPage -Card $Card -Protocol $Protocol -Page $Layout.Auth0Page
+  if ($verifiedAuth0[3] -ne 0xFF) {
+    throw "The NFC card did not confirm that password protection was removed. Keep it on the reader and try again."
+  }
 }
 
 function Send-CardCommand {
