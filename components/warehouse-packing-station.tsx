@@ -20,6 +20,7 @@ export function WarehousePackingStation({token,onSaved}:{token:string;onSaved:()
  const session=useRef<Session|null>(null),mounted=useRef(true),manifest=useRef<Item[]>([]),decoder=useRef<Decoder|null>(null);
  const audioCache=useRef(new Map<string,{version:string;url:string}>()),audioJobs=useRef(new Map<string,Promise<string>>()),jobs=useRef(new Map<string,QueuedPackingVideo>()),uploading=useRef(false);
  const sound=useRef<AudioContext|null>(null),lastWrong=useRef(""),lastWrongAt=useRef(0),played=useRef("");
+ const speech=useRef({generation:0,player:null as HTMLAudioElement|null,source:"",resume:false});
  const callbacks=useRef<{pair:(s:Session)=>Promise<void>;finish:(s:Session,at:number)=>Promise<void>;retry:()=>Promise<void>}>({pair:async()=>{},finish:async()=>{},retry:async()=>{}});
  const decoderStarting=useRef(false);
  const changed=useRef(onSaved);changed.current=onSaved;
@@ -32,8 +33,10 @@ export function WarehousePackingStation({token,onSaved}:{token:string;onSaved:()
  function problem(text:string){
   if(!mounted.current)return;setError(text);cue(false);const player=audio.current,wasPlaying=player&&!player.paused;
   if(!window.speechSynthesis||typeof SpeechSynthesisUtterance==="undefined")return;
+  const source=player?.src||"",state=speech.current,generation=++state.generation;
+  state.resume=Boolean(wasPlaying)||(state.resume&&state.player===player&&state.source===source);state.player=player;state.source=source;
   if(wasPlaying)player.pause();window.speechSynthesis.cancel();const utterance=new SpeechSynthesisUtterance(text);utterance.lang="en-MY";
-  const source=player?.src;const resume=()=>{if(wasPlaying&&player===audio.current&&player.src===source)void player.play().catch(()=>{});};utterance.onend=resume;utterance.onerror=resume;window.speechSynthesis.speak(utterance);
+  const resume=()=>{if(state.generation===generation&&state.resume&&player===audio.current&&player?.src===source){state.resume=false;void player.play().catch(()=>{});}};utterance.onend=resume;utterance.onerror=resume;window.speechSynthesis.speak(utterance);
  }
  async function loadAudio(item:Item){
   const key=item.order_id+":"+item.order.updatedAt,cached=audioCache.current.get(item.order_id);
@@ -100,7 +103,7 @@ export function WarehousePackingStation({token,onSaved}:{token:string;onSaved:()
   catch(e){setError((e as Error).message);setCameraReady(false);}finally{setConnecting(false);}
  }
  function cancel(reason="Packing cancelled. The order has not been marked Packed."){
-  const s=session.current;if(s?.finishing)return;if(s){s.cancelled=true;clearTimeout(s.timer);if(s.recorder.state!=="inactive")s.recorder.stop();}session.current=null;setView(null);audio.current?.pause();setMessage(reason);input.current?.focus();
+  const s=session.current;if(s?.finishing)return;if(s){s.cancelled=true;clearTimeout(s.timer);if(s.recorder.state!=="inactive")s.recorder.stop();}session.current=null;setView(null);speech.current.generation++;speech.current.resume=false;window.speechSynthesis?.cancel();audio.current?.pause();setMessage(reason);input.current?.focus();
  }
  async function pair(s:Session){
   if(!s.item||!s.card||s.pairing||s.paired||s.cancelled||session.current!==s)return;s.pairing=true;publish(s);
@@ -129,7 +132,7 @@ export function WarehousePackingStation({token,onSaved}:{token:string;onSaved:()
   }
   if(current){if(current.barcode.toUpperCase()!==value.toUpperCase())problem("Finish or cancel the current parcel before scanning another order.");return;}
   if(!cameraReady||!stream.current||!decoderReady){problem("Start the webcam and wait for the shipping-label reader before scanning.");return;}
-  audio.current?.pause();window.speechSynthesis?.cancel();
+  speech.current.generation++;speech.current.resume=false;audio.current?.pause();window.speechSynthesis?.cancel();
   try{
    const mimeType=["video/webm;codecs=vp8","video/webm","video/mp4"].find(type=>MediaRecorder.isTypeSupported(type));const recorder=new MediaRecorder(stream.current,{...(mimeType?{mimeType}:{}),videoBitsPerSecond:800000});
    const now=performance.now(),s:Session={id:crypto.randomUUID(),barcode:value,startedAt:now,epoch:performance.timeOrigin+now,recorder,chunks:[],item:null,card:"",paired:false,pairing:false,finishing:false,cancelled:false,tracking:"",timer:setTimeout(()=>cancel("The recording reached its safety limit. Verify the label and start this parcel again."),warehouseMaxDurationMs)};
