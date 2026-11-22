@@ -4,8 +4,10 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { type ProductionItem } from "@/lib/production-tracking";
 import type { Order } from "@/lib/types";
 import type { PackingProofTicket } from "./packing-camera-station";
+import { createSerialScanQueue } from "@/lib/serial-scan-queue";
 
 type Pending = ({ kind: "order"; item: ProductionItem; barcode: string } | { kind: "card"; code: string }) & { expires: number };
+type ScanEntry = { value: string; scannedAt: number };
 type Props = {
   findOrder: (barcode: string) => Promise<ProductionItem | null>;
   audioSourceFor: (order: Order) => string;
@@ -29,6 +31,24 @@ export function ProductionPairScanner({ findOrder, audioSourceFor, checkCard, sa
   const lock = useRef(false);
   const input = useRef<HTMLInputElement>(null);
   const player = useRef<HTMLAudioElement>(null);
+  const recordingRef = useRef(recording);
+  const mounted = useRef(true);
+  recordingRef.current = recording;
+  const handlers = useRef<{ process: (entry: ScanEntry) => Promise<void>; failed: (error: unknown) => void }>({ process: async () => {}, failed: () => {} });
+  const scans = useRef<ReturnType<typeof createSerialScanQueue<ScanEntry>> | null>(null);
+  if (!scans.current) scans.current = createSerialScanQueue({
+    process: entry => handlers.current.process(entry),
+    canProcess: () => mounted.current && !recordingRef.current && !lock.current,
+    onError: error => handlers.current.failed(error),
+  });
+  handlers.current = {
+    process: entry => run(() => processScan(entry.value, entry.scannedAt)),
+    failed: error => show("Unable to complete the scan. " + failureText(error)),
+  };
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; scans.current?.clear(); };
+  }, []);
 
   function show(message: string, replay?: ProductionItem) {
     setStatus(message);
@@ -81,11 +101,12 @@ export function ProductionPairScanner({ findOrder, audioSourceFor, checkCard, sa
     setBusy(true);
     onBusy(true);
     try { await work(); }
-    catch (error) { show("Unable to complete the scan. " + failureText(error)); }
+    catch (error) { scans.current?.clear(); show("Unable to complete the scan. " + failureText(error)); }
     finally {
       lock.current = false;
       setBusy(false);
       onBusy(false);
+      scans.current?.resume();
     }
   }
 
@@ -99,11 +120,12 @@ export function ProductionPairScanner({ findOrder, audioSourceFor, checkCard, sa
   }
 
   useEffect(() => {
-    if (busy || recording) return;
+    if (recording) return;
+    scans.current?.resume();
 
     function focusScanner() {
       input.current?.focus({ preventScroll: true });
-      input.current?.select();
+      if (!input.current?.value) input.current?.select();
     }
 
     function focusFromPage(event: MouseEvent) {
@@ -115,17 +137,17 @@ export function ProductionPairScanner({ findOrder, audioSourceFor, checkCard, sa
     focusScanner();
     document.addEventListener("click", focusFromPage);
     return () => document.removeEventListener("click", focusFromPage);
-  }, [busy, recording, proofEnabled]);
+  }, [recording, proofEnabled]);
 
   // A keyboard scanner sends its characters as a burst. Select any text
   // left idle so the next burst replaces it, even if the field kept focus.
   useEffect(() => {
-    if (busy || !scan) return;
+    if (!scan) return;
     const timer = window.setTimeout(() => {
       if (document.activeElement === input.current) input.current?.select();
     }, 750);
     return () => window.clearTimeout(timer);
-  }, [busy, scan]);
+  }, [scan]);
 
   useEffect(() => {
     if (!pending) return;
@@ -150,18 +172,12 @@ export function ProductionPairScanner({ findOrder, audioSourceFor, checkCard, sa
     } catch (error) {
       ticket?.cancel();
       if (previous?.kind === "card") update(null);
+      scans.current?.clear();
       show("Unable to pair. " + failureText(error), item);
     }
   }
 
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    const value = scan.trim();
-    if (lock.current || recording) return;
-    const scannedAt = performance.now();
-    setScan("");
-    if (!value) return;
-    void run(async () => {
+  async function processScan(value: string, scannedAt: number) {
       let previous = current.current;
       if (previous && Date.now() >= previous.expires) {
         await expire(previous);
@@ -190,12 +206,13 @@ export function ProductionPairScanner({ findOrder, audioSourceFor, checkCard, sa
 
       const code = value.toUpperCase();
       if (!/^NFC-\d{6,12}$/.test(code) && !(previous?.kind === "order" && /^\d{6}$/.test(code))) {
+        scans.current?.clear();
         show("Barcode not recognised. Scan a packing slip or an NFC card.");
         return;
       }
       if (code.startsWith("NFC-")) {
         try { await checkCard(code, previous?.kind === "order" ? previous.item.order_id : undefined); }
-        catch (error) { show("Unable to pair. " + failureText(error), previous?.kind === "order" ? previous.item : undefined); return; }
+        catch (error) { scans.current?.clear(); show("Unable to pair. " + failureText(error), previous?.kind === "order" ? previous.item : undefined); return; }
       }
       if (previous?.kind === "order") {
         if (Date.now() >= previous.expires) { await expire(previous); return; }
@@ -204,17 +221,29 @@ export function ProductionPairScanner({ findOrder, audioSourceFor, checkCard, sa
         update({ kind: "card", code, expires: Date.now() + 60000 });
         show("Card ready. Scan the order within one minute.");
       }
-    });
+  }
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    // Read and clear the actual field immediately, before the order lookup.
+    // The next keyboard-scanner burst must have a focused, writable input.
+    const value = (input.current?.value ?? scan).trim();
+    if (recordingRef.current) return;
+    const scannedAt = performance.now();
+    if (input.current) input.current.value = "";
+    setScan("");
+    if (value) scans.current?.enqueue({ value, scannedAt });
   }
 
   return <section>
     <h2>Scan an order or NFC card</h2>
-    <p>Scanning an order marks it Packed from any stage and confirms any previous issue was fixed. Scan its NFC card to pair it. You can scan either barcode first.</p>
+    <p>Scanning an order marks it Packed from any stage and confirms any previous issue was fixed. Scan its NFC card to pair it. You can scan either barcode first, back-to-back. Scans are checked in the order received.</p>
     <form onSubmit={submit}>
-      <label>Scan order or NFC card<input ref={input} autoFocus onFocus={event => event.currentTarget.select()} onClick={event => event.currentTarget.select()} value={scan} onChange={event => setScan(event.target.value)} disabled={busy || recording} autoComplete="off" /></label>
-      <button disabled={busy || recording} type="submit">Scan</button>
+      <label>Scan order or NFC card<input ref={input} autoFocus onFocus={event => event.currentTarget.select()} onClick={event => event.currentTarget.select()} value={scan} onChange={event => setScan(event.target.value)} disabled={recording} autoComplete="off" /></label>
+      <button disabled={recording} type="submit">Scan</button>
     </form>
     {pending && <p>{seconds} seconds remaining · {pending.kind === "card" ? pending.code : "#" + (pending.item.order?.orderNumber || pending.item.order_id)}</p>}
+    {busy && <p role="status">Checking scan… You can scan the next barcode now.</p>}
     <p role="status">{status}</p>
     {selected && <p>#{String(selected.order?.orderNumber || selected.order_id)} · {String(selected.order?.plushName || selected.order?.character || "")}</p>}
     <audio ref={player} controls preload="none" />
