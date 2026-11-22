@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { packingQueue, uploadPackingVideo, type QueuedPackingVideo } from "@/lib/packing-upload-queue";
 import { matchesProductionBarcode } from "@/lib/production-tracking";
 import { trackingCode, createTrackingConfirmation, warehouseMaxDurationMs } from "@/lib/warehouse-packing";
+import { sewingAudioManifest,preloadSewingAudio } from "@/lib/packing-audio-preload";
 import styles from "./warehouse-packing-station.module.css";
 
 type Item={order_id:string;batchId?:string;order:{id:string;orderNumber:string;updatedAt:string;character:string;plushName:string;trackingNumber:string;voiceLength:number}};
@@ -16,6 +17,7 @@ export function WarehousePackingStation({token,onSaved}:{token:string;onSaved:()
  const [cameraReady,setCameraReady]=useState(false),[connecting,setConnecting]=useState(false),[decoderReady,setDecoderReady]=useState(false);
  const [view,setView]=useState<Session|null>(null),[seconds,setSeconds]=useState(0),[message,setMessage]=useState("Start the webcam, then scan the order and its NFC card back-to-back."),[error,setError]=useState("");
  const [readyAudio,setReadyAudio]=useState(0),[waiting,setWaiting]=useState(0),[loadingAudio,setLoadingAudio]=useState(false);
+ const [audioTotal,setAudioTotal]=useState(0),[audioFailed,setAudioFailed]=useState(0),[preparingAudio,setPreparingAudio]=useState(false);
  const video=useRef<HTMLVideoElement>(null),input=useRef<HTMLInputElement>(null),audio=useRef<HTMLAudioElement>(null),stream=useRef<MediaStream|null>(null);
  const session=useRef<Session|null>(null),mounted=useRef(true),manifest=useRef<Item[]>([]),decoder=useRef<Decoder|null>(null);
  const audioCache=useRef(new Map<string,{version:string;url:string}>()),audioJobs=useRef(new Map<string,Promise<string>>()),jobs=useRef(new Map<string,QueuedPackingVideo>()),uploading=useRef(false);
@@ -23,6 +25,7 @@ export function WarehousePackingStation({token,onSaved}:{token:string;onSaved:()
  const speech=useRef({generation:0,player:null as HTMLAudioElement|null,source:"",resume:false});
  const callbacks=useRef<{pair:(s:Session)=>Promise<void>;finish:(s:Session,at:number)=>Promise<void>;retry:()=>Promise<void>}>({pair:async()=>{},finish:async()=>{},retry:async()=>{}});
  const decoderStarting=useRef(false);
+ const warmingAudio=useRef(false);
  const changed=useRef(onSaved);changed.current=onSaved;
  const publish=(s:Session)=>{if(mounted.current&&session.current===s)setView({...s});};
  const request=async(path:string,body?:object)=>{const response=await fetch(path,{method:body?"POST":"GET",headers:{Authorization:"Bearer "+token,...(body?{"Content-Type":"application/json"}:{})},body:body?JSON.stringify(body):undefined,cache:"no-store"});const data=await response.json();if(!response.ok)throw Error(data.error||"The packing service is unavailable.");return data;};
@@ -50,8 +53,7 @@ export function WarehousePackingStation({token,onSaved}:{token:string;onSaved:()
    const blob=await response.blob();if(!blob.size||blob.size>12*1024*1024)throw Error("The order audio could not be preloaded. Check its saved file.");
    if(!mounted.current)return "";
    const url=URL.createObjectURL(blob);if(cached)URL.revokeObjectURL(cached.url);audioCache.current.set(item.order_id,{version:item.order.updatedAt,url});
-   if(audioCache.current.size>40){for(const[id,entry]of audioCache.current){if(id!==session.current?.item?.order_id&&id!==item.order_id){URL.revokeObjectURL(entry.url);audioCache.current.delete(id);break;}}}
-   setReadyAudio(audioCache.current.size);return url;
+   setReadyAudio(manifest.current.filter(row=>audioCache.current.get(row.order_id)?.version===row.order.updatedAt).length);return url;
   })().finally(()=>audioJobs.current.delete(key));audioJobs.current.set(key,promise);return promise;
  }
  function playUrl(url:string,s:Session){if(!url||session.current!==s||!audio.current)return;audio.current.src=url;played.current=s.item?.order_id||"";void audio.current.play().catch(()=>setMessage("Press Play once to allow the customer audio."));}
@@ -66,11 +68,21 @@ export function WarehousePackingStation({token,onSaved}:{token:string;onSaved:()
  }
  callbacks.current.retry=retry;
 
+ async function prepareQueueAudio(){
+  if(warmingAudio.current)return;warmingAudio.current=true;setPreparingAudio(true);setAudioFailed(0);
+  try{
+   const items=await sewingAudioManifest<Item>(cursor=>request("/api/production-tracking/warehouse"+(cursor?"?after="+encodeURIComponent(cursor):"")),()=>mounted.current);
+   if(!mounted.current)return;manifest.current=items;setAudioTotal(items.length);
+   const ids=new Set(items.map(item=>item.order_id));
+   for(const[id,entry]of audioCache.current){if(!ids.has(id)&&id!==session.current?.item?.order_id&&audio.current?.src!==entry.url){URL.revokeObjectURL(entry.url);audioCache.current.delete(id);}}
+   setReadyAudio(items.filter(row=>audioCache.current.get(row.order_id)?.version===row.order.updatedAt).length);
+   await preloadSewingAudio(items,loadAudio,()=>mounted.current,setAudioFailed);
+  }catch(e){if(mounted.current)setError((e as Error).message);}finally{warmingAudio.current=false;if(mounted.current)setPreparingAudio(false);}
+ }
+
  useEffect(()=>{
   mounted.current=true;const cache=audioCache.current;
-  void request("/api/production-tracking/warehouse").then(async data=>{
-   manifest.current=data.items;let cursor=0;const warm=async()=>{while(mounted.current&&cursor<Math.min(data.items.length,40)){const item=data.items[cursor++] as Item;await loadAudio(item).catch(()=>{});}};await Promise.all([warm(),warm()]);
-  }).catch(e=>{if(mounted.current)setError(e.message);});
+  void prepareQueueAudio();
   void packingQueue("get").then(rows=>{for(const job of rows)jobs.current.set(job.meta.id,job);if(mounted.current){setWaiting(jobs.current.size);void callbacks.current.retry();}}).catch(()=>{});
   const retryTimer=setInterval(()=>void callbacks.current.retry(),15000),clock=setInterval(()=>{const s=session.current;if(s)setSeconds(Math.floor((performance.now()-s.startedAt)/1000));},500);
   const unload=(event:BeforeUnloadEvent)=>{if(session.current||jobs.current.size){event.preventDefault();event.returnValue="";}};const online=()=>void callbacks.current.retry();window.addEventListener("beforeunload",unload);window.addEventListener("online",online);
@@ -149,11 +161,10 @@ export function WarehousePackingStation({token,onSaved}:{token:string;onSaved:()
   <Script src="/nfc-camera/decoder.js" onLoad={()=>void setupDecoder()} onReady={()=>{if(!decoder.current)void setupDecoder();}}/>
   <header className={styles.heading}><div><span className={styles.kicker}>WAREHOUSE PACKING STATION</span><h2>Scan. Pair. Verify. Pack.</h2><p>Recording starts with the order scan and ends when the camera confirms its shipping label.</p></div><span className={view?styles.live:styles.badge}>{view?`● RECORDING · ${seconds}s`:cameraReady&&decoderReady?"READY":"SET UP CAMERA"}</span></header>
   <div className={styles.layout}><div className={styles.preview}><video ref={video} autoPlay muted playsInline/>{!cameraReady&&<span>Overhead packing camera</span>}{view&&<strong>{view.item?"#"+view.item.order.orderNumber:view.barcode} · {view.paired?"Show the matching shipping label":"Scan the NFC card"}</strong>}</div>
-  <div className={styles.controls}><label>Webcam<select aria-label="Packing webcam" value={device} disabled={connecting||Boolean(view)} onChange={e=>{setDevice(e.target.value);if(cameraReady)void startCamera(e.target.value);}}><option value="">Default webcam</option>{devices.map(d=><option key={d.deviceId} value={d.deviceId}>{d.label||"Webcam"}</option>)}</select></label><button type="button" className="button secondary" disabled={connecting||Boolean(view)} onClick={()=>void startCamera()}>{connecting?"Connecting…":cameraReady?"Reconnect webcam":"Start webcam"}</button><small>{decoderReady?"Shipping-label reader ready":"Preparing shipping-label reader…"} · {readyAudio} order recordings preloaded</small>
-  <form onSubmit={submit}><label>Scan order or NFC card<input ref={input} autoFocus autoComplete="off" placeholder="Scan order, then NFC card — no waiting" disabled={Boolean(view?.finishing)}/></label><button type="submit" className="button primary" disabled={Boolean(view?.finishing)}>Read scan</button></form>
+  <div className={styles.controls}><label>Webcam<select aria-label="Packing webcam" value={device} disabled={connecting||Boolean(view)} onChange={e=>{setDevice(e.target.value);if(cameraReady)void startCamera(e.target.value);}}><option value="">Default webcam</option>{devices.map(d=><option key={d.deviceId} value={d.deviceId}>{d.label||"Webcam"}</option>)}</select></label><button type="button" className="button secondary" disabled={connecting||Boolean(view)} onClick={()=>void startCamera()}>{connecting?"Connecting…":cameraReady?"Reconnect webcam":"Start webcam"}</button><small>{decoderReady?"Shipping-label reader ready":"Preparing shipping-label reader…"} · {readyAudio} of {audioTotal} order recordings preloaded{preparingAudio?" · preparing…":""}</small>
+  {audioFailed>0&&<small>{audioFailed} order recording{audioFailed===1?"":"s"} unavailable. Check the saved audio or retry.</small>}<button type="button" className="button secondary" disabled={preparingAudio} onClick={()=>void prepareQueueAudio()}>{preparingAudio?"Preparing all order audio…":"Refresh order audio"}</button><form onSubmit={submit}><label>Scan order or NFC card<input ref={input} autoFocus autoComplete="off" placeholder="Scan order, then NFC card — no waiting" disabled={Boolean(view?.finishing)}/></label><button type="submit" className="button primary" disabled={Boolean(view?.finishing)}>Read scan</button></form>
   <div className={styles.steps}><div><span>1</span><strong>{view?view.item?"#"+view.item.order.orderNumber:view.barcode:"Order scan"}</strong><small>{view?.item?view.item.order.plushName+" · "+view.item.order.character:view?"Saved · loading order…":"Starts video and plays the order audio"}</small></div><div><span>2</span><strong>{view?.card||"NFC card"}</strong><small>{view?.paired?"Paired ✓":view?.pairing?"Checking pairing…":view?.card?"Scan saved · waiting for order":"Scan immediately after the order"}</small></div><div><span>3</span><strong>Shipping-label check</strong><small>{view?.item?"Expected: "+view.item.order.trackingNumber:"Show the J&T tracking barcode to the camera"}</small></div></div>
   <audio ref={audio} controls preload="auto" className={styles.audio}/>{loadingAudio&&<small>Loading this order’s audio…</small>}{view&&!view.finishing&&<button type="button" className="button secondary" onClick={()=>cancel()}>Cancel this parcel</button>}</div></div>
   <p role="status" className={styles.status}>{message}</p>{error&&<p role="alert" className={styles.error}>{error}</p>}{waiting>0&&<div className={styles.waiting}><strong>{waiting} packing video{waiting===1?"":"s"} waiting to save</strong><p>Keep this station open. Orders move to Packed only after their verified video is saved.</p><button className="button secondary" onClick={()=>void callbacks.current.retry()}>Retry saving</button></div>}
  </section>;
 }
-
