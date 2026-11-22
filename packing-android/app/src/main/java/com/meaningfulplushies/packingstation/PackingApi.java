@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 final class PackingApi {
     static final String BASE="https://meaningful-plushies-fulfilment.vercel.app";
     static final String PACKING="/api/mobile/packing";
+    static final String WAREHOUSE="/api/production-tracking/warehouse";
     static final String SCAN="/api/production-tracking",PROOFS=SCAN+"/proofs";
     private final String token;
     PackingApi(String token){this.token=token;}
@@ -37,6 +38,14 @@ final class PackingApi {
             try(var input=new FileInputStream(source);var output=connection.getOutputStream()){byte[] buffer=new byte[65536];int count;while((count=input.read(buffer))!=-1)output.write(buffer,0,count);}
             int code=connection.getResponseCode();if(code<200||code>=300)throw new Exception("Video upload interrupted; the local copy is safe and will retry.");
         }finally{connection.disconnect();}
+    }
+    void downloadAudio(String path,File target)throws Exception{
+        HttpURLConnection c=(HttpURLConnection)new URL(BASE+path).openConnection();c.setConnectTimeout(15000);c.setReadTimeout(30000);c.setInstanceFollowRedirects(false);c.setRequestProperty("Authorization","Bearer "+token);
+        File partial=new File(target.getPath()+".part");
+        try{int status=c.getResponseCode();if(status!=200)throw new ApiError(status,"Order audio could not load.");if(c.getContentLengthLong()>12*1024*1024)throw new Exception("Order audio is too large.");
+            try(var in=c.getInputStream();var out=new java.io.FileOutputStream(partial)){byte[] bytes=new byte[8192];int n,total=0;while((n=in.read(bytes))!=-1){total+=n;if(total>12*1024*1024)throw new Exception("Order audio is too large.");out.write(bytes,0,n);}}
+            if(partial.length()==0||!partial.renameTo(target))throw new Exception("Order audio could not be cached.");
+        }finally{c.disconnect();if(partial.exists())partial.delete();}
     }
     private static String read(InputStream input) throws Exception {if(input==null)return "";try(input;var bytes=new ByteArrayOutputStream()){byte[] buffer=new byte[8192];int count;while((count=input.read(buffer))!=-1){if(bytes.size()+count>2*1024*1024)throw new Exception("Server response too large.");bytes.write(buffer,0,count);}return bytes.toString("UTF-8");}}
 }

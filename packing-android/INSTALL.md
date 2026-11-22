@@ -1,27 +1,22 @@
-# MP Packing Station 1.4 — live Android app
+# MP Packing Station 2.0 — warehouse packing
 
-Install the signed MP-Packing-Station-1.4.0.apk on the Galaxy Tab S9+. This app runs beside the main fulfilment app.
+Install the signed MP-Packing-Station-2.0.0.apk on the Galaxy Tab S9+. It updates the separate MP Packing Station app using the same permanent signing identity; keep app data and pending uploads.
 
-1. Sign in with an existing active fulfilment staff or administrator account. Demo mode has been removed.
-2. Wait for CONNECTED. Check connection verifies access to the live Supabase orders and private packing video storage through the authenticated fulfilment service.
-3. Pair the Bluetooth scanner in Android keyboard/HID mode with an Enter suffix.
-4. Tap Choose camera and select the tablet rear/front camera or USB webcam. Allow camera/USB access and wait for READY.
-5. Scan the individual order or packing-slip barcode. The app reads that exact order, starts its audio immediately, and keeps its current status.
-6. Scan its matching ID-card barcode while the audio continues. A successful match plays the correct tone over the audio. An error pauses it, plays the wrong tone and spoken explanation, then resumes from the paused position. The app saves 3 seconds before + 20 seconds after the matching scan. Card-first scanning is also supported.
-7. The order moves to Packed only after the matching card is paired and the complete video is verified in private online storage. A failed recording, failed pairing, or pending upload leaves the order status unchanged. Completed video sources are kept in private tablet storage until upload and server verification succeed. Finished videos appear in Order details > Packing videos in the main system. Retry uploads now resumes pending uploads. Sign in again if a session expires.
+1. Sign in with an active fulfilment staff account. Wait for CONNECTED.
+2. Pair the Bluetooth barcode scanner in Android keyboard/HID mode with an Enter suffix.
+3. Choose the tablet camera or USB webcam, allow camera and microphone access, and wait for READY. Choose microphone lists Android's available recording inputs, including supported USB inputs. Changing it reconnects the camera between parcels.
+4. Audio for every current Sent for Sewing order is downloaded into private tablet cache with two downloads at a time. Wait for the ready counter for immediate local playback. Refresh order audio includes newly added orders and retries unavailable recordings. Uncached orders still stream their audio on demand.
+5. Scan the individual order barcode. Its code stays visible immediately, recording begins before the online lookup finishes, and cached audio starts without waiting. Scan its NFC barcode straight away; the app retains it while resolving the order. Another parcel cannot replace the active recording.
+6. A successful NFC pair plays the correct tone over customer audio. Errors pause audio, play the wrong tone and spoken problem, then resume. Correct the NFC card without abandoning the active recording.
+7. Pack the parcel and attach its shipping label. Show the complete J&T tracking barcode clearly to the selected camera. Two distinct consecutive frames must match the exact tracking number. A wrong label keeps recording and announces the mismatch.
+8. A match ends the video, retaining microphone sound, and saves it privately on the tablet. The server rechecks the live tracking number, NFC ownership and cloud video before marking Packed. Upload retries do not mark Packed early. The next parcel can begin after local saving while cloud upload continues.
 
-The app never contains the Supabase service key. Staff access is checked by the fulfilment server on each request. Video uploads use short-lived signed URLs to the private packing-proof bucket. Customer order attachments are excluded from the fast scanner response.
+Recording has a three-minute safety limit. Missing tracking numbers, cancellation, microphone/camera failure, interrupted frames or incomplete sound do not produce a successful packing proof. Keep the packing screen open while recording and local saving. Finished uploads survive restarts and retry with WorkManager; older timed recordings already in the queue remain supported.
 
-Keep the packing screen open while recording. Switching cameras is disabled during recording and local saving; choosing a different camera clears the previous rolling history. Leaving the app or disconnecting the camera cancels incomplete footage. Completed recordings survive restarts and retry when internet returns. Do not uninstall or clear app data while files are waiting to upload.
+Microphone sound includes the room and customer audio played aloud through tablet speakers; headphone playback is not captured acoustically. The camera preview is silent to avoid feedback. Android must expose and permit the chosen input; the app reports a routing failure instead of silently selecting a different microphone.
 
-This internal release is non-debuggable and uses a permanent private release key stored on the owner’s computer, outside this repository. It replaces the old disposable test signing identity, so finish pending uploads before uninstalling an old test version if Android cannot update it. Future signed releases must use this same permanent key. No new customer tables or public database grants are needed.
+Preview and recording retain camera aspect ratio and orientation. Rotate camera 90° retains the existing per-camera mount correction. USB webcam support stays on UVCAndroid 1.0.13. Shipping-barcode recognition uses the bundled ML Kit 17.3.0 model on the tablet; the barcode is not sent to a recognition service.
 
-The CI artifact is deliberately unsigned. The owner signs it using scripts/sign-packing-release.ps1 and the verified Android build tools. The password is protected with Windows DPAPI. Back up the private signing folder securely; never publish its key or password.
+View saved proofs in the main fulfilment system under Order details → Packing videos. Customer tracking-video access rules are unchanged. The app contains no Supabase service key and uses active staff authentication and short-lived private-storage upload URLs.
 
-USB camera support uses UVCAndroid 1.0.13; uploads retry with Android WorkManager 2.10.2. Tablet camera recording, camera switching, and native MP4 history are covered by Android instrumentation tests.
-
-Order audio starts automatically on the order scan. A successful NFC match plays a correct tone over the continuing recording. Pairing errors pause the recording, play a wrong tone and a spoken explanation, then resume the same recording from its paused position. The matching NFC barcode can be scanned while order audio plays. Stop audio interrupts playback and Replay order audio starts it again. Tablet media volume controls both channels. Spoken problems use an installed English Android text-to-speech voice, preferring an offline voice. The 3+20 video recording remains independent of audio playback.
-
-Packing completion uses server protocol 2. Pairing never marks the order Packed; the server rechecks the card and cloud file and commits the Packed update with the ready video record in one transaction. Upload retries cannot re-pack a later shipped order. Older app versions must be replaced with this update.
-
-The tablet preview automatically follows display rotation while preserving the camera aspect ratio. Black borders preserve the full frame instead of stretching or cropping. Rotate camera 90° corrects an external webcam mount and is saved per camera; it also applies to new recorded clips. Preview-only tablet rotations do not interrupt the camera stream.
+CI compiles, lints, runs unit tests and exercises native camera/audio encoding on an Android emulator. A USB webcam and microphone still depend on the actual tablet, hub and hardware combination. The CI artifact is unsigned; sign with scripts/sign-packing-release.ps1 and the existing private release key outside the repository. Never replace or publish that key or its DPAPI-protected password.
