@@ -27,6 +27,7 @@ export function ProductionTrackingWorkspace({token,admin,onOpenScanner,onPrint,o
  const [scan,setScan]=useState(""),[card,setCard]=useState(""),[note,setNote]=useState(""),[filter,setFilter]=useState("all"),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
  const requestId=useRef(crypto.randomUUID()),lock=useRef(false),cardInput=useRef<HTMLInputElement>(null);
  const selected=items.find(i=>i.id===current);const next=selected?taskAction(selected):undefined;
+ const packingOrders=items.filter(item=>(!item.disposition||item.disposition==="active")&&item.order).map(item=>({...item.order,id:item.order_id} as Order));
  async function request(path="",body?:object){const r=await fetch(`/api/production-tracking${path}`,{method:body?"POST":"GET",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},cache:"no-store",body:body?JSON.stringify(body):undefined});const d=await r.json();if(!r.ok)throw Error(d.error||"Could not load production.");return d;}
  async function list(){const rows=(await request()).batches as Batch[];setBatches(rows);return rows;}
  async function load(id:string){const d=await request(`?batch=${id}`);setBatch(d.batch);setItems(d.items);setEvents(d.events);return d.items as ProductionItem[];}
@@ -129,7 +130,16 @@ export function ProductionTrackingWorkspace({token,admin,onOpenScanner,onPrint,o
    </div>
    {batch ? <>
      <h2>{productionBatchLabel(batch.batch_number)}</h2>
+     <div className={styles.toolbar}>
+       <button type="button" disabled={busy||!packingOrders.length} onClick={()=>void run(async()=>{
+         setNotice("");
+         const result=await onPrint(packingOrders);
+         if(result===false)throw Error("Could not generate packing slips and shipping labels. Try again.");
+         setNotice("Packing slips and shipping labels PDF ready to print.");
+       })}>{busy?"Preparing PDF…":"Print packing slips + shipping labels"}</button>
      <button disabled={busy||!items.some(i=>!i.disposition||i.disposition==="active")} onClick={()=>void run(()=>onPrintSpeakerTags(items.filter(i=>!i.disposition||i.disposition==="active").map(i=>({...i.order,id:i.order_id} as Order))))}>Print speaker tags · 20 × 10 mm</button>
+     </div>
+     {notice&&<p role="status">{notice}</p>}
      <p>Created {productionBatchCreatedAt(batch.created_at)} · {batchIsOpen(items) ? "Open" : "Closed"}</p>
      <div className="table-scroll"><table className="orders-table">
        <thead><tr><th>Order number</th><th>Status</th></tr></thead>
