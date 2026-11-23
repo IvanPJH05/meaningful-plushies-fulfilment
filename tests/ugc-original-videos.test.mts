@@ -24,6 +24,12 @@ it('records the displayed consent and never issues a reward on submission',async
  await originalSubmission({action:'submit',token:'token',customerName:'Test',phone:'0123456789',email:'test@example.com',orderNumber:'#1',consent:true,language:'ms'},'ip');
  expect(mock.rpc).toHaveBeenCalledExactlyOnceWith('finish_ugc_original_submission',{p_submission:id,p_details:expect.objectContaining({consent_text:originalConsent.ms})});
 });
+it('recovers an original saved just before a completion-request disconnect',async()=>{
+ mock.rpc.mockResolvedValueOnce({data:{storage_path:'private/original.mp4',status:'uploading',file_size:80*1024**2,content_type:'video/mp4'},error:null}).mockResolvedValueOnce({error:null});
+ mock.info.mockResolvedValue({data:{size:80*1024**2,contentType:'video/mp4'},error:null});
+ expect(await originalSubmission({action:'upload',token:'token',fileId:file,fileName:'original.mp4',size:80*1024**2,contentType:'video/mp4'},'ip')).toEqual({alreadyUploaded:true,fileId:file});
+ expect(mock.rpc).toHaveBeenLastCalledWith('manage_ugc_video',{p_submission:id,p_id:file,p_action:'complete'});
+});
 it('blocks foreign origins, oversized metadata and honeypot submissions before accessing storage',async()=>{
  const req=(body:string,origin='http://127.0.0.1:4176')=>new Request('https://app.test/api/customer-ugc',{method:'POST',headers:{origin,'Content-Type':'application/json'},body});
  expect((await POST(req('{}','https://other.example'))).status).toBe(403);

@@ -28,6 +28,15 @@ export async function originalSubmission(body:Record<string,unknown>,client:stri
   if(reserved.error)throw reserved.error;
   const file=reserved.data;
   if(file.status==='complete')return {alreadyUploaded:true,fileId:id};
+  // A disconnect can happen after storage saved the original but before the
+  // completion request reached us. Recover it without uploading/overwriting it.
+  const existing=await db.storage.from('customer-ugc').info(file.storage_path);
+  if(!existing.error&&existing.data){
+   if(Number(existing.data.size??existing.data.metadata?.size)!==Number(file.file_size)||(existing.data.contentType??existing.data.metadata?.mimetype)!==file.content_type)throw new Error('This uploaded file does not match the original. Remove it and choose the original again.');
+   const completed=await db.rpc('manage_ugc_video',{p_submission:parent.id,p_id:id,p_action:'complete'});
+   if(completed.error)throw completed.error;
+   return {alreadyUploaded:true,fileId:id};
+  }
   const signed=await db.storage.from('customer-ugc').createSignedUploadUrl(file.storage_path);
   if(signed.error)throw signed.error;
   const base=process.env.NEXT_PUBLIC_SUPABASE_URL||'https://joaoirpegnkexmktylop.supabase.co';
