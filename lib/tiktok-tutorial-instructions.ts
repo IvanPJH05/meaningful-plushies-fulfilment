@@ -36,7 +36,7 @@ export function tutorialInstructions(lineItems: unknown): string {
   });
 
   const sections = [
-    "Thank you for ordering from Meaningful Plushies! 💗 Watch the tutorial, then reply here in Shop Chat with your voice video.",
+    "Thank you for ordering from Meaningful Plushies! 💗\n\nPlease watch this short tutorial on how to submit your voice recording for your plushie.\n\nTerima kasih kerana membuat pesanan dengan Meaningful Plushies! 💗\n\nSila tonton video tutorial ringkas ini untuk cara menghantar rakaman suara plushie anda.",
     ...instructions,
     "Please label your recording and any certificate with the item number. If you ordered more than one of an item, tell us which plushie or charm each recording is for.",
   ];
