@@ -1,6 +1,6 @@
-# MP Packing Station 2.0 — warehouse packing
+# MP Packing Station 2.1 — warehouse packing
 
-Install the signed MP-Packing-Station-2.0.0.apk on the Galaxy Tab S9+. It updates the separate MP Packing Station app using the same permanent signing identity; keep app data and pending uploads.
+Install the signed MP-Packing-Station-2.1.0.apk on the Galaxy Tab S9+. It updates the separate MP Packing Station app using the same permanent signing identity; keep app data and pending uploads.
 
 1. Sign in with an active fulfilment staff account. Wait for CONNECTED.
 2. Pair the Bluetooth barcode scanner in Android keyboard/HID mode with an Enter suffix.
@@ -20,3 +20,9 @@ Preview and recording retain camera aspect ratio and orientation. Rotate camera 
 View saved proofs in the main fulfilment system under Order details → Packing videos. Customer tracking-video access rules are unchanged. The app contains no Supabase service key and uses active staff authentication and short-lived private-storage upload URLs.
 
 CI compiles, lints, runs unit tests and exercises native camera/audio encoding on an Android emulator. A USB webcam and microphone still depend on the actual tablet, hub and hardware combination. The CI artifact is unsigned; sign with scripts/sign-packing-release.ps1 and the existing private release key outside the repository. Never replace or publish that key or its DPAPI-protected password.
+
+## Higher-quality USB webcam recordings
+
+Version 2.1 requests the highest advertised webcam resolution that the tablet encoder supports, up to 2560 x 1440, preferring MJPEG at equal resolution. Lower modes remain available when 2K is not supported. H.264 targets 8 Mbps above 1080p, 6 Mbps at 1080p and 4 Mbps at 720p. Native H.264/AAC warehouse MP4s keep their original resolution and picture pixels after server saving; they are remuxed rather than downscaled and recompressed. Private upload and recovery limits are 200 MiB; the three-minute safety limit and NFC + J&T + saved-video packing gates remain unchanged. Files and upload times are larger.
+
+Update between parcels. Install over the existing app without uninstalling. Reconnect the camera after updating and test one parcel; check the connected resolution and its saved video. Hardware 2K capability cannot be proven in an emulator.
