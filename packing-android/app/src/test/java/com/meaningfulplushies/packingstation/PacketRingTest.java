@@ -22,5 +22,5 @@ public class PacketRingTest {
         PacketRing ring=new PacketRing();for(int i=0;i<=40;i++)frame(ring,i);PacketRing.Capture clip=ring.begin(9000000,100000);ring.cancel(clip);
         for(int i=41;i<270;i++)frame(ring,i);assertNull(ring.takeFinished());assertFalse(clip.error.isEmpty());
     }
-    @Test public void bufferMemoryIsBounded(){PacketRing ring=new PacketRing();for(int i=0;i<100;i++)ring.add(new PacketRing.Packet(new byte[1024*1024],i*100000L,true),i*100000L);assertTrue(ring.bufferedBytes()<=6*1024*1024);}
+    @Test public void bufferMemoryIsBounded(){PacketRing ring=new PacketRing();for(int i=0;i<100;i++){ring.add(new PacketRing.Packet(new byte[1024*1024],i*100000L,true),i*100000L);assertTrue(ring.bufferedBytes()<=RecordingQuality.MAX_RING_BYTES);}}
 }

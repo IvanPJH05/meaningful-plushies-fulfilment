@@ -32,11 +32,11 @@ final class PacketRing {
         long keep=Long.MIN_VALUE;
         for(Packet p:ring)if(p.key && p.pts<=packet.pts-10_000_000)keep=p.pts;
         while(!ring.isEmpty() && ring.peekFirst().pts<keep)ringBytes-=ring.removeFirst().bytes.length;
-        if(ringBytes>6*1024*1024){fail("Camera buffer exceeded its limit. Restart the webcam.");ring.clear();ringBytes=0;return;}
+        if(ringBytes>RecordingQuality.MAX_RING_BYTES){fail("Camera buffer exceeded its limit. Restart the webcam.");ring.clear();ringBytes=0;return;}
         if(active!=null){
             active.packets.add(packet);
             active.bytes+=packet.bytes.length;
-            if(active.warehouse){if(packet.pts-active.startPts>=180_000_000||active.bytes>24*1024*1024)fail("Recording reached its safety limit. Scan this parcel again.");}
+            if(active.warehouse){if(packet.pts-active.startPts>=180_000_000||active.bytes>RecordingQuality.MAX_VIDEO_BYTES)fail("Recording reached its safety limit. Scan this parcel again.");}
             else if(packet.pts>=active.scanPts+AFTER_US){finished=active;active=null;}
         }
     }
