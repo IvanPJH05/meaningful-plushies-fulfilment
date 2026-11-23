@@ -10,7 +10,7 @@ beforeEach(()=>{vi.resetAllMocks();mocks.session.mockResolvedValue({role:"admin"
 it.each([POST,GET,PATCH])("rejects staff before accessing records or Shopify",async handler=>{mocks.session.mockResolvedValue({role:"staff"});expect((await handler(request())).status).toBe(403);expect(mocks.client).not.toHaveBeenCalled();expect(mocks.create).not.toHaveBeenCalled();});
 it("retains a pending record when Shopify fails, allowing retry with the same code",async()=>{
  const find={select:()=>find,eq:()=>find,maybeSingle:async()=>({data:sample,error:null})};mocks.client.mockReturnValue({from:()=>find});mocks.create.mockRejectedValue(new Error("Shopify unavailable"));
- const response=await POST(request({id}));expect(await response.json()).toEqual({sample,error:"Shopify unavailable"});expect(mocks.create).toHaveBeenCalledWith("UGC-TEST","Customer",id);
+ const response=await POST(request({id}));expect(await response.json()).toEqual({sample,error:"Shopify unavailable"});expect(mocks.create).toHaveBeenCalledWith("UGC-TEST","Customer",id,"ugc_all");
 });
 it("retry returns an existing active code without creating a second discount",async()=>{
  const active={...sample,status:"active",shopify_discount_id:"gid://shopify/DiscountCodeNode/1"};const find={select:()=>find,eq:()=>find,maybeSingle:async()=>({data:active,error:null})};mocks.client.mockReturnValue({from:()=>find});expect(await(await POST(request({id}))).json()).toEqual({sample:active});expect(mocks.create).not.toHaveBeenCalled();

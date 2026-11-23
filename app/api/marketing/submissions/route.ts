@@ -3,24 +3,38 @@ import {randomBytes} from 'node:crypto';
 import {mobileServiceClient,requireMobileSession} from '../../../../lib/mobile-api';
 import {normalizeUgcCode,ugcCollection} from '../../../../lib/marketing-ugc';
 export const runtime='nodejs';
-const columns='id,status,customer_name,phone,email,order_number,notes,consent,consent_text,video_name,reward_id,review_notes,reviewed_by,reviewed_at,submitted_at,updated_at';
+const columns='id,status,customer_name,phone,email,order_number,notes,consent,consent_text,video_name,reward_id,review_notes,reviewed_by,reviewed_at,submitted_at,updated_at,videos:marketing_ugc_submission_videos(count)';
 async function admin(request:Request){const session=await requireMobileSession(request);if(session.role!=='admin')throw new Error('ADMIN_REQUIRED');return session;}
 function failure(error:unknown){const message=error instanceof Error?error.message:'Could not update submissions.';return NextResponse.json({error:message},{status:message==='ADMIN_REQUIRED'?403:message.includes('REQUIRED')?401:400});}
 export async function GET(request:Request){try{
  await admin(request);const params=new URL(request.url).searchParams, status=params.get('status')||'pending', offset=Number(params.get('offset')||0);
  if(!['pending','approved','rejected'].includes(status)||!Number.isInteger(offset)||offset<0||offset>100000)throw new Error('Invalid submission filter.');
- const {data,error}=await mobileServiceClient().from('marketing_ugc_submissions').select(columns).eq('status',status).order('submitted_at',{ascending:false}).order('id').range(offset,offset+50);
+ const {data,error}=await mobileServiceClient().from('marketing_ugc_submissions').select(columns).eq('status',status).eq('videos.status','complete').order('submitted_at',{ascending:false}).order('id').range(offset,offset+50);
  if(error)throw error;return NextResponse.json({submissions:data?.slice(0,50)||[],hasMore:(data?.length||0)>50},{headers:{'Cache-Control':'no-store'}});
  }catch(error){return failure(error);}}
 export async function POST(request:Request){try{
  const session=await admin(request),body=await request.json();
  if(!/^[a-f0-9-]{36}$/i.test(String(body.id||'')))throw new Error('Invalid submission.');
  const db=mobileServiceClient();
+ if(body.action==='files'){
+  const offset=Number(body.offset||0);if(!Number.isSafeInteger(offset)||offset<0)throw new Error('Invalid file page.');
+  const parent=await db.from('marketing_ugc_submissions').select('status').eq('id',body.id).single();
+  if(parent.error||!parent.data||parent.data.status==='draft')throw new Error('Submission not found.');
+  const files=await db.from('marketing_ugc_submission_videos').select('id,file_name,file_size,content_type').eq('submission_id',body.id).eq('status','complete').order('created_at').order('id').range(offset,offset+100);
+  if(files.error)throw files.error;return NextResponse.json({files:files.data.slice(0,100),hasMore:files.data.length>100},{headers:{'Cache-Control':'no-store'}});
+ }
  if(body.action==='video'){
-  const {data,error}=await db.from('marketing_ugc_submissions').select('video_path,status').eq('id',body.id).single();
+  const {data,error}=await db.from('marketing_ugc_submissions').select('video_path,video_name,status').eq('id',body.id).single();
   if(error||!data?.video_path||data.status==='draft')throw new Error('Submitted video not found.');
+  if(body.fileId){
+   const file=await db.from('marketing_ugc_submission_videos').select('storage_path,file_name').eq('id',String(body.fileId)).eq('submission_id',body.id).eq('status','complete').single();
+   if(file.error||!file.data)throw new Error('Submitted video not found.');
+   data.video_path=file.data.storage_path;data.video_name=file.data.file_name;
+  }
   const signed=await db.storage.from('customer-ugc').createSignedUrl(data.video_path,600);
-  if(signed.error)throw signed.error;return NextResponse.json({url:signed.data.signedUrl},{headers:{'Cache-Control':'no-store'}});
+  const download=await db.storage.from('customer-ugc').createSignedUrl(data.video_path,600,{download:data.video_name});
+  if(signed.error)throw signed.error;if(download.error)throw download.error;
+  return NextResponse.json({url:signed.data.signedUrl,downloadUrl:download.data.signedUrl},{headers:{'Cache-Control':'no-store'}});
  }
  if(!['approve','reject'].includes(body.action)||typeof body.expectedUpdatedAt!=='string')throw new Error('Invalid review action.');
  const notes=String(body.notes||'').trim();if(notes.length>5000)throw new Error('Review notes must be 5,000 characters or fewer.');
