@@ -28,7 +28,7 @@ final class RollingEncoder implements AutoCloseable {
         MediaFormat format=MediaFormat.createVideoFormat("video/avc",width,height);
         format.setInteger(MediaFormat.KEY_COLOR_FORMAT,MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
         format.setInteger(MediaFormat.KEY_PROFILE,MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline);
-        format.setInteger(MediaFormat.KEY_BIT_RATE,800_000);format.setInteger(MediaFormat.KEY_FRAME_RATE,24);format.setFloat(MediaFormat.KEY_I_FRAME_INTERVAL,.5f);
+        format.setInteger(MediaFormat.KEY_BIT_RATE,RecordingQuality.bitrate(width,height));format.setInteger(MediaFormat.KEY_FRAME_RATE,24);format.setFloat(MediaFormat.KEY_I_FRAME_INTERVAL,.5f);
         codec=MediaCodec.createEncoderByType("video/avc");
         codec.configure(format,null,null,MediaCodec.CONFIGURE_FLAG_ENCODE);surface=codec.createInputSurface();codec.start();
         drain=new Thread(()->{
@@ -67,7 +67,7 @@ final class RollingEncoder implements AutoCloseable {
             if(audio!=null)for(MicrophoneEncoder.Sample sample:audio.samples){MediaCodec.BufferInfo info=new MediaCodec.BufferInfo();info.set(0,sample.data.length,sample.mono-capture.sourceMonoUs(),0);muxer.writeSampleData(audioTrack,ByteBuffer.wrap(sample.data),info);}
             muxer.stop();started=false;
         } finally{if(started)try{muxer.stop();}catch(Exception ignored){}muxer.release();}
-        if(file.length()<=0 || file.length()>25*1024*1024)throw new Exception("The local recording is empty or too large; scan again.");
+        if(file.length()<=0 || file.length()>RecordingQuality.MAX_FILE_BYTES)throw new Exception("The local recording is empty or too large; scan again.");
     }
     @Override public void close(){
         if(microphone!=null){microphone.close();microphone=null;}

@@ -30,7 +30,7 @@ final class ProofQueue {
         File[] pending=folder(context).listFiles((dir,name)->name.endsWith(".pending"));if(pending==null)return;
         for(File file:pending)try{
             JSONObject meta=read(file);String id=meta.getString("id");if(!id.matches("[a-f0-9-]{36}"))continue;
-            File video=new File(folder(context),id+".mp4");if(!video.isFile()||video.length()==0||video.length()>25*1024*1024)continue;
+            File video=new File(folder(context),id+".mp4");if(!video.isFile()||video.length()==0||video.length()>RecordingQuality.MAX_FILE_BYTES)continue;
             android.media.MediaMetadataRetriever probe=new android.media.MediaMetadataRetriever();long duration;try{probe.setDataSource(video.getAbsolutePath());duration=Long.parseLong(probe.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION));}finally{probe.release();}
             long before=Instant.parse(meta.getString("scannedAt")).toEpochMilli()-Instant.parse(meta.getString("sourceStartedAt")).toEpochMilli();
             if(meta.optString("captureMode").equals("warehouse")?duration<meta.optLong("durationMs")-250:duration<before+20700)continue;
