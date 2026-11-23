@@ -12,24 +12,33 @@ const outputLimit=12*1024*1024;
 export async function trimPackingVideo(bytes: Buffer,offsetMs: number,warehouseDurationMs?: number): Promise<Buffer> {
   if(!ffmpeg || !bytes.length || bytes.length>packingSourceLimit || !Number.isFinite(offsetMs) || offsetMs<0 || offsetMs>21_000) throw new Error("Invalid packing recording.");
   if (warehouseDurationMs!==undefined && (!Number.isInteger(warehouseDurationMs)||warehouseDurationMs<1000||warehouseDurationMs>warehouseMaxDurationMs||offsetMs!==0)) throw new Error("Invalid warehouse recording duration.");
-  const durationMs=warehouseDurationMs??23000,limit=warehouseDurationMs===undefined?outputLimit:24*1024*1024;
+  const durationMs=warehouseDurationMs??23000;
   const dir=await mkdtemp(join(tmpdir(),"packing-proof-"));
   try {
     const source=join(dir,"source"),output=join(dir,"proof.mp4");
     await writeFile(source,bytes);
+    // Native tablet MP4s are already H.264 + AAC. Remux without reducing
+    // resolution or recompressing; retain the complete-frame checks below.
+    const probe=warehouseDurationMs!==undefined&&bytes.subarray(0,64).includes(Buffer.from("ftyp"))
+      ? await exec(ffmpeg,["-hide_banner","-nostdin","-protocol_whitelist","file,pipe","-format_whitelist","mov,matroska,webm","-i",source,"-map","0:v:0","-t","0","-c:v","copy","-an","-f","null","-"],{timeout:15000,maxBuffer:128*1024,windowsHide:true}) : null;
+    const stream=probe?.stderr.match(/Video: h264[^\r\n]*?yuv420p[^,]*,\s*(\d+)x(\d+)/);
+    const copyNative=!!stream&&Number(stream[1])<=2560&&Number(stream[2])<=2560&&Number(stream[1])*Number(stream[2])<=2560*1440&&(!/Audio:/.test(probe!.stderr)||/Audio: aac/.test(probe!.stderr));
+    const limit=copyNative?packingSourceLimit:warehouseDurationMs===undefined?outputLimit:24*1024*1024;
+    const videoOptions=copyNative?["-c:v","copy","-c:a","copy"]:[
+      "-vf","scale=1280:720:force_original_aspect_ratio=decrease:force_divisible_by=2,fps=24",
+      "-c:v","libx264","-preset",warehouseDurationMs===undefined?"veryfast":"ultrafast","-crf","25","-maxrate",warehouseDurationMs===undefined?"2500k":"900k","-bufsize","2500k","-pix_fmt","yuv420p","-threads","1",
+      "-c:a","aac","-b:a","96k","-ac","1"];
     const {stdout}=await exec(ffmpeg,["-hide_banner","-loglevel","error","-nostdin","-y",
       "-protocol_whitelist","file,pipe","-format_whitelist","mov,matroska,webm","-threads","1","-i",source,
       "-ss",String(offsetMs/1000),"-t",String(durationMs/1000),"-map","0:v:0","-map","0:a:0?","-sn","-dn","-map_metadata","-1",
-      "-vf","scale=1280:720:force_original_aspect_ratio=decrease:force_divisible_by=2,fps=24",
-      "-c:v","libx264","-preset",warehouseDurationMs===undefined?"veryfast":"ultrafast","-crf","25","-maxrate",warehouseDurationMs===undefined?"2500k":"900k","-bufsize","2500k","-pix_fmt","yuv420p","-threads","1",
-      "-c:a","aac","-b:a","96k","-ac","1",
+      ...videoOptions,
       "-movflags","+faststart","-fs",String(limit+1),"-progress","pipe:1",output],{timeout:45_000,maxBuffer:128*1024,windowsHide:true}).catch(()=>{throw new Error("This camera recording could not be prepared. Keep the webcam connected and scan again.");});
     const times=[...stdout.matchAll(/out_time_us=(\d+)/g)].map(m=>Number(m[1]));
     if(!times.length || Math.max(...times)<durationMs*1000-300000) throw new Error("The camera stopped before the complete packing video was captured. Scan again with the webcam running.");
     const size=(await stat(output)).size;
     if(!size || size>limit) throw new Error("The packing video could not be saved completely.");
     // Inspect video frames independently: a longer audio track must not hide missing footage.
-    const inspected=await exec(ffmpeg,["-hide_banner","-nostdin","-protocol_whitelist","file,pipe","-i",output,"-map","0:v:0","-an","-f","null","-","-progress","pipe:1"],{timeout:15000,maxBuffer:128*1024,windowsHide:true});
+    const inspected=await exec(ffmpeg,["-hide_banner","-nostdin","-protocol_whitelist","file,pipe","-i",output,"-map","0:v:0","-an","-f","null","-","-progress","pipe:1"],{timeout:45000,maxBuffer:128*1024,windowsHide:true});
     const videoTimes=[...inspected.stdout.matchAll(/out_time_us=(\d+)/g)].map(m=>Number(m[1]));
     if(!videoTimes.length||Math.max(...videoTimes)<durationMs*1000-300000)throw new Error("The camera stopped before the complete packing video was captured. Please scan again.");
     const duration=inspected.stderr.match(/Duration: (\d+):(\d+):([\d.]+)/);

@@ -7,7 +7,7 @@ import { trimPackingVideo } from "@/lib/packing-proof-video";
 import { trackingCode } from "@/lib/warehouse-packing";
 export const runtime="nodejs";
 export const preferredRegion="icn1";
-export const maxDuration=60;
+export const maxDuration=120;
 const bucketName="packing-proof";
 const uuid=/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i;
 
@@ -70,7 +70,7 @@ export async function POST(request:Request) {
     if(body.action!=="complete") throw new PairingError("Choose a valid video action.");
     if(proof.status==="ready") return NextResponse.json({ready:true,packed:proof.pack_after_save},{headers});
     lease=randomUUID();activeId=proof.id;
-    const acquired=await client.from("packing_proof_videos").update({status:"processing",processing_token:lease,lease_until:new Date(Date.now()+120000).toISOString(),error:""}).eq("id",proof.id).or(`status.in.(uploading,failed),lease_until.lt.${new Date().toISOString()}`).select("id").maybeSingle();
+    const acquired=await client.from("packing_proof_videos").update({status:"processing",processing_token:lease,lease_until:new Date(Date.now()+240000).toISOString(),error:""}).eq("id",proof.id).or(`status.in.(uploading,failed),lease_until.lt.${new Date().toISOString()}`).select("id").maybeSingle();
     if(acquired.error) throw acquired.error;
     if(!acquired.data) return NextResponse.json({processing:true},{headers});
     const info=await storage.info(proof.source_path);

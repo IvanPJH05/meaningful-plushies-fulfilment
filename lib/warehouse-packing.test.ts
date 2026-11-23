@@ -39,6 +39,9 @@ test("warehouse completion gates Packed on live label match, paired NFC, and sav
   await db.exec(await readFile(new URL('../supabase/migrations/20261120105131_packing_proof_videos.sql',import.meta.url),'utf8'));
   await db.exec('alter table packing_proof_videos add column pack_after_save boolean not null default false');
   await db.exec(await readFile(new URL('../supabase/migrations/20261122162315_warehouse_packing_label_verification.sql',import.meta.url),'utf8'));
+  await db.exec(await readFile(new URL('../supabase/migrations/20261123073720_higher_quality_packing_proofs.sql',import.meta.url),'utf8'));
+  assert.equal((await db.query<{file_size_limit:number;public:boolean}>("select file_size_limit,public from storage.buckets where id='packing-proof'")).rows[0].file_size_limit,200*1024*1024);
+  assert.equal((await db.query<{public:boolean}>("select public from storage.buckets where id='packing-proof'")).rows[0].public,false);
   await db.exec(`insert into fulfilment_orders values ('test','{"trackingNumber":"632203725770"}','issue');insert into dashboard_accounts values ('${actor}');
    insert into nfc_cards values (100001,'test','assigned');
    insert into packing_proof_videos(id,order_id,card_code,order_barcode,scanned_at,source_started_at,offset_ms,source_path,source_size,source_type,created_by,pack_after_save,capture_mode,duration_ms,tracking_number,tracking_verified_at,status,processing_token,lease_until)
@@ -53,6 +56,11 @@ test("warehouse completion gates Packed on live label match, paired NFC, and sav
   await db.exec(`update nfc_cards set order_id='test';`);await db.exec(complete);
   assert.equal((await db.query<{status:string}>('select status from fulfilment_orders')).rows[0].status,'packed');
   assert.equal((await db.query<{status:string}>('select status from packing_proof_videos')).rows[0].status,'ready');
+  await db.exec(`update packing_proof_videos set source_size=41943040,status='processing',lease_until=now()+interval '2 minutes';update storage.objects set metadata='{"size":41943040}';`);
+  await db.exec(`select public.packing_station_complete('${actor}','${proof}','${lease}','${proof}/proof.mp4',41943040)`);
+  assert.equal((await db.query<{status:string}>('select status from packing_proof_videos')).rows[0].status,'ready');
+  await assert.rejects(db.exec('update packing_proof_videos set source_size=209715201'),/check constraint/);
+  await db.exec(`update storage.objects set metadata='{"size":10000}';`);
   await db.exec(`update fulfilment_orders set status='sent_for_sewing',data='{}';update packing_proof_videos set status='processing',capture_mode='timed',tracking_verified_at=null,tracking_number='',processing_token='${lease}',lease_until=now()+interval '2 minutes';`);await db.exec(complete);
   assert.equal((await db.query<{status:string}>('select status from fulfilment_orders')).rows[0].status,'packed');
   const access=(await db.query<{anon:boolean;service:boolean}>(`select has_function_privilege('anon','public.packing_station_complete(uuid,uuid,uuid,text,integer)','execute') anon,has_function_privilege('service_role','public.packing_station_complete(uuid,uuid,uuid,text,integer)','execute') service`)).rows[0];assert.deepEqual(access,{anon:false,service:true});

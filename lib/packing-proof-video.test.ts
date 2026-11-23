@@ -42,3 +42,17 @@ test("packing MP4s preserve audible microphone sound and longer audio cannot hid
   await assert.rejects(trimPackingVideo(await readFile(interrupted),0,10000),/complete|stopped/);
  }finally{await rm(dir,{recursive:true,force:true});}
 });
+
+test("native 2K MP4 proof retains original pixels and microphone sound without another encode",async()=>{
+ const dir=await mkdtemp(join(tmpdir(),"packing-2k-test-"));
+ try{
+  const source=join(dir,"native.mp4"),saved=join(dir,"proof.mp4");
+  await exec(ffmpeg!,["-hide_banner","-loglevel","error","-y","-f","lavfi","-i","testsrc2=size=2560x1440:rate=24","-f","lavfi","-i","sine=frequency=660:sample_rate=44100","-t","3","-c:v","libx264","-profile:v","baseline","-pix_fmt","yuv420p","-preset","ultrafast","-b:v","8000k","-c:a","aac","-b:a","96k",source],{timeout:30000,windowsHide:true});
+  const bytes=await readFile(source);await writeFile(saved,await trimPackingVideo(bytes,0,3000));
+  const inspect=await exec(ffmpeg!,["-hide_banner","-i",saved,"-f","null","-"],{timeout:15000,windowsHide:true});
+  assert.match(inspect.stderr,/2560x1440/);assert.match(inspect.stderr,/Audio: aac/);assert.match(inspect.stderr,/Duration: 00:00:03/);
+  const hash=async(file:string)=>(await exec(ffmpeg!,["-hide_banner","-loglevel","error","-i",file,"-map","0:v:0","-an","-f","hash","-hash","sha256","-"],{timeout:15000,windowsHide:true})).stdout;
+  assert.equal(await hash(saved),await hash(source),"saved proof must have exactly the source's decoded video pixels");
+  await assert.rejects(trimPackingVideo(bytes,0,10000),/complete|stopped/);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});

@@ -2,7 +2,7 @@ export const packingBeforeMs = 3_000;
 export const packingAfterMs = 20_000;
 export const packingWindowMs = 65_000;
 export const packingWindowStepMs = 20_000;
-export const packingSourceLimit = 25 * 1024 * 1024;
+export const packingSourceLimit = 200 * 1024 * 1024;
 import { trackingCode, warehouseMaxDurationMs } from "./warehouse-packing.ts";
 export type PackingCapture = { id: string; orderId: string; orderNumber: string; orderBarcode: string; cardCode: string; scannedAt: string; sourceStartedAt: string; size: number; contentType: string; captureMode?: "warehouse"; durationMs?: number; trackingNumber?: string; trackingVerifiedAt?: string; packAfterSave?: boolean };
 export type PackingProofRow = { id: string; order_id: string; card_code: string; status: "uploading" | "processing" | "ready" | "failed"; scanned_at: string; error: string; created_at: string };
