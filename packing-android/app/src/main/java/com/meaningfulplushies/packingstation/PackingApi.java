@@ -19,7 +19,7 @@ final class PackingApi {
     static final class ApiError extends Exception {final int status;ApiError(int status,String message){super(message);this.status=status;}}
     JSONObject request(String path,JSONObject body) throws Exception {
         URL url=new URL(BASE+path);HttpURLConnection connection=(HttpURLConnection)url.openConnection();
-        connection.setConnectTimeout(15000);connection.setReadTimeout(75000);connection.setInstanceFollowRedirects(false);
+        connection.setConnectTimeout(15000);connection.setReadTimeout(135000);connection.setInstanceFollowRedirects(false);
         connection.setRequestProperty("Accept","application/json");
         if(!token.isEmpty())connection.setRequestProperty("Authorization","Bearer "+token);
         try {
@@ -33,7 +33,7 @@ final class PackingApi {
         URL url=new URL(signedUrl);
         // Never send staff credentials to the signed storage URL.
         if(!"https".equals(url.getProtocol())||!url.getHost().equals("joaoirpegnkexmktylop.supabase.co"))throw new Exception("Unrecognised video upload destination.");
-        HttpURLConnection connection=(HttpURLConnection)url.openConnection();connection.setConnectTimeout(15000);connection.setReadTimeout(75000);connection.setInstanceFollowRedirects(false);
+        HttpURLConnection connection=(HttpURLConnection)url.openConnection();connection.setConnectTimeout(15000);connection.setReadTimeout(135000);connection.setInstanceFollowRedirects(false);
         try{connection.setRequestMethod("PUT");connection.setDoOutput(true);connection.setRequestProperty("Content-Type","video/mp4");connection.setFixedLengthStreamingMode(source.length());
             try(var input=new FileInputStream(source);var output=connection.getOutputStream()){byte[] buffer=new byte[65536];int count;while((count=input.read(buffer))!=-1)output.write(buffer,0,count);}
             int code=connection.getResponseCode();if(code<200||code>=300)throw new Exception("Video upload interrupted; the local copy is safe and will retry.");
