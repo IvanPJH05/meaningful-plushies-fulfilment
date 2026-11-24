@@ -12,7 +12,7 @@ const exec = promisify(execFile);
 export const maxAudioSourceBytes = 50 * 1024 * 1024;
 const maxMp3Bytes = 4 * 1024 * 1024;
 
-export { batchAudioSource } from "./batch-audio-source";
+export { batchAudioSource } from "./batch-audio-source.ts";
 
 export function assertAudioMediaType(type: string) {
   if (!/^(audio\/|video\/)/i.test(type) && type !== "application/octet-stream") {

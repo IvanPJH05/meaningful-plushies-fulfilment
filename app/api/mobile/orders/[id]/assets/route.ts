@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { mobileServiceClient, requireMobileSession } from "../../../../../../lib/mobile-api";
 import type { Order } from "../../../../../../lib/types";
+import { batchAudioSource } from "../../../../../../lib/batch-audio-source";
+import { assertAudioMediaType, cachedBatchMp3 } from "../../../../../../lib/batch-audio";
+
+export const runtime = "nodejs";
+export const maxDuration = 120;
 
 type AssetKind = "voice" | "photo" | "attachment" | "shipping_label";
 
@@ -35,21 +40,32 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const { id } = await context.params;
     const kind = new URL(request.url).searchParams.get("kind") as AssetKind;
     if (!id || !["voice", "photo", "attachment", "shipping_label"].includes(kind)) return NextResponse.json({ error: "Invalid media request." }, { status: 400 });
-    const { data, error } = await mobileServiceClient().from("fulfilment_orders").select("data").eq("id", id).maybeSingle();
+    const db = mobileServiceClient();
+    const { data, error } = await db.from("fulfilment_orders").select("data").eq("id", id).maybeSingle();
     if (error) throw error;
     const order = data?.data as Order | undefined;
     if (!order) return NextResponse.json({ error: "Order not found." }, { status: 404 });
 
-    const reference = kind === "voice" ? order.meaningfulMessage : kind === "photo" ? order.photoDataUrl : kind === "attachment" ? order.tikTokFileDataUrl : order.shippingLabelUrl;
+    const reference = kind === "voice" ? batchAudioSource(order) : kind === "photo" ? order.photoDataUrl : kind === "attachment" ? order.tikTokFileDataUrl : order.shippingLabelUrl;
     if (!reference) return NextResponse.json({ error: "Media is not available." }, { status: 404 });
+    const mediaResponse = async (bytes: Buffer, contentType: string) => {
+      if (kind === "voice" && order.salesChannel === "tiktok") {
+        // TikTok messages may be videos or formats unsupported by Android.
+        // Reuse the private batch MP3 cache; leave the original attachment intact.
+        assertAudioMediaType(contentType);
+        bytes = await cachedBatchMp3(db, bytes);
+        contentType = "audio/mpeg";
+      }
+      return new NextResponse(new Uint8Array(bytes), { headers: { "content-type": contentType, "cache-control": "private, max-age=3600" } });
+    };
     const embedded = dataUrl(reference);
-    if (embedded) return new NextResponse(embedded.bytes, { headers: { "content-type": embedded.contentType, "cache-control": "private, max-age=3600" } });
+    if (embedded) return await mediaResponse(embedded.bytes, embedded.contentType);
 
     if (kind === "voice" && reference.startsWith("supabase-storage:")) {
       const path = reference.slice("supabase-storage:".length);
       const { data: audio, error: downloadError } = await mobileServiceClient().storage.from("customisation-audio").download(path);
       if (downloadError || !audio) throw downloadError || new Error("Voice message is unavailable.");
-      return new NextResponse(Buffer.from(await audio.arrayBuffer()), { headers: { "content-type": audio.type || "audio/webm", "cache-control": "private, max-age=3600" } });
+      return await mediaResponse(Buffer.from(await audio.arrayBuffer()), audio.type || "audio/webm");
     }
     const url = trustedExternalUrl(reference);
     if (!url) return NextResponse.json({ error: "Media is unavailable." }, { status: 404 });
@@ -59,7 +75,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     if (Number.isFinite(size) && size > 75 * 1024 * 1024) return NextResponse.json({ error: "Media file is too large for the offline archive." }, { status: 413 });
     const bytes = Buffer.from(await response.arrayBuffer());
     if (bytes.length > 75 * 1024 * 1024) return NextResponse.json({ error: "Media file is too large for the offline archive." }, { status: 413 });
-    return new NextResponse(bytes, { headers: { "content-type": response.headers.get("content-type") || contentType(reference, "application/octet-stream"), "cache-control": "private, max-age=3600" } });
+    return await mediaResponse(bytes, response.headers.get("content-type") || contentType(reference, "application/octet-stream"));
   } catch (error) {
     const message = error instanceof Error ? error.message : "MEDIA_DOWNLOAD_FAILED";
     return NextResponse.json({ error: message }, { status: message.includes("REQUIRED") ? 401 : 500 });
