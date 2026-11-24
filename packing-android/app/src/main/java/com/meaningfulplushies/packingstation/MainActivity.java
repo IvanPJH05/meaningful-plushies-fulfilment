@@ -34,6 +34,7 @@ public final class MainActivity extends Activity {
     private int previewWidth,previewHeight,previewDisplay=Surface.ROTATION_0,previewCorrection;private String previewKey="";private Button rotateCameraButton;
     private TabletCamera tabletCamera;private String activeCamera="Camera";private int videoRotation,clipRotation;
     private ICameraHelper helper;private UsbDevice selectedUsb;private RollingEncoder encoder;
+    private UsbCameraStartup<Size> usbStartup;
     private SewingAudioCache audioCache;private TextView preloadLabel;private Button microphoneButton;private AudioDeviceInfo selectedMicrophone;
     private final BarcodeScanner labelReader=BarcodeScanning.getClient(new BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_CODE_128,Barcode.FORMAT_CODE_39,Barcode.FORMAT_ITF,Barcode.FORMAT_QR_CODE).build());
     private final TrackingConfirmation tracking=new TrackingConfirmation();private long frameSequence,lastDecodedFrame=-1,lastWrongAt;private String lastWrong="";private boolean decoding,pairing;
@@ -58,7 +59,7 @@ public final class MainActivity extends Activity {
     private LinearLayout root(){ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setBackgroundColor(Color.rgb(242,246,251));LinearLayout root=column();root.setPadding(dp(26),dp(20),dp(26),dp(20));scroll.addView(root);setContentView(scroll);return root;}
 
     private void loginScreen(){
-        serviceReady=false;lastOrderId="";audioLabel=null;pendingOrder=null;pendingCard="";scan=null;LinearLayout root=root();root.addView(title("MEANINGFUL PLUSHIES",15));root.addView(title("Packing Station · 2.1",32));root.addView(text("A dedicated station for your Bluetooth scanner and USB webcam.",16,MUTED));
+        serviceReady=false;lastOrderId="";audioLabel=null;pendingOrder=null;pendingCard="";scan=null;LinearLayout root=root();root.addView(title("MEANINGFUL PLUSHIES",15));root.addView(title("Packing Station · 2.1.1",32));root.addView(text("A dedicated station for your Bluetooth scanner and USB webcam.",16,MUTED));
         LinearLayout box=card();root.addView(box);box.addView(title("Staff sign-in",23));EditText name=field("Username",false),password=field("Password",true);box.addView(name);box.addView(password);TextView message=text("Use your existing fulfilment staff account.",15,MUTED);box.addView(message);
         Button sign=button("Sign in",()->{});box.addView(sign);sign.setOnClickListener(v->{sign.setEnabled(false);message.setText("Signing in...");io.execute(()->{try{JSONObject result=new PackingApi("").request("/api/mobile/login",new JSONObject().put("username",name.getText().toString().trim()).put("password",password.getText().toString()));SessionStore.save(this,result.getString("token"));getSharedPreferences("station",MODE_PRIVATE).edit().putString("staff",result.optString("displayName","Staff")).apply();runOnUiThread(()->{password.setText("");stationScreen();UploadWorker.enqueue(this);});}catch(Exception error){runOnUiThread(()->{message.setText(error.getMessage());sign.setEnabled(true);});}});});
     }
@@ -204,29 +205,42 @@ public final class MainActivity extends Activity {
         cameraRequested=true;videoRotation=0;activeCamera="USB webcam";preview.setTransform(new Matrix());
         if(helper==null){final ICameraHelper connection=new CameraHelper();helper=connection;connection.setStateCallback(new ICameraHelper.StateCallback(){
             public void onAttach(UsbDevice device){if(helper==connection&&cameraRequested&&tabletCamera==null&&selectedUsb==null&&videoDevice(device)){selectedUsb=device;helper.selectDevice(device);}}
-            public void onDeviceOpen(UsbDevice device,boolean first){if(helper!=connection||!cameraRequested)return;try{Size chosen=usbRecordingSize(helper.getSupportedSizeList());if(chosen==null)throw new Exception("No webcam mode up to 2K can be recorded by this tablet.");helper.openCamera(chosen);}catch(Exception error){stopCamera("Could not choose a webcam recording mode: "+error.getMessage());}}
-            public void onCameraOpen(UsbDevice device){runOnUiThread(()->{if(!cameraRequested||tabletCamera!=null||helper!=connection)return;try{Size size=helper.getPreviewSize();int width=size==null?640:size.width,height=size==null?480:size.height;encoder=new RollingEncoder(width,height,new RollingEncoder.Listener(){public void finished(PacketRing.Capture clip,MediaFormat format){MainActivity.this.finished(clip,format);}public void error(String message){runOnUiThread(()->stopCamera(message));}},selectedMicrophone);previewWidth=width;previewHeight=height;previewKey="usbRotation:"+device.getVendorId()+":"+device.getProductId();previewCorrection=getSharedPreferences("station",MODE_PRIVATE).getInt(previewKey,0);refreshCameraPreview();helper.addSurface(encoder.surface,true);if(preview.getSurfaceTexture()!=null)helper.addSurface(preview.getSurfaceTexture(),false);helper.startPreview();tell("USB webcam connected ("+width+" x "+height+"). Preparing camera and microphone...");focusScan();}catch(Exception error){stopCamera("Could not start webcam recording: "+error.getMessage());}});}
-            public void onCameraClose(UsbDevice device){runOnUiThread(()->{if(helper==connection&&tabletCamera==null&&selectedUsb!=null&&selectedUsb.equals(device))closeEncoder("Webcam closed. Incomplete recordings are not saved.");});}
+            public void onDeviceOpen(UsbDevice device,boolean first){runOnUiThread(()->{if(helper!=connection||!cameraRequested||!device.equals(selectedUsb))return;usbStartup=new UsbCameraStartup<>(new UsbCameraStartup.Camera<Size>(){
+                public void openDefault(){connection.openCamera();}
+                public List<Size> recordingModes(){return usbRecordingModes(connection.getSupportedSizeList());}
+                public Size currentMode(){return connection.getPreviewSize();}
+                public boolean sameMode(Size a,Size b){return a.width==b.width&&a.height==b.height&&a.type==b.type;}
+                public void reopen(Size mode){connection.closeCamera();connection.openCamera(mode);}
+                public void record(Size mode)throws Exception{startUsbRecording(connection,device,mode);}
+                public void failed(String message){stopCamera(message);}
+            });usbStartup.start();});}
+            public void onCameraOpen(UsbDevice device){runOnUiThread(()->{if(cameraRequested&&tabletCamera==null&&helper==connection&&device.equals(selectedUsb)&&usbStartup!=null)usbStartup.opened();});}
+            public void onCameraClose(UsbDevice device){runOnUiThread(()->{if(helper==connection&&tabletCamera==null&&device.equals(selectedUsb)&&(usbStartup==null||!usbStartup.switchingMode()))closeEncoder("Webcam closed. Incomplete recordings are not saved.");});}
             public void onDeviceClose(UsbDevice device){}
-            public void onDetach(UsbDevice device){if(helper==connection&&selectedUsb!=null&&selectedUsb.equals(device))runOnUiThread(()->{selectedUsb=null;closeEncoder("Webcam unplugged. Reconnect it and scan again.");});}
+            public void onDetach(UsbDevice device){runOnUiThread(()->{if(helper==connection&&device.equals(selectedUsb)){if(usbStartup!=null)usbStartup.cancel();selectedUsb=null;closeEncoder("Webcam unplugged. Reconnect it and scan again.");}});}
             public void onCancel(UsbDevice device){runOnUiThread(()->{if(helper!=connection)return;selectedUsb=null;tell("USB webcam permission was cancelled. Tap Connect / choose USB webcam to retry.");});}
-            public void onError(UsbDevice device,CameraException error){runOnUiThread(()->{if(helper==connection)stopCamera("The USB webcam could not open. Check the dongle and reconnect it, then choose the camera again.");});}
+            public void onError(UsbDevice device,CameraException error){runOnUiThread(()->{if(helper==connection&&device.equals(selectedUsb)&&usbStartup!=null)usbStartup.error("The USB webcam could not open. Check the dongle and reconnect it, then choose the camera again.");});}
         });}
         List<UsbDevice> all=helper.getDeviceList();ArrayList<UsbDevice> cameras=new ArrayList<>();if(all!=null)for(UsbDevice d:all)if(videoDevice(d))cameras.add(d);
         if(cameras.isEmpty()){tell("Waiting for a USB webcam. Connect it through your dongle, allow USB access, then retry.");return;}
         if(cameras.size()==1){selectCamera(cameras.get(0));return;}String[] names=new String[cameras.size()];for(int i=0;i<names.length;i++)names[i]=cameraName(cameras.get(i));new AlertDialog.Builder(this).setTitle("Choose USB webcam").setItems(names,(d,index)->selectCamera(cameras.get(index))).show();
     }
-    private Size usbRecordingSize(List<Size> sizes){
-        if(sizes==null)return null;List<Size> modes=new ArrayList<>();for(Size size:sizes)if(RecordingQuality.allowed(size.width,size.height))modes.add(size);
+    private List<Size> usbRecordingModes(List<Size> sizes){
+        List<Size> modes=new ArrayList<>();if(sizes==null)return modes;for(Size size:sizes)if(RecordingQuality.allowed(size.width,size.height))modes.add(size);
         modes.sort((a,b)->Long.compare(RecordingQuality.preference(b.width,b.height,b.type==com.serenegiant.usb.UVCCamera.UVC_VS_FRAME_MJPEG),RecordingQuality.preference(a.width,a.height,a.type==com.serenegiant.usb.UVCCamera.UVC_VS_FRAME_MJPEG)));
         MediaCodecList encoders=new MediaCodecList(MediaCodecList.REGULAR_CODECS);
-        for(Size mode:modes){MediaFormat format=MediaFormat.createVideoFormat("video/avc",mode.width,mode.height);format.setInteger(MediaFormat.KEY_COLOR_FORMAT,MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);format.setInteger(MediaFormat.KEY_PROFILE,MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline);format.setInteger(MediaFormat.KEY_FRAME_RATE,24);format.setInteger(MediaFormat.KEY_BIT_RATE,RecordingQuality.bitrate(mode.width,mode.height));if(encoders.findEncoderForFormat(format)!=null)return mode;}
-        return null;
+        List<Size> supported=new ArrayList<>();for(Size mode:modes){MediaFormat format=MediaFormat.createVideoFormat("video/avc",mode.width,mode.height);format.setInteger(MediaFormat.KEY_COLOR_FORMAT,MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);format.setInteger(MediaFormat.KEY_PROFILE,MediaCodecInfo.CodecProfileLevel.AVCProfileBaseline);format.setInteger(MediaFormat.KEY_FRAME_RATE,24);format.setInteger(MediaFormat.KEY_BIT_RATE,RecordingQuality.bitrate(mode.width,mode.height));if(encoders.findEncoderForFormat(format)!=null)supported.add(mode);}
+        return supported;
+    }
+    private void startUsbRecording(ICameraHelper connection,UsbDevice device,Size size)throws Exception{
+        closeEncoder("");int width=size.width,height=size.height;
+        encoder=new RollingEncoder(width,height,new RollingEncoder.Listener(){public void finished(PacketRing.Capture clip,MediaFormat format){MainActivity.this.finished(clip,format);}public void error(String message){runOnUiThread(()->stopCamera(message));}},selectedMicrophone);
+        previewWidth=width;previewHeight=height;previewKey="usbRotation:"+device.getVendorId()+":"+device.getProductId();previewCorrection=getSharedPreferences("station",MODE_PRIVATE).getInt(previewKey,0);refreshCameraPreview();connection.addSurface(encoder.surface,true);if(preview.getSurfaceTexture()!=null)connection.addSurface(preview.getSurfaceTexture(),false);connection.startPreview();tell("USB webcam connected ("+width+" x "+height+"). Preparing camera and microphone...");focusScan();
     }
     private String cameraName(UsbDevice device){return (device.getProductName()==null?"USB webcam":device.getProductName())+" ("+device.getVendorId()+":"+device.getProductId()+")";}
     private boolean videoDevice(UsbDevice device){if(device.getDeviceClass()==UsbConstants.USB_CLASS_VIDEO)return true;for(int i=0;i<device.getInterfaceCount();i++)if(device.getInterface(i).getInterfaceClass()==UsbConstants.USB_CLASS_VIDEO)return true;return false;}
     private void selectCamera(UsbDevice device){if(encoder!=null&&device.equals(selectedUsb)){tell("This webcam is already connected.");focusScan();return;}if(helper!=null&&helper.isCameraOpened())helper.closeCamera();closeEncoder("");selectedUsb=device;tell("Connecting "+cameraName(device)+"...");helper.selectDevice(device);}
     private void closeEncoder(String reason){pendingOrder=null;pendingCard="";pendingBarcode="";networkBusy=false;pairing=false;tracking.reset();if(capture!=null){if(encoder!=null)encoder.ring.cancel(capture);capture=null;}if(encoder!=null){if(helper!=null)helper.removeSurface(encoder.surface);encoder.close();encoder=null;}if(!reason.isEmpty())tell(reason);}
-    private void stopCamera(String reason){cameraRequested=false;previewWidth=0;previewHeight=0;previewDisplay=Surface.ROTATION_0;selectedUsb=null;if(tabletCamera!=null){tabletCamera.close();tabletCamera=null;}closeEncoder(reason);if(helper!=null){ICameraHelper old=helper;helper=null;old.closeCamera();old.release();}selectedUsb=null;}
+    private void stopCamera(String reason){if(usbStartup!=null){usbStartup.cancel();usbStartup=null;}cameraRequested=false;previewWidth=0;previewHeight=0;previewDisplay=Surface.ROTATION_0;selectedUsb=null;if(tabletCamera!=null){tabletCamera.close();tabletCamera=null;}closeEncoder(reason);if(helper!=null){ICameraHelper old=helper;helper=null;old.closeCamera();old.release();}selectedUsb=null;}
     @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){super.onRequestPermissionsResult(request,permissions,results);if(request==100&&checkSelfPermission(Manifest.permission.CAMERA)==PackageManager.PERMISSION_GRANTED&&checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED)connectCamera();else if(request==100)tell("Camera and microphone permissions are needed to record packing videos with sound. Tap Choose camera to retry.");}
 }

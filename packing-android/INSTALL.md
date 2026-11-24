@@ -1,6 +1,8 @@
-# MP Packing Station 2.0 — warehouse packing
+# MP Packing Station 2.1.1 — warehouse packing
 
-Install the signed MP-Packing-Station-2.0.0.apk on the Galaxy Tab S9+. It updates the separate MP Packing Station app using the same permanent signing identity; keep app data and pending uploads.
+Install the signed MP-Packing-Station-2.1.1.apk on the Galaxy Tab S9+. It updates the separate MP Packing Station app using the same permanent signing identity; keep app data and pending uploads.
+
+USB startup first opens the camera to discover its advertised modes, then reopens at the highest supported recording resolution up to 2K. If a mode fails, it tries the next compatible mode before recording starts. The connected resolution is shown on screen. A failed camera during packing still stops the recording; it never changes resolution in the middle of a parcel.
 
 1. Sign in with an active fulfilment staff account. Wait for CONNECTED.
 2. Pair the Bluetooth barcode scanner in Android keyboard/HID mode with an Enter suffix.
