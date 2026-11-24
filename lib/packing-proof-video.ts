@@ -21,7 +21,9 @@ export async function trimPackingVideo(bytes: Buffer,offsetMs: number,warehouseD
     // resolution or recompressing; retain the complete-frame checks below.
     const probe=warehouseDurationMs!==undefined&&bytes.subarray(0,64).includes(Buffer.from("ftyp"))
       ? await exec(ffmpeg,["-hide_banner","-nostdin","-protocol_whitelist","file,pipe","-format_whitelist","mov,matroska,webm","-i",source,"-map","0:v:0","-t","0","-c:v","copy","-an","-f","null","-"],{timeout:15000,maxBuffer:128*1024,windowsHide:true}) : null;
-    const stream=probe?.stderr.match(/Video: h264[^\r\n]*?yuv420p[^,]*,\s*(\d+)x(\d+)/);
+    // Camera colour descriptors contain commas, e.g. yuv420p(tv, bt709).
+    // Match the dimensions on this video stream's line, not the first comma.
+    const stream=probe?.stderr.match(/Video: h264[^\r\n]*?\byuv420p\b[^\r\n]*?,\s*(\d+)x(\d+)\b/);
     const copyNative=!!stream&&Number(stream[1])<=2560&&Number(stream[2])<=2560&&Number(stream[1])*Number(stream[2])<=2560*1440&&(!/Audio:/.test(probe!.stderr)||/Audio: aac/.test(probe!.stderr));
     const limit=copyNative?packingSourceLimit:warehouseDurationMs===undefined?outputLimit:24*1024*1024;
     const videoOptions=copyNative?["-c:v","copy","-c:a","copy"]:[
