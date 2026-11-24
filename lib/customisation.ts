@@ -7,6 +7,7 @@ import { isPlushCharmOrder } from "./plush-charm";
 import type { Order } from "./types";
 import { sessionIdForOrder } from "./customisation-links";
 import { voiceBackupFileName } from "./voice-file-name";
+import { linkedCertificate } from "./linked-certificate";
 
 const SESSION_TABLE = "customisation_sessions";
 const AUDIO_BUCKET = "customisation-audio";
@@ -509,6 +510,7 @@ async function applySubmittedSessionToFulfilmentOrder(fulfilmentOrderId: string,
     plushBelongsTo: form.belongsTo,
     meaningfulNote: form.meaningfulNote,
     meaningfulMessage: `supabase-storage:${voiceStoragePath}`,
+    certificateCode: certificateCode || order.certificateCode,
     idWebsiteLink: certificateCode ? `https://meaningfulplushies.com/pages/certificate/${certificateCode}` : order.idWebsiteLink,
     voiceUploadStatus: "received",
     updatedAt: now,
@@ -643,7 +645,7 @@ export async function eligibleWebhookCustomisationOrders(orderId: string, orders
   const ids = [...new Set(candidates.filter(Boolean))];
   if (!ids.length) return orders;
   const { data, error } = await serviceClient().from(SESSION_TABLE)
-    .select("id,order_id,fulfilment_order_id").in("id", ids);
+    .select("id,order_id,fulfilment_order_id,certificate_code,certificate_metaobject_id").in("id", ids);
   if (error) throw new Error(error.message);
   const sessions = new Map(data.map(session => [session.id, session]));
   return orders.map((order, index) => {
@@ -653,7 +655,13 @@ export async function eligibleWebhookCustomisationOrders(orderId: string, orders
       && (!session.order_id || session.order_id === orderId)
       && (session.fulfilment_order_id ? session.fulfilment_order_id === order.id
         : candidates.indexOf(id) === candidates.lastIndexOf(id));
-    return { ...order, customisationSessionId: eligible ? id : undefined };
+    const certificate = eligible ? linkedCertificate(session, order.certificateCode) : null;
+    return { ...order, customisationSessionId: eligible ? id : undefined,
+      ...(certificate?.code && !isPlushCharmOrder(order) ? {
+        certificateCode: certificate.code,
+        idWebsiteLink: `https://meaningfulplushies.com/pages/certificate/${certificate.code}`,
+      } : {}),
+    };
   });
 }
 
@@ -696,8 +704,8 @@ export async function bindSessionsToOrders(input: { orderId: string; orderNumber
     const form = session.form_data || {};
     const submitted = session.status === "submitted";
     const plushCharm = isPlushCharmOrder({ ...order, productType: form.productType === "snowy_charm" ? "plush_charm" : String(form.productType || order.productType || "") });
-    const certificate = input.certificates?.[index] || fallbackCertificate;
-    const certificateCode = certificate?.code || session.certificate_code || "";
+    const certificate = linkedCertificate(session, order.certificateCode, input.certificates?.[index] || fallbackCertificate);
+    const certificateCode = certificate.code;
     return {
       ...order,
       customisationSessionId: sessionId,
@@ -739,10 +747,10 @@ export async function bindSessionsToOrders(input: { orderId: string; orderNumber
     session.order_id = input.orderId;
     session.order_number = input.orderNumber;
     session.fulfilment_order_id = order.id;
-    const certificate = input.certificates?.[index] || fallbackCertificate;
-    if (certificate) {
+    const certificate = linkedCertificate(session, order.certificateCode, input.certificates?.[index] || fallbackCertificate);
+    if (certificate.code) {
       session.certificate_code = certificate.code;
-      session.certificate_metaobject_id = certificate.id;
+      session.certificate_metaobject_id = certificate.id || null;
     }
     return client.from(SESSION_TABLE).update({
       order_id: input.orderId,

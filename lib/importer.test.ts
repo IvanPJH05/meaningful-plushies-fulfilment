@@ -4,6 +4,31 @@ import { applyTikTokDetailEntries, importShopifyData, importTikTokShopData, norm
 import { summarizeSales } from "./sales.ts";
 import type { Order } from "./types.ts";
 
+test("Shopify refresh preserves each saved certificate despite stale line properties", () => {
+  const payload = { name: "#2074", lineItems: { nodes: [
+    { id: "line-a", title: "Plushie", customAttributes: [{ key: "Certificate Code", value: "stale-a" }] },
+    { id: "line-b", title: "Plushie", customAttributes: [{ key: "Certificate Code", value: "stale-b" }] },
+  ] } };
+  const initial = shopifyOrderToFulfilmentOrders(payload);
+  assert.deepEqual(initial.map(order => order.certificateCode), ["stale-a", "stale-b"]);
+  const saved = initial.map((order, index) => ({ ...order, certificateCode: `linked-${index}`, status: "sent_for_sewing" as const }));
+  const refreshed = shopifyOrderToFulfilmentOrders(payload, "", saved);
+  assert.deepEqual(refreshed.map(order => order.certificateCode), ["linked-0", "linked-1"]);
+  assert.deepEqual(refreshed.map(order => order.idWebsiteLink), saved.map(order => `https://meaningfulplushies.com/pages/certificate/${order.certificateCode}`));
+  assert.ok(refreshed.every(order => order.status === "sent_for_sewing"));
+});
+
+test("CSV refresh retains the saved certificate and matching URL", () => {
+  const csv = "Name,Lineitem name\n#2074,Plushie";
+  const meta = 'Order GID,Order name,Metafield value\ngid://shopify/Order/1,#2074,"Product: Plushie\nCertificate Code: stale"';
+  const initial = importShopifyData(csv, meta, []).orders;
+  assert.equal(initial[0].certificateCode, "stale");
+  const saved = initial.map(order => ({ ...order, certificateCode: "20748919811" }));
+  const refreshed = importShopifyData(csv, meta, saved).orders;
+  assert.equal(refreshed[0].certificateCode, "20748919811");
+  assert.equal(refreshed[0].idWebsiteLink, "https://meaningfulplushies.com/pages/certificate/20748919811");
+});
+
 test("keeps customisation references with their Shopify line when another line has no form", () => {
   const orders = shopifyOrderToFulfilmentOrders({ name: "#2000", lineItems: { nodes: [
     { id: "gid://shopify/LineItem/1", title: "Accessory", customAttributes: [] },

@@ -507,7 +507,7 @@ export function shopifyOrderToFulfilmentOrders(
     // A new voice plushie is not ready for fulfilment until its details arrive.
     // Successful submitted-session binding promotes this hold to New Order.
     const initialStatus = current?.status ?? (shopifyLineVoice(lineName) > 0 && !personalization.meaningfulMessage ? "awaiting_customisation" : "new_order");
-    const certificateCode = personalization.certificateCode || current?.certificateCode || "";
+    const certificateCode = current?.certificateCode || personalization.certificateCode || "";
     orders.push({
       id,
       orderNumber: number,
@@ -826,7 +826,7 @@ export function importShopifyData(
       const current = existingById.get(id) ?? legacyCurrent;
       const timestamp = new Date().toISOString();
       const initialStatus = current?.status ?? "new_order";
-      const certificateCode = personalization.certificateCode || current?.certificateCode || "";
+      const certificateCode = current?.certificateCode || personalization.certificateCode || "";
 
       const value: Order = {
         id,
