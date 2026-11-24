@@ -25,7 +25,7 @@ public class UsbCameraStartupTest {
     @Test public void rejectedUsbModeFallsBackAndNeverRecordsWrongDimensions(){
         Webcam camera=new Webcam();UsbCameraStartup<String> startup=new UsbCameraStartup<>(camera);startup.start();camera.arrive(startup,"VGA");
         startup.error("USB rejected 2K");assertEquals("open 1080p",camera.events.get(2));assertNull(camera.recorded);
-        camera.arrive(startup,"VGA");assertNull(camera.recorded);assertEquals("open VGA",camera.events.get(3));camera.arrive(startup,"VGA");assertEquals("VGA",camera.recorded);
+        camera.arrive(startup,"720p");assertNull(camera.recorded);assertEquals("open VGA",camera.events.get(3));camera.arrive(startup,"VGA");assertEquals("VGA",camera.recorded);
     }
     @Test public void encoderFailureTriesTheNextMode(){
         Webcam camera=new Webcam();UsbCameraStartup<String> startup=new UsbCameraStartup<>(camera);startup.start();camera.arrive(startup,"VGA");camera.rejectEncoder=true;camera.arrive(startup,"2K");assertNull(camera.recorded);camera.arrive(startup,"1080p");assertEquals("1080p",camera.recorded);

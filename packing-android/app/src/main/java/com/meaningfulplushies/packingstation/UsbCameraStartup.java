@@ -19,8 +19,11 @@ final class UsbCameraStartup<M> {
     private int next;
     private M requested;
     UsbCameraStartup(Camera<M> camera){this.camera=camera;}
-    void start(){phase=Phase.DISCOVERING;next=0;modes=null;camera.openDefault();}
+    void start(){phase=Phase.DISCOVERING;next=0;modes=null;try{camera.openDefault();}catch(Exception error){fail("The webcam could not open. Reconnect it and try again.");}}
     void opened(){
+        try{openedCamera();}catch(Exception error){fail("The webcam recording modes could not be checked. Reconnect it and try again.");}
+    }
+    private void openedCamera(){
         if(phase==Phase.STOPPED||phase==Phase.READY)return;
         if(phase==Phase.DISCOVERING){modes=camera.recordingModes();tryNext();return;}
         M actual=camera.currentMode();
@@ -38,7 +41,7 @@ final class UsbCameraStartup<M> {
         try{camera.record(mode);phase=Phase.READY;}
         catch(Exception error){tryNext();}
     }
-    void error(String message){if(phase==Phase.OPENING)tryNext();else if(phase!=Phase.STOPPED)fail(message);}
+    void error(String message){try{if(phase==Phase.OPENING)tryNext();else if(phase!=Phase.STOPPED)fail(message);}catch(Exception error){fail(message);}}
     boolean switchingMode(){return phase==Phase.OPENING;}
     void cancel(){phase=Phase.STOPPED;}
     private void fail(String message){phase=Phase.STOPPED;camera.failed(message);}
