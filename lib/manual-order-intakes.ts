@@ -3,7 +3,7 @@ import {dailyManualPaymentSummary, manualPaymentDayRange, type DailyPaymentRow} 
 
 import { createClient } from "@supabase/supabase-js";
 
-import { createCompleteNowSession, createVoiceUpload, normaliseCustomisationForm, saveSnowyCharmVoice, saveSubmittedSession, submittedCustomisationsForSessionIds, type CustomisationForm } from "./customisation";
+import { bindSessionsToOrders, createCompleteNowSession, createVoiceUpload, normaliseCustomisationForm, saveSnowyCharmVoice, saveSubmittedSession, submittedCustomisationsForSessionIds, type CustomisationForm } from "./customisation";
 import { shopifyOrderToFulfilmentOrders } from "./importer";
 import { notifyNewManualOrder } from "./mobile-push-notifications";
 import { shopifyManualOrderCustomerName, shopifyManualOrderShippingName } from "./manual-order-customer-name";
@@ -381,8 +381,17 @@ async function saveManualIntakeToFulfilment(
   // Sales reporting reads these fulfilment rows. The separate monthly-journal
   // mirror is intentionally left to its normal background sync so a missing
   // accounting setup can never hide a real customer order from production.
-  await upsertSharedOrders(enriched, { syncSales: false }, database);
-  return enriched.length;
+  // This path runs independently of the Shopify webhook. Bind the submitted
+  // session here too, before saving: the importer may have generated a fresh
+  // certificate while the webhook was linking the customer's original one.
+  const linked = await bindSessionsToOrders({
+    orderId: intake.shopifyOrderId.startsWith("gid://") ? intake.shopifyOrderId : `gid://shopify/Order/${intake.shopifyOrderId}`,
+    orderNumber,
+    sessionIds: [intake.customisationSessionId],
+    orders: enriched,
+  });
+  await upsertSharedOrders(linked, { syncSales: false }, database);
+  return linked.length;
 }
 
 type ShopifyManualOrder = {
