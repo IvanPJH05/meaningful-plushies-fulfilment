@@ -17,3 +17,8 @@ test("large private media never leaks into the packing order response",()=>{
   assert.ok(!JSON.stringify(response).includes("private"));
   assert.ok(!packingOrderProjection.split(",").includes("data"));
 });
+test("packing responses expose only the stable audio revision",()=>{
+  const item=packingOrderItem([{id:"2082",order_number:"2082",audioRevision:"a".repeat(32),updated_at:"new-status-time"}],"MPI-2082");
+  assert.equal(item?.order.audioRevision,"a".repeat(32));
+  assert.ok(packingOrderProjection.includes("audioRevision:packing_audio_revision"));
+});
