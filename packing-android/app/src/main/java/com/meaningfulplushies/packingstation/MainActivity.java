@@ -32,6 +32,7 @@ public final class MainActivity extends Activity {
             int key=event.getKeyCode();boolean end=key==KeyEvent.KEYCODE_ENTER||key==KeyEvent.KEYCODE_NUMPAD_ENTER||key==KeyEvent.KEYCODE_TAB;
             if(end){
                 if(event.getAction()==KeyEvent.ACTION_UP&&scanTerminator){scanTerminator=false;return true;}
+                if(event.getAction()==KeyEvent.ACTION_DOWN&&scanTerminator&&event.getRepeatCount()>0)return true;
                 if(event.getAction()==KeyEvent.ACTION_DOWN&&scannerInput.hasText()){
                     scanTerminator=true;if(event.getRepeatCount()==0){String value=scannerInput.finish();scan.setText(value);submit();}return true;
                 }
