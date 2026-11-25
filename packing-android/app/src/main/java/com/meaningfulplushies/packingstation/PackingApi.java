@@ -42,7 +42,7 @@ final class PackingApi {
     void downloadAudio(String path,File target)throws Exception{
         HttpURLConnection c=(HttpURLConnection)new URL(BASE+path).openConnection();c.setConnectTimeout(15000);c.setReadTimeout(30000);c.setInstanceFollowRedirects(false);c.setRequestProperty("Authorization","Bearer "+token);
         File partial=new File(target.getPath()+".part");
-        try{int status=c.getResponseCode();if(status!=200)throw new ApiError(status,"Order audio could not load.");if(c.getContentLengthLong()>12*1024*1024)throw new Exception("Order audio is too large.");
+        try{int status=c.getResponseCode();if(status!=200)throw new ApiError(status,"Order audio could not load.");String type=c.getContentType();if(type!=null&&!type.startsWith("audio/")&&!type.startsWith("video/")&&!type.startsWith("application/octet-stream"))throw new Exception("The server did not return a recording.");if(c.getContentLengthLong()>12*1024*1024)throw new Exception("Order audio is too large.");
             try(var in=c.getInputStream();var out=new java.io.FileOutputStream(partial)){byte[] bytes=new byte[8192];int n,total=0;while((n=in.read(bytes))!=-1){total+=n;if(total>12*1024*1024)throw new Exception("Order audio is too large.");out.write(bytes,0,n);}}
             if(partial.length()==0||!partial.renameTo(target))throw new Exception("Order audio could not be cached.");
         }finally{c.disconnect();if(partial.exists())partial.delete();}
