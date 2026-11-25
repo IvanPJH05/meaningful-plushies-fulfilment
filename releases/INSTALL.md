@@ -1,14 +1,14 @@
-# MP Packing Station 2.1.1 — warehouse packing
+# MP Packing Station 2.2.0 — warehouse packing
 
-Install the signed MP-Packing-Station-2.1.1.apk on the Galaxy Tab S9+. It updates the separate MP Packing Station app using the same permanent signing identity; keep app data and pending uploads.
+Install the signed MP-Packing-Station-2.2.0.apk on the Galaxy Tab S9+. It updates the separate MP Packing Station app using the same permanent signing identity; keep app data and pending uploads.
 
-This patch fixes USB resolution discovery occurring before the camera was opened. Startup now opens the webcam first, then selects and verifies its highest compatible recording mode up to 2K. Failed modes are retried at lower advertised resolutions before recording starts. Camera failures during an active parcel still stop recording safely.
+USB startup first opens the camera to discover its advertised modes, then reopens at the highest supported recording resolution up to 2K. If a mode fails, it tries the next compatible mode before recording starts. The connected resolution is shown on screen. A failed camera during packing still stops the recording; it never changes resolution in the middle of a parcel.
 
 1. Sign in with an active fulfilment staff account. Wait for CONNECTED.
 2. Pair the Bluetooth barcode scanner in Android keyboard/HID mode with an Enter suffix.
 3. Choose the tablet camera or USB webcam, allow camera and microphone access, and wait for READY. Choose microphone lists Android's available recording inputs, including supported USB inputs. Changing it reconnects the camera between parcels.
-4. Audio for every current Sent for Sewing order is downloaded into private tablet cache with two downloads at a time. Wait for the ready counter for immediate local playback. Refresh order audio includes newly added orders and retries unavailable recordings. Uncached orders still stream their audio on demand.
-5. Scan the individual order barcode. Its code stays visible immediately, recording begins before the online lookup finishes, and cached audio starts without waiting. Scan its NFC barcode straight away; the app retains it while resolving the order. Another parcel cannot replace the active recording.
+4. Audio for every current Sent for Sewing order is downloaded into private tablet cache with two downloads at a time. Wait for the ready counter for immediate local playback. The audio list refreshes automatically every minute and when returning to the app. Refresh order audio also retries unavailable recordings. Ordinary status and tracking edits keep the downloaded audio; replacing a recording invalidates its copy. Uncached orders still stream their audio on demand.
+5. Scan the individual order barcode. Its code stays visible immediately, recording begins before the online lookup finishes, and cached audio starts without waiting. HID input is captured even when another station control has focus. Scans made during local video saving are retained in order for the next parcel. Scan its NFC barcode straight away; the app retains it while resolving the order. Another parcel cannot replace the active recording.
 6. A successful NFC pair plays the correct tone over customer audio. Errors pause audio, play the wrong tone and spoken problem, then resume. Correct the NFC card without abandoning the active recording.
 7. Pack the parcel and attach its shipping label. Show the complete J&T tracking barcode clearly to the selected camera. Two distinct consecutive frames must match the exact tracking number. A wrong label keeps recording and announces the mismatch.
 8. A match ends the video, retaining microphone sound, and saves it privately on the tablet. The server rechecks the live tracking number, NFC ownership and cloud video before marking Packed. Upload retries do not mark Packed early. The next parcel can begin after local saving while cloud upload continues.
@@ -22,9 +22,3 @@ Preview and recording retain camera aspect ratio and orientation. Rotate camera 
 View saved proofs in the main fulfilment system under Order details → Packing videos. Customer tracking-video access rules are unchanged. The app contains no Supabase service key and uses active staff authentication and short-lived private-storage upload URLs.
 
 CI compiles, lints, runs unit tests and exercises native camera/audio encoding on an Android emulator. A USB webcam and microphone still depend on the actual tablet, hub and hardware combination. The CI artifact is unsigned; sign with scripts/sign-packing-release.ps1 and the existing private release key outside the repository. Never replace or publish that key or its DPAPI-protected password.
-
-## Higher-quality USB webcam recordings
-
-Version 2.1 requests the highest advertised webcam resolution that the tablet encoder supports, up to 2560 x 1440, preferring MJPEG at equal resolution. Lower modes remain available when 2K is not supported. H.264 targets 8 Mbps above 1080p, 6 Mbps at 1080p and 4 Mbps at 720p. Native H.264/AAC warehouse MP4s keep their original resolution and picture pixels after server saving; they are remuxed rather than downscaled and recompressed. Private upload and recovery limits are 200 MiB; the three-minute safety limit and NFC + J&T + saved-video packing gates remain unchanged. Files and upload times are larger.
-
-Update between parcels. Install over the existing app without uninstalling. Reconnect the camera after updating and test one parcel; check the connected resolution and its saved video. Hardware 2K capability cannot be proven in an emulator.
