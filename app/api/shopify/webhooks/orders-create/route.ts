@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { shopifyLinePersonalization, shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
+import { isVoiceRecordingReference, preferVoiceRecording } from "../../../../../lib/batch-audio-source";
 import { isPlushCharmOrder } from "../../../../../lib/plush-charm";
 import { addMissingOurLinks } from "../../../../../lib/our-link";
 import { bindSessionsToOrders, customisationSessionIds, eligibleWebhookCustomisationOrders, recoverMissingSessionIdForOrder, submittedCustomisationsForSessionIds } from "../../../../../lib/customisation";
@@ -60,7 +61,7 @@ function certificateFieldsForLineItem(lineItem: Record<string, unknown>, uploadL
     favouritePerson: line.favouritePerson || metafield.favouritePerson,
     belongsTo: line.belongsTo || metafield.belongsTo,
     meaningfulNote: line.meaningfulNote || metafield.meaningfulNote,
-    meaningfulMessage: line.meaningfulMessage || metafield.meaningfulMessage,
+    meaningfulMessage: preferVoiceRecording(line.meaningfulMessage, metafield.meaningfulMessage),
   };
 }
 
@@ -125,8 +126,9 @@ export async function POST(request: Request) {
         plushFavouritePerson: certificateFields.favouritePerson || order.plushFavouritePerson,
         plushBelongsTo: certificateFields.belongsTo || order.plushBelongsTo,
         meaningfulNote: certificateFields.meaningfulNote || order.meaningfulNote,
-        meaningfulMessage: certificateFields.meaningfulMessage || order.meaningfulMessage,
-        voiceUploadStatus: certificateFields.meaningfulMessage ? "received" : order.voiceUploadStatus,
+        meaningfulMessage: preferVoiceRecording(certificateFields.meaningfulMessage, order.meaningfulMessage),
+        voiceUploadStatus: order.voiceUploadStatus === "checked" || !isVoiceRecordingReference(certificateFields.meaningfulMessage)
+          ? order.voiceUploadStatus : "received",
       };
     });
     // Plush Charms are audio-only products. They receive an Our Link address,
@@ -177,7 +179,7 @@ export async function POST(request: Request) {
           favouritePerson: submitted?.form.favouritePerson || certificateFields.favouritePerson || order.plushFavouritePerson,
           belongsTo: submitted?.form.belongsTo || certificateFields.belongsTo || order.plushBelongsTo,
           meaningfulNote: submitted?.form.meaningfulNote || certificateFields.meaningfulNote || order.meaningfulNote,
-          meaningfulMessage: submitted?.voiceStoragePath ? `supabase-storage:${submitted.voiceStoragePath}` : certificateFields.meaningfulMessage || order.meaningfulMessage,
+          meaningfulMessage: submitted?.voiceStoragePath ? `supabase-storage:${submitted.voiceStoragePath}` : preferVoiceRecording(certificateFields.meaningfulMessage, order.meaningfulMessage),
         });
       }))
       : [];

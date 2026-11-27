@@ -1,6 +1,7 @@
 import type { ImportResult, Order } from "./types";
 import { isPlushCharmOrder } from "./plush-charm.ts";
 import { mediaFileExtension, voiceBackupFileName } from "./voice-file-name.ts";
+import { isVoiceRecordingReference, preferVoiceRecording } from "./batch-audio-source.ts";
 
 function clean(value: string | undefined) {
   return (value ?? "").trim().replace(/^"|"$/g, "");
@@ -193,7 +194,7 @@ function personalizationBlocks(raw: string) {
     favouritePerson: metafield(block, "Favourite Person") || metafield(block, "Favorite Person"),
     belongsTo: metafield(block, "Belongs To") || metafield(block, "Plushie Belongs To"),
     meaningfulNote: metafield(block, "Meaningful Note"),
-    meaningfulMessage: metafield(block, "Meaningful Message"),
+    meaningfulMessage: preferVoiceRecording(metafield(block, "_meaningful_message_url"), metafield(block, "Meaningful Message")),
   }));
 }
 
@@ -245,7 +246,12 @@ export function shopifyLinePersonalization(lineItem: unknown): ShopifyPersonaliz
     favouritePerson: shopifyLineAttributeValue(lineItem, ["Favourite Person", "Favorite Person", "Plushie's Favourite Person", "Plushie's Favorite Person"]),
     belongsTo: shopifyLineAttributeValue(lineItem, ["Belongs To", "Plushie Belongs To", "Plushie's Belongs To"]),
     meaningfulNote: shopifyLineAttributeValue(lineItem, ["Meaningful Note", "Note"]),
-    meaningfulMessage: shopifyLineAttributeValue(lineItem, ["_meaningful_message_url", "Meaningful Message", "Message", "Voice Message"]),
+    meaningfulMessage: preferVoiceRecording(
+      shopifyLineAttributeValue(lineItem, ["_meaningful_message_url"]),
+      shopifyLineAttributeValue(lineItem, ["Meaningful Message"]),
+      shopifyLineAttributeValue(lineItem, ["Voice Message"]),
+      shopifyLineAttributeValue(lineItem, ["Message"]),
+    ),
   };
 }
 
@@ -499,7 +505,7 @@ export function shopifyOrderToFulfilmentOrders(
       favouritePerson: linePersonalization.favouritePerson || metafieldPersonalization?.favouritePerson || "",
       belongsTo: linePersonalization.belongsTo || metafieldPersonalization?.belongsTo || "",
       meaningfulNote: linePersonalization.meaningfulNote || metafieldPersonalization?.meaningfulNote || "",
-      meaningfulMessage: linePersonalization.meaningfulMessage || metafieldPersonalization?.meaningfulMessage || "",
+      meaningfulMessage: preferVoiceRecording(linePersonalization.meaningfulMessage, metafieldPersonalization?.meaningfulMessage),
     };
     const lineName = shopifyLineName(lineItem);
     const id = total === 1 ? number : `${number}-${index + 1}`;
@@ -555,9 +561,9 @@ export function shopifyOrderToFulfilmentOrders(
       plushBelongsTo: personalization.belongsTo || current?.plushBelongsTo || "",
       certificateCode,
       meaningfulNote: personalization.meaningfulNote || current?.meaningfulNote || "",
-      meaningfulMessage: personalization.meaningfulMessage || current?.meaningfulMessage || "",
+      meaningfulMessage: preferVoiceRecording(personalization.meaningfulMessage, current?.meaningfulMessage),
       remark: String(shopifyOrder.note ?? current?.remark ?? ""),
-      voiceUploadStatus: current?.voiceUploadStatus ?? (personalization.meaningfulMessage ? "received" : "missing"),
+      voiceUploadStatus: current?.voiceUploadStatus ?? (isVoiceRecordingReference(personalization.meaningfulMessage) ? "received" : "missing"),
       courier: tagTracking.courier || current?.courier || "",
       trackingNumber: tagTracking.trackingNumber || current?.trackingNumber || "",
       status: initialStatus,
@@ -863,9 +869,9 @@ export function importShopifyData(
         plushName: personalization.plushName || current?.plushName || "",
         certificateCode,
         meaningfulNote: personalization.meaningfulNote || current?.meaningfulNote || "",
-        meaningfulMessage: personalization.meaningfulMessage || current?.meaningfulMessage || "",
+        meaningfulMessage: preferVoiceRecording(personalization.meaningfulMessage, current?.meaningfulMessage),
         remark: shared.Remark || shared.Notes || current?.remark || "",
-        voiceUploadStatus: current?.voiceUploadStatus ?? (personalization.meaningfulMessage ? "received" : "missing"),
+        voiceUploadStatus: current?.voiceUploadStatus ?? (isVoiceRecordingReference(personalization.meaningfulMessage) ? "received" : "missing"),
         courier: current?.courier || "",
         trackingNumber: current?.trackingNumber || "",
         status: initialStatus,

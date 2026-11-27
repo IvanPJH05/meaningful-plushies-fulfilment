@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { sessionIdForOrder } from "../../../../../lib/customisation-links";
 
 import { shopifyOrderToFulfilmentOrders } from "../../../../../lib/importer";
+import { preferVoiceRecording } from "../../../../../lib/batch-audio-source";
 import { isPlushCharmOrder } from "../../../../../lib/plush-charm";
 import { addMissingOurLinks } from "../../../../../lib/our-link";
 import { bindSessionsToOrders, customisationSessionIds, recoverMissingSessionIdForOrder, submittedCustomisationForOrder, submittedCustomisationsForSessionIds } from "../../../../../lib/customisation";
@@ -103,7 +104,7 @@ async function refreshOneOrder(requestedOrderNumber: string, existing: Order[], 
         favouritePerson: certificateFields.favouritePerson || order.plushFavouritePerson,
         belongsTo: certificateFields.belongsTo || order.plushBelongsTo,
         meaningfulNote: certificateFields.meaningfulNote || order.meaningfulNote,
-        meaningfulMessage: certificateFields.meaningfulMessage || order.meaningfulMessage,
+        meaningfulMessage: preferVoiceRecording(certificateFields.meaningfulMessage, order.meaningfulMessage),
       });
     }))
     : [];

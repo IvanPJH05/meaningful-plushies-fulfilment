@@ -1,8 +1,30 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ session: vi.fn(), single: vi.fn(), mp3: vi.fn(), storage: vi.fn() }));
-vi.mock("../lib/mobile-api", () => ({ requireMobileSession: mocks.session, mobileServiceClient: () => ({ from: () => ({ select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: mocks.single }) }) }) }), storage: { from: () => ({ download: mocks.storage }) } }) }));
+const mocks = vi.hoisted(() => ({
+  session: vi.fn(), single: vi.fn(), mp3: vi.fn(), storage: vi.fn(), linkedSessions: vi.fn(), sessionFilter: vi.fn(),
+}));
+vi.mock("../lib/mobile-api", () => ({
+  requireMobileSession: mocks.session,
+  mobileServiceClient: () => ({
+    from: (table: string) => {
+      const query = {
+        select: () => query,
+        eq: (column: string, value: string) => {
+          if (table === "customisation_sessions") mocks.sessionFilter(column, value);
+          return query;
+        },
+        not: () => query,
+        neq: () => query,
+        maybeSingle: mocks.single,
+        limit: mocks.linkedSessions,
+      };
+      return query;
+    },
+    storage: { from: () => ({ download: mocks.storage }) },
+  }),
+}));
 vi.mock("../lib/batch-audio", async importOriginal => ({ ...await importOriginal<typeof import("../lib/batch-audio")>(), cachedBatchMp3: mocks.mp3 }));
 import { GET } from "../app/api/fulfilment/batches/audio/route";
+import { GET as productionGET } from "../app/api/production-tracking/audio/route";
 
 const order = { id: "fixture", orderNumber: "TT1323 586597798472746996", character: "Tootsie", salesChannel: "tiktok", meaningfulMessage: "Gender: Male", tikTokFileName: "TT1323 TOOTSIE.mp4", tikTokFileDataUrl: `data:video/mp4;base64,${Buffer.from("video-with-audio").toString("base64")}` };
 function request() { return new Request("https://app.test/api/fulfilment/batches/audio?id=batch&orderId=fixture", { headers: { Authorization: "Bearer fixture" } }); }
@@ -39,6 +61,33 @@ describe("batch MP3 downloads", () => {
     mocks.single.mockResolvedValue({ data: { fulfilment_orders: { data: { ...order, salesChannel: "shopify", meaningfulMessage: "supabase-storage:12345678-1234-1234-1234-123456789abc/voice.webm" } } }, error: null });
     mocks.storage.mockResolvedValue({ data: new Blob(["webm-audio"], { type: "audio/webm" }), error: null });
     expect((await GET(request())).status).toBe(200); expect(mocks.mp3.mock.calls[0][1].toString()).toBe("webm-audio");
+  });
+  it.each([GET, productionGET])("recovers the original recording from the exact submitted Shopify customisation", async (download) => {
+    const sessionId = "12345678-1234-1234-1234-123456789abc";
+    const path = `${sessionId}/voice.webm`;
+    mocks.single.mockResolvedValue({
+      data: { fulfilment_orders: { data: { ...order, salesChannel: "shopify", meaningfulMessage: "Customised", customisationSessionId: sessionId } } },
+      error: null,
+    });
+    mocks.linkedSessions.mockResolvedValue({ data: [{ voice_storage_path: path }], error: null });
+    mocks.storage.mockResolvedValue({ data: new Blob(["webm-audio"], { type: "audio/webm" }), error: null });
+    expect((await download(request())).status).toBe(200);
+    expect(mocks.sessionFilter).toHaveBeenCalledWith("fulfilment_order_id", "fixture");
+    expect(mocks.sessionFilter).toHaveBeenCalledWith("status", "submitted");
+    expect(mocks.sessionFilter).toHaveBeenCalledWith("id", sessionId);
+    expect(mocks.storage).toHaveBeenCalledWith(path);
+    expect(mocks.mp3.mock.calls[0][1].toString()).toBe("webm-audio");
+  });
+  it("refuses ambiguous recordings for an order without an explicit session", async () => {
+    mocks.single.mockResolvedValue({
+      data: { fulfilment_orders: { data: { ...order, salesChannel: "shopify", meaningfulMessage: "Customised" } } },
+      error: null,
+    });
+    mocks.linkedSessions.mockResolvedValue({ data: [{ voice_storage_path: "first" }, { voice_storage_path: "second" }], error: null });
+    const response = await productionGET(request());
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toContain("Multiple recordings");
+    expect(mocks.storage).not.toHaveBeenCalled();
   });
   it("accepts recorded audio data URLs with codec parameters", async () => {
     mocks.single.mockResolvedValue({ data: { fulfilment_orders: { data: { ...order, tikTokFileDataUrl: "data:audio/webm;codecs=opus;base64,YXVkaW8=" } } }, error: null });

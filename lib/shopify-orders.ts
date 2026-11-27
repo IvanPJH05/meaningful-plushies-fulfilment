@@ -1,4 +1,5 @@
 import { randomInt } from "node:crypto";
+import { preferVoiceRecording } from "./batch-audio-source.ts";
 
 let cachedShopifyToken: { token: string; expiresAt: number } | null = null;
 
@@ -300,7 +301,7 @@ export function uploadLiftCertificateFields(raw: string): Omit<CertificateMetaob
     favouritePerson: read("Favourite Person", "Favorite Person", "Plushie's Favourite Person", "Plushie's Favorite Person"),
     belongsTo: read("Belongs To", "Plushie Belongs To", "Plushie's Belongs To"),
     meaningfulNote: read("Meaningful Note"),
-    meaningfulMessage: read("_meaningful_message_url", "Meaningful Message", "Voice Message", "Voice"),
+    meaningfulMessage: preferVoiceRecording(read("_meaningful_message_url"), read("Meaningful Message"), read("Voice Message"), read("Voice")),
   };
 }
 

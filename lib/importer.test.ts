@@ -4,6 +4,25 @@ import { applyTikTokDetailEntries, importShopifyData, importTikTokShopData, norm
 import { summarizeSales } from "./sales.ts";
 import type { Order } from "./types.ts";
 
+test("uses the recording URL even when Shopify lists Customised first", () => {
+  const url = "https://example.com/api/customisation/audio-download?path=voice";
+  const payload = {
+    name: "#2086",
+    lineItems: { nodes: [{ id: "line", title: "Plushie", customAttributes: [
+      { key: "Meaningful Message", value: "Customised" },
+      { key: "_meaningful_message_url", value: url },
+    ] }] },
+  };
+  const imported = shopifyOrderToFulfilmentOrders(payload);
+  assert.equal(imported[0]?.meaningfulMessage, url);
+  assert.equal(imported[0]?.voiceUploadStatus, "received");
+
+  payload.lineItems.nodes[0].customAttributes.pop();
+  const refreshed = shopifyOrderToFulfilmentOrders(payload, "", imported);
+  assert.equal(refreshed[0]?.meaningfulMessage, url);
+  assert.equal(shopifyOrderToFulfilmentOrders(payload)[0]?.voiceUploadStatus, "missing");
+});
+
 test("Shopify refresh preserves each saved certificate despite stale line properties", () => {
   const payload = { name: "#2074", lineItems: { nodes: [
     { id: "line-a", title: "Plushie", customAttributes: [{ key: "Certificate Code", value: "stale-a" }] },

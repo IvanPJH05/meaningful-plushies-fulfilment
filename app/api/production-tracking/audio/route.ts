@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { mobileServiceClient, requireMobileSession } from "../../../../lib/mobile-api";
 import { voiceBackupFileName } from "../../../../lib/voice-file-name";
-import { assertAudioMediaType, batchAudioSource, boundedAudioBytes, cachedBatchMp3, maxAudioSourceBytes } from "../../../../lib/batch-audio";
+import { assertAudioMediaType, boundedAudioBytes, cachedBatchMp3, maxAudioSourceBytes } from "../../../../lib/batch-audio";
+import { resolveBatchAudioSource } from "../../../../lib/batch-audio-source";
 import type { Order } from "../../../../lib/types";
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -15,7 +16,7 @@ export async function GET(request: Request) {
     const { data, error } = await db.from("production_items").select("fulfilment_orders!inner(data)").eq("batch_id", batchId).eq("order_id", orderId).eq("disposition","active").maybeSingle();
     if (error || !data) return NextResponse.json({ error: "Order is not in this batch." }, { status: 404 });
     const order = (data.fulfilment_orders as unknown as { data: Order }).data;
-    const source = batchAudioSource(order);
+    const source = await resolveBatchAudioSource(db, order, orderId);
     if (!source) return NextResponse.json({ code: "VOICE_NOT_UPLOADED", error: "Voice not uploaded" }, { status: 400, headers: { "Cache-Control": "private, no-store" } });
     let bytes: Buffer | null = null, type = "";
     const inline = source.match(/^data:([^;,]+)(?:;[^,]*)?;base64,([\s\S]+)$/i);

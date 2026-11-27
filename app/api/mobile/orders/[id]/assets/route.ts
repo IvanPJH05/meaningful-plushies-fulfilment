@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { mobileServiceClient, requireMobileSession } from "../../../../../../lib/mobile-api";
 import type { Order } from "../../../../../../lib/types";
-import { batchAudioSource } from "../../../../../../lib/batch-audio-source";
+import { resolveBatchAudioSource } from "../../../../../../lib/batch-audio-source";
 import { assertAudioMediaType, cachedBatchMp3 } from "../../../../../../lib/batch-audio";
 
 export const runtime = "nodejs";
@@ -46,7 +46,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const order = data?.data as Order | undefined;
     if (!order) return NextResponse.json({ error: "Order not found." }, { status: 404 });
 
-    const reference = kind === "voice" ? batchAudioSource(order) : kind === "photo" ? order.photoDataUrl : kind === "attachment" ? order.tikTokFileDataUrl : order.shippingLabelUrl;
+    const reference = kind === "voice" ? await resolveBatchAudioSource(db, order, id) : kind === "photo" ? order.photoDataUrl : kind === "attachment" ? order.tikTokFileDataUrl : order.shippingLabelUrl;
     if (!reference) return NextResponse.json({ error: "Media is not available." }, { status: 404 });
     const mediaResponse = async (bytes: Buffer, contentType: string) => {
       if (kind === "voice" && order.salesChannel === "tiktok") {
