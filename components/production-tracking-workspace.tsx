@@ -41,7 +41,38 @@ export function ProductionTrackingWorkspace({token,admin,onOpenScanner,onPrint,o
  async function startTasks(id:string){await run(async()=>{await load(id);setOverview(false);setTaskMode(true);});}
  async function loadNewOrderReview(){const d=await request(`?candidates=1&day=${day}`);setCandidates(d.orders);setChosen([]);requestId.current=draftId||crypto.randomUUID();setBatch(null);setItems([]);setReview(true);setOverview(false);}
  async function completeTask(item:ProductionItem,action:string,orderBarcode:string,cardCode:string,taskNote:string){await request("",{action,itemId:item.id,version:item.version,orderBarcode,cardCode,note:taskNote});const updated=await load(item.batch_id);await list();return updated;}
- async function downloadAudio(){if(!batch)throw Error("Choose a batch.");const cohort=items.filter(i=>(!i.disposition||i.disposition==="active")&&i.stage==="labels_printed");const controller=new AbortController();const result=await prepareBatchAudioFiles(cohort.map(i=>({...i.order,id:i.order_id} as Order)),batch.id,token,controller.signal,()=>{},"/api/production-tracking/audio");if(result.missing.length||!result.available)throw Error("Missing audio. Remove or leave behind affected orders before downloading.");const blob=await buildAudioZip(result.files);const url=URL.createObjectURL(blob);const link=document.createElement("a");link.href=url;link.download="production-"+batch.production_date+"-audio.zip";link.click();setTimeout(()=>URL.revokeObjectURL(url),60000);await request("",{action:"audio_complete",batchId:batch.id,versions:Object.fromEntries(cohort.map(i=>[i.id,i.version]))});const updated=await load(batch.id);await list();return updated;}
+ async function downloadAudio() {
+  if (!batch) throw Error("Choose a batch.");
+  const cohort = items.filter(i => (!i.disposition || i.disposition === "active") && i.stage === "labels_printed");
+  const controller = new AbortController();
+  const result = await prepareBatchAudioFiles(
+   cohort.map(i => ({ ...i.order, id: i.order_id } as Order)),
+   batch.id,
+   token,
+   controller.signal,
+   () => {},
+   "/api/production-tracking/audio",
+  );
+  if (result.missing.length || !result.available) {
+   throw Error("Missing audio. Remove or leave behind affected orders before downloading.");
+  }
+  const blob = await buildAudioZip(result.files);
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const batchIdentifier = batch.batch_number?.toString().padStart(4, "0") ?? batch.id;
+  link.href = url;
+  link.download = `production-${batch.production_date}-batch-${batchIdentifier}-audio.zip`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  await request("", {
+   action: "audio_complete",
+   batchId: batch.id,
+   versions: Object.fromEntries(cohort.map(i => [i.id, i.version])),
+  });
+  const updated = await load(batch.id);
+  await list();
+  return updated;
+ }
  if (assistant && overview) {
    const activeBatches = batches.flatMap(batch => {
      const active = batch.production_items.filter(item => (!item.disposition || item.disposition === "active") && taskInstructions[item.stage]);

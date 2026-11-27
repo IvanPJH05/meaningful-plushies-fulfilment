@@ -69,7 +69,15 @@ export async function GET(request:Request){try{
   const {data,error}=await client.from("fulfilment_orders").select("id,order_number,updated_at,data").eq("status","new_order").order("order_number").limit(1000);if(error)throw error;
   const orders=(data||[]).filter(r=>!used.has(r.id)).slice(0,200).map(r=>({id:r.id,...r.data as object,productionCarryover:deferred.find(m=>m.order_id===r.id)?.issue||null}));return NextResponse.json({orders},{headers});
  }
- if(!id){const {data,error}=await client.from("production_batches").select("*,production_items(stage,issue,disposition,carried_issue)").order("production_date",{ascending:false}).limit(60);if(error)throw error;return NextResponse.json({batches:data},{headers});}
+ if (!id) {
+  const { data, error } = await client.from("production_batches")
+   .select("*,production_items(stage,issue,disposition,carried_issue)")
+   .order("production_date", { ascending: false })
+   .order("batch_number", { ascending: false })
+   .limit(60);
+  if (error) throw error;
+  return NextResponse.json({ batches: data }, { headers });
+ }
  if(!uuid.test(id))throw new PairingError("Invalid batch.");
  const {data:batch,error:batchError}=await client.from("production_batches").select("*").eq("id",id).single();if(batchError)throw batchError;
  const {data:items,error}=await client.from("production_items").select("*").eq("batch_id",id).order("order_id");if(error)throw error;
